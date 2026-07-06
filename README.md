@@ -52,7 +52,14 @@ If onboarding fails at the final step, the database is usually missing migration
 
 In development, the onboarding error message includes the Supabase error text to make this obvious (e.g. `relation "profiles" does not exist` or RLS violations). The app also calls `/api/profile/ensure` before saving, which creates a missing profile row via the service role when `SUPABASE_SERVICE_ROLE_KEY` is set.
 
-### 4. Set up Stripe
+**Signup returns “Something went wrong on our side” (HTTP 500)**
+
+Two common causes after migrations are applied:
+
+1. **Database trigger** — `handle_new_user` fails during `INSERT INTO auth.users` (rolls back signup). Run `supabase/diagnostics/signup_full_diagnostic.sql` in the SQL Editor; section **D3** prints the exact Postgres error. Fix: re-run `007_signup_trigger_bulletproof.sql`.
+2. **SMTP / confirmation email** — user row is created but Auth returns 500 when sending the confirm email. Check Dashboard → Logs → Auth for `gomail` or `Error sending confirmation email`. Fix SMTP (host, port, TLS, sender domain) or temporarily disable **Confirm email** under Authentication → Providers → Email to isolate.
+
+Before retrying with the same email, delete any stuck row from `auth.users` (see section **F** in the diagnostic SQL). Add `https://splitindex.co.uk/auth/callback` to Authentication → URL Configuration → Redirect URLs.
 
 Required in `.env.local` for checkout to work:
 

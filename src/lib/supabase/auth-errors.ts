@@ -3,10 +3,20 @@ import type { AuthError } from "@supabase/supabase-js";
 const GENERIC_SERVER_ERROR =
   "Something went wrong on our side. Please try again in a moment.";
 
-const DEV_SERVER_ERROR_HINT =
+const DEV_DB_TRIGGER_HINT =
   "Likely cause: handle_new_user trigger failed (missing search_path or trigger). " +
-  "Run supabase/diagnostics/signup_trigger_check.sql in Supabase SQL Editor, " +
-  "then apply migration 007. Check Dashboard → Logs → Auth for the Postgres error.";
+  "Run supabase/diagnostics/signup_full_diagnostic.sql in Supabase SQL Editor, " +
+  "then apply migration 007. Check Dashboard → Logs → Postgres for the SQL error.";
+
+const DEV_SMTP_HINT =
+  "Likely cause: confirmation email failed (SMTP misconfiguration, rate limit, or template error). " +
+  "Check Dashboard → Logs → Auth for gomail / confirmation email errors. " +
+  "Temporarily disable Confirm email to isolate DB vs SMTP.";
+
+const DEV_GENERIC_SERVER_HINT =
+  "Check Dashboard → Logs → Auth (path=/signup). " +
+  "Database error saving new user → run signup_full_diagnostic.sql. " +
+  "Error sending confirmation email → fix SMTP or disable confirm email temporarily.";
 
 const AUTH_CODE_MESSAGES: Record<string, string> = {
   email_exists:
@@ -21,6 +31,12 @@ const AUTH_CODE_MESSAGES: Record<string, string> = {
     "Too many attempts. Please wait a few minutes and try again.",
   invalid_credentials: "Email or password is incorrect.",
   signup_disabled: "New sign-ups are temporarily disabled. Please try again later.",
+  email_address_not_authorized:
+    "This email address cannot receive mail from the default Supabase sender. Configure custom SMTP in Supabase → Authentication → SMTP.",
+  email_send_failed:
+    "We could not send the confirmation email. Check SMTP settings or try again shortly.",
+  over_email_send_rate_limit:
+    "Too many emails sent to this address. Please wait a while and try again.",
   email_not_confirmed:
     "Please confirm your email before signing in. Check your inbox for the link.",
   user_not_found: "No account found for that email.",
@@ -55,6 +71,30 @@ function authErrorStatus(error: unknown): number | undefined {
   return typeof status === "number" ? status : undefined;
 }
 
+function devHintForServerError(error: unknown): string {
+  const authError = error as AuthError;
+  const rawMessage =
+    typeof authError.message === "string" ? authError.message.toLowerCase() : "";
+
+  if (
+    rawMessage.includes("confirmation email") ||
+    rawMessage.includes("gomail") ||
+    rawMessage.includes("smtp") ||
+    rawMessage.includes("email send")
+  ) {
+    return DEV_SMTP_HINT;
+  }
+
+  if (
+    rawMessage.includes("database error saving new user") ||
+    rawMessage.includes("database error creating new user")
+  ) {
+    return DEV_DB_TRIGGER_HINT;
+  }
+
+  return DEV_GENERIC_SERVER_HINT;
+}
+
 function withDevAuthDetails(message: string, error: unknown): string {
   if (process.env.NODE_ENV !== "development") return message;
 
@@ -64,7 +104,7 @@ function withDevAuthDetails(message: string, error: unknown): string {
   const parts = [message];
 
   if (message === GENERIC_SERVER_ERROR) {
-    parts.push(DEV_SERVER_ERROR_HINT);
+    parts.push(devHintForServerError(error));
   }
 
   if (status !== undefined) {
@@ -107,6 +147,20 @@ export function authErrorMessage(
     typeof authError.message === "string" ? authError.message.trim() : "";
 
   if (!isUselessMessage(message)) {
+    const lower = message.toLowerCase();
+    if (lower.includes("database error saving new user")) {
+      return withDevAuthDetails(GENERIC_SERVER_ERROR, error);
+    }
+    if (
+      lower.includes("confirmation email") ||
+      lower.includes("gomail") ||
+      lower.includes("smtp")
+    ) {
+      return withDevAuthDetails(
+        AUTH_CODE_MESSAGES.email_send_failed,
+        error
+      );
+    }
     if (mapped && (status === 500 || message === "{}")) {
       return withDevAuthDetails(mapped, error);
     }

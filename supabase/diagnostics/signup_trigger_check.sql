@@ -1,4 +1,5 @@
 -- Signup trigger diagnostic — run in Supabase SQL Editor (Dashboard → SQL).
+-- For full simulation + SMTP decision tree, use signup_full_diagnostic.sql instead.
 -- Checks why email/OAuth signup returns "Database error saving new user".
 
 -- ─── 1. profiles table exists ────────────────────────────────────────────────
