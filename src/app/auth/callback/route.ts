@@ -1,44 +1,81 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { ensureProfileForUser } from "@/lib/supabase/ensure-profile";
+import { getPublicOrigin } from "@/lib/app-url";
+
+function authFailureRedirect(
+  request: Request,
+  reason: string,
+  detail?: string
+) {
+  const origin = getPublicOrigin(request);
+  const params = new URLSearchParams({ error: "auth", reason });
+  if (detail) params.set("detail", detail.slice(0, 200));
+
+  console.error("[auth/callback] Sign-in failed:", { reason, detail });
+
+  return NextResponse.redirect(`${origin}/login?${params.toString()}`);
+}
 
 export async function GET(request: Request) {
-  const { searchParams, origin } = new URL(request.url);
+  const { searchParams } = new URL(request.url);
   const code = searchParams.get("code");
+  const oauthError = searchParams.get("error");
+  const oauthErrorDescription = searchParams.get("error_description");
   let next = searchParams.get("next") ?? "/dashboard";
   // Guard against open redirects: only allow relative paths.
   if (!next.startsWith("/")) next = "/dashboard";
 
-  if (code) {
-    const supabase = await createClient();
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
-    if (!error) {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (user) {
-        await ensureProfileForUser(user);
-
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("onboarding_completed")
-          .eq("user_id", user.id)
-          .single();
-
-        const redirectPath = profile?.onboarding_completed ? next : "/onboarding";
-
-        // Behind a load balancer, `origin` is the internal host; prefer the
-        // original host from the x-forwarded-host header (Supabase SSR docs).
-        const forwardedHost = request.headers.get("x-forwarded-host");
-        const isLocal = process.env.NODE_ENV === "development";
-        if (!isLocal && forwardedHost) {
-          return NextResponse.redirect(`https://${forwardedHost}${redirectPath}`);
-        }
-        return NextResponse.redirect(`${origin}${redirectPath}`);
-      }
-    }
+  if (oauthError) {
+    return authFailureRedirect(
+      request,
+      "oauth_denied",
+      oauthErrorDescription ?? oauthError
+    );
   }
 
-  return NextResponse.redirect(`${origin}/login?error=auth`);
+  if (!code) {
+    return authFailureRedirect(request, "missing_code");
+  }
+
+  const supabase = await createClient();
+  const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+
+  if (exchangeError) {
+    return authFailureRedirect(
+      request,
+      "exchange_failed",
+      exchangeError.message
+    );
+  }
+
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError) {
+    return authFailureRedirect(request, "user_lookup_failed", userError.message);
+  }
+
+  if (!user) {
+    return authFailureRedirect(request, "no_user");
+  }
+
+  const { error: profileError } = await ensureProfileForUser(user);
+  if (profileError) {
+    console.error("[auth/callback] Profile ensure failed:", profileError);
+    // Session is valid; continue so onboarding can retry via /api/profile/ensure.
+  }
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("onboarding_completed")
+    .eq("user_id", user.id)
+    .single();
+
+  const redirectPath = profile?.onboarding_completed ? next : "/onboarding";
+  const origin = getPublicOrigin(request);
+
+  return NextResponse.redirect(`${origin}${redirectPath}`);
 }

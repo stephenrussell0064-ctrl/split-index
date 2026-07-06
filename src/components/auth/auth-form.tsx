@@ -8,6 +8,7 @@ import { Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { createClient } from "@/lib/supabase/client";
+import { getAppUrl } from "@/lib/app-url";
 
 export function AuthForm({
   mode,
@@ -23,6 +24,9 @@ export function AuthForm({
   const [error, setError] = useState(initialError ?? "");
   const [message, setMessage] = useState("");
 
+  const authCallbackUrl = () =>
+    `${getAppUrl(typeof window !== "undefined" ? window.location.origin : undefined)}/auth/callback`;
+
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -33,7 +37,7 @@ export function AuthForm({
       const { error } = await supabase.auth.signUp({
         email,
         password,
-        options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
+        options: { emailRedirectTo: authCallbackUrl() },
       });
       if (error) setError(error.message);
       else setMessage("Check your email to confirm your account.");
@@ -50,7 +54,7 @@ export function AuthForm({
     const supabase = createClient();
     const { error } = await supabase.auth.signInWithOAuth({
       provider,
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
+      options: { redirectTo: authCallbackUrl() },
     });
     if (error) setError(error.message);
   };
@@ -146,6 +150,14 @@ export function AuthForm({
               </Link>
             </>
           )}
+        </p>
+
+        <p className="text-center text-xs text-muted mt-4">
+          By continuing, you agree to our{" "}
+          <Link href="/privacy" className="text-accent hover:underline">
+            Privacy Policy
+          </Link>
+          .
         </p>
       </motion.div>
     </div>
