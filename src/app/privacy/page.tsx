@@ -81,7 +81,7 @@ export default function PrivacyPolicyPage() {
                 </li>
                 <li>
                   <strong>OAuth and integration data:</strong> when you sign in with Google
-                  or Apple, or connect third-party fitness services (such as Strava or
+                  or connect third-party fitness services (such as Strava or
                   Garmin), we receive account identifiers and activity data authorised by
                   you through those providers.
                 </li>
@@ -172,9 +172,6 @@ export default function PrivacyPolicyPage() {
                 </li>
                 <li>
                   <strong>Google</strong> — OAuth sign-in (when you choose to use it);
-                </li>
-                <li>
-                  <strong>Apple</strong> — OAuth sign-in (when you choose to use it);
                 </li>
                 <li>
                   <strong>Strava and Garmin</strong> — activity import when you connect

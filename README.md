@@ -39,7 +39,7 @@ cp .env.example .env.local
    - `supabase/migrations/003_integrations.sql` — OAuth connections and import jobs
    - `supabase/migrations/004_split_weighting.sql` — user-configurable Split Index endurance/strength weights
    - `supabase/migrations/005_session_templates.sql` — session templates + `file` activity source for GPX/TCX import
-3. Enable Google and Apple OAuth in Authentication → Providers
+3. Enable Email and Google OAuth in Authentication → Providers
 4. Add your site URL to redirect allowlist: `http://localhost:3000/auth/callback`
 
 **Onboarding “Could not save your profile”**

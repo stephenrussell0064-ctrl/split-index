@@ -49,7 +49,7 @@ export function AuthForm({
     setLoading(false);
   };
 
-  const handleOAuth = async (provider: "google" | "apple") => {
+  const handleOAuth = async (provider: "google") => {
     setError("");
     const supabase = createClient();
     const { error } = await supabase.auth.signInWithOAuth({
@@ -88,13 +88,6 @@ export function AuthForm({
             onClick={() => handleOAuth("google")}
           >
             Continue with Google
-          </Button>
-          <Button
-            variant="secondary"
-            className="w-full"
-            onClick={() => handleOAuth("apple")}
-          >
-            Continue with Apple
           </Button>
         </div>
 
