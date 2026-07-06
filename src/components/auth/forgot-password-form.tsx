@@ -7,6 +7,7 @@ import { Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { createClient } from "@/lib/supabase/client";
+import { authErrorMessage } from "@/lib/supabase/auth-errors";
 import { getAppUrl } from "@/lib/app-url";
 
 export function ForgotPasswordForm() {
@@ -21,22 +22,26 @@ export function ForgotPasswordForm() {
     setError("");
     setMessage("");
 
-    const supabase = createClient();
-    const redirectTo = `${getAppUrl(typeof window !== "undefined" ? window.location.origin : undefined)}/auth/callback?next=/reset-password`;
+    try {
+      const supabase = createClient();
+      const redirectTo = `${getAppUrl(typeof window !== "undefined" ? window.location.origin : undefined)}/auth/callback?next=/reset-password`;
 
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo,
-    });
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo,
+      });
 
-    if (error) {
-      setError(error.message);
-    } else {
-      setMessage(
-        "If an account exists for that email, we sent a link to reset your password."
-      );
+      if (error) {
+        setError(authErrorMessage(error, "Could not send reset email. Please try again."));
+      } else {
+        setMessage(
+          "If an account exists for that email, we sent a link to reset your password."
+        );
+      }
+    } catch (err) {
+      setError(authErrorMessage(err, "Could not send reset email. Please try again."));
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
   const reducedMotion = useReducedMotion();

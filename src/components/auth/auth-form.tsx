@@ -8,6 +8,7 @@ import { Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { createClient } from "@/lib/supabase/client";
+import { authErrorMessage } from "@/lib/supabase/auth-errors";
 import { getAppUrl } from "@/lib/app-url";
 
 export function AuthForm({
@@ -31,32 +32,70 @@ export function AuthForm({
     e.preventDefault();
     setLoading(true);
     setError("");
-    const supabase = createClient();
+    setMessage("");
 
-    if (mode === "signup") {
-      const { error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: { emailRedirectTo: authCallbackUrl() },
-      });
-      if (error) setError(error.message);
-      else setMessage("Check your email to confirm your account.");
-    } else {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) setError(error.message);
-      else router.push("/dashboard");
+    try {
+      const supabase = createClient();
+
+      if (mode === "signup") {
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: { emailRedirectTo: authCallbackUrl() },
+        });
+
+        if (error) {
+          setError(
+            authErrorMessage(
+              error,
+              "We couldn't create your account. Please try again."
+            )
+          );
+        } else if (data.user?.identities?.length === 0) {
+          setError(
+            "An account with this email already exists. Try signing in instead."
+          );
+        } else {
+          setMessage("Check your email to confirm your account.");
+        }
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) {
+          setError(
+            authErrorMessage(error, "Sign-in failed. Please check your details.")
+          );
+        } else {
+          router.push("/dashboard");
+        }
+      }
+    } catch (err) {
+      setError(
+        authErrorMessage(
+          err,
+          mode === "signup"
+            ? "We couldn't create your account. Please try again."
+            : "Sign-in failed. Please try again."
+        )
+      );
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const handleOAuth = async (provider: "google") => {
     setError("");
-    const supabase = createClient();
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider,
-      options: { redirectTo: authCallbackUrl() },
-    });
-    if (error) setError(error.message);
+    try {
+      const supabase = createClient();
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: { redirectTo: authCallbackUrl() },
+      });
+      if (error) {
+        setError(authErrorMessage(error, "Google sign-in failed. Please try again."));
+      }
+    } catch (err) {
+      setError(authErrorMessage(err, "Google sign-in failed. Please try again."));
+    }
   };
 
   const reducedMotion = useReducedMotion();

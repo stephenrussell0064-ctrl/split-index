@@ -9,6 +9,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils/cn";
 import { Input } from "@/components/ui/input";
 import { createClient } from "@/lib/supabase/client";
+import { authErrorMessage } from "@/lib/supabase/auth-errors";
 
 export function ResetPasswordForm() {
   const router = useRouter();
@@ -44,18 +45,22 @@ export function ResetPasswordForm() {
     }
 
     setLoading(true);
-    const supabase = createClient();
-    const { error } = await supabase.auth.updateUser({ password });
+    try {
+      const supabase = createClient();
+      const { error } = await supabase.auth.updateUser({ password });
 
-    if (error) {
-      setError(error.message);
-    } else {
-      await supabase.auth.signOut();
-      setMessage("Your password has been updated. Redirecting to sign in…");
-      setTimeout(() => router.push("/login"), 2000);
+      if (error) {
+        setError(authErrorMessage(error, "Could not update your password. Please try again."));
+      } else {
+        await supabase.auth.signOut();
+        setMessage("Your password has been updated. Redirecting to sign in…");
+        setTimeout(() => router.push("/login"), 2000);
+      }
+    } catch (err) {
+      setError(authErrorMessage(err, "Could not update your password. Please try again."));
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
   const reducedMotion = useReducedMotion();
