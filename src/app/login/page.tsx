@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { AuthForm } from "@/components/auth/auth-form";
 
 const AUTH_ERROR_MESSAGES: Record<string, string> = {
@@ -34,11 +35,18 @@ export default async function LoginPage({
   const { error, reason, detail } = await searchParams;
 
   return (
-    <div className="min-h-screen bg-ambient flex items-center justify-center px-4">
-      <AuthForm
-        mode="login"
-        initialError={resolveAuthError(error, reason, detail)}
-      />
+    <div className="min-h-screen bg-ambient flex flex-col">
+      <div className="flex flex-1 items-center justify-center px-4">
+        <AuthForm
+          mode="login"
+          initialError={resolveAuthError(error, reason, detail)}
+        />
+      </div>
+      <footer className="px-6 py-6 text-center text-sm text-muted">
+        <Link href="/privacy" className="hover:text-foreground transition-colors">
+          Privacy Policy
+        </Link>
+      </footer>
     </div>
   );
 }
