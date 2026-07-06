@@ -126,6 +126,17 @@ export function AuthForm({
             minLength={8}
           />
 
+          {mode === "login" && (
+            <p className="text-right text-sm">
+              <Link
+                href="/forgot-password"
+                className="text-accent hover:underline"
+              >
+                Forgot password?
+              </Link>
+            </p>
+          )}
+
           {error && <p className="text-sm text-danger">{error}</p>}
           {message && <p className="text-sm text-success">{message}</p>}
 

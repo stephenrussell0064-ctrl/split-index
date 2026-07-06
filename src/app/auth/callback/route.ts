@@ -74,7 +74,12 @@ export async function GET(request: Request) {
     .eq("user_id", user.id)
     .single();
 
-  const redirectPath = profile?.onboarding_completed ? next : "/onboarding";
+  const redirectPath =
+    next === "/reset-password"
+      ? next
+      : profile?.onboarding_completed
+        ? next
+        : "/onboarding";
   const origin = getPublicOrigin(request);
 
   return NextResponse.redirect(`${origin}${redirectPath}`);
