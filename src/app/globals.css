@@ -1,0 +1,311 @@
+@import "tailwindcss";
+
+:root {
+  --background: #09090b;
+  --foreground: #fafafa;
+  --card: rgba(24, 24, 27, 0.72);
+  --card-border: rgba(255, 255, 255, 0.08);
+  --muted: #a1a1aa;
+  --muted-foreground: #71717a;
+  --accent: #6366f1;
+  --accent-glow: rgba(99, 102, 241, 0.2);
+  --success: #22c55e;
+  --warning: #eab308;
+  --danger: #ef4444;
+
+  /* Premium split-index accents (see src/lib/design/tokens.ts) */
+  --cardio-accent: #0e7490;
+  --cardio-accent-soft: #0891b2;
+  --strength-accent: #7c3aed;
+  --strength-accent-soft: #8b5cf6;
+  --endurance: var(--cardio-accent);
+  --strength: var(--strength-accent);
+
+  --glass: rgba(255, 255, 255, 0.03);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-highlight: rgba(255, 255, 255, 0.04);
+  --ring-offset: #09090b;
+
+  /* Neutral slate scale for panels and data surfaces */
+  --slate-50: #f8fafc;
+  --slate-100: #f1f5f9;
+  --slate-800: #1e293b;
+  --slate-900: #0f172a;
+  --slate-950: #09090b;
+
+  /* Gym zone — The Lab */
+  --gym-bg: #0c0c0f;
+  --gym-bg-elevated: #141419;
+  --gym-surface: rgba(20, 20, 25, 0.92);
+  --gym-border: rgba(124, 58, 237, 0.15);
+  --gym-accent: var(--strength-accent);
+  --gym-accent-soft: var(--strength-accent-soft);
+  --gym-glow: rgba(124, 58, 237, 0.12);
+  --gym-rim: rgba(124, 58, 237, 0.08);
+  --gym-text: #f4f4f5;
+  --gym-muted: #71717a;
+
+  /* Cardio zone — The Engine */
+  --cardio-bg: #f4f4f5;
+  --cardio-bg-elevated: #ffffff;
+  --cardio-surface: rgba(255, 255, 255, 0.95);
+  --cardio-border: rgba(14, 116, 144, 0.12);
+  --cardio-glow: rgba(14, 116, 144, 0.08);
+  --cardio-rim: rgba(14, 116, 144, 0.06);
+  --cardio-text: #18181b;
+  --cardio-muted: #71717a;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-endurance: var(--endurance);
+  --color-strength: var(--strength);
+  --color-gym-accent: var(--gym-accent);
+  --color-cardio-accent: var(--cardio-accent);
+  --color-strength-accent: var(--strength-accent);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  color-scheme: dark;
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Zone backgrounds (subtle) ── */
+.bg-ambient {
+  background: var(--background);
+}
+
+.bg-gym-zone {
+  background: var(--gym-bg);
+  color: var(--gym-text);
+}
+
+.bg-cardio-zone {
+  background: var(--cardio-bg);
+  color: var(--cardio-text);
+}
+
+/* Legacy class names kept as no-ops for gradual migration */
+.film-grain::after,
+.light-rays::before,
+.scan-line::after,
+.holographic-border::before {
+  display: none;
+}
+
+/* ── Panels ── */
+.glass {
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+}
+
+.glass-strong {
+  background: rgba(12, 12, 15, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.glass-gym {
+  background: var(--gym-surface);
+  border: 1px solid var(--gym-border);
+}
+
+.glass-cardio {
+  background: var(--cardio-surface);
+  border: 1px solid var(--cardio-border);
+}
+
+/* ── Interactive cards ── */
+.card-interactive {
+  transition:
+    border-color 0.2s ease,
+    background-color 0.2s ease;
+}
+
+.card-interactive:hover {
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+/* Glow utilities — minimal */
+.glow-accent,
+.glow-endurance,
+.glow-strength,
+.glow-gym,
+.glow-cardio,
+.glow-pulse {
+  box-shadow: none;
+}
+
+/* ── Typography ── */
+.eyebrow {
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.page-title {
+  font-size: 1.875rem;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  line-height: 1.2;
+}
+
+.index-display {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.04em;
+  line-height: 1;
+}
+
+.metric-value {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+.headline-tight {
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+
+.micro-label {
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.text-gradient-accent,
+.text-gradient-gym,
+.text-gradient-cardio {
+  background: none;
+  -webkit-background-clip: unset;
+  background-clip: unset;
+  color: inherit;
+}
+
+.text-gradient-gym {
+  color: var(--gym-accent);
+}
+
+.text-gradient-cardio {
+  color: var(--cardio-accent);
+}
+
+/* ── Mode-aware shell ── */
+[data-mode="gym"] .mode-shell-bg {
+  background: var(--gym-bg);
+}
+
+[data-mode="cardio"] .mode-shell-bg {
+  background: #0f0f12;
+}
+
+[data-mode="cardio"] .mode-shell-bg .mode-content {
+  color: var(--foreground);
+}
+
+/* ── Shimmer skeleton ── */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.02) 0%,
+    rgba(255, 255, 255, 0.06) 50%,
+    rgba(255, 255, 255, 0.02) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shimmer {
+    animation: none;
+  }
+}
+
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(161, 161, 170, 0.2);
+  border-radius: 999px;
+}
+
+::selection {
+  background: rgba(99, 102, 241, 0.35);
+  color: white;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.recharts-cartesian-grid-horizontal line,
+.recharts-cartesian-grid-vertical line {
+  stroke: rgba(148, 163, 184, 0.06);
+}
+
+.recharts-text {
+  fill: var(--muted);
+  font-size: 11px;
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+.recharts-tooltip-wrapper {
+  outline: none !important;
+}
+
+.recharts-active-dot {
+  filter: none;
+}
