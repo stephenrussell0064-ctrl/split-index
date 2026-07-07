@@ -38,7 +38,30 @@ export function resolveScoringBodyweightKg(
 
 export function buildScoringProfile(
   profile: Profile,
-  bodyweightKg: number | null
+  bodyweightKg: number | null,
+  effectiveMaxHr?: number | null
 ): Profile {
-  return bodyweightKg ? { ...profile, weight_kg: bodyweightKg } : profile;
+  return {
+    ...profile,
+    ...(bodyweightKg ? { weight_kg: bodyweightKg } : {}),
+    ...(effectiveMaxHr ? { max_hr: effectiveMaxHr } : {}),
+  };
+}
+
+/**
+ * The age-based max-HR formula (Tanaka: 208 − 0.7×age) systematically
+ * underestimates max HR for many trained athletes — if a session's own
+ * avg HR already meets or exceeds it, every effort-fraction calculation
+ * downstream treats that (and easier) sessions as harder than they were.
+ * Prefer real evidence — a profile-set max HR, or the highest max HR ever
+ * recorded across the athlete's own logged activities — over the formula.
+ */
+export function resolveEffectiveMaxHr(
+  profileMaxHr: number | null | undefined,
+  observedMaxHr: number | null | undefined
+): number | null {
+  const candidates = [profileMaxHr, observedMaxHr].filter(
+    (v): v is number => typeof v === "number" && v > 0
+  );
+  return candidates.length > 0 ? Math.max(...candidates) : null;
 }

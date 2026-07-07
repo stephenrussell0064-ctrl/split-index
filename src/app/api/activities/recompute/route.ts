@@ -9,6 +9,7 @@ import {
 import {
   buildScoringProfile,
   resolveScoringBodyweightKg,
+  resolveEffectiveMaxHr,
 } from "@/lib/activities/bodyweight";
 import type { GymExercise } from "@/types";
 
@@ -76,6 +77,16 @@ export async function POST() {
   const strengthIndices: number[] = [];
   const splitIndices: number[] = [];
 
+  // Best-known max HR across every session — the Tanaka age formula
+  // underestimates max HR for a lot of trained athletes, and if any past
+  // session's own avg HR meets or exceeds it, every effort calculation
+  // downstream treats that (and easier) sessions as harder than they were.
+  const observedMaxHr = (activities ?? []).reduce(
+    (max, a) => Math.max(max, a.max_heart_rate ?? 0),
+    0
+  );
+  const effectiveMaxHr = resolveEffectiveMaxHr(profile.max_hr, observedMaxHr || null);
+
   let recomputed = 0;
   const failures: Array<{ id: string; error: string }> = [];
 
@@ -85,7 +96,7 @@ export async function POST() {
       activityMetadata: metadata,
       profileWeightKg: profile.weight_kg,
     });
-    const scoringProfile = buildScoringProfile(profile, bodyweightKg);
+    const scoringProfile = buildScoringProfile(profile, bodyweightKg, effectiveMaxHr);
     const loads = computeRecentLoads(recentScoreLoads);
     const exercises = (exercisesByActivity.get(activity.id as string) ?? []).map((ex) => ({
       exercise_name: ex.exercise_name,

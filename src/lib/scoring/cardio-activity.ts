@@ -74,10 +74,13 @@ const DEFAULT_RESTING_HR = 60;
 const REFERENCE_EFFORT_FRACTION = 0.85;
 const MIN_EFFORT_FRACTION = 0.35;
 const MAX_EFFORT_FRACTION = 1.05;
-// Damp the effort-normalization instead of applying it in full — the %HRR-
-// pace relationship is roughly linear but not precisely so, and this is a
-// deliberately conservative approximation, not a lab-calibrated model.
-const EFFORT_BLEND_FACTOR = 0.5;
+// Cap how far the pace/effort extrapolation is trusted, rather than
+// uniformly damping it — the %HRR-pace relationship holds reasonably well
+// for realistic easy-to-moderate efforts (where this cap never engages),
+// but linear extrapolation breaks down for very low effort fractions
+// (a light recovery jog isn't reliable evidence of near-max pace), so the
+// ratio is bounded instead of scaled down everywhere.
+const MAX_NORMALIZATION_RATIO = 1.6;
 const EASY_SESSION_DAMPING = 0.35;
 const LOW_RPE_THRESHOLD = 4; // UI hint: "1 = very easy · 10 = max effort"
 const EASY_SESSION_TYPES = new Set<SessionType>(['easy', 'recovery', 'long']);
@@ -127,11 +130,15 @@ function computeEffortFraction(avgHR?: number, restingHR?: number, maxHR?: numbe
   return clamp((avgHR - hrRest) / (hrMax - hrRest), MIN_EFFORT_FRACTION, MAX_EFFORT_FRACTION);
 }
 
-/** Scales an easy, low-effort pace toward a threshold-equivalent one — damped, not a full linear extrapolation. */
+/** Scales pace toward a threshold-equivalent effort — full credit for realistic deviations, capped for extreme ones. */
 function effortNormalizedSpeed(rawSpeedMetersPerSec: number, effortFraction: number | null): number {
   if (effortFraction === null || effortFraction <= 0) return rawSpeedMetersPerSec;
-  const fullyNormalized = rawSpeedMetersPerSec * (REFERENCE_EFFORT_FRACTION / effortFraction);
-  return rawSpeedMetersPerSec + (fullyNormalized - rawSpeedMetersPerSec) * EFFORT_BLEND_FACTOR;
+  const ratio = clamp(
+    REFERENCE_EFFORT_FRACTION / effortFraction,
+    1 / MAX_NORMALIZATION_RATIO,
+    MAX_NORMALIZATION_RATIO
+  );
+  return rawSpeedMetersPerSec * ratio;
 }
 
 /** Tanaka (2001) age-predicted max HR. */

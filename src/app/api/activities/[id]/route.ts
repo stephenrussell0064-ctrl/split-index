@@ -20,6 +20,7 @@ import type { ActivityFormData, Profile } from "@/types";
 import {
   buildScoringProfile,
   resolveScoringBodyweightKg,
+  resolveEffectiveMaxHr,
 } from "@/lib/activities/bodyweight";
 
 type ActivityBody = ActivityFormData & {
@@ -58,7 +59,20 @@ async function scoreAndPersist(
     profileWeightKg: profile.weight_kg,
   });
 
-  const scoringProfile = buildScoringProfile(profile, bodyweightKg);
+  const { data: observedMaxHrRow } = await supabase
+    .from("activities")
+    .select("max_heart_rate")
+    .eq("user_id", userId)
+    .not("max_heart_rate", "is", null)
+    .order("max_heart_rate", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const effectiveMaxHr = resolveEffectiveMaxHr(
+    profile.max_hr,
+    Math.max(observedMaxHrRow?.max_heart_rate ?? 0, body.max_heart_rate ?? 0) || null
+  );
+
+  const scoringProfile = buildScoringProfile(profile, bodyweightKg, effectiveMaxHr);
 
   const { data: recentScoresRaw } = await supabase
     .from("workout_scores")
