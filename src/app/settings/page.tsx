@@ -11,6 +11,7 @@ import {
   Shield,
   Plug,
   ChevronDown,
+  RefreshCw,
 } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -36,6 +37,8 @@ export default function SettingsPage() {
   const [showIntegrations, setShowIntegrations] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [recomputeLoading, setRecomputeLoading] = useState(false);
+  const [recomputeResult, setRecomputeResult] = useState<string | null>(null);
   const [profile, setProfile] = useState<{
     tier: SubscriptionTier;
     status: SubscriptionStatus | null;
@@ -96,6 +99,27 @@ export default function SettingsPage() {
     const supabase = createClient();
     await supabase.auth.signOut();
     router.push("/");
+  };
+
+  const handleRecomputeScores = async () => {
+    setRecomputeLoading(true);
+    setRecomputeResult(null);
+    try {
+      const res = await fetch("/api/activities/recompute", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        setRecomputeResult(data.error ?? "Failed to recompute scores.");
+        return;
+      }
+      setRecomputeResult(
+        `Recomputed ${data.recomputed} of ${data.total} activities` +
+          (data.failed > 0 ? ` (${data.failed} failed).` : ".")
+      );
+    } catch {
+      setRecomputeResult("Failed to recompute scores. Please try again.");
+    } finally {
+      setRecomputeLoading(false);
+    }
   };
 
   const handleDeleteAccount = async () => {
@@ -277,6 +301,33 @@ export default function SettingsPage() {
                 ))}
               </div>
             )}
+          </CardContent>
+        </Card>
+
+        {/* Scoring engine */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <RefreshCw className="h-4 w-4 text-muted" />
+              <CardTitle>Scoring engine</CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-muted">
+              Scores are calculated once when you log a workout and don&apos;t
+              update automatically when the scoring engine improves. If we&apos;ve
+              changed how scores are calculated, use this to re-score all of
+              your past activities with the latest version.
+            </p>
+            {recomputeResult && <p className="text-sm text-muted">{recomputeResult}</p>}
+            <Button
+              variant="outline"
+              className="w-full"
+              loading={recomputeLoading}
+              onClick={handleRecomputeScores}
+            >
+              Refresh all my scores
+            </Button>
           </CardContent>
         </Card>
 
