@@ -76,7 +76,7 @@ export default function PrivacyPolicyPage() {
                 </li>
                 <li>
                   <strong>OAuth and integration data:</strong> when you sign in with Google
-                  or connect third-party fitness services (such as Strava or
+                  or Apple, or connect third-party fitness services (such as Strava or
                   Garmin), we receive account identifiers and activity data authorised by
                   you through those providers.
                 </li>
@@ -110,9 +110,9 @@ export default function PrivacyPolicyPage() {
                 <li>Comply with legal obligations and enforce our terms.</li>
               </ul>
               <p className="mt-3">
-                If you sign in with Google, we use the Google account information you
+                If you sign in with Google or Apple, we use the account information you
                 authorise (such as your name and email address) solely to create and
-                authenticate your Split Index account. We do not use Google user data for
+                authenticate your Split Index account. We do not use OAuth provider data for
                 advertising, and we do not sell your personal data.
               </p>
             </section>
@@ -166,7 +166,7 @@ export default function PrivacyPolicyPage() {
                   <strong>Stripe</strong> — payment processing and subscription management;
                 </li>
                 <li>
-                  <strong>Google</strong> — OAuth sign-in (when you choose to use it);
+                  <strong>Google</strong> and <strong>Apple</strong> — OAuth sign-in (when you choose to use it);
                 </li>
                 <li>
                   <strong>Strava and Garmin</strong> — activity import when you connect
