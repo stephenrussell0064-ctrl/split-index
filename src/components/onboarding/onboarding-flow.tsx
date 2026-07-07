@@ -366,7 +366,7 @@ export function OnboardingFlow() {
                           onClick={() => toggleGoal(g.value as TrainingGoal)}
                           className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
                             form.goals.includes(g.value as TrainingGoal)
-                              ? "bg-accent text-white"
+                              ? "bg-accent text-accent-foreground"
                               : "glass text-muted hover:text-foreground"
                           }`}
                         >

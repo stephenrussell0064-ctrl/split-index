@@ -41,7 +41,7 @@ export function GymZonePanel({
               Strength HQ
             </h2>
             <p className="mt-2 max-w-sm text-sm text-gym-muted">
-              Your bench press score vs your bench press history — not generic calories.
+              Per-lift scores. Preset plans. Repeat any session.
             </p>
           </div>
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gym-accent/15 glow-gym">

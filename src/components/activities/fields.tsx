@@ -214,7 +214,9 @@ export function PillGroup({
             onClick={() => onChange(opt.value)}
             className={cn(
               "relative rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors",
-              active ? "text-white" : "text-muted hover:text-foreground hover:bg-white/5"
+              active
+                ? "text-accent-foreground"
+                : "text-muted hover:text-foreground hover:bg-white/5"
             )}
           >
             {active && (
@@ -258,7 +260,7 @@ export function RpeScale({
               active
                 ? "border-accent/40 bg-accent/25 text-white"
                 : "glass border-white/10 text-muted hover:border-white/20 hover:text-foreground",
-              isExact && "bg-accent shadow-lg shadow-accent/30"
+              isExact && "bg-accent text-accent-foreground shadow-lg shadow-accent/30"
             )}
           >
             {n}

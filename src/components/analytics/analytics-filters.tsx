@@ -86,7 +86,7 @@ export function AnalyticsFilters({
               className={cn(
                 "rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-200",
                 granularity === g.value
-                  ? "bg-accent text-white shadow-md shadow-accent/25"
+                  ? "bg-accent text-accent-foreground shadow-md shadow-accent/25"
                   : "text-muted hover:bg-white/[0.04] hover:text-foreground"
               )}
             >

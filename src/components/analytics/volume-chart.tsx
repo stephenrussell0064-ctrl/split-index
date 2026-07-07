@@ -76,7 +76,7 @@ export function VolumeChart({ data, metric = "load" }: VolumeChartProps) {
                 />
                 <Bar
                   dataKey={metric}
-                  fill="#6366f1"
+                  fill="#00e65f"
                   radius={[6, 6, 0, 0]}
                   animationDuration={reducedMotion ? 0 : 800}
                   animationEasing="ease-out"

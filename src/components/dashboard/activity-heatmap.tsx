@@ -126,7 +126,7 @@ export function ActivityHeatmap({
     "bg-accent/25",
     "bg-accent/45",
     "bg-accent/70",
-    "bg-accent shadow-[0_0_8px_rgba(99,102,241,0.5)]",
+    "bg-accent shadow-[0_0_8px_rgba(0,230,95,0.5)]",
   ];
 
   return (

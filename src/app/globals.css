@@ -1,30 +1,31 @@
 @import "tailwindcss";
 
 :root {
-  --background: #09090b;
+  --background: #060606;
   --foreground: #fafafa;
-  --card: rgba(24, 24, 27, 0.72);
+  --card: rgba(18, 18, 18, 0.72);
   --card-border: rgba(255, 255, 255, 0.08);
   --muted: #a1a1aa;
   --muted-foreground: #71717a;
-  --accent: #6366f1;
-  --accent-glow: rgba(99, 102, 241, 0.2);
+  --accent: #00e65f;
+  --accent-foreground: #04120a;
+  --accent-glow: rgba(0, 230, 95, 0.2);
   --success: #22c55e;
   --warning: #eab308;
   --danger: #ef4444;
 
   /* Premium split-index accents (see src/lib/design/tokens.ts) */
-  --cardio-accent: #0e7490;
-  --cardio-accent-soft: #0891b2;
-  --strength-accent: #7c3aed;
-  --strength-accent-soft: #8b5cf6;
+  --cardio-accent: #0ea5e9;
+  --cardio-accent-soft: #38bdf8;
+  --strength-accent: #00e65f;
+  --strength-accent-soft: #5cff9d;
   --endurance: var(--cardio-accent);
   --strength: var(--strength-accent);
 
   --glass: rgba(255, 255, 255, 0.03);
   --glass-border: rgba(255, 255, 255, 0.08);
   --glass-highlight: rgba(255, 255, 255, 0.04);
-  --ring-offset: #09090b;
+  --ring-offset: #060606;
 
   /* Neutral slate scale for panels and data surfaces */
   --slate-50: #f8fafc;
@@ -33,27 +34,27 @@
   --slate-900: #0f172a;
   --slate-950: #09090b;
 
-  /* Gym zone — The Lab */
-  --gym-bg: #0c0c0f;
-  --gym-bg-elevated: #141419;
-  --gym-surface: rgba(20, 20, 25, 0.92);
-  --gym-border: rgba(124, 58, 237, 0.15);
+  /* Gym zone — The Lab · contrasting black + neon green */
+  --gym-bg: #050505;
+  --gym-bg-elevated: #0c0f0c;
+  --gym-surface: rgba(10, 14, 10, 0.92);
+  --gym-border: rgba(0, 230, 95, 0.18);
   --gym-accent: var(--strength-accent);
   --gym-accent-soft: var(--strength-accent-soft);
-  --gym-glow: rgba(124, 58, 237, 0.12);
-  --gym-rim: rgba(124, 58, 237, 0.08);
-  --gym-text: #f4f4f5;
-  --gym-muted: #71717a;
+  --gym-glow: rgba(0, 230, 95, 0.16);
+  --gym-rim: rgba(0, 230, 95, 0.1);
+  --gym-text: #f4fff8;
+  --gym-muted: #7d8a80;
 
-  /* Cardio zone — The Engine */
-  --cardio-bg: #f4f4f5;
-  --cardio-bg-elevated: #ffffff;
-  --cardio-surface: rgba(255, 255, 255, 0.95);
-  --cardio-border: rgba(14, 116, 144, 0.12);
-  --cardio-glow: rgba(14, 116, 144, 0.08);
-  --cardio-rim: rgba(14, 116, 144, 0.06);
-  --cardio-text: #18181b;
-  --cardio-muted: #71717a;
+  /* Cardio zone — The Engine · white + sky blue */
+  --cardio-bg: #ffffff;
+  --cardio-bg-elevated: #f0f9ff;
+  --cardio-surface: rgba(255, 255, 255, 0.96);
+  --cardio-border: rgba(14, 165, 233, 0.2);
+  --cardio-glow: rgba(14, 165, 233, 0.12);
+  --cardio-rim: rgba(14, 165, 233, 0.08);
+  --cardio-text: #0c1a24;
+  --cardio-muted: #5b7284;
 }
 
 @theme inline {
@@ -61,13 +62,26 @@
   --color-foreground: var(--foreground);
   --color-muted: var(--muted);
   --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-danger: var(--danger);
   --color-endurance: var(--endurance);
   --color-strength: var(--strength);
   --color-gym-accent: var(--gym-accent);
+  --color-gym-accent-soft: var(--gym-accent-soft);
+  --color-gym-bg: var(--gym-bg);
+  --color-gym-bg-elevated: var(--gym-bg-elevated);
+  --color-gym-text: var(--gym-text);
+  --color-gym-muted: var(--gym-muted);
+  --color-gym-border: var(--gym-border);
   --color-cardio-accent: var(--cardio-accent);
+  --color-cardio-accent-soft: var(--cardio-accent-soft);
+  --color-cardio-bg: var(--cardio-bg);
+  --color-cardio-bg-elevated: var(--cardio-bg-elevated);
+  --color-cardio-text: var(--cardio-text);
+  --color-cardio-muted: var(--cardio-muted);
+  --color-cardio-border: var(--cardio-border);
   --color-strength-accent: var(--strength-accent);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
@@ -232,12 +246,78 @@ body {
   background: var(--gym-bg);
 }
 
+[data-mode="gym"] .mode-shell-bg .mode-content {
+  color: var(--gym-text);
+  --foreground: var(--gym-text);
+  --muted: var(--gym-muted);
+  --accent: var(--gym-accent);
+  --accent-glow: var(--gym-glow);
+  --glass: rgba(0, 230, 95, 0.03);
+  --glass-border: var(--gym-border);
+}
+
 [data-mode="cardio"] .mode-shell-bg {
-  background: #0f0f12;
+  background: var(--cardio-bg);
 }
 
 [data-mode="cardio"] .mode-shell-bg .mode-content {
-  color: var(--foreground);
+  color: var(--cardio-text);
+  /* Remap dark-theme tokens so shared components stay legible on white */
+  --foreground: var(--cardio-text);
+  --muted: var(--cardio-muted);
+  --muted-foreground: #7d94a5;
+  --accent: var(--cardio-accent);
+  --accent-foreground: #ffffff;
+  --accent-glow: rgba(14, 165, 233, 0.2);
+  --glass: rgba(14, 165, 233, 0.04);
+  --glass-border: rgba(12, 26, 36, 0.12);
+}
+
+/* White-alpha utilities are invisible on the light cardio shell — remap them */
+[data-mode="cardio"] .mode-content [class*="border-white"] {
+  border-color: rgba(12, 26, 36, 0.12);
+}
+
+[data-mode="cardio"] .mode-content [class*="bg-white"] {
+  background-color: rgba(12, 26, 36, 0.04);
+}
+
+[data-mode="cardio"] .mode-content [class*="text-white"] {
+  color: var(--cardio-text);
+}
+
+[data-mode="cardio"] .mode-content .glass-strong {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(12, 26, 36, 0.1);
+}
+
+/* ── Data-grid backgrounds (landing) ── */
+.grid-dark {
+  background-image:
+    linear-gradient(rgba(0, 230, 95, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 230, 95, 0.05) 1px, transparent 1px);
+  background-size: 44px 44px;
+}
+
+.grid-light {
+  background-image:
+    linear-gradient(rgba(14, 165, 233, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(14, 165, 233, 0.08) 1px, transparent 1px);
+  background-size: 44px 44px;
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.pulse-dot {
+  animation: pulse-dot 2s ease-in-out infinite;
 }
 
 /* ── Shimmer skeleton ── */
@@ -282,7 +362,7 @@ body {
 }
 
 ::selection {
-  background: rgba(99, 102, 241, 0.35);
+  background: rgba(0, 230, 95, 0.35);
   color: white;
 }
 

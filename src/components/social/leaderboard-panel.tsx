@@ -89,7 +89,7 @@ export function LeaderboardPanel({
                 className={cn(
                   "rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
                   period === p.value
-                    ? "bg-accent text-white"
+                    ? "bg-accent text-accent-foreground"
                     : "text-muted hover:text-foreground"
                 )}
               >

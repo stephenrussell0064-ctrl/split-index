@@ -106,7 +106,7 @@ export function CompareModal({
                 className={cn(
                   "rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
                   metric === m.value
-                    ? "bg-accent text-white"
+                    ? "bg-accent text-accent-foreground"
                     : "glass text-muted hover:text-foreground"
                 )}
               >

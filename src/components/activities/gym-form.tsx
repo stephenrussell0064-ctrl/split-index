@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { AnimatePresence, motion, useMotionValue, useTransform, PanInfo } from "framer-motion";
 import {
+  ChevronDown,
   Copy,
   Dumbbell,
   Plus,
@@ -21,6 +22,7 @@ import { DerivedChip, Field, FieldError, GlassInput, MicroLabel, UnitInput } fro
 import {
   createExerciseRow,
   epley1RM,
+  exerciseScore,
   parseNum,
   type ExerciseRowState,
   type FormErrors,
@@ -133,7 +135,7 @@ export function GymExercises({
         />
       </Field>
 
-      <div className="hidden sm:grid grid-cols-[minmax(140px,1.4fr)_minmax(100px,1fr)_64px_64px_56px_72px_72px_72px] gap-2 px-1 text-[10px] font-semibold uppercase tracking-wider text-muted/60">
+      <div className="hidden sm:grid grid-cols-[minmax(140px,1.4fr)_minmax(100px,1fr)_64px_64px_56px_72px_72px_64px_64px] gap-2 px-1 text-[10px] font-semibold uppercase tracking-wider text-muted/60">
         <span>Exercise</span>
         <span>Muscle</span>
         <span>kg</span>
@@ -142,6 +144,7 @@ export function GymExercises({
         <span>RPE</span>
         <span>1RM</span>
         <span>× BW</span>
+        <span>Score</span>
       </div>
 
       <div className="space-y-2">
@@ -185,7 +188,7 @@ export function GymExercises({
   if (embedded) return <div className="space-y-5">{inner}</div>;
 
   return (
-    <section className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-5 sm:p-6 space-y-5">
+    <section className="rounded-2xl border border-gym-border/40 bg-gym-bg-elevated/80 p-5 sm:p-6 space-y-5">
       {inner}
     </section>
   );
@@ -219,6 +222,11 @@ function ExerciseRow({
     oneRm && bodyweight && bodyweight > 0
       ? Math.round((oneRm / bodyweight) * 100) / 100
       : null;
+  const kind =
+    COMMON_EXERCISES.find(
+      (ex) => ex.name.toLowerCase() === row.name.trim().toLowerCase()
+    )?.kind ?? "compound";
+  const score = exerciseScore(oneRm, bodyweight, kind);
 
   const dragX = useMotionValue(0);
   const deleteOpacity = useTransform(dragX, [-120, -60], [1, 0]);
@@ -251,7 +259,7 @@ function ExerciseRow({
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, height: 0, marginBottom: 0 }}
         transition={{ duration: 0.2 }}
-        className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-3 sm:p-2 sm:grid sm:grid-cols-[minmax(140px,1.4fr)_minmax(100px,1fr)_64px_64px_56px_72px_72px_72px_auto] sm:gap-2 sm:items-start"
+        className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-3 sm:p-2 sm:grid sm:grid-cols-[minmax(140px,1.4fr)_minmax(100px,1fr)_64px_64px_56px_72px_72px_64px_64px_auto] sm:gap-2 sm:items-start"
       >
         <div className="space-y-3 sm:contents">
           <div className="sm:col-span-2 grid gap-3 sm:grid-cols-2 sm:col-auto sm:contents">
@@ -333,6 +341,18 @@ function ExerciseRow({
                 {relativeBw ? formatRelativeStrength(relativeBw, true) : "—"}
               </span>
             </div>
+            <div className="hidden sm:flex sm:flex-col sm:justify-center sm:h-10 sm:pt-5">
+              <span
+                className={cn(
+                  "text-sm font-bold tabular-nums px-2 py-0.5 rounded-md",
+                  score
+                    ? "text-gym-accent bg-gym-accent/10"
+                    : "text-gym-muted/50"
+                )}
+              >
+                {score ?? "—"}
+              </span>
+            </div>
             <div className="flex gap-1 sm:pt-4 sm:justify-end">
               <button
                 type="button"
@@ -362,6 +382,7 @@ function ExerciseRow({
               value={relativeBw ? formatRelativeStrength(relativeBw, true) : null}
               tone="strength"
             />
+            <DerivedChip label="Score" value={score ? String(score) : null} tone="strength" />
           </div>
 
           <Field label="Notes (optional)" className="sm:col-span-full mt-1">
@@ -390,27 +411,34 @@ function MuscleSelect({
   compact?: boolean;
 }) {
   return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className={cn(
-        "w-full appearance-none rounded-xl glass px-3 text-sm text-foreground",
-        "border border-white/10 transition-colors duration-200",
-        "cursor-pointer focus:border-accent/50 focus:ring-1 focus:ring-accent/30 outline-none",
-        invalid && "border-danger/50",
-        value === "" && "text-muted/50",
-        compact ? "h-10" : "h-11"
-      )}
-    >
-      <option value="" disabled className="bg-slate-900">
-        Select…
-      </option>
-      {MUSCLE_GROUPS.map((group) => (
-        <option key={group} value={group} className="bg-slate-900">
-          {group}
+    <div className="relative">
+      <select
+        value={value}
+        aria-label="Muscle group"
+        onChange={(e) => onChange(e.target.value)}
+        className={cn(
+          "w-full appearance-none rounded-xl glass pl-3 pr-9 text-sm text-foreground",
+          "border border-white/10 transition-colors duration-200",
+          "cursor-pointer focus:border-accent/50 focus:ring-1 focus:ring-accent/30 outline-none",
+          invalid && "border-danger/50",
+          value === "" && "text-muted/50",
+          compact ? "h-10" : "h-11"
+        )}
+      >
+        <option value="" disabled className="bg-slate-900">
+          Select muscle…
         </option>
-      ))}
-    </select>
+        {MUSCLE_GROUPS.map((group) => (
+          <option key={group} value={group} className="bg-slate-900">
+            {group}
+          </option>
+        ))}
+      </select>
+      <ChevronDown
+        className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted/60"
+        aria-hidden
+      />
+    </div>
   );
 }
 
@@ -429,15 +457,11 @@ function ExerciseNameInput({
   onPick: (name: string, muscle: string) => void;
   onFilterChange: (c: MuscleGroupCategory) => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const [highlight, setHighlight] = useState(0);
+  const [customMode, setCustomMode] = useState(false);
   const [search, setSearch] = useState("");
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  const displayValue = open ? search : value;
 
   const matches = useMemo(() => {
-    const query = (open ? search : value).trim().toLowerCase();
+    const query = search.trim().toLowerCase();
     return COMMON_EXERCISES.filter((ex) => {
       const matchesQuery =
         query === "" ||
@@ -447,132 +471,118 @@ function ExerciseNameInput({
         muscleFilter === "all" || ex.category === muscleFilter;
       return matchesQuery && matchesFilter;
     });
-  }, [value, search, open, muscleFilter]);
+  }, [search, muscleFilter]);
 
-  const pick = (index: number) => {
-    const match = matches[index];
-    if (!match) return;
-    onPick(match.name, match.muscle);
-    setSearch("");
-    setOpen(false);
-  };
+  const knownExercise = COMMON_EXERCISES.find(
+    (ex) => ex.name.toLowerCase() === value.trim().toLowerCase()
+  );
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (!open || matches.length === 0) return;
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      setHighlight((h) => (h + 1) % matches.length);
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setHighlight((h) => (h - 1 + matches.length) % matches.length);
-    } else if (e.key === "Enter") {
-      e.preventDefault();
-      pick(highlight);
-    } else if (e.key === "Escape") {
-      setOpen(false);
-      setSearch("");
-    }
-  };
-
-  return (
-    <div ref={containerRef} className="relative">
-      <div className="relative">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted/50" />
+  if (customMode || (value && !knownExercise)) {
+    return (
+      <div className="space-y-2">
         <GlassInput
-          value={displayValue}
-          placeholder="Search or type custom…"
+          value={value}
+          placeholder="Type custom exercise…"
+          aria-label="Custom exercise name"
           autoComplete="off"
           invalid={invalid}
-          className="pl-9 h-11 sm:h-10"
-          onChange={(e) => {
-            const v = e.target.value;
-            setSearch(v);
-            onChange(v);
-            setOpen(true);
-            setHighlight(0);
-          }}
-          onFocus={() => {
-            setSearch(value);
-            setOpen(true);
-          }}
-          onBlur={() => {
-            setOpen(false);
+          className="h-11 sm:h-10"
+          onChange={(e) => onChange(e.target.value)}
+        />
+        <button
+          type="button"
+          onClick={() => {
+            setCustomMode(false);
             setSearch("");
           }}
-          onKeyDown={handleKeyDown}
+          className="text-xs text-gym-accent hover:text-gym-accent/80"
+        >
+          ← Pick from list
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <div
+        className="flex gap-1 overflow-x-auto pb-1"
+        role="group"
+        aria-label="Filter by muscle group"
+      >
+        {MUSCLE_GROUP_CATEGORIES.map((cat) => (
+          <button
+            key={cat.id}
+            type="button"
+            aria-pressed={muscleFilter === cat.id}
+            onClick={() => onFilterChange(cat.id)}
+            className={cn(
+              "shrink-0 rounded-lg px-2.5 py-1.5 text-[10px] font-medium uppercase tracking-wider transition-colors duration-200 min-h-[32px]",
+              muscleFilter === cat.id
+                ? "bg-gym-accent/20 text-gym-accent"
+                : "text-gym-muted hover:text-gym-text border border-gym-border/40"
+            )}
+          >
+            {cat.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-gym-muted/60" />
+        <GlassInput
+          value={search}
+          placeholder="Filter exercises…"
+          aria-label="Filter exercises"
+          autoComplete="off"
+          className="pl-9 h-10 mb-2"
+          onChange={(e) => setSearch(e.target.value)}
         />
       </div>
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            initial={{ opacity: 0, y: -4 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -4 }}
-            transition={{ duration: 0.14 }}
-            className="absolute left-0 right-0 top-full z-30 mt-2 overflow-hidden rounded-xl border border-white/10 bg-[#12121a] shadow-xl"
-          >
-            <div className="flex gap-1 overflow-x-auto border-b border-white/5 p-2">
-              {MUSCLE_GROUP_CATEGORIES.map((cat) => (
-                <button
-                  key={cat.id}
-                  type="button"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => onFilterChange(cat.id)}
-                  className={cn(
-                    "shrink-0 rounded-lg px-2.5 py-1 text-[10px] font-medium uppercase tracking-wider transition-colors duration-200",
-                    muscleFilter === cat.id
-                      ? "bg-strength/20 text-strength"
-                      : "text-muted hover:text-foreground"
-                  )}
-                >
-                  {cat.label}
-                </button>
-              ))}
-            </div>
-            <ul className="max-h-52 overflow-auto p-1.5">
-              {matches.length === 0 ? (
-                <li className="px-3 py-4 text-center text-sm text-muted">
-                  No matches — press enter to use &ldquo;{search || value}&rdquo;
-                </li>
-              ) : (
-                matches.map((exercise, index) => (
-                  <li key={exercise.name}>
-                    <button
-                      type="button"
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        pick(index);
-                      }}
-                      onMouseEnter={() => setHighlight(index)}
-                      className={cn(
-                        "flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-sm transition-colors duration-200 min-h-[44px]",
-                        index === highlight
-                          ? "bg-white/8 text-foreground"
-                          : "text-muted hover:text-foreground hover:bg-white/5"
-                      )}
-                    >
-                      <span>{exercise.name}</span>
-                      <span className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-muted/60">
-                        <span
-                          className={cn(
-                            "rounded px-1.5 py-0.5",
-                            exercise.kind === "compound"
-                              ? "bg-strength/15 text-strength"
-                              : "bg-white/5"
-                          )}
-                        >
-                          {exercise.kind}
-                        </span>
-                        {exercise.muscle}
-                      </span>
-                    </button>
-                  </li>
-                ))
-              )}
-            </ul>
-          </motion.div>
-        )}
-      </AnimatePresence>
+
+      <div className="relative">
+        <select
+          value={knownExercise?.name ?? ""}
+          aria-label="Select exercise"
+          onChange={(e) => {
+            const selected = e.target.value;
+            if (selected === "__custom__") {
+              setCustomMode(true);
+              onChange("");
+              return;
+            }
+            const ex = COMMON_EXERCISES.find((item) => item.name === selected);
+            if (ex) onPick(ex.name, ex.muscle);
+          }}
+          className={cn(
+            "w-full appearance-none rounded-xl border border-gym-border/50 bg-gym-bg-elevated pl-3 pr-9 py-3 text-sm text-gym-text",
+            "cursor-pointer focus:border-gym-accent/60 focus:ring-1 focus:ring-gym-accent/30 outline-none min-h-[48px]",
+            invalid && "border-danger/50"
+          )}
+        >
+          <option value="" disabled className="bg-[#0c0f0c]">
+            Select exercise…
+          </option>
+          {matches.map((ex) => (
+            <option key={ex.name} value={ex.name} className="bg-[#0c0f0c]">
+              {ex.name} — {ex.muscle}
+            </option>
+          ))}
+          <option value="__custom__" className="bg-[#0c0f0c]">
+            + Custom exercise…
+          </option>
+        </select>
+        <ChevronDown
+          className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gym-muted/60"
+          aria-hidden
+        />
+      </div>
+
+      {value && (
+        <p className="text-xs text-gym-muted">
+          Selected: <span className="text-gym-accent font-medium">{value}</span>
+        </p>
+      )}
     </div>
   );
 }

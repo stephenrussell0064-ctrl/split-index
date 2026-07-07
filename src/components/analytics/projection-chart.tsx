@@ -71,9 +71,9 @@ export function ProjectionChart({ data }: ProjectionChartProps) {
                 <Line
                   type="monotone"
                   dataKey="split"
-                  stroke="#6366f1"
+                  stroke="#fafafa"
                   strokeWidth={2.5}
-                  dot={{ r: 2, fill: "#6366f1" }}
+                  dot={{ r: 2, fill: "#fafafa" }}
                   animationDuration={reducedMotion ? 0 : 1200}
                 />
                 <Line

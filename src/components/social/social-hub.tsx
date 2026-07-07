@@ -90,7 +90,7 @@ export function SocialHub({
               className={cn(
                 "flex items-center gap-2 whitespace-nowrap rounded-xl border px-4 py-2.5 text-sm font-medium transition-all duration-200",
                 tab === t.id
-                  ? "border-accent/30 bg-accent text-white shadow-md shadow-accent/25"
+                  ? "border-accent/30 bg-accent text-accent-foreground shadow-md shadow-accent/25"
                   : "border-white/[0.06] glass text-muted hover:border-white/10 hover:bg-white/[0.04] hover:text-foreground"
               )}
             >

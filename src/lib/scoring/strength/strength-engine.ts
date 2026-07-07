@@ -20,12 +20,27 @@ const SBD_MAP: Record<string, SBDLift> = {
   squat: "squat",
   "back squat": "squat",
   "front squat": "squat",
+  "safety bar squat": "squat",
+  "pause squat": "squat",
+  "zercher squat": "squat",
+  "goblet squat": "squat",
+  "hack squat": "squat",
+  "leg press": "squat",
   "bench press": "bench",
   bench: "bench",
+  "incline bench press": "bench",
+  "close grip bench press": "bench",
+  "floor press": "bench",
+  "spoto press": "bench",
+  "dumbbell bench press": "bench",
   deadlift: "deadlift",
   "sumo deadlift": "deadlift",
   "conventional deadlift": "deadlift",
   "romanian deadlift": "deadlift",
+  "trap bar deadlift": "deadlift",
+  "deficit deadlift": "deadlift",
+  "block pull": "deadlift",
+  "rack pull": "deadlift",
 };
 
 const ACCESSORY_MAP: Record<string, AccessoryLift> = {
@@ -34,6 +49,9 @@ const ACCESSORY_MAP: Record<string, AccessoryLift> = {
   "military press": "ohp",
   "strict press": "ohp",
   "shoulder press": "ohp",
+  "dumbbell shoulder press": "ohp",
+  "arnold press": "ohp",
+  "push press": "ohp",
   "pull up": "pullup",
   "pull-up": "pullup",
   pullup: "pullup",
@@ -41,7 +59,21 @@ const ACCESSORY_MAP: Record<string, AccessoryLift> = {
   "weighted pull-up": "pullup",
   "chin up": "pullup",
   "chin-up": "pullup",
+  "weighted chin up": "pullup",
+  "lat pulldown": "pullup",
 };
+
+/** Log-curve index for any exercise from e1RM / bodyweight */
+function genericExerciseIndex(
+  e1RM: number,
+  bw: number,
+  kind: "compound" | "accessory" = "compound"
+): number {
+  if (e1RM <= 0 || bw <= 0) return MIN_INDEX;
+  const ratio = (e1RM / bw) * (kind === "accessory" ? 2 : 1);
+  if (ratio <= 0.05) return MIN_INDEX;
+  return Math.min(MAX_INDEX, Math.max(MIN_INDEX, Math.round(380 * Math.log(ratio) + 500)));
+}
 
 const SBD_BLEND_WEIGHT = 0.85;
 const ACCESSORY_BLEND_WEIGHT = 0.15;
@@ -286,13 +318,15 @@ export function calculateStrengthIndexV2(
   const strengthScoreRows = allLifts.map((lift) => {
     const rel = lift.e1RM / bw;
     const acc = accessoryBreakdowns.find((a) => a.name === lift.name);
+    const normalized = normalizeName(lift.name);
+    const kind = SBD_MAP[normalized] ? "compound" : "accessory";
     const liftIndex = acc
       ? ratioToTierIndex(
           acc.relativeStrength,
-          ACCESSORY_MAP[normalizeName(lift.name)] ?? "ohp",
+          ACCESSORY_MAP[normalized] ?? "ohp",
           sex
         )
-      : dotsToStrengthIndex(dotsScore);
+      : genericExerciseIndex(lift.e1RM, bw, kind);
     return {
       exercise_name: lift.name,
       muscle_group: lift.muscleGroup,

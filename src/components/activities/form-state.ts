@@ -282,6 +282,23 @@ export function epley1RM(weightKg: number | null, reps: number | null): number |
   return Math.round(weightKg * (1 + reps / 30) * 10) / 10;
 }
 
+/**
+ * Per-exercise score (0–999) from estimated 1RM relative to bodyweight.
+ * Accessory lifts are normalised (×2) so a 0.5×BW curl scores like a 1×BW press.
+ * Log curve: 1×BW compound ≈ 500, 2×BW ≈ 760, 3×BW ≈ 915.
+ */
+export function exerciseScore(
+  oneRmKg: number | null,
+  bodyweightKg: number | null,
+  kind: "compound" | "accessory" = "compound"
+): number | null {
+  if (!oneRmKg || oneRmKg <= 0 || !bodyweightKg || bodyweightKg <= 0) return null;
+  const ratio = (oneRmKg / bodyweightKg) * (kind === "accessory" ? 2 : 1);
+  if (ratio <= 0.05) return 50;
+  const score = Math.round(380 * Math.log(ratio) + 500);
+  return Math.min(999, Math.max(50, score));
+}
+
 // ─── Validation ──────────────────────────────────────────────────────────────
 
 export type FormErrors = Record<string, string>;

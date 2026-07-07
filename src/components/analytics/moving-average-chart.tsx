@@ -70,7 +70,7 @@ export function MovingAverageChart({ data }: MovingAverageChartProps) {
                   type="monotone"
                   dataKey="split"
                   name="Split"
-                  stroke="#6366f1"
+                  stroke="#fafafa"
                   strokeWidth={1}
                   strokeOpacity={0.35}
                   dot={false}
@@ -80,7 +80,7 @@ export function MovingAverageChart({ data }: MovingAverageChartProps) {
                   type="monotone"
                   dataKey="splitMa7"
                   name="7-day MA"
-                  stroke="#6366f1"
+                  stroke="#00e65f"
                   strokeWidth={2.5}
                   dot={false}
                   connectNulls
@@ -90,7 +90,7 @@ export function MovingAverageChart({ data }: MovingAverageChartProps) {
                   type="monotone"
                   dataKey="splitMa28"
                   name="28-day MA"
-                  stroke="#06b6d4"
+                  stroke="#0ea5e9"
                   strokeWidth={2}
                   strokeDasharray="6 4"
                   dot={false}

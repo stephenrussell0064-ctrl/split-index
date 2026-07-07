@@ -16,9 +16,9 @@ import { formatIndex } from "@/lib/utils/format";
 import type { TrendGranularity, TrendPoint } from "./types";
 
 const SERIES = [
-  { key: "split", label: "Split", color: "#6366f1" },
-  { key: "endurance", label: "Endurance", color: "#06b6d4" },
-  { key: "strength", label: "Strength", color: "#a855f7" },
+  { key: "split", label: "Split", color: "#fafafa" },
+  { key: "endurance", label: "Endurance", color: "#0ea5e9" },
+  { key: "strength", label: "Strength", color: "#00e65f" },
 ] as const;
 
 interface TrendPanelProps {
@@ -107,7 +107,7 @@ export function TrendPanel({ data, granularity }: TrendPanelProps) {
                 <Area
                   type="monotone"
                   dataKey="endurance"
-                  stroke="#06b6d4"
+                  stroke="#0ea5e9"
                   strokeWidth={1.5}
                   fill="url(#analytics-trend-endurance)"
                   animationDuration={reducedMotion ? 0 : 1400}
@@ -115,7 +115,7 @@ export function TrendPanel({ data, granularity }: TrendPanelProps) {
                 <Area
                   type="monotone"
                   dataKey="strength"
-                  stroke="#a855f7"
+                  stroke="#00e65f"
                   strokeWidth={1.5}
                   fill="url(#analytics-trend-strength)"
                   animationDuration={reducedMotion ? 0 : 1400}
@@ -123,7 +123,7 @@ export function TrendPanel({ data, granularity }: TrendPanelProps) {
                 <Area
                   type="monotone"
                   dataKey="split"
-                  stroke="#6366f1"
+                  stroke="#fafafa"
                   strokeWidth={2.5}
                   fill="url(#analytics-trend-split)"
                   animationDuration={reducedMotion ? 0 : 1400}

@@ -305,10 +305,10 @@ export function buildVolumeByWeek(
 }
 
 const SESSION_COLORS: Record<string, string> = {
-  easy: "#06b6d4",
+  easy: "#0ea5e9",
   recovery: "#64748b",
-  tempo: "#6366f1",
-  threshold: "#a855f7",
+  tempo: "#00e65f",
+  threshold: "#f472b6",
   interval: "#f59e0b",
   race: "#ef4444",
   long: "#10b981",
@@ -326,14 +326,14 @@ export function buildSessionTypeDistribution(
   return Array.from(counts, ([name, value]) => ({
     name: name.charAt(0).toUpperCase() + name.slice(1),
     value,
-    color: SESSION_COLORS[name] ?? "#6366f1",
+    color: SESSION_COLORS[name] ?? "#00e65f",
   })).sort((a, b) => b.value - a.value);
 }
 
 export function buildRpeDistribution(activities: AnalyticsActivity[]): DistributionSlice[] {
   const bands = [
-    { name: "RPE 1–3", min: 1, max: 3, color: "#06b6d4" },
-    { name: "RPE 4–6", min: 4, max: 6, color: "#6366f1" },
+    { name: "RPE 1–3", min: 1, max: 3, color: "#0ea5e9" },
+    { name: "RPE 4–6", min: 4, max: 6, color: "#00e65f" },
     { name: "RPE 7–8", min: 7, max: 8, color: "#f59e0b" },
     { name: "RPE 9–10", min: 9, max: 10, color: "#ef4444" },
   ];
@@ -357,8 +357,8 @@ export function buildHrZoneDistribution(
 
   const zones = [
     { name: "Z1 Recovery", min: 0, max: 0.6, color: "#64748b" },
-    { name: "Z2 Aerobic", min: 0.6, max: 0.7, color: "#06b6d4" },
-    { name: "Z3 Tempo", min: 0.7, max: 0.8, color: "#6366f1" },
+    { name: "Z2 Aerobic", min: 0.6, max: 0.7, color: "#0ea5e9" },
+    { name: "Z3 Tempo", min: 0.7, max: 0.8, color: "#00e65f" },
     { name: "Z4 Threshold", min: 0.8, max: 0.9, color: "#f59e0b" },
     { name: "Z5 Max", min: 0.9, max: 1.01, color: "#ef4444" },
   ];

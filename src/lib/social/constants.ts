@@ -32,9 +32,9 @@ export const WEIGHT_CLASSES = [
 ] as const;
 
 export const INDEX_METRICS: { value: IndexMetric; label: string; color: string }[] = [
-  { value: "split", label: "Split", color: "#6366f1" },
-  { value: "endurance", label: "Endurance", color: "#06b6d4" },
-  { value: "strength", label: "Strength", color: "#a855f7" },
+  { value: "split", label: "Split", color: "#fafafa" },
+  { value: "endurance", label: "Endurance", color: "#0ea5e9" },
+  { value: "strength", label: "Strength", color: "#00e65f" },
 ];
 
 export function getPeriodStart(period: LeaderboardPeriod): string {

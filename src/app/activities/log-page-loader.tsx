@@ -4,6 +4,11 @@ import { AppShell } from "@/components/layout/app-shell";
 import { ActivityForm } from "@/components/activities/activity-form";
 import { activityToFormState } from "@/lib/activities/db-form";
 import { isPremiumUser } from "@/lib/retention/trial";
+import { getWorkoutPlan } from "@/lib/constants/workout-plans";
+import {
+  createDefaultState,
+  nextRowId,
+} from "@/components/activities/form-state";
 import type { SportType } from "@/types";
 import type { WorkoutFormState } from "@/components/activities/form-state";
 
@@ -12,7 +17,7 @@ interface LogPageProps {
   zoneMode: "gym" | "cardio";
   enduranceOnly?: boolean;
   showFileImport?: boolean;
-  searchParams?: Promise<{ repeat?: string }>;
+  searchParams?: Promise<{ repeat?: string; plan?: string; template?: string }>;
 }
 
 export async function loadLogPage({
@@ -43,20 +48,25 @@ export async function loadLogPage({
   const repeatSport = sport ?? (zoneMode === "gym" ? "gym" : "running");
   let initialRepeatState: WorkoutFormState | undefined;
 
-  if (params.repeat === "1" && repeatSport) {
-    const { data: lastActivity } = await supabase
+  if (params.repeat && repeatSport) {
+    // repeat=1 → most recent session; repeat=<uuid> → that specific session
+    let query = supabase
       .from("activities")
       .select("*")
       .eq("user_id", user.id)
-      .eq("sport", repeatSport)
-      .eq("is_draft", false)
-      .order("started_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .eq("is_draft", false);
+
+    if (params.repeat === "1") {
+      query = query.eq("sport", repeatSport).order("started_at", { ascending: false });
+    } else {
+      query = query.eq("id", params.repeat);
+    }
+
+    const { data: lastActivity } = await query.limit(1).maybeSingle();
 
     if (lastActivity) {
       let exercises: Parameters<typeof activityToFormState>[1] = [];
-      if (repeatSport === "gym") {
+      if (lastActivity.sport === "gym") {
         const { data: exRows } = await supabase
           .from("gym_exercises")
           .select("*")
@@ -69,6 +79,40 @@ export async function loadLogPage({
         exercises,
         profile.weight_kg
       );
+    }
+  } else if (params.template && zoneMode === "gym") {
+    const { data: template } = await supabase
+      .from("session_templates")
+      .select("name, template_data")
+      .eq("id", params.template)
+      .eq("user_id", user.id)
+      .single();
+
+    if (template?.template_data) {
+      initialRepeatState = template.template_data as WorkoutFormState;
+      if (template.name && !initialRepeatState.title) {
+        initialRepeatState = { ...initialRepeatState, title: template.name as string };
+      }
+    }
+  } else if (params.plan && zoneMode === "gym") {
+    // plan=<id> → prefill the log form with a preset workout plan
+    const plan = getWorkoutPlan(params.plan);
+    if (plan) {
+      const base = createDefaultState("gym", profile.weight_kg);
+      initialRepeatState = {
+        ...base,
+        title: plan.name,
+        exercises: plan.exercises.map((ex) => ({
+          id: nextRowId(),
+          name: ex.name,
+          muscleGroup: ex.muscle,
+          weight: "",
+          sets: String(ex.sets),
+          reps: String(ex.reps),
+          rpe: "",
+          notes: "",
+        })),
+      };
     }
   }
 

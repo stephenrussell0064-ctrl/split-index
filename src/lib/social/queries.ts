@@ -305,13 +305,13 @@ export async function fetchCompareHistory(
       selfHistory,
       profileMap.get(userId)?.display_name ?? "You",
       profileMap.get(userId)?.username ?? null,
-      "#6366f1"
+      "#00e65f"
     ),
     toSeries(
       otherHistory,
       profileMap.get(otherUserId)?.display_name ?? "Peer",
       profileMap.get(otherUserId)?.username ?? null,
-      "#06b6d4"
+      "#0ea5e9"
     ),
   ];
 }

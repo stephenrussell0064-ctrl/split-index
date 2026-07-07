@@ -4,12 +4,12 @@
  */
 
 export const designTokens = {
-  /** Cardio / endurance accent — slate-cyan */
-  cardioAccent: "#0e7490",
-  cardioAccentSoft: "#0891b2",
-  /** Strength / gym accent — muted violet */
-  strengthAccent: "#7c3aed",
-  strengthAccentSoft: "#8b5cf6",
+  /** Cardio / endurance accent — sky blue on white */
+  cardioAccent: "#0ea5e9",
+  cardioAccentSoft: "#38bdf8",
+  /** Strength / gym accent — neon green on black */
+  strengthAccent: "#00e65f",
+  strengthAccentSoft: "#5cff9d",
   /** Neutral slate scale for data surfaces */
   slate: {
     50: "#f8fafc",
