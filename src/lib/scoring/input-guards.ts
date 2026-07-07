@@ -30,6 +30,7 @@ export function assertScoringInput(input: {
   avgSplitSeconds?: number | null;
   elevationMeters?: number | null;
   splitPacesSec?: number[] | null;
+  rpe?: number | null;
   exercises?: Array<{ weight_kg: number; sets: number; reps: number }>;
   profile?: { weight_kg?: number | null };
 }): void {
@@ -87,6 +88,10 @@ export function assertScoringInput(input: {
         throw new ScoringInputError("Split pace data contains an implausible value.");
       }
     }
+  }
+
+  if (input.rpe != null && (!Number.isFinite(input.rpe) || input.rpe < 1 || input.rpe > 10)) {
+    throw new ScoringInputError("RPE must be between 1 and 10.");
   }
 
   const bw = input.profile?.weight_kg;

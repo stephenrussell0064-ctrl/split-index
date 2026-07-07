@@ -117,6 +117,7 @@ async function scoreAndPersist(
       avgSplitSeconds: body.avg_split_seconds,
       temperatureCelsius: body.temperature_celsius,
       sessionType: body.session_type,
+      rpe: body.rpe,
       exercises: body.exercises,
       profile: scoringProfile,
       recentLoads: loads,
@@ -295,6 +296,7 @@ export async function PATCH(
       avgPaceSecondsPerKm: body.avg_pace_seconds_per_km,
       avgSplitSeconds: body.avg_split_seconds,
       elevationMeters: body.elevation_meters,
+      rpe: body.rpe,
       exercises: body.exercises,
       profile,
     });

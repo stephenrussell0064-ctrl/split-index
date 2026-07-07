@@ -37,6 +37,7 @@ export interface ActivityScoreContext {
   distanceMeters?: number | null;
   avgHeartRate?: number | null;
   sessionType?: SessionType | null;
+  rpe?: number | null;
   exercises?: Array<{
     exercise_name: string;
     muscle_group: string;
@@ -240,6 +241,8 @@ function scoreEnduranceSession(
     age: input.profile.age,
     gender: input.profile.gender,
     experience: input.profile.experience,
+    sessionType: input.sessionType,
+    rpe: input.rpe,
     ...paceHalves,
   });
 

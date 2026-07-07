@@ -1,4 +1,4 @@
-import type { SportType, Gender, ExperienceLevel } from "@/types";
+import type { SportType, Gender, ExperienceLevel, SessionType } from "@/types";
 import type { Profile as AthleteProfile } from "@/lib/scoring/index-engine";
 import type { CardioInput, CardioType, Sex } from "@/lib/scoring/cardio-activity";
 import type { Lift, StrengthInput } from "@/lib/scoring/strength-activity";
@@ -178,6 +178,8 @@ export function buildCardioInput(input: {
   secondHalfAvgHR?: number | null;
   firstHalfPaceSecPerKm?: number | null;
   secondHalfPaceSecPerKm?: number | null;
+  sessionType?: SessionType | null;
+  rpe?: number | null;
 }): CardioInput {
   return {
     type: mapSportToCardioType(input.sport),
@@ -193,6 +195,8 @@ export function buildCardioInput(input: {
     firstHalfPaceSecPerKm: input.firstHalfPaceSecPerKm ?? undefined,
     secondHalfPaceSecPerKm: input.secondHalfPaceSecPerKm ?? undefined,
     experience: mapExperience(input.experience),
+    sessionType: input.sessionType ?? undefined,
+    rpe: input.rpe ?? undefined,
   };
 }
 

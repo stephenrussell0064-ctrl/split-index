@@ -19,6 +19,7 @@ interface ScoreActivityInput {
   avgSplitSeconds?: number | null;
   temperatureCelsius?: number | null;
   sessionType?: SessionType | null;
+  rpe?: number | null;
   exercises?: Array<{
     exercise_name: string;
     muscle_group: string;
@@ -119,6 +120,7 @@ export function scoreActivity(
       distanceMeters: input.distanceMeters,
       avgHeartRate: input.avgHeartRate,
       sessionType: input.sessionType,
+      rpe: input.rpe,
       exercises: input.exercises,
       profile: input.profile,
       recentLoads: input.recentLoads,
