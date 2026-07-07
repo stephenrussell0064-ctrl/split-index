@@ -156,7 +156,7 @@ export interface WorkoutScore {
 }
 
 export interface ScoreBreakdown {
-  base_score: number;
+  base_score?: number;
   pace_factor?: number;
   distance_factor?: number;
   duration_factor?: number;
@@ -178,8 +178,14 @@ export interface ScoreBreakdown {
     string,
     { estimated1RM: number; relativeStrength: number } | undefined
   >;
-  final_sport_index: number;
+  final_sport_index?: number;
   explanation: string[];
+  /** V2 cardio engine output (full object persisted for re-runs) */
+  cardio_activity?: import("@/lib/scoring/cardio-activity").CardioResult;
+  /** V2 strength engine outputs per mapped lift */
+  strength_activities?: import("@/lib/scoring/strength-activity").StrengthResult[];
+  /** V2 index aggregation snapshot */
+  index_result?: import("@/lib/scoring/index-engine").IndexResult;
   /** Phase 2 additive cardio enrichment (display layer) */
   cardio_enrichment?: Record<string, unknown>;
 }

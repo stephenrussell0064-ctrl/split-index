@@ -8,13 +8,17 @@ import { scoreActivity } from "./service";
 import { calculateDOTS, calculateGLPoints } from "./strength";
 import { dotsToStrengthIndex } from "./strength/mapping";
 
+import type { SportType } from "@/types";
+
 const baseProfile = {
   max_hr: 190,
   weight_kg: 75,
+  age: 30,
   experience: "intermediate" as const,
   gender: "male" as const,
   training_history_years: 5,
   split_endurance_weight: 0.5,
+  preferred_sports: ["running", "gym"] as SportType[],
 };
 
 const neutralLoads = { acuteLoad: 200, chronicLoad: 200 };

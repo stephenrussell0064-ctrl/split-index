@@ -1,4 +1,5 @@
 import { MAX_INDEX, MIN_INDEX } from "@/lib/scoring/constants";
+import { projectIndex as projectIndexEngine } from "@/lib/scoring/index-engine";
 import type { SplitIndexSnapshot } from "@/types";
 
 const DAY_MS = 86400000;
@@ -63,5 +64,28 @@ export function computeSplitIndexProjection(
   history: SplitIndexSnapshot[],
   weeksAhead: number
 ): number | null {
-  return forecastSplitIndexFromHistory(history, weeksAhead * 7);
+  const sorted = [...history].sort(
+    (a, b) => new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime()
+  );
+  const recent = sorted.slice(-14);
+  if (recent.length < 3) return null;
+
+  const engineHistory = recent.map((h) => ({
+    date: h.recorded_at,
+    value: h.split_index,
+  }));
+
+  const projection = projectIndexEngine(engineHistory, weeksAhead * 7);
+  if (!projection) return forecastSplitIndexFromHistory(history, weeksAhead * 7);
+
+  const weeklyRate = Math.max(
+    MIN_WEEKLY_DELTA,
+    Math.min(MAX_WEEKLY_DELTA, projection.slopePerWeek)
+  );
+  const lastValue = recent[recent.length - 1].split_index;
+  const capped = Math.round(lastValue + (weeklyRate / 7) * weeksAhead * 7);
+
+  return Math.max(MIN_INDEX, Math.min(MAX_INDEX, capped));
 }
+
+export { projectIndexEngine as projectHeadlineIndex };

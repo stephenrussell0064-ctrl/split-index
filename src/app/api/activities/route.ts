@@ -5,7 +5,11 @@ import { generateCoachFeedback, generateRulesBasedSnippet, type IndexHistoryEntr
 import { computeSportComparison } from "@/lib/utils/sport-comparison";
 import { SPORT_INDEX_LABELS } from "@/lib/constants/sports";
 import { enrichCardioScore } from "@/lib/scoring/cardio";
+import { cardioResultToEnrichment } from "@/lib/scoring/adapters";
+import type { CardioResult } from "@/lib/scoring/cardio-activity";
 import { isEnduranceSport } from "@/lib/scoring/engine";
+import { isPremiumUser } from "@/lib/retention/trial";
+import { serializeScoreBreakdown } from "@/lib/scoring/presentation";
 import { canAccessProfile } from "@/lib/premium/features";
 import type { ActivityFormData, GymExercise } from "@/types";
 
@@ -71,6 +75,30 @@ export async function POST(request: Request) {
   const priorSportScores = (recentSameSportScores ?? []).map(
     (s) => s.sport_index as number
   );
+
+  const { data: recentActivitiesForIndex } = await supabase
+    .from("activities")
+    .select("sport, started_at, workout_scores(sport_index, score_breakdown)")
+    .eq("user_id", user.id)
+    .eq("is_draft", false)
+    .order("started_at", { ascending: false })
+    .limit(20);
+
+  const recentActivityRows = (recentActivitiesForIndex ?? [])
+    .flatMap((row) => {
+      const ws = Array.isArray(row.workout_scores)
+        ? row.workout_scores[0]
+        : row.workout_scores;
+      if (!ws?.sport_index) return [];
+      return [
+        {
+          sport: row.sport as string,
+          sport_index: ws.sport_index as number,
+          started_at: row.started_at as string,
+          score_breakdown: (ws.score_breakdown ?? null) as Record<string, unknown> | null,
+        },
+      ];
+    });
 
   const loads = computeRecentLoads(recentScores ?? []);
 
@@ -171,12 +199,14 @@ export async function POST(request: Request) {
       exercises: body.exercises,
       profile: scoringProfile,
       recentLoads: loads,
+      startedAt: body.started_at,
     },
     {
       enduranceIndices,
       strengthIndices,
       splitIndices: indexHistory?.map((h) => h.split_index) ?? [],
-    }
+    },
+    recentActivityRows
   );
 
   const previousSplitIndex =
@@ -342,19 +372,22 @@ export async function POST(request: Request) {
 
   let cardioEnrichment = null;
   if (isEnduranceSport(body.sport)) {
-    cardioEnrichment = enrichCardioScore({
-      sportIndex: result.sportIndex,
-      sport: body.sport,
-      activity: {
-        duration_seconds: body.duration_seconds,
-        distance_meters: body.distance_meters ?? null,
-        avg_heart_rate: body.avg_heart_rate ?? null,
-        avg_power_watts: body.avg_power_watts ?? null,
-        avg_pace_seconds_per_km: body.avg_pace_seconds_per_km ?? null,
-        avg_split_seconds: body.avg_split_seconds ?? null,
-      },
-      profile: scoringProfile,
-    });
+    const cardioActivity = result.breakdown.cardio_activity as CardioResult | undefined;
+    cardioEnrichment = cardioActivity
+      ? cardioResultToEnrichment(cardioActivity, result.sportIndex)
+      : enrichCardioScore({
+          sportIndex: result.sportIndex,
+          sport: body.sport,
+          activity: {
+            duration_seconds: body.duration_seconds,
+            distance_meters: body.distance_meters ?? null,
+            avg_heart_rate: body.avg_heart_rate ?? null,
+            avg_power_watts: body.avg_power_watts ?? null,
+            avg_pace_seconds_per_km: body.avg_pace_seconds_per_km ?? null,
+            avg_split_seconds: body.avg_split_seconds ?? null,
+          },
+          profile: scoringProfile,
+        });
 
     if (cardioEnrichment && workoutScore) {
       await supabase
@@ -369,6 +402,11 @@ export async function POST(request: Request) {
     }
   }
 
+  const premium = isPremiumUser(
+    profile.subscription_tier,
+    profile.subscription_status
+  );
+
   return NextResponse.json({
     activity,
     score: workoutScore,
@@ -380,16 +418,18 @@ export async function POST(request: Request) {
     splitIndexDelta: result.splitIndex - previousSplitIndex,
     enduranceIndex: result.enduranceIndex,
     strengthIndex: result.strengthIndex,
+    headline: result.headline,
+    headlineLabel: result.headlineLabel,
     sportComparison,
     isFirstSportSession,
     exerciseScores: result.exerciseScores,
-    scoreBreakdown: result.breakdown,
+    scoreBreakdown: serializeScoreBreakdown(result.breakdown, premium),
     dotsScore: result.dotsScore,
     glPoints: result.glPoints,
     useGL: result.useGL,
     splitBreakdownLabel: result.splitBreakdownLabel,
     aiFeedback,
     premium_required: premiumRequired,
-    cardioEnrichment,
+    cardioEnrichment: premium ? cardioEnrichment : null,
   });
 }

@@ -16,7 +16,13 @@ import {
 } from "@/lib/utils/scoring-display";
 import { ActivityDetailActions } from "@/components/activities/activity-detail-actions";
 import { CardioEnrichmentPanel } from "@/components/activities/cardio-enrichment-panel";
+import { SessionScoreInsights } from "@/components/scoring/session-score-insights";
 import { canAccessProfile } from "@/lib/premium/features";
+import { isPremiumUser } from "@/lib/retention/trial";
+import {
+  extractGatedCardioInsight,
+  extractGatedStrengthInsights,
+} from "@/lib/scoring/activity-insights";
 import type { ScoreBreakdown } from "@/types";
 
 export default async function ActivityDetailPage({
@@ -53,6 +59,9 @@ export default async function ActivityDetailPage({
   const showStrengthTiers = profile
     ? canAccessProfile("strength_dots_gl", profile)
     : false;
+  const isPremium = profile
+    ? isPremiumUser(profile.subscription_tier, profile.subscription_status)
+    : false;
 
   const [{ data: score }, { data: exercises }, { data: priorScores }] =
     await Promise.all([
@@ -88,6 +97,12 @@ export default async function ActivityDetailPage({
   const zone = activity.sport === "gym" ? "gym" : "cardio";
   const scoreBreakdown = (score?.score_breakdown ?? {}) as ScoreBreakdown;
   const cardioEnrichment = scoreBreakdown.cardio_enrichment;
+  const gatedCardioInsight = extractGatedCardioInsight(scoreBreakdown, isPremium);
+  const gatedStrengthInsights = extractGatedStrengthInsights(
+    scoreBreakdown,
+    exercises ?? [],
+    isPremium
+  );
 
   const exerciseBreakdown =
     activity.sport === "gym" && exercises?.length
@@ -183,11 +198,30 @@ export default async function ActivityDetailPage({
                 />
               </div>
             )}
-            {zone === "cardio" && cardioEnrichment && (
+            {zone === "cardio" && gatedCardioInsight && (
+              <div className="mt-6 border-t border-white/10 pt-6">
+                <SessionScoreInsights
+                  zone="cardio"
+                  isPremium={isPremium}
+                  cardioResult={gatedCardioInsight}
+                />
+              </div>
+            )}
+            {zone === "cardio" && !gatedCardioInsight && cardioEnrichment && (
               <div className="mt-6">
                 <CardioEnrichmentPanel
                   enrichment={cardioEnrichment}
                   locked={!showHrAccountability}
+                />
+              </div>
+            )}
+            {zone === "gym" && gatedStrengthInsights && (
+              <div className="mt-6 border-t border-white/10 pt-6">
+                <p className="micro-label text-muted mb-3">Per-lift scoring</p>
+                <SessionScoreInsights
+                  zone="gym"
+                  isPremium={isPremium}
+                  strengthResults={gatedStrengthInsights}
                 />
               </div>
             )}

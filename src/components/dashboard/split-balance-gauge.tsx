@@ -8,13 +8,17 @@ import { formatSplitBreakdown } from "@/lib/utils/scoring-display";
 import { CountUp } from "@/components/dashboard/count-up";
 import { SplitWeightSlider } from "@/components/dashboard/split-weight-slider";
 
+import { PremiumTease } from "@/components/premium/premium-tease";
+
 interface SplitBalanceGaugeProps {
   splitIndex: number | null;
   enduranceIndex: number | null;
   strengthIndex: number | null;
+  headlineLabel?: string;
   weeklyTrend?: number;
   enduranceWeight?: number;
   hasHistory: boolean;
+  showBreakdown?: boolean;
   editableWeight?: boolean;
   onWeightChange?: (enduranceWeight: number) => void;
   className?: string;
@@ -24,9 +28,11 @@ export function SplitBalanceGauge({
   splitIndex,
   enduranceIndex,
   strengthIndex,
+  headlineLabel = "Split Index",
   weeklyTrend = 0,
   enduranceWeight = 0.5,
   hasHistory,
+  showBreakdown = true,
   editableWeight = false,
   onWeightChange,
   className,
@@ -62,7 +68,7 @@ export function SplitBalanceGauge({
           className
         )}
       >
-        <p className="micro-label text-muted mb-2">Split Index</p>
+        <p className="micro-label text-muted mb-2">{headlineLabel}</p>
         <p className="text-lg font-semibold tracking-tight">
           Log workouts to build your index
         </p>
@@ -94,7 +100,7 @@ export function SplitBalanceGauge({
     >
       <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
         <div>
-          <p className="micro-label text-muted mb-1">Split Index</p>
+          <p className="micro-label text-muted mb-1">{headlineLabel}</p>
           <div className="flex items-baseline gap-3">
             <p className="index-display text-4xl font-bold tabular-nums sm:text-5xl">
               <CountUp value={splitIndex} format={formatIndex} />
@@ -116,49 +122,62 @@ export function SplitBalanceGauge({
         </div>
       </div>
 
-      {/* Seesaw gauge */}
-      <div className="relative mx-auto max-w-lg h-32 mb-4">
-        {/* Fulcrum */}
-        <div className="absolute left-1/2 bottom-2 -translate-x-1/2 z-10">
-          <div className="flex flex-col items-center">
-            <span className="index-display text-lg font-bold tabular-nums text-foreground/90">
-              {formatIndex(splitIndex)}
-            </span>
-            <div className="w-0 h-0 border-l-[10px] border-r-[10px] border-b-[14px] border-l-transparent border-r-transparent border-b-white/20" />
+      {/* Seesaw gauge — Lab / Engine breakdown */}
+      {showBreakdown ? (
+        <div className="relative mx-auto max-w-lg h-32 mb-4">
+          <div className="absolute left-1/2 bottom-2 -translate-x-1/2 z-10">
+            <div className="flex flex-col items-center">
+              <span className="index-display text-lg font-bold tabular-nums text-foreground/90">
+                {formatIndex(splitIndex)}
+              </span>
+              <div className="w-0 h-0 border-l-[10px] border-r-[10px] border-b-[14px] border-l-transparent border-r-transparent border-b-white/20" />
+            </div>
+          </div>
+
+          <motion.div
+            className="absolute left-4 right-4 top-1/2 h-1 rounded-full bg-white/10 origin-center"
+            initial={false}
+            animate={{ rotate: reducedMotion ? tilt : tilt }}
+            transition={{ type: "spring", stiffness: 120, damping: 14 }}
+            style={{ transformOrigin: "center center" }}
+          >
+            <div className="absolute -left-1 top-1/2 -translate-y-1/2 -translate-x-full flex flex-col items-end pr-3">
+              <span className="micro-label text-cardio-accent/80">Engine</span>
+              <span className="font-mono text-sm font-semibold tabular-nums text-cardio-accent">
+                {formatIndex(endIdx)}
+              </span>
+            </div>
+
+            <div className="absolute -right-1 top-1/2 -translate-y-1/2 translate-x-full flex flex-col items-start pl-3">
+              <span className="micro-label text-strength-accent/80">Lab</span>
+              <span className="font-mono text-sm font-semibold tabular-nums text-strength-accent">
+                {formatIndex(strIdx)}
+              </span>
+            </div>
+          </motion.div>
+
+          <div className="absolute bottom-0 left-0 right-0 flex justify-between px-2 text-[10px] text-muted">
+            <span>{endPct}% weight</span>
+            <span>{strPct}% weight</span>
           </div>
         </div>
-
-        {/* Beam */}
-        <motion.div
-          className="absolute left-4 right-4 top-1/2 h-1 rounded-full bg-white/10 origin-center"
-          initial={false}
-          animate={{ rotate: reducedMotion ? tilt : tilt }}
-          transition={{ type: "spring", stiffness: 120, damping: 14 }}
-          style={{ transformOrigin: "center center" }}
+      ) : (
+        <PremiumTease
+          title={`Lab ${formatIndex(strIdx)} · Engine ${formatIndex(endIdx)}`}
+          subtitle="Premium unlocks the full Lab / Engine breakdown and blend weights."
+          className="mb-4"
         >
-          {/* Cardio side (left) */}
-          <div className="absolute -left-1 top-1/2 -translate-y-1/2 -translate-x-full flex flex-col items-end pr-3">
-            <span className="micro-label text-cardio-accent/80">Cardio</span>
-            <span className="font-mono text-sm font-semibold tabular-nums text-cardio-accent">
+          <div className="relative mx-auto max-w-lg h-32">
+            <div className="absolute left-4 right-4 top-1/2 h-1 rounded-full bg-white/10" />
+            <div className="absolute left-0 top-1/2 -translate-y-1/2 text-cardio-accent text-sm font-mono">
               {formatIndex(endIdx)}
-            </span>
-          </div>
-
-          {/* Strength side (right) */}
-          <div className="absolute -right-1 top-1/2 -translate-y-1/2 translate-x-full flex flex-col items-start pl-3">
-            <span className="micro-label text-strength-accent/80">Strength</span>
-            <span className="font-mono text-sm font-semibold tabular-nums text-strength-accent">
+            </div>
+            <div className="absolute right-0 top-1/2 -translate-y-1/2 text-strength-accent text-sm font-mono">
               {formatIndex(strIdx)}
-            </span>
+            </div>
           </div>
-        </motion.div>
-
-        {/* Weight labels under beam */}
-        <div className="absolute bottom-0 left-0 right-0 flex justify-between px-2 text-[10px] text-muted">
-          <span>{endPct}% weight</span>
-          <span>{strPct}% weight</span>
-        </div>
-      </div>
+        </PremiumTease>
+      )}
 
       {editableWeight && (
         <SplitWeightSlider enduranceWeight={localWeight} onChange={handleWeight} />

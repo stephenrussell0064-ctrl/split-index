@@ -25,6 +25,13 @@ import { RankBadge } from "@/components/retention/rank-badge";
 import { EmptyDashboardHero } from "@/components/retention/empty-dashboard-hero";
 import { FriendInviteBanner } from "@/components/retention/friend-invite-banner";
 import { calculateTrend } from "@/lib/scoring/service";
+import {
+  buildActivityScores,
+  deriveAthleteProfile,
+  labWeightFromProfile,
+} from "@/lib/scoring/adapters";
+import { computeIndexes } from "@/lib/scoring/index-engine";
+import type { IndexResult } from "@/lib/scoring/index-engine";
 import { computeStreakMetrics } from "@/lib/retention/streak-utils";
 import { getGlobalRankPercentile, seedRetentionNotifications } from "@/lib/retention/rank";
 import { isPremiumUser } from "@/lib/retention/trial";
@@ -110,6 +117,7 @@ export default async function DashboardPage() {
     { data: scores },
     { data: aiFeedback },
     { data: goals },
+    { data: indexActivities },
   ] = await Promise.all([
     supabase
       .from("split_index_history")
@@ -173,6 +181,13 @@ export default async function DashboardPage() {
       .eq("user_id", user.id)
       .order("deadline", { ascending: true, nullsFirst: false })
       .limit(10),
+    supabase
+      .from("activities")
+      .select("sport, started_at, workout_scores(sport_index, score_breakdown)")
+      .eq("user_id", user.id)
+      .eq("is_draft", false)
+      .order("started_at", { ascending: false })
+      .limit(20),
   ]);
 
   const hasActivities = (recentActivities?.length ?? 0) > 0;
@@ -284,6 +299,50 @@ export default async function DashboardPage() {
     (scores ?? []).map((s) => [s.activity_id as string, s.sport_index as number])
   );
 
+  const athleteProfile = deriveAthleteProfile((profile.preferred_sports ?? []) as SportType[]);
+  const weightLab = labWeightFromProfile(
+    typeof profile.split_endurance_weight === "number"
+      ? profile.split_endurance_weight
+      : 0.5
+  );
+
+  const indexActivityRows = (indexActivities ?? [])
+    .flatMap((row) => {
+      const ws = Array.isArray(row.workout_scores)
+        ? row.workout_scores[0]
+        : row.workout_scores;
+      if (!ws?.sport_index) return [];
+      return [
+        {
+          sport: row.sport as string,
+          sport_index: ws.sport_index as number,
+          started_at: row.started_at as string,
+          score_breakdown: (ws.score_breakdown ?? null) as Record<string, unknown> | null,
+        },
+      ];
+    });
+
+  const liveIndexes: IndexResult | null =
+    indexActivityRows.length >= 1
+      ? computeIndexes(buildActivityScores(indexActivityRows), athleteProfile, weightLab)
+      : null;
+
+  const headlineLabel: IndexResult["headlineLabel"] =
+    liveIndexes?.headlineLabel ??
+    (athleteProfile === "gym"
+      ? "Lab Index"
+      : athleteProfile === "cardio"
+        ? "Engine Index"
+        : "Split Index");
+  const headlineValue =
+    liveIndexes?.headline ??
+    (athleteProfile === "gym"
+      ? current.strength_index
+      : athleteProfile === "cardio"
+        ? current.endurance_index
+        : current.split_index);
+  const displayEnduranceIndex = liveIndexes?.engineIndex ?? current.endurance_index;
+  const displayStrengthIndex = liveIndexes?.labIndex ?? current.strength_index;
   const indexGap = current.endurance_index - current.strength_index;
   const weakerSide: "endurance" | "strength" | "balanced" =
     indexGap < -15 ? "endurance" : indexGap > 15 ? "strength" : "balanced";
@@ -330,9 +389,10 @@ export default async function DashboardPage() {
         />
 
         <SplitBalanceGauge
-          splitIndex={hasIndexHistory ? current.split_index : null}
-          enduranceIndex={hasIndexHistory ? current.endurance_index : null}
-          strengthIndex={hasIndexHistory ? current.strength_index : null}
+          splitIndex={hasIndexHistory ? headlineValue : null}
+          headlineLabel={headlineLabel}
+          enduranceIndex={hasIndexHistory ? displayEnduranceIndex : null}
+          strengthIndex={hasIndexHistory ? displayStrengthIndex : null}
           weeklyTrend={weeklyTrend}
           enduranceWeight={
             typeof profile.split_endurance_weight === "number"
@@ -340,6 +400,7 @@ export default async function DashboardPage() {
               : 0.5
           }
           hasHistory={hasIndexHistory}
+          showBreakdown={premium}
         />
 
         {hasIndexHistory && projection8Weeks !== null && (

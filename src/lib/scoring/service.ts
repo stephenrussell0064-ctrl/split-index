@@ -1,17 +1,8 @@
 import type { Profile, SessionType, SportType } from "@/types";
-import {
-  calculateEnduranceIndex,
-  calculateFatigueScore,
-  calculateRecoveryScore,
-  predictIndex,
-  estimate1RM,
-  isEnduranceSport,
-  recencyWeightedBlend,
-  calculateACWR,
-} from "@/lib/scoring/engine";
-import { calculateCompositeSplitIndex } from "@/lib/scoring/composite";
-import { calculateStrengthIndexV2 } from "@/lib/scoring/strength";
-import { INDEX_ANCHOR } from "@/lib/scoring/constants";
+import { predictIndex } from "@/lib/scoring/engine";
+import { scoreActivityWithEngines } from "@/lib/scoring/activity-scorer";
+import { estimate1RM } from "@/lib/scoring/engine";
+import type { IndexResult } from "@/lib/scoring/index-engine";
 
 interface ScoreActivityInput {
   sport: SportType;
@@ -36,13 +27,17 @@ interface ScoreActivityInput {
     Profile,
     | "max_hr"
     | "weight_kg"
-    | "experience"
+    | "age"
     | "gender"
+    | "experience"
     | "training_history_years"
     | "split_endurance_weight"
-  >;
+    | "preferred_sports"
+  > & { resting_hr?: number | null };
   recentLoads: { acute: number; chronic: number };
   useGL?: boolean;
+  startedAt?: string;
+  splitPacesSec?: number[];
 }
 
 export interface ScoreResult {
@@ -58,6 +53,9 @@ export interface ScoreResult {
   fatigueScore: number;
   recoveryScore: number;
   predictedIndex: number;
+  indexResult: IndexResult;
+  headline: number;
+  headlineLabel: IndexResult["headlineLabel"];
   dotsScore?: number;
   glPoints?: number;
   useGL?: boolean;
@@ -81,149 +79,72 @@ export interface ScoreResult {
   }>;
 }
 
-function splitWeightsFromProfile(
-  profile: ScoreActivityInput["profile"]
-): { enduranceWeight: number; strengthWeight: number } {
-  const enduranceWeight =
-    typeof profile.split_endurance_weight === "number"
-      ? profile.split_endurance_weight
-      : 0.5;
-  return {
-    enduranceWeight,
-    strengthWeight: 1 - enduranceWeight,
-  };
-}
-
 export function scoreActivity(
   input: ScoreActivityInput,
   history: {
     enduranceIndices: number[];
     strengthIndices: number[];
     splitIndices: number[];
-  }
+  },
+  recentActivityRows: Array<{
+    sport: string;
+    sport_index: number;
+    started_at: string;
+    score_breakdown?: Record<string, unknown> | null;
+  }> = []
 ): ScoreResult {
-  const { acute, chronic } = input.recentLoads;
-  const bodyweight = input.profile.weight_kg ?? 75;
-  const acwr = calculateACWR(acute, chronic);
-  const fatigueScore = calculateFatigueScore(acwr, acute);
-  const recoveryScore = calculateRecoveryScore(fatigueScore, acwr, 1);
-  const weights = splitWeightsFromProfile(input.profile);
-
-  if (input.sport === "gym") {
-    const result = calculateStrengthIndexV2({
-      exercises: (input.exercises ?? []).map((ex) => ({
-        ...ex,
-        rpe: ex.rpe ?? null,
-      })),
-      bodyweightKg: bodyweight,
-      gender: input.profile.gender,
-      options: { useGL: input.useGL ?? false },
-    });
-
-    const strengthIndex = recencyWeightedBlend(
-      result.index,
-      history.strengthIndices
-    );
-    const enduranceIndex =
-      history.enduranceIndices.length > 0
-        ? recencyWeightedBlend(
-            history.enduranceIndices[0],
-            history.enduranceIndices.slice(1)
-          )
-        : INDEX_ANCHOR;
-
-    const composite = calculateCompositeSplitIndex({
-      enduranceIndex,
-      strengthIndex,
-      ...weights,
-    });
-
-    return {
-      sportIndex: result.index,
-      enduranceComponent: null,
-      strengthComponent: result.index,
-      loadScore: result.loadScore,
-      breakdown: result.breakdown,
-      splitIndex: composite.splitIndex,
-      splitBreakdownLabel: composite.breakdownLabel,
-      enduranceIndex,
-      strengthIndex,
-      fatigueScore,
-      recoveryScore,
-      predictedIndex: predictIndex([...history.splitIndices, composite.splitIndex]),
-      dotsScore: result.dotsScore,
-      glPoints: result.glPoints,
-      useGL: result.useGL,
-      exerciseScores: result.exerciseScores,
-      strengthScoreRows: result.strengthScoreRows,
-    };
-  }
-
-  if (isEnduranceSport(input.sport)) {
-    const result = calculateEnduranceIndex({
+  const result = scoreActivityWithEngines(
+    {
       sport: input.sport,
       durationSeconds: input.durationSeconds,
-      distanceMeters: input.distanceMeters ?? null,
-      elevationMeters: input.elevationMeters ?? null,
-      avgHeartRate: input.avgHeartRate ?? null,
-      avgPowerWatts: input.avgPowerWatts ?? null,
-      avgPaceSecondsPerKm: input.avgPaceSecondsPerKm ?? null,
-      avgSplitSeconds: input.avgSplitSeconds ?? null,
-      temperatureCelsius: input.temperatureCelsius ?? null,
-      sessionType: input.sessionType ?? null,
+      distanceMeters: input.distanceMeters,
+      avgHeartRate: input.avgHeartRate,
+      sessionType: input.sessionType,
+      exercises: input.exercises,
       profile: input.profile,
-      acuteLoad: acute,
-      chronicLoad: chronic,
-    });
+      recentLoads: input.recentLoads,
+      useGL: input.useGL,
+      startedAt: input.startedAt,
+      splitPacesSec: input.splitPacesSec,
+    },
+    recentActivityRows,
+    history.splitIndices
+  );
 
-    const enduranceIndex = recencyWeightedBlend(
-      result.index,
-      history.enduranceIndices
-    );
-    const strengthIndex =
-      history.strengthIndices.length > 0
-        ? recencyWeightedBlend(
-            history.strengthIndices[0],
-            history.strengthIndices.slice(1)
-          )
-        : INDEX_ANCHOR;
+  const predictedIndex = predictIndex([
+    ...history.splitIndices,
+    result.splitIndex,
+  ]);
 
-    const composite = calculateCompositeSplitIndex({
-      enduranceIndex,
-      strengthIndex,
-      ...weights,
-    });
-
-    return {
-      sportIndex: result.index,
-      enduranceComponent: result.index,
-      strengthComponent: null,
-      loadScore: result.loadScore,
-      breakdown: result.breakdown,
-      splitIndex: composite.splitIndex,
-      splitBreakdownLabel: composite.breakdownLabel,
-      enduranceIndex,
-      strengthIndex,
-      fatigueScore,
-      recoveryScore,
-      predictedIndex: predictIndex([...history.splitIndices, composite.splitIndex]),
-    };
-  }
-
-  throw new Error(`Unsupported sport: ${input.sport}`);
+  return {
+    sportIndex: result.sportIndex,
+    enduranceComponent: result.enduranceComponent,
+    strengthComponent: result.strengthComponent,
+    loadScore: result.loadScore,
+    breakdown: result.breakdown,
+    splitIndex: result.splitIndex,
+    splitBreakdownLabel: result.splitBreakdownLabel,
+    enduranceIndex: result.enduranceIndex,
+    strengthIndex: result.strengthIndex,
+    fatigueScore: result.fatigueScore,
+    recoveryScore: result.recoveryScore,
+    predictedIndex,
+    indexResult: result.indexResult,
+    headline: result.indexResult.headline,
+    headlineLabel: result.indexResult.headlineLabel,
+    dotsScore: result.dotsScore,
+    glPoints: result.glPoints,
+    useGL: result.useGL,
+    exerciseScores: result.exerciseScores,
+    strengthScoreRows: result.strengthScoreRows,
+  };
 }
 
-export function computeExercise1RM(
-  weightKg: number,
-  reps: number
-): number {
+export function computeExercise1RM(weightKg: number, reps: number): number {
   return Math.round(estimate1RM(weightKg, reps) * 10) / 10;
 }
 
-export function calculateTrend(
-  current: number,
-  previous: number
-): number {
+export function calculateTrend(current: number, previous: number): number {
   return Math.round((current - previous) * 10) / 10;
 }
 
