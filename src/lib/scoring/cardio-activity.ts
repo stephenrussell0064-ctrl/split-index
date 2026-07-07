@@ -49,6 +49,8 @@ export interface CardioInput {
   experience?: 'beginner' | 'intermediate' | 'advanced';
   sessionType?: SessionType | null;  // self-reported intent (easy, race, ...)
   rpe?: number | null;                // 1–10 perceived effort
+  elevationMeters?: number | null;    // total climb, unlocks a terrain-difficulty bonus
+  temperatureCelsius?: number | null; // unlocks a heat/cold-difficulty bonus
 }
 
 export interface CardioResult {
@@ -79,6 +81,42 @@ const EFFORT_BLEND_FACTOR = 0.5;
 const EASY_SESSION_DAMPING = 0.35;
 const LOW_RPE_THRESHOLD = 4; // UI hint: "1 = very easy · 10 = max effort"
 const EASY_SESSION_TYPES = new Set<SessionType>(['easy', 'recovery', 'long']);
+
+// Volume/terrain/environment bonuses — orthogonal to the pace/HR-based base
+// score above. A long session, a hilly one, or one done in harsh heat/cold
+// demonstrates something a pure pace-per-heartbeat estimate can't: sustained
+// aerobic durability. These are deliberately modest relative to `base`
+// (0–1000) so they nudge, not dominate, the score.
+const MAX_VOLUME_BONUS = 70;
+const VOLUME_HALF_SATURATION_MINUTES = 60; // minutes at which half of MAX_VOLUME_BONUS is earned
+const MAX_ELEVATION_BONUS = 25;
+const REFERENCE_GRADIENT_M_PER_KM = 15; // climb rate treated as "hilly"
+const MAX_TEMPERATURE_BONUS = 15;
+const REFERENCE_COMFORT_TEMP_C = 12;
+const TEMPERATURE_SENSITIVITY = 100; // divisor on squared deviation from comfort
+
+/** Rewards sheer time-under-aerobic-load, independent of how fast or easy it was. */
+function enduranceVolumeBonus(durationSeconds: number): number {
+  if (durationSeconds <= 0) return 0;
+  const minutes = durationSeconds / 60;
+  return MAX_VOLUME_BONUS * (minutes / (minutes + VOLUME_HALF_SATURATION_MINUTES));
+}
+
+/** Rewards climbing — the same pace/HR is a harder effort on hillier terrain. */
+function elevationDifficultyBonus(elevationMeters?: number | null, distanceMeters?: number | null): number {
+  if (!elevationMeters || elevationMeters <= 0 || !distanceMeters || distanceMeters <= 0) return 0;
+  const gradientPerKm = elevationMeters / (distanceMeters / 1000);
+  const sigmoid = 1 / (1 + Math.exp(-(gradientPerKm - REFERENCE_GRADIENT_M_PER_KM) / 10));
+  return sigmoid * MAX_ELEVATION_BONUS;
+}
+
+/** Rewards heat/cold — deviation from a comfortable reference temperature in either direction. */
+function temperatureDifficultyBonus(temperatureCelsius?: number | null): number {
+  if (temperatureCelsius == null) return 0;
+  const deviation = temperatureCelsius - REFERENCE_COMFORT_TEMP_C;
+  const factor = 1 - Math.exp(-(deviation * deviation) / TEMPERATURE_SENSITIVITY);
+  return factor * MAX_TEMPERATURE_BONUS;
+}
 
 /** %HRR for this specific session — falls back to a population-average resting HR if none is on file. */
 function computeEffortFraction(avgHR?: number, restingHR?: number, maxHR?: number, age?: number): number | null {
@@ -186,8 +224,10 @@ export function decoupling(input: CardioInput): number | null {
  *     soften the result if the athlete labelled the session easy/recovery/
  *     long or reported a low RPE, since a deliberately slow pace there
  *     isn't evidence of low fitness.
- * Pacing quality (negative-split reward / fade penalty) is layered on top
- * regardless of which path produced the base score.
+ * On top of whichever base score above applies: a volume bonus (sheer
+ * duration — a long session is a bigger aerobic stimulus regardless of
+ * pace), a terrain bonus (climbing), and an environment bonus (heat/cold),
+ * then pacing quality (negative-split reward / fade penalty).
  */
 export function scoreCardioActivity(input: CardioInput): CardioResult {
   const flags: string[] = [];
@@ -248,6 +288,21 @@ export function scoreCardioActivity(input: CardioInput): CardioResult {
       flags.push('easy-effort-acknowledged');
     }
   }
+
+  // Volume/terrain/environment — orthogonal to pace/HR. A long session, a
+  // hilly one, or one done in harsh heat/cold demonstrates real aerobic
+  // durability that a pace-per-heartbeat estimate alone won't capture.
+  const volumeBonus = enduranceVolumeBonus(input.durationSeconds);
+  base += volumeBonus;
+  if (volumeBonus > MAX_VOLUME_BONUS * 0.5) flags.push('long-session-credit');
+
+  const elevationBonus = elevationDifficultyBonus(input.elevationMeters, input.distanceMeters);
+  base += elevationBonus;
+  if (elevationBonus > MAX_ELEVATION_BONUS * 0.5) flags.push('hilly-terrain-credit');
+
+  const temperatureBonus = temperatureDifficultyBonus(input.temperatureCelsius);
+  base += temperatureBonus;
+  if (temperatureBonus > MAX_TEMPERATURE_BONUS * 0.5) flags.push('harsh-conditions-credit');
 
   // Pacing quality — reward negative splits (2nd half >= 1st half).
   const dec = decoupling(input);

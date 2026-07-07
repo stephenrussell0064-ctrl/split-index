@@ -121,6 +121,8 @@ export function scoreActivity(
       avgHeartRate: input.avgHeartRate,
       sessionType: input.sessionType,
       rpe: input.rpe,
+      elevationMeters: input.elevationMeters,
+      temperatureCelsius: input.temperatureCelsius,
       exercises: input.exercises,
       profile: input.profile,
       recentLoads: input.recentLoads,

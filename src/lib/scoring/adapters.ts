@@ -180,6 +180,8 @@ export function buildCardioInput(input: {
   secondHalfPaceSecPerKm?: number | null;
   sessionType?: SessionType | null;
   rpe?: number | null;
+  elevationMeters?: number | null;
+  temperatureCelsius?: number | null;
 }): CardioInput {
   return {
     type: mapSportToCardioType(input.sport),
@@ -196,6 +198,8 @@ export function buildCardioInput(input: {
     secondHalfPaceSecPerKm: input.secondHalfPaceSecPerKm ?? undefined,
     experience: mapExperience(input.experience),
     sessionType: input.sessionType ?? undefined,
+    elevationMeters: input.elevationMeters ?? undefined,
+    temperatureCelsius: input.temperatureCelsius ?? undefined,
     rpe: input.rpe ?? undefined,
   };
 }

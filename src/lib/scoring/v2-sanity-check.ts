@@ -50,7 +50,9 @@ const predictions = riegelPredictions(5000, fiveKSeconds, "intermediate");
 
 console.log("── Cardio: 22:30 5K ──");
 assertNear("VO2max with HR", withHr.vo2max ?? 0, 58.1, 0.5);
-assertNear("Session score with HR", withHr.score, 647, 5);
+// +19 vs. the pre-volume-bonus baseline (647): a 22:30 session earns a small
+// endurance-volume credit on top of the pace/HR-based base score.
+assertNear("Session score with HR", withHr.score, 666, 5);
 console.log(`  Riegel 10K: ${formatRace(predictions?.["10000"] ?? 0)} (expect 46:54)`);
 console.log(`  Riegel half: ${formatRace(predictions?.["21097.5"] ?? 0)} (expect 1:43:30)`);
 console.log(`  Riegel marathon: ${formatRace(predictions?.["42195"] ?? 0)} (expect 3:35:48)`);

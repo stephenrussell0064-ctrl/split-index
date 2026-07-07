@@ -38,6 +38,8 @@ export interface ActivityScoreContext {
   avgHeartRate?: number | null;
   sessionType?: SessionType | null;
   rpe?: number | null;
+  elevationMeters?: number | null;
+  temperatureCelsius?: number | null;
   exercises?: Array<{
     exercise_name: string;
     muscle_group: string;
@@ -243,6 +245,8 @@ function scoreEnduranceSession(
     experience: input.profile.experience,
     sessionType: input.sessionType,
     rpe: input.rpe,
+    elevationMeters: input.elevationMeters,
+    temperatureCelsius: input.temperatureCelsius,
     ...paceHalves,
   });
 
