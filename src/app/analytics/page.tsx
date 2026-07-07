@@ -24,7 +24,7 @@ export default async function AnalyticsPage() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("onboarding_completed, subscription_tier, subscription_status, max_hr")
+    .select("onboarding_completed, subscription_tier, subscription_status, max_hr, timezone")
     .eq("user_id", user.id)
     .single();
 
@@ -78,6 +78,7 @@ export default async function AnalyticsPage() {
   const payload: AnalyticsPayload = {
     isPremium: premium,
     maxHr: profile.max_hr,
+    timezone: profile.timezone,
     targetSessionsPerWeek: 4,
     indexHistory: indexHistory ?? [],
     activities: (activities ?? []).map((a) => ({

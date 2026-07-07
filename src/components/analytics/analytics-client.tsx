@@ -109,8 +109,8 @@ export function AnalyticsClient({ data }: { data: AnalyticsPayload }) {
     filteredActivities.some((a) => a.avg_heart_rate != null) && data.maxHr != null;
 
   const heatmapDays = useMemo(
-    () => buildHeatmapDays(filteredActivities, filteredScores),
-    [filteredActivities, filteredScores]
+    () => buildHeatmapDays(filteredActivities, filteredScores, data.timezone),
+    [filteredActivities, filteredScores, data.timezone]
   );
 
   const periodMetricsA = useMemo(

@@ -34,6 +34,7 @@ import { SuccessScreen, type ScoreResultSummary } from "./success-screen";
 import { useDraftAutosave, type DraftStatus } from "./use-autosave";
 import { LogQuickActions } from "./log-quick-actions";
 import { FileImportDropzone } from "./file-import-dropzone";
+import { submitActivityRequest } from "@/lib/activities/submit-activity";
 import type { CardioEnrichment } from "@/lib/scoring/cardio";
 
 type View = "picker" | "form" | "success";
@@ -328,14 +329,18 @@ export function ActivityForm({
     try {
       const url = isEdit && activityId ? `/api/activities/${activityId}` : "/api/activities";
       const method = isEdit ? "PATCH" : "POST";
-      const res = await fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to save workout");
+      const result = await submitActivityRequest(url, method, payload);
 
+      if (!result.ok) {
+        throw new Error(result.error);
+      }
+
+      if (result.queued) {
+        setSubmitError(result.message);
+        return;
+      }
+
+      const data = result.data;
       setResult(buildScoreSummary(data, sport, currentState));
       // Server deletes the draft on successful submit; mirror that locally.
       setStateMap((prev) => {

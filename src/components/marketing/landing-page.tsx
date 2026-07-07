@@ -12,7 +12,7 @@ export function LandingPage() {
     <div className="landing-page relative min-h-screen bg-[#050605] text-white">
       <div className="landing-grain pointer-events-none fixed inset-0 z-[100]" aria-hidden />
 
-      <header className="sticky top-0 z-50 flex h-16 items-center justify-between border-b border-white/[0.06] bg-[#050605]/80 px-6 backdrop-blur-md md:px-[6vw]">
+      <header className="sticky top-0 z-50 flex h-16 items-center justify-between border-b border-white/[0.06] bg-[#050605]/80 px-4 backdrop-blur-md sm:px-6 md:px-[6vw]">
         <BrandMark variant="full" href="/" logoHeight={34} priority className="shrink-0" />
         <nav className="hidden items-center gap-8 text-xs uppercase tracking-[0.18em] text-white/50 md:flex">
           <a href="#pricing" className="transition hover:text-white">
@@ -22,8 +22,8 @@ export function LandingPage() {
             Log in
           </Link>
         </nav>
-        <Link href="/signup">
-          <Button size="sm" className="bg-gym-accent font-bold text-[#04120a] hover:bg-gym-accent/90">
+        <Link href="/signup" className="min-h-11 shrink-0">
+          <Button size="sm" className="min-h-11 bg-gym-accent font-bold text-[#04120a] hover:bg-gym-accent/90">
             Start free
           </Button>
         </Link>

@@ -12,6 +12,7 @@ function GaugeRing({
   track,
   label,
   side,
+  reducedMotion,
 }: {
   value: number;
   max: number;
@@ -19,6 +20,7 @@ function GaugeRing({
   track: string;
   label: string;
   side: "lab" | "eng";
+  reducedMotion: boolean | null;
 }) {
   const r = 40;
   const c = 2 * Math.PI * r;
@@ -27,7 +29,7 @@ function GaugeRing({
     <div
       className={`mt-10 flex items-center gap-5 ${side === "eng" ? "flex-row-reverse" : ""}`}
     >
-      <svg width="92" height="92" viewBox="0 0 92 92" aria-hidden>
+      <svg width="92" height="92" viewBox="0 0 92 92" role="img" aria-label={`${label}: ${value}`}>
         <circle cx="46" cy="46" r={r} fill="none" stroke={track} strokeWidth="7" />
         <motion.circle
           cx="46"
@@ -38,10 +40,10 @@ function GaugeRing({
           strokeWidth="7"
           strokeLinecap="round"
           strokeDasharray={c}
-          initial={{ strokeDashoffset: c }}
+          initial={{ strokeDashoffset: reducedMotion ? offset : c }}
           whileInView={{ strokeDashoffset: offset }}
           viewport={{ once: true }}
-          transition={{ duration: 1.2, ease: "easeOut" }}
+          transition={reducedMotion ? { duration: 0 } : { duration: 1.2, ease: "easeOut" }}
           transform="rotate(-90 46 46)"
         />
       </svg>
@@ -94,7 +96,7 @@ export function HeroSplit() {
   return (
     <section
       ref={heroRef}
-      className="relative min-h-[660px] h-[calc(100vh-4rem)] overflow-hidden md:cursor-col-resize"
+      className="relative min-h-[520px] h-[min(100dvh,720px)] overflow-hidden md:min-h-[660px] md:h-[calc(100vh-4rem)] md:cursor-col-resize"
       onPointerDown={(e) => {
         if (window.innerWidth < 901) return;
         dragging.current = true;
@@ -110,7 +112,7 @@ export function HeroSplit() {
     >
       {/* Lab side */}
       <div
-        className="absolute inset-0 flex flex-col justify-center px-[6vw] bg-[radial-gradient(1200px_800px_at_20%_60%,#0C1410_0%,var(--gym-bg)_55%)]"
+        className="absolute inset-0 flex flex-col justify-center px-4 sm:px-[6vw] bg-[radial-gradient(1200px_800px_at_20%_60%,#0C1410_0%,var(--gym-bg)_55%)]"
         style={{ color: "var(--gym-text)" }}
       >
         <div className="landing-orb landing-orb-gym" />
@@ -132,13 +134,14 @@ export function HeroSplit() {
             track="#1B241D"
             label="Strength Index"
             side="lab"
+            reducedMotion={reducedMotion}
           />
         </div>
       </div>
 
       {/* Engine side — clipped by split */}
       <div
-        className="absolute inset-0 flex flex-col justify-center px-[6vw] bg-[radial-gradient(1200px_800px_at_80%_40%,#EAF4FF_0%,var(--cardio-bg)_55%)] text-cardio-text"
+        className="absolute inset-0 flex flex-col justify-center px-4 sm:px-[6vw] bg-[radial-gradient(1200px_800px_at_80%_40%,#EAF4FF_0%,var(--cardio-bg)_55%)] text-cardio-text"
         style={{ clipPath: `inset(0 0 0 ${split}%)` }}
       >
         <div className="landing-orb landing-orb-cardio" />
@@ -162,6 +165,7 @@ export function HeroSplit() {
             track="#DCEAF7"
             label="Running Index"
             side="eng"
+            reducedMotion={reducedMotion}
           />
         </div>
       </div>
@@ -191,9 +195,9 @@ export function HeroSplit() {
         <span className="h-px w-[26px] bg-current" />
       </p>
 
-      <div className="absolute bottom-6 left-0 right-0 z-[7] flex justify-center px-6 md:hidden">
-        <Link href="/signup">
-          <Button className="bg-gym-accent text-[#04120a] hover:bg-gym-accent/90 font-bold">
+      <div className="absolute bottom-6 left-0 right-0 z-[7] flex justify-center px-4 sm:px-6 md:hidden">
+        <Link href="/signup" className="min-h-11 min-w-[44px]">
+          <Button className="min-h-11 px-8 bg-gym-accent text-[#04120a] hover:bg-gym-accent/90 font-bold">
             Start free
           </Button>
         </Link>

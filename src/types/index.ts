@@ -87,6 +87,8 @@ export interface Profile {
   subscription_tier: SubscriptionTier;
   subscription_status: SubscriptionStatus | null;
   stripe_customer_id: string | null;
+  /** IANA timezone for local-day workout grouping (e.g. Europe/London). */
+  timezone?: string | null;
   created_at: string;
   updated_at: string;
 }

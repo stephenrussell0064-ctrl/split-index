@@ -22,10 +22,10 @@ const buttonVariants = cva(
           "bg-strength/15 text-strength border border-strength/25 hover:bg-strength/25 hover:border-strength/40",
       },
       size: {
-        sm: "h-9 px-4 text-sm",
-        md: "h-11 px-6 text-sm",
-        lg: "h-13 px-8 text-base",
-        icon: "h-10 w-10",
+        sm: "h-11 min-h-11 px-4 text-sm",
+        md: "h-11 min-h-11 px-6 text-sm",
+        lg: "h-13 min-h-[52px] px-8 text-base",
+        icon: "h-11 w-11 min-h-11 min-w-11",
       },
     },
     defaultVariants: {

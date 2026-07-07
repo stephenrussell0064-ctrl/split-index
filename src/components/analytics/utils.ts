@@ -32,12 +32,12 @@ import type {
 import type { SplitIndexSnapshot } from "@/types";
 
 import { forecastSplitIndexFromHistory } from "@/lib/premium/projection";
+import { localDateKeyInTz, resolveTimezone } from "@/lib/utils/timezone";
 
 const DAY_MS = 86400000;
 
-export function localDateKey(iso: string | Date): string {
-  const d = typeof iso === "string" ? new Date(iso) : iso;
-  return `${d.getFullYear()}-${`${d.getMonth() + 1}`.padStart(2, "0")}-${`${d.getDate()}`.padStart(2, "0")}`;
+export function localDateKey(iso: string | Date, timeZone?: string | null): string {
+  return localDateKeyInTz(iso, resolveTimezone(timeZone));
 }
 
 export function resolvePeriodPreset(preset: PeriodPreset, custom?: DateRange): DateRange {
@@ -361,13 +361,15 @@ export function buildHrZoneDistribution(
 
 export function buildHeatmapDays(
   activities: AnalyticsActivity[],
-  scores: AnalyticsScore[]
+  scores: AnalyticsScore[],
+  timeZone?: string | null
 ): HeatmapDay[] {
+  const tz = resolveTimezone(timeZone);
   const loadByActivity = new Map(scores.map((s) => [s.activity_id, s.load_score]));
   const buckets = new Map<string, { load: number; workouts: number }>();
 
   for (const a of activities) {
-    const key = localDateKey(a.started_at);
+    const key = localDateKeyInTz(a.started_at, tz);
     const load =
       loadByActivity.get(a.id) ?? Math.round(a.duration_seconds / 60);
     const bucket = buckets.get(key) ?? { load: 0, workouts: 0 };
@@ -433,14 +435,15 @@ export function pctDelta(current: number, previous: number): number | null {
   return Math.round(((current - previous) / previous) * 1000) / 10;
 }
 
-export function computeStreak(heatmapDays: HeatmapDay[]): number {
+export function computeStreak(heatmapDays: HeatmapDay[], timeZone?: string | null): number {
+  const tz = resolveTimezone(timeZone);
   const loadByDate = new Map(heatmapDays.map((d) => [d.date, d]));
   const today = new Date();
-  today.setHours(0, 0, 0, 0);
 
   let streak = 0;
   for (let i = 0; ; i++) {
-    const entry = loadByDate.get(localDateKey(new Date(today.getTime() - i * DAY_MS)));
+    const key = localDateKeyInTz(new Date(today.getTime() - i * DAY_MS), tz);
+    const entry = loadByDate.get(key);
     if (entry && entry.workouts > 0) streak++;
     else if (i === 0) continue;
     else break;
@@ -451,22 +454,20 @@ export function computeStreak(heatmapDays: HeatmapDay[]): number {
 export function computeHitRate(
   heatmapDays: HeatmapDay[],
   targetSessionsPerWeek: number,
-  weeks = 8
+  weeks = 8,
+  timeZone?: string | null
 ): number {
+  const tz = resolveTimezone(timeZone);
   const byDate = new Map(heatmapDays.map((d) => [d.date, d]));
   const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const dowMon = (today.getDay() + 6) % 7;
-  const thisMonday = new Date(today.getTime() - dowMon * DAY_MS);
 
   let hitWeeks = 0;
   let completed = 0;
   for (let w = 1; w <= weeks; w++) {
-    const monday = new Date(thisMonday.getTime() - w * 7 * DAY_MS);
     let sessions = 0;
     for (let d = 0; d < 7; d++) {
-      const date = new Date(monday.getTime() + d * DAY_MS);
-      const entry = byDate.get(localDateKey(date));
+      const probe = new Date(today.getTime() - (w * 7 + d) * DAY_MS);
+      const entry = byDate.get(localDateKeyInTz(probe, tz));
       if (entry && entry.workouts > 0) sessions++;
     }
     completed++;

@@ -47,6 +47,7 @@ export interface AnalyticsScore {
 export interface AnalyticsPayload {
   isPremium: boolean;
   maxHr: number | null;
+  timezone?: string | null;
   targetSessionsPerWeek: number;
   indexHistory: SplitIndexSnapshot[];
   activities: AnalyticsActivity[];

@@ -16,6 +16,10 @@ import { isEnduranceSport } from "@/lib/scoring/engine";
 import { isPremiumUser } from "@/lib/retention/trial";
 import { serializeScoreBreakdown } from "@/lib/scoring/presentation";
 import type { ActivityFormData, Profile } from "@/types";
+import {
+  buildScoringProfile,
+  resolveScoringBodyweightKg,
+} from "@/lib/activities/bodyweight";
 
 type ActivityBody = ActivityFormData & {
   bodyweight_kg?: number;
@@ -42,16 +46,18 @@ async function scoreAndPersist(
   profile: Profile,
   body: ActivityBody,
   activityId: string,
-  excludeActivityId?: string
+  excludeActivityId?: string,
+  existingMetadata?: Record<string, unknown> | null,
+  anchoredBodyweightKg?: number | null
 ) {
-  const bodyweightKg =
-    typeof body.bodyweight_kg === "number" && body.bodyweight_kg > 0
-      ? body.bodyweight_kg
-      : null;
+  const bodyweightKg = resolveScoringBodyweightKg(body.sport, {
+    submittedBodyweight: body.bodyweight_kg,
+    activityMetadata: existingMetadata,
+    strengthScoreBodyweight: anchoredBodyweightKg,
+    profileWeightKg: profile.weight_kg,
+  });
 
-  const scoringProfile = bodyweightKg
-    ? { ...profile, weight_kg: bodyweightKg }
-    : profile;
+  const scoringProfile = buildScoringProfile(profile, bodyweightKg);
 
   const { data: recentScoresRaw } = await supabase
     .from("workout_scores")
@@ -276,6 +282,13 @@ export async function PATCH(
     body
   );
 
+  const { data: priorStrength } = await supabase
+    .from("strength_scores")
+    .select("bodyweight_kg")
+    .eq("activity_id", id)
+    .limit(1)
+    .maybeSingle();
+
   const { data: activity, error: updateError } = await supabase
     .from("activities")
     .update({
@@ -337,7 +350,16 @@ export async function PATCH(
 
   let scored;
   try {
-    scored = await scoreAndPersist(supabase, user.id, profile, body, id, id);
+    scored = await scoreAndPersist(
+      supabase,
+      user.id,
+      profile,
+      body,
+      id,
+      id,
+      existing.metadata as Record<string, unknown>,
+      priorStrength?.bodyweight_kg ?? null
+    );
   } catch (err) {
     if (err instanceof ScoringInputError) {
       return NextResponse.json({ error: err.message }, { status: 400 });

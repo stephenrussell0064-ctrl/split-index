@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Space_Grotesk, Unbounded } from "next/font/google";
 import "./globals.css";
+import { ClientBootstrap } from "@/components/providers/client-bootstrap";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -53,6 +54,7 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} ${spaceGrotesk.variable} ${unbounded.variable} h-full antialiased dark selection:bg-accent/35`}
     >
       <body className="min-h-full flex flex-col bg-background text-foreground font-sans">
+        <ClientBootstrap />
         {children}
       </body>
     </html>

@@ -1,17 +1,16 @@
+import { localDateKeyInTz, resolveTimezone } from "@/lib/utils/timezone";
+
 const DAY_MS = 86400000;
 
-function localDateKey(date: Date): string {
-  return `${date.getFullYear()}-${`${date.getMonth() + 1}`.padStart(2, "0")}-${`${date.getDate()}`.padStart(2, "0")}`;
-}
-
-function parseDaySet(activityDates: string[]): Set<string> {
-  return new Set(activityDates.map((iso) => iso.slice(0, 10)));
+function parseDaySet(activityDates: string[], timeZone: string): Set<string> {
+  return new Set(activityDates.map((iso) => localDateKeyInTz(iso, timeZone)));
 }
 
 /** Consecutive training days ending today or yesterday (today rest allowed). */
 export function computeStreakMetrics(
   activityDates: string[],
-  referenceDate = new Date()
+  referenceDate = new Date(),
+  profileTimezone?: string | null
 ): {
   streak: number;
   atRisk: boolean;
@@ -19,33 +18,33 @@ export function computeStreakMetrics(
   weeklySessions: number;
   weeklyTarget: number;
 } {
-  const daySet = parseDaySet(activityDates);
-  const today = new Date(referenceDate);
-  today.setHours(0, 0, 0, 0);
-  const todayKey = localDateKey(today);
+  const timeZone = resolveTimezone(profileTimezone);
+  const daySet = parseDaySet(activityDates, timeZone);
+  const todayKey = localDateKeyInTz(referenceDate, timeZone);
   const trainedToday = daySet.has(todayKey);
 
   let streak = 0;
-  const cursor = new Date(today);
-  if (!trainedToday) {
-    cursor.setTime(cursor.getTime() - DAY_MS);
+  const startOffset = trainedToday ? 0 : 1;
+  for (let i = startOffset; ; i++) {
+    const probe = new Date(referenceDate.getTime() - i * DAY_MS);
+    const key = localDateKeyInTz(probe, timeZone);
+    if (daySet.has(key)) {
+      streak += 1;
+    } else {
+      break;
+    }
   }
 
-  while (daySet.has(localDateKey(cursor))) {
-    streak += 1;
-    cursor.setTime(cursor.getTime() - DAY_MS);
-  }
-
-  const yesterday = new Date(today.getTime() - DAY_MS);
+  const yesterdayProbe = new Date(referenceDate.getTime() - DAY_MS);
+  const yesterdayKey = localDateKeyInTz(yesterdayProbe, timeZone);
   const hadStreakYesterday =
-    streak > 0 && !trainedToday && daySet.has(localDateKey(yesterday));
+    streak > 0 && !trainedToday && daySet.has(yesterdayKey);
   const atRisk = hadStreakYesterday;
 
-  const dowMon = (today.getDay() + 6) % 7;
-  const weekStart = new Date(today.getTime() - dowMon * DAY_MS);
   let weeklySessions = 0;
   for (let d = 0; d < 7; d++) {
-    const key = localDateKey(new Date(weekStart.getTime() + d * DAY_MS));
+    const probe = new Date(referenceDate.getTime() - d * DAY_MS);
+    const key = localDateKeyInTz(probe, timeZone);
     if (daySet.has(key)) weeklySessions += 1;
   }
 

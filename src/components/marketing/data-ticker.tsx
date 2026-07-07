@@ -8,16 +8,33 @@ const ITEMS = [
 ];
 
 export function DataTicker() {
-  const track = [...ITEMS, ...ITEMS];
   return (
     <div
       className="overflow-hidden border-y border-white/[0.07] bg-white/[0.02] py-4"
-      aria-hidden
+      role="region"
+      aria-label="Athlete performance highlights"
     >
-      <div className="ticker-track flex w-max gap-16 whitespace-nowrap">
-        {track.map((item, i) => (
+      <div className="ticker-track flex w-max gap-16 whitespace-nowrap motion-reduce:transform-none">
+        {ITEMS.map((item, i) => (
           <span
-            key={`${item.stat}-${i}`}
+            key={`${item.stat}-a-${i}`}
+            className="flex items-center gap-3.5 text-xs uppercase tracking-[0.22em] text-white/45"
+          >
+            <strong
+              className={`font-display text-sm font-bold tracking-wide ${
+                item.tone === "gym" ? "text-gym-accent" : "text-cardio-accent"
+              }`}
+            >
+              {item.stat}
+            </strong>
+            {item.label}
+            <span className="h-1 w-1 rounded-full bg-white/25" />
+          </span>
+        ))}
+        {ITEMS.map((item, i) => (
+          <span
+            key={`${item.stat}-b-${i}`}
+            aria-hidden="true"
             className="flex items-center gap-3.5 text-xs uppercase tracking-[0.22em] text-white/45"
           >
             <strong

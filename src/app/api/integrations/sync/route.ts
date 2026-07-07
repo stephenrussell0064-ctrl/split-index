@@ -3,8 +3,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getProvider } from "@/lib/integrations/providers";
-import { decodeToken } from "@/lib/integrations/tokens";
 import { runImportJob } from "@/lib/integrations/import-pipeline";
+import { ensureFreshTokens } from "@/lib/integrations/sync-helpers";
 import type { IntegrationProviderId } from "@/lib/integrations/types";
 
 async function syncUserProvider(
@@ -34,12 +34,12 @@ async function syncUserProvider(
     ? new Date(connection.last_sync_at)
     : new Date(Date.now() - 30 * 86400000);
 
-  const tokens = {
-    accessToken: decodeToken(connection.access_token) ?? "",
-    refreshToken: decodeToken(connection.refresh_token),
-    expiresAt: connection.token_expires_at,
-    providerUserId: connection.provider_user_id,
-  };
+  const tokens = await ensureFreshTokens(
+    supabase,
+    connection.id,
+    connection,
+    providerId
+  );
 
   const activities = await provider.fetchActivities(tokens, since);
 

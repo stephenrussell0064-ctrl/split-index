@@ -12,6 +12,10 @@ import { isPremiumUser } from "@/lib/retention/trial";
 import { serializeScoreBreakdown } from "@/lib/scoring/presentation";
 import { canAccessProfile } from "@/lib/premium/features";
 import type { ActivityFormData, GymExercise } from "@/types";
+import {
+  buildScoringProfile,
+  resolveScoringBodyweightKg,
+} from "@/lib/activities/bodyweight";
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -40,14 +44,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Profile not found" }, { status: 404 });
   }
 
-  const bodyweightKg =
-    typeof body.bodyweight_kg === "number" && body.bodyweight_kg > 0
-      ? body.bodyweight_kg
-      : null;
+  const bodyweightKg = resolveScoringBodyweightKg(body.sport, {
+    submittedBodyweight: body.bodyweight_kg,
+    profileWeightKg: profile.weight_kg,
+  });
 
-  const scoringProfile = bodyweightKg
-    ? { ...profile, weight_kg: bodyweightKg }
-    : profile;
+  const scoringProfile = buildScoringProfile(profile, bodyweightKg);
 
   if (bodyweightKg && body.sport === "gym") {
     await supabase.from("body_metrics").insert({

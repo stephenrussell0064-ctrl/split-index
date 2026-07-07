@@ -82,7 +82,11 @@ export function IndexTrendChart({
           <CardTitle>{title}</CardTitle>
         </CardHeader>
         <CardContent>
-          <ResponsiveContainer width="100%" height={200}>
+          <div
+            role="img"
+            aria-label={`${title} line chart with ${data.length} data points`}
+          >
+            <ResponsiveContainer width="100%" height={200}>
             <AreaChart data={data}>
               <defs>
                 <linearGradient id="indexGradient" x1="0" y1="0" x2="0" y2="1">
@@ -118,6 +122,7 @@ export function IndexTrendChart({
               />
             </AreaChart>
           </ResponsiveContainer>
+          </div>
         </CardContent>
       </Card>
     </motion.div>
@@ -163,11 +168,15 @@ export function SplitTrendPanel({ data }: { data: TrendPoint[] }) {
           </div>
         </div>
       </CardHeader>
-      <CardContent className="min-h-0 flex-1">
+        <CardContent className="min-h-0 flex-1">
         {data.length < 2 ? (
           <ChartEmptyState message="Your index trend charts here after a couple of workouts" />
         ) : (
-          <ResponsiveContainer width="100%" height={260}>
+          <div
+            role="img"
+            aria-label={`Index trend chart showing split, endurance, and strength over ${data.length} data points`}
+          >
+            <ResponsiveContainer width="100%" height={260}>
             <AreaChart data={data} margin={{ top: 8, right: 4, left: -8, bottom: 0 }}>
               <defs>
                 {trendSeries.map((s) => (
@@ -237,6 +246,7 @@ export function SplitTrendPanel({ data }: { data: TrendPoint[] }) {
               />
             </AreaChart>
           </ResponsiveContainer>
+          </div>
         )}
       </CardContent>
     </Card>
@@ -275,7 +285,11 @@ export function SportBalanceRadar({ data }: { data: RadarAxis[] }) {
         {data.length < 3 ? (
           <ChartEmptyState message="Train 3+ disciplines to unlock your balance radar" />
         ) : (
-          <ResponsiveContainer width="100%" height={240}>
+          <div
+            role="img"
+            aria-label={`Sport balance radar comparing endurance and strength across ${data.length} disciplines`}
+          >
+            <ResponsiveContainer width="100%" height={240}>
             <RadarChart data={data} outerRadius="72%">
               <PolarGrid stroke={chartGridStroke} />
               <PolarAngleAxis
@@ -307,6 +321,7 @@ export function SportBalanceRadar({ data }: { data: RadarAxis[] }) {
               />
             </RadarChart>
           </ResponsiveContainer>
+          </div>
         )}
       </CardContent>
     </Card>

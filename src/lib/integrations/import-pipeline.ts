@@ -8,6 +8,7 @@ import type {
   ImportPipelineResult,
   ImportStep,
 } from "./types";
+import { findManualDuplicateActivity } from "./sync-helpers";
 
 interface ImportContext {
   supabase: SupabaseClient;
@@ -230,23 +231,34 @@ export async function importActivities(
 
       if (exists) {
         result.skipped++;
-      } else {
-        const insertResult = await insertAndScoreActivity(ctx, activity, scoringCtx);
+        continue;
+      }
 
-        if ("error" in insertResult) {
-          if (insertResult.error === "duplicate") {
-            result.skipped++;
-          } else {
-            result.failed++;
-            result.errors.push({
-              external_id: activity.external_id,
-              message: insertResult.error,
-            });
-          }
+      const manualDup = await findManualDuplicateActivity(
+        ctx.supabase,
+        ctx.userId,
+        activity
+      );
+      if (manualDup) {
+        result.skipped++;
+        continue;
+      }
+
+      const insertResult = await insertAndScoreActivity(ctx, activity, scoringCtx);
+
+      if ("error" in insertResult) {
+        if (insertResult.error === "duplicate") {
+          result.skipped++;
         } else {
-          result.imported++;
-          result.activityIds.push(insertResult.activityId);
+          result.failed++;
+          result.errors.push({
+            external_id: activity.external_id,
+            message: insertResult.error,
+          });
         }
+      } else {
+        result.imported++;
+        result.activityIds.push(insertResult.activityId);
       }
     } catch (err) {
       result.failed++;

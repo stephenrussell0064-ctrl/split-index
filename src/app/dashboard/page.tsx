@@ -26,6 +26,7 @@ import { EmptyDashboardHero } from "@/components/retention/empty-dashboard-hero"
 import { FriendInviteBanner } from "@/components/retention/friend-invite-banner";
 import { ScoreDisclaimer } from "@/components/legal/score-disclaimer";
 import { calculateTrend } from "@/lib/scoring/service";
+import { localDateKeyInTz, resolveTimezone } from "@/lib/utils/timezone";
 import {
   buildActivityScores,
   deriveAthleteProfile,
@@ -56,11 +57,6 @@ function findSnapshotOlderThan(
 
 function isoDaysAgo(days: number): string {
   return new Date(Date.now() - days * DAY_MS).toISOString();
-}
-
-function localDateKey(iso: string): string {
-  const d = new Date(iso);
-  return `${d.getFullYear()}-${`${d.getMonth() + 1}`.padStart(2, "0")}-${`${d.getDate()}`.padStart(2, "0")}`;
 }
 
 function buildGreetingRecommendation(
@@ -99,6 +95,8 @@ export default async function DashboardPage() {
     .single();
 
   if (!profile?.onboarding_completed) redirect("/onboarding");
+
+  const userTimezone = resolveTimezone(profile.timezone);
 
   const premium = isPremiumUser(
     profile.subscription_tier,
@@ -194,7 +192,9 @@ export default async function DashboardPage() {
   const hasActivities = (recentActivities?.length ?? 0) > 0;
   const hasIndexHistory = !!latestIndex;
   const streakMetrics = computeStreakMetrics(
-    (allActivityDates ?? []).map((a) => a.started_at as string)
+    (allActivityDates ?? []).map((a) => a.started_at as string),
+    new Date(),
+    userTimezone
   );
 
   const accountAgeDays = Math.floor(
@@ -248,7 +248,7 @@ export default async function DashboardPage() {
   );
   const dayBuckets = new Map<string, { load: number; workouts: number }>();
   for (const a of loadActivities ?? []) {
-    const key = localDateKey(a.started_at as string);
+    const key = localDateKeyInTz(a.started_at as string, userTimezone);
     const load =
       loadByActivity.get(a.id as string) ??
       Math.round(((a.duration_seconds as number) ?? 0) / 60);
@@ -483,7 +483,7 @@ export default async function DashboardPage() {
             <ConsistencyCard days={heatmapDays} />
           </div>
 
-          <div className="lg:col-span-8">
+          <div className="lg:col-span-8 overflow-x-auto">
             <ActivityHeatmap days={heatmapDays} />
           </div>
           <div className="lg:col-span-4">

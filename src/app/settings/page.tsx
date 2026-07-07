@@ -34,6 +34,8 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [showIntegrations, setShowIntegrations] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [profile, setProfile] = useState<{
     tier: SubscriptionTier;
     status: SubscriptionStatus | null;
@@ -94,6 +96,31 @@ export default function SettingsPage() {
     const supabase = createClient();
     await supabase.auth.signOut();
     router.push("/");
+  };
+
+  const handleDeleteAccount = async () => {
+    const confirmed = window.confirm(
+      "Delete your account permanently? All workouts, scores, and profile data will be removed. This cannot be undone."
+    );
+    if (!confirmed) return;
+
+    setDeleteLoading(true);
+    setDeleteError(null);
+    try {
+      const res = await fetch("/api/account/delete", { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) {
+        setDeleteError(data.error ?? "Failed to delete account");
+        return;
+      }
+      const supabase = createClient();
+      await supabase.auth.signOut();
+      router.push("/");
+    } catch {
+      setDeleteError("Failed to delete account. Please try again.");
+    } finally {
+      setDeleteLoading(false);
+    }
   };
 
   return (
@@ -265,6 +292,15 @@ export default function SettingsPage() {
             <Button variant="destructive" className="w-full" onClick={handleSignOut}>
               <LogOut className="h-4 w-4" />
               Sign out
+            </Button>
+            {deleteError && <p className="text-sm text-danger">{deleteError}</p>}
+            <Button
+              variant="outline"
+              className="w-full min-h-11 border-danger/40 text-danger hover:bg-danger/10"
+              loading={deleteLoading}
+              onClick={handleDeleteAccount}
+            >
+              Delete account and all data
             </Button>
           </CardContent>
         </Card>
