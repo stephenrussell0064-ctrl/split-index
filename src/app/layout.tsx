@@ -34,6 +34,11 @@ export const metadata: Metadata = {
     title: "Split Index",
     description: "Objective fitness scoring for hybrid athletes",
     type: "website",
+    images: [{ url: "/splitindex-logo.png", width: 960, height: 240, alt: "Split Index" }],
+  },
+  icons: {
+    icon: [{ url: "/splitindex-icon.png", type: "image/png" }],
+    apple: [{ url: "/apple-touch-icon.png", type: "image/png" }],
   },
 };
 

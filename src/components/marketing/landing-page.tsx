@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BrandLogo, BrandWordmark } from "@/components/marketing/brand-logo";
+import { BrandMark } from "@/components/brand/brand-mark";
 import { HeroSplit } from "@/components/marketing/hero-split";
 import { DataTicker } from "@/components/marketing/data-ticker";
 import { DataTiles } from "@/components/marketing/data-tiles";
@@ -13,10 +13,7 @@ export function LandingPage() {
       <div className="landing-grain pointer-events-none fixed inset-0 z-[100]" aria-hidden />
 
       <header className="sticky top-0 z-50 flex h-16 items-center justify-between border-b border-white/[0.06] bg-[#050605]/80 px-6 backdrop-blur-md md:px-[6vw]">
-        <Link href="/" className="flex items-center gap-2.5">
-          <BrandLogo size={28} />
-          <BrandWordmark />
-        </Link>
+        <BrandMark variant="full" href="/" logoHeight={34} priority className="shrink-0" />
         <nav className="hidden items-center gap-8 text-xs uppercase tracking-[0.18em] text-white/50 md:flex">
           <a href="#pricing" className="transition hover:text-white">
             Pricing

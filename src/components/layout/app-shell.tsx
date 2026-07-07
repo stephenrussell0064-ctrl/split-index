@@ -10,9 +10,9 @@ import {
   BarChart3,
   Users,
   Settings,
-  Zap,
   PlusCircle,
 } from "lucide-react";
+import { BrandMark } from "@/components/brand/brand-mark";
 import { cn } from "@/lib/utils/cn";
 import { SidebarAccount } from "@/components/layout/sidebar-account";
 import { AppTopBar } from "@/components/layout/app-top-bar";
@@ -62,35 +62,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         )}
       >
         <aside className="fixed left-0 top-0 z-40 hidden h-screen w-64 flex-col border-r border-white/5 glass-strong lg:flex">
-          <div className="flex items-center gap-3 px-6 py-6 border-b border-white/5">
-            <div
-              className={cn(
-                "flex h-9 w-9 items-center justify-center rounded-xl",
-                mode === "gym" && "bg-gym-accent/20",
-                mode === "cardio" && "bg-cardio-accent/20",
-                mode === "neutral" && "bg-accent/20"
-              )}
-            >
-              <Zap
-                className={cn(
-                  "h-5 w-5",
-                  mode === "gym" && "text-gym-accent",
-                  mode === "cardio" && "text-cardio-accent",
-                  mode === "neutral" && "text-accent"
-                )}
-              />
-            </div>
-            <div>
-              <p className="font-semibold text-sm">Split Index</p>
-              <p className="text-xs text-muted">
-                {mode === "gym"
-                  ? "The Lab · Strength"
-                  : mode === "cardio"
-                    ? "The Engine · Endurance"
-                    : "Hybrid Analytics"}
-              </p>
-            </div>
-          </div>
+          <Link href="/dashboard" className="px-6 py-5 border-b border-white/5 block">
+            <BrandMark variant="compact" iconSize={34} wordmarkSize="md" showTagline />
+            <p className="mt-2.5 text-[11px] text-muted pl-[42px]">
+              {mode === "gym"
+                ? "The Lab · Strength"
+                : mode === "cardio"
+                  ? "The Engine · Endurance"
+                  : "Hybrid Analytics"}
+            </p>
+          </Link>
 
           <nav className="flex-1 px-3 py-4 space-y-1">
             <p className="px-3 pb-2 micro-label text-muted/60">Train</p>

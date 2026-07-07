@@ -4,4 +4,4 @@ export {
   BrandLogoImage,
   BrandMark,
   BrandWordmark,
-} from "@/components/brand/brand-mark";
+} from "./brand-mark";

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { motion, useReducedMotion } from "framer-motion";
-import { Zap } from "lucide-react";
+import { BrandMark } from "@/components/brand/brand-mark";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { createClient } from "@/lib/supabase/client";
@@ -48,14 +48,9 @@ export function ForgotPasswordForm() {
 
   return (
     <div className="w-full max-w-md">
-      <div className="mb-8 flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent/15 ring-1 ring-accent/25">
-          <Zap className="h-5 w-5 text-accent" strokeWidth={2.25} />
-        </div>
-        <div>
-          <p className="font-semibold tracking-tight">Split Index</p>
-          <p className="text-xs text-muted">Reset your password</p>
-        </div>
+      <div className="mb-8">
+        <BrandMark variant="full" href="/" logoHeight={36} priority />
+        <p className="mt-3 text-xs text-muted">Reset your password</p>
       </div>
 
       <motion.div

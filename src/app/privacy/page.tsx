@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Zap } from "lucide-react";
+import { BrandMark } from "@/components/brand/brand-mark";
 
 export const metadata: Metadata = {
   title: "Privacy Policy",
@@ -16,12 +16,7 @@ export default function PrivacyPolicyPage() {
     <div className="min-h-screen bg-[#050508] text-foreground">
       <header className="border-b border-white/[0.06] glass-strong">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-6 py-4">
-          <Link href="/" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent/20">
-              <Zap className="h-4 w-4 text-accent" />
-            </div>
-            <span className="font-semibold tracking-tight">Split Index</span>
-          </Link>
+          <BrandMark variant="compact" href="/" iconSize={30} wordmarkSize="sm" />
           <Link
             href="/"
             className="text-sm text-muted transition-colors hover:text-foreground"
