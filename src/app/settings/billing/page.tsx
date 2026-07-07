@@ -17,6 +17,7 @@ import {
 } from "@/lib/premium/features";
 import { getTrialDaysRemaining, isPremiumUser } from "@/lib/retention/trial";
 import { createClient } from "@/lib/supabase/client";
+import { ScoreDisclaimer } from "@/components/legal/score-disclaimer";
 import type { SubscriptionStatus, SubscriptionTier } from "@/types";
 
 function BillingContent() {
@@ -188,6 +189,7 @@ export default function BillingPage() {
         <Suspense fallback={<div className="text-muted">Loading...</div>}>
           <BillingContent />
         </Suspense>
+        <ScoreDisclaimer className="mt-8" variant="compact" />
       </div>
     </AppShell>
   );

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { FREE_TIER_FEATURES, PREMIUM_TIER_FEATURES } from "@/lib/premium/features";
 import { PREMIUM_PRICE_GBP } from "@/lib/stripe/config";
 import { Button } from "@/components/ui/button";
+import { ScoreDisclaimer } from "@/components/legal/score-disclaimer";
 
 export function PricingSection() {
   return (
@@ -55,6 +56,7 @@ export function PricingSection() {
           </Link>
         </article>
       </div>
+      <ScoreDisclaimer className="mx-auto mt-10 max-w-2xl text-center" variant="compact" />
     </section>
   );
 }

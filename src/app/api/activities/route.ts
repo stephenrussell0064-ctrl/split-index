@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { scoreActivity, computeRecentLoads, computeExercise1RM, buildStrengthScoreInserts } from "@/lib/scoring/service";
+import { scoreActivity, computeRecentLoads, computeExercise1RM, buildStrengthScoreInserts, ScoringInputError } from "@/lib/scoring/service";
 import { generateCoachFeedback, generateRulesBasedSnippet, type IndexHistoryEntry } from "@/lib/openai/coach";
 import { computeSportComparison } from "@/lib/utils/sport-comparison";
 import { SPORT_INDEX_LABELS } from "@/lib/constants/sports";
@@ -184,30 +184,44 @@ export async function POST(request: Request) {
     .order("started_at", { ascending: false })
     .limit(10);
 
-  const result = scoreActivity(
-    {
-      sport: body.sport,
-      durationSeconds: body.duration_seconds,
-      distanceMeters: body.distance_meters,
-      elevationMeters: body.elevation_meters,
-      avgHeartRate: body.avg_heart_rate,
-      avgPowerWatts: body.avg_power_watts,
-      avgPaceSecondsPerKm: body.avg_pace_seconds_per_km,
-      avgSplitSeconds: body.avg_split_seconds,
-      temperatureCelsius: body.temperature_celsius,
-      sessionType: body.session_type,
-      exercises: body.exercises,
-      profile: scoringProfile,
-      recentLoads: loads,
-      startedAt: body.started_at,
-    },
-    {
-      enduranceIndices,
-      strengthIndices,
-      splitIndices: indexHistory?.map((h) => h.split_index) ?? [],
-    },
-    recentActivityRows
-  );
+  const result = (() => {
+    try {
+      return scoreActivity(
+        {
+          sport: body.sport,
+          durationSeconds: body.duration_seconds,
+          distanceMeters: body.distance_meters,
+          elevationMeters: body.elevation_meters,
+          avgHeartRate: body.avg_heart_rate,
+          avgPowerWatts: body.avg_power_watts,
+          avgPaceSecondsPerKm: body.avg_pace_seconds_per_km,
+          avgSplitSeconds: body.avg_split_seconds,
+          temperatureCelsius: body.temperature_celsius,
+          sessionType: body.session_type,
+          exercises: body.exercises,
+          profile: scoringProfile,
+          recentLoads: loads,
+          startedAt: body.started_at,
+        },
+        {
+          enduranceIndices,
+          strengthIndices,
+          splitIndices: indexHistory?.map((h) => h.split_index) ?? [],
+        },
+        recentActivityRows
+      );
+    } catch (err) {
+      if (err instanceof ScoringInputError) {
+        return { error: err.message };
+      }
+      throw err;
+    }
+  })();
+
+  if ("error" in result) {
+    await supabase.from("activities").delete().eq("id", activity.id);
+    return NextResponse.json({ error: result.error }, { status: 400 });
+  }
 
   const previousSplitIndex =
     indexHistory?.[indexHistory.length - 1]?.split_index ?? result.splitIndex;

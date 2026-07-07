@@ -3,6 +3,9 @@ import { predictIndex } from "@/lib/scoring/engine";
 import { scoreActivityWithEngines } from "@/lib/scoring/activity-scorer";
 import { estimate1RM } from "@/lib/scoring/engine";
 import type { IndexResult } from "@/lib/scoring/index-engine";
+import { assertScoringInput } from "@/lib/scoring/input-guards";
+
+export { ScoringInputError } from "@/lib/scoring/input-guards";
 
 interface ScoreActivityInput {
   sport: SportType;
@@ -93,6 +96,14 @@ export function scoreActivity(
     score_breakdown?: Record<string, unknown> | null;
   }> = []
 ): ScoreResult {
+  assertScoringInput({
+    sport: input.sport,
+    durationSeconds: input.durationSeconds,
+    distanceMeters: input.distanceMeters,
+    exercises: input.exercises,
+    profile: input.profile,
+  });
+
   const result = scoreActivityWithEngines(
     {
       sport: input.sport,

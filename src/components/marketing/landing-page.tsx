@@ -36,11 +36,14 @@ export function LandingPage() {
       <PricingSection />
       <CtaStrip />
 
-      <footer className="border-t border-white/[0.06] px-6 py-10 text-center text-xs text-white/35 md:px-[6vw]">
+      <footer className="border-t border-white/[0.06] px-6 py-10 text-center text-xs text-white/55 md:px-[6vw]">
         <p>© {new Date().getFullYear()} Split Index · Strength & endurance scoring</p>
         <p className="mt-2 flex justify-center gap-4">
-          <Link href="/privacy" className="hover:text-white/60">
+          <Link href="/privacy" className="hover:text-white/80">
             Privacy
+          </Link>
+          <Link href="/terms" className="hover:text-white/80">
+            Terms
           </Link>
         </p>
       </footer>

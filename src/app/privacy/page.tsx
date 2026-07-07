@@ -307,6 +307,11 @@ export default function PrivacyPolicyPage() {
 
       <footer className="border-t border-white/[0.06] px-6 py-8 text-center text-sm text-muted">
         <p>© {new Date().getFullYear()} Split Index. All rights reserved.</p>
+        <p className="mt-2 flex justify-center gap-4">
+          <Link href="/terms" className="hover:text-foreground transition-colors">
+            Terms of Service
+          </Link>
+        </p>
       </footer>
     </div>
   );

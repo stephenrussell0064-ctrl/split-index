@@ -24,6 +24,7 @@ import { FocusWeekCard } from "@/components/retention/focus-week-card";
 import { RankBadge } from "@/components/retention/rank-badge";
 import { EmptyDashboardHero } from "@/components/retention/empty-dashboard-hero";
 import { FriendInviteBanner } from "@/components/retention/friend-invite-banner";
+import { ScoreDisclaimer } from "@/components/legal/score-disclaimer";
 import { calculateTrend } from "@/lib/scoring/service";
 import {
   buildActivityScores,
@@ -516,6 +517,8 @@ export default async function DashboardPage() {
         </div>
 
         <FriendInviteBanner />
+
+        <ScoreDisclaimer className="mt-2" />
       </div>
     </AppShell>
   );

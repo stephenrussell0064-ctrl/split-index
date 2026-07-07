@@ -8,9 +8,14 @@ export default function ForgotPasswordPage() {
         <ForgotPasswordForm />
       </div>
       <footer className="px-6 py-6 text-center text-sm text-muted">
-        <Link href="/privacy" className="hover:text-foreground transition-colors">
-          Privacy Policy
-        </Link>
+        <span className="inline-flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
+          <Link href="/privacy" className="hover:text-foreground transition-colors">
+            Privacy Policy
+          </Link>
+          <Link href="/terms" className="hover:text-foreground transition-colors">
+            Terms of Service
+          </Link>
+        </span>
       </footer>
     </div>
   );

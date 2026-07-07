@@ -154,6 +154,12 @@ export function AuthForm({
             required
             minLength={8}
           />
+          {mode === "signup" && (
+            <p className="text-xs text-muted -mt-2">
+              Use at least 8 characters. Longer passwords with letters and numbers are
+              stronger.
+            </p>
+          )}
 
           {mode === "login" && (
             <p className="text-right text-sm">
@@ -196,6 +202,10 @@ export function AuthForm({
           By continuing, you agree to our{" "}
           <Link href="/privacy" className="text-accent hover:underline">
             Privacy Policy
+          </Link>{" "}
+          and{" "}
+          <Link href="/terms" className="text-accent hover:underline">
+            Terms of Service
           </Link>
           .
         </p>

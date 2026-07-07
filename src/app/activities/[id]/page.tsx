@@ -17,6 +17,7 @@ import {
 import { ActivityDetailActions } from "@/components/activities/activity-detail-actions";
 import { CardioEnrichmentPanel } from "@/components/activities/cardio-enrichment-panel";
 import { SessionScoreInsights } from "@/components/scoring/session-score-insights";
+import { ScoreDisclaimer } from "@/components/legal/score-disclaimer";
 import { canAccessProfile } from "@/lib/premium/features";
 import { isPremiumUser } from "@/lib/retention/trial";
 import {
@@ -274,6 +275,8 @@ export default async function ActivityDetailPage({
             <p className="text-sm leading-relaxed">{activity.notes as string}</p>
           </div>
         )}
+
+        <ScoreDisclaimer className="mt-6" />
       </div>
     </AppShell>
   );

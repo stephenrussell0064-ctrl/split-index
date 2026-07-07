@@ -1,8 +1,20 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { scoreActivity, computeRecentLoads, computeExercise1RM, buildStrengthScoreInserts } from "@/lib/scoring/service";
+import {
+  scoreActivity,
+  computeRecentLoads,
+  computeExercise1RM,
+  buildStrengthScoreInserts,
+  ScoringInputError,
+} from "@/lib/scoring/service";
 import { computeSportComparison } from "@/lib/utils/sport-comparison";
 import { SPORT_INDEX_LABELS } from "@/lib/constants/sports";
+import { enrichCardioScore } from "@/lib/scoring/cardio";
+import { cardioResultToEnrichment } from "@/lib/scoring/adapters";
+import type { CardioResult } from "@/lib/scoring/cardio-activity";
+import { isEnduranceSport } from "@/lib/scoring/engine";
+import { isPremiumUser } from "@/lib/retention/trial";
+import { serializeScoreBreakdown } from "@/lib/scoring/presentation";
 import type { ActivityFormData, Profile } from "@/types";
 
 type ActivityBody = ActivityFormData & {
@@ -190,14 +202,34 @@ export async function GET(
     return NextResponse.json({ error: "Activity not found" }, { status: 404 });
   }
 
-  const [{ data: exercises }, { data: score }] = await Promise.all([
-    supabase
-      .from("gym_exercises")
-      .select("*")
-      .eq("activity_id", id)
-      .order("order_index"),
-    supabase.from("workout_scores").select("*").eq("activity_id", id).single(),
-  ]);
+  const [{ data: exercises }, { data: scoreRaw }, { data: profile }] =
+    await Promise.all([
+      supabase
+        .from("gym_exercises")
+        .select("*")
+        .eq("activity_id", id)
+        .order("order_index"),
+      supabase.from("workout_scores").select("*").eq("activity_id", id).single(),
+      supabase
+        .from("profiles")
+        .select("subscription_tier, subscription_status")
+        .eq("user_id", user.id)
+        .single(),
+    ]);
+
+  const premium = profile
+    ? isPremiumUser(profile.subscription_tier, profile.subscription_status)
+    : false;
+
+  const score = scoreRaw
+    ? {
+        ...scoreRaw,
+        score_breakdown: serializeScoreBreakdown(
+          scoreRaw.score_breakdown,
+          premium
+        ),
+      }
+    : scoreRaw;
 
   return NextResponse.json({ activity, exercises: exercises ?? [], score });
 }
@@ -303,13 +335,63 @@ export async function PATCH(
     });
   }
 
+  let scored;
+  try {
+    scored = await scoreAndPersist(supabase, user.id, profile, body, id, id);
+  } catch (err) {
+    if (err instanceof ScoringInputError) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
+    throw err;
+  }
+
   const {
     workoutScore,
     result,
     previousSplitIndex,
     sportComparison,
     isFirstSportSession,
-  } = await scoreAndPersist(supabase, user.id, profile, body, id, id);
+    scoringProfile,
+  } = scored;
+
+  const premium = isPremiumUser(
+    profile.subscription_tier,
+    profile.subscription_status
+  );
+
+  let cardioEnrichment = null;
+  if (isEnduranceSport(body.sport)) {
+    const cardioActivity = result.breakdown.cardio_activity as
+      | CardioResult
+      | undefined;
+    cardioEnrichment = cardioActivity
+      ? cardioResultToEnrichment(cardioActivity, result.sportIndex)
+      : enrichCardioScore({
+          sportIndex: result.sportIndex,
+          sport: body.sport,
+          activity: {
+            duration_seconds: body.duration_seconds,
+            distance_meters: body.distance_meters ?? null,
+            avg_heart_rate: body.avg_heart_rate ?? null,
+            avg_power_watts: body.avg_power_watts ?? null,
+            avg_pace_seconds_per_km: body.avg_pace_seconds_per_km ?? null,
+            avg_split_seconds: body.avg_split_seconds ?? null,
+          },
+          profile: scoringProfile,
+        });
+
+    if (cardioEnrichment && workoutScore) {
+      await supabase
+        .from("workout_scores")
+        .update({
+          score_breakdown: {
+            ...result.breakdown,
+            cardio_enrichment: cardioEnrichment,
+          },
+        })
+        .eq("id", workoutScore.id);
+    }
+  }
 
   return NextResponse.json({
     activity,
@@ -322,10 +404,17 @@ export async function PATCH(
     splitIndexDelta: result.splitIndex - previousSplitIndex,
     enduranceIndex: result.enduranceIndex,
     strengthIndex: result.strengthIndex,
+    headline: result.headline,
+    headlineLabel: result.headlineLabel,
     sportComparison,
     isFirstSportSession,
     exerciseScores: result.exerciseScores,
-    scoreBreakdown: result.breakdown,
+    scoreBreakdown: serializeScoreBreakdown(result.breakdown, premium),
+    dotsScore: result.dotsScore,
+    glPoints: result.glPoints,
+    useGL: result.useGL,
+    splitBreakdownLabel: result.splitBreakdownLabel,
+    cardioEnrichment: premium ? cardioEnrichment : null,
   });
 }
 

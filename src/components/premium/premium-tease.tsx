@@ -50,6 +50,9 @@ export function PremiumTease({
             {subtitle}
           </p>
         )}
+        <p className="mt-2 max-w-[300px] text-[10px] leading-relaxed text-muted">
+          Scores are training estimates only — not medical advice.
+        </p>
         <Link
           href="/settings/billing"
           className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-accent/15 px-4 py-2 text-sm font-medium text-accent transition-colors hover:bg-accent/25"
