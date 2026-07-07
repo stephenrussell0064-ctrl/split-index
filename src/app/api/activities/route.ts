@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { scoreActivity, computeRecentLoads, computeExercise1RM, buildStrengthScoreInserts, ScoringInputError } from "@/lib/scoring/service";
+import { assertScoringInput } from "@/lib/scoring/input-guards";
 import { generateCoachFeedback, generateRulesBasedSnippet, type IndexHistoryEntry } from "@/lib/openai/coach";
 import { computeSportComparison } from "@/lib/utils/sport-comparison";
 import { SPORT_INDEX_LABELS } from "@/lib/constants/sports";
@@ -50,6 +51,27 @@ export async function POST(request: Request) {
   });
 
   const scoringProfile = buildScoringProfile(profile, bodyweightKg);
+
+  try {
+    assertScoringInput({
+      sport: body.sport,
+      durationSeconds: body.duration_seconds,
+      distanceMeters: body.distance_meters,
+      avgHeartRate: body.avg_heart_rate,
+      maxHeartRate: body.max_heart_rate,
+      avgPowerWatts: body.avg_power_watts,
+      avgPaceSecondsPerKm: body.avg_pace_seconds_per_km,
+      avgSplitSeconds: body.avg_split_seconds,
+      elevationMeters: body.elevation_meters,
+      exercises: body.exercises,
+      profile: scoringProfile,
+    });
+  } catch (err) {
+    if (err instanceof ScoringInputError) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
+    throw err;
+  }
 
   if (bodyweightKg && body.sport === "gym") {
     await supabase.from("body_metrics").insert({

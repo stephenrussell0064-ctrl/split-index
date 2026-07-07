@@ -13,6 +13,7 @@ interface ScoreActivityInput {
   distanceMeters?: number | null;
   elevationMeters?: number | null;
   avgHeartRate?: number | null;
+  maxHeartRate?: number | null;
   avgPowerWatts?: number | null;
   avgPaceSecondsPerKm?: number | null;
   avgSplitSeconds?: number | null;
@@ -100,6 +101,13 @@ export function scoreActivity(
     sport: input.sport,
     durationSeconds: input.durationSeconds,
     distanceMeters: input.distanceMeters,
+    avgHeartRate: input.avgHeartRate,
+    maxHeartRate: input.maxHeartRate,
+    avgPowerWatts: input.avgPowerWatts,
+    avgPaceSecondsPerKm: input.avgPaceSecondsPerKm,
+    avgSplitSeconds: input.avgSplitSeconds,
+    elevationMeters: input.elevationMeters,
+    splitPacesSec: input.splitPacesSec,
     exercises: input.exercises,
     profile: input.profile,
   });

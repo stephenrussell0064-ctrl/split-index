@@ -7,6 +7,7 @@ import {
   buildStrengthScoreInserts,
   ScoringInputError,
 } from "@/lib/scoring/service";
+import { assertScoringInput } from "@/lib/scoring/input-guards";
 import { computeSportComparison } from "@/lib/utils/sport-comparison";
 import { SPORT_INDEX_LABELS } from "@/lib/constants/sports";
 import { enrichCardioScore } from "@/lib/scoring/cardio";
@@ -110,6 +111,7 @@ async function scoreAndPersist(
       distanceMeters: body.distance_meters,
       elevationMeters: body.elevation_meters,
       avgHeartRate: body.avg_heart_rate,
+      maxHeartRate: body.max_heart_rate,
       avgPowerWatts: body.avg_power_watts,
       avgPaceSecondsPerKm: body.avg_pace_seconds_per_km,
       avgSplitSeconds: body.avg_split_seconds,
@@ -281,6 +283,27 @@ export async function PATCH(
     existing.metadata as Record<string, unknown>,
     body
   );
+
+  try {
+    assertScoringInput({
+      sport: body.sport,
+      durationSeconds: body.duration_seconds,
+      distanceMeters: body.distance_meters,
+      avgHeartRate: body.avg_heart_rate,
+      maxHeartRate: body.max_heart_rate,
+      avgPowerWatts: body.avg_power_watts,
+      avgPaceSecondsPerKm: body.avg_pace_seconds_per_km,
+      avgSplitSeconds: body.avg_split_seconds,
+      elevationMeters: body.elevation_meters,
+      exercises: body.exercises,
+      profile,
+    });
+  } catch (err) {
+    if (err instanceof ScoringInputError) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
+    throw err;
+  }
 
   const { data: priorStrength } = await supabase
     .from("strength_scores")

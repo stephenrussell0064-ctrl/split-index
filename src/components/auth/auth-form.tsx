@@ -152,7 +152,7 @@ export function AuthForm({
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
-            minLength={8}
+            minLength={mode === "signup" ? 8 : undefined}
           />
           {mode === "signup" && (
             <p className="text-xs text-muted -mt-2">
