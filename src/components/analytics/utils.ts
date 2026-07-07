@@ -31,6 +31,8 @@ import type {
 } from "./types";
 import type { SplitIndexSnapshot } from "@/types";
 
+import { forecastSplitIndexFromHistory } from "@/lib/premium/projection";
+
 const DAY_MS = 86400000;
 
 export function localDateKey(iso: string | Date): string {
@@ -188,23 +190,6 @@ export function buildProjections(history: SplitIndexSnapshot[]): ProjectionPoint
   const recent = sorted.slice(-14);
   if (recent.length < 3) return [];
 
-  const points = recent.map((h) => ({
-    t: new Date(h.recorded_at).getTime(),
-    v: h.split_index,
-  }));
-
-  const n = points.length;
-  const sumT = points.reduce((s, p) => s + p.t, 0);
-  const sumV = points.reduce((s, p) => s + p.v, 0);
-  const sumTT = points.reduce((s, p) => s + p.t * p.t, 0);
-  const sumTV = points.reduce((s, p) => s + p.t * p.v, 0);
-  const denom = n * sumTT - sumT * sumT;
-  const slope = denom !== 0 ? (n * sumTV - sumT * sumV) / denom : 0;
-  const intercept = (sumV - slope * sumT) / n;
-
-  const predict = (t: number) =>
-    Math.max(0, Math.min(999, Math.round(slope * t + intercept)));
-
   const historical: ProjectionPoint[] = recent.map((h) => ({
     date: format(new Date(h.recorded_at), "MMM d"),
     split: h.split_index,
@@ -217,11 +202,12 @@ export function buildProjections(history: SplitIndexSnapshot[]): ProjectionPoint
   const forecastDays = [7, 30];
 
   const forecasts: ProjectionPoint[] = forecastDays.map((days) => {
+    const projected = forecastSplitIndexFromHistory(history, days);
     const t = lastT + days * DAY_MS;
     return {
       date: format(new Date(t), "MMM d"),
       split: null,
-      projected: predict(t),
+      projected,
       isForecast: true,
     };
   });
