@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion, useReducedMotion } from "framer-motion";
 import { BrandMark } from "@/components/brand/brand-mark";
-import { AppleIcon, GoogleIcon } from "@/components/auth/oauth-icons";
+import { GoogleIcon } from "@/components/auth/oauth-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { createClient } from "@/lib/supabase/client";
@@ -83,21 +83,19 @@ export function AuthForm({
     }
   };
 
-  const handleOAuth = async (provider: "google" | "apple") => {
+  const handleOAuth = async () => {
     setError("");
     try {
       const supabase = createClient();
       const { error } = await supabase.auth.signInWithOAuth({
-        provider,
+        provider: "google",
         options: { redirectTo: authCallbackUrl() },
       });
       if (error) {
-        const label = provider === "apple" ? "Apple" : "Google";
-        setError(authErrorMessage(error, `${label} sign-in failed. Please try again.`));
+        setError(authErrorMessage(error, "Google sign-in failed. Please try again."));
       }
     } catch (err) {
-      const label = provider === "apple" ? "Apple" : "Google";
-      setError(authErrorMessage(err, `${label} sign-in failed. Please try again.`));
+      setError(authErrorMessage(err, "Google sign-in failed. Please try again."));
     }
   };
 
@@ -122,18 +120,10 @@ export function AuthForm({
           <Button
             variant="secondary"
             className="w-full gap-2"
-            onClick={() => handleOAuth("google")}
+            onClick={handleOAuth}
           >
             <GoogleIcon className="h-4 w-4" />
             Continue with Google
-          </Button>
-          <Button
-            type="button"
-            className="w-full gap-2 bg-black text-white hover:bg-black/90 border border-white/10"
-            onClick={() => handleOAuth("apple")}
-          >
-            <AppleIcon className="h-4 w-4" />
-            Continue with Apple
           </Button>
         </div>
 
