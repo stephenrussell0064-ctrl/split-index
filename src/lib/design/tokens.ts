@@ -5,11 +5,11 @@
 
 export const designTokens = {
   /** Cardio / endurance accent — sky blue on white */
-  cardioAccent: "#0ea5e9",
-  cardioAccentSoft: "#38bdf8",
+  cardioAccent: "#3BA6FF",
+  cardioAccentSoft: "#6BB8FF",
   /** Strength / gym accent — neon green on black */
-  strengthAccent: "#00e65f",
-  strengthAccentSoft: "#5cff9d",
+  strengthAccent: "#3DFF6E",
+  strengthAccentSoft: "#6BFF96",
   /** Neutral slate scale for data surfaces */
   slate: {
     50: "#f8fafc",
@@ -24,8 +24,8 @@ export const designTokens = {
     900: "#0f172a",
     950: "#09090b",
   },
-  /** Display typography — large index numbers (Geist via layout) */
-  fontDisplay: "var(--font-geist-sans)",
+  /** Display typography — headlines & index numbers */
+  fontDisplay: "var(--font-display)",
   /** Data / table typography — tabular figures */
   fontData: "var(--font-geist-mono)",
 } as const;
