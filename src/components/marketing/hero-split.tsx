@@ -96,7 +96,7 @@ export function HeroSplit() {
   return (
     <section
       ref={heroRef}
-      className="relative min-h-[520px] h-[min(100dvh,720px)] overflow-hidden md:min-h-[660px] md:h-[calc(100vh-4rem)] md:cursor-col-resize"
+      className="relative overflow-hidden md:min-h-[660px] md:h-[calc(100vh-4rem)] md:cursor-col-resize"
       onPointerDown={(e) => {
         if (window.innerWidth < 901) return;
         dragging.current = true;
@@ -110,9 +110,15 @@ export function HeroSplit() {
         setSplit(50 + ((e.clientX - r.left) / r.width - 0.5) * 8);
       }}
     >
+      {/*
+        Below md the drag-to-resize split makes no sense on a touchscreen, so
+        both panels stack in normal document flow. At md+ they revert to the
+        absolutely-positioned, clip-path-driven split-screen.
+      */}
+
       {/* Lab side */}
       <div
-        className="absolute inset-0 flex flex-col justify-center px-4 sm:px-[6vw] bg-[radial-gradient(1200px_800px_at_20%_60%,#0C1410_0%,var(--gym-bg)_55%)]"
+        className="relative flex flex-col justify-center px-4 py-16 sm:px-[6vw] md:absolute md:inset-0 md:py-0 bg-[radial-gradient(1200px_800px_at_20%_60%,#0C1410_0%,var(--gym-bg)_55%)]"
         style={{ color: "var(--gym-text)" }}
       >
         <div className="landing-orb landing-orb-gym" />
@@ -139,15 +145,15 @@ export function HeroSplit() {
         </div>
       </div>
 
-      {/* Engine side — clipped by split */}
+      {/* Engine side — clipped by split at md+ only; stacks normally below md */}
       <div
-        className="absolute inset-0 flex flex-col justify-center px-4 sm:px-[6vw] bg-[radial-gradient(1200px_800px_at_80%_40%,#EAF4FF_0%,var(--cardio-bg)_55%)] text-cardio-text"
-        style={{ clipPath: `inset(0 0 0 ${split}%)` }}
+        className="relative flex flex-col justify-center px-4 py-16 sm:px-[6vw] md:absolute md:inset-0 md:py-0 md:[clip-path:var(--split-clip)] bg-[radial-gradient(1200px_800px_at_80%_40%,#EAF4FF_0%,var(--cardio-bg)_55%)] text-cardio-text"
+        style={{ ["--split-clip" as string]: `inset(0 0 0 ${split}%)` }}
       >
         <div className="landing-orb landing-orb-cardio" />
         <div className="landing-hero-grid landing-hero-grid-cardio" />
-        <div className="relative z-[1] ml-auto max-w-lg text-right">
-          <p className="landing-eyebrow landing-eyebrow-right text-[#0B69C7]">
+        <div className="relative z-[1] max-w-lg md:ml-auto md:text-right">
+          <p className="landing-eyebrow md:landing-eyebrow-right text-[#0B69C7]">
             The Engine · Cardio
           </p>
           <h1 className="font-display text-[clamp(34px,4.6vw,64px)] font-black leading-[1.02]">
@@ -155,7 +161,7 @@ export function HeroSplit() {
             <br />
             FAR.
           </h1>
-          <p className="mt-4 ml-auto max-w-[34ch] text-sm leading-relaxed text-cardio-muted">
+          <p className="mt-4 max-w-[34ch] text-sm leading-relaxed text-cardio-muted md:ml-auto">
             Pace, heart rate and splits fused into one honest endurance score.
           </p>
           <GaugeRing
@@ -195,9 +201,9 @@ export function HeroSplit() {
         <span className="h-px w-[26px] bg-current" />
       </p>
 
-      <div className="absolute bottom-6 left-0 right-0 z-[7] flex justify-center px-4 sm:px-6 md:hidden">
-        <Link href="/signup" className="min-h-11 min-w-[44px]">
-          <Button className="min-h-11 px-8 bg-gym-accent text-[#04120a] hover:bg-gym-accent/90 font-bold">
+      <div className="relative flex justify-center px-4 py-8 sm:px-6 md:hidden">
+        <Link href="/signup" className="min-h-11 min-w-[44px] w-full max-w-xs">
+          <Button className="w-full min-h-11 px-8 bg-gym-accent text-[#04120a] hover:bg-gym-accent/90 font-bold">
             Start free
           </Button>
         </Link>
