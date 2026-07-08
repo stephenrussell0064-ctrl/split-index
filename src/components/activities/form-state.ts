@@ -5,14 +5,19 @@ import type { ActivityFormData, SessionType, SportType } from "@/types";
  * Local form state is kept as strings so typing is never blocked;
  * conversion + validation happens only on submit.
  */
+export interface SetRowState {
+  id: string;
+  weight: string;
+  reps: string;
+  rpe: string;
+}
+
 export interface ExerciseRowState {
   id: string;
   name: string;
   muscleGroup: string;
-  weight: string;
-  sets: string;
-  reps: string;
-  rpe: string;
+  /** Each set can carry its own weight/reps/RPE — sets are rarely uniform (ramping, pyramids, drop sets). */
+  sets: SetRowState[];
   notes: string;
 }
 
@@ -79,18 +84,52 @@ export function nextRowId(): string {
   return `row-${Date.now()}-${rowCounter}`;
 }
 
+let setCounter = 0;
+export function nextSetId(): string {
+  setCounter += 1;
+  return `set-${Date.now()}-${setCounter}`;
+}
+
+export function createSetRow(previous?: SetRowState): SetRowState {
+  return {
+    id: nextSetId(),
+    // Smart default: carry the previous set's loading scheme forward.
+    weight: previous?.weight ?? "",
+    reps: previous?.reps ?? "",
+    rpe: "",
+  };
+}
+
 export function createExerciseRow(previous?: ExerciseRowState): ExerciseRowState {
   return {
     id: nextRowId(),
     name: "",
     muscleGroup: "",
-    // Smart default: carry the last row's loading scheme forward.
-    weight: previous?.weight ?? "",
-    sets: previous?.sets ?? "3",
-    reps: previous?.reps ?? "",
-    rpe: "",
+    sets: [createSetRow(previous?.sets[previous.sets.length - 1])],
     notes: "",
   };
+}
+
+/** The set with the highest estimated 1RM — used for the exercise-level 1RM/score preview. */
+export function bestSetRow(sets: SetRowState[]): SetRowState | null {
+  let best: SetRowState | null = null;
+  let bestEstimate = -1;
+  for (const s of sets) {
+    const estimate = epley1RM(parseNum(s.weight), parseNum(s.reps)) ?? -1;
+    if (estimate > bestEstimate) {
+      best = s;
+      bestEstimate = estimate;
+    }
+  }
+  return best;
+}
+
+export function totalVolumeFromSets(sets: SetRowState[]): number {
+  return sets.reduce((sum, s) => {
+    const weight = parseNum(s.weight) ?? 0;
+    const reps = parseNum(s.reps) ?? 0;
+    return sum + weight * reps;
+  }, 0);
 }
 
 export function nowLocalDateTime(): string {
@@ -140,19 +179,50 @@ export function restoreDraftState(
   const str = (v: unknown, fallback: string) =>
     typeof v === "string" ? v : typeof v === "number" ? String(v) : fallback;
 
+  // Old drafts (saved before per-set customization existed) have flat
+  // weight/sets/reps/rpe on the row itself instead of a `sets` array —
+  // detect and expand those into one set entry rather than dropping them.
+  type RawExerciseRow = {
+    id?: unknown;
+    name?: unknown;
+    muscleGroup?: unknown;
+    notes?: unknown;
+    weight?: unknown;
+    reps?: unknown;
+    rpe?: unknown;
+    sets?: unknown;
+  };
+
   const exercises = Array.isArray(d.exercises)
-    ? d.exercises
-        .filter((row): row is ExerciseRowState => !!row && typeof row === "object")
-        .map((row) => ({
-          id: str(row.id, nextRowId()),
-          name: str(row.name, ""),
-          muscleGroup: str(row.muscleGroup, ""),
-          weight: str(row.weight, ""),
-          sets: str(row.sets, ""),
-          reps: str(row.reps, ""),
-          rpe: str(row.rpe, ""),
-          notes: str(row.notes, ""),
-        }))
+    ? (d.exercises as unknown[])
+        .filter((row): row is RawExerciseRow => !!row && typeof row === "object")
+        .map((row) => {
+          const rowSets: SetRowState[] = Array.isArray(row.sets)
+            ? row.sets
+                .filter((s): s is Record<string, unknown> => !!s && typeof s === "object")
+                .map((s) => ({
+                  id: str(s.id, nextSetId()),
+                  weight: str(s.weight, ""),
+                  reps: str(s.reps, ""),
+                  rpe: str(s.rpe, ""),
+                }))
+            : [
+                {
+                  id: nextSetId(),
+                  weight: str(row.weight, ""),
+                  reps: str(row.reps, ""),
+                  rpe: str(row.rpe, ""),
+                },
+              ];
+
+          return {
+            id: str(row.id, nextRowId()),
+            name: str(row.name, ""),
+            muscleGroup: str(row.muscleGroup, ""),
+            sets: rowSets.length > 0 ? rowSets : [createSetRow()],
+            notes: str(row.notes, ""),
+          };
+        })
     : base.exercises;
 
   const sessionType = SESSION_TYPE_VALUES.includes(d.sessionType as SessionType)
@@ -200,10 +270,8 @@ export function isStateDirty(state: WorkoutFormState): boolean {
   const exercisesTouched = state.exercises.some(
     (row) =>
       row.name !== "" ||
-      row.weight !== "" ||
-      row.reps !== "" ||
-      row.rpe !== "" ||
-      row.notes !== ""
+      row.notes !== "" ||
+      row.sets.some((s) => s.weight !== "" || s.reps !== "" || s.rpe !== "")
   );
   return touched || exercisesTouched;
 }
@@ -303,13 +371,16 @@ export function exerciseScore(
 
 export type FormErrors = Record<string, string>;
 
+const gymSetSchema = z.object({
+  weight_kg: z.number().min(0),
+  reps: z.number().int().positive(),
+  rpe: z.number().min(1).max(10).optional(),
+});
+
 const gymExerciseSchema = z.object({
   exercise_name: z.string().min(1),
   muscle_group: z.string().min(1),
-  weight_kg: z.number().min(0),
-  sets: z.number().int().positive(),
-  reps: z.number().int().positive(),
-  rpe: z.number().min(1).max(10).optional(),
+  sets: z.array(gymSetSchema).min(1),
   order_index: z.number().int().min(0),
 });
 
@@ -446,7 +517,9 @@ export function validateAndBuildPayload(
     });
 
     const meaningfulRows = state.exercises.filter(
-      (row) => row.name.trim() !== "" || row.weight !== "" || row.reps !== ""
+      (row) =>
+        row.name.trim() !== "" ||
+        row.sets.some((s) => s.weight !== "" || s.reps !== "")
     );
 
     if (meaningfulRows.length === 0) {
@@ -460,36 +533,42 @@ export function validateAndBuildPayload(
       if (row.name.trim() === "") errors[rowKey("name")] = "Name this exercise";
       if (row.muscleGroup === "") errors[rowKey("muscle")] = "Pick a muscle group";
 
-      const weight = requireNumber(rowKey("weight"), row.weight, {
-        min: 0,
-        max: 600,
-        label: "Weight",
-      });
-      const sets = requireNumber(rowKey("sets"), row.sets, {
-        required: true,
-        min: 1,
-        max: 30,
-        label: "Sets",
-      });
-      const reps = requireNumber(rowKey("reps"), row.reps, {
-        required: true,
-        min: 1,
-        max: 200,
-        label: "Reps",
-      });
-      const rowRpe = requireNumber(rowKey("rpe"), row.rpe, {
-        min: 1,
-        max: 10,
-        label: "RPE",
+      const meaningfulSets = row.sets.filter(
+        (s) => s.weight !== "" || s.reps !== ""
+      );
+      if (meaningfulSets.length === 0) {
+        errors[rowKey("sets")] = "Add at least one set";
+      }
+
+      const parsedSets = meaningfulSets.map((s) => {
+        const setKey = (field: string) => `ex.${row.id}.set.${s.id}.${field}`;
+        const weight = requireNumber(setKey("weight"), s.weight, {
+          min: 0,
+          max: 600,
+          label: "Weight",
+        });
+        const reps = requireNumber(setKey("reps"), s.reps, {
+          required: true,
+          min: 1,
+          max: 200,
+          label: "Reps",
+        });
+        const setRpe = requireNumber(setKey("rpe"), s.rpe, {
+          min: 1,
+          max: 10,
+          label: "RPE",
+        });
+        return {
+          weight_kg: s.weight.trim() === "" ? 0 : weight ?? 0,
+          reps: Math.round(reps ?? 0),
+          rpe: setRpe ?? null,
+        };
       });
 
       exercises!.push({
         exercise_name: row.name.trim(),
         muscle_group: row.muscleGroup,
-        weight_kg: row.weight.trim() === "" ? 0 : weight ?? 0,
-        sets: Math.round(sets ?? 0),
-        reps: Math.round(reps ?? 0),
-        rpe: rowRpe ?? null,
+        sets: parsedSets,
         order_index: index,
       });
       if (row.notes.trim()) {
@@ -529,7 +608,10 @@ export function validateAndBuildPayload(
   // Structural safety net — strips nothing, just guarantees shape.
   const check = payloadSchema.safeParse({
     ...payload,
-    exercises: payload.exercises?.map((ex) => ({ ...ex, rpe: ex.rpe ?? undefined })),
+    exercises: payload.exercises?.map((ex) => ({
+      ...ex,
+      sets: ex.sets.map((s) => ({ ...s, rpe: s.rpe ?? undefined })),
+    })),
   });
   if (!check.success) {
     return { errors: { form: "Something looks off — double-check the highlighted fields" }, payload: null };

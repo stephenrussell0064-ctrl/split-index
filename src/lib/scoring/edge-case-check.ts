@@ -41,7 +41,7 @@ expectThrows("500kg bench at 40kg BW", () =>
     sport: "gym",
     durationSeconds: 3600,
     profile: { weight_kg: 40 },
-    exercises: [{ weight_kg: 500, sets: 1, reps: 1 }],
+    exercises: [{ sets: [{ weight_kg: 500, reps: 1 }] }],
   })
 );
 
@@ -89,7 +89,7 @@ try {
     sport: "gym",
     durationSeconds: 3600,
     profile: { weight_kg: 75 },
-    exercises: [{ weight_kg: 140, sets: 3, reps: 5 }],
+    exercises: [{ sets: [{ weight_kg: 140, reps: 5 }, { weight_kg: 140, reps: 5 }, { weight_kg: 140, reps: 5 }] }],
   });
   console.log("✓ normal gym session passes guards");
 } catch (e) {

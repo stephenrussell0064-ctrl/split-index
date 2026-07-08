@@ -16,6 +16,7 @@ import {
 } from "./fields";
 import { ExpandableSection } from "./expandable-section";
 import {
+  bestSetRow,
   derivePacePer100m,
   derivePacePerKm,
   deriveSpeedKmh,
@@ -264,7 +265,8 @@ function FormSummaryStrip({
     const bw = parseNum(state.bodyweight);
     let topRatio: string | null = null;
     for (const row of state.exercises) {
-      const oneRm = epley1RM(parseNum(row.weight), parseNum(row.reps));
+      const top = bestSetRow(row.sets);
+      const oneRm = top ? epley1RM(parseNum(top.weight), parseNum(top.reps)) : null;
       if (!oneRm || !bw || !row.name.trim()) continue;
       const ratio = oneRm / bw;
       if (!topRatio || ratio > parseFloat(topRatio)) {

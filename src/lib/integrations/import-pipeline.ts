@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { scoreActivity, computeRecentLoads, computeExercise1RM } from "@/lib/scoring/service";
+import { bestSet, summarizeSets } from "@/lib/activities/gym-sets";
 import type { ActivityFormData, Profile } from "@/types";
 import type {
   ActivitySource,
@@ -121,17 +122,22 @@ async function insertAndScoreActivity(
   }
 
   if (body.exercises && body.exercises.length > 0) {
-    const exerciseRows = body.exercises.map((ex, i) => ({
-      activity_id: inserted.id,
-      exercise_name: ex.exercise_name,
-      muscle_group: ex.muscle_group,
-      weight_kg: ex.weight_kg,
-      sets: ex.sets,
-      reps: ex.reps,
-      rpe: ex.rpe,
-      estimated_1rm_kg: computeExercise1RM(ex.weight_kg, ex.reps),
-      order_index: i,
-    }));
+    const exerciseRows = body.exercises.map((ex, i) => {
+      const summary = summarizeSets(ex.sets);
+      const top = bestSet(ex.sets);
+      return {
+        activity_id: inserted.id,
+        exercise_name: ex.exercise_name,
+        muscle_group: ex.muscle_group,
+        weight_kg: summary.weight_kg,
+        sets: summary.sets,
+        reps: summary.reps,
+        rpe: summary.rpe,
+        set_details: ex.sets,
+        estimated_1rm_kg: top ? computeExercise1RM(top.weight_kg, top.reps) : 0,
+        order_index: i,
+      };
+    });
     await supabase.from("gym_exercises").insert(exerciseRows);
   }
 

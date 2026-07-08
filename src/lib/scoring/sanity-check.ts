@@ -164,9 +164,9 @@ const gym = scoreActivity(
     sport: "gym",
     durationSeconds: 3600,
     exercises: [
-      { exercise_name: "Squat", muscle_group: "legs", weight_kg: 140, sets: 1, reps: 1, rpe: 9 },
-      { exercise_name: "Bench Press", muscle_group: "chest", weight_kg: 100, sets: 1, reps: 1, rpe: 9 },
-      { exercise_name: "Deadlift", muscle_group: "back", weight_kg: 180, sets: 1, reps: 1, rpe: 9 },
+      { exercise_name: "Squat", muscle_group: "legs", sets: [{ weight_kg: 140, reps: 1, rpe: 9 }], order_index: 0 },
+      { exercise_name: "Bench Press", muscle_group: "chest", sets: [{ weight_kg: 100, reps: 1, rpe: 9 }], order_index: 1 },
+      { exercise_name: "Deadlift", muscle_group: "back", sets: [{ weight_kg: 180, reps: 1, rpe: 9 }], order_index: 2 },
     ],
     profile: baseProfile,
     recentLoads: { acute: neutralLoads.acuteLoad, chronic: neutralLoads.chronicLoad },

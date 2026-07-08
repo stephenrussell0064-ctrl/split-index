@@ -1,5 +1,7 @@
 import { MAX_INDEX, MIN_INDEX } from "@/lib/scoring/constants";
-import type { Gender, GymExercise, Profile, ScoreBreakdown } from "@/types";
+import type { Gender, GymExerciseInput, Profile, ScoreBreakdown } from "@/types";
+import { COMMON_EXERCISES } from "@/lib/constants/sports";
+import { totalVolumeKg } from "@/lib/activities/gym-sets";
 import type { GLEquipment, StrengthSex } from "./coefficients";
 import { calculateDOTS } from "./dots";
 import { calculateGLPoints } from "./gl";
@@ -13,6 +15,70 @@ import {
   type AccessoryLift,
   type ExRxTier,
 } from "./ratio-tiers";
+
+/**
+ * Per-(muscle-category, compound/accessory) difficulty coefficients, applied
+ * to the raw estimated-1RM / bodyweight ratio before the log-curve index.
+ * These replace a flat "×2 for anything not squat/bench/deadlift" multiplier,
+ * which scored a lateral raise and a pec deck identically even though a
+ * shoulder-isolation movement can never approach the load a supported chest
+ * press machine allows. Coefficients are hand-calibrated approximations
+ * (there's no public percentile database per exercise), not lab-derived —
+ * the goal is "meaningfully more accurate," not perfect.
+ */
+const CATEGORY_KIND_COEFFICIENTS: Record<string, number> = {
+  "chest:compound": 1.0,
+  "chest:accessory": 1.8,
+  "back:compound": 1.0,
+  "back:accessory": 2.2,
+  "legs:compound": 1.0,
+  "legs:accessory": 2.0,
+  "shoulders:compound": 1.0,
+  "shoulders:accessory": 3.5,
+  "arms:compound": 1.0,
+  "arms:accessory": 3.0,
+  "core:compound": 1.6,
+  "core:accessory": 2.5,
+};
+
+/**
+ * Overrides for specific exercises whose category/kind alone doesn't capture
+ * how much a machine leverages the lift — e.g. leg press lets you move far
+ * more absolute weight than a free squat for the same underlying leg
+ * strength, so it needs a *lower* coefficient (deflating an already-inflated
+ * raw ratio), the opposite direction from a true isolation accessory.
+ */
+const EXERCISE_COEFFICIENT_OVERRIDES: Record<string, number> = {
+  "leg press": 0.55,
+  "single leg press": 0.6,
+  "hack squat": 0.6,
+  "pendulum squat": 0.6,
+  "smith machine squat": 0.75,
+  "smith machine bench press": 0.85,
+  "machine chest press": 0.85,
+  "machine shoulder press": 0.85,
+  "machine row": 0.85,
+  "machine lateral raise": 3.2,
+  "machine preacher curl": 2.8,
+};
+
+const DEFAULT_EXERCISE_COEFFICIENT = 2.0; // unrecognized/custom exercise fallback
+
+function exerciseDifficultyCoefficient(name: string): number {
+  const key = normalizeName(name);
+  if (EXERCISE_COEFFICIENT_OVERRIDES[key] != null) {
+    return EXERCISE_COEFFICIENT_OVERRIDES[key];
+  }
+  const known = COMMON_EXERCISES.find((ex) => normalizeName(ex.name) === key);
+  if (!known) return DEFAULT_EXERCISE_COEFFICIENT;
+  return (
+    CATEGORY_KIND_COEFFICIENTS[`${known.category}:${known.kind}`] ??
+    DEFAULT_EXERCISE_COEFFICIENT
+  );
+}
+
+/** Index is at or above this only for a genuinely exceptional (elite/record-approaching) ratio. */
+const NEAR_RECORD_INDEX_THRESHOLD = 950;
 
 export type SBDLift = "squat" | "bench" | "deadlift";
 
@@ -63,16 +129,17 @@ const ACCESSORY_MAP: Record<string, AccessoryLift> = {
   "lat pulldown": "pullup",
 };
 
-/** Log-curve index for any exercise from e1RM / bodyweight */
+/** Log-curve index for any exercise from e1RM / bodyweight, using a per-exercise difficulty coefficient. */
 function genericExerciseIndex(
   e1RM: number,
   bw: number,
-  kind: "compound" | "accessory" = "compound"
-): number {
-  if (e1RM <= 0 || bw <= 0) return MIN_INDEX;
-  const ratio = (e1RM / bw) * (kind === "accessory" ? 2 : 1);
-  if (ratio <= 0.05) return MIN_INDEX;
-  return Math.min(MAX_INDEX, Math.max(MIN_INDEX, Math.round(380 * Math.log(ratio) + 500)));
+  exerciseName: string
+): { index: number; nearRecord: boolean } {
+  if (e1RM <= 0 || bw <= 0) return { index: MIN_INDEX, nearRecord: false };
+  const ratio = (e1RM / bw) * exerciseDifficultyCoefficient(exerciseName);
+  if (ratio <= 0.05) return { index: MIN_INDEX, nearRecord: false };
+  const index = Math.min(MAX_INDEX, Math.max(MIN_INDEX, Math.round(380 * Math.log(ratio) + 500)));
+  return { index, nearRecord: index >= NEAR_RECORD_INDEX_THRESHOLD };
 }
 
 const SBD_BLEND_WEIGHT = 0.85;
@@ -88,10 +155,7 @@ export interface LiftBreakdown {
 }
 
 export interface StrengthEngineInput {
-  exercises: Pick<
-    GymExercise,
-    "exercise_name" | "muscle_group" | "weight_kg" | "sets" | "reps" | "rpe"
-  >[];
+  exercises: GymExerciseInput[];
   bodyweightKg: number;
   gender: Gender | null;
   options?: {
@@ -165,12 +229,9 @@ function collectBest1RMs(
 
   for (const ex of exercises) {
     const key = normalizeName(ex.exercise_name);
-    const sets = Array.from({ length: ex.sets }, () => ({
-      weightKg: ex.weight_kg,
-      reps: ex.reps,
-    }));
+    const sets = ex.sets.map((s) => ({ weightKg: s.weight_kg, reps: s.reps }));
     const e1RM = bestSet1RM(sets);
-    const volume = ex.sets * ex.reps * ex.weight_kg;
+    const volume = totalVolumeKg(ex.sets);
 
     allLifts.push({
       name: ex.exercise_name,
@@ -275,6 +336,22 @@ export function calculateStrengthIndexV2(
         : Math.round((accessoryIndex + tierIdx) / 2);
   }
 
+  // Fold in exercises that are neither SBD lifts nor OHP/pull-up-tier
+  // accessories (lateral raises, pec deck, curls, leg extensions, ...) —
+  // previously these only affected their own per-exercise row and were
+  // dropped from the overall index entirely, so a session made up solely of
+  // this kind of exercise scored ~1 overall despite real lifts being logged.
+  const accessoryNames = new Set(accessories.map((a) => a.name));
+  for (const lift of allLifts) {
+    if (accessoryNames.has(lift.name) || SBD_MAP[normalizeName(lift.name)]) continue;
+    const generic = genericExerciseIndex(lift.e1RM, bw, lift.name);
+    if (generic.index <= MIN_INDEX) continue;
+    accessoryIndex =
+      accessoryIndex === null
+        ? generic.index
+        : Math.round((accessoryIndex + generic.index) / 2);
+  }
+
   let index: number;
   if (sbdTotalKg > 0 && accessoryIndex !== null) {
     index = Math.round(
@@ -319,14 +396,15 @@ export function calculateStrengthIndexV2(
     const rel = lift.e1RM / bw;
     const acc = accessoryBreakdowns.find((a) => a.name === lift.name);
     const normalized = normalizeName(lift.name);
-    const kind = SBD_MAP[normalized] ? "compound" : "accessory";
+    const generic = genericExerciseIndex(lift.e1RM, bw, lift.name);
     const liftIndex = acc
       ? ratioToTierIndex(
           acc.relativeStrength,
           ACCESSORY_MAP[normalized] ?? "ohp",
           sex
         )
-      : genericExerciseIndex(lift.e1RM, bw, kind);
+      : generic.index;
+    const nearRecord = !acc && generic.nearRecord;
     return {
       exercise_name: lift.name,
       muscle_group: lift.muscleGroup,
@@ -340,6 +418,12 @@ export function calculateStrengthIndexV2(
         tier_label: acc?.tierLabel,
         dots_score: dotsScore,
         gl_points: glPoints,
+        near_record: nearRecord,
+        ...(nearRecord
+          ? {
+              near_record_note: `Exceptional result for ${lift.name} — this score is approaching elite/record-level territory relative to bodyweight. If this seems too high, double-check the entered weight and reps.`,
+            }
+          : {}),
       },
     };
   });

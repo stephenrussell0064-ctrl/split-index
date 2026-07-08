@@ -8,6 +8,7 @@ import { getWorkoutPlan } from "@/lib/constants/workout-plans";
 import {
   createDefaultState,
   nextRowId,
+  nextSetId,
 } from "@/components/activities/form-state";
 import type { SportType } from "@/types";
 import type { WorkoutFormState } from "@/components/activities/form-state";
@@ -106,10 +107,12 @@ export async function loadLogPage({
           id: nextRowId(),
           name: ex.name,
           muscleGroup: ex.muscle,
-          weight: "",
-          sets: String(ex.sets),
-          reps: String(ex.reps),
-          rpe: "",
+          sets: Array.from({ length: ex.sets }, () => ({
+            id: nextSetId(),
+            weight: "",
+            reps: String(ex.reps),
+            rpe: "",
+          })),
           notes: "",
         })),
       };

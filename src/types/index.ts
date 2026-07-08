@@ -130,16 +130,34 @@ export interface Activity {
   updated_at: string;
 }
 
+/** A single working set — weight and reps rarely stay uniform across a whole exercise. */
+export interface GymExerciseSet {
+  weight_kg: number;
+  reps: number;
+  rpe?: number | null;
+}
+
 export interface GymExercise {
   id: string;
   activity_id: string;
   exercise_name: string;
   muscle_group: string;
+  /** Best-set summary (kept in sync for backward compatibility) — see set_details for the full breakdown. */
   weight_kg: number;
   sets: number;
   reps: number;
   rpe: number | null;
+  /** Full per-set breakdown; null for legacy rows logged before this existed. */
+  set_details: GymExerciseSet[] | null;
   estimated_1rm_kg: number | null;
+  order_index: number;
+}
+
+/** Payload shape for creating/updating a gym exercise — the client sends the real per-set data, not a pre-computed summary. */
+export interface GymExerciseInput {
+  exercise_name: string;
+  muscle_group: string;
+  sets: GymExerciseSet[];
   order_index: number;
 }
 
@@ -403,5 +421,5 @@ export interface ActivityFormData {
   session_type?: SessionType;
   rpe?: number;
   notes?: string;
-  exercises?: Omit<GymExercise, "id" | "activity_id" | "estimated_1rm_kg">[];
+  exercises?: GymExerciseInput[];
 }

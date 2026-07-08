@@ -1,4 +1,4 @@
-import type { SessionType, SportType, Gender, ExperienceLevel, ScoreBreakdown } from "@/types";
+import type { GymExerciseInput, SessionType, SportType, Gender, ExperienceLevel, ScoreBreakdown } from "@/types";
 import {
   scoreCardioActivity,
   type CardioResult,
@@ -30,6 +30,7 @@ import {
 import { calculateStrengthIndexV2 } from "@/lib/scoring/strength";
 import { INDEX_ANCHOR, MIN_INDEX } from "@/lib/scoring/constants";
 import { bestSet1RM } from "@/lib/scoring/strength/one-rm";
+import { bestSet, totalVolumeKg } from "@/lib/activities/gym-sets";
 
 export interface ActivityScoreContext {
   sport: SportType;
@@ -40,14 +41,7 @@ export interface ActivityScoreContext {
   rpe?: number | null;
   elevationMeters?: number | null;
   temperatureCelsius?: number | null;
-  exercises?: Array<{
-    exercise_name: string;
-    muscle_group: string;
-    weight_kg: number;
-    sets: number;
-    reps: number;
-    rpe?: number | null;
-  }>;
+  exercises?: GymExerciseInput[];
   profile: {
     max_hr?: number | null;
     resting_hr?: number | null;
@@ -135,10 +129,7 @@ function scoreGymSession(
   | "breakdown"
 > {
   const legacy = calculateStrengthIndexV2({
-    exercises: (input.exercises ?? []).map((ex) => ({
-      ...ex,
-      rpe: ex.rpe ?? null,
-    })),
+    exercises: input.exercises ?? [],
     bodyweightKg: bodyweight,
     gender: input.profile.gender ?? null,
     options: { useGL: input.useGL ?? false },
@@ -148,21 +139,19 @@ function scoreGymSession(
   const strengthScoreRows: NonNullable<ActivityScoreOutput["strengthScoreRows"]> = [];
 
   for (const ex of input.exercises ?? []) {
-    const sets = Array.from({ length: ex.sets }, () => ({
-      weightKg: ex.weight_kg,
-      reps: ex.reps,
-    }));
+    const sets = ex.sets.map((s) => ({ weightKg: s.weight_kg, reps: s.reps }));
     const e1RM = bestSet1RM(sets);
+    const top = bestSet(ex.sets);
     const lift = mapExerciseToLift(ex.exercise_name);
-    const volume = ex.sets * ex.reps * ex.weight_kg;
+    const volume = totalVolumeKg(ex.sets);
 
     let strengthResult: StrengthResult | null = null;
-    if (lift && e1RM > 0) {
+    if (lift && e1RM > 0 && top) {
       strengthResult = scoreStrengthActivity(
         buildStrengthInput({
           lift,
-          weightKg: ex.weight_kg,
-          reps: ex.reps,
+          weightKg: top.weight_kg,
+          reps: top.reps,
           bodyweightKg: bodyweight,
           gender: input.profile.gender,
           oneRepMaxOverride: e1RM,

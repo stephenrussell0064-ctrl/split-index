@@ -11,6 +11,7 @@ import {
   resolveScoringBodyweightKg,
   resolveEffectiveMaxHr,
 } from "@/lib/activities/bodyweight";
+import { setsForExercise } from "@/lib/activities/gym-sets";
 import type { GymExercise } from "@/types";
 
 /**
@@ -98,14 +99,14 @@ export async function POST() {
     });
     const scoringProfile = buildScoringProfile(profile, bodyweightKg, effectiveMaxHr);
     const loads = computeRecentLoads(recentScoreLoads);
-    const exercises = (exercisesByActivity.get(activity.id as string) ?? []).map((ex) => ({
-      exercise_name: ex.exercise_name,
-      muscle_group: ex.muscle_group,
-      weight_kg: ex.weight_kg,
-      sets: ex.sets,
-      reps: ex.reps,
-      rpe: ex.rpe,
-    }));
+    const exercises = (exercisesByActivity.get(activity.id as string) ?? [])
+      .sort((a, b) => a.order_index - b.order_index)
+      .map((ex, i) => ({
+        exercise_name: ex.exercise_name,
+        muscle_group: ex.muscle_group,
+        sets: setsForExercise(ex),
+        order_index: i,
+      }));
 
     try {
       const result = scoreActivity(

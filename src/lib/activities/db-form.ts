@@ -3,8 +3,10 @@ import {
   createDefaultState,
   createExerciseRow,
   nextRowId,
+  nextSetId,
   type WorkoutFormState,
 } from "@/components/activities/form-state";
+import { setsForExercise } from "@/lib/activities/gym-sets";
 import type { SportType } from "@/types";
 
 function localDateTimeFromIso(iso: string): string {
@@ -102,10 +104,12 @@ export function activityToFormState(
               id: ex.id || nextRowId(),
               name: ex.exercise_name,
               muscleGroup: ex.muscle_group,
-              weight: String(ex.weight_kg),
-              sets: String(ex.sets),
-              reps: String(ex.reps),
-              rpe: ex.rpe ? String(ex.rpe) : "",
+              sets: setsForExercise(ex).map((s) => ({
+                id: nextSetId(),
+                weight: String(s.weight_kg),
+                reps: String(s.reps),
+                rpe: s.rpe ? String(s.rpe) : "",
+              })),
               notes: exerciseNotes[String(ex.order_index)] ?? "",
             }))
         : sport === "gym"

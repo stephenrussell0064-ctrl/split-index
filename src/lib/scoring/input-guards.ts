@@ -31,7 +31,7 @@ export function assertScoringInput(input: {
   elevationMeters?: number | null;
   splitPacesSec?: number[] | null;
   rpe?: number | null;
-  exercises?: Array<{ weight_kg: number; sets: number; reps: number }>;
+  exercises?: Array<{ sets: Array<{ weight_kg: number; reps: number; rpe?: number | null }> }>;
   profile?: { weight_kg?: number | null };
 }): void {
   if (!Number.isFinite(input.durationSeconds) || input.durationSeconds <= 0) {
@@ -101,14 +101,22 @@ export function assertScoringInput(input: {
 
   if (input.sport === "gym" && input.exercises?.length) {
     for (const ex of input.exercises) {
-      if (ex.weight_kg < 0 || ex.weight_kg > MAX_WEIGHT_KG) {
-        throw new ScoringInputError("Lift weight is out of the allowed range.");
+      if (!ex.sets?.length) {
+        throw new ScoringInputError("Each exercise needs at least one set.");
       }
-      if (ex.sets <= 0 || ex.reps <= 0) {
-        throw new ScoringInputError("Sets and reps must be positive.");
-      }
-      if (bw && bw > 0 && ex.weight_kg > bw * 6) {
-        throw new ScoringInputError("Lift weight is implausible for the recorded bodyweight.");
+      for (const s of ex.sets) {
+        if (!Number.isFinite(s.weight_kg) || s.weight_kg < 0 || s.weight_kg > MAX_WEIGHT_KG) {
+          throw new ScoringInputError("Lift weight is out of the allowed range.");
+        }
+        if (!Number.isInteger(s.reps) || s.reps <= 0) {
+          throw new ScoringInputError("Reps must be a positive whole number.");
+        }
+        if (s.rpe != null && (!Number.isFinite(s.rpe) || s.rpe < 1 || s.rpe > 10)) {
+          throw new ScoringInputError("RPE must be between 1 and 10.");
+        }
+        if (bw && bw > 0 && s.weight_kg > bw * 6) {
+          throw new ScoringInputError("Lift weight is implausible for the recorded bodyweight.");
+        }
       }
     }
   }

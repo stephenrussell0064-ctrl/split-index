@@ -98,9 +98,8 @@ const gymMetric = scoreActivity(
       {
         exercise_name: "Bench Press",
         muscle_group: "chest",
-        weight_kg: benchKg,
-        sets: 3,
-        reps: 5,
+        sets: Array.from({ length: 3 }, () => ({ weight_kg: benchKg, reps: 5 })),
+        order_index: 0,
       },
     ],
     profile: { ...profile, weight_kg: bwKg },
@@ -117,9 +116,8 @@ const gymImperial = scoreActivity(
       {
         exercise_name: "Bench Press",
         muscle_group: "chest",
-        weight_kg: lbToKg(benchLb),
-        sets: 3,
-        reps: 5,
+        sets: Array.from({ length: 3 }, () => ({ weight_kg: lbToKg(benchLb), reps: 5 })),
+        order_index: 0,
       },
     ],
     profile: { ...profile, weight_kg: lbToKg(bwLb) },

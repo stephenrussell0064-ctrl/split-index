@@ -20,12 +20,16 @@ import { formatRelativeStrength } from "@/lib/utils/scoring-display";
 import { cn } from "@/lib/utils/cn";
 import { DerivedChip, Field, FieldError, GlassInput, MicroLabel, UnitInput } from "./fields";
 import {
+  bestSetRow,
   createExerciseRow,
+  createSetRow,
   epley1RM,
   exerciseScore,
   parseNum,
+  totalVolumeFromSets,
   type ExerciseRowState,
   type FormErrors,
+  type SetRowState,
   type WorkoutFormState,
 } from "./form-state";
 import type { UpdateField } from "./sport-form";
@@ -63,10 +67,7 @@ export function GymExercises({
     const copy = createExerciseRow(source);
     copy.name = source.name;
     copy.muscleGroup = source.muscleGroup;
-    copy.weight = source.weight;
-    copy.sets = source.sets;
-    copy.reps = source.reps;
-    copy.rpe = source.rpe;
+    copy.sets = source.sets.map((s) => createSetRow(s));
     const idx = rows.findIndex((r) => r.id === id);
     const next = [...rows];
     next.splice(idx + 1, 0, copy);
@@ -81,12 +82,7 @@ export function GymExercises({
   };
 
   const totalVolume = useMemo(() => {
-    const kg = rows.reduce((sum, row) => {
-      const weight = parseNum(row.weight) ?? 0;
-      const sets = parseNum(row.sets) ?? 0;
-      const reps = parseNum(row.reps) ?? 0;
-      return sum + weight * sets * reps;
-    }, 0);
+    const kg = rows.reduce((sum, row) => sum + totalVolumeFromSets(row.sets), 0);
     return kg > 0 ? `${Math.round(kg).toLocaleString()} kg` : null;
   }, [rows]);
 
@@ -94,7 +90,8 @@ export function GymExercises({
     if (!bodyweight) return null;
     let best: { name: string; ratio: number } | null = null;
     for (const row of rows) {
-      const oneRm = epley1RM(parseNum(row.weight), parseNum(row.reps));
+      const top = bestSetRow(row.sets);
+      const oneRm = top ? epley1RM(parseNum(top.weight), parseNum(top.reps)) : null;
       if (!oneRm || !row.name.trim()) continue;
       const ratio = oneRm / bodyweight;
       if (!best || ratio > best.ratio) {
@@ -134,18 +131,6 @@ export function GymExercises({
           onChange={(e) => onUpdate("bodyweight", e.target.value)}
         />
       </Field>
-
-      <div className="hidden sm:grid grid-cols-[minmax(140px,1.4fr)_minmax(100px,1fr)_64px_64px_56px_72px_72px_64px_64px] gap-2 px-1 text-[10px] font-semibold uppercase tracking-wider text-muted/60">
-        <span>Exercise</span>
-        <span>Muscle</span>
-        <span>kg</span>
-        <span>Sets</span>
-        <span>Reps</span>
-        <span>RPE</span>
-        <span>1RM</span>
-        <span>× BW</span>
-        <span>Score</span>
-      </div>
 
       <div className="space-y-2">
         <AnimatePresence initial={false}>
@@ -217,7 +202,8 @@ function ExerciseRow({
   onRemove: () => void;
   onFilterChange: (c: MuscleGroupCategory) => void;
 }) {
-  const oneRm = epley1RM(parseNum(row.weight), parseNum(row.reps));
+  const topSet = bestSetRow(row.sets);
+  const oneRm = topSet ? epley1RM(parseNum(topSet.weight), parseNum(topSet.reps)) : null;
   const relativeBw =
     oneRm && bodyweight && bodyweight > 0
       ? Math.round((oneRm / bodyweight) * 100) / 100
@@ -227,6 +213,20 @@ function ExerciseRow({
       (ex) => ex.name.toLowerCase() === row.name.trim().toLowerCase()
     )?.kind ?? "compound";
   const score = exerciseScore(oneRm, bodyweight, kind);
+  const volume = totalVolumeFromSets(row.sets);
+
+  const updateSet = (setId: string, patch: Partial<SetRowState>) => {
+    onUpdate({
+      sets: row.sets.map((s) => (s.id === setId ? { ...s, ...patch } : s)),
+    });
+  };
+  const addSet = () => {
+    onUpdate({ sets: [...row.sets, createSetRow(row.sets[row.sets.length - 1])] });
+  };
+  const removeSet = (setId: string) => {
+    if (row.sets.length <= 1) return;
+    onUpdate({ sets: row.sets.filter((s) => s.id !== setId) });
+  };
 
   const dragX = useMotionValue(0);
   const deleteOpacity = useTransform(dragX, [-120, -60], [1, 0]);
@@ -259,141 +259,137 @@ function ExerciseRow({
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, height: 0, marginBottom: 0 }}
         transition={{ duration: 0.2 }}
-        className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-3 sm:p-2 sm:grid sm:grid-cols-[minmax(140px,1.4fr)_minmax(100px,1fr)_64px_64px_56px_72px_72px_64px_64px_auto] sm:gap-2 sm:items-start"
+        className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-3 sm:p-4 space-y-3"
       >
-        <div className="space-y-3 sm:contents">
-          <div className="sm:col-span-2 grid gap-3 sm:grid-cols-2 sm:col-auto sm:contents">
-            <Field label={`Exercise ${index + 1}`} error={errors[`ex.${row.id}.name`]} className="sm:mb-0">
-              <ExerciseNameInput
-                value={row.name}
-                muscleFilter={muscleFilter}
-                invalid={!!errors[`ex.${row.id}.name`]}
-                onFilterChange={onFilterChange}
-                onChange={(name) => onUpdate({ name })}
-                onPick={(name, muscle) => onUpdate({ name, muscleGroup: muscle })}
-              />
-            </Field>
-            <Field label="Muscle" error={errors[`ex.${row.id}.muscle`]} className="sm:mb-0 sm:hidden">
-              <MuscleSelect
-                value={row.muscleGroup}
-                invalid={!!errors[`ex.${row.id}.muscle`]}
-                onChange={(v) => onUpdate({ muscleGroup: v })}
-              />
-            </Field>
-            <div className="hidden sm:block">
-              <MuscleSelect
-                value={row.muscleGroup}
-                invalid={!!errors[`ex.${row.id}.muscle`]}
-                onChange={(v) => onUpdate({ muscleGroup: v })}
-                compact
-              />
-            </div>
-          </div>
+        <div className="grid gap-3 sm:grid-cols-[minmax(140px,1.4fr)_minmax(100px,1fr)]">
+          <Field label={`Exercise ${index + 1}`} error={errors[`ex.${row.id}.name`]} className="mb-0">
+            <ExerciseNameInput
+              value={row.name}
+              muscleFilter={muscleFilter}
+              invalid={!!errors[`ex.${row.id}.name`]}
+              onFilterChange={onFilterChange}
+              onChange={(name) => onUpdate({ name })}
+              onPick={(name, muscle) => onUpdate({ name, muscleGroup: muscle })}
+            />
+          </Field>
+          <Field label="Muscle" error={errors[`ex.${row.id}.muscle`]} className="mb-0">
+            <MuscleSelect
+              value={row.muscleGroup}
+              invalid={!!errors[`ex.${row.id}.muscle`]}
+              onChange={(v) => onUpdate({ muscleGroup: v })}
+            />
+          </Field>
+        </div>
 
-          <div className="grid grid-cols-2 gap-2 sm:contents">
-            <Field label="Weight" error={errors[`ex.${row.id}.weight`]} className="sm:mb-0">
+        <div className="space-y-2">
+          <div className="hidden sm:grid grid-cols-[28px_1fr_1fr_1fr_40px] gap-2 px-1 text-[10px] font-semibold uppercase tracking-wider text-muted/60">
+            <span>Set</span>
+            <span>kg</span>
+            <span>Reps</span>
+            <span>RPE</span>
+            <span />
+          </div>
+          {row.sets.map((set, setIndex) => (
+            <div
+              key={set.id}
+              className="grid grid-cols-[20px_1fr_1fr_1fr_auto] sm:grid-cols-[28px_1fr_1fr_1fr_40px] gap-2 items-center"
+            >
+              <span className="text-xs text-muted/70 text-center tabular-nums">{setIndex + 1}</span>
               <UnitInput
-                value={row.weight}
+                aria-label={`Set ${setIndex + 1} weight`}
+                value={set.weight}
                 unit="kg"
                 placeholder="60"
-                invalid={!!errors[`ex.${row.id}.weight`]}
-                onChange={(e) => onUpdate({ weight: e.target.value })}
+                invalid={!!errors[`ex.${row.id}.set.${set.id}.weight`]}
+                onChange={(e) => updateSet(set.id, { weight: e.target.value })}
                 className="h-11 sm:h-10"
               />
-            </Field>
-            <Field label="Sets" error={errors[`ex.${row.id}.sets`]} className="sm:mb-0">
               <UnitInput
-                value={row.sets}
-                placeholder="3"
-                invalid={!!errors[`ex.${row.id}.sets`]}
-                onChange={(e) => onUpdate({ sets: e.target.value })}
-                className="h-11 sm:h-10"
-              />
-            </Field>
-            <Field label="Reps" error={errors[`ex.${row.id}.reps`]} className="sm:mb-0">
-              <UnitInput
-                value={row.reps}
+                aria-label={`Set ${setIndex + 1} reps`}
+                value={set.reps}
                 placeholder="8"
-                invalid={!!errors[`ex.${row.id}.reps`]}
-                onChange={(e) => onUpdate({ reps: e.target.value })}
+                invalid={!!errors[`ex.${row.id}.set.${set.id}.reps`]}
+                onChange={(e) => updateSet(set.id, { reps: e.target.value })}
                 className="h-11 sm:h-10"
               />
-            </Field>
-            <Field label="RPE" error={errors[`ex.${row.id}.rpe`]} className="sm:mb-0">
               <UnitInput
-                value={row.rpe}
+                aria-label={`Set ${setIndex + 1} RPE`}
+                value={set.rpe}
                 placeholder="8"
-                invalid={!!errors[`ex.${row.id}.rpe`]}
-                onChange={(e) => onUpdate({ rpe: e.target.value })}
+                invalid={!!errors[`ex.${row.id}.set.${set.id}.rpe`]}
+                onChange={(e) => updateSet(set.id, { rpe: e.target.value })}
                 className="h-11 sm:h-10"
               />
-            </Field>
-          </div>
-
-          <div className="flex items-center gap-3 sm:contents">
-            <div className="hidden sm:flex sm:flex-col sm:justify-center sm:h-10 sm:pt-5">
-              <span className="text-xs font-medium tabular-nums text-foreground/80">
-                {oneRm ? `${oneRm} kg` : "—"}
-              </span>
-            </div>
-            <div className="hidden sm:flex sm:flex-col sm:justify-center sm:h-10 sm:pt-5">
-              <span className="text-xs font-semibold tabular-nums text-strength">
-                {relativeBw ? formatRelativeStrength(relativeBw, true) : "—"}
-              </span>
-            </div>
-            <div className="hidden sm:flex sm:flex-col sm:justify-center sm:h-10 sm:pt-5">
-              <span
-                className={cn(
-                  "text-sm font-bold tabular-nums px-2 py-0.5 rounded-md",
-                  score
-                    ? "text-gym-accent bg-gym-accent/10"
-                    : "text-gym-muted/50"
-                )}
-              >
-                {score ?? "—"}
-              </span>
-            </div>
-            <div className="flex gap-1 sm:pt-4 sm:justify-end">
               <button
                 type="button"
-                aria-label="Duplicate set"
-                onClick={onDuplicate}
-                className="rounded-lg p-2 text-muted transition-colors duration-200 hover:bg-white/5 hover:text-foreground min-h-[44px] min-w-[44px] flex items-center justify-center"
+                aria-label={`Remove set ${setIndex + 1}`}
+                onClick={() => removeSet(set.id)}
+                disabled={row.sets.length <= 1}
+                className="rounded-lg p-2 text-muted transition-colors duration-200 hover:bg-danger/10 hover:text-danger disabled:opacity-30 disabled:pointer-events-none min-h-[44px] min-w-[36px] flex items-center justify-center"
               >
-                <Copy className="h-4 w-4" />
+                <Trash2 className="h-3.5 w-3.5" />
               </button>
-              {canRemove && (
-                <button
-                  type="button"
-                  aria-label="Remove exercise"
-                  onClick={onRemove}
-                  className="rounded-lg p-2 text-muted transition-colors duration-200 hover:bg-danger/10 hover:text-danger min-h-[44px] min-w-[44px] items-center justify-center sm:flex hidden"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              )}
             </div>
-          </div>
+          ))}
+          <FieldError error={errors[`ex.${row.id}.sets`]} />
+          <button
+            type="button"
+            onClick={addSet}
+            className="flex items-center gap-1.5 text-xs font-medium text-gym-accent hover:text-gym-accent/80 min-h-[36px]"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add set
+          </button>
+        </div>
 
-          <div className="flex flex-wrap gap-2 sm:hidden">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap gap-2">
             <DerivedChip label="Est. 1RM" value={oneRm ? `${oneRm} kg` : null} tone="strength" />
             <DerivedChip
               label="× BW"
               value={relativeBw ? formatRelativeStrength(relativeBw, true) : null}
               tone="strength"
             />
-            <DerivedChip label="Score" value={score ? String(score) : null} tone="strength" />
+            <DerivedChip label="Volume" value={volume > 0 ? `${Math.round(volume)} kg` : null} tone="strength" />
+            <span
+              className={cn(
+                "inline-flex items-center rounded-md px-2 py-0.5 text-sm font-bold tabular-nums",
+                score ? "text-gym-accent bg-gym-accent/10" : "text-gym-muted/50"
+              )}
+            >
+              {score ?? "—"}
+            </span>
           </div>
-
-          <Field label="Notes (optional)" className="sm:col-span-full mt-1">
-            <GlassInput
-              value={row.notes}
-              placeholder="Tempo, form cues, etc."
-              onChange={(e) => onUpdate({ notes: e.target.value })}
-              className="h-11"
-            />
-          </Field>
+          <div className="flex gap-1">
+            <button
+              type="button"
+              aria-label="Duplicate exercise"
+              onClick={onDuplicate}
+              className="rounded-lg p-2 text-muted transition-colors duration-200 hover:bg-white/5 hover:text-foreground min-h-[44px] min-w-[44px] flex items-center justify-center"
+            >
+              <Copy className="h-4 w-4" />
+            </button>
+            {canRemove && (
+              <button
+                type="button"
+                aria-label="Remove exercise"
+                onClick={onRemove}
+                className="rounded-lg p-2 text-muted transition-colors duration-200 hover:bg-danger/10 hover:text-danger min-h-[44px] min-w-[44px] items-center justify-center hidden sm:flex"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            )}
+          </div>
         </div>
+
+        <Field label="Notes (optional)">
+          <GlassInput
+            value={row.notes}
+            placeholder="Tempo, form cues, etc."
+            onChange={(e) => onUpdate({ notes: e.target.value })}
+            className="h-11"
+          />
+        </Field>
       </motion.div>
     </div>
   );

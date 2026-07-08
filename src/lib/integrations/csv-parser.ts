@@ -210,10 +210,14 @@ export function parseCsvContent(content: string, filename?: string): ParsedCsv {
               {
                 exercise_name: exerciseName,
                 muscle_group: pickField(row, ["muscle_group", "muscle"]) ?? "Other",
-                weight_kg: weightRaw ? parseFloat(weightRaw) : 0,
-                sets: setsRaw ? parseInt(setsRaw, 10) : 1,
-                reps: repsRaw ? parseInt(repsRaw, 10) : 1,
-                rpe: null,
+                sets: Array.from(
+                  { length: setsRaw ? parseInt(setsRaw, 10) : 1 },
+                  () => ({
+                    weight_kg: weightRaw ? parseFloat(weightRaw) : 0,
+                    reps: repsRaw ? parseInt(repsRaw, 10) : 1,
+                    rpe: null,
+                  })
+                ),
                 order_index: 0,
               },
             ]

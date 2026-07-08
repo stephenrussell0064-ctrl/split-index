@@ -1,4 +1,4 @@
-import type { Profile, SessionType, SportType } from "@/types";
+import type { GymExerciseInput, Profile, SessionType, SportType } from "@/types";
 import { predictIndex } from "@/lib/scoring/engine";
 import { scoreActivityWithEngines } from "@/lib/scoring/activity-scorer";
 import { estimate1RM } from "@/lib/scoring/engine";
@@ -20,14 +20,7 @@ interface ScoreActivityInput {
   temperatureCelsius?: number | null;
   sessionType?: SessionType | null;
   rpe?: number | null;
-  exercises?: Array<{
-    exercise_name: string;
-    muscle_group: string;
-    weight_kg: number;
-    sets: number;
-    reps: number;
-    rpe?: number | null;
-  }>;
+  exercises?: GymExerciseInput[];
   profile: Pick<
     Profile,
     | "max_hr"
