@@ -191,17 +191,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <main className="lg:pl-64">
           <div className="mode-content mx-auto max-w-7xl px-4 py-6 pb-24 lg:px-8 lg:py-8 lg:pb-8">
             {showTopBar && <AppTopBar mode={mode} />}
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={pathname}
-                initial={{ opacity: 0, x: 12 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -12 }}
-                transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-              >
-                {children}
-              </motion.div>
-            </AnimatePresence>
+            {/*
+              No `mode="wait"` here on purpose: it forces the outgoing page to
+              fully fade out (200ms) before the incoming one starts fading in
+              (another 200ms), adding 400ms of dead time to every navigation
+              on top of data-fetch latency. Letting them crossfade instead
+              cuts that in half.
+            */}
+            <div className="relative">
+              <AnimatePresence initial={false}>
+                <motion.div
+                  key={pathname}
+                  initial={{ opacity: 0, x: 12 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -12, position: "absolute", top: 0, left: 0, right: 0 }}
+                  transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+                >
+                  {children}
+                </motion.div>
+              </AnimatePresence>
+            </div>
           </div>
         </main>
       </div>

@@ -43,6 +43,8 @@ export async function updateSession(request: NextRequest) {
       request.nextUrl.pathname.startsWith("/onboarding") ||
       request.nextUrl.pathname.startsWith("/activities") ||
       request.nextUrl.pathname.startsWith("/analytics") ||
+      request.nextUrl.pathname.startsWith("/gym") ||
+      request.nextUrl.pathname.startsWith("/cardio") ||
       (request.nextUrl.pathname.startsWith("/social") && !isPublicSocialProfile) ||
       request.nextUrl.pathname.startsWith("/settings") ||
       request.nextUrl.pathname.startsWith("/profile");
