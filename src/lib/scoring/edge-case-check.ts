@@ -4,7 +4,7 @@
  */
 
 import { scoreCardioActivity } from "./cardio-activity";
-import { scoreStrengthActivity } from "./strength-activity";
+import { scoreStrength } from "./split-strength-engine";
 import { assertScoringInput, ScoringInputError } from "./input-guards";
 
 let failed = 0;
@@ -75,12 +75,14 @@ const noHr = scoreCardioActivity({
 });
 expectFinite("5K without HR", noHr.score);
 
-const squat = scoreStrengthActivity({
-  lift: "squat",
-  weightKg: 100,
-  reps: 5,
+const squat = scoreStrength({
+  liftKey: "squat",
+  history: [],
+  latestSet: { weightKg: 100, reps: 5 },
   bodyweightKg: 80,
   sex: "male",
+  age: 28,
+  isPremium: false,
 });
 expectFinite("valid squat", squat.score);
 

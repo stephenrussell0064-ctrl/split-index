@@ -98,11 +98,7 @@ export default async function ActivityDetailPage({
   const scoreBreakdown = (score?.score_breakdown ?? {}) as ScoreBreakdown;
   const cardioEnrichment = scoreBreakdown.cardio_enrichment;
   const gatedCardioInsight = extractGatedCardioInsight(scoreBreakdown, isPremium);
-  const gatedStrengthInsights = extractGatedStrengthInsights(
-    scoreBreakdown,
-    exercises ?? [],
-    isPremium
-  );
+  const gatedStrengthInsights = extractGatedStrengthInsights(scoreBreakdown, isPremium);
 
   const exerciseBreakdown =
     activity.sport === "gym" && exercises?.length

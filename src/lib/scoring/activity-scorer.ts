@@ -4,22 +4,22 @@ import {
   type CardioResult,
 } from "@/lib/scoring/cardio-activity";
 import {
-  scoreStrengthActivity,
-  type StrengthResult,
-} from "@/lib/scoring/strength-activity";
+  scoreStrength,
+  labIndex,
+  normalizeName as normalizeExerciseName,
+  type ScoreStrengthResult,
+  type LoggedSet,
+  type Sex,
+} from "@/lib/scoring/split-strength-engine";
 import {
-  aggregateSideIndex,
   computeIndexes,
-  type ActivityScore,
   type IndexResult,
 } from "@/lib/scoring/index-engine";
 import {
   buildActivityScores,
   buildCardioInput,
-  buildStrengthInput,
   deriveAthleteProfile,
   labWeightFromProfile,
-  mapExerciseToLift,
 } from "@/lib/scoring/adapters";
 import {
   calculateACWR,
@@ -28,8 +28,7 @@ import {
   isEnduranceSport,
 } from "@/lib/scoring/engine";
 import { calculateStrengthIndexV2 } from "@/lib/scoring/strength";
-import { INDEX_ANCHOR, MIN_INDEX } from "@/lib/scoring/constants";
-import { bestSet1RM } from "@/lib/scoring/strength/one-rm";
+import { INDEX_ANCHOR } from "@/lib/scoring/constants";
 import { bestSet, totalVolumeKg } from "@/lib/activities/gym-sets";
 
 export interface ActivityScoreContext {
@@ -42,6 +41,9 @@ export interface ActivityScoreContext {
   elevationMeters?: number | null;
   temperatureCelsius?: number | null;
   exercises?: GymExerciseInput[];
+  /** Full logged history per exercise (across all past sessions), keyed by normalized exercise name — powers the premium adaptive 1RM model. */
+  exerciseHistory?: Record<string, LoggedSet[]>;
+  isPremium?: boolean;
   profile: {
     max_hr?: number | null;
     resting_hr?: number | null;
@@ -74,7 +76,7 @@ export interface ActivityScoreOutput {
   activityConfidence: number;
   indexResult: IndexResult;
   cardioActivity?: CardioResult;
-  strengthActivities?: StrengthResult[];
+  strengthActivities?: ScoreStrengthResult[];
   dotsScore?: number;
   glPoints?: number;
   useGL?: boolean;
@@ -128,6 +130,9 @@ function scoreGymSession(
   | "activityConfidence"
   | "breakdown"
 > {
+  // DOTS/GL and the SBD-total are a separate, still-useful powerlifting-total
+  // metric (only meaningful when squat+bench+deadlift are all logged in one
+  // session) — kept for that display, no longer used for per-exercise scoring.
   const legacy = calculateStrengthIndexV2({
     exercises: input.exercises ?? [],
     bodyweightKg: bodyweight,
@@ -135,77 +140,67 @@ function scoreGymSession(
     options: { useGL: input.useGL ?? false },
   });
 
-  const perLiftResults: StrengthResult[] = [];
+  const sex: Sex = input.profile.gender === "female" ? "female" : "male";
+  const isPremium = input.isPremium ?? false;
+  const results: ScoreStrengthResult[] = [];
   const strengthScoreRows: NonNullable<ActivityScoreOutput["strengthScoreRows"]> = [];
 
   for (const ex of input.exercises ?? []) {
-    const sets = ex.sets.map((s) => ({ weightKg: s.weight_kg, reps: s.reps }));
-    const e1RM = bestSet1RM(sets);
     const top = bestSet(ex.sets);
-    const lift = mapExerciseToLift(ex.exercise_name);
+    if (!top) continue;
     const volume = totalVolumeKg(ex.sets);
+    const history = input.exerciseHistory?.[normalizeExerciseName(ex.exercise_name)] ?? [];
 
-    let strengthResult: StrengthResult | null = null;
-    if (lift && e1RM > 0 && top) {
-      strengthResult = scoreStrengthActivity(
-        buildStrengthInput({
-          lift,
-          weightKg: top.weight_kg,
-          reps: top.reps,
-          bodyweightKg: bodyweight,
-          gender: input.profile.gender,
-          oneRepMaxOverride: e1RM,
-        })
-      );
-      perLiftResults.push(strengthResult);
-    }
-
-    const rowFromLegacy = legacy.strengthScoreRows.find(
-      (r) => r.exercise_name === ex.exercise_name
-    );
+    const result = scoreStrength({
+      liftKey: ex.exercise_name,
+      history,
+      latestSet: { weightKg: top.weight_kg, reps: top.reps },
+      bodyweightKg: bodyweight,
+      sex,
+      age: input.profile.age ?? null,
+      isPremium,
+    });
+    results.push(result);
 
     strengthScoreRows.push({
       exercise_name: ex.exercise_name,
       muscle_group: ex.muscle_group,
-      estimated_1rm_kg: Math.round(e1RM * 100) / 100,
+      estimated_1rm_kg: result.oneRM,
       bodyweight_kg: bodyweight,
-      relative_strength:
-        bodyweight > 0 ? Math.round((e1RM / bodyweight) * 100) / 100 : 0,
+      relative_strength: result.bodyweightRatio,
       volume_load_kg: volume,
-      strength_index: strengthResult?.score ?? rowFromLegacy?.strength_index ?? MIN_INDEX,
-      score_breakdown: {
-        ...(rowFromLegacy?.score_breakdown ?? {}),
-        strength_activity: strengthResult ?? undefined,
-      },
+      strength_index: result.score,
+      score_breakdown: { strength_result: result },
     });
   }
 
-  const sessionScores: ActivityScore[] = perLiftResults.map((r) => ({
-    side: "lab",
-    score: r.score,
-    confidence: 1,
-    date: input.startedAt ?? new Date().toISOString(),
-  }));
-
-  const sportIndex =
-    sessionScores.length > 0
-      ? aggregateSideIndex(sessionScores, "lab") ?? legacy.index
-      : legacy.index;
+  const sportIndex = results.length > 0 ? labIndex(results) : legacy.index;
+  const activityConfidence =
+    results.length > 0
+      ? results.reduce((sum, r) => sum + r.oneRMConfidence, 0) / results.length
+      : 1;
 
   return {
     sportIndex,
     strengthComponent: sportIndex,
     loadScore: legacy.loadScore,
-    strengthActivities: perLiftResults,
+    strengthActivities: results,
     dotsScore: legacy.dotsScore,
     glPoints: legacy.glPoints,
     useGL: legacy.useGL,
-    exerciseScores: legacy.exerciseScores,
+    exerciseScores: results.map((r) => ({
+      name: r.liftKey,
+      muscleGroup: (input.exercises ?? []).find((e) => e.exercise_name === r.liftKey)?.muscle_group ?? "",
+      estimated1RM: r.oneRM,
+      relativeStrength: r.bodyweightRatio,
+      tier: r.tier,
+      tierLabel: r.tier,
+    })),
     strengthScoreRows,
-    activityConfidence: 1,
+    activityConfidence,
     breakdown: {
       ...legacy.breakdown,
-      strength_activities: perLiftResults,
+      strength_activities: results,
     },
   };
 }

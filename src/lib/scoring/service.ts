@@ -4,6 +4,7 @@ import { scoreActivityWithEngines } from "@/lib/scoring/activity-scorer";
 import { estimate1RM } from "@/lib/scoring/engine";
 import type { IndexResult } from "@/lib/scoring/index-engine";
 import { assertScoringInput } from "@/lib/scoring/input-guards";
+import type { LoggedSet } from "@/lib/scoring/split-strength-engine";
 
 export { ScoringInputError } from "@/lib/scoring/input-guards";
 
@@ -21,6 +22,9 @@ interface ScoreActivityInput {
   sessionType?: SessionType | null;
   rpe?: number | null;
   exercises?: GymExerciseInput[];
+  /** Full logged history per exercise (across all past sessions), keyed by normalized exercise name. */
+  exerciseHistory?: Record<string, LoggedSet[]>;
+  isPremium?: boolean;
   profile: Pick<
     Profile,
     | "max_hr"
@@ -117,6 +121,8 @@ export function scoreActivity(
       elevationMeters: input.elevationMeters,
       temperatureCelsius: input.temperatureCelsius,
       exercises: input.exercises,
+      exerciseHistory: input.exerciseHistory,
+      isPremium: input.isPremium,
       profile: input.profile,
       recentLoads: input.recentLoads,
       useGL: input.useGL,

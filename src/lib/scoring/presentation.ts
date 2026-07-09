@@ -1,6 +1,6 @@
 import type { ScoreBreakdown } from "@/types";
 import type { CardioResult } from "@/lib/scoring/cardio-activity";
-import type { StrengthResult } from "@/lib/scoring/strength-activity";
+import type { ScoreStrengthResult } from "@/lib/scoring/split-strength-engine";
 import type { IndexResult } from "@/lib/scoring/index-engine";
 import {
   gateCardioResult,
@@ -23,7 +23,7 @@ export function serializeScoreBreakdown(
     : undefined;
 
   const strength = breakdown.strength_activities?.map((row) =>
-    gateStrengthResult(row as StrengthResult, isPremium)
+    gateStrengthResult(row as ScoreStrengthResult, isPremium)
   );
 
   const index = breakdown.index_result

@@ -12,7 +12,10 @@ import {
   resolveEffectiveMaxHr,
 } from "@/lib/activities/bodyweight";
 import { setsForExercise } from "@/lib/activities/gym-sets";
+import { normalizeName } from "@/lib/scoring/split-strength-engine";
+import { isPremiumUser } from "@/lib/retention/trial";
 import type { GymExercise } from "@/types";
+import type { LoggedSet } from "@/lib/scoring/split-strength-engine";
 
 /**
  * Re-scores every one of the caller's own past activities with the current
@@ -87,9 +90,15 @@ export async function POST() {
     0
   );
   const effectiveMaxHr = resolveEffectiveMaxHr(profile.max_hr, observedMaxHr || null);
+  const isPremium = isPremiumUser(profile.subscription_tier, profile.subscription_status);
 
   let recomputed = 0;
   const failures: Array<{ id: string; error: string }> = [];
+
+  // Built incrementally, oldest-first, so scoring activity N only ever sees
+  // history from activities strictly before it — never a future session's
+  // sets influencing a past one's adaptive 1RM estimate.
+  const exerciseHistory: Record<string, LoggedSet[]> = {};
 
   for (const activity of activities ?? []) {
     const metadata = activity.metadata as Record<string, unknown> | null;
@@ -124,6 +133,8 @@ export async function POST() {
           sessionType: activity.session_type,
           rpe: activity.rpe,
           exercises,
+          exerciseHistory,
+          isPremium,
           profile: scoringProfile,
           recentLoads: loads,
           startedAt: activity.started_at,
@@ -131,6 +142,18 @@ export async function POST() {
         { enduranceIndices, strengthIndices, splitIndices },
         recentActivityRows
       );
+
+      // Append this session's sets to history *after* scoring it, so it's
+      // available to later (more recent) activities but not to itself.
+      for (const ex of exercises) {
+        const key = normalizeName(ex.exercise_name);
+        const logged: LoggedSet[] = ex.sets.map((s) => ({
+          weightKg: s.weight_kg,
+          reps: s.reps,
+          performedAt: activity.started_at as string,
+        }));
+        exerciseHistory[key] = [...(exerciseHistory[key] ?? []), ...logged];
+      }
 
       await supabase.from("workout_scores").delete().eq("activity_id", activity.id);
       await supabase.from("workout_scores").insert({

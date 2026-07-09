@@ -1,5 +1,9 @@
 import type { CardioResult } from "@/lib/scoring/cardio-activity";
-import type { StrengthResult } from "@/lib/scoring/strength-activity";
+import {
+  serializeStrengthResult,
+  type ScoreStrengthResult,
+  type FreeStrengthResult,
+} from "@/lib/scoring/split-strength-engine";
 import type { IndexResult } from "@/lib/scoring/index-engine";
 
 export type LockedCardioFields =
@@ -8,13 +12,6 @@ export type LockedCardioFields =
   | "decouplingPct"
   | "predictions"
   | "confidence"
-  | "flags";
-
-export type LockedStrengthFields =
-  | "dots"
-  | "bodyweightRatio"
-  | "tier"
-  | "percentileVsStandards"
   | "flags";
 
 export type LockedIndexFields =
@@ -29,11 +26,7 @@ export type GatedCardioResult =
       locked: LockedCardioFields[];
     });
 
-export type GatedStrengthResult =
-  | StrengthResult
-  | (Pick<StrengthResult, "score" | "estimated1RM"> & {
-      locked: LockedStrengthFields[];
-    });
+export type GatedStrengthResult = ScoreStrengthResult | FreeStrengthResult;
 
 export type GatedIndexResult =
   | IndexResult
@@ -65,16 +58,10 @@ export function gateCardioResult(
 
 /** Gate strength premium fields at the presentation/API layer. */
 export function gateStrengthResult(
-  result: StrengthResult,
+  result: ScoreStrengthResult,
   isPremium: boolean
 ): GatedStrengthResult {
-  if (isPremium) return result;
-  const { score, estimated1RM } = result;
-  return {
-    score,
-    estimated1RM,
-    locked: ["dots", "bodyweightRatio", "tier", "percentileVsStandards", "flags"],
-  };
+  return serializeStrengthResult(result, isPremium);
 }
 
 /** Gate index premium fields at the presentation/API layer. */
@@ -98,8 +85,8 @@ export function isCardioResultLocked(
 
 export function isStrengthResultLocked(
   value: GatedStrengthResult
-): value is Extract<GatedStrengthResult, { locked: LockedStrengthFields[] }> {
-  return "locked" in value;
+): value is FreeStrengthResult {
+  return "premiumLocked" in value;
 }
 
 export function isIndexResultLocked(

@@ -19,6 +19,7 @@ import {
   resolveEffectiveMaxHr,
 } from "@/lib/activities/bodyweight";
 import { bestSet, summarizeSets } from "@/lib/activities/gym-sets";
+import { fetchExerciseHistory } from "@/lib/activities/exercise-history";
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -229,6 +230,16 @@ export async function POST(request: Request) {
     .order("started_at", { ascending: false })
     .limit(10);
 
+  const premium = isPremiumUser(profile.subscription_tier, profile.subscription_status);
+  const exerciseHistory =
+    body.sport === "gym" && body.exercises?.length
+      ? await fetchExerciseHistory(
+          supabase,
+          user.id,
+          body.exercises.map((ex) => ex.exercise_name)
+        )
+      : {};
+
   const result = (() => {
     try {
       return scoreActivity(
@@ -245,6 +256,8 @@ export async function POST(request: Request) {
           sessionType: body.session_type,
           rpe: body.rpe,
           exercises: body.exercises,
+          exerciseHistory,
+          isPremium: premium,
           profile: scoringProfile,
           recentLoads: loads,
           startedAt: body.started_at,
@@ -461,11 +474,6 @@ export async function POST(request: Request) {
         .eq("id", workoutScore.id);
     }
   }
-
-  const premium = isPremiumUser(
-    profile.subscription_tier,
-    profile.subscription_status
-  );
 
   return NextResponse.json({
     activity,

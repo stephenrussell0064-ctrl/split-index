@@ -1,10 +1,9 @@
-import { mapExerciseToLift } from "@/lib/scoring/adapters";
 import {
   gateCardioResult,
   gateStrengthResult,
 } from "@/lib/scoring/gates";
 import type { CardioResult } from "@/lib/scoring/cardio-activity";
-import type { StrengthResult } from "@/lib/scoring/strength-activity";
+import type { ScoreStrengthResult } from "@/lib/scoring/split-strength-engine";
 import type { ScoreBreakdown } from "@/types";
 
 export function extractGatedCardioInsight(
@@ -16,20 +15,16 @@ export function extractGatedCardioInsight(
   return gateCardioResult(raw, isPremium);
 }
 
+/** Every logged exercise gets a scoreStrength() result now, each carrying its own liftKey — no name/index alignment needed. */
 export function extractGatedStrengthInsights(
   breakdown: ScoreBreakdown,
-  exercises: Array<{ exercise_name: string }>,
   isPremium: boolean
 ) {
-  const activities = breakdown.strength_activities as StrengthResult[] | undefined;
+  const activities = breakdown.strength_activities as ScoreStrengthResult[] | undefined;
   if (!activities?.length) return null;
 
-  const mappedNames = exercises
-    .map((ex) => ex.exercise_name)
-    .filter((name) => mapExerciseToLift(name));
-
-  return activities.map((result, index) => ({
-    name: mappedNames[index] ?? `Lift ${index + 1}`,
+  return activities.map((result) => ({
+    name: result.liftKey,
     result: gateStrengthResult(result, isPremium),
   }));
 }

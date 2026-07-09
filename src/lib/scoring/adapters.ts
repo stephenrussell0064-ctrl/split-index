@@ -1,30 +1,9 @@
 import type { SportType, Gender, ExperienceLevel, SessionType } from "@/types";
 import type { Profile as AthleteProfile } from "@/lib/scoring/index-engine";
 import type { CardioInput, CardioType, Sex } from "@/lib/scoring/cardio-activity";
-import type { Lift, StrengthInput } from "@/lib/scoring/strength-activity";
 import type { ActivityScore } from "@/lib/scoring/index-engine";
 import type { CardioResult } from "@/lib/scoring/cardio-activity";
 import type { CardioEnrichment } from "@/lib/scoring/cardio/confidence";
-
-const LIFT_MAP: Record<string, Lift> = {
-  squat: "squat",
-  "back squat": "squat",
-  "front squat": "squat",
-  "bench press": "bench",
-  bench: "bench",
-  deadlift: "deadlift",
-  "sumo deadlift": "deadlift",
-  "romanian deadlift": "deadlift",
-  "overhead press": "ohp",
-  ohp: "ohp",
-  "military press": "ohp",
-  "strict press": "ohp",
-  "pull up": "pullup",
-  "pull-up": "pullup",
-  pullup: "pullup",
-  "chin up": "pullup",
-  "chin-up": "pullup",
-};
 
 /** Derive onboarding profile from preferred sports — no form changes required. */
 export function deriveAthleteProfile(preferredSports: SportType[]): AthleteProfile {
@@ -51,10 +30,6 @@ export function mapExperience(
 ): CardioInput["experience"] {
   if (experience === "beginner" || experience === "advanced") return experience;
   return "intermediate";
-}
-
-export function mapExerciseToLift(exerciseName: string): Lift | null {
-  return LIFT_MAP[exerciseName.toLowerCase().trim()] ?? null;
 }
 
 export function labWeightFromProfile(enduranceWeight = 0.5): number {
@@ -201,23 +176,5 @@ export function buildCardioInput(input: {
     elevationMeters: input.elevationMeters ?? undefined,
     temperatureCelsius: input.temperatureCelsius ?? undefined,
     rpe: input.rpe ?? undefined,
-  };
-}
-
-export function buildStrengthInput(input: {
-  lift: Lift;
-  weightKg: number;
-  reps: number;
-  bodyweightKg: number;
-  gender?: Gender | null;
-  oneRepMaxOverride?: number;
-}): StrengthInput {
-  return {
-    lift: input.lift,
-    weightKg: input.weightKg,
-    reps: input.reps,
-    bodyweightKg: input.bodyweightKg,
-    sex: mapSex(input.gender),
-    oneRepMaxOverride: input.oneRepMaxOverride,
   };
 }

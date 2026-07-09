@@ -14,7 +14,7 @@ import {
   isStrengthResultLocked,
 } from "@/lib/scoring/gates";
 import type { CardioResult } from "@/lib/scoring/cardio-activity";
-import type { StrengthResult } from "@/lib/scoring/strength-activity";
+import type { ScoreStrengthResult } from "@/lib/scoring/split-strength-engine";
 
 function CardioFreeStats({ result }: { result: CardioResult }) {
   return (
@@ -90,23 +90,46 @@ function CardioPremiumStats({ result }: { result: CardioResult }) {
   );
 }
 
-function StrengthRow({ result, liftName }: { result: StrengthResult; liftName: string }) {
+function StrengthRow({ result, liftName }: { result: ScoreStrengthResult; liftName: string }) {
+  const isBeta = result.appliedFactors?.some((f) => f.includes("beta"));
+  const isEstimated = result.source === "generic";
   return (
     <div className="rounded-lg border border-gym-border/20 bg-gym-bg/40 p-3">
       <div className="flex items-baseline justify-between gap-2">
-        <p className="font-medium">{liftName}</p>
+        <p className="font-medium">
+          {liftName}
+          {isEstimated && (
+            <span className="ml-1.5 rounded-full bg-white/5 px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-muted">
+              estimated
+            </span>
+          )}
+        </p>
         <p className="font-display text-lg font-bold text-gym-accent tabular-nums">
           {formatIndex(result.score)}
         </p>
       </div>
       <p className="mt-1 text-xs text-gym-muted tabular-nums">
-        Est. 1RM {formatWeight(result.estimated1RM)}
-        {result.dots !== null ? ` · DOTS ${result.dots.toFixed(1)}` : ""}
-        {result.tier ? ` · ${result.tier}` : ""}
+        Est. 1RM {formatWeight(result.oneRM)} · {result.tier}
+        {isBeta ? " (beta)" : ""}
       </p>
-      <p className="text-xs text-gym-muted tabular-nums">
-        {result.bodyweightRatio}× bodyweight · {result.percentileVsStandards}th percentile
-      </p>
+      <p className="text-xs text-gym-muted tabular-nums">{result.bodyweightRatio}× bodyweight</p>
+      {result.nextTier && (
+        <p className="mt-1 text-xs text-gym-accent/80 tabular-nums">
+          +{formatWeight(result.nextTier.kgNeeded)} to reach {result.nextTier.tier}
+        </p>
+      )}
+      {"oneRMConfidence" in result && (
+        <div className="mt-2 border-t border-white/5 pt-2 text-xs text-gym-muted space-y-1">
+          <p className="tabular-nums">
+            Confidence {Math.round(result.oneRMConfidence * 100)}%
+            {result.oneRMBandKg
+              ? ` · 1RM band ${formatWeight(result.oneRMBandKg[0])}–${formatWeight(result.oneRMBandKg[1])}`
+              : ""}
+            {result.trend ? ` · trend ${result.trend}` : ""}
+          </p>
+          {result.suggestion && <p>{result.suggestion}</p>}
+        </div>
+      )}
     </div>
   );
 }
@@ -122,7 +145,7 @@ export function SessionScoreInsights({
   cardioResult?: CardioResult | GatedCardioResult | null;
   strengthResults?: Array<{
     name: string;
-    result: StrengthResult | GatedStrengthResult;
+    result: ScoreStrengthResult | GatedStrengthResult;
   }> | null;
   isPremium: boolean;
   className?: string;
@@ -173,24 +196,25 @@ export function SessionScoreInsights({
       <div className={cn("space-y-3", className)}>
         {strengthResults.map(({ name, result }) => {
           const full =
-            isPremium || !isStrengthResultLocked(result) ? (result as StrengthResult) : null;
-          const free = result as StrengthResult;
+            isPremium || !isStrengthResultLocked(result) ? (result as ScoreStrengthResult) : null;
+          const free = result as ScoreStrengthResult;
 
           if (full) return <StrengthRow key={name} result={full} liftName={name} />;
 
           return (
             <PremiumTease
               key={name}
-              title={`${name}: ${formatIndex(free.score)} · DOTS & tier locked`}
-              subtitle="Premium unlocks DOTS, bodyweight ratio tier, and percentile vs standards."
+              title={`${name}: ${formatIndex(free.score)} · ${free.tier} · confidence & trend locked`}
+              subtitle="Premium unlocks the adaptive 1RM confidence band, trend, and a suggestion when the estimate is uncertain."
             >
               <StrengthRow
                 result={{
                   ...free,
-                  dots: 412,
-                  tier: "Advanced",
-                  percentileVsStandards: 78,
-                  bodyweightRatio: 2.1,
+                  oneRMConfidence: 0.82,
+                  oneRMBandKg: [free.oneRM * 0.94, free.oneRM * 1.05],
+                  trend: "up",
+                  suggestion: null,
+                  appliedFactors: [],
                 }}
                 liftName={name}
               />

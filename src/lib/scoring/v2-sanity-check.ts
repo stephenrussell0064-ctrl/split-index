@@ -4,7 +4,7 @@
  */
 
 import { scoreCardioActivity, riegelPredictions } from "./cardio-activity";
-import { dotsScore } from "./strength-activity";
+import { calculateDOTS as dotsScore } from "./strength/dots";
 
 function formatRace(seconds: number): string {
   const h = Math.floor(seconds / 3600);

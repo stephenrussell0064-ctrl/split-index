@@ -1,6 +1,6 @@
 /**
  * V2 scoring engine exports — Claude-validated modules.
- * Coefficient tables in cardio-activity.ts and strength-activity.ts are audited; do not simplify.
+ * Coefficient tables in cardio-activity.ts and split-strength-engine.ts are audited; do not simplify.
  */
 export {
   scoreCardioActivity,
@@ -18,13 +18,16 @@ export {
 } from "./cardio-activity";
 
 export {
-  scoreStrengthActivity,
-  estimate1RM,
-  dotsScore,
-  type Lift,
-  type StrengthInput,
-  type StrengthResult,
-} from "./strength-activity";
+  scoreStrength,
+  serializeStrengthResult,
+  labIndex,
+  ageFactor,
+  SEX_FACTORS,
+  type ScoreStrengthInput,
+  type ScoreStrengthResult,
+  type FreeStrengthResult,
+  type LoggedSet,
+} from "./split-strength-engine";
 
 export {
   computeIndexes,
@@ -49,7 +52,6 @@ export {
   buildActivityScores,
   cardioResultToEnrichment,
   buildCardioInput,
-  buildStrengthInput,
 } from "./adapters";
 
 export { scoreActivityWithEngines } from "./activity-scorer";

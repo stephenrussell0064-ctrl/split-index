@@ -23,6 +23,7 @@ import {
   resolveEffectiveMaxHr,
 } from "@/lib/activities/bodyweight";
 import { bestSet, summarizeSets } from "@/lib/activities/gym-sets";
+import { fetchExerciseHistory } from "@/lib/activities/exercise-history";
 
 type ActivityBody = ActivityFormData & {
   bodyweight_kg?: number;
@@ -119,6 +120,17 @@ async function scoreAndPersist(
     (h) => h.activity_id !== excludeActivityId
   );
 
+  const premium = isPremiumUser(profile.subscription_tier, profile.subscription_status);
+  const exerciseHistory =
+    body.sport === "gym" && body.exercises?.length
+      ? await fetchExerciseHistory(
+          supabase,
+          userId,
+          body.exercises.map((ex) => ex.exercise_name),
+          excludeActivityId
+        )
+      : {};
+
   const result = scoreActivity(
     {
       sport: body.sport,
@@ -134,6 +146,8 @@ async function scoreAndPersist(
       sessionType: body.session_type,
       rpe: body.rpe,
       exercises: body.exercises,
+      exerciseHistory,
+      isPremium: premium,
       profile: scoringProfile,
       recentLoads: loads,
     },
