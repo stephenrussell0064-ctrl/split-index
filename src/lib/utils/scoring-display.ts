@@ -1,9 +1,4 @@
-import {
-  COMPOUND_LIFT_MAP,
-  DEFAULT_STRENGTH_RATIO,
-  REFERENCE_WATTS_PER_KG,
-  STRENGTH_REFERENCE_RATIOS,
-} from "@/lib/scoring/constants";
+import { REFERENCE_WATTS_PER_KG } from "@/lib/scoring/constants";
 import { referencePaceForSport } from "@/lib/scoring/engine";
 import { EXRX_TIER_LABELS, type ExRxTier } from "@/lib/scoring/strength/ratio-tiers";
 import type { EnduranceSport, ExperienceLevel, Gender, SportType } from "@/types";
@@ -23,18 +18,6 @@ export function formatLiftRelativeStrength(
 ): string {
   return `${exerciseName}: ${formatRelativeStrength(ratio)}`;
 }
-
-function lookupStrengthReference(
-  exerciseName: string,
-  gender: Gender,
-  experience: ExperienceLevel
-): number {
-  const key = COMPOUND_LIFT_MAP[exerciseName.toLowerCase().trim()];
-  if (!key || !STRENGTH_REFERENCE_RATIOS[key]) return DEFAULT_STRENGTH_RATIO;
-  return STRENGTH_REFERENCE_RATIOS[key][gender][experience];
-}
-
-export type StrengthTier = "beginner" | "intermediate" | "advanced" | "elite";
 
 /** Format DOTS score for display (1 decimal). */
 export function formatDOTS(dots: number): string {
@@ -86,51 +69,6 @@ export function formatLiftBreakdownLine(
   return tierLabel ? `${base} · ${tierLabel}` : base;
 }
 
-export function strengthTierFromRatio(
-  ratio: number,
-  refRatio: number
-): StrengthTier {
-  const relative = ratio / refRatio;
-  if (relative >= 1.35) return "elite";
-  if (relative >= 1.1) return "advanced";
-  if (relative >= 0.85) return "intermediate";
-  return "beginner";
-}
-
-const TIER_LABELS: Record<StrengthTier, string> = {
-  beginner: "Beginner",
-  intermediate: "Intermediate",
-  advanced: "Advanced",
-  elite: "Elite",
-};
-
-/** Plain-language label vs reference standard for athlete profile */
-export function strengthBenchmarkLabel(
-  ratio: number,
-  exerciseName: string,
-  gender: Gender | null,
-  experience: ExperienceLevel | null
-): string {
-  const g = gender === "male" || gender === "female" ? gender : "other";
-  const e = experience ?? "intermediate";
-  const ref = lookupStrengthReference(exerciseName, g, e);
-  const tier = strengthTierFromRatio(ratio, ref);
-  return `${TIER_LABELS[tier]} for your weight class`;
-}
-
-/** Session-level strength index context */
-export function strengthIndexContext(
-  avgRelativeRatio: number,
-  gender: Gender | null,
-  experience: ExperienceLevel | null
-): string {
-  const g = gender === "male" || gender === "female" ? gender : "other";
-  const e = experience ?? "intermediate";
-  const ref = STRENGTH_REFERENCE_RATIOS.squat[g][e];
-  const tier = strengthTierFromRatio(avgRelativeRatio, ref);
-  return `${TIER_LABELS[tier]} for your weight class`;
-}
-
 /** Compare actual pace to reference — positive = faster than benchmark */
 export function paceVsBenchmarkPercent(
   actualSecPerKm: number,
@@ -179,33 +117,6 @@ export function formatHistoryPercentileContext(
 ): string {
   if (total === 0) return `First ${sportLabel.replace(" Index", "")} session logged`;
   return `Your session ranks at the ${percentile}th percentile of your last ${Math.min(total, 10)} ${sportLabel.replace(" Index", "").toLowerCase()} sessions`;
-}
-
-export interface ExerciseScoreDisplay {
-  name: string;
-  estimated1RM: number;
-  relativeStrength: number;
-  benchmarkLabel: string;
-}
-
-export function buildExerciseScoreDisplays(
-  exercises: Array<{
-    name: string;
-    estimated1RM: number;
-    relativeStrength: number;
-  }>,
-  gender: Gender | null,
-  experience: ExperienceLevel | null
-): ExerciseScoreDisplay[] {
-  return exercises.map((ex) => ({
-    ...ex,
-    benchmarkLabel: strengthBenchmarkLabel(
-      ex.relativeStrength,
-      ex.name,
-      gender,
-      experience
-    ),
-  }));
 }
 
 export function sportMetricLabel(sport: SportType): string {

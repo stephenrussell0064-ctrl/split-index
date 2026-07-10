@@ -4,11 +4,7 @@ import { motion, useReducedMotion } from "framer-motion";
 import { ArrowUpRight, ArrowDownRight, Minus } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 import { formatIndex, formatTrend } from "@/lib/utils/format";
-import {
-  formatHistoryPercentileContext,
-  formatLiftRelativeStrength,
-  type ExerciseScoreDisplay,
-} from "@/lib/utils/scoring-display";
+import { formatHistoryPercentileContext } from "@/lib/utils/scoring-display";
 import type { SportComparisonStats } from "@/lib/utils/sport-comparison";
 
 interface SportComparisonPanelProps {
@@ -17,7 +13,6 @@ interface SportComparisonPanelProps {
   comparison: SportComparisonStats;
   zone?: "gym" | "cardio";
   benchmarkContext?: string | null;
-  exerciseBreakdown?: ExerciseScoreDisplay[];
   strengthContext?: string | null;
   className?: string;
 }
@@ -28,7 +23,6 @@ export function SportComparisonPanel({
   comparison,
   zone = "cardio",
   benchmarkContext,
-  exerciseBreakdown,
   strengthContext,
   className,
 }: SportComparisonPanelProps) {
@@ -51,23 +45,6 @@ export function SportComparisonPanel({
 
       {strengthContext && zone === "gym" && (
         <p className="text-sm font-medium text-foreground/90">{strengthContext}</p>
-      )}
-
-      {exerciseBreakdown && exerciseBreakdown.length > 0 && (
-        <div className="space-y-2">
-          <p className="micro-label text-muted">Relative strength per lift</p>
-          <ul className="space-y-1.5">
-            {exerciseBreakdown.map((ex) => (
-              <li
-                key={ex.name}
-                className="flex flex-wrap items-baseline justify-between gap-2 rounded-lg bg-white/[0.03] px-3 py-2 text-sm"
-              >
-                <span className="font-medium">{formatLiftRelativeStrength(ex.name, ex.relativeStrength)}</span>
-                <span className="text-xs text-muted">{ex.benchmarkLabel}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
       )}
 
       {total > 0 ? (

@@ -11,7 +11,6 @@ import { MilestoneToast } from "@/components/retention/milestone-toast";
 import { SportComparisonPanel } from "@/components/dashboard/sport-comparison";
 import type { SportComparisonStats } from "@/lib/utils/sport-comparison";
 import type { ScoreBreakdown, SportType } from "@/types";
-import type { ExerciseScoreDisplay } from "@/lib/utils/scoring-display";
 import { formatSplitBreakdown } from "@/lib/utils/scoring-display";
 import { cn } from "@/lib/utils/cn";
 import { CardioEnrichmentPanel } from "@/components/activities/cardio-enrichment-panel";
@@ -34,7 +33,6 @@ export interface ScoreResultSummary {
   dotsScore?: number | null;
   glPoints?: number | null;
   useGL?: boolean;
-  exerciseBreakdown?: ExerciseScoreDisplay[];
   scoreBreakdown?: ScoreBreakdown;
   cardioEnrichment?: CardioEnrichment;
 }
@@ -141,7 +139,6 @@ export function SuccessScreen({
               comparison={result.sportComparison}
               zone={zone}
               benchmarkContext={result.benchmarkContext}
-              exerciseBreakdown={result.exerciseBreakdown}
               strengthContext={isGym ? undefined : result.strengthContext}
             />
           </div>

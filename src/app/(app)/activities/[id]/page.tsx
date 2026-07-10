@@ -8,11 +8,7 @@ import { SportComparisonPanel } from "@/components/dashboard/sport-comparison";
 import { formatIndex, formatDuration, formatDistance, formatWeight } from "@/lib/utils/format";
 import { SPORT_INDEX_LABELS, SPORTS } from "@/lib/constants/sports";
 import { computeSportComparison } from "@/lib/utils/sport-comparison";
-import {
-  buildExerciseScoreDisplays,
-  formatLiftRelativeStrength,
-  strengthIndexContext,
-} from "@/lib/utils/scoring-display";
+import { formatLiftRelativeStrength } from "@/lib/utils/scoring-display";
 import { ActivityDetailActions } from "@/components/activities/activity-detail-actions";
 import { CardioEnrichmentPanel } from "@/components/activities/cardio-enrichment-panel";
 import { SessionScoreInsights } from "@/components/scoring/session-score-insights";
@@ -100,32 +96,6 @@ export default async function ActivityDetailPage({
   const gatedCardioInsight = extractGatedCardioInsight(scoreBreakdown, isPremium);
   const gatedStrengthInsights = extractGatedStrengthInsights(scoreBreakdown, isPremium);
 
-  const exerciseBreakdown =
-    activity.sport === "gym" && exercises?.length
-      ? buildExerciseScoreDisplays(
-          exercises.map((ex) => ({
-            name: ex.exercise_name,
-            estimated1RM: ex.estimated_1rm_kg ?? 0,
-            relativeStrength:
-              bodyweightKg && ex.estimated_1rm_kg
-                ? Math.round((ex.estimated_1rm_kg / bodyweightKg) * 100) / 100
-                : 0,
-          })),
-          profile?.gender ?? null,
-          profile?.experience ?? null
-        )
-      : undefined;
-
-  const strengthContext =
-    activity.sport === "gym" && exerciseBreakdown?.length
-      ? strengthIndexContext(
-          exerciseBreakdown.reduce((s, e) => s + e.relativeStrength, 0) /
-            exerciseBreakdown.length,
-          profile?.gender ?? null,
-          profile?.experience ?? null
-        )
-      : null;
-
   return (
     <div className="max-w-2xl mx-auto">
       <div className="flex items-start justify-between gap-4 mb-8">
@@ -173,15 +143,6 @@ export default async function ActivityDetailPage({
           >
             {formatIndex(sportIndex)}
           </p>
-          {strengthContext && showStrengthTiers && (
-            <p className="mt-2 text-sm text-muted">{strengthContext}</p>
-          )}
-          {strengthContext && !showStrengthTiers && (
-            <p className="mt-2 text-sm text-muted">
-              Strength index {formatIndex(sportIndex)} — DOTS tier context requires
-              Premium
-            </p>
-          )}
           {comparison && (
             <div className="mt-6 border-t border-white/10 pt-6">
               <SportComparisonPanel
@@ -189,7 +150,6 @@ export default async function ActivityDetailPage({
                 currentScore={sportIndex}
                 comparison={comparison}
                 zone={zone}
-                exerciseBreakdown={showStrengthTiers ? exerciseBreakdown : undefined}
               />
             </div>
           )}

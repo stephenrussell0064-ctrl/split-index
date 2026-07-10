@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { SPORTS, SPORT_INDEX_LABELS } from "@/lib/constants/sports";
 import { derivePaceSecPerKm, isEnduranceSport } from "@/lib/scoring/engine";
 import {
-  buildExerciseScoreDisplays,
   formatPaceBenchmarkContext,
   formatPowerBenchmarkContext,
   formatStrengthHeadline,
@@ -189,9 +188,6 @@ export function ActivityForm({
 
     let benchmarkContext: string | null = null;
     let strengthContext: string | null = null;
-    const exerciseBreakdown = exerciseScores
-      ? buildExerciseScoreDisplays(exerciseScores, profileGender, profileExperience)
-      : undefined;
 
     if (currentSport === "gym" && exerciseScores?.length) {
       const dots = data.dotsScore as number | undefined;
@@ -251,7 +247,6 @@ export function ActivityForm({
       dotsScore: (data.dotsScore as number | undefined) ?? null,
       glPoints: (data.glPoints as number | undefined) ?? null,
       useGL: (data.useGL as boolean | undefined) ?? false,
-      exerciseBreakdown,
       scoreBreakdown: data.scoreBreakdown as ScoreResultSummary["scoreBreakdown"],
       cardioEnrichment: data.cardioEnrichment as CardioEnrichment | undefined,
     };
