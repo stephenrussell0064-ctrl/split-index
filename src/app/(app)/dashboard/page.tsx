@@ -37,6 +37,7 @@ import { computeStreakMetrics } from "@/lib/retention/streak-utils";
 import { getGlobalRankPercentile, seedRetentionNotifications } from "@/lib/retention/rank";
 import { isPremiumUser } from "@/lib/retention/trial";
 import { computeSplitIndexProjection } from "@/lib/premium/projection";
+import { gateAiFeedback } from "@/lib/scoring/gates";
 import { formatIndex } from "@/lib/utils/format";
 import type { SplitIndexSnapshot, SportType } from "@/types";
 
@@ -510,7 +511,10 @@ export default async function DashboardPage() {
           <RecentWorkouts activities={recentActivities ?? []} scores={scoreMap} />
         </div>
         <div className="lg:col-span-5">
-          <AICoachCard feedback={aiFeedback} isPremium={premium} />
+          <AICoachCard
+            feedback={aiFeedback ? gateAiFeedback(aiFeedback, premium) : aiFeedback}
+            isPremium={premium}
+          />
         </div>
       </div>
 

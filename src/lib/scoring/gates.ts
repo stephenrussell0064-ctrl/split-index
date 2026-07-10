@@ -5,6 +5,8 @@ import {
   type FreeStrengthResult,
 } from "@/lib/scoring/split-strength-engine";
 import type { IndexResult } from "@/lib/scoring/index-engine";
+import type { CardioEnrichment } from "@/lib/scoring/cardio/confidence";
+import type { AIFeedback } from "@/types";
 
 export type LockedCardioFields =
   | "trimp"
@@ -74,6 +76,59 @@ export function gateIndexResult(
     headline: result.headline,
     headlineLabel: result.headlineLabel,
     locked: ["labIndex", "engineIndex", "splitIndex", "breakdown"],
+  };
+}
+
+/**
+ * Gate the (legacy, non-`CardioResult`-shaped) cardio enrichment payload at
+ * the presentation layer — the same trimp/efficiencyFactor/decoupling/
+ * confidence/notes fields locked in gateCardioResult(), never sent real to
+ * the client for free users. vo2max stays real (it's free-tier data, same
+ * as gateCardioResult()). Synthetic placeholder values mirror the pattern
+ * used in session-score-insights.tsx.
+ */
+export function gateCardioEnrichment(
+  enrichment: CardioEnrichment,
+  isPremium: boolean
+): CardioEnrichment {
+  if (isPremium) return enrichment;
+  return {
+    sportIndex: enrichment.sportIndex,
+    adjustedDisplayIndex: enrichment.adjustedDisplayIndex,
+    vo2maxEstimate: enrichment.vo2maxEstimate,
+    confidence: "medium",
+    flags: [],
+    trimp: { trimp: 112, hrReserveRatio: 0.62, durationMinutes: 42, label: "moderate" },
+    efficiencyFactor: { efficiencyFactor: 0.84, unit: "pace_per_hr", displayValue: "0.84" },
+    decoupling: {
+      firstHalfEF: 0.86,
+      secondHalfEF: 0.83,
+      decouplingPct: 3.1,
+      flag: "stable",
+      note: "Pacing held steady between halves.",
+    },
+    notes: [],
+  };
+}
+
+/**
+ * Gate GPT-generated AI Coach feedback at the presentation layer.
+ * `next_workout_recommendation` is the intentional free-tier snippet (shown
+ * unblurred in AICoachCard); the other four fields are real GPT output and
+ * must never reach a free user's client, even blurred — replaced with
+ * synthetic placeholder text instead.
+ */
+export function gateAiFeedback(feedback: AIFeedback, isPremium: boolean): AIFeedback {
+  if (isPremium) return feedback;
+  return {
+    ...feedback,
+    performance_explanation:
+      "Your session score, drivers, and index movement — unlocked with Premium.",
+    recovery_advice:
+      "Personalized recovery timing based on your fatigue and ACWR — unlocked with Premium.",
+    long_term_insight:
+      "Multi-week trend analysis and projections — unlocked with Premium.",
+    score_change_reason: "Why your Split Index moved — unlocked with Premium.",
   };
 }
 

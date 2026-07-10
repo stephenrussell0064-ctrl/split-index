@@ -36,10 +36,38 @@ import {
 } from "./utils";
 import type {
   AnalyticsPayload,
+  PeriodMetrics,
   PeriodPreset,
+  ProjectionPoint,
   SportFilter,
   TrendGranularity,
 } from "./types";
+
+/** Synthetic placeholder for the free-tier blurred preview — never the user's real data (MASTER-BRIEF.md §6: gate at the API, never compute-and-hide on the client). */
+function placeholderPeriodMetrics(label: string): PeriodMetrics {
+  return {
+    label,
+    avgSplit: 612,
+    avgEndurance: 588,
+    avgStrength: 634,
+    avgRecovery: 74,
+    avgFatigue: 38,
+    totalLoad: 420,
+    totalDuration: 14400,
+    totalDistance: 42000,
+    sessions: 6,
+    consistencyPct: 82,
+  };
+}
+
+const PLACEHOLDER_PROJECTION: ProjectionPoint[] = [
+  { date: "W1", split: 560, projected: null, isForecast: false },
+  { date: "W2", split: 578, projected: null, isForecast: false },
+  { date: "W3", split: 591, projected: null, isForecast: false },
+  { date: "W4", split: 604, projected: 604, isForecast: false },
+  { date: "W5", split: null, projected: 618, isForecast: true },
+  { date: "W6", split: null, projected: 631, isForecast: true },
+];
 
 type VolumeTab = "load" | "duration" | "distance";
 
@@ -76,8 +104,8 @@ export function AnalyticsClient({ data }: { data: AnalyticsPayload }) {
   );
 
   const projectionData = useMemo(
-    () => buildProjections(data.indexHistory),
-    [data.indexHistory]
+    () => (data.isPremium ? buildProjections(data.indexHistory) : []),
+    [data.isPremium, data.indexHistory]
   );
 
   const fatigueRecoveryData = useMemo(
@@ -115,14 +143,17 @@ export function AnalyticsClient({ data }: { data: AnalyticsPayload }) {
 
   const periodMetricsA = useMemo(
     () =>
-      computePeriodMetrics(
-        rangeA,
-        data.indexHistory,
-        filteredActivities,
-        filteredScores,
-        data.targetSessionsPerWeek
-      ),
+      data.isPremium
+        ? computePeriodMetrics(
+            rangeA,
+            data.indexHistory,
+            filteredActivities,
+            filteredScores,
+            data.targetSessionsPerWeek
+          )
+        : placeholderPeriodMetrics(rangeA.label),
     [
+      data.isPremium,
       rangeA,
       data.indexHistory,
       filteredActivities,
@@ -133,14 +164,17 @@ export function AnalyticsClient({ data }: { data: AnalyticsPayload }) {
 
   const periodMetricsB = useMemo(
     () =>
-      computePeriodMetrics(
-        rangeB,
-        data.indexHistory,
-        filteredActivities,
-        filteredScores,
-        data.targetSessionsPerWeek
-      ),
+      data.isPremium
+        ? computePeriodMetrics(
+            rangeB,
+            data.indexHistory,
+            filteredActivities,
+            filteredScores,
+            data.targetSessionsPerWeek
+          )
+        : placeholderPeriodMetrics(rangeB.label),
     [
+      data.isPremium,
       rangeB,
       data.indexHistory,
       filteredActivities,
@@ -261,7 +295,7 @@ export function AnalyticsClient({ data }: { data: AnalyticsPayload }) {
             title="Index projections"
             subtitle="7-day and 30-day forecasts from your training trend — Premium unlocks full projection charts."
           >
-            <ProjectionChart data={projectionData} />
+            <ProjectionChart data={PLACEHOLDER_PROJECTION} />
           </PremiumTease>
         )}
       </div>

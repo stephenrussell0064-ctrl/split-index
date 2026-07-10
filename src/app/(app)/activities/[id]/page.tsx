@@ -19,6 +19,8 @@ import {
   extractGatedCardioInsight,
   extractGatedStrengthInsights,
 } from "@/lib/scoring/activity-insights";
+import { gateCardioEnrichment } from "@/lib/scoring/gates";
+import type { CardioEnrichment } from "@/lib/scoring/cardio/confidence";
 import type { ScoreBreakdown } from "@/types";
 
 export default async function ActivityDetailPage({
@@ -92,7 +94,10 @@ export default async function ActivityDetailPage({
 
   const zone = activity.sport === "gym" ? "gym" : "cardio";
   const scoreBreakdown = (score?.score_breakdown ?? {}) as ScoreBreakdown;
-  const cardioEnrichment = scoreBreakdown.cardio_enrichment;
+  const rawCardioEnrichment = scoreBreakdown.cardio_enrichment as CardioEnrichment | undefined;
+  const cardioEnrichment = rawCardioEnrichment
+    ? gateCardioEnrichment(rawCardioEnrichment, showHrAccountability)
+    : undefined;
   const gatedCardioInsight = extractGatedCardioInsight(scoreBreakdown, isPremium);
   const gatedStrengthInsights = extractGatedStrengthInsights(scoreBreakdown, isPremium);
 
