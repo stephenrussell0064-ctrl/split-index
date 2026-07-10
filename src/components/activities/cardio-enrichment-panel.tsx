@@ -116,8 +116,6 @@ export function CardioEnrichmentPanel({
   if (!enrichment || typeof enrichment !== "object") return null;
 
   const e = enrichment as CardioEnrichment;
-  const trimpLabel = e.trimp?.label?.replace("_", " ") ?? "moderate";
-  const efValue = e.efficiencyFactor?.displayValue ?? "—";
   const vo2 = e.vo2maxEstimate?.estimate;
 
   const inner = (
@@ -135,11 +133,7 @@ export function CardioEnrichmentPanel({
 
   return (
     <PremiumTease
-      title={
-        e.trimp
-          ? `TRIMP ${e.trimp.trimp} (${trimpLabel}) · EF ${efValue}`
-          : `Aerobic accountability · EF ${efValue}`
-      }
+      title="Aerobic HR accountability"
       subtitle={
         vo2
           ? `VO2max ~${vo2} ml/kg/min with decoupling flags — unlock HR accountability detail with Premium.`

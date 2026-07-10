@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { cn } from "@/lib/utils/cn";
 import {
   formatDOTS,
@@ -39,12 +38,6 @@ export function GymStrengthPanel({
   showDotsGl = true,
   className,
 }: GymStrengthPanelProps) {
-  const [useGL, setUseGL] = useState(false);
-
-  const headlineScore =
-    useGL && glPoints ? formatGL(glPoints) : dotsScore ? formatDOTS(dotsScore) : null;
-  const headlineLabel = useGL ? "IPF GL Points" : "DOTS";
-
   return (
     <div className={cn("glass-gym rounded-2xl p-6 sm:p-8", className)}>
       <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
@@ -62,53 +55,42 @@ export function GymStrengthPanel({
         </div>
 
         {hasHistory && dotsScore != null && showDotsGl && (
-          <div className="text-right">
-            <div className="inline-flex rounded-lg border border-gym-border/40 p-0.5 text-xs">
-              <button
-                type="button"
-                onClick={() => setUseGL(false)}
-                className={cn(
-                  "rounded-md px-3 py-1.5 transition-colors",
-                  !useGL
-                    ? "bg-gym-accent/20 text-gym-accent font-medium"
-                    : "text-gym-muted hover:text-gym-text"
-                )}
-              >
-                DOTS
-              </button>
-              <button
-                type="button"
-                onClick={() => setUseGL(true)}
-                className={cn(
-                  "rounded-md px-3 py-1.5 transition-colors",
-                  useGL
-                    ? "bg-gym-accent/20 text-gym-accent font-medium"
-                    : "text-gym-muted hover:text-gym-text"
-                )}
-              >
-                IPF GL
-              </button>
+          <div
+            className="text-right"
+            title="DOTS and IPF GL use different scales — don't compare them to each other, only track each over time."
+          >
+            <div className="flex items-baseline justify-end gap-4">
+              <div>
+                <p className="font-mono text-2xl font-semibold tabular-nums text-gym-text">
+                  {formatDOTS(dotsScore)}
+                </p>
+                <p className="text-[10px] text-gym-muted uppercase tracking-wider mt-0.5">
+                  DOTS
+                </p>
+              </div>
+              {glPoints != null && (
+                <div>
+                  <p className="font-mono text-2xl font-semibold tabular-nums text-gym-text">
+                    {formatGL(glPoints)}
+                  </p>
+                  <p className="text-[10px] text-gym-muted uppercase tracking-wider mt-0.5">
+                    IPF GL
+                  </p>
+                </div>
+              )}
             </div>
-            {headlineScore && (
-              <p className="mt-2 font-mono text-2xl font-semibold tabular-nums text-gym-text">
-                {headlineScore}
-              </p>
-            )}
-            <p className="text-[10px] text-gym-muted uppercase tracking-wider mt-0.5">
-              {headlineLabel}
-            </p>
           </div>
         )}
 
         {hasHistory && dotsScore != null && !showDotsGl && (
           <PremiumTease
-            title={`DOTS ${formatDOTS(dotsScore)} · ${glPoints ? `GL ${formatGL(glPoints)}` : "IPF GL"}`}
+            title="DOTS & IPF GL scoring"
             subtitle="Unlock DOTS percentile, IPF GL comparison, and ExRx tier labels with Premium."
             className="max-w-xs"
           >
             <div className="glass-gym rounded-xl p-4 text-right">
               <p className="font-mono text-2xl font-semibold tabular-nums text-gym-text">
-                {formatDOTS(dotsScore)}
+                •••
               </p>
               <p className="text-[10px] text-gym-muted uppercase tracking-wider mt-0.5">
                 DOTS
@@ -144,7 +126,7 @@ export function GymStrengthPanel({
 
       <p className="mt-4 text-xs text-gym-muted leading-relaxed">
         {showDotsGl
-          ? `SBD total scored via ${useGL ? "IPF GL Points" : "DOTS"} · accessories via ExRx ratio tiers`
+          ? "SBD total scored via DOTS and IPF GL (different scales — track each over time) · accessories via ExRx ratio tiers"
           : "Strength index shown — DOTS / GL tiers require Premium"}
       </p>
     </div>

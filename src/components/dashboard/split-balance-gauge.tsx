@@ -163,17 +163,17 @@ export function SplitBalanceGauge({
         </div>
       ) : (
         <PremiumTease
-          title={`Lab ${formatIndex(strIdx)} · Engine ${formatIndex(endIdx)}`}
+          title="Lab / Engine breakdown"
           subtitle="Premium unlocks the full Lab / Engine breakdown and blend weights."
           className="mb-4"
         >
           <div className="relative mx-auto max-w-lg h-32">
             <div className="absolute left-4 right-4 top-1/2 h-1 rounded-full bg-white/10" />
             <div className="absolute left-0 top-1/2 -translate-y-1/2 text-cardio-accent text-sm font-mono">
-              {formatIndex(endIdx)}
+              •••
             </div>
             <div className="absolute right-0 top-1/2 -translate-y-1/2 text-strength-accent text-sm font-mono">
-              {formatIndex(strIdx)}
+              •••
             </div>
           </div>
         </PremiumTease>

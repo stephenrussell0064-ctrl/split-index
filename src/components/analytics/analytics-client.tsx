@@ -177,11 +177,6 @@ export function AnalyticsClient({ data }: { data: AnalyticsPayload }) {
   const spring = { type: "spring" as const, stiffness: 400, damping: 30 };
 
   const yearlyLocked = !data.isPremium && granularity === "year";
-  const forecastPoint = projectionData.find((d) => d.isForecast && d.projected != null);
-  const periodDelta =
-    periodMetricsA.avgSplit != null && periodMetricsB.avgSplit != null
-      ? periodMetricsA.avgSplit - periodMetricsB.avgSplit
-      : null;
 
   return (
     <div className="space-y-6">
@@ -236,11 +231,7 @@ export function AnalyticsClient({ data }: { data: AnalyticsPayload }) {
           <PeriodComparison periodA={periodMetricsA} periodB={periodMetricsB} />
         ) : (
           <PremiumTease
-            title={
-              periodDelta !== null
-                ? `Split Index ${periodDelta >= 0 ? "+" : ""}${Math.round(periodDelta)} pts vs prior period`
-                : "Period-over-period comparison"
-            }
+            title="Period-over-period comparison"
             subtitle={`${rangeA.label} vs ${rangeB.label} — unlock session volume, index delta, and consistency comparisons.`}
           >
             <PeriodComparison periodA={periodMetricsA} periodB={periodMetricsB} />
@@ -267,11 +258,7 @@ export function AnalyticsClient({ data }: { data: AnalyticsPayload }) {
           <ProjectionChart data={projectionData} />
         ) : (
           <PremiumTease
-            title={
-              forecastPoint?.projected != null
-                ? `Projected Split Index: ${formatIndex(forecastPoint.projected)}`
-                : "Index projections"
-            }
+            title="Index projections"
             subtitle="7-day and 30-day forecasts from your training trend — Premium unlocks full projection charts."
           >
             <ProjectionChart data={projectionData} />

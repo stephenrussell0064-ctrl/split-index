@@ -371,8 +371,8 @@ export default async function DashboardPage() {
         )}
         {!premium && rankPercentile !== null && (
           <PremiumTease
-            title={`Top ${100 - rankPercentile}% globally`}
-            subtitle="Your exact global rank is ready — unlock Premium to see where you stand."
+            title="Your global rank is ready"
+            subtitle="Unlock Premium to see where you stand."
             showPreview={false}
             className="max-w-[220px] border border-white/[0.06]"
           />
@@ -420,7 +420,7 @@ export default async function DashboardPage() {
             </Card>
           ) : (
             <PremiumTease
-              title={`Your projected Split Index in 8 weeks: ${formatIndex(projection8Weeks)}`}
+              title="8-week Split Index projection"
               subtitle="Premium unlocks trend projections, 90-day history, and period comparisons."
             >
               <Card padding="sm">
@@ -429,7 +429,7 @@ export default async function DashboardPage() {
                 </CardHeader>
                 <CardContent>
                   <p className="index-display text-3xl font-bold text-accent tabular-nums">
-                    {formatIndex(projection8Weeks)}
+                    •••
                   </p>
                   <p className="mt-1 text-xs text-muted">
                     Linear forecast from your recent index trend
