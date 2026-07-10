@@ -263,7 +263,12 @@ export function AnalyticsClient({ data }: { data: AnalyticsPayload }) {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <InjuryRiskPanel scores={data.scores} isPremium={data.isPremium} />
+        <InjuryRiskPanel
+          scores={data.scores}
+          isPremium={data.isPremium}
+          hrvToday={data.hrvToday}
+          hrvBaseline={data.hrvBaseline}
+        />
         <StoredPredictionsPanel
           benchmarks={data.predictedBenchmarks}
           strengthEstimates={data.strengthEstimates}

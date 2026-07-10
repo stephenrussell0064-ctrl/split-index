@@ -44,6 +44,7 @@ export default async function AnalyticsPage() {
     { data: personalRecords },
     { data: predictedBenchmarksRaw },
     { data: strengthScoresRaw },
+    { data: hrvReadingsRaw },
   ] = await Promise.all([
     supabase
       .from("split_index_history")
@@ -87,7 +88,25 @@ export default async function AnalyticsPage() {
       .eq("user_id", user.id)
       .order("recorded_at", { ascending: false })
       .limit(200),
+    supabase
+      .from("recovery_snapshots")
+      .select("hrv_ms, recorded_at")
+      .eq("user_id", user.id)
+      .not("hrv_ms", "is", null)
+      .gte("recorded_at", isoDaysAgo(15))
+      .order("recorded_at", { ascending: false })
+      .limit(15),
   ]);
+
+  // Most recent reading is "today"; the rolling baseline averages the rest
+  // (MASTER-BRIEF.md §8) — optional, both null when nothing's been logged.
+  const hrvReadings = (hrvReadingsRaw ?? []).map((r) => r.hrv_ms as number);
+  const hrvToday = hrvReadings[0] ?? null;
+  const hrvBaselineReadings = hrvReadings.slice(1);
+  const hrvBaseline =
+    hrvBaselineReadings.length > 0
+      ? hrvBaselineReadings.reduce((sum, v) => sum + v, 0) / hrvBaselineReadings.length
+      : null;
 
   // Latest row per exercise only — recorded_at desc means first occurrence wins.
   const strengthEstimateByLift = new Map<string, StrengthEstimate>();
@@ -140,6 +159,8 @@ export default async function AnalyticsPage() {
       })
     ),
     strengthEstimates: Array.from(strengthEstimateByLift.values()) as StrengthEstimate[],
+    hrvToday,
+    hrvBaseline,
   };
 
   return (

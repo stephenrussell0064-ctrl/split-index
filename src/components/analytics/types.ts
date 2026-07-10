@@ -71,6 +71,9 @@ export interface AnalyticsPayload {
   personalRecords: PersonalRecord[];
   predictedBenchmarks: PredictedBenchmark[];
   strengthEstimates: StrengthEstimate[];
+  /** Optional HRV (rMSSD, ms) — most recent reading and rolling baseline average of the preceding readings. Null when the user hasn't logged any. */
+  hrvToday: number | null;
+  hrvBaseline: number | null;
 }
 
 export interface PeriodMetrics {

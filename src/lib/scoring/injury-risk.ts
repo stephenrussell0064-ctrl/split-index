@@ -35,3 +35,19 @@ export function injuryRisk(acwr: number): InjuryRiskResult {
 export function optimalWeeklyLoadTarget(chronicWeeklyLoad: number): number {
   return Math.round(chronicWeeklyLoad * 1.3);
 }
+
+/**
+ * Optional HRV modifier on the load-based risk (MASTER-BRIEF.md §8). Never
+ * required — when hrvToday/hrvBaseline are absent, the load-based index is
+ * returned unchanged. hrvToday & hrvBaseline are rMSSD in ms.
+ */
+export function hrvAdjustedRisk(
+  loadRiskIndex: number,
+  hrvToday?: number | null,
+  hrvBaseline?: number | null
+): number {
+  if (hrvToday == null || hrvBaseline == null || hrvBaseline <= 0) return loadRiskIndex;
+  const ratio = hrvToday / hrvBaseline; // <1 = suppressed = less recovered
+  const modifier = ratio >= 1 ? -5 * (ratio - 1) : 25 * (1 - ratio);
+  return Math.max(0, Math.min(95, Math.round(loadRiskIndex + modifier)));
+}
