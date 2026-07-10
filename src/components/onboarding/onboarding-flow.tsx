@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
-import { Sparkles, Target, TrendingUp, Dumbbell, Activity } from "lucide-react";
+import { Sparkles, Target, TrendingUp, Dumbbell, Activity, Check, X, Loader2, Camera } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
@@ -16,8 +16,15 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { supabaseErrorMessage } from "@/lib/supabase/errors";
 import { formatIndex } from "@/lib/utils/format";
+import { validateUsernameFormat } from "@/lib/utils/username";
+import { cn } from "@/lib/utils/cn";
 import type { PostgrestError } from "@supabase/supabase-js";
 import type { Gender, ExperienceLevel, TrainingGoal, SportType } from "@/types";
+
+const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
+const ACCEPTED_AVATAR_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
+
+type UsernameStatus = "idle" | "checking" | "available" | "taken" | "invalid";
 
 const STEPS = ["Basics", "Body", "Training", "Sports", "Your Goal", "Ready"];
 
@@ -44,6 +51,18 @@ export function OnboardingFlow() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitError, setSubmitError] = useState("");
   const [targetIndex, setTargetIndex] = useState(DEFAULT_GOAL_TARGET);
+  const [username, setUsername] = useState("");
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string | null>(null);
+  const [avatarError, setAvatarError] = useState("");
+  // Result of the debounced availability fetch, tagged with the username it
+  // was issued for — only trusted when it matches the *current* value, so a
+  // stale response for a since-edited username can't flash "available".
+  const [asyncCheck, setAsyncCheck] = useState<{
+    forUsername: string;
+    status: "available" | "taken" | "error";
+    reason?: string;
+  } | null>(null);
   const [form, setForm] = useState({
     age: "",
     gender: "" as Gender | "",
@@ -55,6 +74,78 @@ export function OnboardingFlow() {
     goals: [] as TrainingGoal[],
     preferred_sports: [] as SportType[],
   });
+
+  const trimmedUsername = username.trim();
+  const usernameFormat = trimmedUsername ? validateUsernameFormat(trimmedUsername) : null;
+
+  useEffect(() => {
+    if (!trimmedUsername || !usernameFormat?.valid) return;
+
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `/api/profile/username-check?u=${encodeURIComponent(trimmedUsername)}`
+        );
+        const data = await res.json();
+        if (cancelled) return;
+        setAsyncCheck({
+          forUsername: trimmedUsername,
+          status: res.ok ? (data.available ? "available" : "taken") : "error",
+          reason: data.reason ?? data.error,
+        });
+      } catch {
+        if (cancelled) return;
+        setAsyncCheck({
+          forUsername: trimmedUsername,
+          status: "error",
+          reason: "Could not check availability",
+        });
+      }
+    }, 400);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- usernameFormat is derived from trimmedUsername each render
+  }, [trimmedUsername]);
+
+  const usernameStatus: UsernameStatus = !trimmedUsername
+    ? "idle"
+    : !usernameFormat!.valid
+      ? "invalid"
+      : asyncCheck?.forUsername === trimmedUsername
+        ? asyncCheck.status === "error"
+          ? "invalid"
+          : asyncCheck.status
+        : "checking";
+  const usernameReason = !trimmedUsername
+    ? undefined
+    : !usernameFormat!.valid
+      ? usernameFormat!.reason
+      : asyncCheck?.forUsername === trimmedUsername
+        ? asyncCheck.reason
+        : undefined;
+
+  const handleAvatarSelect = (file: File | null) => {
+    setAvatarError("");
+    if (!file) {
+      setAvatarFile(null);
+      setAvatarPreviewUrl(null);
+      return;
+    }
+    if (!ACCEPTED_AVATAR_TYPES.includes(file.type)) {
+      setAvatarError("Use a PNG, JPEG, WebP, or GIF image");
+      return;
+    }
+    if (file.size > MAX_AVATAR_BYTES) {
+      setAvatarError("Image must be under 2MB");
+      return;
+    }
+    setAvatarFile(file);
+    setAvatarPreviewUrl(URL.createObjectURL(file));
+  };
 
   const update = (key: string, value: unknown) => {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -73,6 +164,13 @@ export function OnboardingFlow() {
       if (!inRange(form.age, LIMITS.age))
         next.age = `Enter an age between ${LIMITS.age.min} and ${LIMITS.age.max}`;
       if (!form.gender) next.gender = "Select a gender";
+      if (usernameStatus !== "available") {
+        next.username =
+          usernameStatus === "checking"
+            ? "Still checking availability…"
+            : (usernameReason ?? "Choose a username for the leaderboard");
+      }
+      if (avatarError) next.avatar = avatarError;
     }
 
     if (current === 1) {
@@ -172,12 +270,31 @@ export function OnboardingFlow() {
       return;
     }
 
+    let avatarUrl: string | null = null;
+    if (avatarFile) {
+      const ext = avatarFile.name.split(".").pop() ?? "jpg";
+      const path = `${user.id}/${Date.now()}.${ext}`;
+      const { error: uploadError } = await supabase.storage
+        .from("avatars")
+        .upload(path, avatarFile, { upsert: true, contentType: avatarFile.type });
+
+      if (uploadError) {
+        setSubmitError(`Could not upload your profile icon: ${uploadError.message}`);
+        setLoading(false);
+        return;
+      }
+
+      avatarUrl = supabase.storage.from("avatars").getPublicUrl(path).data.publicUrl;
+    }
+
     const profilePayload = {
       user_id: user.id,
       display_name:
         (user.user_metadata?.full_name as string | undefined) ??
         user.email ??
         null,
+      username: username.trim(),
+      avatar_url: avatarUrl,
       age: Number(form.age),
       gender: form.gender as Gender,
       height_cm: Number(form.height_cm),
@@ -195,6 +312,18 @@ export function OnboardingFlow() {
       .upsert(profilePayload, { onConflict: "user_id" })
       .select("id")
       .single();
+
+    if (profileError?.code === "23505") {
+      setAsyncCheck({
+        forUsername: trimmedUsername,
+        status: "taken",
+        reason: "That username was just taken — try another",
+      });
+      setStep(0);
+      setSubmitError("Someone just took that username — please pick another.");
+      setLoading(false);
+      return;
+    }
 
     if (profileError || !savedProfile) {
       setSubmitError(
@@ -285,6 +414,64 @@ export function OnboardingFlow() {
             <Card className="space-y-4 mb-6">
               {step === 0 && (
                 <>
+                  <div className="flex items-center gap-4">
+                    <label className="group relative flex h-16 w-16 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full border border-white/15 bg-white/[0.03]">
+                      {avatarPreviewUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={avatarPreviewUrl}
+                          alt="Profile icon preview"
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <Camera className="h-5 w-5 text-muted" />
+                      )}
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
+                        <Camera className="h-5 w-5 text-white" />
+                      </div>
+                      <input
+                        type="file"
+                        accept={ACCEPTED_AVATAR_TYPES.join(",")}
+                        className="hidden"
+                        onChange={(e) => handleAvatarSelect(e.target.files?.[0] ?? null)}
+                      />
+                    </label>
+                    <div>
+                      <p className="text-sm font-medium text-foreground">Profile icon</p>
+                      <p className="text-xs text-muted">Optional — shown on the leaderboard</p>
+                      {avatarError && <p className="mt-1 text-xs text-danger">{avatarError}</p>}
+                    </div>
+                  </div>
+
+                  <div>
+                    <Input
+                      label="Username"
+                      value={username}
+                      hint="Public — shown on the leaderboard. Letters, numbers, underscore."
+                      error={errors.username}
+                      onChange={(e) => setUsername(e.target.value)}
+                    />
+                    {username.trim() && !errors.username && (
+                      <p
+                        className={cn(
+                          "mt-1.5 flex items-center gap-1.5 text-xs",
+                          usernameStatus === "available" && "text-success",
+                          usernameStatus === "taken" && "text-danger",
+                          usernameStatus === "checking" && "text-muted"
+                        )}
+                      >
+                        {usernameStatus === "checking" && (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        )}
+                        {usernameStatus === "available" && <Check className="h-3 w-3" />}
+                        {usernameStatus === "taken" && <X className="h-3 w-3" />}
+                        {usernameStatus === "checking" && "Checking availability…"}
+                        {usernameStatus === "available" && "Available"}
+                        {usernameStatus === "taken" && (usernameReason ?? "Taken")}
+                      </p>
+                    )}
+                  </div>
+
                   <Input
                     label="Age"
                     type="number"
