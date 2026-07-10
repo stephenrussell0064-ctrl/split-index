@@ -2,7 +2,8 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { AnalyticsClient } from "@/components/analytics/analytics-client";
 import { isPremiumUser } from "@/lib/retention/trial";
-import type { AnalyticsPayload } from "@/components/analytics/types";
+import type { AnalyticsPayload, PredictedBenchmark, StrengthEstimate } from "@/components/analytics/types";
+import type { ScoreStrengthResult } from "@/lib/scoring/split-strength-engine";
 import type { PersonalRecord } from "@/types";
 
 const DAY_MS = 86400000;
@@ -41,6 +42,8 @@ export default async function AnalyticsPage() {
     { data: activities },
     { data: scores },
     { data: personalRecords },
+    { data: predictedBenchmarksRaw },
+    { data: strengthScoresRaw },
   ] = await Promise.all([
     supabase
       .from("split_index_history")
@@ -72,7 +75,36 @@ export default async function AnalyticsPage() {
       .eq("user_id", user.id)
       .order("achieved_at", { ascending: false })
       .limit(50),
+    // predicted_benchmarks may not exist yet if migration 011 hasn't been
+    // run — degrades to an empty array rather than failing the page.
+    supabase
+      .from("predicted_benchmarks")
+      .select("sport, benchmark_seconds, sample_count, updated_at")
+      .eq("user_id", user.id),
+    supabase
+      .from("strength_scores")
+      .select("exercise_name, estimated_1rm_kg, score_breakdown, recorded_at")
+      .eq("user_id", user.id)
+      .order("recorded_at", { ascending: false })
+      .limit(200),
   ]);
+
+  // Latest row per exercise only — recorded_at desc means first occurrence wins.
+  const strengthEstimateByLift = new Map<string, StrengthEstimate>();
+  for (const row of strengthScoresRaw ?? []) {
+    const name = row.exercise_name as string;
+    if (strengthEstimateByLift.has(name)) continue;
+    const breakdown = row.score_breakdown as { strength_result?: ScoreStrengthResult } | null;
+    const result = breakdown?.strength_result;
+    strengthEstimateByLift.set(name, {
+      exerciseName: name,
+      estimated1RmKg: row.estimated_1rm_kg as number,
+      trend: result?.trend ?? undefined,
+      confidence: result?.oneRMConfidence,
+      bandKg: result?.oneRMBandKg ?? undefined,
+      recordedAt: row.recorded_at as string,
+    });
+  }
 
   const payload: AnalyticsPayload = {
     isPremium: premium,
@@ -99,6 +131,15 @@ export default async function AnalyticsPage() {
       created_at: s.created_at as string,
     })),
     personalRecords: (personalRecords ?? []) as PersonalRecord[],
+    predictedBenchmarks: (predictedBenchmarksRaw ?? []).map(
+      (p): PredictedBenchmark => ({
+        sport: p.sport as PredictedBenchmark["sport"],
+        benchmarkSeconds: p.benchmark_seconds as number,
+        sampleCount: p.sample_count as number,
+        updatedAt: p.updated_at as string,
+      })
+    ),
+    strengthEstimates: Array.from(strengthEstimateByLift.values()) as StrengthEstimate[],
   };
 
   return (

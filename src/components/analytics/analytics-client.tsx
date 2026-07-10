@@ -18,6 +18,8 @@ import { IntensityDistribution } from "./intensity-distribution";
 import { TrainingZonesChart } from "./training-zones-chart";
 import { ConsistencyScore } from "./consistency-score";
 import { PersonalRecordsTable } from "./personal-records-table";
+import { InjuryRiskPanel } from "./injury-risk-panel";
+import { StoredPredictionsPanel } from "./stored-predictions-panel";
 import { PremiumGate } from "./premium-gate";
 import { PremiumTease } from "@/components/premium/premium-tease";
 import {
@@ -258,6 +260,15 @@ export function AnalyticsClient({ data }: { data: AnalyticsPayload }) {
             </Card>
           </motion.div>
         ))}
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <InjuryRiskPanel scores={data.scores} isPremium={data.isPremium} />
+        <StoredPredictionsPanel
+          benchmarks={data.predictedBenchmarks}
+          strengthEstimates={data.strengthEstimates}
+          isPremium={data.isPremium}
+        />
       </div>
 
       {compareEnabled && (

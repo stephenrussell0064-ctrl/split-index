@@ -44,6 +44,22 @@ export interface AnalyticsScore {
   created_at: string;
 }
 
+export interface PredictedBenchmark {
+  sport: "run" | "walk" | "row" | "swim" | "cycle" | "ski";
+  benchmarkSeconds: number;
+  sampleCount: number;
+  updatedAt: string;
+}
+
+export interface StrengthEstimate {
+  exerciseName: string;
+  estimated1RmKg: number;
+  trend?: "up" | "down" | "flat";
+  confidence?: number;
+  bandKg?: [number, number];
+  recordedAt: string;
+}
+
 export interface AnalyticsPayload {
   isPremium: boolean;
   maxHr: number | null;
@@ -53,6 +69,8 @@ export interface AnalyticsPayload {
   activities: AnalyticsActivity[];
   scores: AnalyticsScore[];
   personalRecords: PersonalRecord[];
+  predictedBenchmarks: PredictedBenchmark[];
+  strengthEstimates: StrengthEstimate[];
 }
 
 export interface PeriodMetrics {
