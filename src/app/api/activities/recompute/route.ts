@@ -14,6 +14,13 @@ import {
 import { setsForExercise } from "@/lib/activities/gym-sets";
 import { normalizeName } from "@/lib/scoring/split-strength-engine";
 import { isPremiumUser } from "@/lib/retention/trial";
+import { mapSportToBenchmarkSport } from "@/lib/scoring/adapters";
+import {
+  computeSessionBenchmarkEquivalentSeconds,
+  blendPredictedBenchmark,
+} from "@/lib/scoring/cardio-predictions";
+import type { BenchmarkSport } from "@/lib/scoring/cardio-benchmarks";
+import { isEnduranceSport } from "@/lib/scoring/engine";
 import type { GymExercise } from "@/types";
 import type { LoggedSet } from "@/lib/scoring/split-strength-engine";
 
@@ -100,6 +107,13 @@ export async function POST() {
   // sets influencing a past one's adaptive 1RM estimate.
   const exerciseHistory: Record<string, LoggedSet[]> = {};
 
+  // Same oldest-first replay for memory-based cardio predictions
+  // (MASTER-BRIEF.md §5) — this backfills predicted_benchmarks for existing
+  // users the first time recompute runs after this feature ships.
+  const predictedBenchmarkSeconds: Partial<Record<BenchmarkSport, number>> = {};
+  const predictedBenchmarkSampleCounts: Partial<Record<BenchmarkSport, number>> = {};
+  const predictedBenchmarkLastActivityId: Partial<Record<BenchmarkSport, string>> = {};
+
   for (const activity of activities ?? []) {
     const metadata = activity.metadata as Record<string, unknown> | null;
     const bodyweightKg = resolveScoringBodyweightKg(activity.sport, {
@@ -117,6 +131,30 @@ export async function POST() {
         order_index: i,
       }));
 
+    let benchmarkSport: BenchmarkSport | null = null;
+    // Only genuine prior memory (from an earlier iteration of this replay)
+    // is fed into scoring — a sport's first-ever session has nothing to
+    // blend into yet, so it scores as session-only.
+    let storedPredictionForScoring: number | null = null;
+    if (isEnduranceSport(activity.sport)) {
+      benchmarkSport = mapSportToBenchmarkSport(activity.sport);
+      const priorValue = predictedBenchmarkSeconds[benchmarkSport] ?? null;
+      const sessionEquivalentSeconds = computeSessionBenchmarkEquivalentSeconds(
+        benchmarkSport,
+        activity.distance_meters ?? 0,
+        activity.duration_seconds,
+        activity.avg_heart_rate
+      );
+      if (sessionEquivalentSeconds !== null) {
+        predictedBenchmarkSeconds[benchmarkSport] = blendPredictedBenchmark(priorValue, sessionEquivalentSeconds);
+        predictedBenchmarkSampleCounts[benchmarkSport] =
+          (predictedBenchmarkSampleCounts[benchmarkSport] ?? 0) + 1;
+        if (priorValue != null) {
+          storedPredictionForScoring = predictedBenchmarkSeconds[benchmarkSport]!;
+        }
+      }
+    }
+
     try {
       const result = scoreActivity(
         {
@@ -132,6 +170,7 @@ export async function POST() {
           temperatureCelsius: activity.temperature_celsius,
           sessionType: activity.session_type,
           rpe: activity.rpe,
+          storedPredictionSeconds: storedPredictionForScoring,
           exercises,
           exerciseHistory,
           isPremium,
@@ -202,6 +241,9 @@ export async function POST() {
       if (result.strengthComponent != null) strengthIndices.push(result.strengthComponent);
       splitIndices.push(result.splitIndex);
       recentScoreLoads.push({ load_score: result.loadScore, created_at: activity.started_at });
+      if (benchmarkSport && predictedBenchmarkSeconds[benchmarkSport] != null) {
+        predictedBenchmarkLastActivityId[benchmarkSport] = activity.id as string;
+      }
 
       recomputed += 1;
     } catch (err) {
@@ -210,6 +252,18 @@ export async function POST() {
         error: err instanceof ScoringInputError ? err.message : "Unknown error",
       });
     }
+  }
+
+  const benchmarkRows = (Object.keys(predictedBenchmarkSeconds) as BenchmarkSport[]).map((sport) => ({
+    user_id: user.id,
+    sport,
+    benchmark_seconds: predictedBenchmarkSeconds[sport]!,
+    sample_count: predictedBenchmarkSampleCounts[sport] ?? 1,
+    last_activity_id: predictedBenchmarkLastActivityId[sport] ?? null,
+    updated_at: new Date().toISOString(),
+  }));
+  if (benchmarkRows.length > 0) {
+    await supabase.from("predicted_benchmarks").upsert(benchmarkRows, { onConflict: "user_id,sport" });
   }
 
   return NextResponse.json({

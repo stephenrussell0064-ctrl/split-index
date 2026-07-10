@@ -1,20 +1,21 @@
 /**
  * Split Index — Cardio scoring engine ("The Engine")
  * ---------------------------------------------------
- * Pure functions (only a type-only import for the session-type union).
- * Every activity (run / row / swim) gets a per-activity score on a 0–1000
- * scale, plus the underlying physiological estimates (VO2max, predicted
- * race times, training load) that justify it.
+ * Every activity (run / walk / row / swim / cycle / ski) gets a per-activity
+ * score on a 0–1000 scale, plus the underlying physiological estimates
+ * (VO2max, predicted race times, training load) that justify it.
  *
- * Effort-aware by design: two sessions with the same underlying fitness but
- * different intensities (an easy recovery jog vs. a hard tempo run) should
- * land close to the same score. Where a resting HR is on file, VO2max comes
- * from the HR ratio method, which is effort-independent already. Where it
- * isn't, but the session still has an avg HR, the observed pace is scaled
- * toward a threshold-equivalent effort using %HRR so a deliberately slow,
- * low-HR session isn't graded down for being unhurried. Where there's no HR
- * at all, a self-reported "easy" session type or a low RPE softens the pure
- * pace-based estimate instead.
+ * Primary scoring path (MASTER-BRIEF.md §4–5): every session is projected to
+ * its sport's benchmark distance via Riegel, then HR-adjusted so a lower-HR
+ * session yields a faster (better) equivalent. That equivalent blends
+ * asymmetrically into a per-user, per-sport memory (`storedPredictionSeconds`,
+ * maintained by the caller across sessions) — a faster effort pulls the
+ * memory down fast, a slower one barely nudges it, so an easy low-HR session
+ * scores comparably to a hard one of equal underlying fitness, and effort
+ * alone (going slower for no reason) can't tank the score. The blended time
+ * is scored on a calibrated anchor table (see cardio-benchmarks.ts) matching
+ * the universal tier bands. When no memory is supplied yet (first session),
+ * this session's own equivalent is scored directly.
  *
  * FREE tier reads `score` and `vo2max`.
  * PREMIUM tier additionally surfaces `trimp`, `efficiencyFactor`,
@@ -29,12 +30,17 @@
  */
 
 import type { SessionType } from "@/types";
+import { timeToScore, type BenchmarkSport } from "@/lib/scoring/cardio-benchmarks";
+import { computeSessionBenchmarkEquivalentSeconds } from "@/lib/scoring/cardio-predictions";
 
 export type Sex = 'male' | 'female';
 export type CardioType = 'run' | 'row' | 'swim';
+export type { BenchmarkSport };
 
 export interface CardioInput {
   type: CardioType;
+  /** Granular benchmark bucket driving the primary anchor-table score (run/walk/row/swim/cycle/ski). */
+  benchmarkSport: BenchmarkSport;
   distanceMeters: number;
   durationSeconds: number;
   sex: Sex;
@@ -51,6 +57,8 @@ export interface CardioInput {
   rpe?: number | null;                // 1–10 perceived effort
   elevationMeters?: number | null;    // total climb, unlocks a terrain-difficulty bonus
   temperatureCelsius?: number | null; // unlocks a heat/cold-difficulty bonus
+  /** Multi-session memory (seconds at the benchmark distance) — see cardio-predictions.ts. Omit for a one-off, session-only score. */
+  storedPredictionSeconds?: number | null;
 }
 
 export interface CardioResult {
@@ -67,10 +75,11 @@ export interface CardioResult {
 
 const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
 
-const NEUTRAL_ANCHOR = 500;
 const DEFAULT_RESTING_HR = 60;
 // %HRR treated as the "working hard" reference point (roughly tempo/threshold
 // effort). Observed pace at a lower %HRR is scaled toward this reference.
+// Used only for the supplementary VO2max estimate shown in premium panels —
+// the primary score comes from the benchmark anchor tables (see below).
 const REFERENCE_EFFORT_FRACTION = 0.85;
 const MIN_EFFORT_FRACTION = 0.35;
 const MAX_EFFORT_FRACTION = 1.05;
@@ -81,9 +90,6 @@ const MAX_EFFORT_FRACTION = 1.05;
 // (a light recovery jog isn't reliable evidence of near-max pace), so the
 // ratio is bounded instead of scaled down everywhere.
 const MAX_NORMALIZATION_RATIO = 1.6;
-const EASY_SESSION_DAMPING = 0.35;
-const LOW_RPE_THRESHOLD = 4; // UI hint: "1 = very easy · 10 = max effort"
-const EASY_SESSION_TYPES = new Set<SessionType>(['easy', 'recovery', 'long']);
 
 // Volume/terrain/environment bonuses — orthogonal to the pace/HR-based base
 // score above. A long session, a hilly one, or one done in harsh heat/cold
@@ -221,20 +227,18 @@ export function decoupling(input: CardioInput): number | null {
 /**
  * Per-activity cardio score (0–1000).
  *
- * Strategy, in priority order:
- *  1. Resting-HR-ratio VO2max — effort-independent by construction, so an
- *     easy day and a hard day score the same if fitness hasn't changed.
- *  2. No resting HR, but this session has an avg HR — normalize the observed
- *     pace toward a threshold-equivalent effort using %HRR, so a slow,
- *     low-HR session isn't graded down just for being unhurried.
- *  3. No HR at all — fall back to pace alone (honesty-discounted), then
- *     soften the result if the athlete labelled the session easy/recovery/
- *     long or reported a low RPE, since a deliberately slow pace there
- *     isn't evidence of low fitness.
- * On top of whichever base score above applies: a volume bonus (sheer
- * duration — a long session is a bigger aerobic stimulus regardless of
- * pace), a terrain bonus (climbing), and an environment bonus (heat/cold),
- * then pacing quality (negative-split reward / fade penalty).
+ * Primary path: this session is projected to its benchmark distance via
+ * Riegel and HR-adjusted, then blended into the caller-supplied multi-session
+ * memory (`storedPredictionSeconds`) — or, if there's no memory yet (first
+ * session), scored directly off this session's own equivalent. Either way
+ * the result is looked up on a calibrated anchor table, so an easy low-HR
+ * session and a hard one of equal underlying fitness land close together.
+ *
+ * VO2max is still estimated (resting-HR ratio preferred, effort-normalized
+ * pace as a fallback) purely as a supplementary premium metric — it no
+ * longer drives the score. On top of the anchor-table base: a volume bonus
+ * (sheer duration), a terrain bonus (climbing), an environment bonus
+ * (heat/cold), and pacing quality (negative-split reward / fade penalty).
  */
 export function scoreCardioActivity(input: CardioInput): CardioResult {
   const flags: string[] = [];
@@ -243,57 +247,48 @@ export function scoreCardioActivity(input: CardioInput): CardioResult {
     : 0;
 
   let { value: vo2max, method } = vo2maxFromHR(input.restingHR, input.maxHR, input.age);
-  const effortFraction = computeEffortFraction(input.avgHR, input.restingHR, input.maxHR, input.age);
-  const norm = input.sex === 'female' ? 45 : 50; // VO2max reference midpoint
+
+  if (vo2max === null) {
+    const effortFraction = computeEffortFraction(input.avgHR, input.restingHR, input.maxHR, input.age);
+    if (effortFraction !== null && rawSpeed > 0) {
+      const normalizedSpeed = effortNormalizedSpeed(rawSpeed, effortFraction);
+      vo2max = 0.2 * (normalizedSpeed * 60) + 3.5; // ACSM running-economy curve, reused as a directional proxy for row/swim too
+      method = 'pace-hr-adjusted';
+    } else if (input.type === 'run') {
+      const est = vo2FromRunningPace(input.distanceMeters, input.durationSeconds);
+      if (est !== null) {
+        vo2max = est;
+        method = 'pace-estimate';
+      }
+    }
+  }
+
+  if (!input.avgHR) flags.push('no-hr-data');
+
+  const sessionEquivalentSeconds = computeSessionBenchmarkEquivalentSeconds(
+    input.benchmarkSport,
+    input.distanceMeters,
+    input.durationSeconds,
+    input.avgHR
+  );
+  const anchorSeconds = input.storedPredictionSeconds ?? sessionEquivalentSeconds;
 
   let base: number;
   let confidence: number;
 
-  if (vo2max !== null) {
-    // Resting-HR ratio already normalizes for effort — a physiological
-    // ceiling, not a grade on how hard this particular session was.
-    base = clamp(500 + (vo2max - norm) * 18, 0, 1000);
-    confidence = 1;
-  } else if (effortFraction !== null && rawSpeed > 0) {
-    // Real HR for this session, just no measured resting HR. Scale the pace
-    // by how easy/hard the effort actually was instead of taking it at face value.
-    const normalizedSpeed = effortNormalizedSpeed(rawSpeed, effortFraction);
-    const estVo2 = 0.2 * (normalizedSpeed * 60) + 3.5; // ACSM running-economy curve, reused as a directional proxy for row/swim too
-    vo2max = estVo2;
-    method = 'pace-hr-adjusted';
-    base = clamp(500 + (estVo2 - norm) * 18, 0, 1000);
-    confidence = 0.8;
-    flags.push('hr-effort-adjusted');
-  } else if (input.type === 'run') {
-    const est = vo2FromRunningPace(input.distanceMeters, input.durationSeconds);
-    if (est !== null) {
-      vo2max = est;
-      method = 'pace-estimate';
-      base = clamp(500 + (est - norm) * 18, 0, 1000);
+  if (anchorSeconds !== null) {
+    base = timeToScore(input.benchmarkSport, anchorSeconds, input.sex);
+    if (input.storedPredictionSeconds != null) {
+      flags.push('memory-backed');
+      confidence = input.avgHR ? 1 : 0.9;
     } else {
-      base = 0;
+      confidence = input.avgHR ? 0.85 : 0.7;
     }
-    confidence = 0.7;
-    flags.push('no-hr-data');
   } else {
-    // No HR at all for a row/swim session: score off speed alone, capped
-    // and discounted for honesty.
-    base = clamp(rawSpeed * 90, 0, 780);
-    confidence = 0.45;
-    flags.push('no-hr-data');
-  }
-
-  // Self-reported easy effort with no HR to verify it: don't grade a
-  // deliberately slow pace down as if it were a maximal, revealing effort.
-  if (flags.includes('no-hr-data')) {
-    const selfReportedEasy =
-      (input.sessionType != null && EASY_SESSION_TYPES.has(input.sessionType)) ||
-      (typeof input.rpe === 'number' && input.rpe > 0 && input.rpe <= LOW_RPE_THRESHOLD);
-    if (selfReportedEasy) {
-      base = base + (NEUTRAL_ANCHOR - base) * EASY_SESSION_DAMPING;
-      confidence = Math.max(confidence, 0.55);
-      flags.push('easy-effort-acknowledged');
-    }
+    // No distance/duration to project from — shouldn't happen for a real
+    // cardio session, but keep a safe, clearly-low-confidence fallback.
+    base = 0;
+    confidence = 0.3;
   }
 
   // Volume/terrain/environment — orthogonal to pace/HR. A long session, a

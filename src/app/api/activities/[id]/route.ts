@@ -11,8 +11,12 @@ import { assertScoringInput } from "@/lib/scoring/input-guards";
 import { computeSportComparison } from "@/lib/utils/sport-comparison";
 import { SPORT_INDEX_LABELS } from "@/lib/constants/sports";
 import { enrichCardioScore } from "@/lib/scoring/cardio";
-import { cardioResultToEnrichment } from "@/lib/scoring/adapters";
+import { cardioResultToEnrichment, mapSportToBenchmarkSport } from "@/lib/scoring/adapters";
 import type { CardioResult } from "@/lib/scoring/cardio-activity";
+import {
+  computeSessionBenchmarkEquivalentSeconds,
+  blendPredictedBenchmark,
+} from "@/lib/scoring/cardio-predictions";
 import { isEnduranceSport } from "@/lib/scoring/engine";
 import { isPremiumUser } from "@/lib/retention/trial";
 import { serializeScoreBreakdown } from "@/lib/scoring/presentation";
@@ -131,6 +135,44 @@ async function scoreAndPersist(
         )
       : {};
 
+  // Memory-based cardio prediction (MASTER-BRIEF.md §5) — same blend as on
+  // create, so editing a session's duration/HR/etc. keeps the stored
+  // prediction consistent with the corrected values.
+  let newPredictedBenchmarkSeconds: number | null = null;
+  let newPredictedBenchmarkSampleCount = 1;
+  let benchmarkSport: ReturnType<typeof mapSportToBenchmarkSport> | null = null;
+  // Only fed into scoring when genuine prior memory exists (excluding this
+  // same activity's own previous prediction, since we're re-scoring it) —
+  // otherwise it's scored as session-only, not falsely "memory-backed".
+  let storedPredictionForScoring: number | null = null;
+  if (isEnduranceSport(body.sport)) {
+    benchmarkSport = mapSportToBenchmarkSport(body.sport);
+    const { data: priorPrediction } = await supabase
+      .from("predicted_benchmarks")
+      .select("benchmark_seconds, sample_count, last_activity_id")
+      .eq("user_id", userId)
+      .eq("sport", benchmarkSport)
+      .maybeSingle();
+    const priorIsThisActivity = priorPrediction?.last_activity_id === excludeActivityId;
+
+    newPredictedBenchmarkSampleCount = priorIsThisActivity
+      ? (priorPrediction?.sample_count ?? 1)
+      : (priorPrediction?.sample_count ?? 0) + 1;
+    const sessionEquivalentSeconds = computeSessionBenchmarkEquivalentSeconds(
+      benchmarkSport,
+      body.distance_meters ?? 0,
+      body.duration_seconds,
+      body.avg_heart_rate
+    );
+    if (sessionEquivalentSeconds !== null) {
+      const blendBase = priorIsThisActivity ? null : (priorPrediction?.benchmark_seconds ?? null);
+      newPredictedBenchmarkSeconds = blendPredictedBenchmark(blendBase, sessionEquivalentSeconds);
+      if (blendBase != null) {
+        storedPredictionForScoring = newPredictedBenchmarkSeconds;
+      }
+    }
+  }
+
   const result = scoreActivity(
     {
       sport: body.sport,
@@ -145,6 +187,7 @@ async function scoreAndPersist(
       temperatureCelsius: body.temperature_celsius,
       sessionType: body.session_type,
       rpe: body.rpe,
+      storedPredictionSeconds: storedPredictionForScoring,
       exercises: body.exercises,
       exerciseHistory,
       isPremium: premium,
@@ -200,6 +243,20 @@ async function scoreAndPersist(
         body.started_at,
         result.strengthScoreRows
       )
+    );
+  }
+
+  if (benchmarkSport && newPredictedBenchmarkSeconds !== null) {
+    await supabase.from("predicted_benchmarks").upsert(
+      {
+        user_id: userId,
+        sport: benchmarkSport,
+        benchmark_seconds: newPredictedBenchmarkSeconds,
+        sample_count: newPredictedBenchmarkSampleCount,
+        last_activity_id: activityId,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "user_id,sport" }
     );
   }
 

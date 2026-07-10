@@ -47,6 +47,7 @@ expectThrows("500kg bench at 40kg BW", () =>
 
 const tinySwim = scoreCardioActivity({
   type: "swim",
+  benchmarkSport: "swim",
   distanceMeters: 2,
   durationSeconds: 60,
   sex: "male",
@@ -56,6 +57,7 @@ expectFinite("2m swim", tinySwim.score);
 
 const fiveK = scoreCardioActivity({
   type: "run",
+  benchmarkSport: "run",
   distanceMeters: 5000,
   durationSeconds: 22.5 * 60,
   sex: "male",
@@ -68,6 +70,7 @@ expectFinite("valid 5K with HR", fiveK.score);
 
 const noHr = scoreCardioActivity({
   type: "run",
+  benchmarkSport: "run",
   distanceMeters: 5000,
   durationSeconds: 22.5 * 60,
   sex: "male",

@@ -21,6 +21,8 @@ interface ScoreActivityInput {
   temperatureCelsius?: number | null;
   sessionType?: SessionType | null;
   rpe?: number | null;
+  /** Multi-session memory (seconds at the sport's benchmark distance), already blended by the caller — see cardio-predictions.ts. */
+  storedPredictionSeconds?: number | null;
   exercises?: GymExerciseInput[];
   /** Full logged history per exercise (across all past sessions), keyed by normalized exercise name. */
   exerciseHistory?: Record<string, LoggedSet[]>;
@@ -120,6 +122,7 @@ export function scoreActivity(
       rpe: input.rpe,
       elevationMeters: input.elevationMeters,
       temperatureCelsius: input.temperatureCelsius,
+      storedPredictionSeconds: input.storedPredictionSeconds,
       exercises: input.exercises,
       exerciseHistory: input.exerciseHistory,
       isPremium: input.isPremium,

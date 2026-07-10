@@ -4,6 +4,7 @@ import type { CardioInput, CardioType, Sex } from "@/lib/scoring/cardio-activity
 import type { ActivityScore } from "@/lib/scoring/index-engine";
 import type { CardioResult } from "@/lib/scoring/cardio-activity";
 import type { CardioEnrichment } from "@/lib/scoring/cardio/confidence";
+import type { BenchmarkSport } from "@/lib/scoring/cardio-benchmarks";
 
 /** Derive onboarding profile from preferred sports — no form changes required. */
 export function deriveAthleteProfile(preferredSports: SportType[]): AthleteProfile {
@@ -23,6 +24,25 @@ export function mapSportToCardioType(sport: SportType): CardioType {
   if (sport === "swimming") return "swim";
   if (sport === "rowing" || sport === "bike_erg" || sport === "ski_erg") return "row";
   return "run";
+}
+
+/** Granular benchmark bucket driving the primary anchor-table score — finer than mapSportToCardioType (walk/cycle/ski each get their own curve; see cardio-benchmarks.ts). */
+export function mapSportToBenchmarkSport(sport: SportType): BenchmarkSport {
+  switch (sport) {
+    case "walking":
+      return "walk";
+    case "swimming":
+      return "swim";
+    case "rowing":
+      return "row";
+    case "bike_erg":
+    case "indoor_cycling":
+      return "cycle";
+    case "ski_erg":
+      return "ski";
+    default:
+      return "run";
+  }
 }
 
 export function mapExperience(
@@ -157,9 +177,11 @@ export function buildCardioInput(input: {
   rpe?: number | null;
   elevationMeters?: number | null;
   temperatureCelsius?: number | null;
+  storedPredictionSeconds?: number | null;
 }): CardioInput {
   return {
     type: mapSportToCardioType(input.sport),
+    benchmarkSport: mapSportToBenchmarkSport(input.sport),
     distanceMeters: input.distanceMeters ?? 0,
     durationSeconds: input.durationSeconds,
     sex: mapSex(input.gender),
@@ -176,5 +198,6 @@ export function buildCardioInput(input: {
     elevationMeters: input.elevationMeters ?? undefined,
     temperatureCelsius: input.temperatureCelsius ?? undefined,
     rpe: input.rpe ?? undefined,
+    storedPredictionSeconds: input.storedPredictionSeconds ?? undefined,
   };
 }

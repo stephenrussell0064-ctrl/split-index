@@ -40,6 +40,8 @@ export interface ActivityScoreContext {
   rpe?: number | null;
   elevationMeters?: number | null;
   temperatureCelsius?: number | null;
+  /** Multi-session memory (seconds at the sport's benchmark distance), already blended by the caller — see cardio-predictions.ts. */
+  storedPredictionSeconds?: number | null;
   exercises?: GymExerciseInput[];
   /** Full logged history per exercise (across all past sessions), keyed by normalized exercise name — powers the premium adaptive 1RM model. */
   exerciseHistory?: Record<string, LoggedSet[]>;
@@ -231,6 +233,7 @@ function scoreEnduranceSession(
     rpe: input.rpe,
     elevationMeters: input.elevationMeters,
     temperatureCelsius: input.temperatureCelsius,
+    storedPredictionSeconds: input.storedPredictionSeconds,
     ...paceHalves,
   });
 
