@@ -20,9 +20,9 @@ import { AppTopBar } from "@/components/layout/app-top-bar";
 type AppMode = "neutral" | "gym" | "cardio";
 
 const primaryNav = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, mode: "neutral" as const },
-  { href: "/gym", label: "The Lab", icon: Dumbbell, mode: "gym" as const },
-  { href: "/cardio", label: "The Engine", icon: Activity, mode: "cardio" as const },
+  { href: "/dashboard", label: "Dashboard", shortLabel: "Home", icon: LayoutDashboard, mode: "neutral" as const },
+  { href: "/gym", label: "The Lab", shortLabel: "Lab", icon: Dumbbell, mode: "gym" as const },
+  { href: "/cardio", label: "The Engine", shortLabel: "Engine", icon: Activity, mode: "cardio" as const },
 ];
 
 const secondaryNav = [
@@ -160,7 +160,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </aside>
 
         <nav className="fixed bottom-0 left-0 right-0 z-40 flex items-center justify-around border-t border-white/5 glass-strong px-1 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] lg:hidden">
-          {[...primaryNav, { href: logHref, label: "Log", icon: PlusCircle, mode }].map(
+          {[...primaryNav, { href: logHref, label: "Log", shortLabel: "Log", icon: PlusCircle, mode }].map(
             (item) => {
               const active = isActive(item.href) || (item.label === "Log" && pathname.endsWith("/log"));
               const Icon = item.icon;
@@ -181,7 +181,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   )}
                 >
                   <Icon className="h-5 w-5 shrink-0" />
-                  <span className="truncate">{item.label.split(" ")[0]}</span>
+                  <span className="truncate">{item.shortLabel}</span>
                 </Link>
               );
             }

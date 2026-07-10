@@ -73,7 +73,7 @@ export function SplitIndexHero({
 
         <div className="relative grid gap-8 p-6 sm:p-8 lg:grid-cols-[1fr_auto] lg:items-center">
           {/* ── Left: the ticker ── */}
-          <div>
+          <div className="min-w-0">
             <div className="flex items-center gap-2">
               <span className="relative flex h-2 w-2">
                 <span

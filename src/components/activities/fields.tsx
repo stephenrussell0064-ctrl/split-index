@@ -55,7 +55,7 @@ interface FieldProps {
 
 export function Field({ label, error, hint, htmlFor, children, className }: FieldProps) {
   return (
-    <div className={cn("flex flex-col gap-1.5", className)}>
+    <div className={cn("flex min-w-0 flex-col gap-1.5", className)}>
       <MicroLabel htmlFor={htmlFor}>{label}</MicroLabel>
       {children}
       {hint && !error && <p className="text-xs text-muted/70">{hint}</p>}

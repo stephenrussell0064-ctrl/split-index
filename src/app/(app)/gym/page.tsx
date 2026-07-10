@@ -128,7 +128,7 @@ export default async function GymPage() {
           </div>
 
           <div className="grid gap-8 lg:grid-cols-[1fr_380px]">
-            <div>
+            <div className="min-w-0">
               <GymStrengthPanel
                 strengthIndex={hasHistory ? strengthIndex : null}
                 dotsScore={breakdown.dots_score ?? null}
@@ -220,7 +220,7 @@ export default async function GymPage() {
               )}
             </div>
 
-            <aside className="lg:sticky lg:top-24 lg:self-start">
+            <aside className="min-w-0 lg:sticky lg:top-24 lg:self-start">
               <GymQuickStart recentSessions={recentForQuickStart} />
             </aside>
           </div>

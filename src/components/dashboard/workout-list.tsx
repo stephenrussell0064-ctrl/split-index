@@ -136,7 +136,7 @@ export function RecentWorkouts({
                       {activity.title ?? activity.sport.replace("_", " ")}
                     </p>
                     <p className="text-[11px] tabular-nums text-muted">
-                      {new Date(activity.started_at).toLocaleDateString(undefined, {
+                      {new Date(activity.started_at).toLocaleDateString("en-GB", {
                         month: "short",
                         day: "numeric",
                       })}

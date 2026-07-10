@@ -97,7 +97,7 @@ export function ActivityHeatmap({
         }
         col.push({
           key,
-          label: date.toLocaleDateString(undefined, {
+          label: date.toLocaleDateString("en-GB", {
             month: "short",
             day: "numeric",
           }),

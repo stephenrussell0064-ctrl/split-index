@@ -28,11 +28,11 @@ export default function AppLoading() {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1fr_380px]">
-        <div className="glass rounded-2xl p-6 space-y-4">
+        <div className="min-w-0 glass rounded-2xl p-6 space-y-4">
           <SkeletonText lines={3} />
           <Skeleton className="h-40 w-full" />
         </div>
-        <div className="glass rounded-2xl p-6 space-y-4">
+        <div className="min-w-0 glass rounded-2xl p-6 space-y-4">
           <SkeletonText lines={4} />
         </div>
       </div>

@@ -44,7 +44,7 @@ export function ConsistencyCard({
         if (entry && entry.workouts > 0) sessions++;
       }
       buckets.push({
-        label: monday.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+        label: monday.toLocaleDateString("en-GB", { month: "short", day: "numeric" }),
         sessions,
         isCurrent: w === 0,
       });

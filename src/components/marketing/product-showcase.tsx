@@ -27,7 +27,7 @@ export function ProductShowcase() {
   return (
     <section className="relative overflow-hidden border-t border-white/[0.06] bg-[#070908] px-6 py-24 md:px-[6vw]">
       <div className="mx-auto grid max-w-6xl items-center gap-16 lg:grid-cols-[1fr_1.1fr]">
-        <div>
+        <div className="min-w-0">
           <p className="landing-eyebrow text-cardio-accent">The product</p>
           <h2 className="font-display text-3xl font-black text-white md:text-[42px]">
             One logbook.
@@ -54,7 +54,7 @@ export function ProductShowcase() {
 
         <div
           ref={ref}
-          className="relative perspective-[1200px]"
+          className="relative min-w-0 perspective-[1200px]"
           onPointerMove={(e) => {
             const el = ref.current;
             if (!el) return;
