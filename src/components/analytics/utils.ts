@@ -109,6 +109,24 @@ function rollingMean(values: number[], window: number, index: number): number | 
   return Math.round(slice.reduce((a, b) => a + b, 0) / slice.length);
 }
 
+/**
+ * Collapse a chronologically-sorted snapshot history to one entry per
+ * calendar day (keeping the last/most-recent snapshot of each day).
+ * Several activities logged on the same day previously each became their
+ * own chart point, all labeled with that day's date — the x-axis repeated
+ * the same tick across the whole chart and rolling windows counted
+ * activities instead of days.
+ */
+export function collapseToLastPerDay(
+  sorted: SplitIndexSnapshot[]
+): SplitIndexSnapshot[] {
+  const byDay = new Map<string, SplitIndexSnapshot>();
+  for (const h of sorted) {
+    byDay.set(format(new Date(h.recorded_at), "yyyy-MM-dd"), h);
+  }
+  return Array.from(byDay.values());
+}
+
 export function buildTrendSeries(
   history: SplitIndexSnapshot[],
   granularity: TrendGranularity
@@ -120,14 +138,7 @@ export function buildTrendSeries(
   );
 
   if (granularity === "week") {
-    // One point per day, not per logged activity — several workouts on the
-    // same day previously produced several points with the identical "EEE"
-    // label (e.g. two "Mon" ticks), making the chart look frozen.
-    const byDay = new Map<string, SplitIndexSnapshot>();
-    for (const h of sorted) {
-      byDay.set(format(new Date(h.recorded_at), "yyyy-MM-dd"), h);
-    }
-    return Array.from(byDay.values()).map((h) => ({
+    return collapseToLastPerDay(sorted).map((h) => ({
       date: format(new Date(h.recorded_at), "EEE"),
       split: h.split_index,
       endurance: h.endurance_index,
@@ -173,8 +184,10 @@ export function buildTrendSeries(
 }
 
 export function buildMovingAverages(history: SplitIndexSnapshot[]): MovingAveragePoint[] {
-  const sorted = [...history].sort(
-    (a, b) => new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime()
+  const sorted = collapseToLastPerDay(
+    [...history].sort(
+      (a, b) => new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime()
+    )
   );
   const splits = sorted.map((h) => h.split_index);
   const endurance = sorted.map((h) => h.endurance_index);
@@ -191,8 +204,10 @@ export function buildMovingAverages(history: SplitIndexSnapshot[]): MovingAverag
 }
 
 export function buildProjections(history: SplitIndexSnapshot[]): ProjectionPoint[] {
-  const sorted = [...history].sort(
-    (a, b) => new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime()
+  const sorted = collapseToLastPerDay(
+    [...history].sort(
+      (a, b) => new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime()
+    )
   );
   const recent = sorted.slice(-14);
   if (recent.length < 3) return [];
@@ -233,8 +248,10 @@ export function buildFatigueRecoverySeries(
   history: SplitIndexSnapshot[],
   scores: AnalyticsScore[]
 ): FatigueRecoveryPoint[] {
-  const sorted = [...history].sort(
-    (a, b) => new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime()
+  const sorted = collapseToLastPerDay(
+    [...history].sort(
+      (a, b) => new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime()
+    )
   );
 
   return sorted.map((h) => {

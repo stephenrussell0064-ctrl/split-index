@@ -24,9 +24,20 @@ export function regressionSlopePerDay(points: DayPoint[]): number {
   return denom !== 0 ? (n * sumTV - sumT * sumV) / denom : 0;
 }
 
+/** One snapshot per calendar day (last of the day) — several sessions logged the same day previously counted as several regression points clustered at nearly the same day-offset, skewing the fitted slope. */
+function collapseToLastPerDay(sorted: SplitIndexSnapshot[]): SplitIndexSnapshot[] {
+  const byDay = new Map<string, SplitIndexSnapshot>();
+  for (const h of sorted) {
+    byDay.set(new Date(h.recorded_at).toISOString().slice(0, 10), h);
+  }
+  return Array.from(byDay.values());
+}
+
 function toDayPoints(history: SplitIndexSnapshot[], maxPoints: number): DayPoint[] {
-  const sorted = [...history].sort(
-    (a, b) => new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime()
+  const sorted = collapseToLastPerDay(
+    [...history].sort(
+      (a, b) => new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime()
+    )
   );
   const recent = sorted.slice(-maxPoints);
   if (recent.length < 3) return [];
@@ -64,8 +75,10 @@ export function computeSplitIndexProjection(
   history: SplitIndexSnapshot[],
   weeksAhead: number
 ): number | null {
-  const sorted = [...history].sort(
-    (a, b) => new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime()
+  const sorted = collapseToLastPerDay(
+    [...history].sort(
+      (a, b) => new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime()
+    )
   );
   const recent = sorted.slice(-14);
   if (recent.length < 3) return null;

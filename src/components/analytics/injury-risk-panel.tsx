@@ -24,6 +24,17 @@ const ZONE_STYLE: Record<InjuryRiskResult["zone"], string> = {
   Danger: "text-danger",
 };
 
+/** ACWR needs a real chronic baseline — with less than this much logged history, the 8-28-day window is mostly/entirely empty and the ratio collapses toward a meaningless, structurally-fixed extreme (acute / (acute/4) = 4) rather than reflecting genuine overreaching. */
+const MIN_DAYS_OF_HISTORY = 14;
+
+function daysSinceOldest(scores: AnalyticsScore[]): number {
+  const oldest = scores.reduce<number | null>((min, s) => {
+    const t = new Date(s.created_at).getTime();
+    return min === null || t < min ? t : min;
+  }, null);
+  return oldest === null ? 0 : (Date.now() - oldest) / 86400000;
+}
+
 function ReadoutContent({
   risk,
   displayIndex,
@@ -134,7 +145,7 @@ export function InjuryRiskPanel({
   hrvToday?: number | null;
   hrvBaseline?: number | null;
 }) {
-  const { risk, displayIndex, acuteLoad, chronicWeekly } = useMemo(() => {
+  const { risk, displayIndex, acuteLoad, chronicWeekly, daysOfHistory } = useMemo(() => {
     const loads = scores.map((s) => ({ load_score: s.load_score, created_at: s.created_at }));
     const { acute, chronic } = computeRecentLoads(loads);
     const acwr = calculateACWR(acute, chronic);
@@ -144,10 +155,14 @@ export function InjuryRiskPanel({
       displayIndex: hrvAdjustedRisk(r.index, hrvToday, hrvBaseline),
       acuteLoad: acute,
       chronicWeekly: chronic,
+      daysOfHistory: daysSinceOldest(scores),
     };
   }, [scores, hrvToday, hrvBaseline]);
 
-  const hasEnoughData = scores.length >= 3;
+  // Count alone isn't enough — 5 sessions logged this week still has an
+  // empty 8-28-day chronic window, which mathematically forces ACWR to a
+  // fixed, misleadingly extreme ~4.0 regardless of actual training pattern.
+  const hasEnoughData = scores.length >= 3 && daysOfHistory >= MIN_DAYS_OF_HISTORY;
 
   return (
     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
@@ -161,7 +176,8 @@ export function InjuryRiskPanel({
         <CardContent>
           {!hasEnoughData ? (
             <p className="text-sm text-muted">
-              Log a few more sessions to unlock your injury risk index — it needs training-load history to compute ACWR.
+              Log workouts consistently for 2+ weeks to unlock your injury risk index — ACWR needs
+              a real training-load baseline, not just this week&apos;s sessions, to mean anything.
             </p>
           ) : isPremium ? (
             <ReadoutContent
