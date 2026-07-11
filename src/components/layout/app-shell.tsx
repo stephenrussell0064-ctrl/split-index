@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
@@ -11,6 +12,8 @@ import {
   Users,
   Settings,
   PlusCircle,
+  MoreHorizontal,
+  X,
 } from "lucide-react";
 import { BrandMark } from "@/components/brand/brand-mark";
 import { cn } from "@/lib/utils/cn";
@@ -48,6 +51,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const mode = resolveMode(pathname);
   const showTopBar = pathname !== "/onboarding";
   const logHref = logHrefForMode(mode);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [lastPathname, setLastPathname] = useState(pathname);
+  if (pathname !== lastPathname) {
+    setLastPathname(pathname);
+    setMoreOpen(false);
+  }
 
   const isActive = (href: string) =>
     pathname === href ||
@@ -159,6 +168,57 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <SidebarAccount />
         </aside>
 
+        <AnimatePresence>
+          {moreOpen && (
+            <>
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setMoreOpen(false)}
+                className="fixed inset-0 z-40 bg-black/50 lg:hidden"
+              />
+              <motion.div
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 16 }}
+                transition={{ type: "spring", bounce: 0.1, duration: 0.35 }}
+                className="fixed bottom-[calc(4.25rem+env(safe-area-inset-bottom))] left-3 right-3 z-40 rounded-2xl border border-white/10 glass-strong p-2 lg:hidden"
+              >
+                <div className="flex items-center justify-between px-2 pb-1 pt-0.5">
+                  <p className="micro-label text-muted/60">More</p>
+                  <button
+                    type="button"
+                    onClick={() => setMoreOpen(false)}
+                    aria-label="Close menu"
+                    className="rounded-lg p-1 text-muted hover:bg-white/5 hover:text-foreground"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                {secondaryNav.map((item) => {
+                  const active = isActive(item.href);
+                  const Icon = item.icon;
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      onClick={() => setMoreOpen(false)}
+                      className={cn(
+                        "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
+                        active ? "text-foreground bg-white/8" : "text-muted hover:text-foreground hover:bg-white/5"
+                      )}
+                    >
+                      <Icon className="h-4 w-4" />
+                      {item.label}
+                    </Link>
+                  );
+                })}
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>
+
         <nav className="fixed bottom-0 left-0 right-0 z-40 flex items-center justify-around border-t border-white/5 glass-strong px-1 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] lg:hidden">
           {[...primaryNav, { href: logHref, label: "Log", shortLabel: "Log", icon: PlusCircle, mode }].map(
             (item) => {
@@ -186,6 +246,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               );
             }
           )}
+          <button
+            type="button"
+            onClick={() => setMoreOpen((v) => !v)}
+            className={cn(
+              "flex flex-col items-center gap-0.5 rounded-xl px-2 py-1.5 text-[10px] transition-colors min-w-0",
+              moreOpen || secondaryNav.some((item) => isActive(item.href)) ? "text-accent" : "text-muted"
+            )}
+          >
+            <MoreHorizontal className="h-5 w-5 shrink-0" />
+            <span className="truncate">More</span>
+          </button>
         </nav>
 
         <main className="lg:pl-64">
