@@ -337,7 +337,8 @@ function oneRMForRatio(ratio: number, bodyweightKg: number): number {
   return ratio * bodyweightKg ** ALLOMETRIC_EXP * REFERENCE_BODYWEIGHT_KG / refAdjusted;
 }
 
-function tierForScore(score: number): StrengthTier {
+/** Universal 0-1000 tier band (MASTER-BRIEF.md §1) — applies to any Split Index score, not just per-lift strength. */
+export function tierForScore(score: number): StrengthTier {
   let tier: StrengthTier = "Beginner";
   for (const t of TIER_THRESHOLDS) {
     if (score >= t.min) tier = t.tier;

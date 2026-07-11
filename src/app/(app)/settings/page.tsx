@@ -9,13 +9,10 @@ import {
   Download,
   LogOut,
   Shield,
-  Plug,
-  ChevronDown,
   RefreshCw,
 } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { IMPORT_SOURCES } from "@/lib/constants/sports";
 import {
   PREMIUM_FEATURES,
   PREMIUM_PRICE_GBP,
@@ -33,7 +30,6 @@ export default function SettingsPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
-  const [showIntegrations, setShowIntegrations] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [recomputeLoading, setRecomputeLoading] = useState(false);
@@ -79,8 +75,6 @@ export default function SettingsPage() {
     ? getTrialDaysRemaining(profile.createdAt, profile.tier, profile.status)
     : null;
 
-  const connectedSources = IMPORT_SOURCES.filter((s) => s.status === "available");
-  const comingSoonSources = IMPORT_SOURCES.filter((s) => s.status !== "available");
 
   const handleCheckout = async () => {
     setLoading(true);
@@ -151,7 +145,7 @@ export default function SettingsPage() {
       <div>
         <h1 className="text-2xl font-bold">Settings</h1>
         <p className="text-muted text-sm mt-1">
-          Profile, subscription, integrations, and account
+          Profile, subscription, and account
         </p>
       </div>
 
@@ -251,53 +245,6 @@ export default function SettingsPage() {
                 Start {FREE_TRIAL_DAYS}-Day Free Trial
               </Button>
             </>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Integrations */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <Plug className="h-4 w-4 text-endurance" />
-            <CardTitle>Integrations</CardTitle>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 gap-3 mb-3">
-            {connectedSources.map((source) => (
-              <button
-                key={source.id}
-                type="button"
-                className="glass rounded-xl p-4 text-left text-sm transition-colors hover:bg-white/5"
-              >
-                <p className="font-medium">{source.name}</p>
-                <p className="text-xs text-success mt-1">Available</p>
-              </button>
-            ))}
-          </div>
-          <button
-            type="button"
-            onClick={() => setShowIntegrations((v) => !v)}
-            className="flex w-full items-center justify-between rounded-xl border border-white/5 px-4 py-3 text-sm text-muted transition-colors hover:bg-white/5"
-          >
-            <span>Connect more apps</span>
-            <ChevronDown
-              className={`h-4 w-4 transition-transform ${showIntegrations ? "rotate-180" : ""}`}
-            />
-          </button>
-          {showIntegrations && (
-            <div className="mt-3 grid grid-cols-2 gap-3">
-              {comingSoonSources.map((source) => (
-                <div
-                  key={source.id}
-                  className="glass rounded-xl p-4 text-left text-sm opacity-50"
-                >
-                  <p className="font-medium">{source.name}</p>
-                  <p className="text-xs text-muted mt-1">Coming soon</p>
-                </div>
-              ))}
-            </div>
           )}
         </CardContent>
       </Card>

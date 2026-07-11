@@ -7,7 +7,6 @@ import { NotificationBell } from "@/components/retention/notification-bell";
 import { PremiumBadge } from "@/components/retention/premium-badge";
 import { createClient } from "@/lib/supabase/client";
 import { isPremiumUser } from "@/lib/retention/trial";
-import { SyncStatusIndicator } from "@/components/layout/sync-status-indicator";
 
 export function AppTopBar({ mode = "neutral" }: { mode?: "neutral" | "gym" | "cardio" }) {
   const [premium, setPremium] = useState(false);
@@ -61,7 +60,6 @@ export function AppTopBar({ mode = "neutral" }: { mode?: "neutral" | "gym" | "ca
       )}
       {!modeLabel && <span />}
       <div className="flex items-center gap-2">
-      <SyncStatusIndicator />
       {premium ? (
         <PremiumBadge />
       ) : (

@@ -332,13 +332,10 @@ export const GENDERS = [
   { value: "prefer_not_to_say", label: "Prefer not to say" },
 ];
 
+// OAuth integrations (Strava, Garmin, etc.) are intentionally not listed here —
+// the connect UI is removed per MASTER-BRIEF.md §9 while the backend routes/
+// tables stay in place so the feature can return later without a rebuild.
 export const IMPORT_SOURCES = [
-  { id: "strava", name: "Strava", status: "available" },
-  { id: "garmin", name: "Garmin", status: "available" },
-  { id: "apple_health", name: "Apple Health", status: "available" },
-  { id: "polar", name: "Polar", status: "available" },
-  { id: "coros", name: "Coros", status: "available" },
-  { id: "fitbit", name: "Fitbit", status: "available" },
   { id: "csv", name: "CSV Upload", status: "available" },
   { id: "manual", name: "Manual Entry", status: "available" },
 ] as const;

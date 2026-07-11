@@ -315,3 +315,64 @@ export async function fetchCompareHistory(
     ),
   ];
 }
+
+export interface LeaderboardDetailLift {
+  name: string;
+  estimated1RmKg: number;
+  tier?: string;
+}
+
+export interface LeaderboardDetail {
+  topLifts: LeaderboardDetailLift[];
+  racePredictions: Record<string, number> | null;
+}
+
+/**
+ * Premium-only leaderboard detail card data (MASTER-BRIEF.md §9) — top
+ * lifts and race predictions for another user, tapped from the leaderboard.
+ * Only derived scores are exposed (estimated 1RM, tier, predicted times),
+ * never raw bodyweight/HR/personal data. Reads workout_scores directly
+ * (public-read RLS, same as the rest of the leaderboard), most recent gym
+ * and running sessions only.
+ */
+export async function fetchLeaderboardDetail(
+  supabase: SupabaseClient,
+  targetUserId: string
+): Promise<LeaderboardDetail> {
+  const [{ data: gymRow }, { data: cardioRow }] = await Promise.all([
+    supabase
+      .from("workout_scores")
+      .select("score_breakdown")
+      .eq("user_id", targetUserId)
+      .eq("sport", "gym")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("workout_scores")
+      .select("score_breakdown")
+      .eq("user_id", targetUserId)
+      .eq("sport", "running")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
+
+  const strengthActivities =
+    ((gymRow?.score_breakdown as Record<string, unknown> | null)?.strength_activities as
+      | Array<{ liftKey: string; oneRM: number; score: number; tier?: string }>
+      | undefined) ?? [];
+
+  const topLifts: LeaderboardDetailLift[] = [...strengthActivities]
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 4)
+    .map((r) => ({ name: r.liftKey, estimated1RmKg: r.oneRM, tier: r.tier }));
+
+  const cardioActivity = (cardioRow?.score_breakdown as Record<string, unknown> | null)
+    ?.cardio_activity as { predictions?: Record<string, number> | null } | undefined;
+
+  return {
+    topLifts,
+    racePredictions: cardioActivity?.predictions ?? null,
+  };
+}

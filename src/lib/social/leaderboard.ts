@@ -119,12 +119,6 @@ export async function fetchLeaderboard(
   filters: LeaderboardFilters
 ): Promise<LeaderboardRow[]> {
   const periodStart = getPeriodStart(filters.period);
-  const metricField =
-    filters.metric === "endurance"
-      ? "endurance_index"
-      : filters.metric === "strength"
-        ? "strength_index"
-        : "split_index";
 
   const { data: entries } = await supabase
     .from("leaderboard_entries")
@@ -178,6 +172,13 @@ export async function fetchLeaderboard(
     }));
   }
 
+  const profileMetricField =
+    filters.metric === "endurance"
+      ? "current_endurance_index"
+      : filters.metric === "strength"
+        ? "current_strength_index"
+        : "current_split_index";
+
   const { data: allProfiles } = await supabase
     .from("profiles")
     .select(
@@ -185,7 +186,7 @@ export async function fetchLeaderboard(
     )
     .not("current_split_index", "is", null)
     .not("username", "is", null)
-    .order(metricField, { ascending: false })
+    .order(profileMetricField, { ascending: false })
     .limit(200);
 
   const filtered = filterProfiles((allProfiles ?? []) as ProfileRow[], filters);
