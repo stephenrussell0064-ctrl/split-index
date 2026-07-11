@@ -236,12 +236,22 @@ export default async function DashboardPage() {
     ? calculateTrend(current.split_index, weekAgo.split_index)
     : 0;
 
-  const trendData: TrendPoint[] = history.map((h) => ({
-    date: format(new Date(h.recorded_at), "MMM d"),
-    split: h.split_index,
-    endurance: h.endurance_index,
-    strength: h.strength_index,
-  }));
+  // One point per calendar day, not per logged activity — several workouts
+  // on the same day previously produced several x-axis ticks with the same
+  // "MMM d" label, making the chart look frozen. `history` is ascending, so
+  // the last write per day-key naturally keeps that day's final index.
+  const trendByDay = new Map<string, SplitIndexSnapshot>();
+  for (const h of history) {
+    trendByDay.set(format(new Date(h.recorded_at), "yyyy-MM-dd"), h);
+  }
+  const trendData: TrendPoint[] = Array.from(trendByDay.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([, h]) => ({
+      date: format(new Date(h.recorded_at), "MMM d"),
+      split: h.split_index,
+      endurance: h.endurance_index,
+      strength: h.strength_index,
+    }));
 
   const loadByActivity = new Map(
     (scores ?? []).map((s) => [s.activity_id as string, s.load_score as number])

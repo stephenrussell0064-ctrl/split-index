@@ -120,7 +120,14 @@ export function buildTrendSeries(
   );
 
   if (granularity === "week") {
-    return sorted.map((h) => ({
+    // One point per day, not per logged activity — several workouts on the
+    // same day previously produced several points with the identical "EEE"
+    // label (e.g. two "Mon" ticks), making the chart look frozen.
+    const byDay = new Map<string, SplitIndexSnapshot>();
+    for (const h of sorted) {
+      byDay.set(format(new Date(h.recorded_at), "yyyy-MM-dd"), h);
+    }
+    return Array.from(byDay.values()).map((h) => ({
       date: format(new Date(h.recorded_at), "EEE"),
       split: h.split_index,
       endurance: h.endurance_index,
