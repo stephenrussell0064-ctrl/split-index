@@ -2,8 +2,8 @@ import Image from "next/image";
 import Link from "next/link";
 import { cn } from "@/lib/utils/cn";
 
-const BRAND_ICON = "/splitindex-icon.png";
-const BRAND_LOGO = "/splitindex-logo.png";
+const BRAND_ICON = "/splitindex-icon.svg";
+const BRAND_LOGO = "/splitindex-logo.svg";
 
 export function BrandIcon({
   size = 32,

@@ -20,6 +20,12 @@ const cspHeader = `
   .trim();
 
 const nextConfig: NextConfig = {
+  images: {
+    // Only our own static brand assets (public/splitindex-*.svg) go through
+    // next/image as SVG — never user-uploaded content — so this is safe.
+    dangerouslyAllowSVG: true,
+    contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;",
+  },
   async headers() {
     return [
       {

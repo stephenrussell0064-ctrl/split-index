@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- SPLIT INDEX — app icon
+       Concept: the index ring, split by the seam.
+       Left: The Lab (black / neon green). Right: The Engine (white / sky blue).
+       The diagonal gap IS the brand — the split. -->
+  <defs>
+    <clipPath id="labHalf"><path d="M0 0 H320 L192 512 H0 Z"/></clipPath>
+    <clipPath id="engHalf"><path d="M320 0 H512 V512 H192 Z"/></clipPath>
+    <linearGradient id="seamGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3DFF6E"/>
+      <stop offset="1" stop-color="#3BA6FF"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Lab half -->
+  <g clip-path="url(#labHalf)">
+    <rect width="512" height="512" rx="118" fill="#070908"/>
+    <circle cx="256" cy="256" r="136" fill="none" stroke="#3DFF6E" stroke-width="52"/>
+  </g>
+
+  <!-- Engine half -->
+  <g clip-path="url(#engHalf)">
+    <rect width="512" height="512" rx="118" fill="#F7FBFF"/>
+    <circle cx="256" cy="256" r="136" fill="none" stroke="#3BA6FF" stroke-width="52"/>
+  </g>
+
+  <!-- The seam -->
+  <line x1="320" y1="-10" x2="192" y2="522" stroke="url(#seamGrad)" stroke-width="26" opacity=".55"/>
+  <line x1="320" y1="-10" x2="192" y2="522" stroke="#FFFFFF" stroke-width="14"/>
+</svg>
