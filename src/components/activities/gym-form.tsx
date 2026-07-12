@@ -292,7 +292,7 @@ function ExerciseRow({
           {row.sets.map((set, setIndex) => (
             <div
               key={set.id}
-              className="grid grid-cols-[20px_1fr_1fr_1fr_auto] sm:grid-cols-[28px_1fr_1fr_1fr_40px] gap-2 items-center"
+              className="grid grid-cols-[20px_1.6fr_0.7fr_0.7fr_auto] sm:grid-cols-[28px_1fr_1fr_1fr_40px] gap-2 items-center"
             >
               <span className="text-xs text-muted/70 text-center tabular-nums">{setIndex + 1}</span>
               <UnitInput
@@ -310,7 +310,7 @@ function ExerciseRow({
                 placeholder="8"
                 invalid={!!errors[`ex.${row.id}.set.${set.id}.reps`]}
                 onChange={(e) => updateSet(set.id, { reps: e.target.value })}
-                className="h-11 sm:h-10"
+                className="h-11 px-2 sm:h-10 sm:px-4"
               />
               <UnitInput
                 aria-label={`Set ${setIndex + 1} RPE`}
@@ -318,7 +318,7 @@ function ExerciseRow({
                 placeholder="8"
                 invalid={!!errors[`ex.${row.id}.set.${set.id}.rpe`]}
                 onChange={(e) => updateSet(set.id, { rpe: e.target.value })}
-                className="h-11 sm:h-10"
+                className="h-11 px-2 sm:h-10 sm:px-4"
               />
               <button
                 type="button"

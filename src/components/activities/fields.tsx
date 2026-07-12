@@ -104,14 +104,14 @@ export function UnitInput({
         autoComplete="off"
         className={cn(
           inputBase,
-          unit && "pr-14",
+          unit && "pr-9",
           invalid && "border-danger/50 focus:border-danger/50 focus:ring-danger/30",
           className
         )}
         {...props}
       />
       {unit && (
-        <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-xs uppercase tracking-wider text-muted/60">
+        <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] uppercase tracking-wider text-muted/60">
           {unit}
         </span>
       )}
