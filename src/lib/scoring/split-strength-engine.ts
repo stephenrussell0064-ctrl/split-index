@@ -16,22 +16,32 @@
  *
  * History awareness: pass the FULL logged history for the lift, not just
  * the latest set — a single sub-maximal set under-reads true 1RM by ~3–14%,
- * and only a longer history lets the adaptive model correct for that and
- * express a trend. Free tier gets a single-set estimate (`latestSet`);
- * premium gets the adaptive history model. Gate premium fields at the
+ * and only a longer history lets the adaptive model express a trend and
+ * blend against a real achieved peak. Both the single-set fallback and the
+ * adaptive history model apply the same sub-max bias correction
+ * (`subMaxBiasCorrection`) and the same blended Epley/Brzycki estimator
+ * (`bestEstimate1RM`) — free tier just doesn't get the extra trend/band/
+ * multi-session blending premium does. Gate premium fields at the
  * serializer (`serializeStrengthResult`), not by computing and hiding them
  * on the client.
+ *
+ * Bodyweight-relative lifts (`BODYWEIGHT_RELATIVE_LIFTS` — currently just
+ * weighted pull-ups): the logged weight is *added* load, not the total load
+ * under tension. 1RM is estimated from bodyweight + added weight, then
+ * bodyweight is subtracted back out so the result is expressed the same way
+ * it was logged.
  *
  * Honest limitations (keep visible in the UI):
  *  - Sex and age factors are estimates, not calibrated to real population
  *    data yet — mark as "beta" until real data lands (see appliedFactors).
  *  - Accessory/inherited lifts (source: "generic") carry lower confidence
  *    than the calibrated primary/accessory sets.
- *  - 1RM from sub-maximal sets reads low; the free single-set path doesn't
- *    correct for this the way the premium adaptive model does.
+ *  - The sub-max bias correction (+6%) and bodyweight-relative handling are
+ *    both engineering estimates, not lab-calibrated — validate against real
+ *    near-max attempts as they get logged (see `nextTier`/`suggestion`).
  */
 
-import { epley1RM } from "@/lib/scoring/strength/one-rm";
+import { bestEstimate1RM } from "@/lib/scoring/strength/one-rm";
 
 export type Sex = "male" | "female";
 
@@ -280,6 +290,35 @@ const MAX_SCORE = 999;
 const NEAR_RECORD_THRESHOLD = 970;
 const MIN_RATIO = 0.01;
 
+/**
+ * Lifts where the logged weight is *added* load on top of bodyweight, not
+ * the total load under tension — a weighted pull-up at "30kg" moves
+ * bodyweight + 30kg for every rep, but feeding the formula 30kg alone
+ * understates the set's true difficulty (and the error compounds as reps
+ * climb). Resolve total-load 1RM first, then subtract bodyweight back out
+ * to express the result the same way it was logged (added weight).
+ */
+const BODYWEIGHT_RELATIVE_LIFTS = new Set<string>(["weightedPullup"]);
+
+/** Sub-maximal sets (no low-rep/near-max data) read ~3-14% low on formula-based 1RM estimates; this is the midpoint correction, shared by both the adaptive and single-set paths. */
+const SUB_MAX_BIAS_CORRECTION = 1.06;
+
+/**
+ * Skipped for bodyweight-relative lifts: their own total-load-then-subtract
+ * correction (see BODYWEIGHT_RELATIVE_LIFTS) already moves the estimate
+ * substantially, and because bodyweight is usually the majority of the
+ * total load, a small percentage correction on the total gets amplified
+ * into a much larger swing on the comparatively small added-weight result
+ * once bodyweight is subtracted back out (e.g. correcting a ~110kg total
+ * load by 6% can move a ~30kg added-weight answer by 15%+). Stacking both
+ * corrections overshoots past what either was individually validated
+ * against — see BRIEF-3-strength-1rm-calibration.md §1.
+ */
+function subMaxBiasCorrection(hasLowRepData: boolean, isBodyweightRelative: boolean): number {
+  if (isBodyweightRelative) return 1.0;
+  return hasLowRepData ? 1.0 : SUB_MAX_BIAS_CORRECTION;
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -386,10 +425,16 @@ interface AdaptiveEstimate {
  * engineering judgment calls, not lab-derived — the point is a materially
  * better estimate than a single set, not a precise one.
  */
-function adaptiveOneRM(history: LoggedSet[]): AdaptiveEstimate {
+function adaptiveOneRM(
+  history: LoggedSet[],
+  bodyweightKg: number,
+  isBodyweightRelative: boolean
+): AdaptiveEstimate {
   const now = Date.now();
   const weighted = history.map((s) => {
-    const e1rm = epley1RM(s.weightKg, s.reps);
+    const effectiveWeight = isBodyweightRelative ? bodyweightKg + s.weightKg : s.weightKg;
+    const totalE1rm = bestEstimate1RM(effectiveWeight, s.reps);
+    const e1rm = isBodyweightRelative ? totalE1rm - bodyweightKg : totalE1rm;
     const daysAgo = Math.max(0, (now - new Date(s.performedAt).getTime()) / 86_400_000);
     const recencyWeight = Math.exp(-daysAgo / 180); // ~6-month half-life
     const repWeight = s.reps <= 3 ? 1.0 : s.reps <= 6 ? 0.8 : s.reps <= 10 ? 0.55 : 0.35;
@@ -401,7 +446,7 @@ function adaptiveOneRM(history: LoggedSet[]): AdaptiveEstimate {
   const maxE1rm = Math.max(...weighted.map((w) => w.e1rm));
 
   const hasLowRepData = weighted.some((w) => w.reps <= 3);
-  const biasCorrection = hasLowRepData ? 1.0 : 1.06; // midpoint of the stated 3–14% low bias
+  const biasCorrection = subMaxBiasCorrection(hasLowRepData, isBodyweightRelative);
 
   const oneRM = (maxE1rm * 0.6 + weightedAvg * 0.4) * biasCorrection;
 
@@ -438,6 +483,7 @@ export function scoreStrength(input: ScoreStrengthInput): ScoreStrengthResult {
 
   const { anchor, source, resolvedKey } = resolveLiftAnchor(liftKey);
   if (source === "generic") flags.push("estimated-generic-standard");
+  const isBodyweightRelative = BODYWEIGHT_RELATIVE_LIFTS.has(resolvedKey);
 
   let oneRM: number;
   let oneRMConfidence: number;
@@ -445,13 +491,23 @@ export function scoreStrength(input: ScoreStrengthInput): ScoreStrengthResult {
   let oneRMBandKg: [number, number] | null = null;
 
   if (isPremium && history.length > 0) {
-    const adaptive = adaptiveOneRM(history);
+    const adaptive = adaptiveOneRM(history, bodyweightKg, isBodyweightRelative);
     oneRM = adaptive.oneRM;
     oneRMConfidence = adaptive.confidence;
     trend = adaptive.trend;
     oneRMBandKg = adaptive.band;
   } else {
-    oneRM = epley1RM(latestSet.weightKg, latestSet.reps);
+    const effectiveWeight = isBodyweightRelative
+      ? bodyweightKg + latestSet.weightKg
+      : latestSet.weightKg;
+    const rawEstimate = bestEstimate1RM(effectiveWeight, latestSet.reps);
+    // Subtract bodyweight back out *before* the (skipped, for this category —
+    // see subMaxBiasCorrection) bias correction, not after: multiplying a
+    // correction into the total load and only then subtracting amplifies it
+    // hugely on the much smaller added-weight result. Kept in this order so
+    // the two corrections stay independent and composable if that changes.
+    const rawAddedWeight = isBodyweightRelative ? rawEstimate - bodyweightKg : rawEstimate;
+    oneRM = rawAddedWeight * subMaxBiasCorrection(latestSet.reps <= 3, isBodyweightRelative);
     oneRMConfidence = latestSet.reps <= 3 ? 0.85 : latestSet.reps <= 6 ? 0.7 : 0.5;
     if (latestSet.reps > 8) flags.push("1rm-estimate-low-confidence");
   }
