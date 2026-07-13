@@ -44,6 +44,8 @@ export interface WorkoutFormState {
   notes: string;
   bodyweight: string;
   exercises: ExerciseRowState[];
+  /** Rowing/ski erg: which of distance/time the athlete enters directly — the other is derived from split. */
+  rowInputMode: "distance" | "time";
 }
 
 /** Payload sent to POST/PATCH /api/activities. Extensions beyond ActivityFormData. */
@@ -57,6 +59,8 @@ export interface SportFieldConfig {
   elevation?: boolean;
   avgHr?: boolean;
   split?: boolean;
+  /** Split is mandatory and distance/time are interchangeable (one entered, one derived from split) — rowing, ski erg. */
+  derivableDistance?: boolean;
   power?: boolean;
   stroke?: boolean;
   temperature?: boolean;
@@ -75,8 +79,8 @@ export const SPORT_FIELDS: Record<SportType, SportFieldConfig> = {
   },
   walking: { distance: "km", elevation: true, rpe: true },
   swimming: { distance: "m", stroke: true, sessionType: true, rpe: true },
-  rowing: { distance: "m", split: true, avgHr: true, sessionType: true, rpe: true },
-  ski_erg: { distance: "m", split: true, avgHr: true, sessionType: true, rpe: true },
+  rowing: { distance: "m", split: true, derivableDistance: true, avgHr: true, sessionType: true, rpe: true },
+  ski_erg: { distance: "m", split: true, derivableDistance: true, avgHr: true, sessionType: true, rpe: true },
   bike_erg: { distance: "m", power: true, avgHr: true, sessionType: true, rpe: true },
   indoor_cycling: { power: true, avgHr: true, sessionType: true, rpe: true },
   gym: {},
@@ -178,6 +182,7 @@ export function createDefaultState(
     notes: "",
     bodyweight: profileWeightKg ? String(profileWeightKg) : "",
     exercises: sport === "gym" ? [createExerciseRow()] : [],
+    rowInputMode: "distance",
   };
 }
 
@@ -273,6 +278,7 @@ export function restoreDraftState(
     notes: str(d.notes, base.notes),
     bodyweight: str(d.bodyweight, base.bodyweight),
     exercises: exercises.length > 0 ? exercises : base.exercises,
+    rowInputMode: d.rowInputMode === "time" ? "time" : base.rowInputMode,
   };
 }
 
@@ -367,6 +373,24 @@ export function deriveSplitPer500m(meters: number | null, seconds: number): stri
 export function deriveSpeedKmh(meters: number | null, seconds: number): string | null {
   if (!meters || meters <= 0 || seconds <= 0) return null;
   return `${((meters / 1000) / (seconds / 3600)).toFixed(1)} km/h`;
+}
+
+/** Duration from distance + split/500m — rowing/ski erg "log by distance" mode. */
+export function deriveDurationFromDistanceAndSplit(
+  distanceMeters: number | null,
+  splitSeconds: number | null
+): number | null {
+  if (!distanceMeters || distanceMeters <= 0 || !splitSeconds || splitSeconds <= 0) return null;
+  return (splitSeconds / 500) * distanceMeters;
+}
+
+/** Distance from duration + split/500m — rowing/ski erg "log by time" mode. */
+export function deriveDistanceFromDurationAndSplit(
+  durationSeconds: number | null,
+  splitSeconds: number | null
+): number | null {
+  if (!durationSeconds || durationSeconds <= 0 || !splitSeconds || splitSeconds <= 0) return null;
+  return (durationSeconds / splitSeconds) * 500;
 }
 
 /** Epley formula: weight × (1 + reps / 30) */
@@ -475,15 +499,26 @@ export function validateAndBuildPayload(
     errors.startedAt = "Pick a valid date & time";
   }
 
-  const duration = totalDurationSeconds(state);
-  if (duration <= 0) {
-    errors.duration = "Add a duration";
-  } else if (duration > 24 * 3600) {
-    errors.duration = "Duration looks too long";
+  // Rowing/ski erg: split is mandatory and, depending on rowInputMode, either
+  // distance or duration is entered directly while the other is derived from
+  // split — resolve split first since both branches below depend on it.
+  let avgSplit: number | undefined;
+  if (fields.split) {
+    const split = splitSecondsFromState(state);
+    if (split === null) {
+      if (fields.derivableDistance) errors.split = "Split is required";
+    } else if (split < 50 || split > 900) {
+      errors.split = "Split should be between 0:50 and 15:00";
+    } else {
+      avgSplit = split;
+    }
   }
 
+  const derivesTime = fields.derivableDistance && state.rowInputMode === "distance";
+  const derivesDistance = fields.derivableDistance && state.rowInputMode === "time";
+
   let distanceMeters: number | undefined;
-  if (fields.distance) {
+  if (fields.distance && !derivesDistance) {
     const raw = requireNumber("distance", state.distance, {
       required: true,
       min: 0.001,
@@ -492,6 +527,25 @@ export function validateAndBuildPayload(
     if (raw !== undefined) {
       distanceMeters = fields.distance === "km" ? Math.round(raw * 1000) : Math.round(raw);
     }
+  }
+
+  let duration: number;
+  if (derivesTime) {
+    // Distance/split validation above already set their own errors if
+    // missing — a resulting 0 here means the payload build fails downstream,
+    // not a distinct "duration" error.
+    duration = avgSplit != null && distanceMeters != null ? (avgSplit / 500) * distanceMeters : 0;
+  } else {
+    duration = totalDurationSeconds(state);
+    if (duration <= 0) {
+      errors.duration = "Add a duration";
+    } else if (duration > 24 * 3600) {
+      errors.duration = "Duration looks too long";
+    }
+  }
+
+  if (derivesDistance && avgSplit != null && duration > 0) {
+    distanceMeters = Math.round((duration / avgSplit) * 500);
   }
 
   const elevation = fields.elevation
@@ -505,18 +559,6 @@ export function validateAndBuildPayload(
   const avgPower = fields.power
     ? requireNumber("avgPower", state.avgPower, { min: 1, max: 2500, label: "Power" })
     : undefined;
-
-  let avgSplit: number | undefined;
-  if (fields.split) {
-    const split = splitSecondsFromState(state);
-    if (split !== null) {
-      if (split < 50 || split > 900) {
-        errors.split = "Split should be between 0:50 and 15:00";
-      } else {
-        avgSplit = split;
-      }
-    }
-  }
 
   const temperature = fields.temperature
     ? requireNumber("temperature", state.temperature, {

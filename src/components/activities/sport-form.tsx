@@ -19,10 +19,14 @@ import {
   bestSetRow,
   derivePacePer100m,
   derivePacePerKm,
+  deriveDistanceFromDurationAndSplit,
+  deriveDurationFromDistanceAndSplit,
   deriveSpeedKmh,
   deriveSplitPer500m,
   epley1RM,
+  formatClock,
   parseNum,
+  splitSecondsFromState,
   totalDurationSeconds,
   SPORT_FIELDS,
   type FormErrors,
@@ -59,6 +63,22 @@ export function SportForm({
   const durationSeconds = totalDurationSeconds(state);
   const isGym = sport === "gym";
 
+  const logsByDistance = fields.derivableDistance && state.rowInputMode === "distance";
+  const logsByTime = fields.derivableDistance && state.rowInputMode === "time";
+  const splitSeconds = splitSecondsFromState(state);
+  const distanceMeters = fields.distance
+    ? (() => {
+        const raw = parseNum(state.distance);
+        return raw ? (fields.distance === "km" ? raw * 1000 : raw) : null;
+      })()
+    : null;
+  const derivedDurationSeconds = logsByDistance
+    ? deriveDurationFromDistanceAndSplit(distanceMeters, splitSeconds)
+    : null;
+  const derivedDistanceMeters = logsByTime
+    ? deriveDistanceFromDurationAndSplit(durationSeconds, splitSeconds)
+    : null;
+
   return (
     <div className="space-y-6">
       <FormSummaryStrip sport={sport} state={state} durationSeconds={durationSeconds} />
@@ -84,14 +104,24 @@ export function SportForm({
               className="h-12"
             />
           </Field>
-          <Field label="Duration" error={errors.duration}>
-            <DurationInput
-              hours={state.hours}
-              minutes={state.minutes}
-              seconds={state.seconds}
-              invalid={!!errors.duration}
-              onChange={(part, value) => onUpdate(part, value)}
-            />
+          <Field
+            label="Duration"
+            error={errors.duration}
+            hint={logsByDistance ? "Derived from distance ÷ split" : undefined}
+          >
+            {logsByDistance ? (
+              <div className="flex h-12 items-center rounded-xl border border-white/[0.08] bg-white/[0.02] px-4 text-sm text-muted">
+                {derivedDurationSeconds ? formatClock(derivedDurationSeconds) : "Enter distance & split"}
+              </div>
+            ) : (
+              <DurationInput
+                hours={state.hours}
+                minutes={state.minutes}
+                seconds={state.seconds}
+                invalid={!!errors.duration}
+                onChange={(part, value) => onUpdate(part, value)}
+              />
+            )}
           </Field>
         </div>
       </section>
@@ -104,8 +134,21 @@ export function SportForm({
       ) : (
         <section className="rounded-2xl border border-cardio-border/30 bg-cardio-bg-elevated/5 p-5 sm:p-6 space-y-5">
           <SectionLabel>Metrics</SectionLabel>
+          {fields.derivableDistance && (
+            <Field label="Log by">
+              <PillGroup
+                options={[
+                  { value: "distance", label: "Distance" },
+                  { value: "time", label: "Time" },
+                ]}
+                value={state.rowInputMode}
+                onChange={(value) => onUpdate("rowInputMode", value as "distance" | "time")}
+                layoutIdPrefix={`row-input-mode-${sport}`}
+              />
+            </Field>
+          )}
           <div className="grid gap-5 sm:grid-cols-2">
-            {fields.distance && (
+            {fields.distance && !logsByTime && (
               <Field label="Distance" error={errors.distance}>
                 <UnitInput
                   value={state.distance}
@@ -114,6 +157,23 @@ export function SportForm({
                   invalid={!!errors.distance}
                   onChange={(e) => onUpdate("distance", e.target.value)}
                   className="h-12"
+                />
+              </Field>
+            )}
+            {fields.distance && logsByTime && (
+              <Field label="Distance" hint="Derived from time ÷ split">
+                <div className="flex h-12 items-center rounded-xl border border-white/[0.08] bg-white/[0.02] px-4 text-sm text-muted">
+                  {derivedDistanceMeters ? `${Math.round(derivedDistanceMeters).toLocaleString()} m` : "Enter time & split"}
+                </div>
+              </Field>
+            )}
+            {fields.split && fields.derivableDistance && (
+              <Field label="Avg split / 500m" error={errors.split}>
+                <SplitInput
+                  minutes={state.splitMinutes}
+                  seconds={state.splitSeconds}
+                  invalid={!!errors.split}
+                  onChange={(part, value) => onUpdate(part, value)}
                 />
               </Field>
             )}
@@ -180,9 +240,15 @@ export function SportForm({
         </ExpandableSection>
       )}
 
-      {/* Progressive: advanced metrics */}
+      {/* Progressive: advanced metrics — split lives in the main Metrics
+          section (mandatory there, not tucked away) when derivableDistance
+          is set, so it's excluded here to avoid duplicating the field. */}
       {!isGym &&
-        (fields.elevation || fields.split || fields.power || fields.stroke || fields.temperature) && (
+        (fields.elevation ||
+          (fields.split && !fields.derivableDistance) ||
+          fields.power ||
+          fields.stroke ||
+          fields.temperature) && (
           <ExpandableSection title="Advanced metrics" hint="Splits, elevation, power" tone="cardio">
             <div className="grid gap-5 sm:grid-cols-2">
               {fields.elevation && (
@@ -197,7 +263,7 @@ export function SportForm({
                   />
                 </Field>
               )}
-              {fields.split && (
+              {fields.split && !fields.derivableDistance && (
                 <Field label="Avg split / 500m" error={errors.split}>
                   <SplitInput
                     minutes={state.splitMinutes}
