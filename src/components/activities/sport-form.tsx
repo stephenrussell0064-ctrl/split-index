@@ -121,25 +121,33 @@ export function SportForm({
         </section>
       )}
 
-      {/* Effort — session type as primary intensity signal */}
-      <section className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-5 sm:p-6 space-y-5">
-        <SectionLabel>Effort</SectionLabel>
-        {fields.sessionType && (
-          <Field label="Session type">
-            <PillGroup
-              options={SESSION_TYPES}
-              value={state.sessionType}
-              onChange={(value) => onUpdate("sessionType", value as SessionType)}
-              layoutIdPrefix={`session-${sport}`}
-            />
-          </Field>
-        )}
-        {!fields.sessionType && fields.rpe && (
-          <Field label="RPE" error={errors.rpe} hint="1 = very easy · 10 = max effort">
-            <RpeScale value={state.rpe} onChange={(value) => onUpdate("rpe", value)} />
-          </Field>
-        )}
-      </section>
+      {/* Effort — session type as primary intensity signal. Gym has no
+          equivalent here: its session_type taxonomy (Tempo/Threshold/
+          Interval/Race) is cardio-specific, and gym already tracks effort
+          per-set via RPE inside each exercise row. Rendering this for gym
+          previously showed an empty "Effort" header with no control inside
+          it, since both fields.sessionType and fields.rpe are unset for
+          gym (SPORT_FIELDS.gym === {}). */}
+      {!isGym && (
+        <section className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-5 sm:p-6 space-y-5">
+          <SectionLabel>Effort</SectionLabel>
+          {fields.sessionType && (
+            <Field label="Session type">
+              <PillGroup
+                options={SESSION_TYPES}
+                value={state.sessionType}
+                onChange={(value) => onUpdate("sessionType", value as SessionType)}
+                layoutIdPrefix={`session-${sport}`}
+              />
+            </Field>
+          )}
+          {!fields.sessionType && fields.rpe && (
+            <Field label="RPE" error={errors.rpe} hint="1 = very easy · 10 = max effort">
+              <RpeScale value={state.rpe} onChange={(value) => onUpdate("rpe", value)} />
+            </Field>
+          )}
+        </section>
+      )}
 
       {/* Progressive: HR & RPE */}
       {!isGym && (fields.avgHr || fields.rpe) && (

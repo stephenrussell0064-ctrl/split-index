@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { createClient } from "@/lib/supabase/client";
 import { authErrorMessage } from "@/lib/supabase/auth-errors";
-import { getAppUrl } from "@/lib/app-url";
 
 export function ForgotPasswordForm() {
   const [email, setEmail] = useState("");
@@ -24,7 +23,13 @@ export function ForgotPasswordForm() {
 
     try {
       const supabase = createClient();
-      const redirectTo = `${getAppUrl(typeof window !== "undefined" ? window.location.origin : undefined)}/auth/callback?next=/reset-password`;
+      // Use the actual browser origin, not the configured NEXT_PUBLIC_APP_URL —
+      // the PKCE code_verifier cookie is scoped to whatever origin the user is
+      // really on when they request the reset. If that ever diverges from the
+      // env var (a preview deploy, a www/apex mismatch, local dev), the
+      // callback lands on the wrong domain, exchangeCodeForSession has no
+      // matching cookie, and the link reads as "expired or invalid" every time.
+      const redirectTo = `${window.location.origin}/auth/callback?next=/reset-password`;
 
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo,

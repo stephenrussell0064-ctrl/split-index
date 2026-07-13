@@ -13,6 +13,7 @@ import {
   GENDERS,
   SPORTS,
 } from "@/lib/constants/sports";
+import { PRESET_AVATARS } from "@/lib/constants/avatars";
 import { createClient } from "@/lib/supabase/client";
 import { supabaseErrorMessage } from "@/lib/supabase/errors";
 import { formatIndex } from "@/lib/utils/format";
@@ -54,6 +55,7 @@ export function OnboardingFlow() {
   const [username, setUsername] = useState("");
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string | null>(null);
+  const [presetAvatarUrl, setPresetAvatarUrl] = useState<string | null>(null);
   const [avatarError, setAvatarError] = useState("");
   // Result of the debounced availability fetch, tagged with the username it
   // was issued for — only trusted when it matches the *current* value, so a
@@ -143,8 +145,16 @@ export function OnboardingFlow() {
       setAvatarError("Image must be under 2MB");
       return;
     }
+    setPresetAvatarUrl(null);
     setAvatarFile(file);
     setAvatarPreviewUrl(URL.createObjectURL(file));
+  };
+
+  const handlePresetAvatarSelect = (url: string) => {
+    setAvatarError("");
+    setAvatarFile(null);
+    setPresetAvatarUrl(url);
+    setAvatarPreviewUrl(url);
   };
 
   const update = (key: string, value: unknown) => {
@@ -270,7 +280,7 @@ export function OnboardingFlow() {
       return;
     }
 
-    let avatarUrl: string | null = null;
+    let avatarUrl: string | null = presetAvatarUrl;
     if (avatarFile) {
       const ext = avatarFile.name.split(".").pop() ?? "jpg";
       const path = `${user.id}/${Date.now()}.${ext}`;
@@ -440,6 +450,34 @@ export function OnboardingFlow() {
                       <p className="text-sm font-medium text-foreground">Profile icon</p>
                       <p className="text-xs text-muted">Optional — shown on the leaderboard</p>
                       {avatarError && <p className="mt-1 text-xs text-danger">{avatarError}</p>}
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="mb-2 text-xs text-muted">Or pick one</p>
+                    <div className="flex flex-wrap gap-2">
+                      {PRESET_AVATARS.map((preset) => (
+                        <button
+                          key={preset.id}
+                          type="button"
+                          aria-label={`Use the ${preset.label} icon`}
+                          aria-pressed={presetAvatarUrl === preset.url}
+                          onClick={() => handlePresetAvatarSelect(preset.url)}
+                          className={cn(
+                            "h-11 w-11 shrink-0 overflow-hidden rounded-full border transition-all",
+                            presetAvatarUrl === preset.url
+                              ? "border-accent ring-2 ring-accent/40"
+                              : "border-white/15 opacity-80 hover:opacity-100"
+                          )}
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={preset.url}
+                            alt={preset.label}
+                            className="h-full w-full object-cover"
+                          />
+                        </button>
+                      ))}
                     </div>
                   </div>
 
