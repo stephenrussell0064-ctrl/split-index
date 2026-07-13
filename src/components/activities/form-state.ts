@@ -115,12 +115,22 @@ export function createExerciseRow(previous?: ExerciseRowState): ExerciseRowState
   };
 }
 
-/** The set with the highest estimated 1RM — used for the exercise-level 1RM/score preview. */
+/**
+ * The set with the highest estimated 1RM — used for the exercise-level
+ * 1RM/score preview. `epley1RM` returns null for a blank/zero weight (its
+ * "not enough data" case), which is also the valid, common case for a
+ * bodyweight-only set (pull-ups, dips, push-ups with no added load) — so
+ * that can't double as a sentinel meaning "worse than everything." Falling
+ * back to reps as the comparison metric keeps those sets selectable (more
+ * reps at bodyweight beats fewer), and the -Infinity floor (not -1) means a
+ * single set is always returned rather than only sets that beat a positive
+ * threshold.
+ */
 export function bestSetRow(sets: SetRowState[]): SetRowState | null {
   let best: SetRowState | null = null;
-  let bestEstimate = -1;
+  let bestEstimate = -Infinity;
   for (const s of sets) {
-    const estimate = epley1RM(parseNum(s.weight), parseNum(s.reps)) ?? -1;
+    const estimate = epley1RM(parseNum(s.weight), parseNum(s.reps)) ?? parseNum(s.reps) ?? -1;
     if (estimate > bestEstimate) {
       best = s;
       bestEstimate = estimate;
