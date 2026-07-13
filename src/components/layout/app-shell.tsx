@@ -63,10 +63,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     (href !== "/dashboard" && pathname.startsWith(href));
 
   return (
-    <div className="min-h-screen" data-mode={mode}>
+    // min-h-dvh, not min-h-screen (100vh): on mobile, 100vh locks to the
+    // viewport height *before* the on-screen keyboard opens. Tapping an
+    // input to type shrinks the real visible area without this container
+    // resizing, leaving a stale dark gap below the fold where the page's
+    // own background no longer covers it — exactly when a user is typing.
+    // dvh (dynamic viewport height) tracks the real visible viewport.
+    <div className="min-h-dvh" data-mode={mode}>
       <div
         className={cn(
-          "mode-shell-bg min-h-screen transition-colors duration-700",
+          "mode-shell-bg min-h-dvh transition-colors duration-700",
           mode === "neutral" && "bg-ambient"
         )}
       >

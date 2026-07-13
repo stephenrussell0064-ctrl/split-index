@@ -9,6 +9,7 @@ import {
   nextRowId,
   nextSetId,
 } from "@/components/activities/form-state";
+import { defaultWeightEntryMode } from "@/lib/scoring/weight-entry";
 import type { SportType } from "@/types";
 import type { WorkoutFormState } from "@/components/activities/form-state";
 
@@ -106,6 +107,7 @@ export async function loadLogPage({
           id: nextRowId(),
           name: ex.name,
           muscleGroup: ex.muscle,
+          weightEntryMode: defaultWeightEntryMode(ex.name),
           sets: Array.from({ length: ex.sets }, () => ({
             id: nextSetId(),
             weight: "",

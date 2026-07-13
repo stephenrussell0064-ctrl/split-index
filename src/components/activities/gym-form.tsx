@@ -210,10 +210,16 @@ function ExerciseRow({
   onFilterChange: (c: MuscleGroupCategory) => void;
 }) {
   const topSet = bestSetRow(row.sets);
-  const weightKg = topSet ? parseNum(topSet.weight) : null;
+  const weightKgRaw = topSet ? parseNum(topSet.weight) : null;
+  // Bodyweight-only sets (pull-ups, dips, push-ups with no added load) leave
+  // the weight field blank — that's a valid "0kg added" entry, not a missing
+  // one, so it must still score off reps-at-bodyweight rather than silently
+  // producing no score.
+  const weightKg =
+    weightKgRaw ?? (row.weightEntryMode === "added" ? 0 : null);
   const reps = topSet ? parseNum(topSet.reps) : null;
   const resolved =
-    weightKg && row.name.trim()
+    weightKg !== null && row.name.trim()
       ? resolveScoringWeight(weightKg, row.name, row.weightEntryMode)
       : null;
   const engineScore =
@@ -356,7 +362,7 @@ function ExerciseRow({
                 aria-label={`Set ${setIndex + 1} weight`}
                 value={set.weight}
                 unit={weightUnit}
-                placeholder="60"
+                placeholder={row.weightEntryMode === "added" ? "0 = bodyweight" : "60"}
                 invalid={!!errors[`ex.${row.id}.set.${set.id}.weight`]}
                 onChange={(e) => updateSet(set.id, { weight: e.target.value })}
                 className="h-11 sm:h-10"
@@ -411,7 +417,7 @@ function ExerciseRow({
             <span
               className={cn(
                 "inline-flex items-center rounded-md px-2 py-0.5 text-sm font-bold tabular-nums",
-                score ? "text-gym-accent bg-gym-accent/10" : "text-gym-muted/50"
+                engineScore ? "text-gym-accent bg-gym-accent/10" : "text-gym-muted/50"
               )}
             >
               {engineScore ?? "—"}

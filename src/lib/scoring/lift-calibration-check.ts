@@ -56,6 +56,10 @@ assertNear("Dumbbell Curl 20/hand ×8", scoreLift("Dumbbell Curl", 20, 8, "per_h
 assertNear("Preacher Curl 45×8", scoreLift("Preacher Curl", 45, 8), 740);
 assertNear("Single Arm Pushdown 13×8", scoreLift("Single Arm Pushdown", 13, 8), 550);
 assertNear("Rope Pushdown 30×8", scoreLift("Rope Pushdown", 30, 8), 675);
+assertNear("Bodyweight Push Up ×20 (no weight logged)", scoreLift("Push Up", 0, 20, "added"), 625);
+assertNear("Bodyweight Push Up ×40 (no weight logged)", scoreLift("Push Up", 0, 40, "added"), 889);
+assertNear("Bodyweight Pull Up ×10 (no weight logged)", scoreLift("Pull Up", 0, 10, "added"), 496);
+assertNear("Bodyweight Dips ×15 (no weight logged)", scoreLift("Dips", 0, 15, "added"), 613);
 
 console.log(failed === 0 ? "\nAll calibration checks passed." : `\n${failed} check(s) out of tolerance.`);
 if (failed > 0) process.exitCode = 1;

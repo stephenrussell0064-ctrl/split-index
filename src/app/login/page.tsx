@@ -35,7 +35,7 @@ export default async function LoginPage({
   const { error, reason, detail } = await searchParams;
 
   return (
-    <div className="min-h-screen bg-ambient flex flex-col">
+    <div className="min-h-dvh bg-ambient flex flex-col">
       <div className="flex flex-1 items-center justify-center px-4">
         <AuthForm
           mode="login"

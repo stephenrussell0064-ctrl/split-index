@@ -41,6 +41,14 @@ const DEFAULT_MODES: Record<string, WeightEntryMode> = {
   "weighted dips": "added",
   dips: "added",
   "chest dips": "added",
+  "push up": "added",
+  "push-up": "added",
+  "weighted push up": "added",
+  "weighted push-up": "added",
+  "diamond push up": "added",
+  "wide push up": "added",
+  "decline push up": "added",
+  "incline push up": "added",
 };
 
 const BODYWEIGHT_RELATIVE_NAMES = new Set([
@@ -53,6 +61,14 @@ const BODYWEIGHT_RELATIVE_NAMES = new Set([
   "pull up",
   "pull-up",
   "chin up",
+  "push up",
+  "push-up",
+  "weighted push up",
+  "weighted push-up",
+  "diamond push up",
+  "wide push up",
+  "decline push up",
+  "incline push up",
 ]);
 
 export function defaultWeightEntryMode(exerciseName: string): WeightEntryMode {

@@ -82,12 +82,13 @@ export function activityToFormState(
       ? String((metadata as Record<string, number>).bodyweight_kg ?? "")
       : base.bodyweight;
 
-  const exerciseWeightModes =
+  const exerciseWeightModes: Record<string, WeightEntryMode> =
     typeof metadata === "object" &&
     metadata !== null &&
     "exercise_weight_modes" in metadata &&
     typeof (metadata as Record<string, unknown>).exercise_weight_modes === "object"
-      ? ((metadata as Record<string, WeightEntryMode>).exercise_weight_modes ?? {})
+      ? ((metadata as { exercise_weight_modes: Record<string, WeightEntryMode> })
+          .exercise_weight_modes ?? {})
       : {};
 
   return {

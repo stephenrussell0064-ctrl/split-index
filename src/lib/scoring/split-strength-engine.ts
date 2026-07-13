@@ -25,11 +25,14 @@
  * serializer (`serializeStrengthResult`), not by computing and hiding them
  * on the client.
  *
- * Bodyweight-relative lifts (`BODYWEIGHT_RELATIVE_LIFTS` — currently just
- * weighted pull-ups): the logged weight is *added* load, not the total load
- * under tension. 1RM is estimated from bodyweight + added weight, then
- * bodyweight is subtracted back out so the result is expressed the same way
- * it was logged.
+ * Bodyweight-relative lifts (`BODYWEIGHT_RELATIVE_LIFTS`: pull-ups, dips,
+ * push-ups): the logged weight is *added* load, not the total load under
+ * tension. 1RM is estimated from (a fraction of) bodyweight + added weight,
+ * then that same bodyweight fraction is subtracted back out so the result is
+ * expressed the same way it was logged. The fraction (`BODYWEIGHT_FRACTIONS`)
+ * defaults to 1.0 (pull-ups/dips hang full bodyweight) but is lower for
+ * push-ups, whose four-point stance loads only part of bodyweight through
+ * the arms/chest.
  *
  * Honest limitations (keep visible in the UI):
  *  - Sex and age factors are estimates, not calibrated to real population
@@ -156,6 +159,7 @@ const PRIMARY_ANCHORS: Record<string, LiftAnchor> = {
   inclineBench: { anchorRatio: 0.64, category: "chest", bodyPart: "upperBody" },
   weightedPullup: { anchorRatio: 0.3327, category: "back", bodyPart: "pull" },
   weightedDips: { anchorRatio: 0.4731, category: "chest", bodyPart: "upperBody" },
+  pushUp: { anchorRatio: 0.303, category: "chest", bodyPart: "upperBody" },
 };
 
 const ACCESSORY_MAP: Record<string, LiftAnchor> = {
@@ -198,9 +202,11 @@ const LIFT_ALIASES: Record<string, string> = {
   "pull up": "weightedPullup", "pull-up": "weightedPullup", "chin up": "weightedPullup",
   "weighted dips": "weightedDips", dips: "weightedDips", "chest dips": "weightedDips", "bench dips": "weightedDips",
   "romanian deadlift": "deadlift", rdl: "deadlift", "stiff leg deadlift": "deadlift",
+  "push up": "pushUp", "push-up": "pushUp", "weighted push up": "pushUp", "weighted push-up": "pushUp",
+  "diamond push up": "pushUp", "wide push up": "pushUp", "decline push up": "pushUp", "incline push up": "pushUp",
   // accessories
   "incline dumbbell press": "inclineDbPress", "decline dumbbell press": "inclineDbPress",
-  "dumbbell bench press": "flatDbPress", "push up": "flatDbPress", "weighted push up": "flatDbPress",
+  "dumbbell bench press": "flatDbPress",
   "machine chest press": "machineChestPress", "smith machine squat": "machineChestPress",
   "cable fly": "cableFly", "low-to-high cable fly": "cableFly", "high-to-low cable fly": "cableFly",
   "dumbbell fly": "cableFly", "incline dumbbell fly": "cableFly",
@@ -319,7 +325,23 @@ const MIN_RATIO = 0.01;
  * climb). Resolve total-load 1RM first, then subtract bodyweight back out
  * to express the result the same way it was logged (added weight).
  */
-const BODYWEIGHT_RELATIVE_LIFTS = new Set<string>(["weightedPullup", "weightedDips"]);
+const BODYWEIGHT_RELATIVE_LIFTS = new Set<string>(["weightedPullup", "weightedDips", "pushUp"]);
+
+/**
+ * Fraction of bodyweight actually under tension for bodyweight-relative
+ * lifts — pull-ups/dips hang the full bodyweight from the working muscles,
+ * but a push-up's four-point stance (hands + feet) only loads roughly 64%
+ * of bodyweight through the arms/chest (standard fitness-industry estimate
+ * for a horizontal push-up position). Missing from this map defaults to 1.0
+ * (full bodyweight), matching pull-ups/dips.
+ */
+const BODYWEIGHT_FRACTIONS: Record<string, number> = {
+  pushUp: 0.64,
+};
+
+function bodyweightFraction(resolvedKey: string): number {
+  return BODYWEIGHT_FRACTIONS[resolvedKey] ?? 1.0;
+}
 
 /** Sub-maximal sets (no low-rep/near-max data) read ~3-14% low on formula-based 1RM estimates; this is the midpoint correction, shared by both the adaptive and single-set paths. */
 const SUB_MAX_BIAS_CORRECTION = 1.06;
@@ -457,14 +479,16 @@ function adaptiveOneRM(
   history: LoggedSet[],
   bodyweightKg: number,
   isBodyweightRelative: boolean,
-  weightEntryMode?: import("@/lib/scoring/weight-entry").WeightEntryMode
+  weightEntryMode?: import("@/lib/scoring/weight-entry").WeightEntryMode,
+  loadFraction = 1.0
 ): AdaptiveEstimate {
   const now = Date.now();
+  const loadedBodyweight = bodyweightKg * loadFraction;
   const weighted = history.map((s) => {
     const logged = effectiveSetWeight(s.weightKg, weightEntryMode);
-    const effectiveWeight = isBodyweightRelative ? bodyweightKg + logged : logged;
+    const effectiveWeight = isBodyweightRelative ? loadedBodyweight + logged : logged;
     const totalE1rm = bestEstimate1RM(effectiveWeight, s.reps);
-    const e1rm = isBodyweightRelative ? totalE1rm - bodyweightKg : totalE1rm;
+    const e1rm = isBodyweightRelative ? totalE1rm - loadedBodyweight : totalE1rm;
     const daysAgo = Math.max(0, (now - new Date(s.performedAt).getTime()) / 86_400_000);
     const recencyWeight = Math.exp(-daysAgo / 180); // ~6-month half-life
     const repWeight = s.reps <= 3 ? 1.0 : s.reps <= 6 ? 0.8 : s.reps <= 10 ? 0.55 : 0.35;
@@ -515,6 +539,8 @@ export function scoreStrength(input: ScoreStrengthInput): ScoreStrengthResult {
   if (source === "generic") flags.push("estimated-generic-standard");
   const isBodyweightRelative =
     input.isBodyweightRelative ?? BODYWEIGHT_RELATIVE_LIFTS.has(resolvedKey);
+  const loadFraction = bodyweightFraction(resolvedKey);
+  const loadedBodyweight = bodyweightKg * loadFraction;
 
   let oneRM: number;
   let oneRMConfidence: number;
@@ -526,7 +552,8 @@ export function scoreStrength(input: ScoreStrengthInput): ScoreStrengthResult {
       history,
       bodyweightKg,
       isBodyweightRelative,
-      input.weightEntryMode
+      input.weightEntryMode,
+      loadFraction
     );
     oneRM = adaptive.oneRM;
     oneRMConfidence = adaptive.confidence;
@@ -534,7 +561,7 @@ export function scoreStrength(input: ScoreStrengthInput): ScoreStrengthResult {
     oneRMBandKg = adaptive.band;
   } else {
     const effectiveWeight = isBodyweightRelative
-      ? bodyweightKg + latestSet.weightKg
+      ? loadedBodyweight + latestSet.weightKg
       : latestSet.weightKg;
     const rawEstimate = bestEstimate1RM(effectiveWeight, latestSet.reps);
     // Subtract bodyweight back out *before* the (skipped, for this category —
@@ -542,7 +569,7 @@ export function scoreStrength(input: ScoreStrengthInput): ScoreStrengthResult {
     // correction into the total load and only then subtracting amplifies it
     // hugely on the much smaller added-weight result. Kept in this order so
     // the two corrections stay independent and composable if that changes.
-    const rawAddedWeight = isBodyweightRelative ? rawEstimate - bodyweightKg : rawEstimate;
+    const rawAddedWeight = isBodyweightRelative ? rawEstimate - loadedBodyweight : rawEstimate;
     oneRM = rawAddedWeight * subMaxBiasCorrection(latestSet.reps <= 3, isBodyweightRelative);
     oneRMConfidence = latestSet.reps <= 3 ? 0.85 : latestSet.reps <= 6 ? 0.7 : 0.5;
     if (latestSet.reps > 8) flags.push("1rm-estimate-low-confidence");

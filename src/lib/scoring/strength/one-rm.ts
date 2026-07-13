@@ -18,9 +18,23 @@ export function brzycki1RM(weightKg: number, reps: number): number {
   return (weightKg * 36) / (37 - reps);
 }
 
-/** Conservative best estimate from sub-max sets (max of Epley & Brzycki). */
+/**
+ * Conservative best estimate from sub-max sets (max of Epley & Brzycki).
+ * Brzycki's denominator (37 − reps) approaches zero as reps approaches 37,
+ * blowing the estimate up to unbounded multiples of the working weight —
+ * it's only valid in the ~1–15 rep range documented above. High-rep sets
+ * (30+ push-ups, high-rep accessory burnout sets) are common enough that
+ * Brzycki's rep input is capped at 15 rather than left to spike or dropped
+ * outright — an outright drop would make the max() flip from Brzycki's
+ * (higher) 15-rep estimate to Epley's (lower) 16-rep estimate, a score dip
+ * for doing one more rep. Capping instead holds Brzycki at a flat plateau
+ * past 15 reps, so Epley (linear, no singularity) smoothly overtakes it as
+ * reps keep climbing, with no discontinuity either way.
+ */
 export function bestEstimate1RM(weightKg: number, reps: number): number {
-  return Math.max(epley1RM(weightKg, reps), brzycki1RM(weightKg, reps));
+  const epley = epley1RM(weightKg, reps);
+  const brzycki = brzycki1RM(weightKg, Math.min(reps, 15));
+  return Math.max(epley, brzycki);
 }
 
 /** Best 1RM across multiple sets of the same lift. */
