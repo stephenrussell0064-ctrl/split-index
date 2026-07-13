@@ -5,10 +5,9 @@ import { Pencil } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { Button } from "@/components/ui/button";
 import { SportComparisonPanel } from "@/components/dashboard/sport-comparison";
-import { formatIndex, formatDuration, formatDistance, formatWeight } from "@/lib/utils/format";
+import { formatIndex, formatDuration, formatDistance } from "@/lib/utils/format";
 import { SPORT_INDEX_LABELS, SPORTS } from "@/lib/constants/sports";
 import { computeSportComparison } from "@/lib/utils/sport-comparison";
-import { formatLiftRelativeStrength } from "@/lib/utils/scoring-display";
 import { ActivityDetailActions } from "@/components/activities/activity-detail-actions";
 import { CardioEnrichmentPanel } from "@/components/activities/cardio-enrichment-panel";
 import { SessionScoreInsights } from "@/components/scoring/session-score-insights";
@@ -17,8 +16,9 @@ import { canAccessProfile } from "@/lib/premium/features";
 import { isPremiumUser } from "@/lib/retention/trial";
 import {
   extractGatedCardioInsight,
-  extractGatedStrengthInsights,
+  resolveStrengthInsights,
 } from "@/lib/scoring/activity-insights";
+import { GymExerciseScoreList } from "@/components/activities/gym-exercise-score-list";
 import { gateCardioEnrichment } from "@/lib/scoring/gates";
 import type { CardioEnrichment } from "@/lib/scoring/cardio/confidence";
 import type { ScoreBreakdown } from "@/types";
@@ -54,14 +54,11 @@ export default async function ActivityDetailPage({
   const showHrAccountability = profile
     ? canAccessProfile("cardio_hr_accountability", profile)
     : false;
-  const showStrengthTiers = profile
-    ? canAccessProfile("strength_dots_gl", profile)
-    : false;
   const isPremium = profile
     ? isPremiumUser(profile.subscription_tier, profile.subscription_status)
     : false;
 
-  const [{ data: score }, { data: exercises }, { data: priorScores }] =
+  const [{ data: score }, { data: exercises }, { data: priorScores }, { data: strengthScores }] =
     await Promise.all([
       supabase.from("workout_scores").select("*").eq("activity_id", id).single(),
       supabase
@@ -77,6 +74,13 @@ export default async function ActivityDetailPage({
         .neq("activity_id", id)
         .order("created_at", { ascending: false })
         .limit(10),
+      activity.sport === "gym"
+        ? supabase
+            .from("strength_scores")
+            .select("*")
+            .eq("activity_id", id)
+            .order("recorded_at")
+        : Promise.resolve({ data: [] as never[] }),
     ]);
 
   const meta = SPORTS.find((s) => s.id === activity.sport);
@@ -99,7 +103,11 @@ export default async function ActivityDetailPage({
     ? gateCardioEnrichment(rawCardioEnrichment, showHrAccountability)
     : undefined;
   const gatedCardioInsight = extractGatedCardioInsight(scoreBreakdown, isPremium);
-  const gatedStrengthInsights = extractGatedStrengthInsights(scoreBreakdown, isPremium);
+  const gatedStrengthInsights = resolveStrengthInsights(
+    scoreBreakdown,
+    strengthScores ?? [],
+    isPremium
+  );
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -175,55 +183,29 @@ export default async function ActivityDetailPage({
               />
             </div>
           )}
-          {zone === "gym" && gatedStrengthInsights && (
-            <div className="mt-6 border-t border-white/10 pt-6">
-              <p className="micro-label text-muted mb-3">Per-lift scoring</p>
-              <SessionScoreInsights
-                zone="gym"
-                isPremium={isPremium}
-                strengthResults={gatedStrengthInsights}
-              />
-            </div>
-          )}
         </div>
       )}
 
       {activity.sport === "gym" && (exercises ?? []).length > 0 && (
-        <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-6 mb-6">
-          <p className="micro-label text-muted mb-4">Exercises</p>
-          <ul className="space-y-3">
-            {(exercises ?? []).map((ex) => {
-              const ratio =
-                bodyweightKg && ex.estimated_1rm_kg
-                  ? ex.estimated_1rm_kg / bodyweightKg
-                  : null;
-              return (
-                <li
-                  key={ex.id}
-                  className="flex flex-wrap items-baseline justify-between gap-2 border-b border-white/5 pb-3 last:border-0"
-                >
-                  <div>
-                    <p className="font-medium">{ex.exercise_name}</p>
-                    <p className="text-xs text-muted">
-                      {ex.sets}×{ex.reps} @ {formatWeight(ex.weight_kg)}
-                      {ex.estimated_1rm_kg
-                        ? ` · est. 1RM ${formatWeight(ex.estimated_1rm_kg)}`
-                        : ""}
-                    </p>
-                  </div>
-                  {ratio && (
-                    <span className="text-sm font-medium text-strength tabular-nums">
-                      {showStrengthTiers
-                        ? formatLiftRelativeStrength(ex.exercise_name, ratio)
-                        : `${ex.exercise_name}: ${ratio.toFixed(1)}× BW`}
-                    </span>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-          {bodyweightKg && (
-            <p className="mt-4 text-xs text-muted">Bodyweight: {formatWeight(bodyweightKg)}</p>
+        <div className="rounded-2xl border border-gym-border/30 bg-gym-bg-elevated/20 p-6 mb-6">
+          <p className="micro-label text-gym-muted mb-4">Exercises &amp; lift scores</p>
+          <GymExerciseScoreList
+            exercises={exercises ?? []}
+            insights={gatedStrengthInsights}
+            bodyweightKg={bodyweightKg}
+          />
+          {gatedStrengthInsights && gatedStrengthInsights.length > 0 && (
+            <div className="mt-6 border-t border-gym-border/20 pt-6">
+              <p className="micro-label text-gym-muted mb-3">Score breakdown</p>
+              <SessionScoreInsights
+                zone="gym"
+                isPremium={isPremium}
+                strengthResults={gatedStrengthInsights.map((row, i) => ({
+                  name: (exercises ?? [])[i]?.exercise_name ?? row.name,
+                  result: row.result,
+                }))}
+              />
+            </div>
           )}
         </div>
       )}
