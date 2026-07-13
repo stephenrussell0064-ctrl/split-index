@@ -75,6 +75,10 @@ export interface ScoreStrengthInput {
   sex: Sex;
   age: number | null;
   isPremium: boolean;
+  /** When true, latestSet.weightKg is added load on top of bodyweight (dips, pull-ups). */
+  isBodyweightRelative?: boolean;
+  /** How weight was logged — doubles for per-hand when resolving history sets. */
+  weightEntryMode?: import("@/lib/scoring/weight-entry").WeightEntryMode;
 }
 
 export interface NextTierTarget {
@@ -142,29 +146,38 @@ interface LiftAnchor {
  * table — all fixtures are ±3 of scoreStrength()'s output for these anchors).
  */
 const PRIMARY_ANCHORS: Record<string, LiftAnchor> = {
-  bench: { anchorRatio: 0.6715, category: "chest", bodyPart: "upperBody" },
+  // Bench family recalibrated so 120×4 / 110×6 / 100×9 ≈ 800 @ 80kg BW.
+  bench: { anchorRatio: 0.785, category: "chest", bodyPart: "upperBody" },
   squat: { anchorRatio: 0.9984, category: "legs", bodyPart: "lowerBody" },
   deadlift: { anchorRatio: 1.1841, category: "back", bodyPart: "pull" },
   ohp: { anchorRatio: 0.4213, category: "shoulders", bodyPart: "upperBody" },
-  barbellRow: { anchorRatio: 0.6395, category: "back", bodyPart: "pull" },
+  barbellRow: { anchorRatio: 0.687, category: "back", bodyPart: "pull" },
   frontSquat: { anchorRatio: 0.8103, category: "legs", bodyPart: "lowerBody" },
-  inclineBench: { anchorRatio: 0.5471, category: "chest", bodyPart: "upperBody" },
-  weightedPullup: { anchorRatio: 0.2735, category: "back", bodyPart: "pull" },
+  inclineBench: { anchorRatio: 0.64, category: "chest", bodyPart: "upperBody" },
+  weightedPullup: { anchorRatio: 0.3327, category: "back", bodyPart: "pull" },
+  weightedDips: { anchorRatio: 0.4731, category: "chest", bodyPart: "upperBody" },
 };
 
 const ACCESSORY_MAP: Record<string, LiftAnchor> = {
-  inclineDbPress: { anchorRatio: 0.2470, category: "chest", bodyPart: "upperBody" },
-  flatDbPress: { anchorRatio: 0.3120, category: "chest", bodyPart: "upperBody" },
-  machineChestPress: { anchorRatio: 0.6147, category: "chest", bodyPart: "upperBody" },
-  tricepPushdown: { anchorRatio: 0.3197, category: "arms", bodyPart: "upperBody" },
-  dbShoulderPress: { anchorRatio: 0.2160, category: "shoulders", bodyPart: "upperBody" },
+  inclineDbPress: { anchorRatio: 0.6776, category: "chest", bodyPart: "upperBody" },
+  flatDbPress: { anchorRatio: 0.365, category: "chest", bodyPart: "upperBody" },
+  machineChestPress: { anchorRatio: 0.7846, category: "chest", bodyPart: "upperBody" },
+  cableFly: { anchorRatio: 0.3823, category: "chest", bodyPart: "upperBody" },
+  pecDeck: { anchorRatio: 0.8583, category: "chest", bodyPart: "upperBody" },
+  tricepPushdown: { anchorRatio: 0.3138, category: "arms", bodyPart: "upperBody" },
+  singleArmPushdown: { anchorRatio: 0.189, category: "arms", bodyPart: "upperBody" },
+  dbShoulderPress: { anchorRatio: 0.216, category: "shoulders", bodyPart: "upperBody" },
   lateralRaise: { anchorRatio: 0.1525, category: "shoulders", bodyPart: "upperBody" },
   dbRow: { anchorRatio: 0.4524, category: "back", bodyPart: "pull" },
-  barbellCurl: { anchorRatio: 0.3197, category: "arms", bodyPart: "upperBody" },
-  preacherCurl: { anchorRatio: 0.3464, category: "arms", bodyPart: "upperBody" },
+  barbellCurl: { anchorRatio: 0.3435, category: "arms", bodyPart: "upperBody" },
+  preacherCurl: { anchorRatio: 0.3968, category: "arms", bodyPart: "upperBody" },
   latPulldown: { anchorRatio: 0.8813, category: "back", bodyPart: "pull" },
-  legExtension: { anchorRatio: 0.9165, category: "legs", bodyPart: "lowerBody" },
-  bulgarianSplit: { anchorRatio: 0.3432, category: "legs", bodyPart: "lowerBody" },
+  legExtension: { anchorRatio: 0.9899, category: "legs", bodyPart: "lowerBody" },
+  walkingLunge: { anchorRatio: 0.7762, category: "legs", bodyPart: "lowerBody" },
+  bulgarianSplit: { anchorRatio: 0.8921, category: "legs", bodyPart: "lowerBody" },
+  calfRaise: { anchorRatio: 1.0462, category: "legs", bodyPart: "lowerBody" },
+  hipAdduction: { anchorRatio: 0.816, category: "legs", bodyPart: "lowerBody" },
+  legCurl: { anchorRatio: 0.6372, category: "legs", bodyPart: "lowerBody" },
 };
 
 /**
@@ -181,25 +194,33 @@ const LIFT_ALIASES: Record<string, string> = {
   "barbell row": "barbellRow", "pendlay row": "barbellRow", "chest supported row": "barbellRow", "seal row": "barbellRow", "t-bar row": "barbellRow", "meadows row": "barbellRow",
   "front squat": "frontSquat", "goblet squat": "frontSquat",
   "incline bench press": "inclineBench", "decline bench press": "inclineBench", "smith machine bench press": "inclineBench",
-  "weighted pull up": "weightedPullup", "weighted pull-up": "weightedPullup", "weighted chin up": "weightedPullup", "pull up": "weightedPullup", "pull-up": "weightedPullup", "chin up": "weightedPullup",
+  "weighted pull up": "weightedPullup", "weighted pull-up": "weightedPullup", "weighted chin up": "weightedPullup",
+  "pull up": "weightedPullup", "pull-up": "weightedPullup", "chin up": "weightedPullup",
+  "weighted dips": "weightedDips", dips: "weightedDips", "chest dips": "weightedDips", "bench dips": "weightedDips",
+  "romanian deadlift": "deadlift", rdl: "deadlift", "stiff leg deadlift": "deadlift",
   // accessories
   "incline dumbbell press": "inclineDbPress", "decline dumbbell press": "inclineDbPress",
-  "dumbbell bench press": "flatDbPress", "push up": "flatDbPress", "weighted push up": "flatDbPress", "chest dips": "flatDbPress", dips: "flatDbPress", "weighted dips": "flatDbPress",
+  "dumbbell bench press": "flatDbPress", "push up": "flatDbPress", "weighted push up": "flatDbPress",
   "machine chest press": "machineChestPress", "smith machine squat": "machineChestPress",
-  "rope pushdown": "tricepPushdown", "single arm pushdown": "tricepPushdown", "skull crusher": "tricepPushdown", "overhead tricep extension": "tricepPushdown", "cable overhead extension": "tricepPushdown", "dumbbell kickback": "tricepPushdown", "jm press": "tricepPushdown", "bench dips": "tricepPushdown",
+  "cable fly": "cableFly", "low-to-high cable fly": "cableFly", "high-to-low cable fly": "cableFly",
+  "dumbbell fly": "cableFly", "incline dumbbell fly": "cableFly",
+  "pec deck": "pecDeck",
+  "rope pushdown": "tricepPushdown", "tricep pushdown": "tricepPushdown", "tricep extension": "tricepPushdown",
+  "single arm pushdown": "singleArmPushdown", "skull crusher": "tricepPushdown", "overhead tricep extension": "tricepPushdown",
+  "cable overhead extension": "tricepPushdown", "dumbbell kickback": "tricepPushdown", "jm press": "tricepPushdown",
   "dumbbell shoulder press": "dbShoulderPress", "seated dumbbell press": "dbShoulderPress", "machine shoulder press": "dbShoulderPress", "arnold press": "dbShoulderPress",
   "cable lateral raise": "lateralRaise", "machine lateral raise": "lateralRaise", "front raise": "lateralRaise", "rear delt fly": "lateralRaise", "reverse pec deck": "lateralRaise", "upright row": "lateralRaise", "cable rear delt pull": "lateralRaise",
   "dumbbell row": "dbRow", "single arm cable row": "dbRow", "seated cable row": "dbRow", "inverted row": "dbRow", "face pull": "dbRow", "machine row": "dbRow",
   "ez bar curl": "barbellCurl", "dumbbell curl": "barbellCurl", "hammer curl": "barbellCurl", "cross body hammer curl": "barbellCurl", "cable curl": "barbellCurl", "bayesian cable curl": "barbellCurl", "concentration curl": "barbellCurl", "reverse curl": "barbellCurl", "wrist curl": "barbellCurl",
   "machine preacher curl": "preacherCurl", "spider curl": "preacherCurl",
   "close grip lat pulldown": "latPulldown",
-  "single leg extension": "legExtension",
-  "bulgarian split squat": "bulgarianSplit", lunges: "bulgarianSplit", "walking lunges": "bulgarianSplit", "reverse lunges": "bulgarianSplit", "step up": "bulgarianSplit",
-  // Pec deck's weight-stack numbers behave like a leveraged machine press
-  // (large mechanical advantage), not a free-weight isolation fly — this is
-  // exactly the case that originally motivated per-exercise anchors: a heavy
-  // pec-deck number isn't remotely as rare as the same ratio on a barbell lift.
-  "pec deck": "machineChestPress",
+  "leg extension": "legExtension", "single leg extension": "legExtension",
+  "walking lunges": "walkingLunge", lunges: "walkingLunge", "reverse lunges": "walkingLunge",
+  "bulgarian split squat": "bulgarianSplit", "step up": "bulgarianSplit",
+  "standing calf raise": "calfRaise", "seated calf raise": "calfRaise", "calf raise": "calfRaise",
+  "leg press calf raise": "calfRaise",
+  "hip adduction": "hipAdduction", "hip abduction": "hipAdduction",
+  "seated leg curl": "legCurl", "leg curl": "legCurl",
 };
 
 /**
@@ -298,7 +319,7 @@ const MIN_RATIO = 0.01;
  * climb). Resolve total-load 1RM first, then subtract bodyweight back out
  * to express the result the same way it was logged (added weight).
  */
-const BODYWEIGHT_RELATIVE_LIFTS = new Set<string>(["weightedPullup"]);
+const BODYWEIGHT_RELATIVE_LIFTS = new Set<string>(["weightedPullup", "weightedDips"]);
 
 /** Sub-maximal sets (no low-rep/near-max data) read ~3-14% low on formula-based 1RM estimates; this is the midpoint correction, shared by both the adaptive and single-set paths. */
 const SUB_MAX_BIAS_CORRECTION = 1.06;
@@ -425,14 +446,23 @@ interface AdaptiveEstimate {
  * engineering judgment calls, not lab-derived — the point is a materially
  * better estimate than a single set, not a precise one.
  */
+function effectiveSetWeight(
+  weightKg: number,
+  weightEntryMode?: import("@/lib/scoring/weight-entry").WeightEntryMode
+): number {
+  return weightEntryMode === "per_hand" ? weightKg * 2 : weightKg;
+}
+
 function adaptiveOneRM(
   history: LoggedSet[],
   bodyweightKg: number,
-  isBodyweightRelative: boolean
+  isBodyweightRelative: boolean,
+  weightEntryMode?: import("@/lib/scoring/weight-entry").WeightEntryMode
 ): AdaptiveEstimate {
   const now = Date.now();
   const weighted = history.map((s) => {
-    const effectiveWeight = isBodyweightRelative ? bodyweightKg + s.weightKg : s.weightKg;
+    const logged = effectiveSetWeight(s.weightKg, weightEntryMode);
+    const effectiveWeight = isBodyweightRelative ? bodyweightKg + logged : logged;
     const totalE1rm = bestEstimate1RM(effectiveWeight, s.reps);
     const e1rm = isBodyweightRelative ? totalE1rm - bodyweightKg : totalE1rm;
     const daysAgo = Math.max(0, (now - new Date(s.performedAt).getTime()) / 86_400_000);
@@ -483,7 +513,8 @@ export function scoreStrength(input: ScoreStrengthInput): ScoreStrengthResult {
 
   const { anchor, source, resolvedKey } = resolveLiftAnchor(liftKey);
   if (source === "generic") flags.push("estimated-generic-standard");
-  const isBodyweightRelative = BODYWEIGHT_RELATIVE_LIFTS.has(resolvedKey);
+  const isBodyweightRelative =
+    input.isBodyweightRelative ?? BODYWEIGHT_RELATIVE_LIFTS.has(resolvedKey);
 
   let oneRM: number;
   let oneRMConfidence: number;
@@ -491,7 +522,12 @@ export function scoreStrength(input: ScoreStrengthInput): ScoreStrengthResult {
   let oneRMBandKg: [number, number] | null = null;
 
   if (isPremium && history.length > 0) {
-    const adaptive = adaptiveOneRM(history, bodyweightKg, isBodyweightRelative);
+    const adaptive = adaptiveOneRM(
+      history,
+      bodyweightKg,
+      isBodyweightRelative,
+      input.weightEntryMode
+    );
     oneRM = adaptive.oneRM;
     oneRMConfidence = adaptive.confidence;
     trend = adaptive.trend;

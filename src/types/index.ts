@@ -159,6 +159,8 @@ export interface GymExerciseInput {
   muscle_group: string;
   sets: GymExerciseSet[];
   order_index: number;
+  /** How weight was entered: total bar/load, per dumbbell hand, or added on bodyweight. */
+  weight_entry_mode?: import("@/lib/scoring/weight-entry").WeightEntryMode;
 }
 
 export interface WorkoutScore {

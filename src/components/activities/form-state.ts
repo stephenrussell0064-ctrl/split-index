@@ -1,5 +1,7 @@
 import { z } from "zod";
 import type { ActivityFormData, SessionType, SportType } from "@/types";
+import type { WeightEntryMode } from "@/lib/scoring/weight-entry";
+import { defaultWeightEntryMode } from "@/lib/scoring/weight-entry";
 
 /**
  * Local form state is kept as strings so typing is never blocked;
@@ -19,6 +21,8 @@ export interface ExerciseRowState {
   /** Each set can carry its own weight/reps/RPE — sets are rarely uniform (ramping, pyramids, drop sets). */
   sets: SetRowState[];
   notes: string;
+  /** How the athlete entered load for this exercise. */
+  weightEntryMode: WeightEntryMode;
 }
 
 export interface WorkoutFormState {
@@ -107,6 +111,7 @@ export function createExerciseRow(previous?: ExerciseRowState): ExerciseRowState
     muscleGroup: "",
     sets: [createSetRow(previous?.sets[previous.sets.length - 1])],
     notes: "",
+    weightEntryMode: previous?.weightEntryMode ?? "total",
   };
 }
 
@@ -187,6 +192,7 @@ export function restoreDraftState(
     name?: unknown;
     muscleGroup?: unknown;
     notes?: unknown;
+    weightEntryMode?: unknown;
     weight?: unknown;
     reps?: unknown;
     rpe?: unknown;
@@ -215,12 +221,21 @@ export function restoreDraftState(
                 },
               ];
 
+          const name = str(row.name, "");
           return {
             id: str(row.id, nextRowId()),
-            name: str(row.name, ""),
+            name,
             muscleGroup: str(row.muscleGroup, ""),
             sets: rowSets.length > 0 ? rowSets : [createSetRow()],
             notes: str(row.notes, ""),
+            weightEntryMode:
+              row.weightEntryMode === "per_hand" ||
+              row.weightEntryMode === "added" ||
+              row.weightEntryMode === "total"
+                ? row.weightEntryMode
+                : name.trim()
+                  ? defaultWeightEntryMode(name)
+                  : "total",
           };
         })
     : base.exercises;
@@ -570,6 +585,7 @@ export function validateAndBuildPayload(
         muscle_group: row.muscleGroup,
         sets: parsedSets,
         order_index: index,
+        weight_entry_mode: row.weightEntryMode,
       });
       if (row.notes.trim()) {
         notesMap[String(index)] = row.notes.trim();

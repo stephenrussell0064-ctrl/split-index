@@ -8,6 +8,10 @@ import {
 } from "@/components/activities/form-state";
 import { setsForExercise } from "@/lib/activities/gym-sets";
 import type { SportType } from "@/types";
+import {
+  defaultWeightEntryMode,
+  type WeightEntryMode,
+} from "@/lib/scoring/weight-entry";
 
 function localDateTimeFromIso(iso: string): string {
   const d = new Date(iso);
@@ -78,6 +82,14 @@ export function activityToFormState(
       ? String((metadata as Record<string, number>).bodyweight_kg ?? "")
       : base.bodyweight;
 
+  const exerciseWeightModes =
+    typeof metadata === "object" &&
+    metadata !== null &&
+    "exercise_weight_modes" in metadata &&
+    typeof (metadata as Record<string, unknown>).exercise_weight_modes === "object"
+      ? ((metadata as Record<string, WeightEntryMode>).exercise_weight_modes ?? {})
+      : {};
+
   return {
     ...base,
     title: activity.title ?? "",
@@ -111,6 +123,9 @@ export function activityToFormState(
                 rpe: s.rpe ? String(s.rpe) : "",
               })),
               notes: exerciseNotes[String(ex.order_index)] ?? "",
+              weightEntryMode:
+                exerciseWeightModes[ex.exercise_name] ??
+                defaultWeightEntryMode(ex.exercise_name),
             }))
         : sport === "gym"
           ? [createExerciseRow()]

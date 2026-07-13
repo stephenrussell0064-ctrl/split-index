@@ -21,6 +21,8 @@ import { isEnduranceSport } from "@/lib/scoring/engine";
 import { isPremiumUser } from "@/lib/retention/trial";
 import { serializeScoreBreakdown } from "@/lib/scoring/presentation";
 import type { ActivityFormData, Profile } from "@/types";
+import type { WeightEntryMode } from "@/lib/scoring/weight-entry";
+import { defaultWeightEntryMode } from "@/lib/scoring/weight-entry";
 import {
   buildScoringProfile,
   resolveScoringBodyweightKg,
@@ -44,6 +46,14 @@ function buildActivityMetadata(
   }
   if (body.exercise_notes && Object.keys(body.exercise_notes).length > 0) {
     metadata.exercise_notes = body.exercise_notes;
+  }
+  if (body.exercises?.length) {
+    const modes: Record<string, WeightEntryMode> = {};
+    for (const ex of body.exercises) {
+      modes[ex.exercise_name] =
+        ex.weight_entry_mode ?? defaultWeightEntryMode(ex.exercise_name);
+    }
+    metadata.exercise_weight_modes = modes;
   }
   return metadata;
 }

@@ -12,6 +12,10 @@ import {
   type Sex,
 } from "@/lib/scoring/split-strength-engine";
 import {
+  resolveScoringWeight,
+  type WeightEntryMode,
+} from "@/lib/scoring/weight-entry";
+import {
   computeIndexes,
   type IndexResult,
 } from "@/lib/scoring/index-engine";
@@ -45,6 +49,8 @@ export interface ActivityScoreContext {
   exercises?: GymExerciseInput[];
   /** Full logged history per exercise (across all past sessions), keyed by normalized exercise name — powers the premium adaptive 1RM model. */
   exerciseHistory?: Record<string, LoggedSet[]>;
+  /** Per-exercise weight entry mode from the logging form (per hand / added / total). */
+  exerciseWeightModes?: Record<string, WeightEntryMode>;
   isPremium?: boolean;
   profile: {
     max_hr?: number | null;
@@ -152,15 +158,21 @@ function scoreGymSession(
     if (!top) continue;
     const volume = totalVolumeKg(ex.sets);
     const history = input.exerciseHistory?.[normalizeExerciseName(ex.exercise_name)] ?? [];
+    const weightMode =
+      ex.weight_entry_mode ??
+      input.exerciseWeightModes?.[normalizeExerciseName(ex.exercise_name)];
+    const resolved = resolveScoringWeight(top.weight_kg, ex.exercise_name, weightMode);
 
     const result = scoreStrength({
       liftKey: ex.exercise_name,
       history,
-      latestSet: { weightKg: top.weight_kg, reps: top.reps },
+      latestSet: { weightKg: resolved.scoringWeightKg, reps: top.reps },
       bodyweightKg: bodyweight,
       sex,
       age: input.profile.age ?? null,
       isPremium,
+      isBodyweightRelative: resolved.isBodyweightRelative,
+      weightEntryMode: resolved.mode,
     });
     results.push(result);
 

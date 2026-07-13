@@ -13,6 +13,8 @@ import {
 } from "@/lib/activities/bodyweight";
 import { setsForExercise } from "@/lib/activities/gym-sets";
 import { normalizeName } from "@/lib/scoring/split-strength-engine";
+import { defaultWeightEntryMode } from "@/lib/scoring/weight-entry";
+import type { WeightEntryMode } from "@/lib/scoring/weight-entry";
 import { isPremiumUser } from "@/lib/retention/trial";
 import { mapSportToBenchmarkSport } from "@/lib/scoring/adapters";
 import {
@@ -122,6 +124,10 @@ export async function POST() {
     });
     const scoringProfile = buildScoringProfile(profile, bodyweightKg, effectiveMaxHr);
     const loads = computeRecentLoads(recentScoreLoads);
+    const weightModes =
+      metadata && typeof metadata.exercise_weight_modes === "object"
+        ? (metadata.exercise_weight_modes as Record<string, WeightEntryMode>)
+        : {};
     const exercises = (exercisesByActivity.get(activity.id as string) ?? [])
       .sort((a, b) => a.order_index - b.order_index)
       .map((ex, i) => ({
@@ -129,6 +135,8 @@ export async function POST() {
         muscle_group: ex.muscle_group,
         sets: setsForExercise(ex),
         order_index: i,
+        weight_entry_mode:
+          weightModes[ex.exercise_name] ?? defaultWeightEntryMode(ex.exercise_name),
       }));
 
     let benchmarkSport: BenchmarkSport | null = null;

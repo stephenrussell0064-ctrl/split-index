@@ -18,13 +18,19 @@ import {
 } from "@/lib/constants/sports";
 import { formatRelativeStrength } from "@/lib/utils/scoring-display";
 import { cn } from "@/lib/utils/cn";
+import { scoreStrength } from "@/lib/scoring/split-strength-engine";
+import {
+  defaultWeightEntryMode,
+  resolveScoringWeight,
+  weightEntryLabel,
+  type WeightEntryMode,
+} from "@/lib/scoring/weight-entry";
 import { DerivedChip, Field, FieldError, GlassInput, MicroLabel, UnitInput } from "./fields";
 import {
   bestSetRow,
   createExerciseRow,
   createSetRow,
   epley1RM,
-  exerciseScore,
   parseNum,
   totalVolumeFromSets,
   type ExerciseRowState,
@@ -67,6 +73,7 @@ export function GymExercises({
     const copy = createExerciseRow(source);
     copy.name = source.name;
     copy.muscleGroup = source.muscleGroup;
+    copy.weightEntryMode = source.weightEntryMode;
     copy.sets = source.sets.map((s) => createSetRow(s));
     const idx = rows.findIndex((r) => r.id === id);
     const next = [...rows];
@@ -203,17 +210,33 @@ function ExerciseRow({
   onFilterChange: (c: MuscleGroupCategory) => void;
 }) {
   const topSet = bestSetRow(row.sets);
+  const weightKg = topSet ? parseNum(topSet.weight) : null;
+  const reps = topSet ? parseNum(topSet.reps) : null;
+  const resolved =
+    weightKg && row.name.trim()
+      ? resolveScoringWeight(weightKg, row.name, row.weightEntryMode)
+      : null;
+  const engineScore =
+    resolved && reps && bodyweight
+      ? scoreStrength({
+          liftKey: row.name,
+          history: [],
+          latestSet: { weightKg: resolved.scoringWeightKg, reps },
+          bodyweightKg: bodyweight,
+          sex: "male",
+          age: 28,
+          isPremium: false,
+          isBodyweightRelative: resolved.isBodyweightRelative,
+          weightEntryMode: resolved.mode,
+        }).score
+      : null;
   const oneRm = topSet ? epley1RM(parseNum(topSet.weight), parseNum(topSet.reps)) : null;
   const relativeBw =
     oneRm && bodyweight && bodyweight > 0
       ? Math.round((oneRm / bodyweight) * 100) / 100
       : null;
-  const kind =
-    COMMON_EXERCISES.find(
-      (ex) => ex.name.toLowerCase() === row.name.trim().toLowerCase()
-    )?.kind ?? "compound";
-  const score = exerciseScore(oneRm, bodyweight, kind);
   const volume = totalVolumeFromSets(row.sets);
+  const weightUnit = weightEntryLabel(row.weightEntryMode);
 
   const updateSet = (setId: string, patch: Partial<SetRowState>) => {
     onUpdate({
@@ -268,8 +291,21 @@ function ExerciseRow({
               muscleFilter={muscleFilter}
               invalid={!!errors[`ex.${row.id}.name`]}
               onFilterChange={onFilterChange}
-              onChange={(name) => onUpdate({ name })}
-              onPick={(name, muscle) => onUpdate({ name, muscleGroup: muscle })}
+              onChange={(name) =>
+                onUpdate({
+                  name,
+                  weightEntryMode: name.trim()
+                    ? defaultWeightEntryMode(name)
+                    : row.weightEntryMode,
+                })
+              }
+              onPick={(name, muscle) =>
+                onUpdate({
+                  name,
+                  muscleGroup: muscle,
+                  weightEntryMode: defaultWeightEntryMode(name),
+                })
+              }
             />
           </Field>
           <Field label="Muscle" error={errors[`ex.${row.id}.muscle`]} className="mb-0">
@@ -281,10 +317,31 @@ function ExerciseRow({
           </Field>
         </div>
 
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted/60">
+            Weight entry
+          </span>
+          {(["total", "per_hand", "added"] as WeightEntryMode[]).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => onUpdate({ weightEntryMode: mode })}
+              className={cn(
+                "rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors min-h-[36px]",
+                row.weightEntryMode === mode
+                  ? "bg-gym-accent/15 text-gym-accent border border-gym-accent/30"
+                  : "bg-white/[0.03] text-muted border border-white/[0.06] hover:text-foreground"
+              )}
+            >
+              {mode === "total" ? "Total load" : mode === "per_hand" ? "Per hand" : "Added load"}
+            </button>
+          ))}
+        </div>
+
         <div className="space-y-2">
           <div className="hidden sm:grid grid-cols-[28px_1fr_1fr_1fr_40px] gap-2 px-1 text-[10px] font-semibold uppercase tracking-wider text-muted/60">
             <span>Set</span>
-            <span>kg</span>
+            <span>{weightUnit}</span>
             <span>Reps</span>
             <span>RPE</span>
             <span />
@@ -298,7 +355,7 @@ function ExerciseRow({
               <UnitInput
                 aria-label={`Set ${setIndex + 1} weight`}
                 value={set.weight}
-                unit="kg"
+                unit={weightUnit}
                 placeholder="60"
                 invalid={!!errors[`ex.${row.id}.set.${set.id}.weight`]}
                 onChange={(e) => updateSet(set.id, { weight: e.target.value })}
@@ -357,7 +414,7 @@ function ExerciseRow({
                 score ? "text-gym-accent bg-gym-accent/10" : "text-gym-muted/50"
               )}
             >
-              {score ?? "—"}
+              {engineScore ?? "—"}
             </span>
           </div>
           <div className="flex gap-1">

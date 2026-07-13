@@ -24,6 +24,8 @@ import {
 } from "@/lib/activities/bodyweight";
 import { bestSet, summarizeSets } from "@/lib/activities/gym-sets";
 import { fetchExerciseHistory } from "@/lib/activities/exercise-history";
+import { defaultWeightEntryMode } from "@/lib/scoring/weight-entry";
+import type { WeightEntryMode } from "@/lib/scoring/weight-entry";
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -173,6 +175,16 @@ export async function POST(request: Request) {
       metadata: {
         ...(bodyweightKg ? { bodyweight_kg: bodyweightKg } : {}),
         ...(body.exercise_notes ? { exercise_notes: body.exercise_notes } : {}),
+        ...(body.exercises?.length
+          ? {
+              exercise_weight_modes: Object.fromEntries(
+                body.exercises.map((ex) => [
+                  ex.exercise_name,
+                  ex.weight_entry_mode ?? defaultWeightEntryMode(ex.exercise_name),
+                ])
+              ) as Record<string, WeightEntryMode>,
+            }
+          : {}),
       },
     })
     .select()
