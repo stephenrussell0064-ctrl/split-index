@@ -15,8 +15,15 @@ import { BENCHMARK_DISTANCE_METERS, type BenchmarkSport } from "@/lib/scoring/ca
 
 const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
 
-/** Riegel exponent — same value used for the free-tier race-ladder predictions. */
-export const RIEGEL_K = 1.06;
+/**
+ * Riegel exponent for session→benchmark projection. Nudged up slightly from
+ * the textbook 1.06 (still used by the free-tier race-ladder predictions,
+ * `riegelPredictions` in cardio-activity.ts) after real logged sessions
+ * showed the standard exponent under-crediting long, controlled efforts when
+ * projected down to a much shorter benchmark distance (e.g. an 18km tempo
+ * run projected to 5k) — review further as more real data comes in.
+ */
+export const RIEGEL_K = 1.08;
 
 /** Reference avg HR per sport for the HR-adjustment below — mid-tempo effort at that activity. */
 const HR_ADJUST_REF_HR: Record<BenchmarkSport, number> = {
@@ -47,14 +54,22 @@ export function riegelEquivalentSeconds(
   return time * Math.pow(toDistanceMeters / fromDistanceMeters, k);
 }
 
-/** Lower avg HR than the sport's reference yields a faster (better) equivalent time, clamped to ±10%. */
+/**
+ * Lower avg HR than the sport's reference yields a faster (better) equivalent
+ * time, capped at a 10% bonus. Deliberately bonus-only (never a penalty
+ * above reference): a near-max HR is the expected, correct signature of a
+ * genuinely hard short effort (e.g. an all-out 5k), not an efficiency
+ * deficiency — penalizing it above reference was inflating equivalent times,
+ * and therefore lowering scores, for exactly the hardest, most legitimate
+ * efforts.
+ */
 export function hrAdjustedEquivalentSeconds(
   time: number,
   avgHR: number | null | undefined,
   refHR: number
 ): number {
   if (!avgHR || avgHR <= 0) return time;
-  const adjustment = clamp((refHR - avgHR) / HR_ADJUST_SENSITIVITY, -HR_ADJUST_MAX, HR_ADJUST_MAX);
+  const adjustment = clamp((refHR - avgHR) / HR_ADJUST_SENSITIVITY, 0, HR_ADJUST_MAX);
   return time * (1 - adjustment);
 }
 

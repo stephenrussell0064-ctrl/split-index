@@ -96,8 +96,12 @@ const MAX_NORMALIZATION_RATIO = 1.6;
 // demonstrates something a pure pace-per-heartbeat estimate can't: sustained
 // aerobic durability. These are deliberately modest relative to `base`
 // (0–1000) so they nudge, not dominate, the score.
-const MAX_VOLUME_BONUS = 70;
-const VOLUME_HALF_SATURATION_MINUTES = 60; // minutes at which half of MAX_VOLUME_BONUS is earned
+// Raised from 70/60min after real long sessions (an 18km tempo run, a 40min
+// row) showed the old cap under-crediting genuine sustained aerobic
+// durability relative to user-reported expectations — review further as
+// more real data comes in.
+const MAX_VOLUME_BONUS = 110;
+const VOLUME_HALF_SATURATION_MINUTES = 45; // minutes at which half of MAX_VOLUME_BONUS is earned
 const MAX_ELEVATION_BONUS = 25;
 const REFERENCE_GRADIENT_M_PER_KM = 15; // climb rate treated as "hilly"
 const MAX_TEMPERATURE_BONUS = 15;
