@@ -5,6 +5,7 @@ import type { ActivityScore } from "@/lib/scoring/index-engine";
 import type { CardioResult } from "@/lib/scoring/cardio-activity";
 import type { CardioEnrichment } from "@/lib/scoring/cardio/confidence";
 import type { BenchmarkSport } from "@/lib/scoring/cardio-benchmarks";
+import { ScoringInputError } from "@/lib/scoring/input-guards";
 
 /** Derive onboarding profile from preferred sports — no form changes required. */
 export function deriveAthleteProfile(preferredSports: SportType[]): AthleteProfile {
@@ -16,6 +17,15 @@ export function deriveAthleteProfile(preferredSports: SportType[]): AthleteProfi
   return "hybrid";
 }
 
+/** Map profile gender to scoring sex — never default to male (Part F). */
+export function requireScoringSex(gender: Gender | null | undefined): Sex {
+  if (gender === "female" || gender === "male") return gender;
+  throw new ScoringInputError(
+    "Set your sex (male or female) in your profile before scoring — it's required for fair strength and cardio benchmarks."
+  );
+}
+
+/** @deprecated Use requireScoringSex — kept for non-scoring display paths only. */
 export function mapSex(gender: Gender | null | undefined): Sex {
   return gender === "female" ? "female" : "male";
 }
@@ -184,7 +194,7 @@ export function buildCardioInput(input: {
     benchmarkSport: mapSportToBenchmarkSport(input.sport),
     distanceMeters: input.distanceMeters ?? 0,
     durationSeconds: input.durationSeconds,
-    sex: mapSex(input.gender),
+    sex: requireScoringSex(input.gender),
     age: input.age ?? 30,
     restingHR: input.restingHr ?? undefined,
     maxHR: input.maxHr ?? undefined,

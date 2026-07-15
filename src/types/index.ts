@@ -135,6 +135,8 @@ export interface GymExerciseSet {
   weight_kg: number;
   reps: number;
   rpe?: number | null;
+  /** Reps in reserve — optional; blank means near failure (Part B3). */
+  reps_in_reserve?: number | null;
 }
 
 export interface GymExercise {

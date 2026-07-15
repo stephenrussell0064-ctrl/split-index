@@ -20,11 +20,15 @@ import { formatRelativeStrength } from "@/lib/utils/scoring-display";
 import { cn } from "@/lib/utils/cn";
 import { scoreStrength } from "@/lib/scoring/split-strength-engine";
 import {
+  conventionLabel,
+  conventionToMode,
   defaultWeightEntryMode,
+  getExerciseLoadConfig,
   resolveScoringWeight,
   weightEntryLabel,
   type WeightEntryMode,
 } from "@/lib/scoring/weight-entry";
+import type { Gender } from "@/types";
 import { DerivedChip, Field, FieldError, GlassInput, MicroLabel, UnitInput } from "./fields";
 import {
   bestSetRow,
@@ -45,12 +49,14 @@ export function GymExercises({
   errors,
   onUpdate,
   embedded = false,
+  profileGender = null,
 }: {
   state: WorkoutFormState;
   errors: FormErrors;
   onUpdate: UpdateField;
   /** When true, skip outer section wrapper (inside ExpandableSection) */
   embedded?: boolean;
+  profileGender?: Gender | null;
 }) {
   const rows = state.exercises;
   const [muscleFilter, setMuscleFilter] = useState<MuscleGroupCategory>("all");
@@ -150,6 +156,7 @@ export function GymExercises({
               muscleFilter={muscleFilter}
               errors={errors}
               canRemove={rows.length > 1}
+              profileGender={profileGender}
               onUpdate={(patch) => updateRow(row.id, patch)}
               onDuplicate={() => duplicateRow(row.id)}
               onRemove={() => removeRow(row.id)}
@@ -193,6 +200,7 @@ function ExerciseRow({
   muscleFilter,
   errors,
   canRemove,
+  profileGender,
   onUpdate,
   onDuplicate,
   onRemove,
@@ -204,11 +212,15 @@ function ExerciseRow({
   muscleFilter: MuscleGroupCategory;
   errors: FormErrors;
   canRemove: boolean;
+  profileGender?: Gender | null;
   onUpdate: (patch: Partial<ExerciseRowState>) => void;
   onDuplicate: () => void;
   onRemove: () => void;
   onFilterChange: (c: MuscleGroupCategory) => void;
 }) {
+  const loadConfig = row.name.trim() ? getExerciseLoadConfig(row.name) : null;
+  const showConventionPicker =
+    loadConfig != null && loadConfig.allowedConventions.length > 1;
   const topSet = bestSetRow(row.sets);
   const weightKgRaw = topSet ? parseNum(topSet.weight) : null;
   // Bodyweight-only sets (pull-ups, dips, push-ups with no added load) leave
@@ -218,22 +230,30 @@ function ExerciseRow({
   const weightKg =
     weightKgRaw ?? (row.weightEntryMode === "added" ? 0 : null);
   const reps = topSet ? parseNum(topSet.reps) : null;
+  const rir = topSet?.repsInReserve.trim() ? parseNum(topSet.repsInReserve) : null;
   const resolved =
     weightKg !== null && row.name.trim()
       ? resolveScoringWeight(weightKg, row.name, row.weightEntryMode)
       : null;
+  const scoringSex =
+    profileGender === "female" || profileGender === "male" ? profileGender : null;
   const engineScore =
-    resolved && reps && bodyweight
+    resolved && reps && bodyweight && scoringSex
       ? scoreStrength({
           liftKey: row.name,
           history: [],
-          latestSet: { weightKg: resolved.scoringWeightKg, reps },
+          latestSet: {
+            weightKg: resolved.scoringWeightKg,
+            reps,
+            repsInReserve: rir,
+          },
           bodyweightKg: bodyweight,
-          sex: "male",
+          sex: scoringSex,
           age: 28,
           isPremium: false,
           isBodyweightRelative: resolved.isBodyweightRelative,
           weightEntryMode: resolved.mode,
+          exerciseName: row.name,
         }).score
       : null;
   const oneRm = topSet ? epley1RM(parseNum(topSet.weight), parseNum(topSet.reps)) : null;
@@ -323,39 +343,50 @@ function ExerciseRow({
           </Field>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted/60">
-            Weight entry
-          </span>
-          {(["total", "per_hand", "added"] as WeightEntryMode[]).map((mode) => (
-            <button
-              key={mode}
-              type="button"
-              onClick={() => onUpdate({ weightEntryMode: mode })}
-              className={cn(
-                "rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors min-h-[36px]",
-                row.weightEntryMode === mode
-                  ? "bg-gym-accent/15 text-gym-accent border border-gym-accent/30"
-                  : "bg-white/[0.03] text-muted border border-white/[0.06] hover:text-foreground"
-              )}
-            >
-              {mode === "total" ? "Total load" : mode === "per_hand" ? "Per hand" : "Added load"}
-            </button>
-          ))}
-        </div>
+        {showConventionPicker ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted/60">
+              Load convention
+            </span>
+            {loadConfig!.allowedConventions.map((convention) => {
+              const mode = conventionToMode(convention);
+              return (
+                <button
+                  key={convention}
+                  type="button"
+                  onClick={() => onUpdate({ weightEntryMode: mode })}
+                  className={cn(
+                    "rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors min-h-[36px]",
+                    row.weightEntryMode === mode
+                      ? "bg-gym-accent/15 text-gym-accent border border-gym-accent/30"
+                      : "bg-white/[0.03] text-muted border border-white/[0.06] hover:text-foreground"
+                  )}
+                >
+                  {conventionLabel(convention)}
+                </button>
+              );
+            })}
+            {loadConfig!.conventionNote && (
+              <p className="w-full text-[11px] text-muted/70">{loadConfig!.conventionNote}</p>
+            )}
+          </div>
+        ) : loadConfig?.conventionNote ? (
+          <p className="text-[11px] text-muted/70">{loadConfig.conventionNote}</p>
+        ) : null}
 
         <div className="space-y-2">
-          <div className="hidden sm:grid grid-cols-[28px_1fr_1fr_1fr_40px] gap-2 px-1 text-[10px] font-semibold uppercase tracking-wider text-muted/60">
+          <div className="hidden sm:grid grid-cols-[28px_1fr_1fr_0.7fr_0.7fr_40px] gap-2 px-1 text-[10px] font-semibold uppercase tracking-wider text-muted/60">
             <span>Set</span>
             <span>{weightUnit}</span>
             <span>Reps</span>
+            <span>RIR</span>
             <span>RPE</span>
             <span />
           </div>
           {row.sets.map((set, setIndex) => (
             <div
               key={set.id}
-              className="grid grid-cols-[20px_1.6fr_0.7fr_0.7fr_auto] sm:grid-cols-[28px_1fr_1fr_1fr_40px] gap-2 items-center"
+              className="grid grid-cols-[20px_1.4fr_0.6fr_0.55fr_0.55fr_auto] sm:grid-cols-[28px_1fr_1fr_0.7fr_0.7fr_40px] gap-2 items-center"
             >
               <span className="text-xs text-muted/70 text-center tabular-nums">{setIndex + 1}</span>
               <UnitInput
@@ -373,6 +404,14 @@ function ExerciseRow({
                 placeholder="8"
                 invalid={!!errors[`ex.${row.id}.set.${set.id}.reps`]}
                 onChange={(e) => updateSet(set.id, { reps: e.target.value })}
+                className="h-11 px-2 sm:h-10 sm:px-4"
+              />
+              <UnitInput
+                aria-label={`Set ${setIndex + 1} reps in reserve`}
+                value={set.repsInReserve}
+                placeholder="0"
+                invalid={!!errors[`ex.${row.id}.set.${set.id}.rir`]}
+                onChange={(e) => updateSet(set.id, { repsInReserve: e.target.value })}
                 className="h-11 px-2 sm:h-10 sm:px-4"
               />
               <UnitInput

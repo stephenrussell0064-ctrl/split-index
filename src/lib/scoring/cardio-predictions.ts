@@ -4,11 +4,10 @@
  * Each cardio activity keeps a stored predicted benchmark time per user,
  * updated by every session asymmetrically: a faster-predicting session
  * pulls the stored prediction down ~55% of the gap (proven fitness,
- * trusted); a slower-predicting session nudges it only ~4% (easy days
- * hold, never crater it). Every session projects to the benchmark distance
- * via Riegel, then HR-adjusts the result so a lower-HR session yields a
- * faster (better) equivalent — every session can contribute, even easy
- * ones, if HR improved.
+ * trusted); a slower-predicting session only nudges it when the session
+ * was a genuine quality effort near known capability. Easy runs never
+ * move the prediction slower (Part E1). Decay is time-based, not
+ * session-based (Part E2). HR reward on equivalents stays intact (E3).
  */
 
 import { BENCHMARK_DISTANCE_METERS, type BenchmarkSport } from "@/lib/scoring/cardio-benchmarks";
@@ -38,10 +37,28 @@ const HR_ADJUST_REF_HR: Record<BenchmarkSport, number> = {
 const HR_ADJUST_SENSITIVITY = 450;
 const HR_ADJUST_MAX = 0.1;
 
-/** A faster-predicting session pulls the stored prediction down this fraction of the gap. */
-export const FASTER_PULL_FACTOR = 0.55;
-/** A slower-predicting session only nudges the stored prediction by this fraction of the gap. */
+/** A faster-predicting session pulls the stored prediction down this fraction of the gap (Part E1). */
+export const IMPROVE_RATE = 0.55;
+/** Alias for callers still using the old name. */
+export const FASTER_PULL_FACTOR = IMPROVE_RATE;
+
+/** Hard effort that regressed: gentle pull (Part E1). */
+export const REGRESS_RATE = 0.15;
+
+/** Session counts as quality if its equivalent is within this fraction of stored prediction (Part E1). */
+export const QUALITY_PROXIMITY = 1.1;
+
+/** Legacy export — replaced by REGRESS_RATE + quality gate; kept for reference only. */
 export const SLOWER_NUDGE_FACTOR = 0.04;
+
+/** Time-based prediction decay (Part E2). */
+export const PREDICTION_DECAY = {
+  graceDays: 14,
+  ratePerWeekInactive: 0.004,
+  qualityGraceDays: 60,
+  ratePerWeekNoQuality: 0.001,
+  maxDecay: 0.15,
+} as const;
 
 /** Riegel equivalent: predicted = time × (toDistance/fromDistance)^k. */
 export function riegelEquivalentSeconds(
@@ -88,9 +105,6 @@ export function computeSessionBenchmarkEquivalentSeconds(
   if (distanceMeters <= 0 || durationSeconds <= 0) return null;
 
   if (sport === "walk") {
-    // Walking pace is close to distance-invariant (steady-state effort, not
-    // a race distance) — score the session's own per-km pace directly
-    // rather than Riegel-projecting it to a fixed distance.
     const pacePerKm = durationSeconds / (distanceMeters / 1000);
     return hrAdjustedEquivalentSeconds(pacePerKm, avgHR, HR_ADJUST_REF_HR.walk);
   }
@@ -100,6 +114,69 @@ export function computeSessionBenchmarkEquivalentSeconds(
   return hrAdjustedEquivalentSeconds(projected, avgHR, HR_ADJUST_REF_HR[sport]);
 }
 
+/** True when a session's equivalent is close enough to stored capability to count as quality (Part E1). */
+export function isQualityEffort(storedSeconds: number, equivSeconds: number): boolean {
+  if (storedSeconds <= 0 || equivSeconds <= 0) return false;
+  return equivSeconds <= storedSeconds * QUALITY_PROXIMITY;
+}
+
+/**
+ * Asymmetric memory update (Part E1): easy runs never move prediction slower.
+ */
+export function updatePrediction(storedSec: number, equivSec: number): number {
+  if (equivSec < storedSec) {
+    return storedSec + (equivSec - storedSec) * IMPROVE_RATE;
+  }
+  if (isQualityEffort(storedSec, equivSec)) {
+    return storedSec + (equivSec - storedSec) * REGRESS_RATE;
+  }
+  return storedSec;
+}
+
+/**
+ * Time-based decay on stored prediction (Part E2).
+ * `daysSinceAnyRun` — days since last session of any intensity.
+ * `daysSinceQuality` — days since last quality effort.
+ */
+export function applyDecay(
+  storedSec: number,
+  daysSinceAnyRun: number,
+  daysSinceQuality: number
+): number {
+  let d = 0;
+  if (daysSinceAnyRun > PREDICTION_DECAY.graceDays) {
+    d =
+      PREDICTION_DECAY.ratePerWeekInactive *
+      ((daysSinceAnyRun - PREDICTION_DECAY.graceDays) / 7);
+  } else if (daysSinceQuality > PREDICTION_DECAY.qualityGraceDays) {
+    d =
+      PREDICTION_DECAY.ratePerWeekNoQuality *
+      ((daysSinceQuality - PREDICTION_DECAY.qualityGraceDays) / 7);
+  }
+  return storedSec * (1 + Math.min(d, PREDICTION_DECAY.maxDecay));
+}
+
+/** Apply decay to a stored benchmark before using it for scoring. */
+export function effectiveStoredPrediction(
+  storedSeconds: number,
+  lastRunAt: Date | string | null | undefined,
+  lastQualityAt: Date | string | null | undefined,
+  now: Date = new Date()
+): number {
+  const nowMs = now.getTime();
+  const daysSince = (at: Date | string | null | undefined) => {
+    if (!at) return Infinity;
+    const ms = typeof at === "string" ? new Date(at).getTime() : at.getTime();
+    if (!Number.isFinite(ms)) return Infinity;
+    return Math.max(0, (nowMs - ms) / 86_400_000);
+  };
+  return applyDecay(
+    storedSeconds,
+    daysSince(lastRunAt),
+    daysSince(lastQualityAt)
+  );
+}
+
 /**
  * Asymmetric memory update: blend this session's benchmark-equivalent into
  * the previously stored prediction. Seeds the prediction on the first
@@ -107,7 +184,14 @@ export function computeSessionBenchmarkEquivalentSeconds(
  */
 export function blendPredictedBenchmark(previousSeconds: number | null, sessionSeconds: number): number {
   if (previousSeconds == null || !Number.isFinite(previousSeconds)) return sessionSeconds;
-  const gap = sessionSeconds - previousSeconds; // negative = session is faster than the stored prediction
-  const pull = gap < 0 ? FASTER_PULL_FACTOR : SLOWER_NUDGE_FACTOR;
-  return previousSeconds + gap * pull;
+  return updatePrediction(previousSeconds, sessionSeconds);
+}
+
+/** Whether this session should refresh the last-quality timestamp. */
+export function sessionCountsAsQuality(
+  previousSeconds: number | null,
+  sessionSeconds: number
+): boolean {
+  if (previousSeconds == null) return true;
+  return sessionSeconds <= previousSeconds || isQualityEffort(previousSeconds, sessionSeconds);
 }

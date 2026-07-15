@@ -15,6 +15,7 @@ import {
   resolveScoringWeight,
   type WeightEntryMode,
 } from "@/lib/scoring/weight-entry";
+import { requireScoringSex } from "@/lib/scoring/adapters";
 import {
   computeIndexes,
   type IndexResult,
@@ -148,7 +149,7 @@ function scoreGymSession(
     options: { useGL: input.useGL ?? false },
   });
 
-  const sex: Sex = input.profile.gender === "female" ? "female" : "male";
+  const sex = requireScoringSex(input.profile.gender);
   const isPremium = input.isPremium ?? false;
   const results: ScoreStrengthResult[] = [];
   const strengthScoreRows: NonNullable<ActivityScoreOutput["strengthScoreRows"]> = [];
@@ -166,13 +167,18 @@ function scoreGymSession(
     const result = scoreStrength({
       liftKey: ex.exercise_name,
       history,
-      latestSet: { weightKg: resolved.scoringWeightKg, reps: top.reps },
+      latestSet: {
+        weightKg: resolved.scoringWeightKg,
+        reps: top.reps,
+        repsInReserve: top.reps_in_reserve ?? null,
+      },
       bodyweightKg: bodyweight,
       sex,
       age: input.profile.age ?? null,
       isPremium,
       isBodyweightRelative: resolved.isBodyweightRelative,
       weightEntryMode: resolved.mode,
+      exerciseName: ex.exercise_name,
     });
     results.push(result);
 

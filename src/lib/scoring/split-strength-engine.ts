@@ -44,7 +44,16 @@
  *    near-max attempts as they get logged (see `nextTier`/`suggestion`).
  */
 
-import { bestEstimate1RM } from "@/lib/scoring/strength/one-rm";
+import {
+  bestEstimate1RM,
+  oneRMVarianceFlag,
+  weightedCalisthenic1RM,
+  type ExerciseClass,
+} from "@/lib/scoring/strength/one-rm";
+import {
+  resolveScoringWeight,
+  type WeightEntryMode,
+} from "@/lib/scoring/weight-entry";
 
 export type Sex = "male" | "female";
 
@@ -65,6 +74,8 @@ export interface LoggedSet {
   reps: number;
   /** ISO timestamp of the session this set was logged in. */
   performedAt: string;
+  /** Reps in reserve — blank means near failure (Part B3). */
+  repsInReserve?: number | null;
 }
 
 export interface ScoreStrengthInput {
@@ -73,15 +84,19 @@ export interface ScoreStrengthInput {
   /** Full logged history for this lift across all past sessions (any order). Required for the premium adaptive path. */
   history: LoggedSet[];
   /** Most recent/best set from the current session — the free-tier path scores off this alone. */
-  latestSet: { weightKg: number; reps: number };
+  latestSet: { weightKg: number; reps: number; repsInReserve?: number | null };
+  /** User-stated 1RM for variance guard (Part B4) — optional. */
+  statedOneRMKg?: number | null;
   bodyweightKg: number;
   sex: Sex;
   age: number | null;
   isPremium: boolean;
   /** When true, latestSet.weightKg is added load on top of bodyweight (dips, pull-ups). */
   isBodyweightRelative?: boolean;
-  /** How weight was logged — doubles for per-hand when resolving history sets. */
-  weightEntryMode?: import("@/lib/scoring/weight-entry").WeightEntryMode;
+  /** How weight was logged — per hand / total / added when resolving history sets. */
+  weightEntryMode?: WeightEntryMode;
+  /** Exercise name for convention-aware history weight resolution. */
+  exerciseName?: string;
 }
 
 export interface NextTierTarget {
@@ -169,6 +184,11 @@ const ACCESSORY_MAP: Record<string, LiftAnchor> = {
   cableFly: { anchorRatio: 0.3823, category: "chest", bodyPart: "upperBody" },
   pecDeck: { anchorRatio: 0.8583, category: "chest", bodyPart: "upperBody" },
   tricepPushdown: { anchorRatio: 0.3138, category: "arms", bodyPart: "upperBody" },
+  tricepPushdownSingleArm: { anchorRatio: 0.153, category: "arms", bodyPart: "upperBody" },
+  dbCurl: { anchorRatio: 0.247, category: "arms", bodyPart: "upperBody" },
+  hammerCurl: { anchorRatio: 0.202, category: "arms", bodyPart: "upperBody" },
+  skullcrusher: { anchorRatio: 0.22, category: "arms", bodyPart: "upperBody" },
+  cableCurl: { anchorRatio: 0.28, category: "arms", bodyPart: "upperBody" },
   singleArmPushdown: { anchorRatio: 0.189, category: "arms", bodyPart: "upperBody" },
   dbShoulderPress: { anchorRatio: 0.216, category: "shoulders", bodyPart: "upperBody" },
   lateralRaise: { anchorRatio: 0.1525, category: "shoulders", bodyPart: "upperBody" },
@@ -212,12 +232,14 @@ const LIFT_ALIASES: Record<string, string> = {
   "dumbbell fly": "cableFly", "incline dumbbell fly": "cableFly",
   "pec deck": "pecDeck",
   "rope pushdown": "tricepPushdown", "tricep pushdown": "tricepPushdown", "tricep extension": "tricepPushdown",
-  "single arm pushdown": "singleArmPushdown", "skull crusher": "tricepPushdown", "overhead tricep extension": "tricepPushdown",
+  "single arm pushdown": "tricepPushdownSingleArm",
+  "skull crusher": "skullcrusher", "overhead tricep extension": "tricepPushdown",
   "cable overhead extension": "tricepPushdown", "dumbbell kickback": "tricepPushdown", "jm press": "tricepPushdown",
   "dumbbell shoulder press": "dbShoulderPress", "seated dumbbell press": "dbShoulderPress", "machine shoulder press": "dbShoulderPress", "arnold press": "dbShoulderPress",
   "cable lateral raise": "lateralRaise", "machine lateral raise": "lateralRaise", "front raise": "lateralRaise", "rear delt fly": "lateralRaise", "reverse pec deck": "lateralRaise", "upright row": "lateralRaise", "cable rear delt pull": "lateralRaise",
   "dumbbell row": "dbRow", "single arm cable row": "dbRow", "seated cable row": "dbRow", "inverted row": "dbRow", "face pull": "dbRow", "machine row": "dbRow",
-  "ez bar curl": "barbellCurl", "dumbbell curl": "barbellCurl", "hammer curl": "barbellCurl", "cross body hammer curl": "barbellCurl", "cable curl": "barbellCurl", "bayesian cable curl": "barbellCurl", "concentration curl": "barbellCurl", "reverse curl": "barbellCurl", "wrist curl": "barbellCurl",
+  "ez bar curl": "barbellCurl", "dumbbell curl": "dbCurl", "hammer curl": "hammerCurl", "cross body hammer curl": "hammerCurl", "cable curl": "cableCurl", "bayesian cable curl": "cableCurl", "concentration curl": "dbCurl", "reverse curl": "barbellCurl", "wrist curl": "barbellCurl",
+  "skull crushers": "skullcrusher", "dumbbell skull crusher": "skullcrusher",
   "machine preacher curl": "preacherCurl", "spider curl": "preacherCurl",
   "close grip lat pulldown": "latPulldown",
   "leg extension": "legExtension", "single leg extension": "legExtension",
@@ -275,17 +297,58 @@ const GENERIC_CATEGORY_ANCHORS: Record<string, LiftAnchor> = {
 const DEFAULT_GENERIC_ANCHOR: LiftAnchor = { anchorRatio: 0.35, category: "other", bodyPart: "upperBody" };
 
 /**
- * Female standard, expressed as a fraction of the male anchor, derived from
- * Legion/Henriques female-vs-male strength-standard data. ESTIMATES — refine
- * with real female lifter data (see roadmap). Verified: a woman benching
- * 84kg at 83kg bodyweight scores ~850, matching a man benching 140kg —
- * equivalent relative strength, equivalent score.
+ * Female standard as a fraction of the male anchor, by movement region (Part A).
+ * Lower factor = more boost. `upper` and `pull` calibrated from real female-lifter
+ * data; `lowerBody` unchanged — needs barbell squat/RDL to calibrate.
  */
 export const SEX_FACTORS: Record<BodyPart, number> = {
   lowerBody: 0.78,
-  upperBody: 0.60,
-  pull: 0.65,
+  upperBody: 0.85,
+  pull: 0.73,
 };
+
+/** Exercise class for 1RM coefficient selection (Part D). */
+export const EXERCISE_CLASS: Record<string, ExerciseClass> = {
+  bench: "compound",
+  squat: "compound",
+  deadlift: "compound",
+  ohp: "compound",
+  barbellRow: "compound",
+  frontSquat: "compound",
+  inclineBench: "compound",
+  weightedPullup: "compound",
+  weightedDips: "compound",
+  pushUp: "compound",
+  inclineDbPress: "accessory",
+  flatDbPress: "accessory",
+  machineChestPress: "accessory",
+  pecDeck: "accessory",
+  dbShoulderPress: "accessory",
+  latPulldown: "accessory",
+  legExtension: "accessory",
+  legPress: "accessory",
+  walkingLunge: "accessory",
+  bulgarianSplit: "accessory",
+  calfRaise: "accessory",
+  hipAdduction: "accessory",
+  legCurl: "accessory",
+  dbRow: "accessory",
+  tricepPushdown: "isolation",
+  tricepPushdownSingleArm: "isolation",
+  dbCurl: "isolation",
+  hammerCurl: "isolation",
+  skullcrusher: "isolation",
+  cableCurl: "isolation",
+  cableFly: "isolation",
+  lateralRaise: "isolation",
+  preacherCurl: "isolation",
+  barbellCurl: "isolation",
+  singleArmPushdown: "isolation",
+};
+
+export function exerciseClassFor(resolvedKey: string): ExerciseClass {
+  return EXERCISE_CLASS[resolvedKey] ?? "accessory";
+}
 
 /**
  * Gentle Masters-style age curve, applied as a multiplier on the athlete's
@@ -343,6 +406,28 @@ function bodyweightFraction(resolvedKey: string): number {
   return BODYWEIGHT_FRACTIONS[resolvedKey] ?? 1.0;
 }
 
+function estimate1RMFromSet(
+  weightKg: number,
+  reps: number,
+  exerciseClass: ExerciseClass,
+  isBodyweightRelative: boolean,
+  bodyweightKg: number,
+  loadFraction: number,
+  repsInReserve?: number | null
+): number {
+  const loadedBodyweight = bodyweightKg * loadFraction;
+  if (isBodyweightRelative) {
+    return weightedCalisthenic1RM(
+      weightKg,
+      reps,
+      loadedBodyweight,
+      exerciseClass,
+      repsInReserve
+    );
+  }
+  return bestEstimate1RM(weightKg, reps, exerciseClass, repsInReserve);
+}
+
 /** Sub-maximal sets (no low-rep/near-max data) read ~3-14% low on formula-based 1RM estimates; this is the midpoint correction, shared by both the adaptive and single-set paths. */
 const SUB_MAX_BIAS_CORRECTION = 1.06;
 
@@ -357,8 +442,13 @@ const SUB_MAX_BIAS_CORRECTION = 1.06;
  * corrections overshoots past what either was individually validated
  * against — see BRIEF-3-strength-1rm-calibration.md §1.
  */
-function subMaxBiasCorrection(hasLowRepData: boolean, isBodyweightRelative: boolean): number {
+function subMaxBiasCorrection(
+  hasLowRepData: boolean,
+  isBodyweightRelative: boolean,
+  exerciseClass: ExerciseClass = "compound"
+): number {
   if (isBodyweightRelative) return 1.0;
+  if (exerciseClass === "isolation") return 1.0;
   return hasLowRepData ? 1.0 : SUB_MAX_BIAS_CORRECTION;
 }
 
@@ -470,8 +560,12 @@ interface AdaptiveEstimate {
  */
 function effectiveSetWeight(
   weightKg: number,
-  weightEntryMode?: import("@/lib/scoring/weight-entry").WeightEntryMode
+  weightEntryMode?: WeightEntryMode,
+  exerciseName?: string
 ): number {
+  if (exerciseName) {
+    return resolveScoringWeight(weightKg, exerciseName, weightEntryMode).scoringWeightKg;
+  }
   return weightEntryMode === "per_hand" ? weightKg * 2 : weightKg;
 }
 
@@ -479,16 +573,24 @@ function adaptiveOneRM(
   history: LoggedSet[],
   bodyweightKg: number,
   isBodyweightRelative: boolean,
-  weightEntryMode?: import("@/lib/scoring/weight-entry").WeightEntryMode,
+  exerciseClass: ExerciseClass,
+  weightEntryMode?: WeightEntryMode,
+  exerciseName?: string,
   loadFraction = 1.0
 ): AdaptiveEstimate {
   const now = Date.now();
   const loadedBodyweight = bodyweightKg * loadFraction;
   const weighted = history.map((s) => {
-    const logged = effectiveSetWeight(s.weightKg, weightEntryMode);
-    const effectiveWeight = isBodyweightRelative ? loadedBodyweight + logged : logged;
-    const totalE1rm = bestEstimate1RM(effectiveWeight, s.reps);
-    const e1rm = isBodyweightRelative ? totalE1rm - loadedBodyweight : totalE1rm;
+    const logged = effectiveSetWeight(s.weightKg, weightEntryMode, exerciseName);
+    const e1rm = estimate1RMFromSet(
+      logged,
+      s.reps,
+      exerciseClass,
+      isBodyweightRelative,
+      bodyweightKg,
+      loadFraction,
+      s.repsInReserve
+    );
     const daysAgo = Math.max(0, (now - new Date(s.performedAt).getTime()) / 86_400_000);
     const recencyWeight = Math.exp(-daysAgo / 180); // ~6-month half-life
     const repWeight = s.reps <= 3 ? 1.0 : s.reps <= 6 ? 0.8 : s.reps <= 10 ? 0.55 : 0.35;
@@ -500,7 +602,7 @@ function adaptiveOneRM(
   const maxE1rm = Math.max(...weighted.map((w) => w.e1rm));
 
   const hasLowRepData = weighted.some((w) => w.reps <= 3);
-  const biasCorrection = subMaxBiasCorrection(hasLowRepData, isBodyweightRelative);
+  const biasCorrection = subMaxBiasCorrection(hasLowRepData, isBodyweightRelative, exerciseClass);
 
   const oneRM = (maxE1rm * 0.6 + weightedAvg * 0.4) * biasCorrection;
 
@@ -536,11 +638,12 @@ export function scoreStrength(input: ScoreStrengthInput): ScoreStrengthResult {
   const appliedFactors: string[] = [];
 
   const { anchor, source, resolvedKey } = resolveLiftAnchor(liftKey);
+  const exerciseClass = exerciseClassFor(resolvedKey);
   if (source === "generic") flags.push("estimated-generic-standard");
   const isBodyweightRelative =
     input.isBodyweightRelative ?? BODYWEIGHT_RELATIVE_LIFTS.has(resolvedKey);
   const loadFraction = bodyweightFraction(resolvedKey);
-  const loadedBodyweight = bodyweightKg * loadFraction;
+  const exerciseName = input.exerciseName ?? liftKey;
 
   let oneRM: number;
   let oneRMConfidence: number;
@@ -552,7 +655,9 @@ export function scoreStrength(input: ScoreStrengthInput): ScoreStrengthResult {
       history,
       bodyweightKg,
       isBodyweightRelative,
+      exerciseClass,
       input.weightEntryMode,
+      exerciseName,
       loadFraction
     );
     oneRM = adaptive.oneRM;
@@ -560,19 +665,42 @@ export function scoreStrength(input: ScoreStrengthInput): ScoreStrengthResult {
     trend = adaptive.trend;
     oneRMBandKg = adaptive.band;
   } else {
-    const effectiveWeight = isBodyweightRelative
-      ? loadedBodyweight + latestSet.weightKg
-      : latestSet.weightKg;
-    const rawEstimate = bestEstimate1RM(effectiveWeight, latestSet.reps);
-    // Subtract bodyweight back out *before* the (skipped, for this category —
-    // see subMaxBiasCorrection) bias correction, not after: multiplying a
-    // correction into the total load and only then subtracting amplifies it
-    // hugely on the much smaller added-weight result. Kept in this order so
-    // the two corrections stay independent and composable if that changes.
-    const rawAddedWeight = isBodyweightRelative ? rawEstimate - loadedBodyweight : rawEstimate;
-    oneRM = rawAddedWeight * subMaxBiasCorrection(latestSet.reps <= 3, isBodyweightRelative);
-    oneRMConfidence = latestSet.reps <= 3 ? 0.85 : latestSet.reps <= 6 ? 0.7 : 0.5;
-    if (latestSet.reps > 8) flags.push("1rm-estimate-low-confidence");
+    const scoringWeight = latestSet.weightKg;
+    oneRM = estimate1RMFromSet(
+      scoringWeight,
+      latestSet.reps,
+      exerciseClass,
+      isBodyweightRelative,
+      bodyweightKg,
+      loadFraction,
+      latestSet.repsInReserve
+    );
+    oneRM *= subMaxBiasCorrection(
+      latestSet.reps + (latestSet.repsInReserve ?? 0) <= 3,
+      isBodyweightRelative,
+      exerciseClass
+    );
+    const effectiveRepsTotal =
+      latestSet.reps + (latestSet.repsInReserve ?? 0);
+    oneRMConfidence =
+      effectiveRepsTotal <= 3 ? 0.85 : effectiveRepsTotal <= 6 ? 0.7 : 0.5;
+    if (effectiveRepsTotal > 8 && (latestSet.repsInReserve ?? 0) === 0) {
+      flags.push("1rm-estimate-low-confidence");
+    }
+  }
+
+  if (
+    input.statedOneRMKg != null &&
+    input.statedOneRMKg > 0 &&
+    oneRMVarianceFlag(
+      latestSet.weightKg,
+      latestSet.reps,
+      input.statedOneRMKg,
+      exerciseClass,
+      latestSet.repsInReserve
+    )
+  ) {
+    flags.push("1rm-set-variance");
   }
 
   if (oneRM <= 0 || bodyweightKg <= 0) {
@@ -600,6 +728,7 @@ export function scoreStrength(input: ScoreStrengthInput): ScoreStrengthResult {
     effectiveAnchor *= sexFactor;
     appliedFactors.push(`sex:female ×${sexFactor} standard (beta)`);
     flags.push("sex-factor-beta");
+    flags.push("female-strength-beta");
   }
 
   if (age != null && age > 35) {
@@ -620,8 +749,12 @@ export function scoreStrength(input: ScoreStrengthInput): ScoreStrengthResult {
 
   const suggestion =
     isPremium && oneRMConfidence < 0.7
-      ? "Log a heavy set (1–3 reps close to failure) to sharpen this estimate."
-      : null;
+      ? "Log a heavier set (1–3 reps close to failure) to sharpen this estimate."
+      : flags.includes("1rm-estimate-low-confidence")
+        ? "Log a heavier set near failure to sharpen your 1RM."
+        : flags.includes("1rm-set-variance")
+          ? "This 1RM looks inconsistent with your logged set. Was the set not near failure, or is the 1RM a different setup?"
+          : null;
 
   return {
     liftKey: resolvedKey,

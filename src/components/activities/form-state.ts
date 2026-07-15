@@ -12,6 +12,8 @@ export interface SetRowState {
   weight: string;
   reps: string;
   rpe: string;
+  /** Reps in reserve — optional (Part B3). */
+  repsInReserve: string;
 }
 
 export interface ExerciseRowState {
@@ -101,10 +103,10 @@ export function nextSetId(): string {
 export function createSetRow(previous?: SetRowState): SetRowState {
   return {
     id: nextSetId(),
-    // Smart default: carry the previous set's loading scheme forward.
     weight: previous?.weight ?? "",
     reps: previous?.reps ?? "",
     rpe: "",
+    repsInReserve: previous?.repsInReserve ?? "",
   };
 }
 
@@ -226,6 +228,7 @@ export function restoreDraftState(
                   weight: str(s.weight, ""),
                   reps: str(s.reps, ""),
                   rpe: str(s.rpe, ""),
+                  repsInReserve: str(s.repsInReserve, ""),
                 }))
             : [
                 {
@@ -233,6 +236,7 @@ export function restoreDraftState(
                   weight: str(row.weight, ""),
                   reps: str(row.reps, ""),
                   rpe: str(row.rpe, ""),
+                  repsInReserve: "",
                 },
               ];
 
@@ -625,10 +629,19 @@ export function validateAndBuildPayload(
           max: 10,
           label: "RPE",
         });
+        const rirRaw = s.repsInReserve.trim();
+        const rir = rirRaw
+          ? requireNumber(setKey("rir"), rirRaw, {
+              min: 0,
+              max: 10,
+              label: "RIR",
+            })
+          : undefined;
         return {
           weight_kg: s.weight.trim() === "" ? 0 : weight ?? 0,
           reps: Math.round(reps ?? 0),
           rpe: setRpe ?? null,
+          reps_in_reserve: rir ?? null,
         };
       });
 

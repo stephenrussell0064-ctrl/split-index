@@ -11,6 +11,8 @@ import type { CardioResult } from "@/lib/scoring/cardio-activity";
 import {
   computeSessionBenchmarkEquivalentSeconds,
   blendPredictedBenchmark,
+  effectiveStoredPrediction,
+  sessionCountsAsQuality,
 } from "@/lib/scoring/cardio-predictions";
 import { isEnduranceSport } from "@/lib/scoring/engine";
 import { isPremiumUser } from "@/lib/retention/trial";
@@ -267,11 +269,12 @@ export async function POST(request: Request) {
   // session for a sport has nothing to blend into, so it should be scored
   // (and confidence-flagged) as session-only, not "memory-backed".
   let storedPredictionForScoring: number | null = null;
+  let lastQualityAt: string | null = null;
   if (isEnduranceSport(body.sport)) {
     benchmarkSport = mapSportToBenchmarkSport(body.sport);
     const { data: priorPrediction } = await supabase
       .from("predicted_benchmarks")
-      .select("benchmark_seconds, sample_count")
+      .select("benchmark_seconds, sample_count, updated_at, last_quality_at")
       .eq("user_id", user.id)
       .eq("sport", benchmarkSport)
       .maybeSingle();
@@ -284,11 +287,23 @@ export async function POST(request: Request) {
       body.avg_heart_rate
     );
     if (sessionEquivalentSeconds !== null) {
+      const decayedPrior =
+        priorPrediction?.benchmark_seconds != null
+          ? effectiveStoredPrediction(
+              priorPrediction.benchmark_seconds,
+              priorPrediction.updated_at,
+              priorPrediction.last_quality_at
+            )
+          : null;
       newPredictedBenchmarkSeconds = blendPredictedBenchmark(
-        priorPrediction?.benchmark_seconds ?? null,
+        decayedPrior,
         sessionEquivalentSeconds
       );
-      if (priorPrediction?.benchmark_seconds != null) {
+      const nowIso = new Date().toISOString();
+      lastQualityAt = sessionCountsAsQuality(decayedPrior, sessionEquivalentSeconds)
+        ? nowIso
+        : (priorPrediction?.last_quality_at ?? nowIso);
+      if (decayedPrior != null) {
         storedPredictionForScoring = newPredictedBenchmarkSeconds;
       }
     }
@@ -387,6 +402,7 @@ export async function POST(request: Request) {
         benchmark_seconds: newPredictedBenchmarkSeconds,
         sample_count: newPredictedBenchmarkSampleCount,
         last_activity_id: activity.id,
+        last_quality_at: lastQualityAt,
         updated_at: new Date().toISOString(),
       },
       { onConflict: "user_id,sport" }

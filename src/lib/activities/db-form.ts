@@ -122,6 +122,8 @@ export function activityToFormState(
                 weight: String(s.weight_kg),
                 reps: String(s.reps),
                 rpe: s.rpe ? String(s.rpe) : "",
+                repsInReserve:
+                  s.reps_in_reserve != null ? String(s.reps_in_reserve) : "",
               })),
               notes: exerciseNotes[String(ex.order_index)] ?? "",
               weightEntryMode:

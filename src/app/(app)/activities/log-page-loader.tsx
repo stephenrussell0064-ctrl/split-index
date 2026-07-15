@@ -113,6 +113,7 @@ export async function loadLogPage({
             weight: "",
             reps: String(ex.reps),
             rpe: "",
+            repsInReserve: "",
           })),
           notes: "",
         })),

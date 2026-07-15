@@ -53,11 +53,13 @@ export function SportForm({
   state,
   errors,
   onUpdate,
+  profileGender = null,
 }: {
   sport: SportType;
   state: WorkoutFormState;
   errors: FormErrors;
   onUpdate: UpdateField;
+  profileGender?: import("@/types").Gender | null;
 }) {
   const fields = SPORT_FIELDS[sport];
   const durationSeconds = totalDurationSeconds(state);
@@ -129,7 +131,13 @@ export function SportForm({
       {/* Metrics — distance upfront for cardio; exercises for gym */}
       {isGym ? (
         <ExpandableSection title="Metrics · Strength work" defaultOpen hint="Exercises, sets, reps">
-          <GymExercises state={state} errors={errors} onUpdate={onUpdate} embedded />
+          <GymExercises
+            state={state}
+            errors={errors}
+            onUpdate={onUpdate}
+            embedded
+            profileGender={profileGender}
+          />
         </ExpandableSection>
       ) : (
         <section className="rounded-2xl border border-cardio-border/30 bg-cardio-bg-elevated/5 p-5 sm:p-6 space-y-5">

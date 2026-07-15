@@ -1,10 +1,12 @@
 /**
  * split-strength-engine calibration fixtures — run with:
  *   npx tsx src/lib/scoring/split-strength-engine-check.ts
- *
- * Fixtures from IMPLEMENTATION-BRIEF.md, all at 83kg male. Asserts within ±3.
  */
-import { scoreStrength, ageFactor, type LoggedSet } from "./split-strength-engine";
+import { scoreStrength, ageFactor, SEX_FACTORS, type LoggedSet } from "./split-strength-engine";
+import { weightedCalisthenic1RM, epley1RM } from "./strength/one-rm";
+import { scoreCardioActivity } from "./cardio-activity";
+import { buildCardioInput } from "./adapters";
+import { FEMALE_CARDIO_FACTORS } from "./cardio-benchmarks";
 
 let failed = 0;
 
@@ -64,17 +66,102 @@ for (const [lift, oneRM, expectedScore, expectedTier] of fixtures) {
   assertEqual(`${lift} -> tier`, result.tier, expectedTier);
 }
 
-console.log("\n— Sex factor —");
+console.log("\n— Sex factor (Part A + F regression) —");
+assertEqual("SEX_FACTORS.upper", SEX_FACTORS.upperBody, 0.85);
+assertEqual("SEX_FACTORS.pull", SEX_FACTORS.pull, 0.73);
+assertEqual("SEX_FACTORS.lower", SEX_FACTORS.lowerBody, 0.78);
+
+const maleBench = scoreStrength({
+  liftKey: "bench",
+  history: [],
+  latestSet: { weightKg: 100, reps: 1 },
+  bodyweightKg: 83,
+  sex: "male",
+  age: 28,
+  isPremium: false,
+});
 const femaleBench = scoreStrength({
   liftKey: "bench",
   history: [],
-  latestSet: { weightKg: 84, reps: 1 },
+  latestSet: { weightKg: 100, reps: 1 },
   bodyweightKg: 83,
   sex: "female",
   age: 28,
   isPremium: false,
 });
-assertNear("Female 84kg bench @ 83kg BW", femaleBench.score, 791, 5);
+console.log(`Male 100kg bench: ${maleBench.score}, Female 100kg bench: ${femaleBench.score}`);
+if (!(femaleBench.score > maleBench.score)) {
+  console.log("✗ female bench should score higher than male at same absolute weight (easier anchor)");
+  failed += 1;
+} else {
+  console.log("✓ female vs male strength scores differ by sex factor");
+}
+if (!femaleBench.flags.includes("female-strength-beta")) {
+  console.log("✗ female scores should carry female-strength-beta flag");
+  failed += 1;
+}
+
+const maleRun = scoreCardioActivity(
+  buildCardioInput({
+    sport: "running",
+    durationSeconds: 20 * 60,
+    distanceMeters: 5000,
+    gender: "male",
+    age: 30,
+  })
+);
+const femaleRun = scoreCardioActivity(
+  buildCardioInput({
+    sport: "running",
+    durationSeconds: 20 * 60,
+    distanceMeters: 5000,
+    gender: "female",
+    age: 30,
+  })
+);
+if (femaleRun.score === maleRun.score) {
+  console.log("✗ female and male run scores must differ");
+  failed += 1;
+} else {
+  console.log(
+    `✓ female vs male run scores differ (F factor ${FEMALE_CARDIO_FACTORS.run}): ${femaleRun.score} vs ${maleRun.score}`
+  );
+}
+
+console.log("\n— Part B1 weighted calisthenics —");
+const wc1rm = weightedCalisthenic1RM(30, 8, 83);
+assertNear("30kg×8 weighted pull-up 1RM @83kg BW", wc1rm, 48, 2);
+
+console.log("\n— Part D isolation 1RM —");
+const iso1rm = epley1RM(13, 8, "isolation");
+assertNear("13kg×8 isolation pushdown 1RM", iso1rm, 19.9, 0.5);
+
+const saPush = scoreStrength({
+  liftKey: "Single Arm Pushdown",
+  history: [],
+  latestSet: { weightKg: 13, reps: 8 },
+  bodyweightKg: 83,
+  sex: "male",
+  age: 28,
+  isPremium: false,
+  weightEntryMode: "per_hand",
+  exerciseName: "Single Arm Pushdown",
+});
+assertNear("Single-arm pushdown 13×8 end-to-end score", saPush.score, 673, 15);
+
+console.log("\n— Part B2 db curl —");
+const dbCurlScore = scoreStrength({
+  liftKey: "Dumbbell Curl",
+  history: [],
+  latestSet: { weightKg: 32.5, reps: 1 },
+  bodyweightKg: 83,
+  sex: "male",
+  age: 28,
+  isPremium: false,
+  weightEntryMode: "per_hand",
+  exerciseName: "Dumbbell Curl",
+});
+assertNear("32.5kg/hand curl 1RM score", dbCurlScore.score, 675, 40);
 
 console.log("\n— Age factor —");
 assertNear("ageFactor(35)", ageFactor(35), 1.0, 0.001);

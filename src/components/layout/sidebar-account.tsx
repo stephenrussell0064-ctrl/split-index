@@ -13,9 +13,10 @@ interface AccountInfo {
   avatarUrl: string | null;
 }
 
-function initials(name: string, email: string): string {
-  const source = name.trim() || email;
-  const parts = source.split(/[\s@._-]+/).filter(Boolean);
+function initials(name: string): string {
+  const source = name.trim();
+  if (!source) return "?";
+  const parts = source.split(/[\s._-]+/).filter(Boolean);
   return parts
     .slice(0, 2)
     .map((p) => p[0]!.toUpperCase())
@@ -38,13 +39,17 @@ export function SidebarAccount() {
 
       const { data: profile } = await supabase
         .from("profiles")
-        .select("display_name, avatar_url")
+        .select("username, display_name, avatar_url")
         .eq("user_id", user.id)
         .single();
 
       if (cancelled) return;
+      const displayName =
+        profile?.username?.trim() ||
+        profile?.display_name?.trim() ||
+        "";
       setAccount({
-        name: profile?.display_name ?? "",
+        name: displayName,
         email: user.email ?? "",
         avatarUrl: profile?.avatar_url ?? null,
       });
@@ -93,14 +98,16 @@ export function SidebarAccount() {
             />
           ) : (
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-accent to-strength text-xs font-bold text-white ring-1 ring-white/10">
-              {initials(account.name, account.email)}
+              {initials(account.name)}
             </div>
           )}
           <div className="min-w-0">
             <p className="truncate text-sm font-medium">
               {account.name || "Your Profile"}
             </p>
-            <p className="truncate text-xs text-muted">{account.email}</p>
+            {!account.name && (
+              <p className="truncate text-xs text-muted">Complete your profile</p>
+            )}
           </div>
         </Link>
         <button

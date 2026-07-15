@@ -578,6 +578,7 @@ export function ActivityForm({
                     state={currentState}
                     errors={errors}
                     onUpdate={updateField}
+                    profileGender={profileGender}
                   />
                 </motion.div>
               </AnimatePresence>

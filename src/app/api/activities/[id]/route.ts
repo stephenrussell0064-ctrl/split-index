@@ -16,6 +16,8 @@ import type { CardioResult } from "@/lib/scoring/cardio-activity";
 import {
   computeSessionBenchmarkEquivalentSeconds,
   blendPredictedBenchmark,
+  effectiveStoredPrediction,
+  sessionCountsAsQuality,
 } from "@/lib/scoring/cardio-predictions";
 import { isEnduranceSport } from "@/lib/scoring/engine";
 import { isPremiumUser } from "@/lib/retention/trial";
@@ -155,11 +157,12 @@ async function scoreAndPersist(
   // same activity's own previous prediction, since we're re-scoring it) —
   // otherwise it's scored as session-only, not falsely "memory-backed".
   let storedPredictionForScoring: number | null = null;
+  let lastQualityAt: string | null = null;
   if (isEnduranceSport(body.sport)) {
     benchmarkSport = mapSportToBenchmarkSport(body.sport);
     const { data: priorPrediction } = await supabase
       .from("predicted_benchmarks")
-      .select("benchmark_seconds, sample_count, last_activity_id")
+      .select("benchmark_seconds, sample_count, last_activity_id, updated_at, last_quality_at")
       .eq("user_id", userId)
       .eq("sport", benchmarkSport)
       .maybeSingle();
@@ -175,8 +178,20 @@ async function scoreAndPersist(
       body.avg_heart_rate
     );
     if (sessionEquivalentSeconds !== null) {
-      const blendBase = priorIsThisActivity ? null : (priorPrediction?.benchmark_seconds ?? null);
+      const rawBlendBase = priorIsThisActivity ? null : (priorPrediction?.benchmark_seconds ?? null);
+      const blendBase =
+        rawBlendBase != null
+          ? effectiveStoredPrediction(
+              rawBlendBase,
+              priorPrediction?.updated_at,
+              priorPrediction?.last_quality_at
+            )
+          : null;
       newPredictedBenchmarkSeconds = blendPredictedBenchmark(blendBase, sessionEquivalentSeconds);
+      const nowIso = new Date().toISOString();
+      lastQualityAt = sessionCountsAsQuality(blendBase, sessionEquivalentSeconds)
+        ? nowIso
+        : (priorPrediction?.last_quality_at ?? nowIso);
       if (blendBase != null) {
         storedPredictionForScoring = newPredictedBenchmarkSeconds;
       }
@@ -264,6 +279,7 @@ async function scoreAndPersist(
         benchmark_seconds: newPredictedBenchmarkSeconds,
         sample_count: newPredictedBenchmarkSampleCount,
         last_activity_id: activityId,
+        last_quality_at: lastQualityAt,
         updated_at: new Date().toISOString(),
       },
       { onConflict: "user_id,sport" }

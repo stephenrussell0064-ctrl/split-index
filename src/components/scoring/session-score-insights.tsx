@@ -91,7 +91,10 @@ function CardioPremiumStats({ result }: { result: CardioResult }) {
 }
 
 function StrengthRow({ result, liftName }: { result: ScoreStrengthResult; liftName: string }) {
-  const isBeta = result.appliedFactors?.some((f) => f.includes("beta"));
+  const isBeta =
+    result.flags?.includes("female-strength-beta") ||
+    result.flags?.includes("sex-factor-beta") ||
+    result.appliedFactors?.some((f) => f.includes("beta"));
   const isEstimated = result.source === "generic";
   return (
     <div className="rounded-lg border border-gym-border/20 bg-gym-bg/40 p-3">

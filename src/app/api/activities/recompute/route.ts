@@ -20,6 +20,8 @@ import { mapSportToBenchmarkSport } from "@/lib/scoring/adapters";
 import {
   computeSessionBenchmarkEquivalentSeconds,
   blendPredictedBenchmark,
+  effectiveStoredPrediction,
+  sessionCountsAsQuality,
 } from "@/lib/scoring/cardio-predictions";
 import type { BenchmarkSport } from "@/lib/scoring/cardio-benchmarks";
 import { isEnduranceSport } from "@/lib/scoring/engine";
@@ -115,6 +117,8 @@ export async function POST() {
   const predictedBenchmarkSeconds: Partial<Record<BenchmarkSport, number>> = {};
   const predictedBenchmarkSampleCounts: Partial<Record<BenchmarkSport, number>> = {};
   const predictedBenchmarkLastActivityId: Partial<Record<BenchmarkSport, string>> = {};
+  const predictedBenchmarkLastRunAt: Partial<Record<BenchmarkSport, string>> = {};
+  const predictedBenchmarkLastQualityAt: Partial<Record<BenchmarkSport, string>> = {};
 
   for (const activity of activities ?? []) {
     const metadata = activity.metadata as Record<string, unknown> | null;
@@ -146,7 +150,16 @@ export async function POST() {
     let storedPredictionForScoring: number | null = null;
     if (isEnduranceSport(activity.sport)) {
       benchmarkSport = mapSportToBenchmarkSport(activity.sport);
-      const priorValue = predictedBenchmarkSeconds[benchmarkSport] ?? null;
+      const rawPrior = predictedBenchmarkSeconds[benchmarkSport] ?? null;
+      const priorValue =
+        rawPrior != null
+          ? effectiveStoredPrediction(
+              rawPrior,
+              predictedBenchmarkLastRunAt[benchmarkSport] ?? null,
+              predictedBenchmarkLastQualityAt[benchmarkSport] ?? null,
+              new Date(activity.started_at as string)
+            )
+          : null;
       const sessionEquivalentSeconds = computeSessionBenchmarkEquivalentSeconds(
         benchmarkSport,
         activity.distance_meters ?? 0,
@@ -154,9 +167,18 @@ export async function POST() {
         activity.avg_heart_rate
       );
       if (sessionEquivalentSeconds !== null) {
-        predictedBenchmarkSeconds[benchmarkSport] = blendPredictedBenchmark(priorValue, sessionEquivalentSeconds);
+        predictedBenchmarkSeconds[benchmarkSport] = blendPredictedBenchmark(
+          priorValue,
+          sessionEquivalentSeconds
+        );
         predictedBenchmarkSampleCounts[benchmarkSport] =
           (predictedBenchmarkSampleCounts[benchmarkSport] ?? 0) + 1;
+        predictedBenchmarkLastRunAt[benchmarkSport] = activity.started_at as string;
+        if (sessionCountsAsQuality(priorValue, sessionEquivalentSeconds)) {
+          predictedBenchmarkLastQualityAt[benchmarkSport] = activity.started_at as string;
+        } else if (!predictedBenchmarkLastQualityAt[benchmarkSport]) {
+          predictedBenchmarkLastQualityAt[benchmarkSport] = activity.started_at as string;
+        }
         if (priorValue != null) {
           storedPredictionForScoring = predictedBenchmarkSeconds[benchmarkSport]!;
         }
@@ -268,6 +290,7 @@ export async function POST() {
     benchmark_seconds: predictedBenchmarkSeconds[sport]!,
     sample_count: predictedBenchmarkSampleCounts[sport] ?? 1,
     last_activity_id: predictedBenchmarkLastActivityId[sport] ?? null,
+    last_quality_at: predictedBenchmarkLastQualityAt[sport] ?? null,
     updated_at: new Date().toISOString(),
   }));
   if (benchmarkRows.length > 0) {

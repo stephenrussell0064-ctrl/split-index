@@ -10,7 +10,7 @@ interface EmptyDashboardHeroProps {
 }
 
 export function EmptyDashboardHero({ displayName }: EmptyDashboardHeroProps) {
-  const firstName = displayName?.split(" ")[0];
+  const greetingName = displayName?.trim() || null;
 
   return (
     <motion.div
@@ -28,7 +28,7 @@ export function EmptyDashboardHero({ displayName }: EmptyDashboardHeroProps) {
           <Sparkles className="h-7 w-7 text-accent" />
         </div>
         <h2 className="headline-tight text-xl font-bold sm:text-2xl">
-          {firstName ? `${firstName}, your index is unwritten` : "Your index is unwritten"}
+          {greetingName ? `${greetingName}, your index is unwritten` : "Your index is unwritten"}
         </h2>
         <p className="mx-auto mt-3 max-w-lg text-sm leading-relaxed text-muted">
           No baseline guess. Log your first workout and earn a sport-specific score —

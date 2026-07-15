@@ -32,7 +32,7 @@ export function assertScoringInput(input: {
   splitPacesSec?: number[] | null;
   rpe?: number | null;
   exercises?: Array<{ sets: Array<{ weight_kg: number; reps: number; rpe?: number | null }> }>;
-  profile?: { weight_kg?: number | null };
+  profile?: { weight_kg?: number | null; gender?: import("@/types").Gender | null };
 }): void {
   if (!Number.isFinite(input.durationSeconds) || input.durationSeconds <= 0) {
     throw new ScoringInputError("Duration must be greater than zero.");
@@ -97,6 +97,18 @@ export function assertScoringInput(input: {
   const bw = input.profile?.weight_kg;
   if (bw != null && (!Number.isFinite(bw) || bw <= 0 || bw > MAX_BODYWEIGHT_KG)) {
     throw new ScoringInputError("Bodyweight is out of the allowed range.");
+  }
+
+  const gender = input.profile?.gender;
+  if (gender == null) {
+    throw new ScoringInputError(
+      "Set your sex (male or female) in your profile before scoring."
+    );
+  }
+  if (gender !== "male" && gender !== "female") {
+    throw new ScoringInputError(
+      "Set your sex to male or female in your profile before scoring."
+    );
   }
 
   if (input.sport === "gym" && input.exercises?.length) {

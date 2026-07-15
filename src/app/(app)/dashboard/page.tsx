@@ -360,7 +360,10 @@ export default async function DashboardPage() {
 
   const recovery = current.recovery_score ?? 85;
   const fatigue = current.fatigue_score ?? 15;
-  const firstName = profile.display_name?.split(" ")[0];
+  const displayName =
+    profile.username?.trim() ||
+    profile.display_name?.split(" ")[0]?.trim() ||
+    null;
   const sessionHint = buildGreetingRecommendation(
     (profile.preferred_sports ?? []) as SportType[],
     weakerSide
@@ -371,7 +374,7 @@ export default async function DashboardPage() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="headline-tight text-2xl font-bold sm:text-3xl">
-            {firstName ? `Welcome back, ${firstName}` : "Dashboard"}
+            {displayName ? `Welcome back, ${displayName}` : "Welcome back"}
           </h1>
           <p className="mt-1 text-sm text-muted">
             {format(new Date(), "EEEE, MMMM d")} · {sessionHint}
@@ -390,7 +393,7 @@ export default async function DashboardPage() {
         )}
       </div>
 
-      {!hasActivities && <EmptyDashboardHero displayName={profile.display_name} />}
+      {!hasActivities && <EmptyDashboardHero displayName={displayName} />}
 
       <StreakBanner
         streak={streakMetrics.streak}
