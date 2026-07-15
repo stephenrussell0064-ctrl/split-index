@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { createClient } from "@/lib/supabase/client";
 import { authErrorMessage } from "@/lib/supabase/auth-errors";
-import { getAppUrl } from "@/lib/app-url";
+import { buildAuthCallbackUrl } from "@/lib/supabase/auth-callback-url";
 
 export function AuthForm({
   mode,
@@ -26,8 +26,7 @@ export function AuthForm({
   const [error, setError] = useState(initialError ?? "");
   const [message, setMessage] = useState("");
 
-  const authCallbackUrl = () =>
-    `${getAppUrl(typeof window !== "undefined" ? window.location.origin : undefined)}/auth/callback`;
+  const authCallbackUrl = (nextPath = "/dashboard") => buildAuthCallbackUrl(undefined, nextPath);
 
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -42,7 +41,7 @@ export function AuthForm({
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
-          options: { emailRedirectTo: authCallbackUrl() },
+          options: { emailRedirectTo: authCallbackUrl("/onboarding") },
         });
 
         if (error) {
@@ -89,7 +88,7 @@ export function AuthForm({
       const supabase = createClient();
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
-        options: { redirectTo: authCallbackUrl() },
+        options: { redirectTo: authCallbackUrl("/dashboard") },
       });
       if (error) {
         setError(authErrorMessage(error, "Google sign-in failed. Please try again."));

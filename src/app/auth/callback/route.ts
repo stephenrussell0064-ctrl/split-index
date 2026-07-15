@@ -1,7 +1,14 @@
 import { NextResponse } from "next/server";
+import type { EmailOtpType } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { ensureProfileForUser } from "@/lib/supabase/ensure-profile";
 import { getPublicOrigin } from "@/lib/app-url";
+
+function failurePath(next: string, reason: string): string {
+  if (next === "/reset-password") return "/reset-password";
+  if (next === "/onboarding" || next.startsWith("/signup")) return "/signup";
+  return "/login";
+}
 
 function authFailureRedirect(
   request: Request,
@@ -12,55 +19,87 @@ function authFailureRedirect(
   const origin = getPublicOrigin(request);
   console.error("[auth/callback] Sign-in failed:", { reason, detail, next });
 
-  // A password-reset link that's expired, already used (a common cause:
-  // email clients/security scanners "click" links to prescan them before
-  // the user does, burning the one-time code), or otherwise fails to
-  // exchange isn't a "sign-in was cancelled" event — send it to the reset
-  // page, which already has a clear "this link is invalid or expired,
-  // request a new one" state for exactly this case, instead of the
-  // generic OAuth-flavored login error.
-  if (next === "/reset-password") {
-    return NextResponse.redirect(`${origin}/reset-password`);
-  }
-
+  const path = failurePath(next ?? "/dashboard", reason);
   const params = new URLSearchParams({ error: "auth", reason });
   if (detail) params.set("detail", detail.slice(0, 200));
 
-  return NextResponse.redirect(`${origin}/login?${params.toString()}`);
+  return NextResponse.redirect(`${origin}${path}?${params.toString()}`);
+}
+
+function mapOAuthErrorReason(
+  oauthError: string,
+  errorCode: string | null,
+  otpType: string | null
+): string {
+  if (errorCode === "otp_expired" || errorCode === "expired_token") {
+    return "link_expired";
+  }
+  if (
+    otpType === "signup" ||
+    otpType === "email" ||
+    errorCode === "email_not_confirmed"
+  ) {
+    return "email_confirmation_failed";
+  }
+  if (oauthError === "access_denied") {
+    return "email_confirmation_failed";
+  }
+  return "oauth_denied";
 }
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const code = searchParams.get("code");
+  const tokenHash = searchParams.get("token_hash");
+  const otpType = searchParams.get("type");
   const oauthError = searchParams.get("error");
   const oauthErrorDescription = searchParams.get("error_description");
+  const errorCode = searchParams.get("error_code");
   let next = searchParams.get("next") ?? "/dashboard";
-  // Guard against open redirects: only allow relative paths.
   if (!next.startsWith("/")) next = "/dashboard";
 
   if (oauthError) {
     return authFailureRedirect(
       request,
-      "oauth_denied",
+      mapOAuthErrorReason(oauthError, errorCode, otpType),
       oauthErrorDescription ?? oauthError,
       next
     );
   }
 
-  if (!code) {
-    return authFailureRedirect(request, "missing_code", undefined, next);
-  }
-
   const supabase = await createClient();
-  const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
 
-  if (exchangeError) {
-    return authFailureRedirect(
-      request,
-      "exchange_failed",
-      exchangeError.message,
-      next
-    );
+  if (tokenHash && otpType) {
+    const { error: verifyError } = await supabase.auth.verifyOtp({
+      token_hash: tokenHash,
+      type: otpType as EmailOtpType,
+    });
+
+    if (verifyError) {
+      const reason =
+        verifyError.message.toLowerCase().includes("expired") ||
+        verifyError.message.toLowerCase().includes("invalid")
+          ? "link_expired"
+          : "email_confirmation_failed";
+      return authFailureRedirect(request, reason, verifyError.message, next);
+    }
+  } else if (code) {
+    const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+
+    if (exchangeError) {
+      const lower = exchangeError.message.toLowerCase();
+      const reason =
+        lower.includes("code verifier") ||
+        lower.includes("pkce") ||
+        lower.includes("invalid flow state")
+          ? "exchange_failed"
+          : lower.includes("expired") || lower.includes("already been used")
+            ? "link_expired"
+            : "exchange_failed";
+      return authFailureRedirect(request, reason, exchangeError.message, next);
+    }
+  } else {
+    return authFailureRedirect(request, "missing_code", undefined, next);
   }
 
   const {
@@ -79,7 +118,6 @@ export async function GET(request: Request) {
   const { error: profileError } = await ensureProfileForUser(user);
   if (profileError) {
     console.error("[auth/callback] Profile ensure failed:", profileError);
-    // Session is valid; continue so onboarding can retry via /api/profile/ensure.
   }
 
   const { data: profile } = await supabase
@@ -92,7 +130,9 @@ export async function GET(request: Request) {
     next === "/reset-password"
       ? next
       : profile?.onboarding_completed
-        ? next
+        ? next === "/onboarding"
+          ? "/dashboard"
+          : next
         : "/onboarding";
   const origin = getPublicOrigin(request);
 
