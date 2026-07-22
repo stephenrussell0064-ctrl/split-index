@@ -1,11 +1,21 @@
 import type { SportType, Gender, ExperienceLevel, SessionType } from "@/types";
 import type { Profile as AthleteProfile } from "@/lib/scoring/index-engine";
 import type { CardioInput, CardioType, Sex } from "@/lib/scoring/cardio-activity";
+import { isValidIntervalWorkPiece, isValidFartlekOnPiece } from "@/lib/scoring/cardio/interval-scoring";
 import type { ActivityScore } from "@/lib/scoring/index-engine";
 import type { CardioResult } from "@/lib/scoring/cardio-activity";
 import type { CardioEnrichment } from "@/lib/scoring/cardio/confidence";
 import type { BenchmarkSport } from "@/lib/scoring/cardio-benchmarks";
 import { ScoringInputError } from "@/lib/scoring/input-guards";
+import {
+  computeSessionBenchmarkEquivalentSeconds,
+  computeIntervalBenchmarkEquivalentSeconds,
+} from "@/lib/scoring/cardio-predictions";
+import {
+  intervalEquivalentPaceSecPerKm,
+  intervalTotalWorkDistanceMeters,
+  fartlekEquivalentPaceSecPerKm,
+} from "@/lib/scoring/cardio/interval-scoring";
 
 /** Derive onboarding profile from preferred sports — no form changes required. */
 export function deriveAthleteProfile(preferredSports: SportType[]): AthleteProfile {
@@ -188,7 +198,29 @@ export function buildCardioInput(input: {
   elevationMeters?: number | null;
   temperatureCelsius?: number | null;
   storedPredictionSeconds?: number | null;
+  intervalReps?: number | null;
+  intervalWorkDistanceMeters?: number | null;
+  intervalWorkSeconds?: number | null;
+  intervalRestSeconds?: number | null;
+  intervalWorkAvgHr?: number | null;
+  fartlekOnDistanceMeters?: number | null;
+  fartlekOnSeconds?: number | null;
+  fartlekOnAvgHr?: number | null;
 }): CardioInput {
+  const structuredInterval = {
+    reps: input.intervalReps ?? 0,
+    workDistanceMeters: input.intervalWorkDistanceMeters ?? 0,
+    workSecondsPerRep: input.intervalWorkSeconds ?? 0,
+    restSeconds: input.intervalRestSeconds ?? 0,
+    workAvgHeartRate: input.intervalWorkAvgHr ?? undefined,
+  };
+  const structuredFartlek = {
+    onDistanceMeters: input.fartlekOnDistanceMeters ?? 0,
+    onSeconds: input.fartlekOnSeconds ?? 0,
+    totalDurationSeconds: input.durationSeconds,
+    onAvgHeartRate: input.fartlekOnAvgHr ?? undefined,
+  };
+
   return {
     type: mapSportToCardioType(input.sport),
     benchmarkSport: mapSportToBenchmarkSport(input.sport),
@@ -209,5 +241,71 @@ export function buildCardioInput(input: {
     temperatureCelsius: input.temperatureCelsius ?? undefined,
     rpe: input.rpe ?? undefined,
     storedPredictionSeconds: input.storedPredictionSeconds ?? undefined,
+    structuredInterval: isValidIntervalWorkPiece(structuredInterval) ? structuredInterval : undefined,
+    structuredFartlek: isValidFartlekOnPiece(structuredFartlek) ? structuredFartlek : undefined,
   };
+}
+
+/**
+ * Same benchmark-equivalent projection `buildCardioInput` feeds into the
+ * per-activity score, used standalone by the memory-prediction block in the
+ * activities API routes (which computes `predicted_benchmarks` updates
+ * outside of `scoreCardioActivity`) — kept consistent so a structured
+ * interval/fartlek session updates the stored prediction off the same
+ * work-piece equivalent it was scored with, not the diluted whole-session
+ * average.
+ */
+export function computeBodyBenchmarkEquivalentSeconds(
+  benchmarkSport: BenchmarkSport,
+  body: {
+    distance_meters?: number | null;
+    duration_seconds: number;
+    avg_heart_rate?: number | null;
+    interval_reps?: number | null;
+    interval_work_distance_meters?: number | null;
+    interval_work_seconds?: number | null;
+    interval_rest_seconds?: number | null;
+    interval_work_avg_hr?: number | null;
+    fartlek_on_distance_meters?: number | null;
+    fartlek_on_seconds?: number | null;
+    fartlek_on_avg_hr?: number | null;
+  }
+): number | null {
+  const structuredInterval = {
+    reps: body.interval_reps ?? 0,
+    workDistanceMeters: body.interval_work_distance_meters ?? 0,
+    workSecondsPerRep: body.interval_work_seconds ?? 0,
+    restSeconds: body.interval_rest_seconds ?? 0,
+    workAvgHeartRate: body.interval_work_avg_hr ?? undefined,
+  };
+  if (isValidIntervalWorkPiece(structuredInterval)) {
+    return computeIntervalBenchmarkEquivalentSeconds(
+      benchmarkSport,
+      intervalTotalWorkDistanceMeters(structuredInterval),
+      intervalEquivalentPaceSecPerKm(structuredInterval),
+      structuredInterval.workAvgHeartRate
+    );
+  }
+
+  const structuredFartlek = {
+    onDistanceMeters: body.fartlek_on_distance_meters ?? 0,
+    onSeconds: body.fartlek_on_seconds ?? 0,
+    totalDurationSeconds: body.duration_seconds,
+    onAvgHeartRate: body.fartlek_on_avg_hr ?? undefined,
+  };
+  if (isValidFartlekOnPiece(structuredFartlek)) {
+    return computeIntervalBenchmarkEquivalentSeconds(
+      benchmarkSport,
+      structuredFartlek.onDistanceMeters,
+      fartlekEquivalentPaceSecPerKm(structuredFartlek),
+      structuredFartlek.onAvgHeartRate
+    );
+  }
+
+  return computeSessionBenchmarkEquivalentSeconds(
+    benchmarkSport,
+    body.distance_meters ?? 0,
+    body.duration_seconds,
+    body.avg_heart_rate
+  );
 }

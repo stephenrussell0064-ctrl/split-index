@@ -31,7 +31,19 @@
 
 import type { SessionType } from "@/types";
 import { timeToScore, type BenchmarkSport } from "@/lib/scoring/cardio-benchmarks";
-import { computeSessionBenchmarkEquivalentSeconds } from "@/lib/scoring/cardio-predictions";
+import {
+  computeSessionBenchmarkEquivalentSeconds,
+  computeIntervalBenchmarkEquivalentSeconds,
+} from "@/lib/scoring/cardio-predictions";
+import {
+  intervalEquivalentPaceSecPerKm,
+  intervalTotalWorkDistanceMeters,
+  fartlekEquivalentPaceSecPerKm,
+  isValidIntervalWorkPiece,
+  isValidFartlekOnPiece,
+  type IntervalWorkPiece,
+  type FartlekOnPiece,
+} from "@/lib/scoring/cardio/interval-scoring";
 
 export type Sex = 'male' | 'female';
 export type CardioType = 'run' | 'row' | 'swim';
@@ -54,6 +66,10 @@ export interface CardioInput {
   secondHalfPaceSecPerKm?: number;
   experience?: 'beginner' | 'intermediate' | 'advanced';
   sessionType?: SessionType | null;  // self-reported intent (easy, race, ...)
+  /** Structured interval reps — when present, the benchmark equivalent is seeded from work-piece pace (rest-ratio converted) instead of the whole-session average. */
+  structuredInterval?: IntervalWorkPiece | null;
+  /** Fartlek "on" distance/time — same work-piece treatment once resolved to an equivalent pace. */
+  structuredFartlek?: FartlekOnPiece | null;
   rpe?: number | null;                // 1–10 perceived effort
   elevationMeters?: number | null;    // total climb, unlocks a terrain-difficulty bonus
   temperatureCelsius?: number | null; // unlocks a heat/cold-difficulty bonus
@@ -276,14 +292,38 @@ export function scoreCardioActivity(input: CardioInput): CardioResult {
     input.maxHR && input.maxHR > 0 ? input.maxHR : estimateMaxHR(input.age);
   if (input.restingHR && input.restingHR > 0) flags.push('hr-personalized');
 
-  const sessionEquivalentSeconds = computeSessionBenchmarkEquivalentSeconds(
-    input.benchmarkSport,
-    input.distanceMeters,
-    input.durationSeconds,
-    input.avgHR,
-    undefined,
-    { restingHR: input.restingHR, maxHR: hrMaxForPersonalization }
-  );
+  const personalization = { restingHR: input.restingHR, maxHR: hrMaxForPersonalization };
+  let sessionEquivalentSeconds: number | null;
+  if (isValidIntervalWorkPiece(input.structuredInterval)) {
+    sessionEquivalentSeconds = computeIntervalBenchmarkEquivalentSeconds(
+      input.benchmarkSport,
+      intervalTotalWorkDistanceMeters(input.structuredInterval),
+      intervalEquivalentPaceSecPerKm(input.structuredInterval),
+      input.structuredInterval.workAvgHeartRate,
+      undefined,
+      personalization
+    );
+    flags.push('interval-work-piece-scored');
+  } else if (isValidFartlekOnPiece(input.structuredFartlek)) {
+    sessionEquivalentSeconds = computeIntervalBenchmarkEquivalentSeconds(
+      input.benchmarkSport,
+      input.structuredFartlek.onDistanceMeters,
+      fartlekEquivalentPaceSecPerKm(input.structuredFartlek),
+      input.structuredFartlek.onAvgHeartRate,
+      undefined,
+      personalization
+    );
+    flags.push('fartlek-work-piece-scored');
+  } else {
+    sessionEquivalentSeconds = computeSessionBenchmarkEquivalentSeconds(
+      input.benchmarkSport,
+      input.distanceMeters,
+      input.durationSeconds,
+      input.avgHR,
+      undefined,
+      personalization
+    );
+  }
   const anchorSeconds = input.storedPredictionSeconds ?? sessionEquivalentSeconds;
 
   let base: number;

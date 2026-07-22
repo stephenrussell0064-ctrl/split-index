@@ -50,6 +50,7 @@ export const SESSION_TYPE_MODIFIERS: Record<SessionType, number> = {
   tempo: 1.0,
   threshold: 1.1,
   interval: 1.15,
+  fartlek: 1.15,
   race: 1.2,
   other: 0.85,
 };

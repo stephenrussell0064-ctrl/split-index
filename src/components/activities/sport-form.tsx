@@ -214,6 +214,12 @@ export function SportForm({
               <RpeScale value={state.rpe} onChange={(value) => onUpdate("rpe", value)} />
             </Field>
           )}
+          {fields.sessionType && state.sessionType === "interval" && (
+            <IntervalSubForm state={state} errors={errors} onUpdate={onUpdate} />
+          )}
+          {fields.sessionType && state.sessionType === "fartlek" && (
+            <FartlekSubForm state={state} errors={errors} onUpdate={onUpdate} />
+          )}
         </section>
       )}
 
@@ -328,6 +334,148 @@ export function SportForm({
           />
         </Field>
       </ExpandableSection>
+    </div>
+  );
+}
+
+/**
+ * Structured work-piece breakdown for an interval session — reps × work
+ * distance/time + rest between reps. Entirely optional: leaving it blank
+ * scores the session off the whole-session average, same as before this
+ * existed. Filling it in scores off the work-piece pace instead, so the
+ * hard reps aren't diluted by the recovery jogs in between (see
+ * cardio/interval-scoring.ts).
+ */
+function IntervalSubForm({
+  state,
+  errors,
+  onUpdate,
+}: {
+  state: WorkoutFormState;
+  errors: FormErrors;
+  onUpdate: UpdateField;
+}) {
+  return (
+    <div className="space-y-4 rounded-xl border border-white/[0.06] bg-white/[0.015] p-4">
+      <p className="text-xs text-muted/70">
+        Optional — add your rep breakdown to score off work-piece pace instead of the whole-session average (recovery jogs won&apos;t dilute the hard reps).
+      </p>
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <Field label="Reps" error={errors.intervalReps}>
+          <GlassInput
+            type="text"
+            inputMode="numeric"
+            placeholder="6"
+            value={state.intervalReps}
+            invalid={!!errors.intervalReps}
+            onChange={(e) => onUpdate("intervalReps", e.target.value)}
+            className="h-11"
+          />
+        </Field>
+        <Field label="Work distance" error={errors.intervalWorkDistance}>
+          <UnitInput
+            value={state.intervalWorkDistance}
+            unit="m"
+            placeholder="400"
+            invalid={!!errors.intervalWorkDistance}
+            onChange={(e) => onUpdate("intervalWorkDistance", e.target.value)}
+            className="h-11"
+          />
+        </Field>
+        <Field label="Work time /rep" error={errors.intervalWorkSeconds}>
+          <UnitInput
+            value={state.intervalWorkSeconds}
+            unit="sec"
+            placeholder="75"
+            invalid={!!errors.intervalWorkSeconds}
+            onChange={(e) => onUpdate("intervalWorkSeconds", e.target.value)}
+            className="h-11"
+          />
+        </Field>
+        <Field label="Rest between reps" error={errors.intervalRestSeconds}>
+          <UnitInput
+            value={state.intervalRestSeconds}
+            unit="sec"
+            placeholder="90"
+            invalid={!!errors.intervalRestSeconds}
+            onChange={(e) => onUpdate("intervalRestSeconds", e.target.value)}
+            className="h-11"
+          />
+        </Field>
+      </div>
+      <Field
+        label="Avg HR during reps"
+        error={errors.intervalWorkHr}
+        hint="Optional — work-only, not whole-session average"
+      >
+        <UnitInput
+          value={state.intervalWorkHr}
+          unit="bpm"
+          placeholder="172 — skip if not tracked"
+          invalid={!!errors.intervalWorkHr}
+          onChange={(e) => onUpdate("intervalWorkHr", e.target.value)}
+          className="h-11 max-w-[220px]"
+        />
+      </Field>
+    </div>
+  );
+}
+
+/**
+ * Fartlek's unstructured "on/off" speed play, resolved to the same
+ * work-piece treatment as structured intervals once the total "on"
+ * distance/time are known. Optional — same graceful fallback as intervals.
+ */
+function FartlekSubForm({
+  state,
+  errors,
+  onUpdate,
+}: {
+  state: WorkoutFormState;
+  errors: FormErrors;
+  onUpdate: UpdateField;
+}) {
+  return (
+    <div className="space-y-4 rounded-xl border border-white/[0.06] bg-white/[0.015] p-4">
+      <p className="text-xs text-muted/70">
+        Optional — total up your hard (&quot;on&quot;) pieces to score off that work-piece pace instead of the whole-session average.
+      </p>
+      <div className="grid grid-cols-2 gap-4">
+        <Field label="Total &quot;on&quot; distance" error={errors.fartlekOnDistance}>
+          <UnitInput
+            value={state.fartlekOnDistance}
+            unit="m"
+            placeholder="2400"
+            invalid={!!errors.fartlekOnDistance}
+            onChange={(e) => onUpdate("fartlekOnDistance", e.target.value)}
+            className="h-11"
+          />
+        </Field>
+        <Field label="Total &quot;on&quot; time" error={errors.fartlekOnSeconds}>
+          <UnitInput
+            value={state.fartlekOnSeconds}
+            unit="sec"
+            placeholder="600"
+            invalid={!!errors.fartlekOnSeconds}
+            onChange={(e) => onUpdate("fartlekOnSeconds", e.target.value)}
+            className="h-11"
+          />
+        </Field>
+      </div>
+      <Field
+        label="Avg HR during &quot;on&quot; pieces"
+        error={errors.fartlekOnHr}
+        hint="Optional — on-effort only, not whole-session average"
+      >
+        <UnitInput
+          value={state.fartlekOnHr}
+          unit="bpm"
+          placeholder="170 — skip if not tracked"
+          invalid={!!errors.fartlekOnHr}
+          onChange={(e) => onUpdate("fartlekOnHr", e.target.value)}
+          className="h-11 max-w-[220px]"
+        />
+      </Field>
     </div>
   );
 }

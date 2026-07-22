@@ -142,6 +142,29 @@ Keep `RIEGEL_K`, `SLOW_RUN_FACTOR`, benchmark distances, HR ratios, and all anch
 
 ---
 
+## 5a. Structured interval/fartlek scoring — work-piece pace, not whole-session average
+
+A logged **Interval** or **Fartlek** session previously scored identically to a steady run of the same total distance/duration — the whole-session average pace dilutes the hard reps down toward an easy effort and erases the very thing that makes it a quality session. `session_type` was captured but had zero effect on the score.
+
+The log form now accepts an **optional** work/rest breakdown:
+- **Interval:** reps × work distance × work time/rep + rest between reps (+ optional work-only avg HR).
+- **Fartlek:** total "on" (hard-effort) distance + time for the session (+ optional on-effort avg HR).
+
+When supplied, the benchmark-equivalent time is computed from the **work-piece pace**, rest-ratio converted to a race-equivalent, instead of the raw session average — then fed through the *same* Riegel + HR-bonus + personalization pipeline as every other session (§4–5), so it lands on the same anchor tables and the same memory system. Leaving the breakdown blank falls back to the original whole-session-average scoring exactly as before — this is additive, not a replacement.
+
+**Rest-ratio conversion** (`lib/scoring/cardio/interval-scoring.ts`):
+```typescript
+equivPace = workPaceSecPerKm × (1 + BASE_OFFSET + REST_COEF × min(restSec/workSec, REST_CAP))
+// BASE_OFFSET = 0.03, REST_COEF = 0.02, REST_CAP = 1.5
+```
+Harder rest (more recovery per unit of work) means the work pace alone overstates fitness relative to a continuous effort, so the conversion scales the equivalent pace slower to compensate. Fartlek resolves the same way once "on" distance/time are known, treating the remainder of the session as rest.
+
+Work-only avg HR (when supplied) drives the HR bonus instead of the whole-session average, which blends work and rest and is a poor efficiency signal for structured intervals — this mirrors why TRIMP/volume bonuses still use the whole-session duration (real training load, not efficiency).
+
+Keep `INTERVAL_BASE_OFFSET`, `INTERVAL_REST_COEF`, `INTERVAL_REST_CAP` as editable constants; recalibrate against real logged interval sessions the same way the anchor tables were calibrated.
+
+---
+
 ## 6. Monetization — free logging, paywalled intelligence
 
 Do **not** cap logging (that blocks the habit that creates value). Cap insight instead.

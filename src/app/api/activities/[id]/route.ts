@@ -11,10 +11,13 @@ import { assertScoringInput } from "@/lib/scoring/input-guards";
 import { computeSportComparison } from "@/lib/utils/sport-comparison";
 import { SPORT_INDEX_LABELS } from "@/lib/constants/sports";
 import { enrichCardioScore } from "@/lib/scoring/cardio";
-import { cardioResultToEnrichment, mapSportToBenchmarkSport } from "@/lib/scoring/adapters";
+import {
+  cardioResultToEnrichment,
+  mapSportToBenchmarkSport,
+  computeBodyBenchmarkEquivalentSeconds,
+} from "@/lib/scoring/adapters";
 import type { CardioResult } from "@/lib/scoring/cardio-activity";
 import {
-  computeSessionBenchmarkEquivalentSeconds,
   blendPredictedBenchmark,
   effectiveStoredPrediction,
   sessionCountsAsQuality,
@@ -171,12 +174,7 @@ async function scoreAndPersist(
     newPredictedBenchmarkSampleCount = priorIsThisActivity
       ? (priorPrediction?.sample_count ?? 1)
       : (priorPrediction?.sample_count ?? 0) + 1;
-    const sessionEquivalentSeconds = computeSessionBenchmarkEquivalentSeconds(
-      benchmarkSport,
-      body.distance_meters ?? 0,
-      body.duration_seconds,
-      body.avg_heart_rate
-    );
+    const sessionEquivalentSeconds = computeBodyBenchmarkEquivalentSeconds(benchmarkSport, body);
     if (sessionEquivalentSeconds !== null) {
       const rawBlendBase = priorIsThisActivity ? null : (priorPrediction?.benchmark_seconds ?? null);
       const blendBase =
@@ -213,6 +211,14 @@ async function scoreAndPersist(
       sessionType: body.session_type,
       rpe: body.rpe,
       storedPredictionSeconds: storedPredictionForScoring,
+      intervalReps: body.interval_reps,
+      intervalWorkDistanceMeters: body.interval_work_distance_meters,
+      intervalWorkSeconds: body.interval_work_seconds,
+      intervalRestSeconds: body.interval_rest_seconds,
+      intervalWorkAvgHr: body.interval_work_avg_hr,
+      fartlekOnDistanceMeters: body.fartlek_on_distance_meters,
+      fartlekOnSeconds: body.fartlek_on_seconds,
+      fartlekOnAvgHr: body.fartlek_on_avg_hr,
       exercises: body.exercises,
       exerciseHistory,
       isPremium: premium,
@@ -444,6 +450,14 @@ export async function PATCH(
       stroke_type: body.stroke_type,
       temperature_celsius: body.temperature_celsius,
       session_type: body.session_type,
+      interval_reps: body.interval_reps,
+      interval_work_distance_meters: body.interval_work_distance_meters,
+      interval_work_seconds: body.interval_work_seconds,
+      interval_rest_seconds: body.interval_rest_seconds,
+      interval_work_avg_hr: body.interval_work_avg_hr,
+      fartlek_on_distance_meters: body.fartlek_on_distance_meters,
+      fartlek_on_seconds: body.fartlek_on_seconds,
+      fartlek_on_avg_hr: body.fartlek_on_avg_hr,
       rpe: body.rpe,
       notes: body.notes,
       metadata,

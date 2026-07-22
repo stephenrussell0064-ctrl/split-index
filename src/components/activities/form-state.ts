@@ -48,6 +48,16 @@ export interface WorkoutFormState {
   exercises: ExerciseRowState[];
   /** Rowing/ski erg: which of distance/time the athlete enters directly — the other is derived from split. */
   rowInputMode: "distance" | "time";
+  /** Structured interval reps (session type "interval") — optional; scores off work-piece pace instead of the whole-session average when filled in. */
+  intervalReps: string;
+  intervalWorkDistance: string; // meters, per rep
+  intervalWorkSeconds: string; // work time per rep
+  intervalRestSeconds: string; // rest between reps
+  intervalWorkHr: string; // optional, work-only avg HR
+  /** Fartlek "on" (hard-effort) distance/time (session type "fartlek") — optional. */
+  fartlekOnDistance: string; // meters
+  fartlekOnSeconds: string;
+  fartlekOnHr: string; // optional, on-effort avg HR
 }
 
 /** Payload sent to POST/PATCH /api/activities. Extensions beyond ActivityFormData. */
@@ -185,6 +195,14 @@ export function createDefaultState(
     bodyweight: profileWeightKg ? String(profileWeightKg) : "",
     exercises: sport === "gym" ? [createExerciseRow()] : [],
     rowInputMode: "distance",
+    intervalReps: "",
+    intervalWorkDistance: "",
+    intervalWorkSeconds: "",
+    intervalRestSeconds: "",
+    intervalWorkHr: "",
+    fartlekOnDistance: "",
+    fartlekOnSeconds: "",
+    fartlekOnHr: "",
   };
 }
 
@@ -283,6 +301,14 @@ export function restoreDraftState(
     bodyweight: str(d.bodyweight, base.bodyweight),
     exercises: exercises.length > 0 ? exercises : base.exercises,
     rowInputMode: d.rowInputMode === "time" ? "time" : base.rowInputMode,
+    intervalReps: str(d.intervalReps, base.intervalReps),
+    intervalWorkDistance: str(d.intervalWorkDistance, base.intervalWorkDistance),
+    intervalWorkSeconds: str(d.intervalWorkSeconds, base.intervalWorkSeconds),
+    intervalRestSeconds: str(d.intervalRestSeconds, base.intervalRestSeconds),
+    intervalWorkHr: str(d.intervalWorkHr, base.intervalWorkHr),
+    fartlekOnDistance: str(d.fartlekOnDistance, base.fartlekOnDistance),
+    fartlekOnSeconds: str(d.fartlekOnSeconds, base.fartlekOnSeconds),
+    fartlekOnHr: str(d.fartlekOnHr, base.fartlekOnHr),
   };
 }
 
@@ -301,7 +327,9 @@ export function isStateDirty(state: WorkoutFormState): boolean {
     state.splitSeconds !== "" ||
     state.temperature !== "" ||
     state.rpe !== "" ||
-    state.notes !== "";
+    state.notes !== "" ||
+    state.intervalReps !== "" ||
+    state.fartlekOnDistance !== "";
   const exercisesTouched = state.exercises.some(
     (row) =>
       row.name !== "" ||
@@ -317,6 +345,7 @@ const SESSION_TYPE_VALUES: SessionType[] = [
   "tempo",
   "threshold",
   "interval",
+  "fartlek",
   "race",
   "long",
   "other",
@@ -459,6 +488,14 @@ const payloadSchema = z.object({
   stroke_type: z.string().optional(),
   temperature_celsius: z.number().min(-40).max(55).optional(),
   session_type: z.enum(SESSION_TYPE_VALUES).optional(),
+  interval_reps: z.number().int().positive().optional(),
+  interval_work_distance_meters: z.number().positive().optional(),
+  interval_work_seconds: z.number().positive().optional(),
+  interval_rest_seconds: z.number().min(0).optional(),
+  interval_work_avg_hr: z.number().int().min(30).max(250).optional(),
+  fartlek_on_distance_meters: z.number().positive().optional(),
+  fartlek_on_seconds: z.number().positive().optional(),
+  fartlek_on_avg_hr: z.number().int().min(30).max(250).optional(),
   rpe: z.number().min(1).max(10).optional(),
   notes: z.string().optional(),
   exercises: z.array(gymExerciseSchema).optional(),
@@ -563,6 +600,71 @@ export function validateAndBuildPayload(
   const avgPower = fields.power
     ? requireNumber("avgPower", state.avgPower, { min: 1, max: 2500, label: "Power" })
     : undefined;
+
+  // Structured interval/fartlek data is entirely optional — only validated
+  // (and only sent) when the athlete has actually started filling in the
+  // sub-form for the matching session type; otherwise the session scores
+  // off the whole-session average exactly as before.
+  let intervalReps: number | undefined;
+  let intervalWorkDistance: number | undefined;
+  let intervalWorkSeconds: number | undefined;
+  let intervalRestSeconds: number | undefined;
+  let intervalWorkHr: number | undefined;
+  if (fields.sessionType && state.sessionType === "interval" && state.intervalReps.trim() !== "") {
+    intervalReps = requireNumber("intervalReps", state.intervalReps, {
+      required: true,
+      min: 1,
+      max: 100,
+      label: "Reps",
+    });
+    intervalWorkDistance = requireNumber("intervalWorkDistance", state.intervalWorkDistance, {
+      required: true,
+      min: 1,
+      label: "Work distance",
+    });
+    intervalWorkSeconds = requireNumber("intervalWorkSeconds", state.intervalWorkSeconds, {
+      required: true,
+      min: 1,
+      label: "Work time",
+    });
+    intervalRestSeconds = requireNumber("intervalRestSeconds", state.intervalRestSeconds, {
+      required: true,
+      min: 0,
+      label: "Rest time",
+    });
+    intervalWorkHr =
+      state.intervalWorkHr.trim() !== ""
+        ? requireNumber("intervalWorkHr", state.intervalWorkHr, {
+            min: 30,
+            max: 250,
+            label: "Work heart rate",
+          })
+        : undefined;
+  }
+
+  let fartlekOnDistance: number | undefined;
+  let fartlekOnSeconds: number | undefined;
+  let fartlekOnHr: number | undefined;
+  if (fields.sessionType && state.sessionType === "fartlek" && state.fartlekOnDistance.trim() !== "") {
+    fartlekOnDistance = requireNumber("fartlekOnDistance", state.fartlekOnDistance, {
+      required: true,
+      min: 1,
+      label: "On distance",
+    });
+    fartlekOnSeconds = requireNumber("fartlekOnSeconds", state.fartlekOnSeconds, {
+      required: true,
+      min: 1,
+      label: "On time",
+    });
+    fartlekOnHr =
+      state.fartlekOnHr.trim() !== ""
+        ? requireNumber("fartlekOnHr", state.fartlekOnHr, {
+            min: 30,
+            max: 250,
+            label: "On heart rate",
+          })
+        : undefined;
+  }
 
   const temperature = fields.temperature
     ? requireNumber("temperature", state.temperature, {
@@ -679,6 +781,14 @@ export function validateAndBuildPayload(
     stroke_type: fields.stroke ? state.strokeType : undefined,
     temperature_celsius: temperature,
     session_type: fields.sessionType ? state.sessionType : "easy",
+    interval_reps: intervalReps !== undefined ? Math.round(intervalReps) : undefined,
+    interval_work_distance_meters: intervalWorkDistance,
+    interval_work_seconds: intervalWorkSeconds,
+    interval_rest_seconds: intervalRestSeconds,
+    interval_work_avg_hr: intervalWorkHr !== undefined ? Math.round(intervalWorkHr) : undefined,
+    fartlek_on_distance_meters: fartlekOnDistance,
+    fartlek_on_seconds: fartlekOnSeconds,
+    fartlek_on_avg_hr: fartlekOnHr !== undefined ? Math.round(fartlekOnHr) : undefined,
     rpe,
     notes: state.notes.trim() || undefined,
     exercises,
