@@ -72,6 +72,8 @@ export interface Profile {
   height_cm: number | null;
   weight_kg: number | null;
   max_hr: number | null;
+  /** Optional — personalizes cardio HR-reference calibration to this athlete's own heart-rate-reserve range instead of a fixed population value. */
+  resting_hr: number | null;
   gender: Gender | null;
   experience: ExperienceLevel | null;
   training_history_years: number | null;

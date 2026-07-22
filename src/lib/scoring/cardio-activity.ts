@@ -269,11 +269,20 @@ export function scoreCardioActivity(input: CardioInput): CardioResult {
 
   if (!input.avgHR) flags.push('no-hr-data');
 
+  // Personalize the HR-adjustment reference to this athlete's own resting/max
+  // HR when known, instead of the fixed population bpm value — falls back to
+  // the original unpersonalized behaviour otherwise (see resolveReferenceHR).
+  const hrMaxForPersonalization =
+    input.maxHR && input.maxHR > 0 ? input.maxHR : estimateMaxHR(input.age);
+  if (input.restingHR && input.restingHR > 0) flags.push('hr-personalized');
+
   const sessionEquivalentSeconds = computeSessionBenchmarkEquivalentSeconds(
     input.benchmarkSport,
     input.distanceMeters,
     input.durationSeconds,
-    input.avgHR
+    input.avgHR,
+    undefined,
+    { restingHR: input.restingHR, maxHR: hrMaxForPersonalization }
   );
   const anchorSeconds = input.storedPredictionSeconds ?? sessionEquivalentSeconds;
 

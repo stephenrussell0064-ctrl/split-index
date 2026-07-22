@@ -31,6 +31,7 @@ export function ProfileForm({ profile }: ProfileFormProps) {
     height_cm: profile.height_cm?.toString() ?? "",
     weight_kg: profile.weight_kg?.toString() ?? "",
     max_hr: profile.max_hr?.toString() ?? "",
+    resting_hr: profile.resting_hr?.toString() ?? "",
     experience: profile.experience ?? "",
     training_history_years: profile.training_history_years?.toString() ?? "",
   });
@@ -58,6 +59,7 @@ export function ProfileForm({ profile }: ProfileFormProps) {
         height_cm: form.height_cm ? Number(form.height_cm) : null,
         weight_kg: form.weight_kg ? Number(form.weight_kg) : null,
         max_hr: form.max_hr ? Number(form.max_hr) : null,
+        resting_hr: form.resting_hr ? Number(form.resting_hr) : null,
         experience: (form.experience as ExperienceLevel) || null,
         training_history_years: form.training_history_years
           ? Number(form.training_history_years)
@@ -161,6 +163,15 @@ export function ProfileForm({ profile }: ProfileFormProps) {
               max={230}
               value={form.max_hr}
               onChange={(e) => update("max_hr", e.target.value)}
+            />
+            <Input
+              label="Resting HR"
+              type="number"
+              min={30}
+              max={120}
+              value={form.resting_hr}
+              onChange={(e) => update("resting_hr", e.target.value)}
+              hint="Optional — calibrates cardio scoring to your own heart rate range instead of a fixed average"
             />
           </div>
           <div className="mt-4">
