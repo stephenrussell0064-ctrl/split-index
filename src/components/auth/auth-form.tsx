@@ -86,9 +86,13 @@ export function AuthForm({
     setError("");
     try {
       const supabase = createClient();
+      // No `?next=` query param — Supabase's redirectTo allowlist match is
+      // exact against the bare callback URL registered in the dashboard
+      // (see buildAuthCallbackUrl); /auth/callback still routes correctly
+      // by onboarding state without it.
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
-        options: { redirectTo: authCallbackUrl("/dashboard") },
+        options: { redirectTo: buildAuthCallbackUrl(undefined, null) },
       });
       if (error) {
         setError(authErrorMessage(error, "Google sign-in failed. Please try again."));
