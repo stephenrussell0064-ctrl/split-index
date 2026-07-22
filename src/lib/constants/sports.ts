@@ -44,6 +44,7 @@ export const SESSION_TYPES = [
   { value: "tempo", label: "Tempo" },
   { value: "threshold", label: "Threshold" },
   { value: "interval", label: "Interval" },
+  { value: "fartlek", label: "Fartlek" },
   { value: "race", label: "Race" },
   { value: "long", label: "Long" },
   { value: "other", label: "Other" },

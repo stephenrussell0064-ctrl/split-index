@@ -106,6 +106,18 @@ export function activityToFormState(
       ? String(activity.temperature_celsius)
       : "",
     sessionType: activity.session_type ?? base.sessionType,
+    intervalReps: activity.interval_reps ? String(activity.interval_reps) : "",
+    intervalWorkDistance: activity.interval_work_distance_meters
+      ? String(activity.interval_work_distance_meters)
+      : "",
+    intervalWorkSeconds: activity.interval_work_seconds ? String(activity.interval_work_seconds) : "",
+    intervalRestSeconds: activity.interval_rest_seconds ? String(activity.interval_rest_seconds) : "",
+    intervalWorkHr: activity.interval_work_avg_hr ? String(activity.interval_work_avg_hr) : "",
+    fartlekOnDistance: activity.fartlek_on_distance_meters
+      ? String(activity.fartlek_on_distance_meters)
+      : "",
+    fartlekOnSeconds: activity.fartlek_on_seconds ? String(activity.fartlek_on_seconds) : "",
+    fartlekOnHr: activity.fartlek_on_avg_hr ? String(activity.fartlek_on_avg_hr) : "",
     rpe: activity.rpe ? String(activity.rpe) : "",
     notes: activity.notes ?? "",
     bodyweight: bodyweightFromMeta,

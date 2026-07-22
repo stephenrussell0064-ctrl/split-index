@@ -47,6 +47,15 @@ export interface ActivityScoreContext {
   temperatureCelsius?: number | null;
   /** Multi-session memory (seconds at the sport's benchmark distance), already blended by the caller — see cardio-predictions.ts. */
   storedPredictionSeconds?: number | null;
+  /** Structured interval/fartlek work-piece data — optional; see cardio/interval-scoring.ts. */
+  intervalReps?: number | null;
+  intervalWorkDistanceMeters?: number | null;
+  intervalWorkSeconds?: number | null;
+  intervalRestSeconds?: number | null;
+  intervalWorkAvgHr?: number | null;
+  fartlekOnDistanceMeters?: number | null;
+  fartlekOnSeconds?: number | null;
+  fartlekOnAvgHr?: number | null;
   exercises?: GymExerciseInput[];
   /** Full logged history per exercise (across all past sessions), keyed by normalized exercise name — powers the premium adaptive 1RM model. */
   exerciseHistory?: Record<string, LoggedSet[]>;
@@ -252,6 +261,14 @@ function scoreEnduranceSession(
     elevationMeters: input.elevationMeters,
     temperatureCelsius: input.temperatureCelsius,
     storedPredictionSeconds: input.storedPredictionSeconds,
+    intervalReps: input.intervalReps,
+    intervalWorkDistanceMeters: input.intervalWorkDistanceMeters,
+    intervalWorkSeconds: input.intervalWorkSeconds,
+    intervalRestSeconds: input.intervalRestSeconds,
+    intervalWorkAvgHr: input.intervalWorkAvgHr,
+    fartlekOnDistanceMeters: input.fartlekOnDistanceMeters,
+    fartlekOnSeconds: input.fartlekOnSeconds,
+    fartlekOnAvgHr: input.fartlekOnAvgHr,
     ...paceHalves,
   });
 

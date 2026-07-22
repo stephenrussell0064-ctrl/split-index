@@ -171,6 +171,34 @@ export function computeSessionBenchmarkEquivalentSeconds(
   return hrAdjustedEquivalentSeconds(projected, avgHR, refHR);
 }
 
+/**
+ * Project a structured interval/fartlek session to its benchmark distance
+ * from its work-piece equivalent pace (rest-ratio converted — see
+ * cardio/interval-scoring.ts) instead of the whole-session average pace.
+ * Reuses the same Riegel + HR-bonus + personalization pipeline as
+ * `computeSessionBenchmarkEquivalentSeconds`, just seeded from the work
+ * distance/pace rather than the raw session distance/duration.
+ */
+export function computeIntervalBenchmarkEquivalentSeconds(
+  sport: BenchmarkSport,
+  totalWorkDistanceMeters: number,
+  equivalentPaceSecPerKm: number,
+  workAvgHR?: number | null,
+  riegelK: number = RIEGEL_K,
+  personalization?: HrPersonalization
+): number | null {
+  if (totalWorkDistanceMeters <= 0 || equivalentPaceSecPerKm <= 0) return null;
+  const equivalentDurationSeconds = equivalentPaceSecPerKm * (totalWorkDistanceMeters / 1000);
+  return computeSessionBenchmarkEquivalentSeconds(
+    sport,
+    totalWorkDistanceMeters,
+    equivalentDurationSeconds,
+    workAvgHR,
+    riegelK,
+    personalization
+  );
+}
+
 /** True when a session's equivalent is close enough to stored capability to count as quality (Part E1). */
 export function isQualityEffort(storedSeconds: number, equivSeconds: number): boolean {
   if (storedSeconds <= 0 || equivSeconds <= 0) return false;

@@ -31,6 +31,7 @@ export type SessionType =
   | "tempo"
   | "threshold"
   | "interval"
+  | "fartlek"
   | "race"
   | "long"
   | "other";
@@ -113,6 +114,16 @@ export interface Activity {
   stroke_type: string | null;
   temperature_celsius: number | null;
   session_type: SessionType | null;
+  /** Structured interval reps — present only when logged with a per-rep work/rest breakdown. */
+  interval_reps: number | null;
+  interval_work_distance_meters: number | null;
+  interval_work_seconds: number | null;
+  interval_rest_seconds: number | null;
+  interval_work_avg_hr: number | null;
+  /** Fartlek "on" (hard-effort) distance/time — present only when logged with an on/off breakdown. */
+  fartlek_on_distance_meters: number | null;
+  fartlek_on_seconds: number | null;
+  fartlek_on_avg_hr: number | null;
   rpe: number | null;
   notes: string | null;
   source:
@@ -425,6 +436,16 @@ export interface ActivityFormData {
   stroke_type?: string;
   temperature_celsius?: number;
   session_type?: SessionType;
+  /** Structured interval reps — optional; omit to score off the whole-session average as before. */
+  interval_reps?: number;
+  interval_work_distance_meters?: number;
+  interval_work_seconds?: number;
+  interval_rest_seconds?: number;
+  interval_work_avg_hr?: number;
+  /** Fartlek "on" (hard-effort) distance/time — optional; omit to score off the whole-session average as before. */
+  fartlek_on_distance_meters?: number;
+  fartlek_on_seconds?: number;
+  fartlek_on_avg_hr?: number;
   rpe?: number;
   notes?: string;
   exercises?: GymExerciseInput[];

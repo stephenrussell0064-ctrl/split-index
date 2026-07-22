@@ -16,9 +16,8 @@ import { normalizeName } from "@/lib/scoring/split-strength-engine";
 import { defaultWeightEntryMode } from "@/lib/scoring/weight-entry";
 import type { WeightEntryMode } from "@/lib/scoring/weight-entry";
 import { isPremiumUser } from "@/lib/retention/trial";
-import { mapSportToBenchmarkSport } from "@/lib/scoring/adapters";
+import { mapSportToBenchmarkSport, computeBodyBenchmarkEquivalentSeconds } from "@/lib/scoring/adapters";
 import {
-  computeSessionBenchmarkEquivalentSeconds,
   blendPredictedBenchmark,
   effectiveStoredPrediction,
   sessionCountsAsQuality,
@@ -160,12 +159,7 @@ export async function POST() {
               new Date(activity.started_at as string)
             )
           : null;
-      const sessionEquivalentSeconds = computeSessionBenchmarkEquivalentSeconds(
-        benchmarkSport,
-        activity.distance_meters ?? 0,
-        activity.duration_seconds,
-        activity.avg_heart_rate
-      );
+      const sessionEquivalentSeconds = computeBodyBenchmarkEquivalentSeconds(benchmarkSport, activity);
       if (sessionEquivalentSeconds !== null) {
         predictedBenchmarkSeconds[benchmarkSport] = blendPredictedBenchmark(
           priorValue,
@@ -201,6 +195,14 @@ export async function POST() {
           sessionType: activity.session_type,
           rpe: activity.rpe,
           storedPredictionSeconds: storedPredictionForScoring,
+          intervalReps: activity.interval_reps,
+          intervalWorkDistanceMeters: activity.interval_work_distance_meters,
+          intervalWorkSeconds: activity.interval_work_seconds,
+          intervalRestSeconds: activity.interval_rest_seconds,
+          intervalWorkAvgHr: activity.interval_work_avg_hr,
+          fartlekOnDistanceMeters: activity.fartlek_on_distance_meters,
+          fartlekOnSeconds: activity.fartlek_on_seconds,
+          fartlekOnAvgHr: activity.fartlek_on_avg_hr,
           exercises,
           exerciseHistory,
           isPremium,

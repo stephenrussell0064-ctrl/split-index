@@ -136,5 +136,12 @@ export async function GET(request: Request) {
         : "/onboarding";
   const origin = getPublicOrigin(request);
 
+  console.log("[auth/callback] Sign-in succeeded:", {
+    userId: user.id,
+    onboardingCompleted: !!profile?.onboarding_completed,
+    next,
+    redirectPath,
+  });
+
   return NextResponse.redirect(`${origin}${redirectPath}`);
 }
