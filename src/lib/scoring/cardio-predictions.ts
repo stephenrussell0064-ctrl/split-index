@@ -24,7 +24,7 @@ const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x
  */
 export const RIEGEL_K = 1.08;
 
-/** Reference avg HR per sport for the HR-adjustment below — mid-tempo effort at that activity. */
+/** Reference avg HR per sport for the HR-adjustment below — mid-tempo effort at that activity, calibrated against the population baseline (see PERSONALIZATION_POPULATION_* below). */
 const HR_ADJUST_REF_HR: Record<BenchmarkSport, number> = {
   run: 175,
   walk: 140,
@@ -36,6 +36,42 @@ const HR_ADJUST_REF_HR: Record<BenchmarkSport, number> = {
 
 const HR_ADJUST_SENSITIVITY = 450;
 const HR_ADJUST_MAX = 0.1;
+
+/**
+ * Personalized HR calibration: HR_ADJUST_REF_HR above is one fixed bpm number
+ * per sport, applied to every athlete alike — unfair to anyone whose resting/
+ * max HR differs from the population this was tuned against. These two
+ * constants describe that assumed population (a representative adult:
+ * resting 60 bpm, Tanaka max HR at age 35), so each sport's fixed reference
+ * can be re-expressed as an intensity FRACTION of that population's
+ * heart-rate reserve, then remapped onto a specific athlete's own
+ * resting/max HR (see `personalizedReferenceHR`). An athlete who hasn't set
+ * a resting HR falls back to the exact original fixed-bpm behaviour.
+ */
+const PERSONALIZATION_POPULATION_RESTING_HR = 60;
+const PERSONALIZATION_POPULATION_MAX_HR = 208 - 0.7 * 35; // Tanaka at a representative age 35 = 183.5
+
+/**
+ * Re-expresses a sport's fixed HR_ADJUST_REF_HR as a heart-rate-reserve
+ * intensity fraction (against the assumed population resting/max), then
+ * maps that same relative intensity onto this athlete's own resting/max HR.
+ * Two athletes at very different absolute HR now get compared at the same
+ * RELATIVE effort instead of the same absolute bpm number.
+ */
+export function personalizedReferenceHR(
+  sport: BenchmarkSport,
+  restingHR: number,
+  maxHR: number
+): number {
+  const populationRefHR = HR_ADJUST_REF_HR[sport];
+  const populationIntensity = clamp(
+    (populationRefHR - PERSONALIZATION_POPULATION_RESTING_HR) /
+      (PERSONALIZATION_POPULATION_MAX_HR - PERSONALIZATION_POPULATION_RESTING_HR),
+    0,
+    1
+  );
+  return restingHR + populationIntensity * (maxHR - restingHR);
+}
 
 /** A faster-predicting session pulls the stored prediction down this fraction of the gap (Part E1). */
 export const IMPROVE_RATE = 0.55;
@@ -90,28 +126,49 @@ export function hrAdjustedEquivalentSeconds(
   return time * (1 - adjustment);
 }
 
+export interface HrPersonalization {
+  restingHR?: number | null;
+  maxHR?: number | null;
+}
+
+/** The reference HR to judge this session's avgHR against: personalized when both resting/max HR are known, else the original fixed population value. */
+function resolveReferenceHR(sport: BenchmarkSport, personalization?: HrPersonalization): number {
+  const restingHR = personalization?.restingHR;
+  const maxHR = personalization?.maxHR;
+  if (restingHR && restingHR > 0 && maxHR && maxHR > restingHR) {
+    return personalizedReferenceHR(sport, restingHR, maxHR);
+  }
+  return HR_ADJUST_REF_HR[sport];
+}
+
 /**
  * Project a single session to its sport's benchmark distance (or, for
  * walking, its per-km pace) and HR-adjust the result. Returns null when
- * there's no distance/duration to project from.
+ * there's no distance/duration to project from. `personalization` (resting/
+ * max HR) re-centers the HR adjustment on this athlete's own heart-rate
+ * reserve instead of the fixed population reference — omit it (or leave
+ * either field unset) for the original, unpersonalized behaviour.
  */
 export function computeSessionBenchmarkEquivalentSeconds(
   sport: BenchmarkSport,
   distanceMeters: number,
   durationSeconds: number,
   avgHR?: number | null,
-  riegelK: number = RIEGEL_K
+  riegelK: number = RIEGEL_K,
+  personalization?: HrPersonalization
 ): number | null {
   if (distanceMeters <= 0 || durationSeconds <= 0) return null;
 
+  const refHR = resolveReferenceHR(sport, personalization);
+
   if (sport === "walk") {
     const pacePerKm = durationSeconds / (distanceMeters / 1000);
-    return hrAdjustedEquivalentSeconds(pacePerKm, avgHR, HR_ADJUST_REF_HR.walk);
+    return hrAdjustedEquivalentSeconds(pacePerKm, avgHR, refHR);
   }
 
   const benchmarkDistance = BENCHMARK_DISTANCE_METERS[sport];
   const projected = riegelEquivalentSeconds(durationSeconds, distanceMeters, benchmarkDistance, riegelK);
-  return hrAdjustedEquivalentSeconds(projected, avgHR, HR_ADJUST_REF_HR[sport]);
+  return hrAdjustedEquivalentSeconds(projected, avgHR, refHR);
 }
 
 /** True when a session's equivalent is close enough to stored capability to count as quality (Part E1). */
