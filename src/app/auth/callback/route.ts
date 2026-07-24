@@ -6,7 +6,9 @@ import { getPublicOrigin } from "@/lib/app-url";
 
 function failurePath(next: string, reason: string): string {
   if (next === "/reset-password") return "/reset-password";
-  if (next === "/onboarding" || next.startsWith("/signup")) return "/signup";
+  if (next === "/onboarding" || next === "/email-confirmed" || next.startsWith("/signup")) {
+    return "/signup";
+  }
   return "/login";
 }
 
@@ -125,6 +127,19 @@ export async function GET(request: Request) {
     .select("onboarding_completed")
     .eq("user_id", user.id)
     .single();
+
+  // The email-confirmation landing page is a standalone "you're verified"
+  // screen, not an onboarding entry point — the account is now active, but
+  // the user explicitly signs in from there rather than being silently
+  // carried into a session created by clicking an email link.
+  if (next === "/email-confirmed") {
+    await supabase.auth.signOut();
+    const origin = getPublicOrigin(request);
+    console.log("[auth/callback] Email confirmed, signed out for explicit sign-in:", {
+      userId: user.id,
+    });
+    return NextResponse.redirect(`${origin}/email-confirmed`);
+  }
 
   const redirectPath =
     next === "/reset-password"
