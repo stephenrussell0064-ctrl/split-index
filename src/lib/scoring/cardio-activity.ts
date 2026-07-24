@@ -30,7 +30,7 @@
  */
 
 import type { SessionType } from "@/types";
-import { timeToScore, type BenchmarkSport } from "@/lib/scoring/cardio-benchmarks";
+import { timeToScore, enduranceAgeGradeFactor, type BenchmarkSport } from "@/lib/scoring/cardio-benchmarks";
 import {
   computeSessionBenchmarkEquivalentSeconds,
   computeIntervalBenchmarkEquivalentSeconds,
@@ -330,7 +330,14 @@ export function scoreCardioActivity(input: CardioInput): CardioResult {
   let confidence: number;
 
   if (anchorSeconds !== null) {
-    base = timeToScore(input.benchmarkSport, anchorSeconds, input.sex);
+    // Age-grade the benchmark-equivalent before scoring: an older athlete's
+    // same finish time is a stronger performance, so their time is graded
+    // down (credit for age); under-35s are unchanged (factor 1.0). Applied
+    // to the score only — stored predictions and displayed race times stay
+    // as the athlete's real (un-graded) times.
+    const ageFactor = enduranceAgeGradeFactor(input.age);
+    if (ageFactor !== 1) flags.push('age-graded');
+    base = timeToScore(input.benchmarkSport, anchorSeconds * ageFactor, input.sex);
     if (input.storedPredictionSeconds != null) {
       flags.push('memory-backed');
       confidence = input.avgHR ? 1 : 0.9;

@@ -146,6 +146,40 @@ function clampScore(x: number): number {
 }
 
 /**
+ * Endurance age-grading factor (age → multiplier on the benchmark-equivalent
+ * time before scoring). Older athletes lose aerobic capacity with age, so the
+ * same finish time is a stronger performance at 55 than at 30; grading their
+ * time down (factor < 1) gives them fair credit, the same way percentile
+ * tools compare you against your own age group. Under-35s sit on a flat peak
+ * plateau (factor 1.0) — we deliberately don't inflate juniors, only credit
+ * aging — so a young athlete's score is unchanged.
+ *
+ * Endurance-wide approximation (a single curve for run/row/swim/cycle/ski/
+ * walk), shaped from standard ~0.7%/yr-accelerating masters decline in
+ * distance-running age factors. Recalibrate per-sport against real masters
+ * data later, same process as the anchor tables.
+ */
+const ENDURANCE_AGE_FACTORS: Anchor[] = [
+  [35, 1.0],
+  [40, 0.97],
+  [45, 0.93],
+  [50, 0.89],
+  [55, 0.85],
+  [60, 0.8],
+  [65, 0.75],
+  [70, 0.7],
+  [75, 0.65],
+  [80, 0.6],
+];
+
+export function enduranceAgeGradeFactor(age: number | null | undefined): number {
+  if (!age || age <= 35 || !Number.isFinite(age)) return 1.0;
+  const clamped = Math.min(age, 80);
+  // Reuse the anchor interpolator (it reads [x, y] pairs) over the age→factor table.
+  return interpolateAnchors(ENDURANCE_AGE_FACTORS, clamped);
+}
+
+/**
  * Score a benchmark-distance time (or, for walk, a per-km pace) on the
  * calibrated 0–1000 scale, applying the activity's female factor first so
  * equal-ability men and women land on the same tier.
