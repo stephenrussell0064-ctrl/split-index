@@ -41,7 +41,7 @@ export function AuthForm({
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
-          options: { emailRedirectTo: authCallbackUrl("/onboarding") },
+          options: { emailRedirectTo: authCallbackUrl("/email-confirmed") },
         });
 
         if (error) {
