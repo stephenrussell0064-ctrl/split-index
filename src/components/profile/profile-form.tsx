@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Select, Textarea } from "@/components/ui/input";
 import { EXPERIENCE_LEVELS, GENDERS } from "@/lib/constants/sports";
 import { createClient } from "@/lib/supabase/client";
+import { ageFromDateOfBirth, maxDobForMinAge, minDobForMaxAge } from "@/lib/utils/age";
 import type { ExperienceLevel, Gender, Profile } from "@/types";
 
 interface ProfileFormProps {
@@ -26,7 +27,7 @@ export function ProfileForm({ profile }: ProfileFormProps) {
     username: profile.username ?? "",
     bio: profile.bio ?? "",
     country: profile.country ?? "",
-    age: profile.age?.toString() ?? "",
+    date_of_birth: profile.date_of_birth ?? "",
     gender: profile.gender ?? "",
     height_cm: profile.height_cm?.toString() ?? "",
     weight_kg: profile.weight_kg?.toString() ?? "",
@@ -54,7 +55,8 @@ export function ProfileForm({ profile }: ProfileFormProps) {
         username: form.username.trim().toLowerCase() || null,
         bio: form.bio.trim() || null,
         country: form.country.trim() || null,
-        age: form.age ? Number(form.age) : null,
+        date_of_birth: form.date_of_birth || null,
+        age: ageFromDateOfBirth(form.date_of_birth),
         gender: (form.gender as Gender) || null,
         height_cm: form.height_cm ? Number(form.height_cm) : null,
         weight_kg: form.weight_kg ? Number(form.weight_kg) : null,
@@ -131,15 +133,22 @@ export function ProfileForm({ profile }: ProfileFormProps) {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div className="mb-4">
             <Input
-              label="Age"
-              type="number"
-              min={13}
-              max={120}
-              value={form.age}
-              onChange={(e) => update("age", e.target.value)}
+              label="Date of Birth"
+              type="date"
+              min={minDobForMaxAge(120)}
+              max={maxDobForMinAge(13)}
+              value={form.date_of_birth}
+              onChange={(e) => update("date_of_birth", e.target.value)}
+              hint={
+                ageFromDateOfBirth(form.date_of_birth) !== null
+                  ? `Age ${ageFromDateOfBirth(form.date_of_birth)} — used to calculate your age automatically`
+                  : "We use this to calculate your age"
+              }
             />
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <Input
               label="Height (cm)"
               type="number"

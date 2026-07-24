@@ -69,7 +69,10 @@ export interface Profile {
   avatar_url: string | null;
   bio: string | null;
   country: string | null;
+  /** Snapshot age (kept for legacy profiles + display); prefer deriving from date_of_birth when present so it never goes stale. */
   age: number | null;
+  /** Date of birth as YYYY-MM-DD — the source of truth for age; age is derived from this at scoring time (see lib/utils/age.ts). */
+  date_of_birth: string | null;
   height_cm: number | null;
   weight_kg: number | null;
   max_hr: number | null;
