@@ -247,7 +247,7 @@ body {
   background: var(--gym-bg);
 }
 
-[data-mode="gym"] .mode-shell-bg .mode-content {
+[data-mode="gym"] .mode-content {
   color: var(--gym-text);
   --foreground: var(--gym-text);
   --muted: var(--gym-muted);
@@ -261,7 +261,7 @@ body {
   background: var(--cardio-bg);
 }
 
-[data-mode="cardio"] .mode-shell-bg .mode-content {
+[data-mode="cardio"] .mode-content {
   color: var(--cardio-text);
   /* Remap dark-theme tokens so shared components stay legible on white */
   --foreground: var(--cardio-text);

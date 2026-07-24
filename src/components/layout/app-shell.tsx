@@ -70,12 +70,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     // own background no longer covers it — exactly when a user is typing.
     // dvh (dynamic viewport height) tracks the real visible viewport.
     <div className="min-h-dvh" data-mode={mode}>
+      {/*
+        Themed background lives on a FIXED, viewport-covering backdrop rather
+        than on the growing content wrapper. A min-height wrapper's painted
+        background could fail to cover the full document when content grew or
+        repainted (e.g. focusing an input, async content loading, the mobile
+        keyboard opening), leaving a dark gap below the fold where the page's
+        dark body showed through — making the cardio light-theme inputs
+        unreadable (dark text on the stale dark gap). A fixed element is
+        glued to the viewport, so the themed colour always covers whatever is
+        currently on screen, no matter the content height or scroll position.
+      */}
       <div
+        aria-hidden
         className={cn(
-          "mode-shell-bg min-h-dvh transition-colors duration-700",
+          "mode-shell-bg fixed inset-0 -z-10 transition-colors duration-700",
           mode === "neutral" && "bg-ambient"
         )}
-      >
+      />
+      <div className="min-h-dvh">
         <aside className="fixed left-0 top-0 z-40 hidden h-screen w-64 flex-col border-r border-white/5 glass-strong lg:flex">
           <Link href="/dashboard" className="px-6 py-5 border-b border-white/5 block">
             <BrandMark variant="compact" iconSize={34} wordmarkSize="md" showTagline />
