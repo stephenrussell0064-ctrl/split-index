@@ -1,4 +1,5 @@
 import type { Profile, SportType } from "@/types";
+import { ageFromDateOfBirth } from "@/lib/utils/age";
 
 /** Bodyweight captured at workout time — never substitute current profile weight on edits. */
 export function resolveScoringBodyweightKg(
@@ -41,8 +42,13 @@ export function buildScoringProfile(
   bodyweightKg: number | null,
   effectiveMaxHr?: number | null
 ): Profile {
+  // Prefer age derived live from date_of_birth over the stored snapshot, so
+  // scoring (age factor, Tanaka max-HR) uses the athlete's real current age
+  // rather than whatever age they typed once at onboarding.
+  const derivedAge = ageFromDateOfBirth(profile.date_of_birth);
   return {
     ...profile,
+    ...(derivedAge !== null ? { age: derivedAge } : {}),
     ...(bodyweightKg ? { weight_kg: bodyweightKg } : {}),
     ...(effectiveMaxHr ? { max_hr: effectiveMaxHr } : {}),
   };

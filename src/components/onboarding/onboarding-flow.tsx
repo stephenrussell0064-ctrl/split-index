@@ -18,6 +18,7 @@ import { createClient } from "@/lib/supabase/client";
 import { supabaseErrorMessage } from "@/lib/supabase/errors";
 import { formatIndex } from "@/lib/utils/format";
 import { validateUsernameFormat } from "@/lib/utils/username";
+import { ageFromDateOfBirth, maxDobForMinAge, minDobForMaxAge } from "@/lib/utils/age";
 import { cn } from "@/lib/utils/cn";
 import type { PostgrestError } from "@supabase/supabase-js";
 import type { Gender, ExperienceLevel, TrainingGoal, SportType } from "@/types";
@@ -66,7 +67,7 @@ export function OnboardingFlow() {
     reason?: string;
   } | null>(null);
   const [form, setForm] = useState({
-    age: "",
+    date_of_birth: "",
     gender: "" as Gender | "",
     height_cm: "",
     weight_kg: "",
@@ -79,6 +80,7 @@ export function OnboardingFlow() {
 
   const trimmedUsername = username.trim();
   const usernameFormat = trimmedUsername ? validateUsernameFormat(trimmedUsername) : null;
+  const derivedAge = ageFromDateOfBirth(form.date_of_birth);
 
   useEffect(() => {
     if (!trimmedUsername || !usernameFormat?.valid) return;
@@ -171,8 +173,13 @@ export function OnboardingFlow() {
     const next: Record<string, string> = {};
 
     if (current === 0) {
-      if (!inRange(form.age, LIMITS.age))
-        next.age = `Enter an age between ${LIMITS.age.min} and ${LIMITS.age.max}`;
+      if (!form.date_of_birth) {
+        next.date_of_birth = "Enter your date of birth";
+      } else if (derivedAge === null) {
+        next.date_of_birth = "Enter a valid date of birth";
+      } else if (derivedAge < LIMITS.age.min || derivedAge > LIMITS.age.max) {
+        next.date_of_birth = `Age must be between ${LIMITS.age.min} and ${LIMITS.age.max}`;
+      }
       if (!form.gender) next.gender = "Select a gender";
       if (usernameStatus !== "available") {
         next.username =
@@ -305,11 +312,12 @@ export function OnboardingFlow() {
         null,
       username: username.trim(),
       avatar_url: avatarUrl,
-      age: Number(form.age),
+      date_of_birth: form.date_of_birth,
+      age: derivedAge,
       gender: form.gender as Gender,
       height_cm: Number(form.height_cm),
       weight_kg: Number(form.weight_kg),
-      max_hr: Number(form.max_hr) || Math.round(220 - Number(form.age)),
+      max_hr: Number(form.max_hr) || (derivedAge ? Math.round(220 - derivedAge) : null),
       experience: form.experience as ExperienceLevel,
       training_history_years: Number(form.training_history_years) || 0,
       goals: form.goals,
@@ -511,13 +519,14 @@ export function OnboardingFlow() {
                   </div>
 
                   <Input
-                    label="Age"
-                    type="number"
-                    min={LIMITS.age.min}
-                    max={LIMITS.age.max}
-                    value={form.age}
-                    error={errors.age}
-                    onChange={(e) => update("age", e.target.value)}
+                    label="Date of Birth"
+                    type="date"
+                    min={minDobForMaxAge(LIMITS.age.max)}
+                    max={maxDobForMinAge(LIMITS.age.min)}
+                    value={form.date_of_birth}
+                    error={errors.date_of_birth}
+                    onChange={(e) => update("date_of_birth", e.target.value)}
+                    hint={derivedAge !== null ? `Age ${derivedAge}` : "We use this to calculate your age"}
                   />
                   <Select
                     label="Gender"
@@ -557,7 +566,7 @@ export function OnboardingFlow() {
                     value={form.max_hr}
                     error={errors.max_hr}
                     onChange={(e) => update("max_hr", e.target.value)}
-                    hint={`Optional — suggested: ${form.age ? Math.round(220 - Number(form.age)) : "220 - age"}`}
+                    hint={`Optional — suggested: ${derivedAge ? Math.round(220 - derivedAge) : "220 - age"}`}
                   />
                 </>
               )}
