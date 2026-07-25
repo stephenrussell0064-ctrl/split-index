@@ -86,10 +86,10 @@ describe("scoreCardioActivity — pace monotonicity", () => {
   });
 
   it("a faster time never scores lower than a slower time even at opposite modifier extremes", () => {
-    // Worst case for the ±5% cap: the faster session gets every modifier at
-    // its most negative, the slower session gets every modifier at its most
-    // positive. Faster must still never score lower once paces differ
-    // enough (see MAX_MODIFIER_FRACTION in cardio-activity.ts).
+    // The faster session gets every modifier at its most negative, the
+    // slower session gets every modifier at its most positive (uncapped).
+    // Faster must still never score lower once paces differ enough that
+    // the pace gap dominates any plausible modifier swing.
     const faster = scoreCardioActivity({
       ...base,
       durationSeconds: 900, // 15:00
@@ -104,5 +104,28 @@ describe("scoreCardioActivity — pace monotonicity", () => {
     });
 
     expect(faster.score).toBeGreaterThan(slower.score);
+  });
+
+  it("a long, easy, low-HR session gets its full volume/terrain bonus, not scaled down by its own (modest) pace score", () => {
+    // Regression: an earlier fix capped the combined modifier at ±5% of
+    // paceScore to guarantee monotonicity, but that made the *absolute*
+    // bonus scale with how fast the pace read — crushing exactly the
+    // long/easy/low-HR sessions the volume bonus exists to credit (a hard
+    // fast effort's high paceScore gave it a much bigger allowance than an
+    // easy long run's modest paceScore, inverting the intent). Reproduces
+    // the real reported case: a 53:19 easy 10.12km run.
+    const easyLongRun = scoreCardioActivity({
+      ...base,
+      distanceMeters: 10120,
+      durationSeconds: 3199, // 53:19
+      avgHR: 174,
+      elevationMeters: 66,
+      temperatureCelsius: 12,
+    });
+    // The uncapped volume+elevation bonus (score minus the pure pace
+    // component) for this real session is ~65-70 points — nowhere near the
+    // ~26 points a ±5%-of-paceScore cap would have allowed for a paceScore
+    // this modest (paceScore here is ~523, so 5% would cap the bonus at ~26).
+    expect(easyLongRun.score - easyLongRun.paceScore).toBeGreaterThan(50);
   });
 });

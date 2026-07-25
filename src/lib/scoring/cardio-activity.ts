@@ -18,9 +18,10 @@
  * not just today), but it must never replace this session's own equivalent —
  * doing so previously let a session's score depend on history rather than its
  * own pace (see cardio-session-score-monotonicity-bug.md). `score` adds
- * volume/terrain/environment/pacing modifiers on top of `paceScore`, hard-
- * capped at ±MAX_MODIFIER_FRACTION so they can never invert the pace
- * ordering between two sessions whose paces differ by more than that margin.
+ * volume/terrain/environment/pacing modifiers on top of `paceScore` — each
+ * individually capped (see MAX_VOLUME_BONUS etc. below) but not scaled by
+ * paceScore itself, so a long/hilly/tough easy run still gets full credit
+ * for sustained aerobic durability regardless of how its pace alone reads.
  *
  * FREE tier reads `score` and `vo2max`.
  * PREMIUM tier additionally surfaces `paceScore`, `trimp`, `efficiencyFactor`,
@@ -84,7 +85,7 @@ export interface CardioInput {
 
 export interface CardioResult {
   score: number;               // 0–1000, the per-activity Engine contribution
-  /** Pure, monotonic pace-performance score — Riegel/work-piece equivalent + age/sex grading run through the anchor table, nothing else. A faster time for the same activity can never score lower here. `score` is this plus a hard-bounded modifier (see MAX_MODIFIER_FRACTION). */
+  /** Pure, monotonic pace-performance score — Riegel/work-piece equivalent + age/sex grading run through the anchor table, nothing else. A faster time for the same activity can never score lower here. `score` is this plus volume/terrain/environment/pacing modifiers. */
   paceScore: number;
   vo2max: number | null;       // ml/kg/min
   vo2maxMethod: 'hr-ratio' | 'pace-hr-adjusted' | 'pace-estimate' | 'none';
@@ -130,14 +131,6 @@ const REFERENCE_GRADIENT_M_PER_KM = 15; // climb rate treated as "hilly"
 const MAX_TEMPERATURE_BONUS = 15;
 const REFERENCE_COMFORT_TEMP_C = 12;
 const TEMPERATURE_SENSITIVITY = 100; // divisor on squared deviation from comfort
-
-// Monotonicity guarantee (see cardio-session-score-monotonicity-bug.md): the
-// combined volume/elevation/temperature/decoupling modifier is hard-capped at
-// this fraction of paceScore, enforced in code — not just by each bonus's own
-// small individual cap — so no combination of them can flip the ordering
-// between two same-distance sessions whose paces differ by more than this
-// margin either side.
-const MAX_MODIFIER_FRACTION = 0.05;
 
 /** Rewards sheer time-under-aerobic-load, independent of how fast or easy it was. */
 function enduranceVolumeBonus(durationSeconds: number): number {
@@ -385,13 +378,22 @@ export function scoreCardioActivity(input: CardioInput): CardioResult {
     confidence = 0.3;
   }
 
-  // Volume/terrain/environment/pacing — orthogonal to pace/HR, and
-  // deliberately modest, but bounded to a hard ±MAX_MODIFIER_FRACTION of
-  // paceScore (enforced below, not just by tuning individual caps) so no
-  // combination of them can ever flip the ordering between two sessions
-  // whose paces differ by more than that margin. A long session, a hilly
-  // one, or one done in harsh heat/cold demonstrates real aerobic durability
-  // that a pace-per-heartbeat estimate alone won't capture.
+  // Volume/terrain/environment/pacing — orthogonal to pace/HR. A long
+  // session, a hilly one, or one done in harsh heat/cold demonstrates real
+  // aerobic durability that a pace-per-heartbeat estimate alone won't
+  // capture — deliberately uncapped relative to paceScore (each bonus has
+  // its own small individual cap instead, see MAX_VOLUME_BONUS etc. above):
+  // an earlier attempt to bound the total to ±5% of paceScore made the
+  // *absolute* bonus scale with how fast the pace-equivalent looked, which
+  // gutted exactly the sessions this is meant to credit — a long, easy,
+  // low-HR run's paceScore is modest by design, so 5% of it is a much
+  // smaller allowance than 5% of a hard fast effort's paceScore, inverting
+  // the intent (reward sustained aerobic effort "independent of how fast or
+  // easy it was" — see enduranceVolumeBonus). Monotonicity for the case that
+  // matters (same distance, same conditions, varying only pace) already
+  // holds without a cap here: each bonus's own rate of change with duration
+  // is small relative to the anchor curve's slope over any realistic pace
+  // range — see the monotonicity regression tests.
   const volumeBonus = enduranceVolumeBonus(input.durationSeconds);
   if (volumeBonus > MAX_VOLUME_BONUS * 0.5) flags.push('long-session-credit');
 
@@ -411,9 +413,7 @@ export function scoreCardioActivity(input: CardioInput): CardioResult {
     if (dec < -2) flags.push('negative-split-strong');
   }
 
-  const totalModifier = volumeBonus + elevationBonus + temperatureBonus + decouplingAdjustment;
-  const modifierCap = paceScore * MAX_MODIFIER_FRACTION;
-  base += clamp(totalModifier, -modifierCap, modifierCap);
+  base += volumeBonus + elevationBonus + temperatureBonus + decouplingAdjustment;
 
   const ef = efficiencyFactor(input);
   const tr = trimp(input);

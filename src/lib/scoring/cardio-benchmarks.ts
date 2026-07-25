@@ -57,6 +57,14 @@ const RUN_5K_ANCHORS: Anchor[] = [
   [1530, 475], // 25:30 — ~50th percentile
   [1650, 250], // 27:30 — ~20th percentile
   [1860, 125], // 31:00 — ~5th percentile
+  // Below the 5th percentile isn't part of Part C's sourced data — these two
+  // extend the floor (matching the old table's spirit of a gentle tail
+  // rather than clamping to 0 right past 31:00) so a long, easy, low-HR
+  // session's volume/terrain bonus never has room to make a much slower
+  // finish read as a HIGHER final score than a slightly-faster one once
+  // paceScore itself would otherwise be floored flat.
+  [2100, 60], // 35:00
+  [2400, 25], // 40:00
 ];
 
 /**
