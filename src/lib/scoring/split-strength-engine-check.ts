@@ -38,9 +38,13 @@ function scoreSingleSet(liftKey: string, oneRM: number, bodyweightKg = 83) {
 console.log("split-strength-engine — calibration fixtures\n");
 
 const fixtures: Array<[string, number, number, string]> = [
-  ["bench", 140, 791, "Advanced"],
+  // bench/deadlift corrected (scoring-calibration-rewrite.md Part G) —
+  // Strength-Level-derived anchor table, not the log formula the other
+  // lifts below still use. Was 791/770 (log formula against the old
+  // anchorRatio); now scored via direct anchor-table interpolation.
+  ["bench", 140, 752, "Advanced"],
   ["squat", 160, 750, "Advanced"],
-  ["deadlift", 200, 770, "Advanced"],
+  ["deadlift", 200, 725, "Advanced"],
   ["ohp", 75, 790, "Advanced"],
   ["barbellRow", 120, 783, "Advanced"],
   ["frontSquat", 120, 720, "Semi-Pro"],
