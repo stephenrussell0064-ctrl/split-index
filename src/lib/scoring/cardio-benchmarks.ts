@@ -87,12 +87,21 @@ const ROW_2K_ANCHORS_FEMALE: Anchor[] = [
   [614.2, 125], // 10:14.2 — 5th percentile
 ];
 
+/**
+ * PROVISIONAL — NEWLY CALIBRATED, LOW CONFIDENCE (Part F,
+ * scoring-calibration-rewrite). Built from ROUVY and BestBikeSplit
+ * speed-band descriptions (beginner 19-26km/h, intermediate 24-32km/h,
+ * advanced 30-35km/h, elite/racing 40+km/h), not a percentile table.
+ * Recommend treating as a draft to sanity-check before fully trusting;
+ * revisit once real logged cycling data comes in. Female factor (1.219)
+ * still applied on top.
+ */
 const CYCLE_20K_ANCHORS: Anchor[] = [
-  [2126, 925], // 35:26
-  [2280, 775], // 38:00
-  [2492, 575], // 41:32
-  [2790, 400], // 46:30
-  [3227, 200], // 53:47
+  [1800, 925], // 30:00, ~40km/h — elite/racing threshold (tail toward 999 for pro TT speeds, ~24min/50km/h+)
+  [2040, 725], // 34:00, ~35km/h — top of "advanced"
+  [2400, 475], // 40:00, ~30km/h
+  [3000, 250], // 50:00, ~24km/h
+  [3780, 125], // 63:00, ~19km/h — beginner
 ];
 
 /** Seconds per km — lower is better, same monotonic direction as the time tables above. */
