@@ -164,10 +164,19 @@ interface LiftAnchor {
  * table — all fixtures are ±3 of scoreStrength()'s output for these anchors).
  */
 const PRIMARY_ANCHORS: Record<string, LiftAnchor> = {
-  // Bench family recalibrated so 120×4 / 110×6 / 100×9 ≈ 800 @ 80kg BW.
-  bench: { anchorRatio: 0.785, category: "chest", bodyPart: "upperBody" },
+  // Bench/deadlift anchorRatio now only a fallback reference (50th-percentile
+  // ratio, kept in sync with WEIGHT_RATIO_ANCHOR_TABLES below) — actual
+  // scoring for these two goes through the corrected anchor table instead
+  // (Part G, scoring-calibration-rewrite). Previous single-anchor value
+  // (0.785, "recalibrated so 120×4/110×6/100×9 ≈ 800 @ 80kg BW") scored a
+  // real bench PB (140kg @ 83kg BW) at ~850 "Elite" — a full tier more
+  // generous than Strength Level's population data implies (~752, Advanced).
+  bench: { anchorRatio: 98 / 83, category: "chest", bodyPart: "upperBody" },
   squat: { anchorRatio: 0.9984, category: "legs", bodyPart: "lowerBody" },
-  deadlift: { anchorRatio: 1.1841, category: "back", bodyPart: "pull" },
+  // Deadlift was already close to accurate (200kg @ 83kg BW -> 770 vs. the
+  // corrected 725) — least-urgent of the two, still corrected for
+  // consistency now the table exists.
+  deadlift: { anchorRatio: 152 / 83, category: "back", bodyPart: "pull" },
   ohp: { anchorRatio: 0.4213, category: "shoulders", bodyPart: "upperBody" },
   barbellRow: { anchorRatio: 0.687, category: "back", bodyPart: "pull" },
   frontSquat: { anchorRatio: 0.8103, category: "legs", bodyPart: "lowerBody" },
@@ -175,6 +184,50 @@ const PRIMARY_ANCHORS: Record<string, LiftAnchor> = {
   weightedPullup: { anchorRatio: 0.3327, category: "back", bodyPart: "pull" },
   weightedDips: { anchorRatio: 0.4731, category: "chest", bodyPart: "upperBody" },
   pushUp: { anchorRatio: 0.303, category: "chest", bodyPart: "upperBody" },
+};
+
+type WeightAnchor = [ratio: number, score: number];
+
+/**
+ * Corrected worked examples (Part G, scoring-calibration-rewrite.md) —
+ * Strength Level's general standards (the same 48.7M-lift dataset the
+ * sex/age factors above already use), mapped through
+ * percentile-framework.ts's 5/20/50/80/95th percentile scale, at
+ * REFERENCE_BODYWEIGHT_KG (83kg). Ratio = weight_kg / 83.
+ *
+ * Scored via direct interpolation across the table (same mechanism as the
+ * cardio anchor tables), not the single-anchorRatio log formula the other
+ * ~20 lifts still use: a single anchor + fixed SLOPE can't fit 5
+ * independent percentile points well — real strength distributions aren't
+ * a clean single-slope log-normal curve end to end — so these two lifts
+ * (the ones with full 5-point Strength Level data) get a real anchor table
+ * instead, exactly like row/run/etc.
+ *
+ * Methodology for the remaining ~20 lifts (mechanical, repeatable): pull
+ * Strength Level's published bodyweight-indexed standards for each lift and
+ * bodyweight band, map through percentile-framework.ts exactly as done
+ * here. Squat and overhead press are next — the other two "big four" lifts
+ * with the most reliable Strength Level coverage. Accessory/dumbbell lifts
+ * without direct Strength Level tables (incline DB, DB shoulder press, etc)
+ * can be derived by applying their existing documented multiplier
+ * relationship to the now-corrected compound-lift anchors, rather than
+ * needing independent population data for every accessory movement.
+ */
+const WEIGHT_RATIO_ANCHOR_TABLES: Partial<Record<string, WeightAnchor[]>> = {
+  bench: [
+    [47 / REFERENCE_BODYWEIGHT_KG, 125],
+    [70 / REFERENCE_BODYWEIGHT_KG, 250],
+    [98 / REFERENCE_BODYWEIGHT_KG, 475],
+    [132 / REFERENCE_BODYWEIGHT_KG, 725],
+    [169 / REFERENCE_BODYWEIGHT_KG, 850],
+  ],
+  deadlift: [
+    [78 / REFERENCE_BODYWEIGHT_KG, 125],
+    [112 / REFERENCE_BODYWEIGHT_KG, 250],
+    [152 / REFERENCE_BODYWEIGHT_KG, 475],
+    [200 / REFERENCE_BODYWEIGHT_KG, 725],
+    [250 / REFERENCE_BODYWEIGHT_KG, 850],
+  ],
 };
 
 const ACCESSORY_MAP: Record<string, LiftAnchor> = {
@@ -539,6 +592,90 @@ function computeNextTier(
   return { tier: next.tier, kgNeeded: round1(kgNeeded) };
 }
 
+/**
+ * Interpolates a strength anchor table (ratio -> score) — ascending ratio =
+ * ascending score (higher ratio is always better, unlike the cardio time
+ * tables where lower is better), with the same gentle slope-continued
+ * extrapolation at both ends as interpolateAnchors() in cardio-benchmarks.ts.
+ */
+function interpolateWeightAnchors(anchors: WeightAnchor[], ratio: number): number {
+  const sorted = [...anchors].sort((a, b) => a[0] - b[0]);
+  const first = sorted[0];
+  const last = sorted[sorted.length - 1];
+
+  if (ratio <= first[0]) {
+    const next = sorted[1] ?? first;
+    const slope = next[0] === first[0] ? 0 : (next[1] - first[1]) / (next[0] - first[0]);
+    return Math.max(0, first[1] + slope * (ratio - first[0]));
+  }
+  if (ratio >= last[0]) {
+    const prev = sorted[sorted.length - 2] ?? last;
+    const slope = last[0] === prev[0] ? 0 : (last[1] - prev[1]) / (last[0] - prev[0]);
+    return Math.min(999, last[1] + slope * (ratio - last[0]));
+  }
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const [x0, y0] = sorted[i];
+    const [x1, y1] = sorted[i + 1];
+    if (ratio >= x0 && ratio <= x1) {
+      const t = (ratio - x0) / (x1 - x0);
+      return y0 + (y1 - y0) * t;
+    }
+  }
+  return last[1];
+}
+
+/** Inverse of interpolateWeightAnchors — the ratio that would produce a given score. */
+function inverseInterpolateWeightAnchors(anchors: WeightAnchor[], targetScore: number): number {
+  const sorted = [...anchors].sort((a, b) => a[1] - b[1]);
+  const first = sorted[0];
+  const last = sorted[sorted.length - 1];
+
+  if (targetScore <= first[1]) {
+    const next = sorted[1] ?? first;
+    const slope = next[1] === first[1] ? 0 : (next[0] - first[0]) / (next[1] - first[1]);
+    return first[0] + slope * (targetScore - first[1]);
+  }
+  if (targetScore >= last[1]) {
+    const prev = sorted[sorted.length - 2] ?? last;
+    const slope = last[1] === prev[1] ? 0 : (last[0] - prev[0]) / (last[1] - prev[1]);
+    return last[0] + slope * (targetScore - last[1]);
+  }
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const [x0, y0] = sorted[i];
+    const [x1, y1] = sorted[i + 1];
+    if (targetScore >= y0 && targetScore <= y1) {
+      const t = (targetScore - y0) / (y1 - y0);
+      return x0 + (x1 - x0) * t;
+    }
+  }
+  return last[0];
+}
+
+/**
+ * computeNextTier() equivalent for anchor-table-scored lifts (bench/
+ * deadlift). `effectiveSexFactor`/`effectiveAgeFactor` undo the sex/age
+ * adjustment applied to get from this athlete's raw ratio to the
+ * table-lookup ratio, so the target is expressed back in this athlete's own
+ * raw kg (default 1 = no adjustment, matching a male athlete age <= 35).
+ */
+function computeNextTierFromWeightAnchors(
+  score: number,
+  table: WeightAnchor[],
+  bodyweightKg: number,
+  currentOneRM: number,
+  effectiveSexFactor: number,
+  effectiveAgeFactor: number
+): NextTierTarget | null {
+  const currentIdx = TIER_THRESHOLDS.findIndex((t) => t.tier === tierForScore(score));
+  if (currentIdx === -1 || currentIdx === TIER_THRESHOLDS.length - 1) return null;
+  const next = TIER_THRESHOLDS[currentIdx + 1];
+  const targetEffectiveRatio = inverseInterpolateWeightAnchors(table, next.min);
+  const targetRatio = (targetEffectiveRatio * effectiveSexFactor) / effectiveAgeFactor;
+  const targetOneRM = oneRMForRatio(targetRatio, bodyweightKg);
+  const kgNeeded = Math.max(0, targetOneRM - currentOneRM);
+  return { tier: next.tier, kgNeeded: round1(kgNeeded) };
+}
+
 // ---------------------------------------------------------------------------
 // Adaptive 1RM (premium) — uses the full logged history, not just this session
 // ---------------------------------------------------------------------------
@@ -722,10 +859,19 @@ export function scoreStrength(input: ScoreStrengthInput): ScoreStrengthResult {
   }
 
   let effectiveAnchor = anchor.anchorRatio;
+  // Sex/age adjustment expressed the other way round for anchor-table
+  // lookups (weightAnchorTable below): rather than making the anchor easier
+  // to reach, we improve the athlete's own effective ratio before the table
+  // lookup — same direction of credit, different mechanics (a fixed anchor
+  // doesn't mean anything for a piecewise table the way it does for the log
+  // formula's single anchorRatio).
+  let effectiveSexFactor = 1;
+  let effectiveAgeFactor = 1;
 
   if (sex === "female") {
     const sexFactor = SEX_FACTORS[anchor.bodyPart];
     effectiveAnchor *= sexFactor;
+    effectiveSexFactor = sexFactor;
     appliedFactors.push(`sex:female ×${sexFactor} standard (beta)`);
     flags.push("sex-factor-beta");
     flags.push("female-strength-beta");
@@ -734,14 +880,41 @@ export function scoreStrength(input: ScoreStrengthInput): ScoreStrengthResult {
   if (age != null && age > 35) {
     const factor = ageFactor(age);
     effectiveAnchor /= factor;
+    effectiveAgeFactor = factor;
     appliedFactors.push(`age:${age} ×${factor.toFixed(3)} standard (beta)`);
     flags.push("age-factor-beta");
   }
 
   const ratio = relativeStrengthRatio(oneRM, bodyweightKg);
-  const score = scoreFromRatio(ratio, effectiveAnchor);
+  const weightAnchorTable = WEIGHT_RATIO_ANCHOR_TABLES[resolvedKey];
+
+  let score: number;
+  let nextTier: NextTierTarget | null;
+
+  if (weightAnchorTable) {
+    // Bench/deadlift (Part G, scoring-calibration-rewrite): scored via
+    // direct interpolation across Strength-Level-derived anchors rather
+    // than the single-anchorRatio log formula — see WEIGHT_RATIO_ANCHOR_TABLES.
+    const effectiveRatio = (ratio / effectiveSexFactor) * effectiveAgeFactor;
+    score = clamp(
+      Math.round(interpolateWeightAnchors(weightAnchorTable, effectiveRatio)),
+      MIN_SCORE,
+      MAX_SCORE
+    );
+    nextTier = computeNextTierFromWeightAnchors(
+      score,
+      weightAnchorTable,
+      bodyweightKg,
+      oneRM,
+      effectiveSexFactor,
+      effectiveAgeFactor
+    );
+  } else {
+    score = scoreFromRatio(ratio, effectiveAnchor);
+    nextTier = computeNextTier(score, effectiveAnchor, bodyweightKg, oneRM);
+  }
+
   const tier = tierForScore(score);
-  const nextTier = computeNextTier(score, effectiveAnchor, bodyweightKg, oneRM);
 
   if (score >= NEAR_RECORD_THRESHOLD) {
     flags.push("near-record");
