@@ -2,36 +2,42 @@ import { describe, expect, it } from "vitest";
 import { timeToScore } from "./cardio-benchmarks";
 
 /**
- * Run 5k anchors, corrected against Run Regimen (runregimen.com) —
- * sex-specific tables using the same 5/20/50/80/95th percentile convention
- * as row/cycle/swim (splitindex_calibration_master.py), single internally-
- * consistent source, high confidence.
+ * Run 5k anchors, sourced from the Motera 5k times chart QA reconstruction
+ * — matched point-by-point rather than reduced to a handful of tier-
+ * boundary anchors. Reverted here from a briefly-tried Run Regimen
+ * (single-source, sex-specific, percentile-convention) table after direct
+ * comparison — judged Motera's numbers more accurate for run specifically.
  */
-describe("timeToScore — run (Run Regimen percentile anchors)", () => {
-  it("matches the male percentile anchors", () => {
-    expect(timeToScore("run", 973.3, "male")).toBeCloseTo(925, 0); // 16:13.3, 99th
-    expect(timeToScore("run", 1060, "male")).toBeCloseTo(850, 0); // 17:40, 95th
-    expect(timeToScore("run", 1184, "male")).toBeCloseTo(725, 0); // 19:44, 80th
-    expect(timeToScore("run", 1351, "male")).toBeCloseTo(475, 0); // 22:31, 50th
-    expect(timeToScore("run", 1579, "male")).toBeCloseTo(250, 0); // 26:19, 20th
-    expect(timeToScore("run", 1889, "male")).toBeCloseTo(125, 0); // 31:29, 5th
+describe("timeToScore — run (Motera reconstruction anchors)", () => {
+  it("matches the Motera chart's reconstructed scores at its own data points", () => {
+    expect(timeToScore("run", 900, "male")).toBeCloseTo(950, 0); // 15:00
+    expect(timeToScore("run", 960, "male")).toBeCloseTo(910, 0); // 16:00
+    expect(timeToScore("run", 1020, "male")).toBeCloseTo(870, 0); // 17:00
+    expect(timeToScore("run", 1050, "male")).toBeCloseTo(850, 0); // 17:30
+    expect(timeToScore("run", 1110, "male")).toBeCloseTo(775, 0); // 18:30
+    expect(timeToScore("run", 1170, "male")).toBeCloseTo(708.3, 0); // 19:30
+    expect(timeToScore("run", 1200, "male")).toBeCloseTo(675, 0); // 20:00
+    expect(timeToScore("run", 1350, "male")).toBeCloseTo(575, 0); // 22:30
+    expect(timeToScore("run", 1500, "male")).toBeCloseTo(500, 0); // 25:00
+    expect(timeToScore("run", 1800, "male")).toBeCloseTo(350, 0); // 30:00
+    expect(timeToScore("run", 2400, "male")).toBeCloseTo(200, 0); // 40:00
   });
 
-  it("matches the female percentile anchors", () => {
-    expect(timeToScore("run", 1138.1, "female")).toBeCloseTo(925, 0); // 18:58.1, 99th
-    expect(timeToScore("run", 1247, "female")).toBeCloseTo(850, 0); // 20:47, 95th
-    expect(timeToScore("run", 1384, "female")).toBeCloseTo(725, 0); // 23:04, 80th
-    expect(timeToScore("run", 1567, "female")).toBeCloseTo(475, 0); // 26:07, 50th
-  });
-
-  it("the originally reported bug case (5.00km/18:25) scores solidly in the Elite range", () => {
+  it("the originally reported bug case (5.00km/18:25) interpolates close to the chart's own 18:30 anchor", () => {
     const score = timeToScore("run", 18 * 60 + 25, "male"); // 18:25 = 1105s
-    expect(score).toBeGreaterThan(725); // Advanced floor
-    expect(score).toBeLessThan(925); // below World Class
+    expect(score).toBeGreaterThan(775);
+    expect(score).toBeLessThan(850);
   });
 
-  it("a 19:20 finish (his PB) lands solidly inside Advanced", () => {
-    const score = timeToScore("run", 19 * 60 + 20, "male");
-    expect(score).toBeGreaterThanOrEqual(725);
+  it("a 22:22 finish lands close to the 22:30 anchor (575)", () => {
+    const score = timeToScore("run", 22 * 60 + 22, "male"); // 22:22 = 1342s
+    expect(score).toBeGreaterThan(575);
+    expect(score).toBeLessThan(615); // 21:30 anchor
+  });
+
+  it("still applies the female multiplier on top (no sex-specific Motera data available)", () => {
+    const male = timeToScore("run", 1320, "male");
+    const female = timeToScore("run", 1320, "female");
+    expect(female).toBeGreaterThan(male); // same raw time, female scores higher (fairness adjustment)
   });
 });

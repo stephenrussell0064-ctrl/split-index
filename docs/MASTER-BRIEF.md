@@ -107,17 +107,21 @@ Each cardio activity keeps a **stored predicted benchmark time** per user, updat
 
 ### Score anchor tables (time → 0–1000)
 
-**Methodology (splitindex_calibration_master.py):** run/row/cycle/swim are each calibrated against ONE internally-consistent source per activity — the Run/Row/Cycle/Swim Regimen sibling-site network, which all explicitly use the same percentile convention (Beginner=5th, Novice=20th, Intermediate=50th, Advanced=80th, Elite=95th). Never synthesized across sources with different definitions of "advanced" — an earlier draft did that and silently mis-scored a real time by mixing percentile targets from one source with time boundaries from another that didn't actually agree on what "Advanced" meant. The 99th-percentile anchor is 30% of the remaining gap from the 95th-percentile time toward the world record (or a separately-sourced elite/pro estimate for cycle/swim, which lack a WR column on the same source page — flagged lower confidence for that one anchor only). Every table below passes an automated monotonicity + internal-consistency audit (run the script to verify).
+**Methodology (splitindex_calibration_master.py):** row/cycle/swim are each calibrated against ONE internally-consistent source per activity — the Row/Cycle/Swim Regimen sibling-site network, which all explicitly use the same percentile convention (Beginner=5th, Novice=20th, Intermediate=50th, Advanced=80th, Elite=95th). Never synthesized across sources with different definitions of "advanced" — an earlier draft did that and silently mis-scored a real time by mixing percentile targets from one source with time boundaries from another that didn't actually agree on what "Advanced" meant. The 99th-percentile anchor is 30% of the remaining gap from the 95th-percentile time toward the world record (or a separately-sourced elite/pro estimate for cycle/swim, which lack a WR column on the same source page — flagged lower confidence for that one anchor only). Every table below passes an automated monotonicity + internal-consistency audit (run the script to verify).
 
-**Running (5k time) — Run Regimen, sex-specific, high confidence:**
-| 5k (male) | Score (percentile) | | 5k (female) | Score (percentile) |
+**Running (5k time) — Motera QA reconstruction, male, matched point-by-point.** Briefly tried Run Regimen's single-source sex-specific percentile table instead, but reverted after direct comparison — Motera's numbers judged more accurate for run specifically. No sex-specific Motera data available in the same dense format, so female runners use the 1.152 multiplier on this male curve (same as swim/cycle/walk/ski):
+| 5k | Score | | 5k | Score |
 |---|---|---|---|---|
-| 16:13.3 | 925 (99th) | | 18:58.1 | 925 (99th) |
-| 17:40 | 850 (95th) | | 20:47 | 850 (95th) |
-| 19:44 | 725 (80th) | | 23:04 | 725 (80th) |
-| 22:31 | 475 (50th) | | 26:07 | 475 (50th) |
-| 26:19 | 250 (20th) | | 30:08 | 250 (20th) |
-| 31:29 | 125 (5th) | | 35:27 | 125 (5th) |
+| 15:00 | 950 | | 25:00 | 500 |
+| 16:00 | 910 | | 27:00 | 440 |
+| 17:00 | 870 | | 29:00 | 380 |
+| 17:30 | 850 | | 30:00 | 350 |
+| 18:30 | 775 | | 33:00 | 305 |
+| 19:30 | 708.3 | | 36:00 | 260 |
+| 20:00 | 675 | | 37:00 | 245 |
+| 21:30 | 615 | | 40:00 | 200 |
+| 22:30 | 575 | | 44:00 | 170 |
+| 24:00 | 530 | | | |
 
 **Rowing (2k time) — Rowing Regimen, sex-specific, high confidence:**
 | 2k (male) | Score (percentile) | | 2k (female) | Score (percentile) |

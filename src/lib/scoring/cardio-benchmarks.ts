@@ -23,9 +23,9 @@ export const BENCHMARK_DISTANCE_METERS: Record<BenchmarkSport, number> = {
   ski: 2000,
 };
 
-/** Data-derived F/M time-ratio factors — a woman's time is divided by this before scoring on the male curve. Differ by sport; do not reuse the running factor elsewhere. Run and row now use their own sex-specific anchor tables instead of this factor — `run`/`row` are kept here only because `ski` inherits the row factor (same machine family, no sex-specific ski data of its own). */
+/** Data-derived F/M time-ratio factors — a woman's time is divided by this before scoring on the male curve. Differ by sport; do not reuse the running factor elsewhere. Row uses its own sex-specific anchor tables instead of this factor for its own scoring — kept here because `ski` inherits it (same machine family, no sex-specific ski data of its own). Run is back on the multiplier (reverted to the male-only Motera table, no sex-specific Motera data available). */
 export const FEMALE_CARDIO_FACTORS: Record<BenchmarkSport, number> = {
-  run: 1.152, // unused for run's own scoring — run has sex-specific tables now
+  run: 1.152,
   walk: 1.152, // mirrors running per instruction
   swim: 1.073,
   cycle: 1.219,
@@ -39,38 +39,42 @@ export const SKI_FROM_ROW_PACE = 1.0357;
 type Anchor = [seconds: number, score: number];
 
 /**
- * Corrected against Run Regimen (runregimen.com), age-25 male/female — one
- * of a network of five sibling sites (Run/Row/Cycle/Swim/Triathlon Regimen)
- * that all use the identical, explicitly-stated percentile convention:
- * Beginner=5th, Novice=20th, Intermediate=50th, Advanced=80th, Elite=95th.
- * High confidence — single internally-consistent source, not synthesized
- * across sources with different definitions of "advanced" (an earlier draft
- * did that and silently mis-scored a real time by mixing percentile targets
- * from one source with time boundaries from another that didn't actually
- * agree on what "Advanced" meant — see splitindex_calibration_master.py).
- * 99th-percentile anchor: 30% of the remaining gap from the 95th-percentile
- * time toward the world record, the same rule applied to every activity
- * below with a 95th-percentile-plus-WR source, rather than a different ad
- * hoc guess per activity. Sex-specific tables sourced directly from
- * sex-specific percentile data (more accurate than a single-curve female-
- * multiplier approach).
+ * Corrected against the Motera 5k times chart QA reconstruction (male,
+ * general/non-age-specific) — read directly off the chart at every
+ * available point rather than reduced to a handful of tier-boundary
+ * anchors, so the interpolated curve hugs the real chart closely
+ * throughout. Reverted here from a briefly-tried Run Regimen (single-
+ * source, sex-specific, percentile-convention) table after direct
+ * comparison — Stephen judged Motera's numbers more accurate for run
+ * specifically. Row/cycle/swim are unaffected by this reversal (Row was
+ * already Motera-consistent via RowingRegimen; cycle/swim have no Motera
+ * equivalent to compare against and haven't been flagged as wrong).
+ * Excludes the chart's 14:00 row (flagged extrapolated/outside-anchors in
+ * the source — non-monotonic relative to 15:00, an artifact, not real
+ * data). No sex-specific Motera data available in the same dense format,
+ * so female runners use the existing female cardio factor (1.152) on this
+ * male curve, same as swim/cycle/walk/ski.
  */
-const RUN_5K_ANCHORS_MALE: Anchor[] = [
-  [973.3, 925], // 16:13.3 — 99th percentile (30% of gap toward WR 12:51)
-  [1060, 850], // 17:40 — 95th percentile
-  [1184, 725], // 19:44 — 80th percentile
-  [1351, 475], // 22:31 — 50th percentile
-  [1579, 250], // 26:19 — 20th percentile
-  [1889, 125], // 31:29 — 5th percentile
-];
-
-const RUN_5K_ANCHORS_FEMALE: Anchor[] = [
-  [1138.1, 925], // 18:58.1 — 99th percentile (30% of gap toward WR 14:44)
-  [1247, 850], // 20:47 — 95th percentile
-  [1384, 725], // 23:04 — 80th percentile
-  [1567, 475], // 26:07 — 50th percentile
-  [1808, 250], // 30:08 — 20th percentile
-  [2127, 125], // 35:27 — 5th percentile
+const RUN_5K_ANCHORS: Anchor[] = [
+  [900, 950], // 15:00
+  [960, 910], // 16:00
+  [1020, 870], // 17:00
+  [1050, 850], // 17:30
+  [1110, 775], // 18:30
+  [1170, 708.3], // 19:30
+  [1200, 675], // 20:00
+  [1290, 615], // 21:30
+  [1350, 575], // 22:30
+  [1440, 530], // 24:00
+  [1500, 500], // 25:00
+  [1620, 440], // 27:00
+  [1740, 380], // 29:00
+  [1800, 350], // 30:00
+  [1980, 305], // 33:00
+  [2160, 260], // 36:00
+  [2220, 245], // 37:00
+  [2400, 200], // 40:00
+  [2640, 170], // 44:00
 ];
 
 /**
@@ -162,8 +166,9 @@ const SWIM_400M_ANCHORS: Anchor[] = [
   [370.1, 125], // 6:10.1 — 5th percentile
 ];
 
-/** Sports scored via a single male curve + FEMALE_CARDIO_FACTORS multiplier (no sex-specific source data captured for these) — run/row and, indirectly through row, ski are the exceptions (sex-specific tables). */
-const ANCHOR_TABLES: Record<Exclude<BenchmarkSport, "ski" | "row" | "run">, Anchor[]> = {
+/** Sports scored via a single male curve + FEMALE_CARDIO_FACTORS multiplier (no sex-specific source data captured for these) — row and, indirectly through row, ski are the exceptions (sex-specific tables). */
+const ANCHOR_TABLES: Record<Exclude<BenchmarkSport, "ski" | "row">, Anchor[]> = {
+  run: RUN_5K_ANCHORS,
   walk: WALK_PACE_ANCHORS,
   swim: SWIM_400M_ANCHORS,
   cycle: CYCLE_20K_ANCHORS,
@@ -241,18 +246,14 @@ export function enduranceAgeGradeFactor(age: number | null | undefined): number 
 
 /**
  * Score a benchmark-distance time (or, for walk, a per-km pace) on the
- * calibrated 0–1000 scale. Run and row use sex-specific anchor tables
- * sourced directly from sex-specific percentile data (more accurate than a
- * single curve + multiplier). Everything else applies the activity's female
+ * calibrated 0–1000 scale. Row uses sex-specific anchor tables sourced
+ * directly from sex-specific percentile data (more accurate than a single
+ * curve + multiplier). Everything else — including run, since reverting to
+ * the Motera-sourced table (male-only data) — applies the activity's female
  * factor first so equal-ability men and women land on the same tier.
  */
 export function timeToScore(sport: BenchmarkSport, seconds: number, sex: "male" | "female"): number {
   if (!Number.isFinite(seconds) || seconds <= 0) return 0;
-
-  if (sport === "run") {
-    const table = sex === "female" ? RUN_5K_ANCHORS_FEMALE : RUN_5K_ANCHORS_MALE;
-    return clampScore(interpolateAnchors(table, seconds));
-  }
 
   if (sport === "row") {
     const table = sex === "female" ? ROW_2K_ANCHORS_FEMALE : ROW_2K_ANCHORS_MALE;
