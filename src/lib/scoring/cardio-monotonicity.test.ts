@@ -53,8 +53,12 @@ describe("scoreCardioActivity — pace monotonicity", () => {
   it("never lets multi-session memory override a session's own faster pace (the reported bug)", () => {
     // The reported case: 5.00km in 18:25 (1105s) with a stale, slower stored
     // prediction from prior sessions (~19:53 / 1193.7s equivalent) — this
-    // used to score 725 (below what the 18:30 anchor alone maps to, 775).
-    const result = scoreCardioActivity({
+    // used to score 725 by anchoring to the stale memory instead of this
+    // session's own pace. Assert the INVARIANT (memory can't change the
+    // outcome), not a hardcoded score range — the exact number depends on
+    // whichever anchor table is live (see scoring-calibration-rewrite.md),
+    // and re-hardcoding a magic range here would break every recalibration.
+    const withStaleMemory = scoreCardioActivity({
       ...base,
       durationSeconds: 1105,
       avgHR: 192,
@@ -62,9 +66,15 @@ describe("scoreCardioActivity — pace monotonicity", () => {
       temperatureCelsius: 18,
       storedPredictionSeconds: 1193.7,
     });
-
-    expect(result.score).toBeGreaterThanOrEqual(780);
-    expect(result.score).toBeLessThanOrEqual(870);
+    const withoutMemory = scoreCardioActivity({
+      ...base,
+      durationSeconds: 1105,
+      avgHR: 192,
+      elevationMeters: 22,
+      temperatureCelsius: 18,
+    });
+    expect(withStaleMemory.score).toBe(withoutMemory.score);
+    expect(withStaleMemory.paceScore).toBe(withoutMemory.paceScore);
 
     // A faster session must never score below a slower one, memory or not.
     const slowerResult = scoreCardioActivity({
@@ -72,7 +82,7 @@ describe("scoreCardioActivity — pace monotonicity", () => {
       durationSeconds: 1110, // 18:30 — slower than the 18:25 case above
       storedPredictionSeconds: 1193.7,
     });
-    expect(result.score).toBeGreaterThanOrEqual(slowerResult.score);
+    expect(withStaleMemory.score).toBeGreaterThanOrEqual(slowerResult.score);
   });
 
   it("a faster time never scores lower than a slower time even at opposite modifier extremes", () => {

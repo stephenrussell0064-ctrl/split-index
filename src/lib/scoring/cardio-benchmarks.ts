@@ -38,18 +38,25 @@ export const SKI_FROM_ROW_PACE = 1.0357;
 
 type Anchor = [seconds: number, score: number];
 
+/**
+ * Corrected (CLAUDE-CODE-BRIEF-scoring-calibration-rewrite.md, Part C) —
+ * synthesized from several percentile-tagged sources (RevelSports,
+ * PacePercentile, RunDida/Marathon Handbook median framing), since no single
+ * source gave a clean 5/20/50/80/95th percentile table the way RowingRegimen
+ * did for rowing (see Part B). Moderate confidence — a strong first
+ * correction, not final truth; revisit if better sourcing turns up. Fixes
+ * the previous 18:30→775 / 20:00→675 gap that put a 19:20 finish six points
+ * shy of Advanced — under this table 19:20 lands solidly inside Advanced.
+ * Female factor (1.152) still applied on top (no sex-specific running data
+ * at the same quality as the male data here — revisit alongside Part C).
+ */
 const RUN_5K_ANCHORS: Anchor[] = [
-  [900, 950], // 15:00
-  [1050, 850], // 17:30
-  [1110, 775], // 18:30
-  [1200, 675], // 20:00
-  [1350, 575], // 22:30
-  [1500, 500], // 25:00
-  [1800, 350], // 30:00
-  [2100, 275], // 35:00
-  [2400, 200], // 40:00
-  [3000, 125], // 50:00
-  [3600, 50], // 60:00
+  [1020, 925], // 17:00 — ~99th percentile / competitive club level (tail beyond asymptotic toward 999, WR 12:35)
+  [1140, 850], // 19:00 — ~95th percentile
+  [1320, 725], // 22:00 — ~80th percentile
+  [1530, 475], // 25:30 — ~50th percentile
+  [1650, 250], // 27:30 — ~20th percentile
+  [1860, 125], // 31:00 — ~5th percentile
 ];
 
 /**
