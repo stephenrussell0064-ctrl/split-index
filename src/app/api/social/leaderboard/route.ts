@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { fetchLeaderboard } from "@/lib/social/leaderboard";
+import { fetchLeaderboardWithBracket } from "@/lib/social/leaderboard";
 import { canAccessLeaderboardScope } from "@/lib/premium/features";
 import type { LeaderboardPeriod } from "@/types";
 import type { IndexMetric, LeaderboardScope } from "@/lib/social/constants";
@@ -27,36 +27,46 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const period = (searchParams.get("period") ?? "all_time") as LeaderboardPeriod;
-  const scope = (searchParams.get("scope") ?? "global") as LeaderboardScope;
+  const scope = (searchParams.get("scope") ?? "bracket") as LeaderboardScope;
   const country = searchParams.get("country") ?? profile.country ?? undefined;
   const ageBracket = searchParams.get("ageBracket") ?? undefined;
   const weightClass = searchParams.get("weightClass") ?? undefined;
   const metric = (searchParams.get("metric") ?? "split") as IndexMetric;
 
   if (!canAccessLeaderboardScope(scope, profile)) {
+    const fallback = await fetchLeaderboardWithBracket(
+      supabase,
+      {
+        period,
+        scope: "bracket",
+        country,
+        metric,
+      },
+      user.id
+    );
     return NextResponse.json(
       {
         error: "Global leaderboards require Premium",
         premium_required: true,
-        rows: await fetchLeaderboard(supabase, {
-          period,
-          scope: "country",
-          country,
-          metric,
-        }),
+        rows: fallback.rows,
+        bracket: fallback.bracket,
       },
       { status: 403 }
     );
   }
 
-  const rows = await fetchLeaderboard(supabase, {
-    period,
-    scope,
-    country,
-    ageBracket,
-    weightClass,
-    metric,
-  });
+  const result = await fetchLeaderboardWithBracket(
+    supabase,
+    {
+      period,
+      scope,
+      country,
+      ageBracket,
+      weightClass,
+      metric,
+    },
+    user.id
+  );
 
-  return NextResponse.json({ rows });
+  return NextResponse.json(result);
 }

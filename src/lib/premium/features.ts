@@ -85,11 +85,11 @@ export function canAccessProfile(
   return canAccess(feature, profile.subscription_tier, profile.subscription_status);
 }
 
-/** Free users may view country-scoped leaderboard only. */
+/** Free users may view country + personal bracket; other scopes need Premium. */
 export function canAccessLeaderboardScope(
   scope: string,
   profile: PremiumProfile
 ): boolean {
-  if (scope === "country") return true;
+  if (scope === "country" || scope === "bracket") return true;
   return canAccessProfile("global_leaderboards", profile);
 }

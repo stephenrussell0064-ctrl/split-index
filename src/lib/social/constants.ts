@@ -1,7 +1,23 @@
 import type { LeaderboardPeriod } from "@/types";
 
-export type LeaderboardScope = "global" | "country" | "age" | "weight" | "sport";
+export type LeaderboardScope =
+  | "bracket"
+  | "global"
+  | "country"
+  | "age"
+  | "weight"
+  | "sport";
 export type IndexMetric = "split" | "endurance" | "strength";
+
+/** Which leaderboard is shown: the Split/Endurance/Strength index ranking, or a single-value ranking on one dimension. */
+export type LeaderboardViewMode = "index" | "exercise" | "muscleGroup" | "activity";
+
+export const LEADERBOARD_VIEW_MODES: { value: LeaderboardViewMode; label: string }[] = [
+  { value: "index", label: "Index" },
+  { value: "exercise", label: "By Exercise" },
+  { value: "muscleGroup", label: "By Muscle Group" },
+  { value: "activity", label: "By Activity" },
+];
 
 export const LEADERBOARD_PERIODS: { value: LeaderboardPeriod; label: string }[] = [
   { value: "weekly", label: "Weekly" },
@@ -10,6 +26,7 @@ export const LEADERBOARD_PERIODS: { value: LeaderboardPeriod; label: string }[] 
 ];
 
 export const LEADERBOARD_SCOPES: { value: LeaderboardScope; label: string }[] = [
+  { value: "bracket", label: "My Bracket" },
   { value: "global", label: "Global" },
   { value: "country", label: "Country" },
   { value: "age", label: "Age Group" },

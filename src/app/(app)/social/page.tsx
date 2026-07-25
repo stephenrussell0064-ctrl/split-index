@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { SocialHub } from "@/components/social/social-hub";
-import { fetchLeaderboard } from "@/lib/social/leaderboard";
+import { fetchLeaderboardWithBracket } from "@/lib/social/leaderboard";
 import {
   fetchAchievements,
   fetchChallenges,
@@ -33,8 +33,13 @@ export default async function SocialPage() {
     profile.subscription_status
   );
 
-  const [{ data: activityDates }, leaderboard, friendsData, challenges, achievements] =
-    await Promise.all([
+  const [
+    { data: activityDates },
+    leaderboardResult,
+    friendsData,
+    challenges,
+    achievements,
+  ] = await Promise.all([
       supabase
         .from("activities")
         .select("started_at")
@@ -42,12 +47,16 @@ export default async function SocialPage() {
         .eq("is_draft", false)
         .order("started_at", { ascending: false })
         .limit(365),
-      fetchLeaderboard(supabase, {
-        period: "all_time",
-        scope: premium ? "global" : "country",
-        country: profile.country ?? undefined,
-        metric: "split",
-      }),
+      fetchLeaderboardWithBracket(
+        supabase,
+        {
+          period: "all_time",
+          scope: "bracket",
+          country: profile.country ?? undefined,
+          metric: "split",
+        },
+        user.id
+      ),
       fetchFriendsData(supabase, user.id),
       fetchChallenges(supabase, user.id),
       fetchAchievements(supabase, user.id),
@@ -62,7 +71,8 @@ export default async function SocialPage() {
       currentUserId={user.id}
       userCountry={profile.country}
       isPremium={premium}
-      leaderboard={leaderboard}
+      leaderboard={leaderboardResult.rows}
+      leaderboardBracket={leaderboardResult.bracket}
       friends={friendsData.friends}
       incoming={friendsData.incoming}
       outgoing={friendsData.outgoing}

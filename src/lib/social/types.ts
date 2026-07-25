@@ -15,6 +15,18 @@ export interface LeaderboardRow {
   previousRank: number | null;
 }
 
+/** By Exercise / By Muscle Group / By Activity — a single-value ranking, unlike LeaderboardRow's split/endurance/strength triple. */
+export interface DimensionLeaderboardRow {
+  rank: number;
+  userId: string;
+  username: string | null;
+  displayName: string | null;
+  avatarUrl: string | null;
+  country: string | null;
+  /** 1RM in kg (exercise) or a 0-999 index (muscle group / activity). */
+  value: number;
+}
+
 export interface LeaderboardFilters {
   period: LeaderboardPeriod;
   scope: LeaderboardScope;
@@ -22,6 +34,30 @@ export interface LeaderboardFilters {
   ageBracket?: string;
   weightClass?: string;
   metric: IndexMetric;
+}
+
+/** Age × sex × weight bracket metadata for the current user. */
+export interface BracketSummary {
+  /** User's true demographic bracket — never rewritten when the view widens. */
+  exactLabel: string;
+  /** What is actually ranked (may be widened for population). */
+  effectiveLabel: string;
+  /** Rank within the effective bracket (1-based). */
+  bracketRank: number | null;
+  bracketSize: number;
+  /** Rank among all scored athletes for this metric (1-based). */
+  globalRank: number | null;
+  globalSize: number;
+  widenLevel: "exact" | "weight" | "age" | "sex_only" | "global";
+  /** Invite CTA — only when fallback reached sex-only or global. */
+  showInvitePrompt: boolean;
+  /** Profile incomplete for bracketing (missing age/sex/weight). */
+  unavailableReason?: "missing_profile";
+}
+
+export interface LeaderboardResponse {
+  rows: LeaderboardRow[];
+  bracket: BracketSummary | null;
 }
 
 export interface FriendProfile {

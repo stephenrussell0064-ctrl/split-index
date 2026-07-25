@@ -12,9 +12,11 @@ import {
   INDEX_METRICS,
   LEADERBOARD_PERIODS,
   LEADERBOARD_SCOPES,
+  LEADERBOARD_VIEW_MODES,
   WEIGHT_CLASSES,
   type IndexMetric,
   type LeaderboardScope,
+  type LeaderboardViewMode,
 } from "@/lib/social/constants";
 import { getDisplayIndex } from "@/lib/social/leaderboard";
 import { PremiumTease } from "@/components/premium/premium-tease";
@@ -23,9 +25,14 @@ import {
   formatPredictionLabel,
   formatRiegelPrediction,
 } from "@/lib/scoring/presentation";
+import { COMMON_EXERCISES, MUSCLE_GROUPS, SPORTS } from "@/lib/constants/sports";
 import type { LeaderboardDetail } from "@/lib/social/queries";
-import type { LeaderboardRow } from "@/lib/social/types";
-import type { LeaderboardPeriod } from "@/types";
+import type {
+  BracketSummary,
+  DimensionLeaderboardRow,
+  LeaderboardRow,
+} from "@/lib/social/types";
+import type { LeaderboardPeriod, SportType } from "@/types";
 import { cn } from "@/lib/utils/cn";
 
 const PLACEHOLDER_DETAIL: LeaderboardDetail = {
@@ -100,31 +107,108 @@ function LeaderboardDetailCard({
 
 interface LeaderboardPanelProps {
   initialRows: LeaderboardRow[];
+  initialBracket?: BracketSummary | null;
   currentUserId: string;
   userCountry?: string | null;
   isPremium?: boolean;
   onCompare?: (username: string | null, userId: string) => void;
 }
 
+function BracketSummaryCard({ bracket }: { bracket: BracketSummary | null }) {
+  if (!bracket) return null;
+
+  if (bracket.unavailableReason === "missing_profile") {
+    return (
+      <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-3">
+        <p className="text-sm font-medium">Your bracket</p>
+        <p className="mt-1 text-xs text-muted">
+          Add age, sex, and bodyweight in your profile to unlock peer brackets.
+        </p>
+        {bracket.globalRank != null && (
+          <p className="mt-2 text-xs text-muted">
+            Global rank{" "}
+            <span className="tabular-nums text-foreground">
+              #{bracket.globalRank}
+            </span>
+            {bracket.globalSize > 0 ? ` of ${bracket.globalSize}` : ""}
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  const widened = bracket.widenLevel !== "exact";
+
+  return (
+    <div className="rounded-xl border border-accent/20 bg-accent/5 px-4 py-3">
+      <p className="text-[10px] font-medium uppercase tracking-wide text-muted">
+        Your bracket
+      </p>
+      <p className="mt-0.5 text-sm font-medium text-foreground">
+        {bracket.exactLabel}
+      </p>
+      <div className="mt-2 flex flex-wrap items-baseline gap-x-4 gap-y-1">
+        <p className="text-2xl font-bold tabular-nums tracking-tight">
+          {bracket.bracketRank != null ? `#${bracket.bracketRank}` : "—"}
+          <span className="ml-1.5 text-sm font-medium text-muted">
+            of {bracket.bracketSize}
+          </span>
+        </p>
+        <p className="text-xs text-muted">
+          Global{" "}
+          <span className="tabular-nums text-foreground/80">
+            {bracket.globalRank != null ? `#${bracket.globalRank}` : "—"}
+          </span>
+          {bracket.globalSize > 0 ? (
+            <span className="text-muted"> of {bracket.globalSize}</span>
+          ) : null}
+        </p>
+      </div>
+      {widened && (
+        <p className="mt-2 text-xs text-muted">
+          Ranking a wider peer group for now
+          {bracket.effectiveLabel !== bracket.exactLabel
+            ? ` (${bracket.effectiveLabel})`
+            : ""}
+          — your bracket label stays {bracket.exactLabel}.
+        </p>
+      )}
+      {bracket.showInvitePrompt && (
+        <p className="mt-2 text-xs text-accent">
+          Brackets unlock once more athletes join your bracket — invite your
+          training partners.
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function LeaderboardPanel({
   initialRows,
+  initialBracket = null,
   currentUserId,
   userCountry,
   isPremium = false,
   onCompare,
 }: LeaderboardPanelProps) {
   const [period, setPeriod] = useState<LeaderboardPeriod>("all_time");
-  const [scope, setScope] = useState<LeaderboardScope>(
-    isPremium ? "global" : "country"
-  );
+  const [scope, setScope] = useState<LeaderboardScope>("bracket");
   const [metric, setMetric] = useState<IndexMetric>("split");
   const [ageBracket, setAgeBracket] = useState("18-29");
   const [weightClass, setWeightClass] = useState("middle");
   const [rows, setRows] = useState(initialRows);
+  const [bracket, setBracket] = useState<BracketSummary | null>(initialBracket);
   const [loading, setLoading] = useState(false);
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
   const [detailCache, setDetailCache] = useState<Record<string, LeaderboardDetail>>({});
   const skipInitialFetch = useRef(true);
+
+  const [viewMode, setViewMode] = useState<LeaderboardViewMode>("index");
+  const [selectedExercise, setSelectedExercise] = useState(COMMON_EXERCISES[0]?.name ?? "");
+  const [selectedMuscleGroup, setSelectedMuscleGroup] = useState(MUSCLE_GROUPS[0]);
+  const [selectedActivity, setSelectedActivity] = useState<SportType>("running");
+  const [dimensionRows, setDimensionRows] = useState<DimensionLeaderboardRow[]>([]);
+  const [dimensionLoading, setDimensionLoading] = useState(false);
 
   const toggleExpanded = useCallback(
     (userId: string) => {
@@ -150,7 +234,10 @@ export function LeaderboardPanel({
 
       const res = await fetch(`/api/social/leaderboard?${params}`);
       const data = await res.json();
-      if (res.ok) setRows(data.rows);
+      if (res.ok || data.rows) {
+        setRows(data.rows ?? []);
+        if (data.bracket !== undefined) setBracket(data.bracket);
+      }
     } finally {
       setLoading(false);
     }
@@ -164,6 +251,30 @@ export function LeaderboardPanel({
     void fetchRows();
   }, [fetchRows]);
 
+  const dimensionValue =
+    viewMode === "exercise"
+      ? selectedExercise
+      : viewMode === "muscleGroup"
+        ? selectedMuscleGroup
+        : selectedActivity;
+
+  const fetchDimensionRows = useCallback(async () => {
+    if (viewMode === "index" || !dimensionValue) return;
+    setDimensionLoading(true);
+    try {
+      const params = new URLSearchParams({ type: viewMode, value: dimensionValue });
+      const res = await fetch(`/api/social/leaderboard/dimension?${params}`);
+      const data = await res.json();
+      if (res.ok) setDimensionRows(data.rows ?? []);
+    } finally {
+      setDimensionLoading(false);
+    }
+  }, [viewMode, dimensionValue]);
+
+  useEffect(() => {
+    void fetchDimensionRows();
+  }, [fetchDimensionRows]);
+
   return (
     <Card glow="accent">
       <CardHeader>
@@ -172,30 +283,55 @@ export function LeaderboardPanel({
             <Trophy className="h-4 w-4 text-warning" />
             <CardTitle>Leaderboard</CardTitle>
           </div>
-          <div className="flex gap-1 rounded-xl glass p-1">
-            {LEADERBOARD_PERIODS.map((p) => (
-              <button
-                key={p.value}
-                type="button"
-                onClick={() => setPeriod(p.value)}
-                className={cn(
-                  "rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
-                  period === p.value
-                    ? "bg-accent text-accent-foreground"
-                    : "text-muted hover:text-foreground"
-                )}
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
+          {viewMode === "index" && (
+            <div className="flex gap-1 rounded-xl glass p-1">
+              {LEADERBOARD_PERIODS.map((p) => (
+                <button
+                  key={p.value}
+                  type="button"
+                  onClick={() => setPeriod(p.value)}
+                  className={cn(
+                    "rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
+                    period === p.value
+                      ? "bg-accent text-accent-foreground"
+                      : "text-muted hover:text-foreground"
+                  )}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </CardHeader>
 
       <CardContent className="space-y-4">
+        <div className="flex flex-wrap gap-1.5 rounded-xl glass p-1">
+          {LEADERBOARD_VIEW_MODES.map((v) => (
+            <button
+              key={v.value}
+              type="button"
+              onClick={() => setViewMode(v.value)}
+              className={cn(
+                "rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
+                viewMode === v.value
+                  ? "bg-accent text-accent-foreground"
+                  : "text-muted hover:text-foreground"
+              )}
+            >
+              {v.label}
+            </button>
+          ))}
+        </div>
+
+        {viewMode === "index" && (
+        <>
+        <BracketSummaryCard bracket={bracket} />
+
         <div className="flex flex-wrap gap-2">
           {LEADERBOARD_SCOPES.map((s) => {
-            const locked = !isPremium && s.value !== "country";
+            const locked =
+              !isPremium && s.value !== "country" && s.value !== "bracket";
             return (
               <button
                 key={s.value}
@@ -229,13 +365,13 @@ export function LeaderboardPanel({
         {!isPremium && (
           <PremiumTease
             title="Global leaderboard rank"
-            subtitle="See where you stand against athletes worldwide — unlock global, age, weight, and sport filters."
+            subtitle="See where you stand against athletes worldwide — unlock global, age, weight, and sport filters. Your personal bracket stays free."
             showPreview={false}
             className="border border-white/[0.06]"
           />
         )}
 
-        {/* Free for everyone — ranking by Split/Endurance/Strength doesn't require a premium scope. */}
+        {/* Free for everyone — Split / Endurance / Strength (Lab/Engine) metric toggle. */}
         <div className="flex flex-wrap gap-2">
           {INDEX_METRICS.map((m) => (
             <button
@@ -415,7 +551,175 @@ export function LeaderboardPanel({
             })
           )}
         </div>
+        </>
+        )}
+
+        {viewMode !== "index" && (
+          <DimensionLeaderboard
+            viewMode={viewMode}
+            selectedExercise={selectedExercise}
+            onSelectExercise={setSelectedExercise}
+            selectedMuscleGroup={selectedMuscleGroup}
+            onSelectMuscleGroup={setSelectedMuscleGroup}
+            selectedActivity={selectedActivity}
+            onSelectActivity={setSelectedActivity}
+            rows={dimensionRows}
+            loading={dimensionLoading}
+            currentUserId={currentUserId}
+          />
+        )}
       </CardContent>
     </Card>
+  );
+}
+
+function DimensionLeaderboard({
+  viewMode,
+  selectedExercise,
+  onSelectExercise,
+  selectedMuscleGroup,
+  onSelectMuscleGroup,
+  selectedActivity,
+  onSelectActivity,
+  rows,
+  loading,
+  currentUserId,
+}: {
+  viewMode: Exclude<LeaderboardViewMode, "index">;
+  selectedExercise: string;
+  onSelectExercise: (value: string) => void;
+  selectedMuscleGroup: string;
+  onSelectMuscleGroup: (value: string) => void;
+  selectedActivity: SportType;
+  onSelectActivity: (value: SportType) => void;
+  rows: DimensionLeaderboardRow[];
+  loading: boolean;
+  currentUserId: string;
+}) {
+  return (
+    <div className="space-y-4">
+      {viewMode === "exercise" && (
+        <select
+          value={selectedExercise}
+          onChange={(e) => onSelectExercise(e.target.value)}
+          className="w-full rounded-xl border border-white/10 glass px-3 py-2.5 text-sm text-foreground outline-none focus:border-accent/50"
+        >
+          {COMMON_EXERCISES.map((ex) => (
+            <option key={ex.name} value={ex.name} className="bg-[#0c0f0c]">
+              {ex.name} — {ex.muscle}
+            </option>
+          ))}
+        </select>
+      )}
+
+      {viewMode === "muscleGroup" && (
+        <div className="flex flex-wrap gap-2">
+          {MUSCLE_GROUPS.map((mg) => (
+            <button
+              key={mg}
+              type="button"
+              onClick={() => onSelectMuscleGroup(mg)}
+              className={cn(
+                "rounded-lg px-3 py-1.5 text-xs font-medium transition-colors glass",
+                selectedMuscleGroup === mg
+                  ? "bg-white/10 text-foreground border border-white/15"
+                  : "text-muted hover:text-foreground hover:bg-white/5"
+              )}
+            >
+              {mg}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {viewMode === "activity" && (
+        <div className="flex flex-wrap gap-2">
+          {SPORTS.map((sport) => (
+            <button
+              key={sport.id}
+              type="button"
+              onClick={() => onSelectActivity(sport.id)}
+              className={cn(
+                "rounded-lg px-3 py-1.5 text-xs font-medium transition-colors glass",
+                selectedActivity === sport.id
+                  ? "bg-white/10 text-foreground border border-white/15"
+                  : "text-muted hover:text-foreground hover:bg-white/5"
+              )}
+            >
+              {sport.icon} {sport.name}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className={cn("space-y-1", loading && "opacity-50")}>
+        {rows.length === 0 ? (
+          <p className="py-8 text-center text-sm text-muted">
+            {loading ? "Loading…" : "No rankings yet for this selection — log a matching session to appear here"}
+          </p>
+        ) : (
+          rows.map((entry, i) => {
+            const isMe = entry.userId === currentUserId;
+            const tier = viewMode !== "exercise" ? tierForScore(entry.value) : null;
+
+            return (
+              <motion.div
+                key={entry.userId}
+                initial={{ opacity: 0, x: -8 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: i * 0.03 }}
+                className={cn(
+                  "flex items-center gap-3 rounded-xl p-3 transition-colors",
+                  isMe ? "bg-accent/10 ring-1 ring-accent/30" : "hover:bg-white/5"
+                )}
+              >
+                <span
+                  className={cn(
+                    "w-8 text-center font-bold tabular-nums",
+                    entry.rank <= 3 ? "text-warning" : "text-muted"
+                  )}
+                >
+                  {entry.rank}
+                </span>
+
+                <UserAvatar
+                  name={entry.displayName ?? entry.username ?? "?"}
+                  avatarUrl={entry.avatarUrl}
+                  size="sm"
+                />
+
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    {entry.username ? (
+                      <Link
+                        href={`/social/profile/${entry.username}`}
+                        className="block truncate text-sm font-medium hover:text-accent"
+                      >
+                        {entry.displayName ?? entry.username}
+                      </Link>
+                    ) : (
+                      <p className="truncate text-sm font-medium">{entry.displayName ?? "Athlete"}</p>
+                    )}
+                    {tier && (
+                      <span className="shrink-0 rounded-full bg-white/[0.06] px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-muted">
+                        {tier}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted">
+                    {entry.country ?? "—"}
+                    {entry.username && <span className="ml-1 opacity-60">@{entry.username}</span>}
+                  </p>
+                </div>
+
+                <p className="text-lg font-bold tabular-nums">
+                  {viewMode === "exercise" ? formatWeight(entry.value) : formatIndex(entry.value)}
+                </p>
+              </motion.div>
+            );
+          })
+        )}
+      </div>
+    </div>
   );
 }

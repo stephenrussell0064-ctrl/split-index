@@ -11,6 +11,7 @@ import { CompareModal } from "@/components/social/compare-modal";
 import { PageHeader } from "@/components/ui/page-header";
 import type {
   AchievementBadge,
+  BracketSummary,
   ChallengeWithProgress,
   FriendConnection,
   LeaderboardRow,
@@ -31,6 +32,7 @@ interface SocialHubProps {
   userCountry: string | null;
   isPremium: boolean;
   leaderboard: LeaderboardRow[];
+  leaderboardBracket?: BracketSummary | null;
   friends: FriendConnection[];
   incoming: FriendConnection[];
   outgoing: FriendConnection[];
@@ -44,6 +46,7 @@ export function SocialHub({
   userCountry,
   isPremium,
   leaderboard,
+  leaderboardBracket = null,
   friends,
   incoming,
   outgoing,
@@ -112,6 +115,7 @@ export function SocialHub({
             <div className="lg:col-span-2">
               <LeaderboardPanel
                 initialRows={leaderboard}
+                initialBracket={leaderboardBracket}
                 currentUserId={currentUserId}
                 userCountry={userCountry}
                 isPremium={isPremium}
