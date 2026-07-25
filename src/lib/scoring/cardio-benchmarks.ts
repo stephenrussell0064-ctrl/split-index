@@ -120,22 +120,21 @@ const WALK_PACE_ANCHORS: Anchor[] = [
 ];
 
 /**
- * Provisional — swimming has no full calibration table yet, only a single
- * F/M cross-check point (BRIEF-2: age-25 Intermediate male 7:28/400m).
- * Shaped from running's relative anchor spacing and anchored at that one
- * point. Recalibrate with real logged swim data per MASTER-BRIEF.md §4's
- * own sequencing note ("mark swim/cycle/ski provisional").
+ * PROVISIONAL — NEWLY CALIBRATED, LOWEST CONFIDENCE OF ANY TABLE IN THIS
+ * FILE (Part E, scoring-calibration-rewrite). Replaces the previous
+ * scaled-from-running placeholder with a first dedicated attempt, built
+ * from SwimmingLevel.com averages, swimmingregimen.com's practical LCM
+ * ranges, and ASA award standards — not a clean percentile table like
+ * rowing (Part B). Recommend sanity-checking against a handful of real
+ * swimmers' times before fully trusting this table; revisit once real
+ * logged swim data comes in. Female factor (1.073) still applied on top.
  */
 const SWIM_400M_ANCHORS: Anchor[] = [
-  [300, 950], // 5:00
-  [340, 850],
-  [370, 750],
-  [400, 650],
-  [448, 500], // ~7:28 calibration point
-  [500, 350],
-  [560, 250],
-  [660, 150],
-  [780, 75],
+  [240, 925], // 4:00
+  [285, 725], // 4:45
+  [315, 475], // 5:15
+  [420, 250], // 7:00
+  [540, 125], // 9:00
 ];
 
 /** Sports still scored via a single male curve + FEMALE_CARDIO_FACTORS multiplier — row (Part B) and, indirectly through row, ski are the exceptions (sex-specific tables). */
