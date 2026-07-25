@@ -24,6 +24,79 @@ const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x
  */
 export const RIEGEL_K = 1.08;
 
+/**
+ * Riegel k personalization (Part H, scoring-calibration-rewrite.md).
+ * k=1.06 is the literature-standard population average — confirmed
+ * correct, not a finding, and still what RIEGEL_K above is nudged from.
+ * But individual athletes genuinely vary: speed-oriented athletes fit
+ * better around 1.03-1.05, endurance-oriented/ultra athletes around
+ * 1.07-1.10. Rather than one flat k for every user, a user's own realized
+ * cross-distance performances (e.g. their actual 5k-to-10k ratio, once
+ * they've logged both) nudge their personal k within this literature-
+ * supported band — same rolling-window convergence pattern already built
+ * for the asymmetric benchmark-prediction memory (`updatePrediction`
+ * above), reused here rather than introducing a new mechanism.
+ *
+ * Not yet wired into a stored per-user profile field/DB column (that's the
+ * natural next step, mirroring how `resting_hr` was added for HR
+ * personalization) — this is the enhancement's core, tested mechanism the
+ * brief itself frames as "worth considering" rather than a required
+ * corrected anchor.
+ */
+export const RIEGEL_K_DEFAULT = 1.06;
+export const RIEGEL_K_MIN = 1.03;
+export const RIEGEL_K_MAX = 1.10;
+
+/** How fast a personal k converges toward the athlete's own newly-implied k per cross-distance data point (symmetric — unlike the benchmark-prediction blend, a race-profile shape isn't something effort alone can game, so there's no reason to move slower in one direction). */
+const RIEGEL_K_CONVERGENCE_RATE = 0.2;
+
+/**
+ * The k that would exactly fit two of an athlete's own realized performances
+ * at different distances, solving Riegel's equation for k:
+ * t2 = t1 × (d2/d1)^k  =>  k = ln(t2/t1) / ln(d2/d1).
+ * Clamped to the literature-supported band — a noisy pair of runs (e.g. one
+ * far easier effort than the other) shouldn't be able to imply a k outside
+ * what's physiologically plausible.
+ */
+export function impliedRiegelK(
+  shorterDistanceMeters: number,
+  shorterTimeSeconds: number,
+  longerDistanceMeters: number,
+  longerTimeSeconds: number
+): number | null {
+  if (
+    shorterDistanceMeters <= 0 ||
+    longerDistanceMeters <= 0 ||
+    shorterTimeSeconds <= 0 ||
+    longerTimeSeconds <= 0 ||
+    longerDistanceMeters <= shorterDistanceMeters
+  ) {
+    return null;
+  }
+  const k =
+    Math.log(longerTimeSeconds / shorterTimeSeconds) /
+    Math.log(longerDistanceMeters / shorterDistanceMeters);
+  if (!Number.isFinite(k)) return null;
+  return clamp(k, RIEGEL_K_MIN, RIEGEL_K_MAX);
+}
+
+/**
+ * Blend a newly-implied personal k into the athlete's stored personal k
+ * (or RIEGEL_K_DEFAULT — actually RIEGEL_K, the current live population
+ * default — when they don't have one yet), the same rolling-window
+ * convergence pattern as the benchmark-prediction memory. Ramps toward the
+ * athlete's own realized cross-distance profile over repeated data points
+ * rather than snapping to it from one pair of runs.
+ */
+export function personalizedRiegelK(
+  storedPersonalK: number | null,
+  newlyImpliedK: number
+): number {
+  const base = storedPersonalK ?? RIEGEL_K;
+  const blended = base + (newlyImpliedK - base) * RIEGEL_K_CONVERGENCE_RATE;
+  return clamp(blended, RIEGEL_K_MIN, RIEGEL_K_MAX);
+}
+
 /** Reference avg HR per sport for the HR-adjustment below — mid-tempo effort at that activity, calibrated against the population baseline (see PERSONALIZATION_POPULATION_* below). */
 const HR_ADJUST_REF_HR: Record<BenchmarkSport, number> = {
   run: 175,
