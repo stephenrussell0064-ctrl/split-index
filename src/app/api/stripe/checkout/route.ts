@@ -58,6 +58,7 @@ export async function POST() {
       line_items: [{ price: process.env.STRIPE_PRICE_ID, quantity: 1 }],
       subscription_data: {
         trial_period_days: 14,
+        metadata: { supabase_user_id: user.id },
       },
       success_url: `${appUrl}/settings/billing?success=true`,
       cancel_url: `${appUrl}/settings/billing?canceled=true`,
