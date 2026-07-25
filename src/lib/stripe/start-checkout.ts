@@ -1,10 +1,18 @@
+import type { SubscriptionSku } from "@/types";
+
 export type CheckoutResult =
   | { ok: true; url: string }
   | { ok: false; message: string };
 
-export async function startStripeCheckout(): Promise<CheckoutResult> {
+export async function startStripeCheckout(
+  sku: SubscriptionSku = "monthly"
+): Promise<CheckoutResult> {
   try {
-    const res = await fetch("/api/stripe/checkout", { method: "POST" });
+    const res = await fetch("/api/stripe/checkout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sku }),
+    });
     const text = await res.text();
 
     let data: { url?: string; error?: string } = {};

@@ -36,6 +36,7 @@ import type { IndexResult } from "@/lib/scoring/index-engine";
 import { computeStreakMetrics } from "@/lib/retention/streak-utils";
 import { getGlobalRankPercentile, seedRetentionNotifications } from "@/lib/retention/rank";
 import { isPremiumUser } from "@/lib/retention/trial";
+import { ACTIVATION_EVENT_SESSION_COUNT, PRICING } from "@/lib/pricing/config";
 import { computeSplitIndexProjection } from "@/lib/premium/projection";
 import { gateAiFeedback } from "@/lib/scoring/gates";
 import { formatIndex } from "@/lib/utils/format";
@@ -191,6 +192,9 @@ export default async function DashboardPage() {
 
   const hasActivities = (recentActivities?.length ?? 0) > 0;
   const hasIndexHistory = !!latestIndex;
+  const sessionCount = allActivityDates?.length ?? 0;
+  const showActivationPaywall =
+    !premium && sessionCount >= ACTIVATION_EVENT_SESSION_COUNT;
   const streakMetrics = computeStreakMetrics(
     (allActivityDates ?? []).map((a) => a.started_at as string),
     new Date(),
@@ -394,6 +398,17 @@ export default async function DashboardPage() {
       </div>
 
       {!hasActivities && <EmptyDashboardHero displayName={displayName} />}
+
+      {showActivationPaywall && (
+        <PremiumTease
+          title={`Start your ${PRICING.TRIAL_DAYS}-day free trial`}
+          subtitle="You've logged a few sessions — see your full trend, projections, and AI coaching."
+          ctaLabel={`Start your ${PRICING.TRIAL_DAYS}-day free trial →`}
+          className="border border-accent/20"
+        >
+          <SplitTrendPanel data={trendData} />
+        </PremiumTease>
+      )}
 
       <StreakBanner
         streak={streakMetrics.streak}

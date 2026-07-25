@@ -5,11 +5,7 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import {
-  PREMIUM_PRICE_GBP,
-  FREE_TRIAL_DAYS,
-} from "@/lib/stripe/config";
-import { startStripeCheckout } from "@/lib/stripe/start-checkout";
+import { PREMIUM_PRICE_GBP, FREE_TRIAL_DAYS } from "@/lib/stripe/config";
 import {
   FREE_TIER_FEATURES,
   PREMIUM_TIER_FEATURES,
@@ -17,13 +13,13 @@ import {
 import { getTrialDaysRemaining, isPremiumUser } from "@/lib/retention/trial";
 import { createClient } from "@/lib/supabase/client";
 import { ScoreDisclaimer } from "@/components/legal/score-disclaimer";
+import { SkuPicker } from "@/components/pricing/sku-picker";
 import type { SubscriptionStatus, SubscriptionTier } from "@/types";
 
 function BillingContent() {
   const searchParams = useSearchParams();
   const success = searchParams.get("success");
   const canceled = searchParams.get("canceled");
-  const [loading, setLoading] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [profile, setProfile] = useState<{
     tier: SubscriptionTier;
@@ -58,18 +54,6 @@ function BillingContent() {
   const trialDays = profile
     ? getTrialDaysRemaining(profile.createdAt, profile.tier, profile.status)
     : null;
-
-  const handleCheckout = async () => {
-    setLoading(true);
-    setCheckoutError(null);
-    const result = await startStripeCheckout();
-    if (result.ok) {
-      window.location.href = result.url;
-      return;
-    }
-    setCheckoutError(result.message);
-    setLoading(false);
-  };
 
   if (success) {
     return (
@@ -151,9 +135,7 @@ function BillingContent() {
               {checkoutError && (
                 <p className="text-sm text-warning mb-4">{checkoutError}</p>
               )}
-              <Button className="w-full" loading={loading} onClick={handleCheckout}>
-                Subscribe — £{PREMIUM_PRICE_GBP}/month
-              </Button>
+              <SkuPicker onError={setCheckoutError} />
               {/*
                 Manual premium for testing (Supabase SQL editor):
                 UPDATE profiles

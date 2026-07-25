@@ -39,6 +39,7 @@ export async function POST(request: Request) {
     case "customer.subscription.updated": {
       const subscription = event.data.object as Stripe.Subscription;
       const userId = subscription.metadata.supabase_user_id;
+      const sku = subscription.metadata.sku === "annual" ? "annual" : "monthly";
 
       if (userId) {
         await supabaseAdmin
@@ -46,6 +47,7 @@ export async function POST(request: Request) {
           .update({
             subscription_tier: "premium",
             subscription_status: subscription.status as "active" | "trialing",
+            subscription_sku: sku,
           })
           .eq("user_id", userId);
       }
@@ -61,6 +63,27 @@ export async function POST(request: Request) {
           .update({
             subscription_tier: "free",
             subscription_status: "canceled",
+            subscription_sku: null,
+          })
+          .eq("user_id", userId);
+      }
+      break;
+    }
+    // Lifetime is a one-time payment — no subscription object, so it's
+    // handled off the Checkout Session itself rather than subscription events.
+    case "checkout.session.completed": {
+      const session = event.data.object as Stripe.Checkout.Session;
+      if (session.mode !== "payment") break;
+
+      const userId = session.metadata?.supabase_user_id;
+      const sku = session.metadata?.sku;
+      if (userId && sku === "lifetime") {
+        await supabaseAdmin
+          .from("profiles")
+          .update({
+            subscription_tier: "premium",
+            subscription_status: "active",
+            subscription_sku: "lifetime",
           })
           .eq("user_id", userId);
       }

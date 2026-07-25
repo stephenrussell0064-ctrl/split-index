@@ -61,6 +61,11 @@ export type SubscriptionStatus =
   | "canceled"
   | "incomplete";
 
+export type SubscriptionSku = "monthly" | "annual" | "lifetime";
+
+/** Answer to the onboarding "What's your main goal?" question — distinct from `goals` (training focus). */
+export type PrimaryMotivation = "leaderboard" | "beat_pr" | "predict_race" | "just_track";
+
 export interface Profile {
   id: string;
   user_id: string;
@@ -92,6 +97,8 @@ export interface Profile {
   index_updated_at: string | null;
   subscription_tier: SubscriptionTier;
   subscription_status: SubscriptionStatus | null;
+  subscription_sku: SubscriptionSku | null;
+  primary_motivation: PrimaryMotivation | null;
   stripe_customer_id: string | null;
   /** IANA timezone for local-day workout grouping (e.g. Europe/London). */
   timezone?: string | null;

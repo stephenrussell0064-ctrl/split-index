@@ -20,8 +20,16 @@ import { formatIndex } from "@/lib/utils/format";
 import { validateUsernameFormat } from "@/lib/utils/username";
 import { ageFromDateOfBirth, maxDobForMinAge, minDobForMaxAge } from "@/lib/utils/age";
 import { cn } from "@/lib/utils/cn";
+import { ScoreRevealSequence } from "@/components/onboarding/score-reveal";
 import type { PostgrestError } from "@supabase/supabase-js";
-import type { Gender, ExperienceLevel, TrainingGoal, SportType } from "@/types";
+import type { Gender, ExperienceLevel, TrainingGoal, SportType, PrimaryMotivation } from "@/types";
+
+const MOTIVATIONS: Array<{ value: PrimaryMotivation; label: string }> = [
+  { value: "leaderboard", label: "Climb the leaderboard" },
+  { value: "beat_pr", label: "Beat my PR" },
+  { value: "predict_race", label: "Predict my next race" },
+  { value: "just_track", label: "Just track my training" },
+];
 
 const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
 const ACCEPTED_AVATAR_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
@@ -53,6 +61,8 @@ export function OnboardingFlow() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitError, setSubmitError] = useState("");
   const [targetIndex, setTargetIndex] = useState(DEFAULT_GOAL_TARGET);
+  const [primaryMotivation, setPrimaryMotivation] = useState<PrimaryMotivation | "">("");
+  const [showReveal, setShowReveal] = useState(false);
   const [username, setUsername] = useState("");
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string | null>(null);
@@ -217,6 +227,7 @@ export function OnboardingFlow() {
       if (targetIndex < 350 || targetIndex > 999) {
         next.target = "Target must be between 350 and 999";
       }
+      if (!primaryMotivation) next.primaryMotivation = "Pick what brings you here";
     }
 
     setErrors(next);
@@ -322,6 +333,7 @@ export function OnboardingFlow() {
       training_history_years: Number(form.training_history_years) || 0,
       goals: form.goals,
       preferred_sports: form.preferred_sports,
+      primary_motivation: primaryMotivation || null,
       onboarding_completed: true,
     };
 
@@ -392,11 +404,25 @@ export function OnboardingFlow() {
     }
 
     localStorage.setItem("split-index-account-created", String(Date.now()));
-    router.push("/dashboard");
+    setLoading(false);
+    setShowReveal(true);
   };
 
   const hasGym = form.preferred_sports.includes("gym");
   const hasCardio = form.preferred_sports.some((s) => s !== "gym");
+  const cardioSport = form.preferred_sports.find((s) => s !== "gym") ?? null;
+
+  if (showReveal) {
+    return (
+      <div className="mx-auto max-w-lg">
+        <ScoreRevealSequence
+          hasGym={hasGym}
+          cardioSport={cardioSport}
+          onDone={() => router.push("/dashboard")}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-lg">
@@ -700,6 +726,30 @@ export function OnboardingFlow() {
                   onChange={(e) => setTargetIndex(Number(e.target.value))}
                   hint="Aspirational target — your composite index builds from logged workouts"
                 />
+              </Card>
+
+              <Card className="space-y-3">
+                <p className="text-sm font-semibold">What&apos;s your main goal?</p>
+                <div className="flex flex-wrap gap-2">
+                  {MOTIVATIONS.map((m) => (
+                    <button
+                      key={m.value}
+                      type="button"
+                      onClick={() => setPrimaryMotivation(m.value)}
+                      className={cn(
+                        "px-3 py-1.5 rounded-full text-xs font-medium transition-colors",
+                        primaryMotivation === m.value
+                          ? "bg-accent text-accent-foreground"
+                          : "glass text-muted hover:text-foreground"
+                      )}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+                {errors.primaryMotivation && (
+                  <p className="text-xs text-danger">{errors.primaryMotivation}</p>
+                )}
               </Card>
             </div>
           )}

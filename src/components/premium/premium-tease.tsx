@@ -12,6 +12,7 @@ interface PremiumTeaseProps {
   className?: string;
   /** When true, children are still visible but blurred. When false, only the CTA shows. */
   showPreview?: boolean;
+  ctaLabel?: string;
 }
 
 export function PremiumTease({
@@ -20,6 +21,7 @@ export function PremiumTease({
   subtitle,
   className,
   showPreview = true,
+  ctaLabel = "Unlock with Premium →",
 }: PremiumTeaseProps) {
   return (
     <div className={cn("relative overflow-hidden rounded-2xl", className)}>
@@ -57,7 +59,7 @@ export function PremiumTease({
           href="/settings/billing"
           className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-accent/15 px-4 py-2 text-sm font-medium text-accent transition-colors hover:bg-accent/25"
         >
-          Unlock with Premium →
+          {ctaLabel}
         </Link>
       </motion.div>
     </div>
