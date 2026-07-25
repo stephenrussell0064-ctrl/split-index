@@ -276,9 +276,11 @@ export async function POST(request: Request) {
   let newPredictedBenchmarkSeconds: number | null = null;
   let newPredictedBenchmarkSampleCount = 1;
   let benchmarkSport: ReturnType<typeof mapSportToBenchmarkSport> | null = null;
-  // Only fed into scoring when genuine prior memory exists — the first-ever
-  // session for a sport has nothing to blend into, so it should be scored
-  // (and confidence-flagged) as session-only, not "memory-backed".
+  // Only fed into scoring (as a confidence signal, never as the score's
+  // anchor time — see cardio-session-score-monotonicity-bug.md) when genuine
+  // prior memory exists; the first-ever session for a sport has nothing to
+  // blend into, so it's confidence-flagged as session-only, not
+  // "memory-available".
   let storedPredictionForScoring: number | null = null;
   let lastQualityAt: string | null = null;
   if (isEnduranceSport(body.sport)) {

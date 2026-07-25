@@ -156,9 +156,11 @@ async function scoreAndPersist(
   let newPredictedBenchmarkSeconds: number | null = null;
   let newPredictedBenchmarkSampleCount = 1;
   let benchmarkSport: ReturnType<typeof mapSportToBenchmarkSport> | null = null;
-  // Only fed into scoring when genuine prior memory exists (excluding this
-  // same activity's own previous prediction, since we're re-scoring it) —
-  // otherwise it's scored as session-only, not falsely "memory-backed".
+  // Only fed into scoring, as a confidence signal only (never the score's
+  // anchor time — see cardio-session-score-monotonicity-bug.md), when genuine
+  // prior memory exists (excluding this same activity's own previous
+  // prediction, since we're re-scoring it) — otherwise it's confidence-
+  // flagged as session-only, not falsely "memory-available".
   let storedPredictionForScoring: number | null = null;
   let lastQualityAt: string | null = null;
   if (isEnduranceSport(body.sport)) {
