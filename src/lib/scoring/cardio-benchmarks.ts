@@ -96,13 +96,27 @@ const CYCLE_20K_ANCHORS: Anchor[] = [
 ];
 
 /** Seconds per km — lower is better, same monotonic direction as the time tables above. */
+/**
+ * Lighter-touch correction (Part D) — no purpose-built leveled walking
+ * benchmark table exists the way it does for running/rowing, so this is a
+ * smaller, more conservative correction rather than a full rebuild. Per the
+ * brief, only the 12:00 and 10:00 anchors were meant to change; live code
+ * had already drifted from the brief's assumed "current" 9:15 value (775,
+ * not the 725 the brief describes as unchanged) — applying the brief's
+ * specified target number regardless, per its own instruction to treat live
+ * code as source of truth for "current" but still apply the corrected
+ * numbers. ~12min/km is repeatedly described in general-population research
+ * as close to a normal/default adult pace, which shouldn't already read as
+ * solidly "Intermediate" (was 375) — lowered proportionally at 10:00/km too
+ * (was 600).
+ */
 const WALK_PACE_ANCHORS: Anchor[] = [
-  [420, 925], // 7:00/km
-  [480, 875], // 8:00
-  [555, 775], // 9:15
-  [600, 600], // 10:00
-  [720, 375], // 12:00
-  [840, 150], // 14:00
+  [420, 925], // 7:00/km — unchanged, top anchor already looked appropriately hard
+  [480, 875], // 8:00 — unchanged
+  [555, 725], // 9:15 — brief's target value; live code was actually 775, not 725 as the brief assumed
+  [600, 500], // 10:00 — was 600, lowered proportionally
+  [720, 300], // 12:00 — was 375, lowered (near-default adult pace, not Intermediate)
+  [840, 150], // 14:00 — unchanged, floor looked fine
 ];
 
 /**
