@@ -107,45 +107,49 @@ Each cardio activity keeps a **stored predicted benchmark time** per user, updat
 
 ### Score anchor tables (time → 0–1000)
 
-**Running (5k time) — corrected against percentile-tagged data (scoring-calibration-rewrite.md Part C), moderate confidence:**
-| 5k | Score (percentile) |
+**Methodology (splitindex_calibration_master.py):** run/row/cycle/swim are each calibrated against ONE internally-consistent source per activity — the Run/Row/Cycle/Swim Regimen sibling-site network, which all explicitly use the same percentile convention (Beginner=5th, Novice=20th, Intermediate=50th, Advanced=80th, Elite=95th). Never synthesized across sources with different definitions of "advanced" — an earlier draft did that and silently mis-scored a real time by mixing percentile targets from one source with time boundaries from another that didn't actually agree on what "Advanced" meant. The 99th-percentile anchor is 30% of the remaining gap from the 95th-percentile time toward the world record (or a separately-sourced elite/pro estimate for cycle/swim, which lack a WR column on the same source page — flagged lower confidence for that one anchor only). Every table below passes an automated monotonicity + internal-consistency audit (run the script to verify).
+
+**Running (5k time) — Run Regimen, sex-specific, high confidence:**
+| 5k (male) | Score (percentile) | | 5k (female) | Score (percentile) |
+|---|---|---|---|---|
+| 16:13.3 | 925 (99th) | | 18:58.1 | 925 (99th) |
+| 17:40 | 850 (95th) | | 20:47 | 850 (95th) |
+| 19:44 | 725 (80th) | | 23:04 | 725 (80th) |
+| 22:31 | 475 (50th) | | 26:07 | 475 (50th) |
+| 26:19 | 250 (20th) | | 30:08 | 250 (20th) |
+| 31:29 | 125 (5th) | | 35:27 | 125 (5th) |
+
+**Rowing (2k time) — Rowing Regimen, sex-specific, high confidence:**
+| 2k (male) | Score (percentile) | | 2k (female) | Score (percentile) |
+|---|---|---|---|---|
+| 5:59.9 | 925 (99th) | | 6:52.2 | 925 (99th) |
+| 6:10.2 | 850 (95th) | | 7:03.9 | 850 (95th) |
+| 6:35.9 | 725 (80th) | | 7:44.0 | 725 (80th) |
+| 7:04.6 | 475 (50th) | | 8:30.2 | 475 (50th) |
+| 7:35.4 | 250 (20th) | | 9:21.0 | 250 (20th) |
+| 8:06.9 | 125 (5th) | | 10:14.2 | 125 (5th) |
+
+**Cycling (20k time) — Cycling Regimen, male only, female uses the 1.219 multiplier:**
+| 20k | Score (percentile) |
 |---|---|
-| 17:00 | 925 (~99th) |
-| 19:00 | 850 (~95th) |
-| 22:00 | 725 (~80th) |
-| 25:30 | 475 (~50th) |
-| 27:30 | 250 (~20th) |
-| 31:00 | 125 (~5th) |
+| 30:33.8 | 925 (99th, separately-sourced elite/pro estimate) |
+| 34:14 | 850 (95th) |
+| 36:42 | 725 (80th) |
+| 40:02 | 475 (50th) |
+| 44:58 | 250 (20th) |
+| 51:58 | 125 (5th) |
 
-**Rowing (2k time) — sex-specific, corrected against RowingRegimen's Concept2-logbook percentile data (scoring-calibration-rewrite.md Part B), high confidence:**
-| 2k (male) | Score (percentile) |
+**Swimming (400m LCM) — Swimming Regimen, male only, female uses the 1.073 multiplier:**
+| 400m | Score (percentile) |
 |---|---|
-| 6:00.0 | 925 (~99th) |
-| 6:10.2 | 850 (95th) |
-| 6:35.9 | 725 (80th) |
-| 7:04.6 | 475 (50th) |
-| 7:35.4 | 250 (20th) |
-| 8:06.9 | 125 (5th) |
+| 4:29.5 | 925 (99th, separately-sourced WR estimate) |
+| 4:50.7 | 850 (95th) |
+| 5:04.0 | 725 (80th) |
+| 5:17.1 | 475 (50th) |
+| 5:43.5 | 250 (20th) |
+| 6:10.1 | 125 (5th) |
 
-| 2k (female) | Score (percentile) |
-|---|---|
-| 7:03.9 | 850 (95th) |
-| 7:44.0 | 725 (80th) |
-| 8:30.2 | 475 (50th) |
-| 9:21.0 | 250 (20th) |
-| 10:14.2 | 125 (5th) |
-
-**Rowing 2k prediction — calibrated to real data:**
-```typescript
-function predictRow2k(steadyPace500Sec: number, avgHR: number): number {
-  const REF_HR = 175;
-  const ratio = 0.830 - (REF_HR - avgHR) * 0.0015; // lower HR = fitter at pace
-  return steadyPace500Sec * ratio * 4;             // 2km = 4×500m
-}
-```
-Validated: steady 2:02/500m @HR175 → 6:45 (score 750); friend's 1:57/500m @HR165 → 6:21 (score ~890). Lower HR at quicker pace correctly ranks far higher.
-
-**Swim (400m), cycle (20k):** own draft anchor tables now (scoring-calibration-rewrite.md Parts E/F) — replacing the previous scaled-from-running placeholder. **PROVISIONAL — lowest-confidence tables in the calibration set**, built from swim/cycle-specific sources (SwimmingLevel.com, swimmingregimen.com, ASA standards; ROUVY/BestBikeSplit speed bands) rather than a clean percentile table. Recommend sanity-checking against real swimmers'/cyclists' times before fully trusting; revisit once real logged data comes in. Ski still reuses the rowing curve via a row-equivalent-time conversion.
+**Walking (per-km pace)** — no equivalent 5-tier single source exists in that network or elsewhere found; kept as the earlier lighter-touch correction, lowest confidence alongside ski. **SkiErg** — no independent source either; still a pure derivation off the row curve, flagged for its steepness (925→~64 inside a 2-minute band, see PR notes).
 
 Keep `RIEGEL_K`, `SLOW_RUN_FACTOR`, benchmark distances, HR ratios, and all anchor tables as editable constants.
 

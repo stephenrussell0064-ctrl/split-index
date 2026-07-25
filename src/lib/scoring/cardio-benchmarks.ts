@@ -23,13 +23,13 @@ export const BENCHMARK_DISTANCE_METERS: Record<BenchmarkSport, number> = {
   ski: 2000,
 };
 
-/** Data-derived F/M time-ratio factors — a woman's time is divided by this before scoring on the male curve. Differ by sport; do not reuse the running factor elsewhere. Row now uses its own sex-specific anchor tables (Part B) instead of this factor — kept here only because `ski` still inherits it (same machine family, no sex-specific ski data of its own). */
+/** Data-derived F/M time-ratio factors — a woman's time is divided by this before scoring on the male curve. Differ by sport; do not reuse the running factor elsewhere. Run and row now use their own sex-specific anchor tables instead of this factor — `run`/`row` are kept here only because `ski` inherits the row factor (same machine family, no sex-specific ski data of its own). */
 export const FEMALE_CARDIO_FACTORS: Record<BenchmarkSport, number> = {
-  run: 1.152,
+  run: 1.152, // unused for run's own scoring — run has sex-specific tables now
   walk: 1.152, // mirrors running per instruction
   swim: 1.073,
   cycle: 1.219,
-  row: 1.187, // unused for row's own scoring since Part B; row has sex-specific tables now
+  row: 1.187, // unused for row's own scoring — row has sex-specific tables now
   ski: 1.187, // inherits rowing — same machine family
 };
 
@@ -39,55 +39,61 @@ export const SKI_FROM_ROW_PACE = 1.0357;
 type Anchor = [seconds: number, score: number];
 
 /**
- * Corrected (CLAUDE-CODE-BRIEF-scoring-calibration-rewrite.md, Part C) —
- * synthesized from several percentile-tagged sources (RevelSports,
- * PacePercentile, RunDida/Marathon Handbook median framing), since no single
- * source gave a clean 5/20/50/80/95th percentile table the way RowingRegimen
- * did for rowing (see Part B). Moderate confidence — a strong first
- * correction, not final truth; revisit if better sourcing turns up. Fixes
- * the previous 18:30→775 / 20:00→675 gap that put a 19:20 finish six points
- * shy of Advanced — under this table 19:20 lands solidly inside Advanced.
- * Female factor (1.152) still applied on top (no sex-specific running data
- * at the same quality as the male data here — revisit alongside Part C).
+ * Corrected against Run Regimen (runregimen.com), age-25 male/female — one
+ * of a network of five sibling sites (Run/Row/Cycle/Swim/Triathlon Regimen)
+ * that all use the identical, explicitly-stated percentile convention:
+ * Beginner=5th, Novice=20th, Intermediate=50th, Advanced=80th, Elite=95th.
+ * High confidence — single internally-consistent source, not synthesized
+ * across sources with different definitions of "advanced" (an earlier draft
+ * did that and silently mis-scored a real time by mixing percentile targets
+ * from one source with time boundaries from another that didn't actually
+ * agree on what "Advanced" meant — see splitindex_calibration_master.py).
+ * 99th-percentile anchor: 30% of the remaining gap from the 95th-percentile
+ * time toward the world record, the same rule applied to every activity
+ * below with a 95th-percentile-plus-WR source, rather than a different ad
+ * hoc guess per activity. Sex-specific tables sourced directly from
+ * sex-specific percentile data (more accurate than a single-curve female-
+ * multiplier approach).
  */
-const RUN_5K_ANCHORS: Anchor[] = [
-  [1020, 925], // 17:00 — ~99th percentile / competitive club level (tail beyond asymptotic toward 999, WR 12:35)
-  [1140, 850], // 19:00 — ~95th percentile
-  [1320, 725], // 22:00 — ~80th percentile
-  [1530, 475], // 25:30 — ~50th percentile
-  [1650, 250], // 27:30 — ~20th percentile
-  [1860, 125], // 31:00 — ~5th percentile
-  // Below the 5th percentile isn't part of Part C's sourced data — these two
-  // extend the floor (matching the old table's spirit of a gentle tail
-  // rather than clamping to 0 right past 31:00) so a long, easy, low-HR
-  // session's volume/terrain bonus never has room to make a much slower
-  // finish read as a HIGHER final score than a slightly-faster one once
-  // paceScore itself would otherwise be floored flat.
-  [2100, 60], // 35:00
-  [2400, 25], // 40:00
+const RUN_5K_ANCHORS_MALE: Anchor[] = [
+  [973.3, 925], // 16:13.3 — 99th percentile (30% of gap toward WR 12:51)
+  [1060, 850], // 17:40 — 95th percentile
+  [1184, 725], // 19:44 — 80th percentile
+  [1351, 475], // 22:31 — 50th percentile
+  [1579, 250], // 26:19 — 20th percentile
+  [1889, 125], // 31:29 — 5th percentile
+];
+
+const RUN_5K_ANCHORS_FEMALE: Anchor[] = [
+  [1138.1, 925], // 18:58.1 — 99th percentile (30% of gap toward WR 14:44)
+  [1247, 850], // 20:47 — 95th percentile
+  [1384, 725], // 23:04 — 80th percentile
+  [1567, 475], // 26:07 — 50th percentile
+  [1808, 250], // 30:08 — 20th percentile
+  [2127, 125], // 35:27 — 5th percentile
 ];
 
 /**
- * Corrected against RowingRegimen's Concept2-logbook-derived age-30
- * percentile table (CLAUDE-CODE-BRIEF-scoring-calibration-rewrite.md, Part
- * B) — this source already uses the exact 5/20/50/80/95th percentile
- * convention, so it maps directly onto percentile-framework.ts with no
- * synthesis needed. High confidence. Sex-specific tables sourced directly
- * from sex-specific percentile data (more accurate than the single-curve
- * female-multiplier approach still used for swim/cycle/walk/ski, where
- * sex-specific percentile data wasn't available).
+ * Corrected against Rowing Regimen (rowingregimen.com), Concept2-logbook-
+ * derived, age-30 (== age-25 for this purpose — the source treats 20-30 as
+ * a flat band, consistent with the age-factor curve below doing the same
+ * for 25-35). Same 5/20/50/80/95th percentile convention as run (same
+ * sibling-site network) — high confidence, already a clean single source,
+ * unchanged in substance from the prior pass (only the 99th-percentile
+ * anchor is now derived via the same WR-gap rule as every other activity,
+ * rather than a one-off floor point).
  */
 const ROW_2K_ANCHORS_MALE: Anchor[] = [
-  [360, 925], // 6:00.0 — ~99th percentile / national-team-adjacent (tail beyond asymptotic toward 999, WR 5:35.8)
+  [359.9, 925], // 5:59.9 — 99th percentile (30% of gap toward WR 5:35.8)
   [370.2, 850], // 6:10.2 — 95th percentile
   [395.9, 725], // 6:35.9 — 80th percentile
   [424.6, 475], // 7:04.6 — 50th percentile
   [455.4, 250], // 7:35.4 — 20th percentile
   [486.9, 125], // 8:06.9 — 5th percentile
-  [600, 50], // 10:00 — floor
 ];
 
 const ROW_2K_ANCHORS_FEMALE: Anchor[] = [
+  [412.2, 925], // 6:52.2 — 99th percentile (30% of gap toward WR 6:24.8)
   [423.9, 850], // 7:03.9 — 95th percentile
   [464.0, 725], // 7:44.0 — 80th percentile
   [510.2, 475], // 8:30.2 — 50th percentile
@@ -96,20 +102,21 @@ const ROW_2K_ANCHORS_FEMALE: Anchor[] = [
 ];
 
 /**
- * PROVISIONAL — NEWLY CALIBRATED, LOW CONFIDENCE (Part F,
- * scoring-calibration-rewrite). Built from ROUVY and BestBikeSplit
- * speed-band descriptions (beginner 19-26km/h, intermediate 24-32km/h,
- * advanced 30-35km/h, elite/racing 40+km/h), not a percentile table.
- * Recommend treating as a draft to sanity-check before fully trusting;
- * revisit once real logged cycling data comes in. Female factor (1.219)
- * still applied on top.
+ * Corrected against Cycling Regimen (cyclingregimen.com), age-25 male, same
+ * sibling-site network and percentile convention as run/row. High
+ * confidence for the 5/20/50/80/95th percentile points; the 99th-percentile
+ * anchor uses a separately-sourced elite/pro estimate (~22:00) since that
+ * page had no WR column of its own — flagged lower confidence for that one
+ * point only. Female table not captured this pass — the existing female
+ * cardio factor (1.219) is still applied on top of this male curve.
  */
 const CYCLE_20K_ANCHORS: Anchor[] = [
-  [1800, 925], // 30:00, ~40km/h — elite/racing threshold (tail toward 999 for pro TT speeds, ~24min/50km/h+)
-  [2040, 725], // 34:00, ~35km/h — top of "advanced"
-  [2400, 475], // 40:00, ~30km/h
-  [3000, 250], // 50:00, ~24km/h
-  [3780, 125], // 63:00, ~19km/h — beginner
+  [1833.8, 925], // 30:33.8 — 99th percentile (30% of gap toward ~22:00 elite/pro estimate)
+  [2054, 850], // 34:14 — 95th percentile
+  [2202, 725], // 36:42 — 80th percentile
+  [2402, 475], // 40:02 — 50th percentile
+  [2698, 250], // 44:58 — 20th percentile
+  [3118, 125], // 51:58 — 5th percentile
 ];
 
 /** Seconds per km — lower is better, same monotonic direction as the time tables above. */
@@ -137,26 +144,26 @@ const WALK_PACE_ANCHORS: Anchor[] = [
 ];
 
 /**
- * PROVISIONAL — NEWLY CALIBRATED, LOWEST CONFIDENCE OF ANY TABLE IN THIS
- * FILE (Part E, scoring-calibration-rewrite). Replaces the previous
- * scaled-from-running placeholder with a first dedicated attempt, built
- * from SwimmingLevel.com averages, swimmingregimen.com's practical LCM
- * ranges, and ASA award standards — not a clean percentile table like
- * rowing (Part B). Recommend sanity-checking against a handful of real
- * swimmers' times before fully trusting this table; revisit once real
- * logged swim data comes in. Female factor (1.073) still applied on top.
+ * Corrected against Swimming Regimen (swimmingregimen.com), age-25 male,
+ * LCM, same sibling-site network and percentile convention as run/row/cycle.
+ * Replaces the previous scaled-from-running/ASA-standards placeholder.
+ * High confidence for the 5/20/50/80/95th percentile points; the 99th-
+ * percentile anchor uses a separately-sourced WR estimate (~3:40) since that
+ * page had no WR column of its own — flagged lower confidence for that one
+ * point only. Female table not captured this pass — the existing female
+ * cardio factor (1.073) is still applied on top of this male curve.
  */
 const SWIM_400M_ANCHORS: Anchor[] = [
-  [240, 925], // 4:00
-  [285, 725], // 4:45
-  [315, 475], // 5:15
-  [420, 250], // 7:00
-  [540, 125], // 9:00
+  [269.5, 925], // 4:29.5 — 99th percentile (30% of gap toward WR estimate 3:40.0)
+  [290.7, 850], // 4:50.7 — 95th percentile
+  [304, 725], // 5:04.0 — 80th percentile
+  [317.1, 475], // 5:17.1 — 50th percentile
+  [343.5, 250], // 5:43.5 — 20th percentile
+  [370.1, 125], // 6:10.1 — 5th percentile
 ];
 
-/** Sports still scored via a single male curve + FEMALE_CARDIO_FACTORS multiplier — row (Part B) and, indirectly through row, ski are the exceptions (sex-specific tables). */
-const ANCHOR_TABLES: Record<Exclude<BenchmarkSport, "ski" | "row">, Anchor[]> = {
-  run: RUN_5K_ANCHORS,
+/** Sports scored via a single male curve + FEMALE_CARDIO_FACTORS multiplier (no sex-specific source data captured for these) — run/row and, indirectly through row, ski are the exceptions (sex-specific tables). */
+const ANCHOR_TABLES: Record<Exclude<BenchmarkSport, "ski" | "row" | "run">, Anchor[]> = {
   walk: WALK_PACE_ANCHORS,
   swim: SWIM_400M_ANCHORS,
   cycle: CYCLE_20K_ANCHORS,
@@ -234,13 +241,18 @@ export function enduranceAgeGradeFactor(age: number | null | undefined): number 
 
 /**
  * Score a benchmark-distance time (or, for walk, a per-km pace) on the
- * calibrated 0–1000 scale. Row uses sex-specific anchor tables sourced
- * directly from sex-specific percentile data (Part B — more accurate than a
+ * calibrated 0–1000 scale. Run and row use sex-specific anchor tables
+ * sourced directly from sex-specific percentile data (more accurate than a
  * single curve + multiplier). Everything else applies the activity's female
  * factor first so equal-ability men and women land on the same tier.
  */
 export function timeToScore(sport: BenchmarkSport, seconds: number, sex: "male" | "female"): number {
   if (!Number.isFinite(seconds) || seconds <= 0) return 0;
+
+  if (sport === "run") {
+    const table = sex === "female" ? RUN_5K_ANCHORS_FEMALE : RUN_5K_ANCHORS_MALE;
+    return clampScore(interpolateAnchors(table, seconds));
+  }
 
   if (sport === "row") {
     const table = sex === "female" ? ROW_2K_ANCHORS_FEMALE : ROW_2K_ANCHORS_MALE;

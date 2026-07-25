@@ -9,6 +9,7 @@ import type { CardioEnrichment } from "@/lib/scoring/cardio/confidence";
 import type { AIFeedback } from "@/types";
 
 export type LockedCardioFields =
+  | "executionScore"
   | "trimp"
   | "efficiencyFactor"
   | "decouplingPct"
@@ -24,7 +25,7 @@ export type LockedIndexFields =
 
 export type GatedCardioResult =
   | CardioResult
-  | (Pick<CardioResult, "score" | "vo2max" | "vo2maxMethod"> & {
+  | (Pick<CardioResult, "score" | "paceScore" | "vo2max" | "vo2maxMethod"> & {
       locked: LockedCardioFields[];
     });
 
@@ -36,18 +37,20 @@ export type GatedIndexResult =
       locked: LockedIndexFields[];
     });
 
-/** Gate cardio premium fields at the presentation/API layer. */
+/** Gate cardio premium fields at the presentation/API layer. `score`/`paceScore` (identical, pure pace) stay free — `executionScore` (secondary "how well executed" metric) is premium, same as the other quality-signal fields. */
 export function gateCardioResult(
   result: CardioResult,
   isPremium: boolean
 ): GatedCardioResult {
   if (isPremium) return result;
-  const { score, vo2max, vo2maxMethod } = result;
+  const { score, paceScore, vo2max, vo2maxMethod } = result;
   return {
     score,
+    paceScore,
     vo2max,
     vo2maxMethod,
     locked: [
+      "executionScore",
       "trimp",
       "efficiencyFactor",
       "decouplingPct",

@@ -28,6 +28,8 @@ export interface CardioEnrichment {
   trimp?: TrimpResult;
   efficiencyFactor?: EfficiencyFactorResult;
   decoupling?: DecouplingResult;
+  /** Secondary "how well was this session executed" metric (volume/terrain/environment + pacing quality) — never substitutes for sportIndex, see cardio-activity.ts's executionScore. */
+  executionScore?: number;
   notes: string[];
 }
 

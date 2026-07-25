@@ -122,6 +122,7 @@ export function cardioResultToEnrichment(
     adjustedDisplayIndex,
     confidence,
     flags,
+    executionScore: result.executionScore ?? undefined,
     vo2maxEstimate: result.vo2max
       ? {
           estimate: result.vo2max,

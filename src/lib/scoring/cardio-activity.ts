@@ -5,27 +5,39 @@
  * score on a 0–1000 scale, plus the underlying physiological estimates
  * (VO2max, predicted race times, training load) that justify it.
  *
- * Primary scoring path (MASTER-BRIEF.md §4–5): every session is projected to
- * its sport's benchmark distance via Riegel, then HR-adjusted so a lower-HR
- * session yields a faster (better) equivalent. THIS session's own equivalent
- * — never a multi-session memory — is what gets scored on the calibrated
- * anchor table (see cardio-benchmarks.ts): `paceScore` is pure and monotonic
- * by construction, so a faster time for the same activity can never score
- * lower. A per-user, per-sport memory (`storedPredictionSeconds`, maintained
- * by the caller across sessions, blended asymmetrically — a faster effort
- * pulls it down fast, a slower one barely nudges it) still exists and informs
+ * Primary scoring path (MASTER-BRIEF.md §4–5, monotonicity-bug fix): every
+ * session is projected to its sport's benchmark distance via Riegel, then
+ * HR-adjusted so a lower-HR session yields a faster (better) equivalent.
+ * THIS session's own equivalent — never a multi-session memory — is what
+ * gets scored on the calibrated anchor table (see cardio-benchmarks.ts).
+ *
+ * `score` (= `paceScore`) is pure and monotonic BY CONSTRUCTION: nothing —
+ * no volume/terrain/environment bonus, no session-type weighting, no
+ * pacing-quality adjustment — is ever added on top of it. A faster time for
+ * the same activity can never score lower, full stop, and it's what the
+ * rolling per-activity index averages/rolls up from. Volume/terrain/
+ * environment credit and pacing-quality (negative split / fade) instead
+ * feed a clearly separate `executionScore` — "how well was this session
+ * executed," never blended back into `score`. An earlier attempt to keep a
+ * single blended number (bounding the modifier to ±5% of paceScore so it
+ * couldn't invert ordering) had a real side effect: the *absolute* bonus
+ * allowance scaled with how fast the pace read, so a long/easy/low-HR run
+ * (modest paceScore by design) got a much smaller allowance than a hard
+ * fast effort — inverting the intent of rewarding sustained aerobic
+ * durability "independent of how fast or easy it was." The two-number
+ * split is the more robust fix (see cardio-session-score-monotonicity-bug.md).
+ *
+ * A per-user, per-sport memory (`storedPredictionSeconds`, maintained by the
+ * caller across sessions, blended asymmetrically — a faster effort pulls it
+ * down fast, a slower one barely nudges it) still exists and informs
  * `confidence`/flags (this athlete has proven this fitness across sessions,
  * not just today), but it must never replace this session's own equivalent —
- * doing so previously let a session's score depend on history rather than its
- * own pace (see cardio-session-score-monotonicity-bug.md). `score` adds
- * volume/terrain/environment/pacing modifiers on top of `paceScore` — each
- * individually capped (see MAX_VOLUME_BONUS etc. below) but not scaled by
- * paceScore itself, so a long/hilly/tough easy run still gets full credit
- * for sustained aerobic durability regardless of how its pace alone reads.
+ * doing so previously let a session's score depend on history rather than
+ * its own pace.
  *
  * FREE tier reads `score` and `vo2max`.
- * PREMIUM tier additionally surfaces `paceScore`, `trimp`, `efficiencyFactor`,
- * `decoupling`, `predictions`, and `confidence`.
+ * PREMIUM tier additionally surfaces `executionScore`, `trimp`,
+ * `efficiencyFactor`, `decoupling`, `predictions`, and `confidence`.
  *
  * Sources (verify on review):
  *  - VO2max HR-ratio: Uth, Sørensen, Overgaard & Pedersen (2004) — 15.3 × HRmax/HRrest
@@ -84,9 +96,12 @@ export interface CardioInput {
 }
 
 export interface CardioResult {
-  score: number;               // 0–1000, the per-activity Engine contribution
-  /** Pure, monotonic pace-performance score — Riegel/work-piece equivalent + age/sex grading run through the anchor table, nothing else. A faster time for the same activity can never score lower here. `score` is this plus volume/terrain/environment/pacing modifiers. */
+  /** Pure, monotonic pace-performance score — Riegel/work-piece equivalent + age/sex grading run through the anchor table, nothing else touches it. A faster time for the same activity can never score lower here, by construction. This is "the score for this run" and what the rolling per-activity index rolls up from. Identical to `paceScore`. */
+  score: number;
+  /** Alias of `score` — kept as its own field so callers can be explicit about which number they mean. */
   paceScore: number;
+  /** Separate, secondary "how well was this session executed" metric — pacing quality (negative split / fade) and, when volume/terrain/environment data is present, sustained-aerobic-durability credit. Never blended into `score`/`paceScore`; can be lower than the pace score, and can be null when there's no execution-quality signal to assess. */
+  executionScore: number | null;
   vo2max: number | null;       // ml/kg/min
   vo2maxMethod: 'hr-ratio' | 'pace-hr-adjusted' | 'pace-estimate' | 'none';
   trimp: number | null;
@@ -346,7 +361,6 @@ export function scoreCardioActivity(input: CardioInput): CardioResult {
   // that answers "how good was this specific run."
   const anchorSeconds = sessionEquivalentSeconds;
 
-  let base: number;
   let paceScore: number;
   let confidence: number;
 
@@ -359,11 +373,9 @@ export function scoreCardioActivity(input: CardioInput): CardioResult {
     const ageFactor = enduranceAgeGradeFactor(input.age);
     if (ageFactor !== 1) flags.push('age-graded');
     // paceScore: pure, monotonic — Riegel/work-piece equivalent + age/sex
-    // grading run through the calibrated anchor table, nothing else. This is
-    // "the score for this run" — a faster time for the same activity can
-    // never score lower here, by construction.
+    // grading run through the calibrated anchor table. NOTHING is added on
+    // top of this — see the file header for why.
     paceScore = timeToScore(input.benchmarkSport, anchorSeconds * ageFactor, input.sex);
-    base = paceScore;
     if (input.storedPredictionSeconds != null) {
       flags.push('memory-available');
       confidence = input.avgHR ? 1 : 0.9;
@@ -373,37 +385,11 @@ export function scoreCardioActivity(input: CardioInput): CardioResult {
   } else {
     // No distance/duration to project from — shouldn't happen for a real
     // cardio session, but keep a safe, clearly-low-confidence fallback.
-    base = 0;
     paceScore = 0;
     confidence = 0.3;
   }
 
-  // Volume/terrain/environment/pacing — orthogonal to pace/HR. A long
-  // session, a hilly one, or one done in harsh heat/cold demonstrates real
-  // aerobic durability that a pace-per-heartbeat estimate alone won't
-  // capture — deliberately uncapped relative to paceScore (each bonus has
-  // its own small individual cap instead, see MAX_VOLUME_BONUS etc. above):
-  // an earlier attempt to bound the total to ±5% of paceScore made the
-  // *absolute* bonus scale with how fast the pace-equivalent looked, which
-  // gutted exactly the sessions this is meant to credit — a long, easy,
-  // low-HR run's paceScore is modest by design, so 5% of it is a much
-  // smaller allowance than 5% of a hard fast effort's paceScore, inverting
-  // the intent (reward sustained aerobic effort "independent of how fast or
-  // easy it was" — see enduranceVolumeBonus). Monotonicity for the case that
-  // matters (same distance, same conditions, varying only pace) already
-  // holds without a cap here: each bonus's own rate of change with duration
-  // is small relative to the anchor curve's slope over any realistic pace
-  // range — see the monotonicity regression tests.
-  const volumeBonus = enduranceVolumeBonus(input.durationSeconds);
-  if (volumeBonus > MAX_VOLUME_BONUS * 0.5) flags.push('long-session-credit');
-
-  const elevationBonus = elevationDifficultyBonus(input.elevationMeters, input.distanceMeters);
-  if (elevationBonus > MAX_ELEVATION_BONUS * 0.5) flags.push('hilly-terrain-credit');
-
-  const temperatureBonus = temperatureDifficultyBonus(input.temperatureCelsius);
-  if (temperatureBonus > MAX_TEMPERATURE_BONUS * 0.5) flags.push('harsh-conditions-credit');
-
-  // Pacing quality — reward negative splits (2nd half >= 1st half).
+  // Pacing quality — reward negative splits (2nd half >= 1st half), penalize fade.
   const dec = decoupling(input);
   let decouplingAdjustment = 0;
   if (dec !== null) {
@@ -413,14 +399,39 @@ export function scoreCardioActivity(input: CardioInput): CardioResult {
     if (dec < -2) flags.push('negative-split-strong');
   }
 
-  base += volumeBonus + elevationBonus + temperatureBonus + decouplingAdjustment;
+  // executionScore — separate, secondary "how well was this session
+  // executed" metric. Volume/terrain/environment credit (a long session, a
+  // hilly one, one done in harsh heat/cold demonstrates real aerobic
+  // durability a pace-per-heartbeat estimate alone won't capture) and
+  // pacing quality (negative-split reward / fade penalty) land here instead
+  // of on `paceScore` — this can vary independently, can be lower than
+  // paceScore, and never overrides it.
+  let executionScore: number | null = null;
+  if (anchorSeconds !== null) {
+    const EXECUTION_NEUTRAL = 500;
+    const volumeBonus = enduranceVolumeBonus(input.durationSeconds);
+    if (volumeBonus > MAX_VOLUME_BONUS * 0.5) flags.push('long-session-credit');
+
+    const elevationBonus = elevationDifficultyBonus(input.elevationMeters, input.distanceMeters);
+    if (elevationBonus > MAX_ELEVATION_BONUS * 0.5) flags.push('hilly-terrain-credit');
+
+    const temperatureBonus = temperatureDifficultyBonus(input.temperatureCelsius);
+    if (temperatureBonus > MAX_TEMPERATURE_BONUS * 0.5) flags.push('harsh-conditions-credit');
+
+    executionScore = clamp(
+      Math.round(EXECUTION_NEUTRAL + volumeBonus + elevationBonus + temperatureBonus + decouplingAdjustment),
+      0,
+      1000
+    );
+  }
 
   const ef = efficiencyFactor(input);
   const tr = trimp(input);
 
   return {
-    score: Math.round(clamp(base, 0, 1000)),
+    score: Math.round(clamp(paceScore, 0, 1000)),
     paceScore: Math.round(clamp(paceScore, 0, 1000)),
+    executionScore,
     vo2max: vo2max === null ? null : Math.round(vo2max * 10) / 10,
     vo2maxMethod: method,
     trimp: tr === null ? null : Math.round(tr * 10) / 10,
