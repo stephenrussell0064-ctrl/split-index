@@ -107,24 +107,33 @@ Each cardio activity keeps a **stored predicted benchmark time** per user, updat
 
 ### Score anchor tables (time → 0–1000)
 
-**Running (5k time), calibrated & exact:**
-| 5k | Score | | 5k | Score |
-|---|---|---|---|---|
-| 15:00 | 950 | | 25:00 | 500 |
-| 17:30 | 850 | | 30:00 | 350 |
-| 18:30 | 775 | | 35:00 | 275 |
-| 20:00 | 675 | | 40:00 | 200 |
-| 22:30 | 575 | | 50:00 | 125 |
-| | | | 60:00 | 50 |
+**Running (5k time) — corrected against percentile-tagged data (scoring-calibration-rewrite.md Part C), moderate confidence:**
+| 5k | Score (percentile) |
+|---|---|
+| 17:00 | 925 (~99th) |
+| 19:00 | 850 (~95th) |
+| 22:00 | 725 (~80th) |
+| 25:30 | 475 (~50th) |
+| 27:30 | 250 (~20th) |
+| 31:00 | 125 (~5th) |
 
-**Rowing (2k time), calibrated & exact:**
-| 2k | Score | | 2k | Score |
-|---|---|---|---|---|
-| 10:00 | 100 | | 6:45 | 750 |
-| 9:00 | 200 | | 6:30 | 850 |
-| 8:00 | 400 | | 6:15 | 925 |
-| 7:30 | 525 | | 6:00 | 975 |
-| 7:00 | 650 | | | |
+**Rowing (2k time) — sex-specific, corrected against RowingRegimen's Concept2-logbook percentile data (scoring-calibration-rewrite.md Part B), high confidence:**
+| 2k (male) | Score (percentile) |
+|---|---|
+| 6:00.0 | 925 (~99th) |
+| 6:10.2 | 850 (95th) |
+| 6:35.9 | 725 (80th) |
+| 7:04.6 | 475 (50th) |
+| 7:35.4 | 250 (20th) |
+| 8:06.9 | 125 (5th) |
+
+| 2k (female) | Score (percentile) |
+|---|---|
+| 7:03.9 | 850 (95th) |
+| 7:44.0 | 725 (80th) |
+| 8:30.2 | 475 (50th) |
+| 9:21.0 | 250 (20th) |
+| 10:14.2 | 125 (5th) |
 
 **Rowing 2k prediction — calibrated to real data:**
 ```typescript
@@ -136,7 +145,7 @@ function predictRow2k(steadyPace500Sec: number, avgHR: number): number {
 ```
 Validated: steady 2:02/500m @HR175 → 6:45 (score 750); friend's 1:57/500m @HR165 → 6:21 (score ~890). Lower HR at quicker pace correctly ranks far higher.
 
-**Swim (400m), cycle (40k), ski (1k):** same curve shape, own anchor tables — start scaled from running and **calibrate against real efforts later** (log a few, assign target tiers, solve anchors — same process used for strength). Mark as provisional until calibrated.
+**Swim (400m), cycle (20k):** own draft anchor tables now (scoring-calibration-rewrite.md Parts E/F) — replacing the previous scaled-from-running placeholder. **PROVISIONAL — lowest-confidence tables in the calibration set**, built from swim/cycle-specific sources (SwimmingLevel.com, swimmingregimen.com, ASA standards; ROUVY/BestBikeSplit speed bands) rather than a clean percentile table. Recommend sanity-checking against real swimmers'/cyclists' times before fully trusting; revisit once real logged data comes in. Ski still reuses the rowing curve via a row-equivalent-time conversion.
 
 Keep `RIEGEL_K`, `SLOW_RUN_FACTOR`, benchmark distances, HR ratios, and all anchor tables as editable constants.
 
