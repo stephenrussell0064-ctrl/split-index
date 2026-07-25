@@ -58,10 +58,10 @@ export const PREMIUM_TIER_FEATURES = [
   "Full Strength Index with DOTS / IPF GL tiers",
   "Cardio HR accountability (TRIMP, EF, decoupling)",
   "GPT AI Coach after every workout",
-  "90-day analytics, projections & period comparison",
+  "90-day trend history & period comparison",
+  "8-week Split Index projections",
   "Global leaderboards & rank percentile",
   "Data export (CSV / JSON)",
-  "Strava, Garmin & all OAuth auto-sync",
 ] as const;
 
 export interface PremiumProfile {

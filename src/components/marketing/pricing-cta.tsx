@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { FREE_TIER_FEATURES, PREMIUM_TIER_FEATURES } from "@/lib/premium/features";
-import { PREMIUM_PRICE_GBP } from "@/lib/stripe/config";
+import { PRICING, ANNUAL_MONTHLY_EQUIVALENT_GBP } from "@/lib/pricing/config";
 import { Button } from "@/components/ui/button";
 import { ScoreDisclaimer } from "@/components/legal/score-disclaimer";
 
@@ -36,10 +36,19 @@ export function PricingSection() {
         </article>
 
         <article className="landing-price-card landing-price-card-premium">
-          <p className="text-[10px] uppercase tracking-[0.24em] text-gym-accent">Premium</p>
+          <div className="flex items-center justify-between">
+            <p className="text-[10px] uppercase tracking-[0.24em] text-gym-accent">Premium</p>
+            <span className="rounded-full bg-gym-accent px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#04120a]">
+              Best value: annual
+            </span>
+          </div>
           <p className="font-display mt-3 text-5xl font-black text-white">
-            £{PREMIUM_PRICE_GBP}
-            <span className="text-base font-medium text-white/40">/mo</span>
+            £{PRICING.ANNUAL_GBP}
+            <span className="text-base font-medium text-white/40">/yr</span>
+          </p>
+          <p className="mt-1 text-sm text-white/45">
+            <span className="line-through opacity-60">£{PRICING.MONTHLY_GBP}/mo billed monthly</span>{" "}
+            — just £{ANNUAL_MONTHLY_EQUIVALENT_GBP.toFixed(2)}/mo
           </p>
           <ul className="mt-8 space-y-3 text-left text-sm text-white/55">
             {PREMIUM_TIER_FEATURES.map((f) => (
@@ -54,6 +63,9 @@ export function PricingSection() {
               Start free trial
             </Button>
           </Link>
+          <p className="mt-4 text-center text-xs text-white/40">
+            Also available monthly (£{PRICING.MONTHLY_GBP}/mo) or lifetime (£{PRICING.LIFETIME_GBP}, one-time) after signup.
+          </p>
         </article>
       </div>
       <ScoreDisclaimer className="mx-auto mt-10 max-w-2xl text-center" variant="compact" />
