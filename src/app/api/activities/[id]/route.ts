@@ -21,7 +21,15 @@ import {
   blendPredictedBenchmark,
   effectiveStoredPrediction,
   sessionCountsAsQuality,
+  RIEGEL_K,
 } from "@/lib/scoring/cardio-predictions";
+import {
+  computeTier1Prediction,
+  computeWindowedTier2Seconds,
+  personalizeRiegelKFromWindow,
+  pickSwimTimeTrialEfforts,
+  type HistorySession,
+} from "@/lib/scoring/cardio/race-prediction";
 import { isEnduranceSport } from "@/lib/scoring/engine";
 import { isPremiumUser } from "@/lib/retention/trial";
 import { serializeScoreBreakdown } from "@/lib/scoring/presentation";
@@ -163,20 +171,51 @@ async function scoreAndPersist(
   // flagged as session-only, not falsely "memory-available".
   let storedPredictionForScoring: number | null = null;
   let lastQualityAt: string | null = null;
+  let personalizedK: number | null = null;
+  let tier1Prediction: ReturnType<typeof computeTier1Prediction> = null;
   if (isEnduranceSport(body.sport)) {
     benchmarkSport = mapSportToBenchmarkSport(body.sport);
     const { data: priorPrediction } = await supabase
       .from("predicted_benchmarks")
-      .select("benchmark_seconds, sample_count, last_activity_id, updated_at, last_quality_at")
+      .select("benchmark_seconds, sample_count, last_activity_id, updated_at, last_quality_at, riegel_k")
       .eq("user_id", userId)
       .eq("sport", benchmarkSport)
       .maybeSingle();
     const priorIsThisActivity = priorPrediction?.last_activity_id === excludeActivityId;
 
+    const windowCutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+    const { data: windowActivities } = await supabase
+      .from("activities")
+      .select("sport, started_at, duration_seconds, distance_meters, avg_heart_rate, session_type")
+      .eq("user_id", userId)
+      .eq("is_draft", false)
+      .neq("id", excludeActivityId ?? "")
+      .gte("started_at", windowCutoff);
+
+    const windowSessions: HistorySession[] = (windowActivities ?? [])
+      .filter(
+        (row) =>
+          mapSportToBenchmarkSport(row.sport) === benchmarkSport &&
+          row.distance_meters != null
+      )
+      .map((row) => ({
+        distanceMeters: row.distance_meters as number,
+        durationSeconds: row.duration_seconds,
+        avgHR: row.avg_heart_rate ?? undefined,
+        sessionType: row.session_type ?? undefined,
+        startedAt: row.started_at,
+      }));
+
+    personalizedK = personalizeRiegelKFromWindow(windowSessions, priorPrediction?.riegel_k ?? null);
+
     newPredictedBenchmarkSampleCount = priorIsThisActivity
       ? (priorPrediction?.sample_count ?? 1)
       : (priorPrediction?.sample_count ?? 0) + 1;
-    const sessionEquivalentSeconds = computeBodyBenchmarkEquivalentSeconds(benchmarkSport, body);
+    const sessionEquivalentSeconds = computeBodyBenchmarkEquivalentSeconds(
+      benchmarkSport,
+      body,
+      personalizedK ?? undefined
+    );
     if (sessionEquivalentSeconds !== null) {
       const rawBlendBase = priorIsThisActivity ? null : (priorPrediction?.benchmark_seconds ?? null);
       const blendBase =
@@ -187,7 +226,13 @@ async function scoreAndPersist(
               priorPrediction?.last_quality_at
             )
           : null;
-      newPredictedBenchmarkSeconds = blendPredictedBenchmark(blendBase, sessionEquivalentSeconds);
+      const sequentialBlend = blendPredictedBenchmark(blendBase, sessionEquivalentSeconds);
+      newPredictedBenchmarkSeconds = computeWindowedTier2Seconds(
+        benchmarkSport,
+        sequentialBlend,
+        windowSessions,
+        personalizedK ?? RIEGEL_K
+      );
       const nowIso = new Date().toISOString();
       lastQualityAt = sessionCountsAsQuality(blendBase, sessionEquivalentSeconds)
         ? nowIso
@@ -195,6 +240,27 @@ async function scoreAndPersist(
       if (blendBase != null) {
         storedPredictionForScoring = newPredictedBenchmarkSeconds;
       }
+    }
+
+    if (body.distance_meters != null) {
+      const swimTimeTrialEfforts =
+        benchmarkSport === "swim"
+          ? pickSwimTimeTrialEfforts(
+              windowSessions
+                .filter((s) => s.sessionType === "race")
+                .map((s) => ({ distanceMeters: s.distanceMeters, durationSeconds: s.durationSeconds }))
+            )
+          : null;
+
+      tier1Prediction = computeTier1Prediction({
+        benchmarkSport,
+        distanceMeters: body.distance_meters,
+        durationSeconds: body.duration_seconds,
+        avgHR: body.avg_heart_rate ?? undefined,
+        avgPowerWatts: body.avg_power_watts ?? undefined,
+        riegelK: personalizedK ?? undefined,
+        swimTimeTrialEfforts,
+      });
     }
   }
 
@@ -288,6 +354,7 @@ async function scoreAndPersist(
         sample_count: newPredictedBenchmarkSampleCount,
         last_activity_id: activityId,
         last_quality_at: lastQualityAt,
+        riegel_k: personalizedK,
         updated_at: new Date().toISOString(),
       },
       { onConflict: "user_id,sport" }
@@ -303,6 +370,7 @@ async function scoreAndPersist(
     sportComparison,
     isFirstSportSession: priorSportScores.length === 0,
     scoringProfile,
+    tier1Prediction,
   };
 }
 
@@ -532,6 +600,7 @@ export async function PATCH(
     sportComparison,
     isFirstSportSession,
     scoringProfile,
+    tier1Prediction,
   } = scored;
 
   const premium = isPremiumUser(
@@ -595,6 +664,7 @@ export async function PATCH(
     useGL: result.useGL,
     splitBreakdownLabel: result.splitBreakdownLabel,
     cardioEnrichment: premium ? cardioEnrichment : null,
+    tier1Prediction,
   });
 }
 

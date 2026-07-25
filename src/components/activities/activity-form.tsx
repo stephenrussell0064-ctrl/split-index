@@ -249,6 +249,7 @@ export function ActivityForm({
       useGL: (data.useGL as boolean | undefined) ?? false,
       scoreBreakdown: data.scoreBreakdown as ScoreResultSummary["scoreBreakdown"],
       cardioEnrichment: data.cardioEnrichment as CardioEnrichment | undefined,
+      tier1Prediction: data.tier1Prediction as ScoreResultSummary["tier1Prediction"],
     };
   }
 

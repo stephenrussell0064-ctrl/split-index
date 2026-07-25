@@ -21,7 +21,13 @@ import {
   blendPredictedBenchmark,
   effectiveStoredPrediction,
   sessionCountsAsQuality,
+  RIEGEL_K,
 } from "@/lib/scoring/cardio-predictions";
+import {
+  computeWindowedTier2Seconds,
+  personalizeRiegelKFromWindow,
+  type HistorySession,
+} from "@/lib/scoring/cardio/race-prediction";
 import type { BenchmarkSport } from "@/lib/scoring/cardio-benchmarks";
 import { isEnduranceSport } from "@/lib/scoring/engine";
 import type { GymExercise } from "@/types";
@@ -118,6 +124,12 @@ export async function POST() {
   const predictedBenchmarkLastActivityId: Partial<Record<BenchmarkSport, string>> = {};
   const predictedBenchmarkLastRunAt: Partial<Record<BenchmarkSport, string>> = {};
   const predictedBenchmarkLastQualityAt: Partial<Record<BenchmarkSport, string>> = {};
+  // Race-prediction-model.md: Tier 2 windowed enhancement + personalized
+  // Riegel k, replayed the same oldest-first way as the sequential blend
+  // above — each activity only ever sees its own 90-day trailing window of
+  // previously-replayed same-sport sessions, never future ones.
+  const predictedBenchmarkRiegelK: Partial<Record<BenchmarkSport, number>> = {};
+  const sessionsBySport: Partial<Record<BenchmarkSport, HistorySession[]>> = {};
 
   for (const activity of activities ?? []) {
     const metadata = activity.metadata as Record<string, unknown> | null;
@@ -159,15 +171,35 @@ export async function POST() {
               new Date(activity.started_at as string)
             )
           : null;
-      const sessionEquivalentSeconds = computeBodyBenchmarkEquivalentSeconds(benchmarkSport, activity);
+
+      const windowCutoff =
+        new Date(activity.started_at as string).getTime() - 90 * 24 * 60 * 60 * 1000;
+      const priorSessions = sessionsBySport[benchmarkSport] ?? [];
+      const windowSessions = priorSessions.filter(
+        (s) => new Date(s.startedAt).getTime() >= windowCutoff
+      );
+      const personalizedK = personalizeRiegelKFromWindow(
+        windowSessions,
+        predictedBenchmarkRiegelK[benchmarkSport] ?? null
+      );
+
+      const sessionEquivalentSeconds = computeBodyBenchmarkEquivalentSeconds(
+        benchmarkSport,
+        activity,
+        personalizedK ?? undefined
+      );
       if (sessionEquivalentSeconds !== null) {
-        predictedBenchmarkSeconds[benchmarkSport] = blendPredictedBenchmark(
-          priorValue,
-          sessionEquivalentSeconds
+        const sequentialBlend = blendPredictedBenchmark(priorValue, sessionEquivalentSeconds);
+        predictedBenchmarkSeconds[benchmarkSport] = computeWindowedTier2Seconds(
+          benchmarkSport,
+          sequentialBlend,
+          windowSessions,
+          personalizedK ?? RIEGEL_K
         );
         predictedBenchmarkSampleCounts[benchmarkSport] =
           (predictedBenchmarkSampleCounts[benchmarkSport] ?? 0) + 1;
         predictedBenchmarkLastRunAt[benchmarkSport] = activity.started_at as string;
+        predictedBenchmarkRiegelK[benchmarkSport] = personalizedK ?? undefined;
         if (sessionCountsAsQuality(priorValue, sessionEquivalentSeconds)) {
           predictedBenchmarkLastQualityAt[benchmarkSport] = activity.started_at as string;
         } else if (!predictedBenchmarkLastQualityAt[benchmarkSport]) {
@@ -176,6 +208,19 @@ export async function POST() {
         if (priorValue != null) {
           storedPredictionForScoring = predictedBenchmarkSeconds[benchmarkSport]!;
         }
+      }
+
+      if (activity.distance_meters != null) {
+        sessionsBySport[benchmarkSport] = [
+          ...priorSessions,
+          {
+            distanceMeters: activity.distance_meters,
+            durationSeconds: activity.duration_seconds,
+            avgHR: activity.avg_heart_rate ?? undefined,
+            sessionType: activity.session_type ?? undefined,
+            startedAt: activity.started_at as string,
+          },
+        ];
       }
     }
 
@@ -293,6 +338,7 @@ export async function POST() {
     sample_count: predictedBenchmarkSampleCounts[sport] ?? 1,
     last_activity_id: predictedBenchmarkLastActivityId[sport] ?? null,
     last_quality_at: predictedBenchmarkLastQualityAt[sport] ?? null,
+    riegel_k: predictedBenchmarkRiegelK[sport] ?? null,
     updated_at: new Date().toISOString(),
   }));
   if (benchmarkRows.length > 0) {

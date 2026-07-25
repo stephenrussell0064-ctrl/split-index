@@ -270,7 +270,9 @@ export function computeBodyBenchmarkEquivalentSeconds(
     fartlek_on_distance_meters?: number | null;
     fartlek_on_seconds?: number | null;
     fartlek_on_avg_hr?: number | null;
-  }
+  },
+  /** Personalized Riegel k (race-prediction-model.md) — omit to use the population default. */
+  riegelK?: number
 ): number | null {
   const structuredInterval = {
     reps: body.interval_reps ?? 0,
@@ -284,7 +286,8 @@ export function computeBodyBenchmarkEquivalentSeconds(
       benchmarkSport,
       intervalTotalWorkDistanceMeters(structuredInterval),
       intervalEquivalentPaceSecPerKm(structuredInterval),
-      structuredInterval.workAvgHeartRate
+      structuredInterval.workAvgHeartRate,
+      riegelK
     );
   }
 
@@ -299,7 +302,8 @@ export function computeBodyBenchmarkEquivalentSeconds(
       benchmarkSport,
       structuredFartlek.onDistanceMeters,
       fartlekEquivalentPaceSecPerKm(structuredFartlek),
-      structuredFartlek.onAvgHeartRate
+      structuredFartlek.onAvgHeartRate,
+      riegelK
     );
   }
 
@@ -307,6 +311,7 @@ export function computeBodyBenchmarkEquivalentSeconds(
     benchmarkSport,
     body.distance_meters ?? 0,
     body.duration_seconds,
-    body.avg_heart_rate
+    body.avg_heart_rate,
+    riegelK
   );
 }

@@ -15,6 +15,21 @@ import { formatSplitBreakdown } from "@/lib/utils/scoring-display";
 import { cn } from "@/lib/utils/cn";
 import { CardioEnrichmentPanel } from "@/components/activities/cardio-enrichment-panel";
 import type { CardioEnrichment } from "@/lib/scoring/cardio";
+import { formatRiegelPrediction } from "@/lib/scoring/presentation";
+import type { Tier1Prediction } from "@/lib/scoring/cardio/race-prediction";
+
+const TIER1_CONFIDENCE_LABEL: Record<Tier1Prediction["confidence"], string> = {
+  high: "High confidence",
+  medium: "Medium confidence",
+  low: "Low confidence",
+};
+
+const TIER1_METHOD_LABEL: Record<Tier1Prediction["method"], string> = {
+  "row-derived": "from your rowing pace",
+  "power-cubic-scaling": "from your power output",
+  "critical-swim-speed": "from your time-trial pace",
+  "hr-anchored": "from HR-adjusted pace",
+};
 
 export interface ScoreResultSummary {
   sport: SportType;
@@ -35,6 +50,7 @@ export interface ScoreResultSummary {
   useGL?: boolean;
   scoreBreakdown?: ScoreBreakdown;
   cardioEnrichment?: CardioEnrichment;
+  tier1Prediction?: Tier1Prediction | null;
 }
 
 const REDIRECT_AFTER_MS = 6200;
@@ -129,6 +145,23 @@ export function SuccessScreen({
           {!isGym && result.cardioEnrichment && (
             <div className="mt-6">
               <CardioEnrichmentPanel enrichment={result.cardioEnrichment} />
+            </div>
+          )}
+
+          {!isGym && result.tier1Prediction && (
+            <div className="mt-6 border-t border-white/10 pt-6">
+              <p className="micro-label mb-2 text-muted">
+                This session&apos;s pace · not your profile average
+              </p>
+              <p className="text-lg font-semibold tabular-nums text-foreground/90">
+                {formatRiegelPrediction(result.tier1Prediction.rangeSeconds[0])}
+                {" – "}
+                {formatRiegelPrediction(result.tier1Prediction.rangeSeconds[1])}
+              </p>
+              <p className="mt-1 text-xs text-muted">
+                {TIER1_CONFIDENCE_LABEL[result.tier1Prediction.confidence]} ·{" "}
+                {TIER1_METHOD_LABEL[result.tier1Prediction.method]}
+              </p>
             </div>
           )}
 

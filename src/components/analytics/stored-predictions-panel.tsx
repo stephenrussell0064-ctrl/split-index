@@ -11,6 +11,7 @@ import {
   formatRiegelPrediction,
 } from "@/lib/scoring/presentation";
 import { riegelPredictions } from "@/lib/scoring/cardio-activity";
+import { tier2IsCalibrating, TIER2_MIN_SAMPLES_TO_DISPLAY } from "@/lib/scoring/cardio/race-prediction";
 import type { PredictedBenchmark, StrengthEstimate } from "./types";
 
 const SPORT_LABELS: Record<PredictedBenchmark["sport"], string> = {
@@ -45,29 +46,46 @@ function PredictionsContent({
   showConfidence: boolean;
 }) {
   const runBenchmark = benchmarks.find((b) => b.sport === "run");
-  const runLadder = runBenchmark
-    ? riegelPredictions(5000, runBenchmark.benchmarkSeconds, "intermediate")
-    : null;
+  const runLadder =
+    runBenchmark && !tier2IsCalibrating(runBenchmark.sampleCount)
+      ? riegelPredictions(5000, runBenchmark.benchmarkSeconds, "intermediate")
+      : null;
 
   return (
     <div className="space-y-5">
       {benchmarks.length > 0 && (
         <div>
-          <p className="micro-label text-muted mb-2">Predicted benchmarks</p>
+          <p className="micro-label text-muted mb-2">
+            Profile prediction · built from your full training history
+          </p>
           <div className="grid gap-2 sm:grid-cols-2">
-            {benchmarks.map((b) => (
-              <div key={b.sport} className="glass rounded-xl p-3">
-                <p className="text-[10px] uppercase tracking-wider text-muted">
-                  {SPORT_LABELS[b.sport]}
-                </p>
-                <p className="mt-0.5 font-mono text-lg font-semibold tabular-nums">
-                  {formatBenchmarkValue(b)}
-                </p>
-                <p className="text-[10px] text-muted">
-                  {b.sampleCount} session{b.sampleCount === 1 ? "" : "s"} of evidence
-                </p>
-              </div>
-            ))}
+            {benchmarks.map((b) => {
+              const calibrating = tier2IsCalibrating(b.sampleCount);
+              return (
+                <div key={b.sport} className="glass rounded-xl p-3">
+                  <p className="text-[10px] uppercase tracking-wider text-muted">
+                    {SPORT_LABELS[b.sport]}
+                  </p>
+                  {calibrating ? (
+                    <>
+                      <p className="mt-0.5 text-sm font-medium text-muted">Calibrating…</p>
+                      <p className="text-[10px] text-muted">
+                        {b.sampleCount}/{TIER2_MIN_SAMPLES_TO_DISPLAY} sessions logged
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="mt-0.5 font-mono text-lg font-semibold tabular-nums">
+                        {formatBenchmarkValue(b)}
+                      </p>
+                      <p className="text-[10px] text-muted">
+                        {b.sampleCount} session{b.sampleCount === 1 ? "" : "s"} of evidence
+                      </p>
+                    </>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
