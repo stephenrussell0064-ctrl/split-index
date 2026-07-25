@@ -23,13 +23,13 @@ export const BENCHMARK_DISTANCE_METERS: Record<BenchmarkSport, number> = {
   ski: 2000,
 };
 
-/** Data-derived F/M time-ratio factors — a woman's time is divided by this before scoring on the male curve. Differ by sport; do not reuse the running factor elsewhere. */
+/** Data-derived F/M time-ratio factors — a woman's time is divided by this before scoring on the male curve. Differ by sport; do not reuse the running factor elsewhere. Row now uses its own sex-specific anchor tables (Part B) instead of this factor — kept here only because `ski` still inherits it (same machine family, no sex-specific ski data of its own). */
 export const FEMALE_CARDIO_FACTORS: Record<BenchmarkSport, number> = {
   run: 1.152,
   walk: 1.152, // mirrors running per instruction
   swim: 1.073,
   cycle: 1.219,
-  row: 1.187,
+  row: 1.187, // unused for row's own scoring since Part B; row has sex-specific tables now
   ski: 1.187, // inherits rowing — same machine family
 };
 
@@ -52,16 +52,32 @@ const RUN_5K_ANCHORS: Anchor[] = [
   [3600, 50], // 60:00
 ];
 
-const ROW_2K_ANCHORS: Anchor[] = [
-  [360, 975], // 6:00
-  [375, 925], // 6:15
-  [390, 850], // 6:30
-  [405, 750], // 6:45
-  [420, 650], // 7:00
-  [450, 525], // 7:30
-  [480, 400], // 8:00
-  [540, 200], // 9:00
-  [600, 100], // 10:00
+/**
+ * Corrected against RowingRegimen's Concept2-logbook-derived age-30
+ * percentile table (CLAUDE-CODE-BRIEF-scoring-calibration-rewrite.md, Part
+ * B) — this source already uses the exact 5/20/50/80/95th percentile
+ * convention, so it maps directly onto percentile-framework.ts with no
+ * synthesis needed. High confidence. Sex-specific tables sourced directly
+ * from sex-specific percentile data (more accurate than the single-curve
+ * female-multiplier approach still used for swim/cycle/walk/ski, where
+ * sex-specific percentile data wasn't available).
+ */
+const ROW_2K_ANCHORS_MALE: Anchor[] = [
+  [360, 925], // 6:00.0 — ~99th percentile / national-team-adjacent (tail beyond asymptotic toward 999, WR 5:35.8)
+  [370.2, 850], // 6:10.2 — 95th percentile
+  [395.9, 725], // 6:35.9 — 80th percentile
+  [424.6, 475], // 7:04.6 — 50th percentile
+  [455.4, 250], // 7:35.4 — 20th percentile
+  [486.9, 125], // 8:06.9 — 5th percentile
+  [600, 50], // 10:00 — floor
+];
+
+const ROW_2K_ANCHORS_FEMALE: Anchor[] = [
+  [423.9, 850], // 7:03.9 — 95th percentile
+  [464.0, 725], // 7:44.0 — 80th percentile
+  [510.2, 475], // 8:30.2 — 50th percentile
+  [561.0, 250], // 9:21.0 — 20th percentile
+  [614.2, 125], // 10:14.2 — 5th percentile
 ];
 
 const CYCLE_20K_ANCHORS: Anchor[] = [
@@ -101,10 +117,10 @@ const SWIM_400M_ANCHORS: Anchor[] = [
   [780, 75],
 ];
 
-const ANCHOR_TABLES: Record<Exclude<BenchmarkSport, "ski">, Anchor[]> = {
+/** Sports still scored via a single male curve + FEMALE_CARDIO_FACTORS multiplier — row (Part B) and, indirectly through row, ski are the exceptions (sex-specific tables). */
+const ANCHOR_TABLES: Record<Exclude<BenchmarkSport, "ski" | "row">, Anchor[]> = {
   run: RUN_5K_ANCHORS,
   walk: WALK_PACE_ANCHORS,
-  row: ROW_2K_ANCHORS,
   swim: SWIM_400M_ANCHORS,
   cycle: CYCLE_20K_ANCHORS,
 };
@@ -181,16 +197,26 @@ export function enduranceAgeGradeFactor(age: number | null | undefined): number 
 
 /**
  * Score a benchmark-distance time (or, for walk, a per-km pace) on the
- * calibrated 0–1000 scale, applying the activity's female factor first so
- * equal-ability men and women land on the same tier.
+ * calibrated 0–1000 scale. Row uses sex-specific anchor tables sourced
+ * directly from sex-specific percentile data (Part B — more accurate than a
+ * single curve + multiplier). Everything else applies the activity's female
+ * factor first so equal-ability men and women land on the same tier.
  */
 export function timeToScore(sport: BenchmarkSport, seconds: number, sex: "male" | "female"): number {
   if (!Number.isFinite(seconds) || seconds <= 0) return 0;
 
+  if (sport === "row") {
+    const table = sex === "female" ? ROW_2K_ANCHORS_FEMALE : ROW_2K_ANCHORS_MALE;
+    return clampScore(interpolateAnchors(table, seconds));
+  }
+
   if (sport === "ski") {
+    // Ski reuses the male rowing curve after converting to a row-equivalent
+    // time, then applies its own (rowing-inherited) female multiplier — ski
+    // doesn't have its own sex-specific percentile data the way row now does.
     const rowEquivalent = skiToRowEquivalentSeconds(seconds);
     const adjusted = sex === "female" ? rowEquivalent / FEMALE_CARDIO_FACTORS.ski : rowEquivalent;
-    return clampScore(interpolateAnchors(ANCHOR_TABLES.row, adjusted));
+    return clampScore(interpolateAnchors(ROW_2K_ANCHORS_MALE, adjusted));
   }
 
   const factor = FEMALE_CARDIO_FACTORS[sport];
