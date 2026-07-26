@@ -49,6 +49,8 @@ export interface PredictedBenchmark {
   benchmarkSeconds: number;
   sampleCount: number;
   updatedAt: string;
+  /** This athlete's own personalized Riegel exponent (see personalizedRiegelK in cardio-predictions.ts) — null until enough cross-distance evidence exists, in which case the ladder falls back to a generic experience-tier k. */
+  riegelK?: number | null;
 }
 
 export interface StrengthEstimate {

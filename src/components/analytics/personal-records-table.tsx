@@ -13,12 +13,12 @@ interface PersonalRecordsTableProps {
   records: PersonalRecord[];
 }
 
-function sportLabel(sport: string): string {
+export function sportLabel(sport: string): string {
   return SPORTS.find((s) => s.id === sport)?.name ?? sport.replace("_", " ");
 }
 
 /** Time/distance-based metrics (personal-records.ts) read far better formatted than raw seconds/meters. */
-function formatRecordValue(pr: PersonalRecord): string {
+export function formatRecordValue(pr: PersonalRecord): string {
   if (pr.unit === "seconds") return formatDuration(pr.value);
   if (pr.unit === "meters") return formatDistance(pr.value);
   return `${pr.value.toLocaleString()} ${pr.unit}`;

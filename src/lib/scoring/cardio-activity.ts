@@ -245,14 +245,27 @@ export function vo2FromRunningPace(distanceMeters: number, durationSeconds: numb
   return vo2 > 0 ? vo2 : null;
 }
 
-/** Riegel race-time predictions across the standard ladder. */
+/**
+ * Riegel race-time predictions across the standard ladder. `personalizedK`
+ * (see personalizedRiegelK in cardio-predictions.ts) overrides the generic
+ * experience-tier k below with this athlete's own realized cross-distance
+ * profile when enough evidence exists — omit/null to fall back to the
+ * experience-tier default. Without this, every athlete's ladder used the
+ * same flat k regardless of their own data, silently ignoring the
+ * personalization this app already computes and stores elsewhere (user
+ * feedback: 10k/half/marathon predictions read as too optimistic off a
+ * genuine 5k time — a systematically-too-low k for that athlete does
+ * exactly this, since it under-penalizes longer distances).
+ */
 export function riegelPredictions(
   distanceMeters: number,
   durationSeconds: number,
-  experience: CardioInput['experience'] = 'intermediate'
+  experience: CardioInput['experience'] = 'intermediate',
+  personalizedK?: number | null
 ): Record<string, number> | null {
   if (distanceMeters <= 0 || durationSeconds <= 0) return null;
-  const k = experience === 'beginner' ? 1.08 : experience === 'advanced' ? 1.04 : 1.06;
+  const k =
+    personalizedK ?? (experience === 'beginner' ? 1.08 : experience === 'advanced' ? 1.04 : 1.06);
   const ladder = [1500, 5000, 10000, 21097.5, 42195];
   const out: Record<string, number> = {};
   for (const d of ladder) out[String(d)] = durationSeconds * Math.pow(d / distanceMeters, k);
@@ -278,10 +291,12 @@ export function sportRacePredictions(
   sport: 'row' | 'ski' | 'swim',
   distanceMeters: number,
   durationSeconds: number,
-  experience: CardioInput['experience'] = 'intermediate'
+  experience: CardioInput['experience'] = 'intermediate',
+  personalizedK?: number | null
 ): Record<string, number> | null {
   if (distanceMeters <= 0 || durationSeconds <= 0) return null;
-  const k = experience === 'beginner' ? 1.08 : experience === 'advanced' ? 1.04 : 1.06;
+  const k =
+    personalizedK ?? (experience === 'beginner' ? 1.08 : experience === 'advanced' ? 1.04 : 1.06);
   const ladder = SPORT_LADDER_METERS[sport];
   const out: Record<string, number> = {};
   for (const d of ladder) out[String(d)] = durationSeconds * Math.pow(d / distanceMeters, k);

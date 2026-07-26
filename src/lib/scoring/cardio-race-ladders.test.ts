@@ -67,3 +67,32 @@ describe("riegelPredictions (running, unchanged) sanity", () => {
     expect(new Set(Object.keys(result!))).toEqual(new Set(["1500", "5000", "10000", "21097.5", "42195"]));
   });
 });
+
+/**
+ * Personalized k threading (user feedback: 10k/half/marathon predictions off
+ * a real 5k "seem slightly faster than i think i may be able to achieve" —
+ * root cause was the ladder always using the flat "intermediate" experience
+ * tier (k=1.06), silently ignoring this athlete's own personalized Riegel
+ * exponent already computed and stored elsewhere in the app).
+ */
+describe("riegelPredictions / sportRacePredictions — personalized k override", () => {
+  it("uses the personalized k instead of the experience-tier default when provided", () => {
+    const flat = riegelPredictions(5000, 1105, "intermediate")!; // k=1.06 default
+    const personalized = riegelPredictions(5000, 1105, "intermediate", 1.10)!;
+    // A higher k penalizes longer distances more — same 5k input, slower long-distance output.
+    expect(personalized["42195"]).toBeGreaterThan(flat["42195"]);
+    expect(personalized["21097.5"]).toBeGreaterThan(flat["21097.5"]);
+  });
+
+  it("falls back to the experience-tier default when no personalized k is given", () => {
+    const withNull = riegelPredictions(5000, 1105, "intermediate", null)!;
+    const withUndefined = riegelPredictions(5000, 1105, "intermediate")!;
+    expect(withNull["42195"]).toBeCloseTo(withUndefined["42195"], 5);
+  });
+
+  it("sportRacePredictions also honors a personalized k", () => {
+    const flat = sportRacePredictions("row", 2000, 420, "intermediate")!;
+    const personalized = sportRacePredictions("row", 2000, 420, "intermediate", 1.10)!;
+    expect(personalized["10000"]).toBeGreaterThan(flat["10000"]);
+  });
+});

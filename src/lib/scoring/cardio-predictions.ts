@@ -152,6 +152,29 @@ export const IMPROVE_RATE = 0.55;
 /** Alias for callers still using the old name. */
 export const FASTER_PULL_FACTOR = IMPROVE_RATE;
 
+/**
+ * A "race"-tagged session run at (or within DIRECT_EVIDENCE_DISTANCE_TOLERANCE
+ * of) the sport's benchmark distance itself is direct, non-extrapolated proof
+ * of current capability — not a Riegel projection from some other distance
+ * that still carries model error. User feedback: running an actual 18:25 5k
+ * and having the stored 5k prediction only creep from ~18:42 to 18:33 (the
+ * ordinary IMPROVE_RATE=0.55 blend) makes no sense — if you just raced the
+ * exact distance, the prediction for that distance IS that time, full stop,
+ * not a partially-trusted blend toward it.
+ */
+export const DIRECT_EVIDENCE_IMPROVE_RATE = 1.0;
+export const DIRECT_EVIDENCE_DISTANCE_TOLERANCE = 0.05;
+
+/** True when a session's own distance sits within DIRECT_EVIDENCE_DISTANCE_TOLERANCE of the sport's benchmark distance — i.e. a genuine at-distance time trial rather than a projection from a different distance. */
+export function isDirectBenchmarkDistance(
+  sessionDistanceMeters: number,
+  benchmarkDistanceMeters: number
+): boolean {
+  if (sessionDistanceMeters <= 0 || benchmarkDistanceMeters <= 0) return false;
+  const ratio = sessionDistanceMeters / benchmarkDistanceMeters;
+  return Math.abs(ratio - 1) <= DIRECT_EVIDENCE_DISTANCE_TOLERANCE;
+}
+
 /** Hard effort that regressed: gentle pull (Part E1). */
 export const REGRESS_RATE = 0.15;
 
@@ -311,6 +334,8 @@ export interface RelativeEffortTrendContext {
   thisSessionEF?: number | null;
   /** This athlete's personal easy-effort baseline EF — see personalEasyEffortBaselineEF. */
   baselineEF?: number | null;
+  /** True when this session's own distance is at (or within DIRECT_EVIDENCE_DISTANCE_TOLERANCE of) the sport's benchmark distance itself, rather than Riegel-projected from a different distance — see isDirectBenchmarkDistance below. */
+  isDirectBenchmarkDistance?: boolean;
 }
 
 const EASY_TREND_SENSITIVITY = 0.3;
@@ -336,7 +361,9 @@ export function updatePrediction(
   context?: RelativeEffortTrendContext
 ): number {
   if (equivSec < storedSec) {
-    return storedSec + (equivSec - storedSec) * IMPROVE_RATE;
+    const isDirectRaceEvidence = context?.isDirectBenchmarkDistance && context.sessionType === "race";
+    const rate = isDirectRaceEvidence ? DIRECT_EVIDENCE_IMPROVE_RATE : IMPROVE_RATE;
+    return storedSec + (equivSec - storedSec) * rate;
   }
   if (isQualityEffort(storedSec, equivSec)) {
     return storedSec + (equivSec - storedSec) * REGRESS_RATE;
@@ -520,8 +547,8 @@ export function terrainAdjustedSessionEF(
   return ef * terrainHeatEffortCreditMultiplier(elevationMeters, distanceMeters, temperatureCelsius);
 }
 
-/** Session types that genuinely measure pace capability — used as the mistag guard's reference pace below. */
-const HARD_EFFORT_SESSION_TYPES = new Set<SessionType>(["race", "tempo", "threshold", "interval", "fartlek"]);
+/** Session types that genuinely measure pace capability — used as the mistag guard's reference pace below, and as the direct-evidence gate for updatePrediction above. */
+export const HARD_EFFORT_SESSION_TYPES = new Set<SessionType>(["race", "tempo", "threshold", "interval", "fartlek"]);
 
 /** A session tagged easy/recovery/long whose own pace is within this fraction of (or faster than) the athlete's fastest recent hard-effort pace is treated as a likely mistagged hard effort, not a genuine easy run — both when scoring it directly and when deciding whether it should count toward the easy-effort baseline below. */
 export const MISTAG_GUARD_MAX_RATIO = 1.08;

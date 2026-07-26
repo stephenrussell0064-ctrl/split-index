@@ -12,6 +12,7 @@ import {
   computeBodyBenchmarkEquivalentSeconds,
 } from "@/lib/scoring/adapters";
 import type { CardioResult } from "@/lib/scoring/cardio-activity";
+import { BENCHMARK_DISTANCE_METERS } from "@/lib/scoring/cardio-benchmarks";
 import {
   blendPredictedBenchmark,
   effectiveStoredPrediction,
@@ -20,6 +21,7 @@ import {
   personalEasyEffortBaselinePaceSeconds,
   personalRecentHardEffortBenchmarkSeconds,
   terrainAdjustedSessionEF,
+  isDirectBenchmarkDistance,
 } from "@/lib/scoring/cardio-predictions";
 import {
   computeTier1Prediction,
@@ -395,6 +397,10 @@ export async function POST(request: Request) {
           body.temperature_celsius
         ),
         baselineEF: easyEffortBaselineEF,
+        isDirectBenchmarkDistance: isDirectBenchmarkDistance(
+          body.distance_meters ?? 0,
+          BENCHMARK_DISTANCE_METERS[benchmarkSport]
+        ),
       });
       newPredictedBenchmarkSeconds = computeWindowedTier2Seconds(
         benchmarkSport,

@@ -25,13 +25,14 @@ import {
   personalEasyEffortBaselinePaceSeconds,
   personalRecentHardEffortBenchmarkSeconds,
   terrainAdjustedSessionEF,
+  isDirectBenchmarkDistance,
 } from "@/lib/scoring/cardio-predictions";
 import {
   computeWindowedTier2Seconds,
   personalizeRiegelKFromWindow,
   type HistorySession,
 } from "@/lib/scoring/cardio/race-prediction";
-import type { BenchmarkSport } from "@/lib/scoring/cardio-benchmarks";
+import { BENCHMARK_DISTANCE_METERS, type BenchmarkSport } from "@/lib/scoring/cardio-benchmarks";
 import { isEnduranceSport } from "@/lib/scoring/engine";
 import type { GymExercise } from "@/types";
 import type { LoggedSet } from "@/lib/scoring/split-strength-engine";
@@ -244,6 +245,10 @@ export async function POST() {
             activity.temperature_celsius
           ),
           baselineEF: easyEffortBaselineEF,
+          isDirectBenchmarkDistance: isDirectBenchmarkDistance(
+            activity.distance_meters ?? 0,
+            BENCHMARK_DISTANCE_METERS[benchmarkSport]
+          ),
         });
         predictedBenchmarkSeconds[benchmarkSport] = computeWindowedTier2Seconds(
           benchmarkSport,

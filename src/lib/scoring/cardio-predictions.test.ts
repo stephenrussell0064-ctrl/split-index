@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { updatePrediction, blendPredictedBenchmark, applyDecay, PREDICTION_DECAY } from "./cardio-predictions";
+import {
+  updatePrediction,
+  blendPredictedBenchmark,
+  applyDecay,
+  PREDICTION_DECAY,
+  isDirectBenchmarkDistance,
+  DIRECT_EVIDENCE_IMPROVE_RATE,
+} from "./cardio-predictions";
+import { BENCHMARK_DISTANCE_METERS } from "./cardio-benchmarks";
 
 /**
  * Relative-trend evidence for Tier 2 (user feedback): an easy/recovery/long
@@ -101,6 +109,59 @@ describe("updatePrediction / blendPredictedBenchmark — relative-trend evidence
 
   it("blendPredictedBenchmark seeds the prediction on the first-ever session regardless of context", () => {
     expect(blendPredictedBenchmark(null, 1200, { sessionType: "easy" })).toBe(1200);
+  });
+});
+
+/**
+ * Direct race-distance evidence (user feedback): "i ran an 18:25 time 5km
+ * and it shows my 5km prediction is 18:33 why?" Root cause: the ordinary
+ * IMPROVE_RATE=0.55 blend treated a genuine at-distance race exactly like
+ * an inferred/projected result, only pulling 55% of the way from the prior
+ * stored prediction (~18:42) toward the demonstrated 18:25. A race run at
+ * the benchmark distance itself is direct, non-extrapolated proof — the
+ * prediction for that distance should become that time, not a blend
+ * toward it.
+ */
+describe("updatePrediction — direct race-distance evidence snaps fully, not the 55% blend", () => {
+  const STORED = 18 * 60 + 42; // 18:42 prior prediction
+  const RACED = 18 * 60 + 25; // 18:25 actual race result
+
+  it("reproduces the reported bug without the direct-evidence context (ordinary 55% blend)", () => {
+    const result = updatePrediction(STORED, RACED);
+    expect(Math.round(result)).toBe(18 * 60 + 33); // 18:33 — the reported symptom
+  });
+
+  it("snaps directly to the demonstrated time when raced at the benchmark distance", () => {
+    const direct = isDirectBenchmarkDistance(5000, BENCHMARK_DISTANCE_METERS.run);
+    expect(direct).toBe(true);
+    const result = updatePrediction(STORED, RACED, { sessionType: "race", isDirectBenchmarkDistance: direct });
+    expect(result).toBe(RACED);
+  });
+
+  it("isDirectBenchmarkDistance tolerates small GPS/course measurement noise but not a genuinely different distance", () => {
+    expect(isDirectBenchmarkDistance(5000, 5000)).toBe(true);
+    expect(isDirectBenchmarkDistance(5100, 5000)).toBe(true); // 2% off, within tolerance
+    expect(isDirectBenchmarkDistance(4800, 5000)).toBe(true); // 4% off, within tolerance
+    expect(isDirectBenchmarkDistance(8000, 5000)).toBe(false); // a genuinely different distance
+    expect(isDirectBenchmarkDistance(0, 5000)).toBe(false);
+  });
+
+  it("does not snap for a hard-effort session tagged something other than 'race', even at the exact benchmark distance", () => {
+    const direct = isDirectBenchmarkDistance(5000, BENCHMARK_DISTANCE_METERS.run);
+    const result = updatePrediction(STORED, RACED, { sessionType: "tempo", isDirectBenchmarkDistance: direct });
+    expect(result).not.toBe(RACED);
+    expect(result).toBeCloseTo(STORED + (RACED - STORED) * 0.55, 1);
+  });
+
+  it("does not snap when the session's own distance isn't actually close to the benchmark distance, even if tagged 'race'", () => {
+    const notDirect = isDirectBenchmarkDistance(10000, BENCHMARK_DISTANCE_METERS.run);
+    expect(notDirect).toBe(false);
+    const result = updatePrediction(STORED, RACED, { sessionType: "race", isDirectBenchmarkDistance: notDirect });
+    expect(result).toBeCloseTo(STORED + (RACED - STORED) * 0.55, 1);
+  });
+
+  it("DIRECT_EVIDENCE_IMPROVE_RATE is a full 1.0 snap, distinct from IMPROVE_RATE's 55% blend", () => {
+    expect(DIRECT_EVIDENCE_IMPROVE_RATE).toBe(1.0);
   });
 });
 

@@ -38,7 +38,7 @@ function buildLadder(benchmark: PredictedBenchmark): Record<string, number> | nu
   if (tier2IsCalibrating(benchmark.sampleCount)) return null;
   switch (benchmark.sport) {
     case "run":
-      return riegelPredictions(5000, benchmark.benchmarkSeconds, "intermediate");
+      return riegelPredictions(5000, benchmark.benchmarkSeconds, "intermediate", benchmark.riegelK);
     case "row":
     case "ski":
     case "swim":
@@ -46,7 +46,8 @@ function buildLadder(benchmark: PredictedBenchmark): Record<string, number> | nu
         benchmark.sport,
         BENCHMARK_DISTANCE_METERS[benchmark.sport],
         benchmark.benchmarkSeconds,
-        "intermediate"
+        "intermediate",
+        benchmark.riegelK
       );
     case "walk":
       return walkPacePredictions(1000, benchmark.benchmarkSeconds);

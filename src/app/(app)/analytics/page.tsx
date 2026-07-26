@@ -80,7 +80,7 @@ export default async function AnalyticsPage() {
     // run — degrades to an empty array rather than failing the page.
     supabase
       .from("predicted_benchmarks")
-      .select("sport, benchmark_seconds, sample_count, updated_at")
+      .select("sport, benchmark_seconds, sample_count, updated_at, riegel_k")
       .eq("user_id", user.id),
     // One row per exercise ever logged, not just whatever falls within a
     // row-count-limited recent-history query (see migration 019) — a plain
@@ -156,6 +156,7 @@ export default async function AnalyticsPage() {
         benchmarkSeconds: p.benchmark_seconds as number,
         sampleCount: p.sample_count as number,
         updatedAt: p.updated_at as string,
+        riegelK: p.riegel_k as number | null,
       })
     ),
     strengthEstimates: Array.from(strengthEstimateByLift.values()) as StrengthEstimate[],

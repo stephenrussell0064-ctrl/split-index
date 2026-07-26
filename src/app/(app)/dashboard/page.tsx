@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { format } from "date-fns";
 import { createClient } from "@/lib/supabase/server";
 import { SplitBalanceGauge } from "@/components/dashboard/split-balance-gauge";
+import { HeroStatWall } from "@/components/dashboard/hero-stat-wall";
 import { GymZonePanel, CardioZonePanel } from "@/components/dashboard/zone-panels";
 import { RecentWorkouts, AICoachCard } from "@/components/dashboard/workout-list";
 import { ActivityHeatmap, type HeatmapDay } from "@/components/dashboard/activity-heatmap";
@@ -17,10 +18,8 @@ import {
 import { PremiumGate } from "@/components/analytics/premium-gate";
 import { PremiumTease } from "@/components/premium/premium-tease";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { StreakBanner } from "@/components/retention/streak-banner";
 import { WeeklyTargetCard } from "@/components/retention/weekly-target-card";
 import { FocusWeekCard } from "@/components/retention/focus-week-card";
-import { RankBadge } from "@/components/retention/rank-badge";
 import { EmptyDashboardHero } from "@/components/retention/empty-dashboard-hero";
 import { FriendInviteBanner } from "@/components/retention/friend-invite-banner";
 import { ScoreDisclaimer } from "@/components/legal/score-disclaimer";
@@ -40,7 +39,7 @@ import { ACTIVATION_EVENT_SESSION_COUNT, PRICING } from "@/lib/pricing/config";
 import { computeSplitIndexProjection } from "@/lib/premium/projection";
 import { gateAiFeedback } from "@/lib/scoring/gates";
 import { formatIndex } from "@/lib/utils/format";
-import type { SplitIndexSnapshot, SportType } from "@/types";
+import type { PersonalRecord, SplitIndexSnapshot, SportType } from "@/types";
 
 const DAY_MS = 86400000;
 const HEATMAP_DAYS = 112;
@@ -118,6 +117,7 @@ export default async function DashboardPage() {
     { data: aiFeedback },
     { data: goals },
     { data: indexActivities },
+    { data: latestPersonalRecord },
   ] = await Promise.all([
     supabase
       .from("split_index_history")
@@ -188,6 +188,13 @@ export default async function DashboardPage() {
       .eq("is_draft", false)
       .order("started_at", { ascending: false })
       .limit(20),
+    supabase
+      .from("personal_records")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("achieved_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ]);
 
   const hasActivities = (recentActivities?.length ?? 0) > 0;
@@ -375,29 +382,34 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="headline-tight text-2xl font-bold sm:text-3xl">
-            {displayName ? `Welcome back, ${displayName}` : "Welcome back"}
-          </h1>
-          <p className="mt-1 text-sm text-muted">
-            {format(new Date(), "EEEE, MMMM d")} · {sessionHint}
-          </p>
-        </div>
-        {premium && rankPercentile !== null && (
-          <RankBadge percentile={rankPercentile} />
-        )}
-        {!premium && rankPercentile !== null && (
-          <PremiumTease
-            title="Your global rank is ready"
-            subtitle="Unlock Premium to see where you stand."
-            showPreview={false}
-            className="max-w-[220px] border border-white/[0.06]"
-          />
-        )}
+      <div>
+        <h1 className="headline-tight text-2xl font-bold sm:text-3xl">
+          {displayName ? `Welcome back, ${displayName}` : "Welcome back"}
+        </h1>
+        <p className="mt-1 text-sm text-muted">
+          {format(new Date(), "EEEE, MMMM d")} · {sessionHint}
+        </p>
       </div>
 
       {!hasActivities && <EmptyDashboardHero displayName={displayName} />}
+
+      {hasActivities && (
+        <HeroStatWall
+          headlineLabel={headlineLabel}
+          headlineValue={hasIndexHistory ? headlineValue : null}
+          weeklyTrend={weeklyTrend}
+          hasHistory={hasIndexHistory}
+          recovery={recovery}
+          fatigue={fatigue}
+          streak={streakMetrics.streak}
+          streakAtRisk={streakMetrics.atRisk}
+          trainedToday={streakMetrics.trainedToday}
+          weeklySessions={streakMetrics.weeklySessions}
+          rankPercentile={rankPercentile}
+          isPremium={premium}
+          latestPr={(latestPersonalRecord as PersonalRecord | null) ?? null}
+        />
+      )}
 
       {showActivationPaywall && (
         <PremiumTease
@@ -409,12 +421,6 @@ export default async function DashboardPage() {
           <SplitTrendPanel data={trendData} />
         </PremiumTease>
       )}
-
-      <StreakBanner
-        streak={streakMetrics.streak}
-        atRisk={streakMetrics.atRisk}
-        trainedToday={streakMetrics.trainedToday}
-      />
 
       <SplitBalanceGauge
         splitIndex={hasIndexHistory ? headlineValue : null}
