@@ -184,6 +184,15 @@ const PRIMARY_ANCHORS: Record<string, LiftAnchor> = {
   weightedPullup: { anchorRatio: 0.3327, category: "back", bodyPart: "pull" },
   weightedDips: { anchorRatio: 0.4731, category: "chest", bodyPart: "upperBody" },
   pushUp: { anchorRatio: 0.303, category: "chest", bodyPart: "upperBody" },
+  // No Strength Level population data for muscle-ups (not a mainstream
+  // tracked lift there) — anchor reasoned from published calisthenics
+  // standards instead (Fitness Volt): "Intermediate" is defined as ~1 rep
+  // at bodyweight+20%, which is the natural 500-point anchor given this
+  // model's convention (bodyweight-only reps still resolve through the
+  // same rep-to-1RM estimator, so this isn't just for added-weight sets).
+  // Flag as an estimate, same honesty standard as the file's other
+  // engineering approximations, until real logged data can validate it.
+  muscleUp: { anchorRatio: 0.20, category: "back", bodyPart: "pull" },
 };
 
 type WeightAnchor = [ratio: number, score: number];
@@ -238,7 +247,15 @@ const ACCESSORY_MAP: Record<string, LiftAnchor> = {
   pecDeck: { anchorRatio: 0.8583, category: "chest", bodyPart: "upperBody" },
   tricepPushdown: { anchorRatio: 0.3138, category: "arms", bodyPart: "upperBody" },
   tricepPushdownSingleArm: { anchorRatio: 0.153, category: "arms", bodyPart: "upperBody" },
-  dbCurl: { anchorRatio: 0.247, category: "arms", bodyPart: "upperBody" },
+  // Recalibrated (user feedback: 20kg/hand x8 scored 669, expected ~750;
+  // 12.5kg/hand x8 scored ~475, expected ~550 — both read meaningfully low).
+  // 0.20 is the best single-anchor fit for both reported points under the
+  // shared SLOPE constant (which isn't exercise-specific, so it isn't
+  // touched here) — lands almost exactly on the 12.5kg point and within
+  // ~2% of the 20kg one; the two examples aren't perfectly consistent with
+  // a single anchor at the existing SLOPE, so this is the closest
+  // reasonable fit rather than an exact match to both.
+  dbCurl: { anchorRatio: 0.20, category: "arms", bodyPart: "upperBody" },
   hammerCurl: { anchorRatio: 0.202, category: "arms", bodyPart: "upperBody" },
   skullcrusher: { anchorRatio: 0.22, category: "arms", bodyPart: "upperBody" },
   cableCurl: { anchorRatio: 0.28, category: "arms", bodyPart: "upperBody" },
@@ -274,6 +291,8 @@ const LIFT_ALIASES: Record<string, string> = {
   "weighted pull up": "weightedPullup", "weighted pull-up": "weightedPullup", "weighted chin up": "weightedPullup",
   "pull up": "weightedPullup", "pull-up": "weightedPullup", "chin up": "weightedPullup",
   "weighted dips": "weightedDips", dips: "weightedDips", "chest dips": "weightedDips", "bench dips": "weightedDips",
+  "muscle up": "muscleUp", "muscle-up": "muscleUp", "weighted muscle up": "muscleUp", "weighted muscle-up": "muscleUp",
+  "bar muscle up": "muscleUp", "ring muscle up": "muscleUp",
   "romanian deadlift": "deadlift", rdl: "deadlift", "stiff leg deadlift": "deadlift",
   "push up": "pushUp", "push-up": "pushUp", "weighted push up": "pushUp", "weighted push-up": "pushUp",
   "diamond push up": "pushUp", "wide push up": "pushUp", "decline push up": "pushUp", "incline push up": "pushUp",
@@ -372,6 +391,7 @@ export const EXERCISE_CLASS: Record<string, ExerciseClass> = {
   weightedPullup: "compound",
   weightedDips: "compound",
   pushUp: "compound",
+  muscleUp: "compound",
   inclineDbPress: "accessory",
   flatDbPress: "accessory",
   machineChestPress: "accessory",
@@ -441,7 +461,7 @@ const MIN_RATIO = 0.01;
  * climb). Resolve total-load 1RM first, then subtract bodyweight back out
  * to express the result the same way it was logged (added weight).
  */
-const BODYWEIGHT_RELATIVE_LIFTS = new Set<string>(["weightedPullup", "weightedDips", "pushUp"]);
+const BODYWEIGHT_RELATIVE_LIFTS = new Set<string>(["weightedPullup", "weightedDips", "pushUp", "muscleUp"]);
 
 /**
  * Fraction of bodyweight actually under tension for bodyweight-relative

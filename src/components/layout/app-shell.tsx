@@ -19,6 +19,7 @@ import { BrandMark } from "@/components/brand/brand-mark";
 import { cn } from "@/lib/utils/cn";
 import { SidebarAccount } from "@/components/layout/sidebar-account";
 import { AppTopBar } from "@/components/layout/app-top-bar";
+import { ModeOverrideProvider, useModeOverride } from "@/components/layout/mode-override-context";
 
 type AppMode = "neutral" | "gym" | "cardio";
 
@@ -47,8 +48,22 @@ function logHrefForMode(mode: AppMode): string {
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
+  return (
+    <ModeOverrideProvider>
+      <AppShellContent>{children}</AppShellContent>
+    </ModeOverrideProvider>
+  );
+}
+
+function AppShellContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const mode = resolveMode(pathname);
+  const pathnameMode = resolveMode(pathname);
+  const modeOverride = useModeOverride();
+  // The pathname's own mode always wins when it has one (/gym, /cardio) —
+  // the override only fills in for pages whose pathname can't encode a mode
+  // (the generic log/edit activity forms), themed off whatever sport is
+  // currently selected instead (see mode-override-context.tsx).
+  const mode = pathnameMode !== "neutral" ? pathnameMode : (modeOverride ?? "neutral");
   const showTopBar = pathname !== "/onboarding";
   const logHref = logHrefForMode(mode);
   const [moreOpen, setMoreOpen] = useState(false);

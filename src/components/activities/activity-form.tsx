@@ -35,6 +35,7 @@ import { LogQuickActions } from "./log-quick-actions";
 import { FileImportDropzone } from "./file-import-dropzone";
 import { submitActivityRequest } from "@/lib/activities/submit-activity";
 import type { CardioEnrichment } from "@/lib/scoring/cardio";
+import { useSetModeOverride } from "@/components/layout/mode-override-context";
 
 type View = "picker" | "form" | "success";
 
@@ -109,6 +110,16 @@ export function ActivityForm({
 
   const [view, setView] = useState<View>(openFormInitially ? "form" : "picker");
   const [sport, setSport] = useState<SportType | null>(editSport ?? initialSport ?? null);
+  // The generic log/edit pages (/activities/new, /activities/[id]/edit)
+  // host both gym and cardio sports on one pathname, so app-shell.tsx's
+  // pathname-based theming can't tell them apart — this registers an
+  // override so the shell themes off whatever's actually selected instead
+  // (user-reported: cardio sports stayed on the dark gym theme here).
+  // zoneMode !== "generic" means the pathname already encodes the mode
+  // (/gym/log, /cardio/log), so no override is needed there.
+  useSetModeOverride(
+    zoneMode === "generic" ? (sport === "gym" ? "gym" : sport ? "cardio" : null) : null
+  );
   const [direction, setDirection] = useState(1);
   const [stateMap, setStateMap] = useState<Partial<Record<SportType, WorkoutFormState>>>(() => {
     if (initialSport && initialRepeatState) {

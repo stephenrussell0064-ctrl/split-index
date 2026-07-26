@@ -6,6 +6,7 @@ import { Trophy } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { SPORTS } from "@/lib/constants/sports";
 import { ChartEmptyState } from "@/components/analytics/charts";
+import { formatDuration, formatDistance } from "@/lib/utils/format";
 import type { PersonalRecord } from "@/types";
 
 interface PersonalRecordsTableProps {
@@ -14,6 +15,13 @@ interface PersonalRecordsTableProps {
 
 function sportLabel(sport: string): string {
   return SPORTS.find((s) => s.id === sport)?.name ?? sport.replace("_", " ");
+}
+
+/** Time/distance-based metrics (personal-records.ts) read far better formatted than raw seconds/meters. */
+function formatRecordValue(pr: PersonalRecord): string {
+  if (pr.unit === "seconds") return formatDuration(pr.value);
+  if (pr.unit === "meters") return formatDistance(pr.value);
+  return `${pr.value.toLocaleString()} ${pr.unit}`;
 }
 
 export function PersonalRecordsTable({ records }: PersonalRecordsTableProps) {
@@ -62,7 +70,7 @@ export function PersonalRecordsTable({ records }: PersonalRecordsTableProps) {
                         {pr.metric.replace(/_/g, " ")}
                       </td>
                       <td className="py-3 pr-4 text-right font-semibold tabular-nums text-accent">
-                        {pr.value.toLocaleString()} {pr.unit}
+                        {formatRecordValue(pr)}
                       </td>
                       <td className="py-3 text-right tabular-nums text-muted">
                         {format(new Date(pr.achieved_at), "MMM d, yyyy")}

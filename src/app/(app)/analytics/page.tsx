@@ -82,12 +82,11 @@ export default async function AnalyticsPage() {
       .from("predicted_benchmarks")
       .select("sport, benchmark_seconds, sample_count, updated_at")
       .eq("user_id", user.id),
-    supabase
-      .from("strength_scores")
-      .select("exercise_name, estimated_1rm_kg, score_breakdown, recorded_at")
-      .eq("user_id", user.id)
-      .order("recorded_at", { ascending: false })
-      .limit(200),
+    // One row per exercise ever logged, not just whatever falls within a
+    // row-count-limited recent-history query (see migration 019) — a plain
+    // .select().limit() can silently drop lifts not trained recently for
+    // anyone with a wide exercise history.
+    supabase.rpc("latest_strength_scores", { p_user_id: user.id }),
     supabase
       .from("recovery_snapshots")
       .select("hrv_ms, recorded_at")
@@ -108,7 +107,8 @@ export default async function AnalyticsPage() {
       ? hrvBaselineReadings.reduce((sum, v) => sum + v, 0) / hrvBaselineReadings.length
       : null;
 
-  // Latest row per exercise only — recorded_at desc means first occurrence wins.
+  // latest_strength_scores() already returns one row per exercise — this
+  // dedup is just a defensive no-op if that ever changes.
   const strengthEstimateByLift = new Map<string, StrengthEstimate>();
   for (const row of strengthScoresRaw ?? []) {
     const name = row.exercise_name as string;

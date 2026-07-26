@@ -10,7 +10,8 @@ import {
   formatPredictionLabel,
   formatRiegelPrediction,
 } from "@/lib/scoring/presentation";
-import { riegelPredictions } from "@/lib/scoring/cardio-activity";
+import { riegelPredictions, sportRacePredictions, walkPacePredictions } from "@/lib/scoring/cardio-activity";
+import { BENCHMARK_DISTANCE_METERS } from "@/lib/scoring/cardio-benchmarks";
 import { tier2IsCalibrating, TIER2_MIN_SAMPLES_TO_DISPLAY } from "@/lib/scoring/cardio/race-prediction";
 import type { PredictedBenchmark, StrengthEstimate } from "./types";
 
@@ -22,6 +23,37 @@ const SPORT_LABELS: Record<PredictedBenchmark["sport"], string> = {
   cycle: "Cycling · 20K",
   ski: "SkiErg · 2K",
 };
+
+/** Race ladder label per sport — every endurance sport but cycle gets one (user feedback: only running had a ladder). */
+const LADDER_TITLE: Partial<Record<PredictedBenchmark["sport"], string>> = {
+  run: "Race ladder · from your running memory",
+  row: "Race ladder · from your rowing memory",
+  ski: "Race ladder · from your SkiErg memory",
+  swim: "Race ladder · from your swimming memory",
+  walk: "Pace ladder · from your walking memory",
+};
+
+/** Builds the race/pace ladder for a stored Tier 2 benchmark — same Riegel projection each sport's per-session ladder uses, seeded from the profile-level prediction instead of a single session. */
+function buildLadder(benchmark: PredictedBenchmark): Record<string, number> | null {
+  if (tier2IsCalibrating(benchmark.sampleCount)) return null;
+  switch (benchmark.sport) {
+    case "run":
+      return riegelPredictions(5000, benchmark.benchmarkSeconds, "intermediate");
+    case "row":
+    case "ski":
+    case "swim":
+      return sportRacePredictions(
+        benchmark.sport,
+        BENCHMARK_DISTANCE_METERS[benchmark.sport],
+        benchmark.benchmarkSeconds,
+        "intermediate"
+      );
+    case "walk":
+      return walkPacePredictions(1000, benchmark.benchmarkSeconds);
+    default:
+      return null;
+  }
+}
 
 function formatBenchmarkValue(benchmark: PredictedBenchmark): string {
   if (benchmark.sport === "walk") {
@@ -45,11 +77,9 @@ function PredictionsContent({
   strengthEstimates: StrengthEstimate[];
   showConfidence: boolean;
 }) {
-  const runBenchmark = benchmarks.find((b) => b.sport === "run");
-  const runLadder =
-    runBenchmark && !tier2IsCalibrating(runBenchmark.sampleCount)
-      ? riegelPredictions(5000, runBenchmark.benchmarkSeconds, "intermediate")
-      : null;
+  const ladders = benchmarks
+    .map((b) => ({ benchmark: b, ladder: buildLadder(b) }))
+    .filter((entry): entry is { benchmark: PredictedBenchmark; ladder: Record<string, number> } => entry.ladder !== null);
 
   return (
     <div className="space-y-5">
@@ -90,11 +120,13 @@ function PredictionsContent({
         </div>
       )}
 
-      {runLadder && (
-        <div>
-          <p className="micro-label text-muted mb-2">Race ladder · from your running memory</p>
+      {ladders.map(({ benchmark, ladder }) => (
+        <div key={benchmark.sport}>
+          <p className="micro-label text-muted mb-2">
+            {LADDER_TITLE[benchmark.sport] ?? "Race ladder"}
+          </p>
           <ul className="grid gap-1.5 sm:grid-cols-2 text-xs">
-            {Object.entries(runLadder).map(([dist, sec]) => (
+            {Object.entries(ladder).map(([dist, sec]) => (
               <li key={dist} className="flex justify-between gap-2 tabular-nums glass rounded-lg px-3 py-1.5">
                 <span className="text-muted">{formatPredictionLabel(dist)}</span>
                 <span className="font-medium">{formatRiegelPrediction(sec)}</span>
@@ -102,12 +134,12 @@ function PredictionsContent({
             ))}
           </ul>
         </div>
-      )}
+      ))}
 
       {strengthEstimates.length > 0 && (
         <div>
           <p className="micro-label text-muted mb-2 flex items-center gap-1.5">
-            <Target className="h-3 w-3" /> Adaptive 1RM · core lifts
+            <Target className="h-3 w-3" /> Adaptive 1RM · every lift logged
           </p>
           <ul className="space-y-1.5">
             {strengthEstimates.map((est) => (

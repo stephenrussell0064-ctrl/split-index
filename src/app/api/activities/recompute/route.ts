@@ -34,6 +34,11 @@ import type { BenchmarkSport } from "@/lib/scoring/cardio-benchmarks";
 import { isEnduranceSport } from "@/lib/scoring/engine";
 import type { GymExercise } from "@/types";
 import type { LoggedSet } from "@/lib/scoring/split-strength-engine";
+import {
+  enduranceRecordCandidates,
+  gymRecordCandidates,
+  type PersonalRecordCandidate,
+} from "@/lib/activities/personal-records";
 
 /**
  * Re-scores every one of the caller's own past activities with the current
@@ -133,6 +138,23 @@ export async function POST() {
   const predictedBenchmarkRiegelK: Partial<Record<BenchmarkSport, number>> = {};
   const sessionsBySport: Partial<Record<BenchmarkSport, HistorySession[]>> = {};
 
+  // Personal records (personal-records.ts) — recompute is the authoritative
+  // full rebuild: replayed oldest-first, so the best-per-metric accumulated
+  // here is always correct, unlike the create/edit routes' incremental
+  // "upsert only if better" (which can't detect a record becoming invalid
+  // after an edit/delete lowers what used to be the record-holding session).
+  const bestPersonalRecords = new Map<string, PersonalRecordCandidate>();
+  function trackPersonalRecords(candidates: PersonalRecordCandidate[]) {
+    for (const c of candidates) {
+      const key = `${c.sport}::${c.metric}`;
+      const existing = bestPersonalRecords.get(key);
+      const better =
+        !existing ||
+        (c.direction === "lower-is-better" ? c.value < existing.value : c.value > existing.value);
+      if (better) bestPersonalRecords.set(key, c);
+    }
+  }
+
   for (const activity of activities ?? []) {
     const metadata = activity.metadata as Record<string, unknown> | null;
     const bodyweightKg = resolveScoringBodyweightKg(activity.sport, {
@@ -163,6 +185,7 @@ export async function POST() {
     let storedPredictionForScoring: number | null = null;
     let easyEffortBaselineEF: number | null = null;
     let recentHardEffortBenchmarkSeconds: number | null = null;
+    let sessionBenchmarkEquivalentSeconds: number | null = null;
     if (isEnduranceSport(activity.sport)) {
       benchmarkSport = mapSportToBenchmarkSport(activity.sport);
       const rawPrior = predictedBenchmarkSeconds[benchmarkSport] ?? null;
@@ -202,6 +225,7 @@ export async function POST() {
         activity,
         personalizedK ?? undefined
       );
+      sessionBenchmarkEquivalentSeconds = sessionEquivalentSeconds;
       if (sessionEquivalentSeconds !== null) {
         const sequentialBlend = blendPredictedBenchmark(priorValue, sessionEquivalentSeconds, {
           sessionType: activity.session_type,
@@ -331,9 +355,36 @@ export async function POST() {
         recovery_score: result.recoveryScore,
         predicted_index_7d: result.predictedIndex,
         activity_id: activity.id,
+        // Must reflect the activity's own date, not recompute-run time —
+        // see the matching comment in the create route. This is the most
+        // severe manifestation of the bug: without it, every historical
+        // activity in a recompute pass gets stamped with virtually the same
+        // instant, collapsing months of history into a single calendar day
+        // once analytics groups by day (collapseToLastPerDay).
+        recorded_at: activity.started_at,
       });
 
+      if (isEnduranceSport(activity.sport)) {
+        trackPersonalRecords(
+          enduranceRecordCandidates({
+            sport: activity.sport,
+            activityId: activity.id,
+            achievedAt: activity.started_at,
+            distanceMeters: activity.distance_meters,
+            durationSeconds: activity.duration_seconds,
+            benchmarkEquivalentSeconds: sessionBenchmarkEquivalentSeconds,
+          })
+        );
+      }
+
       if (activity.sport === "gym" && result.strengthScoreRows?.length) {
+        trackPersonalRecords(
+          gymRecordCandidates({
+            activityId: activity.id,
+            achievedAt: activity.started_at,
+            exercises: result.strengthScoreRows,
+          })
+        );
         await supabase.from("strength_scores").delete().eq("activity_id", activity.id);
         await supabase.from("strength_scores").insert(
           buildStrengthScoreInserts(
@@ -380,6 +431,24 @@ export async function POST() {
   }));
   if (benchmarkRows.length > 0) {
     await supabase.from("predicted_benchmarks").upsert(benchmarkRows, { onConflict: "user_id,sport" });
+  }
+
+  // Full rebuild — recompute is the authoritative pass, so replace every
+  // existing record rather than incrementally upserting (see
+  // trackPersonalRecords above for why that's necessary here).
+  await supabase.from("personal_records").delete().eq("user_id", user.id);
+  if (bestPersonalRecords.size > 0) {
+    await supabase.from("personal_records").insert(
+      Array.from(bestPersonalRecords.values()).map((c) => ({
+        user_id: user.id,
+        sport: c.sport,
+        metric: c.metric,
+        value: c.value,
+        unit: c.unit,
+        activity_id: c.activityId,
+        achieved_at: c.achievedAt,
+      }))
+    );
   }
 
   return NextResponse.json({

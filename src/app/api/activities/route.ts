@@ -38,6 +38,12 @@ import {
   resolveEffectiveMaxHr,
 } from "@/lib/activities/bodyweight";
 import { bestSet, summarizeSets } from "@/lib/activities/gym-sets";
+import {
+  upsertPersonalRecordsIfBetter,
+  enduranceRecordCandidates,
+  gymRecordCandidates,
+  type PersonalRecordCandidate,
+} from "@/lib/activities/personal-records";
 import { fetchExerciseHistory } from "@/lib/activities/exercise-history";
 import { defaultWeightEntryMode } from "@/lib/scoring/weight-entry";
 import type { WeightEntryMode } from "@/lib/scoring/weight-entry";
@@ -305,6 +311,10 @@ export async function POST(request: Request) {
   // personalEasyEffortBaselineEF in cardio-predictions.ts.
   let easyEffortBaselineEF: number | null = null;
   let recentHardEffortBenchmarkSeconds: number | null = null;
+  // This session's own benchmark-equivalent — kept for personal-record
+  // detection below (personal-records.ts), separate from the multi-session
+  // blended prediction.
+  let sessionBenchmarkEquivalentSeconds: number | null = null;
   if (isEnduranceSport(body.sport)) {
     benchmarkSport = mapSportToBenchmarkSport(body.sport);
     const { data: priorPrediction } = await supabase
@@ -358,6 +368,7 @@ export async function POST(request: Request) {
       body,
       personalizedK ?? undefined
     );
+    sessionBenchmarkEquivalentSeconds = sessionEquivalentSeconds;
     if (sessionEquivalentSeconds !== null) {
       const decayedPrior =
         priorPrediction?.benchmark_seconds != null
@@ -505,6 +516,12 @@ export async function POST(request: Request) {
     recovery_score: result.recoveryScore,
     predicted_index_7d: result.predictedIndex,
     activity_id: activity.id,
+    // Must reflect the ACTIVITY's own date, not insert time — analytics
+    // trends/moving-averages/projections all group by calendar day off this
+    // column (collapseToLastPerDay), so logging (or backfilling) an old
+    // activity today must not stamp it as "today" or it silently collapses
+    // into whatever else was logged today, breaking every time-series chart.
+    recorded_at: body.started_at,
   });
 
   if (body.sport === "gym" && result.strengthScoreRows?.length) {
@@ -536,6 +553,26 @@ export async function POST(request: Request) {
   }
 
   await supabase.from("workout_drafts").delete().eq("user_id", user.id).eq("sport", body.sport);
+
+  const personalRecordCandidates: PersonalRecordCandidate[] = isEnduranceSport(body.sport)
+    ? enduranceRecordCandidates({
+        sport: body.sport,
+        activityId: activity.id,
+        achievedAt: body.started_at,
+        distanceMeters: body.distance_meters,
+        durationSeconds: body.duration_seconds,
+        benchmarkEquivalentSeconds: sessionBenchmarkEquivalentSeconds,
+      })
+    : body.sport === "gym" && result.strengthScoreRows?.length
+      ? gymRecordCandidates({
+          activityId: activity.id,
+          achievedAt: body.started_at,
+          exercises: result.strengthScoreRows,
+        })
+      : [];
+  if (personalRecordCandidates.length > 0) {
+    await upsertPersonalRecordsIfBetter(supabase, user.id, personalRecordCandidates);
+  }
 
   let aiFeedback = null;
   let premiumRequired = false;

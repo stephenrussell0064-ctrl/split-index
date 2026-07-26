@@ -93,6 +93,16 @@ export function weightedCalisthenic1RM(
   if (effective <= 1) return addedKg;
   const totalLoad1RM =
     blendedRepFormula(bodyweightKg + addedKg, reps, exerciseClass, repsInReserve) - bodyweightKg;
+  // The added-only side of the blend is degenerate at addedKg <= 0 — any
+  // rep formula applied to a 0 weight trivially returns 0 regardless of
+  // reps, so blending 50/50 with an always-zero signal silently halved the
+  // true credit for pure-bodyweight performances (user feedback: 10 strict
+  // bodyweight pull-ups — a genuinely strong "Intermediate" feat per
+  // published calisthenics standards — scored as low as 237/1000
+  // "Beginner"). Bodyweight-only reps rely on totalLoad1RM alone; the blend
+  // only makes sense once there's real added weight for addedOnly1RM to
+  // meaningfully estimate against, and is unchanged for addedKg > 0.
+  if (addedKg <= 0) return totalLoad1RM;
   const addedOnly1RM = blendedRepFormula(addedKg, reps, exerciseClass, repsInReserve);
   return CALISTHENIC_BLEND * totalLoad1RM + (1 - CALISTHENIC_BLEND) * addedOnly1RM;
 }

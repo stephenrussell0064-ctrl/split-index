@@ -178,6 +178,7 @@ export default async function ActivityDetailPage({
                 isPremium={isPremium}
                 cardioResult={gatedCardioInsight}
                 sessionType={activity.session_type}
+                sport={activity.sport}
               />
             </div>
           )}

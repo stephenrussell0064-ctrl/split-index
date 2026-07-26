@@ -15,10 +15,22 @@ import {
 } from "@/lib/scoring/gates";
 import type { CardioResult } from "@/lib/scoring/cardio-activity";
 import type { ScoreStrengthResult } from "@/lib/scoring/split-strength-engine";
-import type { SessionType } from "@/types";
+import type { SessionType, SportType } from "@/types";
 
 /** Session types scored relative to the athlete's own history — mirrors RELATIVE_EFFORT_SESSION_TYPES in cardio-predictions.ts (kept as a local literal set to avoid a server-only import chain from a "use client" component). */
 const RELATIVE_EFFORT_SESSION_TYPES = new Set<SessionType>(["easy", "recovery", "long"]);
+
+/** The predictions ladder now covers row/ski/swim/walk too (previously running-only) — this verb keeps the header sport-accurate instead of hardcoding "run". */
+const PREDICTION_VERB: Record<SportType, string> = {
+  running: "run",
+  walking: "walk",
+  rowing: "row",
+  swimming: "swim",
+  ski_erg: "ski",
+  bike_erg: "ride",
+  indoor_cycling: "ride",
+  gym: "lift",
+};
 
 /** Explains the relative-effort scoring model — shown for every tier (session_type isn't premium-gated), since the score itself is affected by this regardless of tier. */
 function RelativeEffortNote({ sessionType, flags }: { sessionType?: SessionType | null; flags?: string[] }) {
@@ -70,12 +82,15 @@ function CardioFreeStats({
 function CardioPremiumStats({
   result,
   sessionType,
+  sport,
 }: {
   result: CardioResult;
   sessionType?: SessionType | null;
+  sport?: SportType | null;
 }) {
   const hiddenFlags = new Set(["relative-effort-scored", "easy-tag-pace-mismatch"]);
   const remainingFlags = result.flags.filter((f) => !hiddenFlags.has(f));
+  const predictionVerb = (sport && PREDICTION_VERB[sport]) || "run";
 
   return (
     <div className="space-y-4 text-sm">
@@ -107,7 +122,7 @@ function CardioPremiumStats({
       {result.predictions && (
         <div className="border-t border-white/5 pt-4">
           <p className="text-[10px] uppercase tracking-wider text-muted mb-2">
-            At this pace, you could run:
+            At this pace, you could {predictionVerb}:
           </p>
           <ul className="grid gap-1.5 sm:grid-cols-2 text-xs">
             {Object.entries(result.predictions).map(([dist, sec]) => (
@@ -183,6 +198,7 @@ export function SessionScoreInsights({
   strengthResults,
   isPremium,
   sessionType,
+  sport,
   className,
 }: {
   zone: "gym" | "cardio";
@@ -193,6 +209,7 @@ export function SessionScoreInsights({
   }> | null;
   isPremium: boolean;
   sessionType?: SessionType | null;
+  sport?: SportType | null;
   className?: string;
 }) {
   if (zone === "cardio" && cardioResult) {
@@ -210,7 +227,7 @@ export function SessionScoreInsights({
         )}
       >
         {full ? (
-          <CardioPremiumStats result={full} sessionType={sessionType} />
+          <CardioPremiumStats result={full} sessionType={sessionType} sport={sport} />
         ) : (
           <CardioFreeStats result={free} sessionType={sessionType} />
         )}
@@ -236,6 +253,7 @@ export function SessionScoreInsights({
             flags: ["negative-split-strong"],
           }}
           sessionType={sessionType}
+          sport={sport}
         />
       </PremiumTease>
     );

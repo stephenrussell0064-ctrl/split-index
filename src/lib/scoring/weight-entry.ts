@@ -63,6 +63,12 @@ export const EXERCISE_LOAD_CONFIG: Record<string, ExerciseConfig> = {
     anchorConvention: "addedLoad",
     conventionNote: "Enter added load only (0 = bodyweight only).",
   },
+  muscleUp: {
+    defaultConvention: "addedLoad",
+    allowedConventions: ["addedLoad"],
+    anchorConvention: "addedLoad",
+    conventionNote: "Enter the weight ADDED to your bodyweight (0 = bodyweight only).",
+  },
   inclineDbPress: {
     defaultConvention: "perHand",
     allowedConventions: ["perHand", "total"],
@@ -181,6 +187,12 @@ const NAME_TO_CONFIG_KEY: Record<string, string> = {
   "push-up": "pushUp",
   "weighted push up": "pushUp",
   "weighted push-up": "pushUp",
+  "muscle up": "muscleUp",
+  "muscle-up": "muscleUp",
+  "weighted muscle up": "muscleUp",
+  "weighted muscle-up": "muscleUp",
+  "bar muscle up": "muscleUp",
+  "ring muscle up": "muscleUp",
   "incline dumbbell press": "inclineDbPress",
   "decline dumbbell press": "inclineDbPress",
   "dumbbell bench press": "flatDbPress",
@@ -309,6 +321,12 @@ const BODYWEIGHT_RELATIVE_NAMES = new Set([
   "wide push up",
   "decline push up",
   "incline push up",
+  "muscle up",
+  "muscle-up",
+  "weighted muscle up",
+  "weighted muscle-up",
+  "bar muscle up",
+  "ring muscle up",
 ]);
 
 export function resolveScoringWeight(

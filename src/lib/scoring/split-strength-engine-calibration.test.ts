@@ -84,3 +84,121 @@ describe("scoreStrength — bench/deadlift corrected anchors (Part G)", () => {
     expect(result.score).toBeLessThanOrEqual(999);
   });
 });
+
+/**
+ * Dumbbell curl recalibration (user feedback: 20kg/hand x8 scored 669,
+ * expected ~750; 12.5kg/hand x8 scored ~475, expected ~550). The two
+ * reported points aren't perfectly consistent with a single anchor under
+ * the shared SLOPE constant (not exercise-specific — not touched here), so
+ * 0.20 is the best single-anchor fit rather than an exact match to both.
+ */
+describe("scoreStrength — dumbbell curl recalibration", () => {
+  function scoreDbCurl(weightKg: number, reps: number) {
+    return scoreStrength({
+      liftKey: "dumbbell curl",
+      exerciseName: "dumbbell curl",
+      history: [{ weightKg, reps, performedAt: new Date().toISOString() }],
+      latestSet: { weightKg, reps },
+      bodyweightKg: 83,
+      sex: "male",
+      age: 30,
+      isPremium: false,
+      weightEntryMode: "per_hand",
+    });
+  }
+
+  it("20kg/hand x8 now scores close to 750, not 669", () => {
+    const result = scoreDbCurl(20, 8);
+    expect(result.score).toBeGreaterThan(700);
+    expect(result.score).toBeLessThan(760);
+  });
+
+  it("12.5kg/hand x8 now scores close to 550, not ~475", () => {
+    const result = scoreDbCurl(12.5, 8);
+    expect(result.score).toBeGreaterThan(530);
+    expect(result.score).toBeLessThan(570);
+  });
+
+  it("heavier weight for the same reps never scores lower (monotonic)", () => {
+    expect(scoreDbCurl(20, 8).score).toBeGreaterThan(scoreDbCurl(12.5, 8).score);
+  });
+});
+
+/**
+ * Muscle-up bodyweight-relative scoring (user feedback: muscle-ups were
+ * entirely unrecognized — fell through to the generic "total weight"
+ * default, so bodyweight-only sets scored as if 0kg was the total load
+ * lifted). Anchor reasoned from published calisthenics standards (no
+ * Strength Level population data exists for muscle-ups specifically) — see
+ * the anchor's own comment in split-strength-engine.ts.
+ */
+describe("scoreStrength — muscle-up bodyweight-relative recognition", () => {
+  it("resolves to the dedicated muscleUp lift, not the generic category fallback", () => {
+    const result = scoreStrength({
+      liftKey: "muscle up",
+      history: [],
+      latestSet: { weightKg: 0, reps: 5 },
+      bodyweightKg: 83,
+      sex: "male",
+      age: 30,
+      isPremium: false,
+      isBodyweightRelative: true,
+    });
+    expect(result.source).not.toBe("generic");
+  });
+
+  it("a bodyweight-only set (0kg added) scores meaningfully above zero", () => {
+    const result = scoreStrength({
+      liftKey: "muscle up",
+      history: [],
+      latestSet: { weightKg: 0, reps: 5 },
+      bodyweightKg: 83,
+      sex: "male",
+      age: 30,
+      isPremium: false,
+      isBodyweightRelative: true,
+    });
+    expect(result.score).toBeGreaterThan(400);
+  });
+
+  it("added weight scores higher than bodyweight-only for the same reps", () => {
+    const bodyweightOnly = scoreStrength({
+      liftKey: "muscle up",
+      history: [],
+      latestSet: { weightKg: 0, reps: 5 },
+      bodyweightKg: 83,
+      sex: "male",
+      age: 30,
+      isPremium: false,
+      isBodyweightRelative: true,
+    });
+    const weighted = scoreStrength({
+      liftKey: "muscle up",
+      history: [],
+      latestSet: { weightKg: 20, reps: 5 },
+      bodyweightKg: 83,
+      sex: "male",
+      age: 30,
+      isPremium: false,
+      isBodyweightRelative: true,
+    });
+    expect(weighted.score).toBeGreaterThan(bodyweightOnly.score);
+  });
+
+  it("recognizes common name variants (muscle-up, bar muscle up, ring muscle up)", () => {
+    const variants = ["muscle-up", "bar muscle up", "ring muscle up", "weighted muscle up"];
+    for (const name of variants) {
+      const result = scoreStrength({
+        liftKey: name,
+        history: [],
+        latestSet: { weightKg: 0, reps: 5 },
+        bodyweightKg: 83,
+        sex: "male",
+        age: 30,
+        isPremium: false,
+        isBodyweightRelative: true,
+      });
+      expect(result.source).not.toBe("generic");
+    }
+  });
+});

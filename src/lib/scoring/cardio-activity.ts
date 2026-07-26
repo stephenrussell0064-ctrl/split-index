@@ -252,6 +252,49 @@ export function riegelPredictions(
   return out;
 }
 
+/**
+ * Race-ladder predictions for row/ski/swim — same Riegel projection as
+ * running's ladder above, just each sport's own typical benchmark
+ * distances (user feedback: only running had a ladder; row/ski/swim/walk
+ * did not). Walk gets its own linear (non-Riegel) ladder further below,
+ * since walking is already treated everywhere else in this file as a
+ * roughly constant per-km pace rather than a distance with its own fatigue
+ * curve (see the `sport === 'walk'` branch in cardio-predictions.ts).
+ */
+const SPORT_LADDER_METERS: Record<'row' | 'ski' | 'swim', number[]> = {
+  row: [500, 1000, 2000, 5000, 10000],
+  ski: [500, 1000, 2000, 5000],
+  swim: [100, 200, 400, 800, 1500],
+};
+
+export function sportRacePredictions(
+  sport: 'row' | 'ski' | 'swim',
+  distanceMeters: number,
+  durationSeconds: number,
+  experience: CardioInput['experience'] = 'intermediate'
+): Record<string, number> | null {
+  if (distanceMeters <= 0 || durationSeconds <= 0) return null;
+  const k = experience === 'beginner' ? 1.08 : experience === 'advanced' ? 1.04 : 1.06;
+  const ladder = SPORT_LADDER_METERS[sport];
+  const out: Record<string, number> = {};
+  for (const d of ladder) out[String(d)] = durationSeconds * Math.pow(d / distanceMeters, k);
+  return out;
+}
+
+const WALK_LADDER_METERS = [1000, 5000, 10000, 21097.5];
+
+/** Linear (no Riegel exponent) pace-based ladder for walking — this session's own per-km pace scaled to each distance, matching how walk is scored everywhere else (constant pace, not a fatigue curve). */
+export function walkPacePredictions(
+  distanceMeters: number,
+  durationSeconds: number
+): Record<string, number> | null {
+  if (distanceMeters <= 0 || durationSeconds <= 0) return null;
+  const pacePerKm = durationSeconds / (distanceMeters / 1000);
+  const out: Record<string, number> = {};
+  for (const d of WALK_LADDER_METERS) out[String(d)] = pacePerKm * (d / 1000);
+  return out;
+}
+
 /** Banister TRIMP — exponentially-weighted training load. */
 export function trimp(input: CardioInput): number | null {
   const { avgHR, restingHR, maxHR, age, durationSeconds, sex } = input;
@@ -520,9 +563,30 @@ export function scoreCardioActivity(input: CardioInput): CardioResult {
     trimp: tr === null ? null : Math.round(tr * 10) / 10,
     efficiencyFactor: ef === null ? null : Math.round(ef * 1000) / 1000,
     decouplingPct: dec === null ? null : Math.round(dec * 10) / 10,
-    predictions: input.type === 'run'
-      ? riegelPredictions(input.distanceMeters, input.durationSeconds, input.experience)
-      : null,
+    predictions: (() => {
+      // Keyed off benchmarkSport (the fine-grained bucket), not the coarser
+      // `type` — `type` previously grouped walking/indoor_cycling under
+      // "run" for VO2max-method purposes, which meant they silently got a
+      // running Riegel ladder (wrong distances/exponent for walking, and
+      // no ladder was requested for cycling either).
+      switch (input.benchmarkSport) {
+        case 'run':
+          return riegelPredictions(input.distanceMeters, input.durationSeconds, input.experience);
+        case 'row':
+        case 'ski':
+        case 'swim':
+          return sportRacePredictions(
+            input.benchmarkSport,
+            input.distanceMeters,
+            input.durationSeconds,
+            input.experience
+          );
+        case 'walk':
+          return walkPacePredictions(input.distanceMeters, input.durationSeconds);
+        default:
+          return null;
+      }
+    })(),
     confidence: Math.round(confidence * 100) / 100,
     flags,
   };

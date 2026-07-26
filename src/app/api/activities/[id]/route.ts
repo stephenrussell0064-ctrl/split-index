@@ -37,6 +37,12 @@ import { isPremiumUser } from "@/lib/retention/trial";
 import { serializeScoreBreakdown } from "@/lib/scoring/presentation";
 import type { ActivityFormData, Profile } from "@/types";
 import type { WeightEntryMode } from "@/lib/scoring/weight-entry";
+import {
+  upsertPersonalRecordsIfBetter,
+  enduranceRecordCandidates,
+  gymRecordCandidates,
+  type PersonalRecordCandidate,
+} from "@/lib/activities/personal-records";
 import { defaultWeightEntryMode } from "@/lib/scoring/weight-entry";
 import {
   buildScoringProfile,
@@ -177,6 +183,7 @@ async function scoreAndPersist(
   let tier1Prediction: ReturnType<typeof computeTier1Prediction> = null;
   let easyEffortBaselineEF: number | null = null;
   let recentHardEffortBenchmarkSeconds: number | null = null;
+  let sessionBenchmarkEquivalentSeconds: number | null = null;
   if (isEnduranceSport(body.sport)) {
     benchmarkSport = mapSportToBenchmarkSport(body.sport);
     const { data: priorPrediction } = await supabase
@@ -234,6 +241,7 @@ async function scoreAndPersist(
       body,
       personalizedK ?? undefined
     );
+    sessionBenchmarkEquivalentSeconds = sessionEquivalentSeconds;
     if (sessionEquivalentSeconds !== null) {
       const rawBlendBase = priorIsThisActivity ? null : (priorPrediction?.benchmark_seconds ?? null);
       const blendBase =
@@ -370,6 +378,9 @@ async function scoreAndPersist(
     recovery_score: result.recoveryScore,
     predicted_index_7d: result.predictedIndex,
     activity_id: activityId,
+    // Must reflect the activity's own date, not edit time — see the
+    // matching comment in the create route.
+    recorded_at: body.started_at,
   });
 
   if (body.sport === "gym" && result.strengthScoreRows?.length) {
@@ -398,6 +409,26 @@ async function scoreAndPersist(
       },
       { onConflict: "user_id,sport" }
     );
+  }
+
+  const personalRecordCandidates: PersonalRecordCandidate[] = isEnduranceSport(body.sport)
+    ? enduranceRecordCandidates({
+        sport: body.sport,
+        activityId,
+        achievedAt: body.started_at,
+        distanceMeters: body.distance_meters,
+        durationSeconds: body.duration_seconds,
+        benchmarkEquivalentSeconds: sessionBenchmarkEquivalentSeconds,
+      })
+    : body.sport === "gym" && result.strengthScoreRows?.length
+      ? gymRecordCandidates({
+          activityId,
+          achievedAt: body.started_at,
+          exercises: result.strengthScoreRows,
+        })
+      : [];
+  if (personalRecordCandidates.length > 0) {
+    await upsertPersonalRecordsIfBetter(supabase, userId, personalRecordCandidates);
   }
 
   const sportComparison = computeSportComparison(result.sportIndex, priorSportScores);
