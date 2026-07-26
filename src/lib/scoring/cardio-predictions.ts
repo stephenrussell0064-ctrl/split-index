@@ -161,13 +161,27 @@ export const QUALITY_PROXIMITY = 1.1;
 /** Legacy export — replaced by REGRESS_RATE + quality gate; kept for reference only. */
 export const SLOWER_NUDGE_FACTOR = 0.04;
 
-/** Time-based prediction decay (Part E2). */
+/**
+ * Time-based prediction decay (Part E2). Two separate ceilings (user
+ * feedback: "someone who ran a 20:00 5k a year ago is likely not to be
+ * able to run a 20:00 5k now, dependent on the exercise they've done
+ * since"): total inactivity (no running at all) should be able to erode
+ * the prediction considerably more than merely "hasn't tested near-capability
+ * lately but still runs easy" — the old single 15% ceiling applied to both,
+ * which was too gentle for genuine months-long inactivity (a runner who
+ * stops entirely for a year could realistically lose well more than 15% of
+ * their 5k fitness). ratePerWeekInactive reaches the new 35% ceiling around
+ * 5-6 months of total inactivity, consistent with detraining research
+ * showing most of the loss happens well before a year and then plateaus —
+ * a full year off lands at the ceiling, not still climbing toward it.
+ */
 export const PREDICTION_DECAY = {
   graceDays: 14,
-  ratePerWeekInactive: 0.004,
+  ratePerWeekInactive: 0.015,
+  maxDecayInactive: 0.35,
   qualityGraceDays: 60,
   ratePerWeekNoQuality: 0.001,
-  maxDecay: 0.15,
+  maxDecayNoQuality: 0.15,
 } as const;
 
 /** Riegel equivalent: predicted = time × (toDistance/fromDistance)^k. */
@@ -280,16 +294,54 @@ export function isQualityEffort(storedSeconds: number, equivSeconds: number): bo
 }
 
 /**
- * Asymmetric memory update (Part E1): easy runs never move prediction slower.
+ * Relative-trend evidence for the Tier 2 prediction (user feedback): an
+ * easy/recovery/long session whose own HR-adjusted equivalent is nowhere
+ * near the stored prediction (far outside QUALITY_PROXIMITY) still isn't
+ * NOTHING — if it beat the athlete's own recent easy-effort baseline (the
+ * same relative-effort comparison the primary score uses), that's a small,
+ * indirect signal of improved fitness, distinct from and much weaker than
+ * an outright faster absolute time. Deliberately tiny and bonus-only: this
+ * is inferred from an easy run, not demonstrated on a fast one, so it can
+ * only ever nudge the prediction a small fraction of a percent — nowhere
+ * near IMPROVE_RATE's 55% pull for genuine faster-time evidence.
  */
-export function updatePrediction(storedSec: number, equivSec: number): number {
+export interface RelativeEffortTrendContext {
+  sessionType?: SessionType | null;
+  /** This session's own efficiency factor (speed per heartbeat, terrain/heat-credited) — see terrainAdjustedSessionEF. */
+  thisSessionEF?: number | null;
+  /** This athlete's personal easy-effort baseline EF — see personalEasyEffortBaselineEF. */
+  baselineEF?: number | null;
+}
+
+const EASY_TREND_SENSITIVITY = 0.3;
+/** Max prediction nudge from relative-trend evidence alone — deliberately far smaller than IMPROVE_RATE/REGRESS_RATE since it's inferred, not demonstrated. */
+const EASY_TREND_MAX_IMPROVEMENT_FRACTION = 0.02;
+
+function easyTrendImprovementNudge(storedSec: number, context?: RelativeEffortTrendContext): number {
+  if (!context?.sessionType || !RELATIVE_EFFORT_SESSION_TYPES.has(context.sessionType)) return storedSec;
+  if (!context.thisSessionEF || !context.baselineEF) return storedSec;
+  const efRatio = context.thisSessionEF / context.baselineEF;
+  const nudgeFraction = clamp((efRatio - 1) * EASY_TREND_SENSITIVITY, 0, EASY_TREND_MAX_IMPROVEMENT_FRACTION);
+  return storedSec * (1 - nudgeFraction);
+}
+
+/**
+ * Asymmetric memory update (Part E1): easy runs never move prediction slower.
+ * `context` (optional) enables the relative-trend nudge above for sessions
+ * that don't clear the absolute QUALITY_PROXIMITY gate.
+ */
+export function updatePrediction(
+  storedSec: number,
+  equivSec: number,
+  context?: RelativeEffortTrendContext
+): number {
   if (equivSec < storedSec) {
     return storedSec + (equivSec - storedSec) * IMPROVE_RATE;
   }
   if (isQualityEffort(storedSec, equivSec)) {
     return storedSec + (equivSec - storedSec) * REGRESS_RATE;
   }
-  return storedSec;
+  return easyTrendImprovementNudge(storedSec, context);
 }
 
 /**
@@ -302,17 +354,19 @@ export function applyDecay(
   daysSinceAnyRun: number,
   daysSinceQuality: number
 ): number {
-  let d = 0;
   if (daysSinceAnyRun > PREDICTION_DECAY.graceDays) {
-    d =
+    const d =
       PREDICTION_DECAY.ratePerWeekInactive *
       ((daysSinceAnyRun - PREDICTION_DECAY.graceDays) / 7);
-  } else if (daysSinceQuality > PREDICTION_DECAY.qualityGraceDays) {
-    d =
+    return storedSec * (1 + Math.min(d, PREDICTION_DECAY.maxDecayInactive));
+  }
+  if (daysSinceQuality > PREDICTION_DECAY.qualityGraceDays) {
+    const d =
       PREDICTION_DECAY.ratePerWeekNoQuality *
       ((daysSinceQuality - PREDICTION_DECAY.qualityGraceDays) / 7);
+    return storedSec * (1 + Math.min(d, PREDICTION_DECAY.maxDecayNoQuality));
   }
-  return storedSec * (1 + Math.min(d, PREDICTION_DECAY.maxDecay));
+  return storedSec;
 }
 
 /** Apply decay to a stored benchmark before using it for scoring. */
@@ -341,9 +395,13 @@ export function effectiveStoredPrediction(
  * the previously stored prediction. Seeds the prediction on the first
  * session (no previous value).
  */
-export function blendPredictedBenchmark(previousSeconds: number | null, sessionSeconds: number): number {
+export function blendPredictedBenchmark(
+  previousSeconds: number | null,
+  sessionSeconds: number,
+  context?: RelativeEffortTrendContext
+): number {
   if (previousSeconds == null || !Number.isFinite(previousSeconds)) return sessionSeconds;
-  return updatePrediction(previousSeconds, sessionSeconds);
+  return updatePrediction(previousSeconds, sessionSeconds, context);
 }
 
 /** Whether this session should refresh the last-quality timestamp. */
@@ -376,6 +434,59 @@ export interface EasyEffortSession {
   durationSeconds: number;
   avgHR?: number | null;
   sessionType?: SessionType | null;
+  elevationMeters?: number | null;
+  temperatureCelsius?: number | null;
+}
+
+// Shared terrain/heat difficulty curves — same formulas cardio-activity.ts's
+// executionScore terrain/environment bonus already uses (elevationDifficultyBonus/
+// temperatureDifficultyBonus there), factored out here as plain 0-1 fractions
+// so relative-effort scoring below can reuse the identical curve for its own,
+// much smaller, bonus-only EF credit. cardio-activity.ts imports these and
+// multiplies by its own (much larger) MAX_ELEVATION_BONUS/MAX_TEMPERATURE_BONUS
+// — executionScore's numbers are unchanged by this refactor.
+const REFERENCE_GRADIENT_M_PER_KM = 15; // climb rate treated as "hilly"
+const REFERENCE_COMFORT_TEMP_C = 12;
+const TEMPERATURE_SENSITIVITY = 100; // divisor on squared deviation from comfort
+
+/** 0-1: how much a session's climb rate (m per km) suggests genuinely hilly terrain. */
+export function elevationDifficultyFraction(
+  elevationMeters?: number | null,
+  distanceMeters?: number | null
+): number {
+  if (!elevationMeters || elevationMeters <= 0 || !distanceMeters || distanceMeters <= 0) return 0;
+  const gradientPerKm = elevationMeters / (distanceMeters / 1000);
+  return 1 / (1 + Math.exp(-(gradientPerKm - REFERENCE_GRADIENT_M_PER_KM) / 10));
+}
+
+/** 0-1: how much a session's temperature suggests genuinely harsh heat/cold. */
+export function temperatureDifficultyFraction(temperatureCelsius?: number | null): number {
+  if (temperatureCelsius == null) return 0;
+  const deviation = temperatureCelsius - REFERENCE_COMFORT_TEMP_C;
+  return 1 - Math.exp(-(deviation * deviation) / TEMPERATURE_SENSITIVITY);
+}
+
+/** Max relative-effort EF credit from genuinely hilly terrain — modest and bonus-only, same philosophy as the rest of relative-effort scoring. */
+export const RELATIVE_EFFORT_TERRAIN_CREDIT_MAX = 0.05;
+/** Max relative-effort EF credit from genuinely harsh heat/cold. */
+export const RELATIVE_EFFORT_HEAT_CREDIT_MAX = 0.05;
+
+/**
+ * Bonus-only multiplier (always >= 1) crediting a session's efficiency
+ * factor for terrain/heat difficulty a pace/HR reading alone can't capture —
+ * the same pace and HR on a hilly, hot day is a harder effort than on flat,
+ * cool ground. Applied identically when building the personal easy-effort
+ * baseline (so both sides of the relative-effort comparison are normalized
+ * the same way) and when scoring a session directly (cardio-activity.ts).
+ */
+export function terrainHeatEffortCreditMultiplier(
+  elevationMeters?: number | null,
+  distanceMeters?: number | null,
+  temperatureCelsius?: number | null
+): number {
+  const terrainCredit = elevationDifficultyFraction(elevationMeters, distanceMeters) * RELATIVE_EFFORT_TERRAIN_CREDIT_MAX;
+  const heatCredit = temperatureDifficultyFraction(temperatureCelsius) * RELATIVE_EFFORT_HEAT_CREDIT_MAX;
+  return 1 + terrainCredit + heatCredit;
 }
 
 /** Speed (m/min) per heartbeat for one session — same definition as cardio-activity.ts's efficiencyFactor(), duplicated here (rather than imported) to avoid a circular dependency, since cardio-activity.ts already imports from this module. */
@@ -387,6 +498,26 @@ function sessionEfficiencyFactor(
   if (distanceMeters <= 0 || durationSeconds <= 0 || avgHR <= 0) return null;
   const speedMetersPerMin = distanceMeters / (durationSeconds / 60);
   return speedMetersPerMin / avgHR;
+}
+
+/**
+ * This session's own efficiency factor, credited for terrain/heat
+ * difficulty — the single per-session EF calculation shared by the personal
+ * easy-effort baseline (personalEasyEffortBaselineEF) and callers comparing
+ * a fresh session against that baseline (e.g. the Tier 2 relative-trend
+ * nudge above).
+ */
+export function terrainAdjustedSessionEF(
+  distanceMeters: number,
+  durationSeconds: number,
+  avgHR?: number | null,
+  elevationMeters?: number | null,
+  temperatureCelsius?: number | null
+): number | null {
+  if (!avgHR) return null;
+  const ef = sessionEfficiencyFactor(distanceMeters, durationSeconds, avgHR);
+  if (ef === null) return null;
+  return ef * terrainHeatEffortCreditMultiplier(elevationMeters, distanceMeters, temperatureCelsius);
 }
 
 /** Session types that genuinely measure pace capability — used as the mistag guard's reference pace below. */
@@ -451,7 +582,9 @@ export function personalEasyEffortBaselineEF(
       const projected = riegelEquivalentSeconds(s.durationSeconds, s.distanceMeters, benchmarkDistance, riegelK);
       return projected >= hardEffortReferenceSeconds * MISTAG_GUARD_MAX_RATIO;
     })
-    .map((s) => (s.avgHR ? sessionEfficiencyFactor(s.distanceMeters, s.durationSeconds, s.avgHR) : null))
+    .map((s) =>
+      terrainAdjustedSessionEF(s.distanceMeters, s.durationSeconds, s.avgHR, s.elevationMeters, s.temperatureCelsius)
+    )
     .filter((ef): ef is number => ef !== null && ef > 0);
   if (efs.length < MIN_EASY_BASELINE_SAMPLES) return null;
   return efs.reduce((a, b) => a + b, 0) / efs.length;

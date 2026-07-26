@@ -43,7 +43,7 @@ assertNear("Hard regression gently pulls prediction", stored, 19 * 60 + 30, 5);
 
 console.log("\n— E2: time-based decay —");
 const decayedInactive = applyDecay(pr, 56, 30);
-assertNear("56d inactive ≈ 19:47", decayedInactive, 19 * 60 + 47, 5);
+assertNear("56d inactive ≈ 21:04", decayedInactive, 21 * 60 + 4, 5);
 
 const noDecayEasy = applyDecay(pr, 10, 30);
 assertNear("Easy running within grace: no decay", noDecayEasy, pr, 1);

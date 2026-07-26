@@ -17,10 +17,36 @@
  * against the remainder of the session.
  */
 
-/** Interval → equivalent pace conversion: equivPace = workPace × (1 + BASE_OFFSET + REST_COEF × min(restSec/workSec, REST_CAP)). Harder rest (more recovery per unit of work) means the work pace understates true fitness, so the conversion scales the equivalent pace slower to compensate. */
+/**
+ * Interval → equivalent pace conversion: equivPace = workPace × (1 + BASE_OFFSET
+ * + REST_COEF × min(restSec/workSec, REST_CAP)). Harder rest (more recovery
+ * per unit of work) means the work pace understates true fitness, so the
+ * conversion scales the equivalent pace slower to compensate.
+ *
+ * Recalibrated (user feedback: an 8×500m @ 3:20/km with 2:45 rest between
+ * reps — rest:work ratio ~1.44 — scored 815, above the athlete's actual best
+ * logged 5k race). The rest:work ratio here is well into Jack Daniels'
+ * "Repetition pace" territory (short reps, generous recovery, run for
+ * neuromuscular/speed economy — R-pace is explicitly faster than a runner's
+ * current race pace and isn't meant to predict race-day performance), not
+ * "Interval pace" (longer reps, modest recovery, close to current race
+ * pace). The previous constants capped the total discount at 6% (0.03 base
+ * + 0.02 × a 1.5x rest-ratio cap) regardless of how much recovery was
+ * actually taken beyond that — this session's 1.44x ratio was already
+ * essentially at the ceiling, so more recovery couldn't be discounted any
+ * further, which is the core problem. The coefficient is tripled and the
+ * cap raised to let heavily-recovered rep sessions keep being discounted
+ * further (up to a fifth slower than raw work pace at the new cap), while
+ * barely changing genuinely race-like short-rest intervals (e.g. a
+ * 0.25 rest ratio still only discounts ~4.5%, similar to before).
+ *
+ * This is a reasoned recalibration informed by the Daniels I/R-pace
+ * hierarchy, not a literal lookup from a published table — verify against
+ * further real logged interval sessions as more data comes in.
+ */
 const INTERVAL_BASE_OFFSET = 0.03;
-const INTERVAL_REST_COEF = 0.02;
-const INTERVAL_REST_CAP = 1.5;
+const INTERVAL_REST_COEF = 0.06;
+const INTERVAL_REST_CAP = 3.0;
 
 export interface IntervalWorkPiece {
   reps: number;

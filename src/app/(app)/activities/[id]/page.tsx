@@ -22,6 +22,8 @@ import { GymExerciseScoreList } from "@/components/activities/gym-exercise-score
 import { gateCardioEnrichment } from "@/lib/scoring/gates";
 import type { CardioEnrichment } from "@/lib/scoring/cardio/confidence";
 import type { ScoreBreakdown } from "@/types";
+import { formatRiegelPrediction } from "@/lib/scoring/presentation";
+import { tier2IsCalibrating, TIER2_MIN_SAMPLES_TO_DISPLAY } from "@/lib/scoring/cardio/race-prediction";
 
 export default async function ActivityDetailPage({
   params,
@@ -103,6 +105,9 @@ export default async function ActivityDetailPage({
     ? gateCardioEnrichment(rawCardioEnrichment, showHrAccountability)
     : undefined;
   const gatedCardioInsight = extractGatedCardioInsight(scoreBreakdown, isPremium);
+  const predictedBenchmarkAfterSession = isPremium
+    ? scoreBreakdown.predicted_benchmark_after_session
+    : undefined;
   const gatedStrengthInsights = resolveStrengthInsights(
     scoreBreakdown,
     strengthScores ?? [],
@@ -182,6 +187,23 @@ export default async function ActivityDetailPage({
                 enrichment={cardioEnrichment}
                 locked={!showHrAccountability}
               />
+            </div>
+          )}
+          {zone === "cardio" && predictedBenchmarkAfterSession && (
+            <div className="mt-6 border-t border-white/10 pt-6">
+              <p className="micro-label mb-2 text-muted">
+                Your predicted 5K, updated by this run
+              </p>
+              {tier2IsCalibrating(predictedBenchmarkAfterSession.sampleCount) ? (
+                <p className="text-sm text-muted">
+                  Calibrating — {predictedBenchmarkAfterSession.sampleCount}/
+                  {TIER2_MIN_SAMPLES_TO_DISPLAY} sessions logged
+                </p>
+              ) : (
+                <p className="text-lg font-semibold tabular-nums text-foreground/90">
+                  {formatRiegelPrediction(predictedBenchmarkAfterSession.benchmarkSeconds)}
+                </p>
+              )}
             </div>
           )}
         </div>

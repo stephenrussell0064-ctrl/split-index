@@ -35,22 +35,40 @@ describe("intervalEquivalentPaceSecPerKm", () => {
     expect(longRest).toBeGreaterThan(shortRest);
   });
 
-  it("caps the rest-ratio contribution at INTERVAL_REST_CAP (1.5×) — an absurdly long rest doesn't extrapolate further", () => {
+  it("caps the rest-ratio contribution at INTERVAL_REST_CAP (3.0×) — an absurdly long rest doesn't extrapolate further", () => {
     // totalWorkSeconds = 6 x 75 = 450; restRatio = ((reps-1) x restSeconds) / totalWorkSeconds.
-    // restSeconds = 135 -> (5 x 135)/450 = 1.5 exactly (at the cap).
+    // restSeconds = 270 -> (5 x 270)/450 = 3.0 exactly (at the cap).
     const atCap = intervalEquivalentPaceSecPerKm({
       reps: 6,
       workDistanceMeters: 400,
       workSecondsPerRep: 75,
-      restSeconds: 135,
+      restSeconds: 270,
     });
     const beyondCap = intervalEquivalentPaceSecPerKm({
       reps: 6,
       workDistanceMeters: 400,
       workSecondsPerRep: 75,
-      restSeconds: 750,
+      restSeconds: 1500,
     });
     expect(beyondCap).toBeCloseTo(atCap, 5);
+  });
+
+  it("discounts a high-rest 'repetition-style' session (rest well beyond work) considerably more than a low-rest one, reflecting that generous recovery implies faster-than-race-pace fitness, not race-day fitness", () => {
+    // Reproduces the reported case: 8x500m at 3:20/km (100s work) with 165s
+    // rest — rest:work ratio ~1.44, deep into Daniels' "Repetition pace"
+    // territory (short reps, generous recovery, faster than sustainable
+    // race pace by design) rather than "Interval pace" (closer to current
+    // race pace, modest recovery).
+    const repStyleRest = intervalEquivalentPaceSecPerKm({
+      reps: 8,
+      workDistanceMeters: 500,
+      workSecondsPerRep: 100,
+      restSeconds: 165,
+    });
+    const workPace = (100 / 500) * 1000; // 200 sec/km
+    const discount = repStyleRest / workPace - 1;
+    expect(discount).toBeGreaterThan(0.1); // well beyond the old ~6% ceiling
+    expect(discount).toBeLessThan(0.15);
   });
 });
 

@@ -250,6 +250,8 @@ export function ActivityForm({
       scoreBreakdown: data.scoreBreakdown as ScoreResultSummary["scoreBreakdown"],
       cardioEnrichment: data.cardioEnrichment as CardioEnrichment | undefined,
       tier1Prediction: data.tier1Prediction as ScoreResultSummary["tier1Prediction"],
+      predictedBenchmarkAfterSession:
+        data.predictedBenchmarkAfterSession as ScoreResultSummary["predictedBenchmarkAfterSession"],
       sessionType: formState.sessionType,
     };
   }

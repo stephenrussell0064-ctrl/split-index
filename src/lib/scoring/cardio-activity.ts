@@ -60,6 +60,9 @@ import {
   riegelEquivalentSeconds,
   RELATIVE_EFFORT_SESSION_TYPES,
   MISTAG_GUARD_MAX_RATIO,
+  elevationDifficultyFraction,
+  temperatureDifficultyFraction,
+  terrainHeatEffortCreditMultiplier,
 } from "@/lib/scoring/cardio-predictions";
 import {
   intervalEquivalentPaceSecPerKm,
@@ -163,10 +166,7 @@ const RELATIVE_EFFORT_MAX_ADJUSTMENT = 0.20;
 const MAX_VOLUME_BONUS = 110;
 const VOLUME_HALF_SATURATION_MINUTES = 45; // minutes at which half of MAX_VOLUME_BONUS is earned
 const MAX_ELEVATION_BONUS = 25;
-const REFERENCE_GRADIENT_M_PER_KM = 15; // climb rate treated as "hilly"
 const MAX_TEMPERATURE_BONUS = 15;
-const REFERENCE_COMFORT_TEMP_C = 12;
-const TEMPERATURE_SENSITIVITY = 100; // divisor on squared deviation from comfort
 
 /** Rewards sheer time-under-aerobic-load, independent of how fast or easy it was. */
 function enduranceVolumeBonus(durationSeconds: number): number {
@@ -175,20 +175,14 @@ function enduranceVolumeBonus(durationSeconds: number): number {
   return MAX_VOLUME_BONUS * (minutes / (minutes + VOLUME_HALF_SATURATION_MINUTES));
 }
 
-/** Rewards climbing — the same pace/HR is a harder effort on hillier terrain. */
+/** Rewards climbing — the same pace/HR is a harder effort on hillier terrain. Shares its difficulty curve (elevationDifficultyFraction) with relative-effort scoring's much smaller terrain credit — see cardio-predictions.ts. */
 function elevationDifficultyBonus(elevationMeters?: number | null, distanceMeters?: number | null): number {
-  if (!elevationMeters || elevationMeters <= 0 || !distanceMeters || distanceMeters <= 0) return 0;
-  const gradientPerKm = elevationMeters / (distanceMeters / 1000);
-  const sigmoid = 1 / (1 + Math.exp(-(gradientPerKm - REFERENCE_GRADIENT_M_PER_KM) / 10));
-  return sigmoid * MAX_ELEVATION_BONUS;
+  return elevationDifficultyFraction(elevationMeters, distanceMeters) * MAX_ELEVATION_BONUS;
 }
 
-/** Rewards heat/cold — deviation from a comfortable reference temperature in either direction. */
+/** Rewards heat/cold — deviation from a comfortable reference temperature in either direction. Shares its difficulty curve (temperatureDifficultyFraction) with relative-effort scoring's much smaller heat credit — see cardio-predictions.ts. */
 function temperatureDifficultyBonus(temperatureCelsius?: number | null): number {
-  if (temperatureCelsius == null) return 0;
-  const deviation = temperatureCelsius - REFERENCE_COMFORT_TEMP_C;
-  const factor = 1 - Math.exp(-(deviation * deviation) / TEMPERATURE_SENSITIVITY);
-  return factor * MAX_TEMPERATURE_BONUS;
+  return temperatureDifficultyFraction(temperatureCelsius) * MAX_TEMPERATURE_BONUS;
 }
 
 /** %HRR for this specific session — falls back to a population-average resting HR if none is on file. */
@@ -388,7 +382,18 @@ export function scoreCardioActivity(input: CardioInput): CardioResult {
 
     const isRelativeEffortSession =
       !!input.sessionType && RELATIVE_EFFORT_SESSION_TYPES.has(input.sessionType);
-    const thisSessionEF = efficiencyFactor(input);
+    const rawSessionEF = efficiencyFactor(input);
+    // Terrain/heat difficulty credited directly into the efficiency-factor
+    // comparison (not just executionScore) for relative-effort scoring —
+    // the same pace/HR on a hilly, hot day is genuinely harder than on flat,
+    // cool ground, and easy/recovery/long sessions are exactly where "effort,
+    // not pace" should matter most. Bonus-only (multiplier >= 1), same
+    // philosophy as the rest of relative-effort scoring.
+    const thisSessionEF =
+      rawSessionEF !== null
+        ? rawSessionEF *
+          terrainHeatEffortCreditMultiplier(input.elevationMeters, input.distanceMeters, input.temperatureCelsius)
+        : null;
     const rawProjectedSeconds =
       input.distanceMeters > 0 && input.durationSeconds > 0
         ? input.benchmarkSport === 'walk'

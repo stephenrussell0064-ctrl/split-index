@@ -23,7 +23,7 @@ import {
   sessionCountsAsQuality,
   personalEasyEffortBaselineEF,
   personalRecentHardEffortBenchmarkSeconds,
-  RIEGEL_K,
+  terrainAdjustedSessionEF,
 } from "@/lib/scoring/cardio-predictions";
 import {
   computeWindowedTier2Seconds,
@@ -203,12 +203,21 @@ export async function POST() {
         personalizedK ?? undefined
       );
       if (sessionEquivalentSeconds !== null) {
-        const sequentialBlend = blendPredictedBenchmark(priorValue, sessionEquivalentSeconds);
+        const sequentialBlend = blendPredictedBenchmark(priorValue, sessionEquivalentSeconds, {
+          sessionType: activity.session_type,
+          thisSessionEF: terrainAdjustedSessionEF(
+            activity.distance_meters ?? 0,
+            activity.duration_seconds,
+            activity.avg_heart_rate,
+            activity.elevation_meters,
+            activity.temperature_celsius
+          ),
+          baselineEF: easyEffortBaselineEF,
+        });
         predictedBenchmarkSeconds[benchmarkSport] = computeWindowedTier2Seconds(
           benchmarkSport,
           sequentialBlend,
-          windowSessions,
-          personalizedK ?? RIEGEL_K
+          windowSessions
         );
         predictedBenchmarkSampleCounts[benchmarkSport] =
           (predictedBenchmarkSampleCounts[benchmarkSport] ?? 0) + 1;
@@ -233,6 +242,8 @@ export async function POST() {
             avgHR: activity.avg_heart_rate ?? undefined,
             sessionType: activity.session_type ?? undefined,
             startedAt: activity.started_at as string,
+            elevationMeters: activity.elevation_meters ?? undefined,
+            temperatureCelsius: activity.temperature_celsius ?? undefined,
           },
         ];
       }
@@ -297,7 +308,17 @@ export async function POST() {
         strength_component: result.strengthComponent,
         fatigue_impact: result.fatigueScore,
         load_score: result.loadScore,
-        score_breakdown: result.breakdown,
+        score_breakdown:
+          benchmarkSport && predictedBenchmarkSeconds[benchmarkSport] != null
+            ? {
+                ...result.breakdown,
+                predicted_benchmark_after_session: {
+                  sport: benchmarkSport,
+                  benchmarkSeconds: predictedBenchmarkSeconds[benchmarkSport],
+                  sampleCount: predictedBenchmarkSampleCounts[benchmarkSport] ?? 1,
+                },
+              }
+            : result.breakdown,
       });
 
       await supabase.from("split_index_history").delete().eq("activity_id", activity.id);

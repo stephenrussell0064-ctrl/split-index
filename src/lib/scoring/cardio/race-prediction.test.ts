@@ -200,27 +200,49 @@ describe("Tier 2 windowed enhancement", () => {
     startedAt: new Date(Date.now() - daysAgo * 86_400_000).toISOString(),
   });
 
-  it("returns the sequential value unchanged with too little window history", () => {
-    const sessions = [makeRun(5000, 1200, 1), makeRun(5000, 1210, 5)];
-    const result = computeWindowedTier2Seconds("run", 1250, sessions, RIEGEL_K);
-    expect(result).toBe(1250);
+  it("never blends running, regardless of how much window history exists (user feedback: race predictions must be evidence-based, not an average across sessions)", () => {
+    const fewSessions = [makeRun(5000, 1200, 1), makeRun(5000, 1210, 5)];
+    expect(computeWindowedTier2Seconds("run", 1250, fewSessions)).toBe(1250);
+
+    const manySessions = Array.from({ length: 100 }, (_, i) => makeRun(5000, 1200, i));
+    expect(computeWindowedTier2Seconds("run", 1400, manySessions)).toBe(1400);
   });
 
-  it("blends toward the windowed fit once there's enough history, without fully overriding the sequential value", () => {
-    // Consistent recent 5k pace around 1200s, but the sequential (asymmetric-
-    // update) value is stuck slower at 1400s — the blend should move toward
-    // the window's evidence without snapping all the way to it.
-    const sessions = Array.from({ length: 10 }, (_, i) => makeRun(5000, 1200, i));
-    const result = computeWindowedTier2Seconds("run", 1400, sessions, RIEGEL_K);
-    expect(result).toBeLessThan(1400);
-    expect(result).toBeGreaterThan(1200);
+  it("row/cycle/etc.: returns the sequential value unchanged with too little window history", () => {
+    const sessions = [
+      { distanceMeters: 2000, durationSeconds: 450, startedAt: new Date().toISOString() },
+      { distanceMeters: 2000, durationSeconds: 455, startedAt: new Date().toISOString() },
+    ];
+    const result = computeWindowedTier2Seconds("row", 460, sessions);
+    expect(result).toBe(460);
   });
 
-  it("caps the windowed influence at 50% regardless of how much history exists", () => {
-    const sessions = Array.from({ length: 100 }, (_, i) => makeRun(5000, 1200, i));
-    const result = computeWindowedTier2Seconds("run", 1400, sessions, RIEGEL_K);
-    const midpoint = (1400 + 1200) / 2;
-    expect(result).toBeGreaterThanOrEqual(midpoint - 1); // small tolerance for the volume adjustment
+  // Synthetic points on a known critical-speed line (distance = CS*time + D',
+  // CS=4.5 m/s, D'=50m) — varying BOTH distance and duration, since a
+  // critical-speed regression is degenerate when distance never varies
+  // across samples (as an earlier version of these tests mistakenly did).
+  // Predicted 2000m time = (2000-50)/4.5 = 433.3s, faster than a 500s
+  // sequential value.
+  const criticalSpeedSessions = (n: number) =>
+    Array.from({ length: n }, (_, i) => {
+      const durationSeconds = 400 + i * 10;
+      return {
+        distanceMeters: 4.5 * durationSeconds + 50,
+        durationSeconds,
+        startedAt: new Date(Date.now() - i * 86_400_000).toISOString(),
+      };
+    });
+
+  it("row/cycle/etc.: blends toward the windowed critical-speed fit once there's enough history, without fully overriding the sequential value", () => {
+    const result = computeWindowedTier2Seconds("row", 500, criticalSpeedSessions(10));
+    expect(result).toBeLessThan(500);
+    expect(result).toBeGreaterThan(433.3);
+  });
+
+  it("row/cycle/etc.: caps the windowed influence at 50% regardless of how much history exists", () => {
+    const result = computeWindowedTier2Seconds("row", 500, criticalSpeedSessions(100));
+    const midpoint = (500 + 433.3) / 2;
+    expect(result).toBeCloseTo(midpoint, 0);
   });
 
   it("uses a generic critical-speed refit for non-running sports", () => {
@@ -229,7 +251,7 @@ describe("Tier 2 windowed enhancement", () => {
       durationSeconds: 420 + i, // slight variation so the regression isn't degenerate
       startedAt: new Date(Date.now() - i * 86_400_000).toISOString(),
     }));
-    const result = computeWindowedTier2Seconds("row", 450, sessions, RIEGEL_K);
+    const result = computeWindowedTier2Seconds("row", 450, sessions);
     expect(result).toBeGreaterThan(0);
     expect(Number.isFinite(result)).toBe(true);
   });

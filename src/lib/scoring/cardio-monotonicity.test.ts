@@ -407,3 +407,87 @@ describe("scoreCardioActivity — mistag guard for relative-effort scoring", () 
     expect(genuineEasy.flags).toContain("relative-effort-scored");
   });
 });
+
+/**
+ * Terrain/heat credit for relative-effort scoring (user feedback: elevation
+ * and temperature should genuinely affect easy/recovery/long scoring, not
+ * just the secondary executionScore — a hilly/hot easy run at a given pace/
+ * HR is a harder effort than a flat/cool one). Bonus-only, same philosophy
+ * as the rest of relative-effort scoring, and applied identically to the
+ * personal baseline itself (personalEasyEffortBaselineEF) so both sides of
+ * the comparison stay normalized the same way.
+ */
+describe("scoreCardioActivity — terrain/heat credit for relative-effort scoring", () => {
+  const base: CardioInput = {
+    type: "run",
+    benchmarkSport: "run",
+    distanceMeters: 8000,
+    durationSeconds: 2880, // 48:00 easy pace
+    sex: "male",
+    age: 30,
+  };
+
+  const flatCoolBaselineSessions: EasyEffortSession[] = Array.from({ length: 3 }, () => ({
+    distanceMeters: 8000,
+    durationSeconds: 2880,
+    avgHR: 140,
+    sessionType: "easy",
+  }));
+  const flatCoolBaselineEF = personalEasyEffortBaselineEF("run", flatCoolBaselineSessions)!;
+
+  it("a hilly/hot easy run at the same pace/HR as the baseline earns more credit than a flat/cool one", () => {
+    const flatCool = scoreCardioActivity({
+      ...base,
+      avgHR: 140,
+      sessionType: "easy",
+      easyEffortBaselineEF: flatCoolBaselineEF,
+    });
+    const hillyHot = scoreCardioActivity({
+      ...base,
+      avgHR: 140,
+      sessionType: "easy",
+      easyEffortBaselineEF: flatCoolBaselineEF,
+      elevationMeters: 400, // genuinely hilly for 8km
+      temperatureCelsius: 32, // genuinely hot
+    });
+
+    expect(flatCool.flags).not.toContain("relative-effort-scored"); // exactly at baseline, no terrain/heat credit -> no bonus
+    expect(hillyHot.flags).toContain("relative-effort-scored");
+    expect(hillyHot.score).toBeGreaterThan(flatCool.score);
+  });
+
+  it("elevation/temperature alone never penalize — a flat/cool run never scores worse for lacking terrain/heat credit", () => {
+    const flatCool = scoreCardioActivity({
+      ...base,
+      avgHR: 150, // slightly below baseline efficiency
+      sessionType: "easy",
+      easyEffortBaselineEF: flatCoolBaselineEF,
+    });
+    const flatCoolExplicit = scoreCardioActivity({
+      ...base,
+      avgHR: 150,
+      sessionType: "easy",
+      easyEffortBaselineEF: flatCoolBaselineEF,
+      elevationMeters: 0,
+      temperatureCelsius: 12, // exactly the comfort reference -> zero heat credit
+    });
+    expect(flatCoolExplicit.score).toBe(flatCool.score);
+  });
+
+  it("personalEasyEffortBaselineEF normalizes baseline sessions for terrain/heat too, not just the session being scored", () => {
+    // A baseline built from genuinely hilly/hot sessions should read as a
+    // HIGHER bar (terrain/heat-credited EF), same as scoring a session
+    // directly — otherwise a hilly baseline would make it artificially easy
+    // to "beat" with a flat, easy session of otherwise-equal raw EF.
+    const hillyHotBaselineSessions: EasyEffortSession[] = Array.from({ length: 3 }, () => ({
+      distanceMeters: 8000,
+      durationSeconds: 2880,
+      avgHR: 140,
+      sessionType: "easy",
+      elevationMeters: 400,
+      temperatureCelsius: 32,
+    }));
+    const hillyHotBaselineEF = personalEasyEffortBaselineEF("run", hillyHotBaselineSessions)!;
+    expect(hillyHotBaselineEF).toBeGreaterThan(flatCoolBaselineEF);
+  });
+});

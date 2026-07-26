@@ -38,13 +38,10 @@ import {
 } from "@/lib/scoring/cardio-benchmarks";
 import {
   computeSessionBenchmarkEquivalentSeconds,
-  riegelEquivalentSeconds,
   impliedRiegelK,
   personalizedRiegelK,
   type HrPersonalization,
 } from "@/lib/scoring/cardio-predictions";
-
-const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
 
 // ---------------------------------------------------------------------------
 // Tier 1 — per-session prediction
@@ -284,6 +281,8 @@ export interface HistorySession {
   avgHR?: number | null;
   sessionType?: SessionType | null;
   startedAt: string | Date;
+  elevationMeters?: number | null;
+  temperatureCelsius?: number | null;
 }
 
 /** Distances must differ by at least this fraction to count as genuinely different (not noise around the same route). */
@@ -332,75 +331,6 @@ export function tier2IsCalibrating(sampleCount: number): boolean {
   return sampleCount < TIER2_MIN_SAMPLES_TO_DISPLAY;
 }
 
-function spanDays(sessions: HistorySession[]): number {
-  if (sessions.length === 0) return 0;
-  const times = sessions.map((s) => new Date(s.startedAt).getTime()).filter(Number.isFinite);
-  if (times.length === 0) return 0;
-  const spanMs = Math.max(...times) - Math.min(...times);
-  return Math.max(1, spanMs / 86_400_000);
-}
-
-/** Quality weighting for the running volume+pace estimate — a hard tempo/threshold/race effort says more about fitness than an easy recovery jog of the same pace. */
-const SESSION_TYPE_QUALITY_WEIGHT: Partial<Record<SessionType, number>> = {
-  race: 1.5,
-  tempo: 1.2,
-  threshold: 1.2,
-  interval: 1.1,
-  fartlek: 1.1,
-  long: 1.0,
-  other: 1.0,
-  easy: 0.7,
-  recovery: 0.5,
-};
-
-const REFERENCE_WEEKLY_VOLUME_KM = 40; // rough "solid recreational base" reference point
-const MAX_VOLUME_ADJUSTMENT_FRACTION = 0.05; // deliberately modest — nudges, doesn't dominate
-
-/**
- * Tanda-inspired running estimate: quality-weighted mean pace (each
- * session's own pace projected to the benchmark distance via the
- * personalized Riegel k, then averaged) adjusted by weekly training
- * volume relative to a reference band. This is a documented proxy for
- * Tanda's finding (weekly volume + mean pace explain ~77% of marathon-time
- * variance) — not a literal reproduction of his fitted coefficients, which
- * aren't precisely known here; the volume adjustment is deliberately
- * capped small so it nudges rather than dominates, same philosophy as the
- * existing scoring bonuses.
- */
-function tandaStyleRunningEstimate(sessions: HistorySession[], riegelK: number): number | null {
-  const windowDays = spanDays(sessions);
-  if (windowDays <= 0) return null;
-
-  let weightedSum = 0;
-  let weightTotal = 0;
-  let totalDistanceMeters = 0;
-
-  for (const s of sessions) {
-    const weight = SESSION_TYPE_QUALITY_WEIGHT[s.sessionType ?? "other"] ?? 1.0;
-    const equivalentSeconds = riegelEquivalentSeconds(
-      s.durationSeconds,
-      s.distanceMeters,
-      BENCHMARK_DISTANCE_METERS.run,
-      riegelK
-    );
-    weightedSum += equivalentSeconds * weight;
-    weightTotal += weight;
-    totalDistanceMeters += s.distanceMeters;
-  }
-  if (weightTotal <= 0) return null;
-  const meanPaceEquivalentSeconds = weightedSum / weightTotal;
-
-  const weeklyVolumeKm = totalDistanceMeters / 1000 / (windowDays / 7);
-  const volumeRatio = clamp(weeklyVolumeKm / REFERENCE_WEEKLY_VOLUME_KM, 0.5, 2);
-  const volumeAdjustment = clamp(
-    (1 - volumeRatio) * 0.1,
-    -MAX_VOLUME_ADJUSTMENT_FRACTION,
-    MAX_VOLUME_ADJUSTMENT_FRACTION
-  );
-
-  return meanPaceEquivalentSeconds * (1 + volumeAdjustment);
-}
-
 /**
  * Generic critical-speed-style linear refit (distance = CS × time + D′)
  * across the window's sessions — "a personalized critical-speed/power fit
@@ -437,24 +367,33 @@ function criticalSpeedRefit(sport: BenchmarkSport, sessions: HistorySession[]): 
 
 /**
  * Blend the existing sequential asymmetric-update value (still the primary
- * mechanism — unchanged) with a fit across the full rolling-window
- * history, so Tier 2 visibly incorporates accumulated history rather than
- * only the most recent nudge. Weight ramps up with more window history,
- * capped at 50% so the asymmetric-update mechanism (which already protects
- * against one noisy session skewing things) always stays the dominant
- * driver — this extends the existing system, it doesn't replace it.
+ * mechanism — unchanged) with a critical-speed refit across the full
+ * rolling-window history, so Tier 2 visibly incorporates accumulated
+ * history rather than only the most recent nudge. Weight ramps up with more
+ * window history, capped at 50% so the asymmetric-update mechanism (which
+ * already protects against one noisy session skewing things) always stays
+ * the dominant driver — this extends the existing system, it doesn't
+ * replace it.
+ *
+ * Running is explicitly excluded (user feedback): race predictions must be
+ * based on evidence of fast efforts (or genuine relative-trend improvement
+ * on easy runs — see personalizeRiegelKFromWindow/the asymmetric update in
+ * cardio-predictions.ts), never a quality-weighted AVERAGE across all
+ * sessions. The critical-speed refit below is a physiological model fit
+ * (not an average) so it stays for row/cycle/swim/ski, which have no
+ * separate "relative-trend" mechanism of their own yet.
  */
 export function computeWindowedTier2Seconds(
   sport: BenchmarkSport,
   sequentialSeconds: number,
-  windowSessions: HistorySession[],
-  riegelK: number
+  windowSessions: HistorySession[]
 ): number {
+  if (sport === "run") return sequentialSeconds;
+
   const valid = windowSessions.filter((s) => s.distanceMeters > 0 && s.durationSeconds > 0);
   if (valid.length < TIER2_MIN_SAMPLES_TO_DISPLAY) return sequentialSeconds;
 
-  const windowedSeconds =
-    sport === "run" ? tandaStyleRunningEstimate(valid, riegelK) : criticalSpeedRefit(sport, valid);
+  const windowedSeconds = criticalSpeedRefit(sport, valid);
   if (windowedSeconds === null) return sequentialSeconds;
 
   const windowWeight = Math.min(0.5, valid.length / 20);

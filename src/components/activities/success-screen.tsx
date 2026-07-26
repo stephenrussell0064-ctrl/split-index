@@ -16,7 +16,14 @@ import { cn } from "@/lib/utils/cn";
 import { CardioEnrichmentPanel } from "@/components/activities/cardio-enrichment-panel";
 import type { CardioEnrichment } from "@/lib/scoring/cardio";
 import { formatRiegelPrediction } from "@/lib/scoring/presentation";
-import type { Tier1Prediction } from "@/lib/scoring/cardio/race-prediction";
+import { tier2IsCalibrating, TIER2_MIN_SAMPLES_TO_DISPLAY, type Tier1Prediction } from "@/lib/scoring/cardio/race-prediction";
+import type { BenchmarkSport } from "@/lib/scoring/cardio-benchmarks";
+
+export interface PredictedBenchmarkAfterSession {
+  sport: BenchmarkSport;
+  benchmarkSeconds: number;
+  sampleCount: number;
+}
 
 /** Session types scored relative to the athlete's own history — mirrors RELATIVE_EFFORT_SESSION_TYPES in cardio-predictions.ts (kept as a local literal set to avoid a server-only import chain from a "use client" component). */
 const RELATIVE_EFFORT_SESSION_TYPES = new Set<SessionType>(["easy", "recovery", "long"]);
@@ -54,6 +61,7 @@ export interface ScoreResultSummary {
   scoreBreakdown?: ScoreBreakdown;
   cardioEnrichment?: CardioEnrichment;
   tier1Prediction?: Tier1Prediction | null;
+  predictedBenchmarkAfterSession?: PredictedBenchmarkAfterSession | null;
   sessionType?: SessionType | null;
 }
 
@@ -171,6 +179,24 @@ export function SuccessScreen({
                 {TIER1_CONFIDENCE_LABEL[result.tier1Prediction.confidence]} ·{" "}
                 {TIER1_METHOD_LABEL[result.tier1Prediction.method]}
               </p>
+            </div>
+          )}
+
+          {!isGym && result.predictedBenchmarkAfterSession && (
+            <div className="mt-6 border-t border-white/10 pt-6">
+              <p className="micro-label mb-2 text-muted">
+                Your predicted 5K, updated by this run
+              </p>
+              {tier2IsCalibrating(result.predictedBenchmarkAfterSession.sampleCount) ? (
+                <p className="text-sm text-muted">
+                  Calibrating — {result.predictedBenchmarkAfterSession.sampleCount}/
+                  {TIER2_MIN_SAMPLES_TO_DISPLAY} sessions logged
+                </p>
+              ) : (
+                <p className="text-lg font-semibold tabular-nums text-foreground/90">
+                  {formatRiegelPrediction(result.predictedBenchmarkAfterSession.benchmarkSeconds)}
+                </p>
+              )}
             </div>
           )}
 

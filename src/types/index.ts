@@ -235,6 +235,12 @@ export interface ScoreBreakdown {
   index_result?: import("@/lib/scoring/index-engine").IndexResult;
   /** Phase 2 additive cardio enrichment (display layer) */
   cardio_enrichment?: Record<string, unknown>;
+  /** Tier 2 (predicted_benchmarks) value as of this specific session, persisted at write time so a past activity can display what it updated the prediction to. */
+  predicted_benchmark_after_session?: {
+    sport: string;
+    benchmarkSeconds: number;
+    sampleCount: number;
+  };
 }
 
 export interface SessionTemplate {

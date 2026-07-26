@@ -18,7 +18,7 @@ import {
   sessionCountsAsQuality,
   personalEasyEffortBaselineEF,
   personalRecentHardEffortBenchmarkSeconds,
-  RIEGEL_K,
+  terrainAdjustedSessionEF,
 } from "@/lib/scoring/cardio-predictions";
 import {
   computeTier1Prediction,
@@ -317,7 +317,9 @@ export async function POST(request: Request) {
     const windowCutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
     const { data: windowActivities } = await supabase
       .from("activities")
-      .select("sport, started_at, duration_seconds, distance_meters, avg_heart_rate, session_type")
+      .select(
+        "sport, started_at, duration_seconds, distance_meters, avg_heart_rate, session_type, elevation_meters, temperature_celsius"
+      )
       .eq("user_id", user.id)
       .eq("is_draft", false)
       .gte("started_at", windowCutoff);
@@ -334,6 +336,8 @@ export async function POST(request: Request) {
         avgHR: row.avg_heart_rate ?? undefined,
         sessionType: row.session_type ?? undefined,
         startedAt: row.started_at,
+        elevationMeters: row.elevation_meters ?? undefined,
+        temperatureCelsius: row.temperature_celsius ?? undefined,
       }));
 
     personalizedK = personalizeRiegelKFromWindow(windowSessions, priorPrediction?.riegel_k ?? null);
@@ -363,12 +367,21 @@ export async function POST(request: Request) {
               priorPrediction.last_quality_at
             )
           : null;
-      const sequentialBlend = blendPredictedBenchmark(decayedPrior, sessionEquivalentSeconds);
+      const sequentialBlend = blendPredictedBenchmark(decayedPrior, sessionEquivalentSeconds, {
+        sessionType: body.session_type,
+        thisSessionEF: terrainAdjustedSessionEF(
+          body.distance_meters ?? 0,
+          body.duration_seconds,
+          body.avg_heart_rate,
+          body.elevation_meters,
+          body.temperature_celsius
+        ),
+        baselineEF: easyEffortBaselineEF,
+      });
       newPredictedBenchmarkSeconds = computeWindowedTier2Seconds(
         benchmarkSport,
         sequentialBlend,
-        windowSessions,
-        personalizedK ?? RIEGEL_K
+        windowSessions
       );
       const nowIso = new Date().toISOString();
       lastQualityAt = sessionCountsAsQuality(decayedPrior, sessionEquivalentSeconds)
@@ -468,7 +481,17 @@ export async function POST(request: Request) {
       strength_component: result.strengthComponent,
       fatigue_impact: result.fatigueScore,
       load_score: result.loadScore,
-      score_breakdown: result.breakdown,
+      score_breakdown:
+        benchmarkSport && newPredictedBenchmarkSeconds !== null
+          ? {
+              ...result.breakdown,
+              predicted_benchmark_after_session: {
+                sport: benchmarkSport,
+                benchmarkSeconds: newPredictedBenchmarkSeconds,
+                sampleCount: newPredictedBenchmarkSampleCount,
+              },
+            }
+          : result.breakdown,
     })
     .select()
     .single();
@@ -657,6 +680,15 @@ export async function POST(request: Request) {
           score_breakdown: {
             ...result.breakdown,
             cardio_enrichment: cardioEnrichment,
+            ...(benchmarkSport && newPredictedBenchmarkSeconds !== null
+              ? {
+                  predicted_benchmark_after_session: {
+                    sport: benchmarkSport,
+                    benchmarkSeconds: newPredictedBenchmarkSeconds,
+                    sampleCount: newPredictedBenchmarkSampleCount,
+                  },
+                }
+              : {}),
           },
         })
         .eq("id", workoutScore.id);
@@ -688,5 +720,13 @@ export async function POST(request: Request) {
     premium_required: premiumRequired,
     cardioEnrichment: premium ? cardioEnrichment : null,
     tier1Prediction,
+    predictedBenchmarkAfterSession:
+      premium && benchmarkSport && newPredictedBenchmarkSeconds !== null
+        ? {
+            sport: benchmarkSport,
+            benchmarkSeconds: newPredictedBenchmarkSeconds,
+            sampleCount: newPredictedBenchmarkSampleCount,
+          }
+        : null,
   });
 }
