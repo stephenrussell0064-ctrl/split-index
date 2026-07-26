@@ -11,6 +11,7 @@
  */
 
 import { BENCHMARK_DISTANCE_METERS, type BenchmarkSport } from "@/lib/scoring/cardio-benchmarks";
+import type { SessionType } from "@/types";
 
 const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
 
@@ -352,4 +353,106 @@ export function sessionCountsAsQuality(
 ): boolean {
   if (previousSeconds == null) return true;
   return sessionSeconds <= previousSeconds || isQualityEffort(previousSeconds, sessionSeconds);
+}
+
+// ---------------------------------------------------------------------------
+// Relative-effort scoring for easy/recovery/long sessions (user feedback:
+// easy runs should score off HOW EFFICIENT this session was relative to this
+// athlete's own typical easy effort, not off absolute pace-vs-benchmark — the
+// population HR-adjustment above caps out at 10%, far too small to offset a
+// deliberately slow, low-HR pace judged against the same anchor table a race
+// effort is judged on). See scoreCardioActivity in cardio-activity.ts for
+// where this baseline is actually applied to the score.
+// ---------------------------------------------------------------------------
+
+/** Session types scored relative to the athlete's own easy-effort baseline instead of the population pace-vs-benchmark table. */
+export const RELATIVE_EFFORT_SESSION_TYPES = new Set<SessionType>(["easy", "recovery", "long"]);
+
+/** Minimum qualifying sessions before a baseline is trusted — below this, callers fall back to standard scoring. */
+export const MIN_EASY_BASELINE_SAMPLES = 3;
+
+export interface EasyEffortSession {
+  distanceMeters: number;
+  durationSeconds: number;
+  avgHR?: number | null;
+  sessionType?: SessionType | null;
+}
+
+/** Speed (m/min) per heartbeat for one session — same definition as cardio-activity.ts's efficiencyFactor(), duplicated here (rather than imported) to avoid a circular dependency, since cardio-activity.ts already imports from this module. */
+function sessionEfficiencyFactor(
+  distanceMeters: number,
+  durationSeconds: number,
+  avgHR: number
+): number | null {
+  if (distanceMeters <= 0 || durationSeconds <= 0 || avgHR <= 0) return null;
+  const speedMetersPerMin = distanceMeters / (durationSeconds / 60);
+  return speedMetersPerMin / avgHR;
+}
+
+/** Session types that genuinely measure pace capability — used as the mistag guard's reference pace below. */
+const HARD_EFFORT_SESSION_TYPES = new Set<SessionType>(["race", "tempo", "threshold", "interval", "fartlek"]);
+
+/** A session tagged easy/recovery/long whose own pace is within this fraction of (or faster than) the athlete's fastest recent hard-effort pace is treated as a likely mistagged hard effort, not a genuine easy run — both when scoring it directly and when deciding whether it should count toward the easy-effort baseline below. */
+export const MISTAG_GUARD_MAX_RATIO = 1.08;
+
+/**
+ * Mistag guard reference: the fastest recent race/tempo/threshold/interval/
+ * fartlek pace, Riegel-projected to the sport's benchmark distance. Returns
+ * null for walk (no Riegel benchmark-distance projection applies) or when no
+ * qualifying hard-effort session exists yet.
+ */
+export function personalRecentHardEffortBenchmarkSeconds(
+  sport: BenchmarkSport,
+  sessions: EasyEffortSession[],
+  riegelK: number = RIEGEL_K
+): number | null {
+  if (sport === "walk") return null;
+  const benchmarkDistance = BENCHMARK_DISTANCE_METERS[sport];
+  const projected = sessions
+    .filter(
+      (s) =>
+        !!s.sessionType &&
+        HARD_EFFORT_SESSION_TYPES.has(s.sessionType) &&
+        s.distanceMeters > 0 &&
+        s.durationSeconds > 0
+    )
+    .map((s) => riegelEquivalentSeconds(s.durationSeconds, s.distanceMeters, benchmarkDistance, riegelK))
+    .filter((t) => Number.isFinite(t) && t > 0);
+  if (projected.length === 0) return null;
+  return Math.min(...projected);
+}
+
+/**
+ * This athlete's own baseline efficiency factor (speed per heartbeat) from
+ * their recent easy/recovery/long same-sport sessions — the reference point
+ * a new easy-tagged session is compared against for relative-effort scoring.
+ * Sessions that look like mistagged hard efforts (their own pace suspiciously
+ * close to the athlete's fastest recent race/tempo/threshold pace — the same
+ * MISTAG_GUARD_MAX_RATIO test applied when scoring a session directly) are
+ * excluded from the baseline pool: a single fluke hard effort logged under
+ * an easy/long tag would otherwise drag the whole baseline up, making it
+ * harder for genuinely easy runs to ever earn the bonus they're meant to.
+ * Returns null below MIN_EASY_BASELINE_SAMPLES qualifying sessions, signaling
+ * the caller to fall back to standard pace-vs-benchmark scoring.
+ */
+export function personalEasyEffortBaselineEF(
+  sport: BenchmarkSport,
+  sessions: EasyEffortSession[],
+  riegelK: number = RIEGEL_K
+): number | null {
+  const hardEffortReferenceSeconds = personalRecentHardEffortBenchmarkSeconds(sport, sessions, riegelK);
+  const benchmarkDistance = sport === "walk" ? null : BENCHMARK_DISTANCE_METERS[sport];
+
+  const efs = sessions
+    .filter((s) => !!s.sessionType && RELATIVE_EFFORT_SESSION_TYPES.has(s.sessionType))
+    .filter((s) => {
+      if (hardEffortReferenceSeconds == null || benchmarkDistance == null) return true;
+      if (s.distanceMeters <= 0 || s.durationSeconds <= 0) return true;
+      const projected = riegelEquivalentSeconds(s.durationSeconds, s.distanceMeters, benchmarkDistance, riegelK);
+      return projected >= hardEffortReferenceSeconds * MISTAG_GUARD_MAX_RATIO;
+    })
+    .map((s) => (s.avgHR ? sessionEfficiencyFactor(s.distanceMeters, s.durationSeconds, s.avgHR) : null))
+    .filter((ef): ef is number => ef !== null && ef > 0);
+  if (efs.length < MIN_EASY_BASELINE_SAMPLES) return null;
+  return efs.reduce((a, b) => a + b, 0) / efs.length;
 }

@@ -21,6 +21,8 @@ import {
   blendPredictedBenchmark,
   effectiveStoredPrediction,
   sessionCountsAsQuality,
+  personalEasyEffortBaselineEF,
+  personalRecentHardEffortBenchmarkSeconds,
   RIEGEL_K,
 } from "@/lib/scoring/cardio-predictions";
 import {
@@ -159,6 +161,8 @@ export async function POST() {
     // is fed into scoring — a sport's first-ever session has nothing to
     // blend into yet, so it scores as session-only.
     let storedPredictionForScoring: number | null = null;
+    let easyEffortBaselineEF: number | null = null;
+    let recentHardEffortBenchmarkSeconds: number | null = null;
     if (isEnduranceSport(activity.sport)) {
       benchmarkSport = mapSportToBenchmarkSport(activity.sport);
       const rawPrior = predictedBenchmarkSeconds[benchmarkSport] ?? null;
@@ -181,6 +185,16 @@ export async function POST() {
       const personalizedK = personalizeRiegelKFromWindow(
         windowSessions,
         predictedBenchmarkRiegelK[benchmarkSport] ?? null
+      );
+      easyEffortBaselineEF = personalEasyEffortBaselineEF(
+        benchmarkSport,
+        windowSessions,
+        personalizedK ?? undefined
+      );
+      recentHardEffortBenchmarkSeconds = personalRecentHardEffortBenchmarkSeconds(
+        benchmarkSport,
+        windowSessions,
+        personalizedK ?? undefined
       );
 
       const sessionEquivalentSeconds = computeBodyBenchmarkEquivalentSeconds(
@@ -240,6 +254,8 @@ export async function POST() {
           sessionType: activity.session_type,
           rpe: activity.rpe,
           storedPredictionSeconds: storedPredictionForScoring,
+          easyEffortBaselineEF,
+          recentHardEffortBenchmarkSeconds,
           intervalReps: activity.interval_reps,
           intervalWorkDistanceMeters: activity.interval_work_distance_meters,
           intervalWorkSeconds: activity.interval_work_seconds,

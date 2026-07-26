@@ -15,8 +15,36 @@ import {
 } from "@/lib/scoring/gates";
 import type { CardioResult } from "@/lib/scoring/cardio-activity";
 import type { ScoreStrengthResult } from "@/lib/scoring/split-strength-engine";
+import type { SessionType } from "@/types";
 
-function CardioFreeStats({ result }: { result: CardioResult }) {
+/** Session types scored relative to the athlete's own history — mirrors RELATIVE_EFFORT_SESSION_TYPES in cardio-predictions.ts (kept as a local literal set to avoid a server-only import chain from a "use client" component). */
+const RELATIVE_EFFORT_SESSION_TYPES = new Set<SessionType>(["easy", "recovery", "long"]);
+
+/** Explains the relative-effort scoring model — shown for every tier (session_type isn't premium-gated), since the score itself is affected by this regardless of tier. */
+function RelativeEffortNote({ sessionType, flags }: { sessionType?: SessionType | null; flags?: string[] }) {
+  if (!sessionType || !RELATIVE_EFFORT_SESSION_TYPES.has(sessionType)) return null;
+
+  let detail = "Scored relative to your own recent easy-effort history, not absolute pace.";
+  if (flags?.includes("easy-tag-pace-mismatch")) {
+    detail = "This pace looked more like a hard effort, so it was scored on the standard scale instead.";
+  } else if (flags?.includes("relative-effort-scored")) {
+    detail = "This session beat your recent easy-effort average — pace credit applied.";
+  }
+
+  return (
+    <p className="mt-2 text-xs text-muted italic">{detail}</p>
+  );
+}
+
+function CardioFreeStats({
+  result,
+  sessionType,
+  flags,
+}: {
+  result: CardioResult;
+  sessionType?: SessionType | null;
+  flags?: string[];
+}) {
   return (
     <dl className="grid gap-3 sm:grid-cols-2 text-sm">
       <div>
@@ -24,6 +52,7 @@ function CardioFreeStats({ result }: { result: CardioResult }) {
         <dd className="font-display text-xl font-bold text-cardio-accent tabular-nums">
           {formatIndex(result.score)}
         </dd>
+        <RelativeEffortNote sessionType={sessionType} flags={flags} />
       </div>
       {result.vo2max !== null && (
         <div>
@@ -38,10 +67,19 @@ function CardioFreeStats({ result }: { result: CardioResult }) {
   );
 }
 
-function CardioPremiumStats({ result }: { result: CardioResult }) {
+function CardioPremiumStats({
+  result,
+  sessionType,
+}: {
+  result: CardioResult;
+  sessionType?: SessionType | null;
+}) {
+  const hiddenFlags = new Set(["relative-effort-scored", "easy-tag-pace-mismatch"]);
+  const remainingFlags = result.flags.filter((f) => !hiddenFlags.has(f));
+
   return (
     <div className="space-y-4 text-sm">
-      <CardioFreeStats result={result} />
+      <CardioFreeStats result={result} sessionType={sessionType} flags={result.flags} />
       <dl className="grid gap-3 sm:grid-cols-2 border-t border-white/5 pt-4">
         {result.trimp !== null && (
           <div>
@@ -68,20 +106,22 @@ function CardioPremiumStats({ result }: { result: CardioResult }) {
       </dl>
       {result.predictions && (
         <div className="border-t border-white/5 pt-4">
-          <p className="text-[10px] uppercase tracking-wider text-muted mb-2">Riegel predictions</p>
+          <p className="text-[10px] uppercase tracking-wider text-muted mb-2">
+            At this pace, you could run:
+          </p>
           <ul className="grid gap-1.5 sm:grid-cols-2 text-xs">
             {Object.entries(result.predictions).map(([dist, sec]) => (
-              <li key={dist} className="flex justify-between gap-2 tabular-nums">
-                <span className="text-muted">{formatPredictionLabel(dist)}</span>
+              <li key={dist} className="tabular-nums">
+                <span className="text-muted">{formatPredictionLabel(dist)} in </span>
                 <span className="font-medium">{formatRiegelPrediction(sec)}</span>
               </li>
             ))}
           </ul>
         </div>
       )}
-      {result.flags.length > 0 && (
+      {remainingFlags.length > 0 && (
         <ul className="text-xs text-muted space-y-1 border-t border-white/5 pt-3">
-          {result.flags.map((flag) => (
+          {remainingFlags.map((flag) => (
             <li key={flag}>· {flag.replace(/-/g, " ")}</li>
           ))}
         </ul>
@@ -142,6 +182,7 @@ export function SessionScoreInsights({
   cardioResult,
   strengthResults,
   isPremium,
+  sessionType,
   className,
 }: {
   zone: "gym" | "cardio";
@@ -151,6 +192,7 @@ export function SessionScoreInsights({
     result: ScoreStrengthResult | GatedStrengthResult;
   }> | null;
   isPremium: boolean;
+  sessionType?: SessionType | null;
   className?: string;
 }) {
   if (zone === "cardio" && cardioResult) {
@@ -167,7 +209,11 @@ export function SessionScoreInsights({
           className
         )}
       >
-        {full ? <CardioPremiumStats result={full} /> : <CardioFreeStats result={free} />}
+        {full ? (
+          <CardioPremiumStats result={full} sessionType={sessionType} />
+        ) : (
+          <CardioFreeStats result={free} sessionType={sessionType} />
+        )}
       </div>
     );
 
@@ -176,7 +222,7 @@ export function SessionScoreInsights({
     return (
       <PremiumTease
         title={`VO2max ${free.vo2max ?? "—"} ml/kg/min · TRIMP & EF locked`}
-        subtitle="Premium unlocks TRIMP, efficiency factor, decoupling, and Riegel race predictions."
+        subtitle="Premium unlocks TRIMP, efficiency factor, decoupling, and race-pace predictions."
         className={className}
       >
         <CardioPremiumStats
@@ -189,6 +235,7 @@ export function SessionScoreInsights({
             predictions: { "10000": 2814, "21097.5": 6210, "42195": 12948 },
             flags: ["negative-split-strong"],
           }}
+          sessionType={sessionType}
         />
       </PremiumTease>
     );

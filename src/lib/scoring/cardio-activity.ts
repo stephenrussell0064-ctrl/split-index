@@ -48,10 +48,18 @@
  */
 
 import type { SessionType } from "@/types";
-import { timeToScore, enduranceAgeGradeFactor, type BenchmarkSport } from "@/lib/scoring/cardio-benchmarks";
+import {
+  timeToScore,
+  enduranceAgeGradeFactor,
+  BENCHMARK_DISTANCE_METERS,
+  type BenchmarkSport,
+} from "@/lib/scoring/cardio-benchmarks";
 import {
   computeSessionBenchmarkEquivalentSeconds,
   computeIntervalBenchmarkEquivalentSeconds,
+  riegelEquivalentSeconds,
+  RELATIVE_EFFORT_SESSION_TYPES,
+  MISTAG_GUARD_MAX_RATIO,
 } from "@/lib/scoring/cardio-predictions";
 import {
   intervalEquivalentPaceSecPerKm,
@@ -93,6 +101,10 @@ export interface CardioInput {
   temperatureCelsius?: number | null; // unlocks a heat/cold-difficulty bonus
   /** Multi-session memory (seconds at the benchmark distance) — see cardio-predictions.ts. Omit for a one-off, session-only score. */
   storedPredictionSeconds?: number | null;
+  /** This athlete's own baseline efficiency factor (speed per heartbeat) from recent easy/recovery/long same-sport sessions (see personalEasyEffortBaselineEF in cardio-predictions.ts). When present and sessionType is easy/recovery/long, the score is anchored to how this session's own efficiency compares to that personal baseline instead of the population pace-vs-benchmark table — omit/null to keep the standard scoring for these session types too. */
+  easyEffortBaselineEF?: number | null;
+  /** Mistag guard: this athlete's fastest recent race/tempo/threshold/interval/fartlek pace, Riegel-projected to the benchmark distance (see personalRecentHardEffortBenchmarkSeconds in cardio-predictions.ts). When an easy/recovery/long-tagged session's own pace is suspiciously close to this reference, it's more likely a hard effort logged with the wrong tag than a genuine easy run, so relative-effort scoring is skipped in favor of standard scoring. Omit/null to skip the guard (e.g. no hard-effort history yet). */
+  recentHardEffortBenchmarkSeconds?: number | null;
 }
 
 export interface CardioResult {
@@ -129,6 +141,15 @@ const MAX_EFFORT_FRACTION = 1.05;
 // (a light recovery jog isn't reliable evidence of near-max pace), so the
 // ratio is bounded instead of scaled down everywhere.
 const MAX_NORMALIZATION_RATIO = 1.6;
+
+// Relative-effort scoring cap for easy/recovery/long-tagged sessions —
+// bonus-only (never a penalty, same philosophy as the HR adjustment above),
+// wider than the population HR-adjustment cap (10%) because this factor is
+// personalized (this athlete's OWN typical easy effort, not a fixed
+// population reference), so genuinely beating one's own baseline deserves
+// more credit than a population-wide number could safely assume for
+// everyone.
+const RELATIVE_EFFORT_MAX_ADJUSTMENT = 0.20;
 
 // Volume/terrain/environment bonuses — orthogonal to the pace/HR-based base
 // score above. A long session, a hilly one, or one done in harsh heat/cold
@@ -338,7 +359,25 @@ export function scoreCardioActivity(input: CardioInput): CardioResult {
     );
     flags.push('fartlek-work-piece-scored');
   } else {
-    sessionEquivalentSeconds = computeSessionBenchmarkEquivalentSeconds(
+    // Relative-effort scoring (user feedback): easy/recovery/long-tagged
+    // sessions are DESIGNED to be run slow at low HR — judging them on the
+    // same absolute pace-vs-benchmark table as a race/tempo/threshold effort
+    // means the ~10%-capped population HR adjustment above can never
+    // compensate for a deliberately easy pace, so genuinely well-executed
+    // easy runs read as low scores. When a personal easy-effort baseline
+    // exists (this athlete's own recent easy/recovery/long same-sport
+    // sessions — see personalEasyEffortBaselineEF), these tags get an
+    // ADDITIONAL, BONUS-ONLY credit when this session's own efficiency
+    // factor (speed per heartbeat) beats that personal baseline — never a
+    // penalty when it falls short. Being less efficient than one's own
+    // recent average on an easy day isn't a fitness deficiency (fatigue,
+    // heat, terrain — already credited separately via executionScore); the
+    // population-referenced score above is never worse than it already was,
+    // it can only improve, mirroring the bonus-only philosophy of the HR
+    // adjustment already applied above (hrAdjustedEquivalentSeconds).
+    // Race/tempo/threshold/interval/fartlek sessions are untouched: those
+    // ARE meant to measure absolute pace capability.
+    const populationEquivalentSeconds = computeSessionBenchmarkEquivalentSeconds(
       input.benchmarkSport,
       input.distanceMeters,
       input.durationSeconds,
@@ -346,6 +385,45 @@ export function scoreCardioActivity(input: CardioInput): CardioResult {
       undefined,
       personalization
     );
+
+    const isRelativeEffortSession =
+      !!input.sessionType && RELATIVE_EFFORT_SESSION_TYPES.has(input.sessionType);
+    const thisSessionEF = efficiencyFactor(input);
+    const rawProjectedSeconds =
+      input.distanceMeters > 0 && input.durationSeconds > 0
+        ? input.benchmarkSport === 'walk'
+          ? input.durationSeconds / (input.distanceMeters / 1000)
+          : riegelEquivalentSeconds(
+              input.durationSeconds,
+              input.distanceMeters,
+              BENCHMARK_DISTANCE_METERS[input.benchmarkSport]
+            )
+        : null;
+    const looksMistagged =
+      rawProjectedSeconds !== null &&
+      input.recentHardEffortBenchmarkSeconds != null &&
+      rawProjectedSeconds < input.recentHardEffortBenchmarkSeconds * MISTAG_GUARD_MAX_RATIO;
+    if (looksMistagged) flags.push('easy-tag-pace-mismatch');
+
+    if (
+      isRelativeEffortSession &&
+      !looksMistagged &&
+      input.easyEffortBaselineEF &&
+      thisSessionEF &&
+      rawProjectedSeconds !== null &&
+      populationEquivalentSeconds !== null
+    ) {
+      const efRatio = thisSessionEF / input.easyEffortBaselineEF;
+      const bonus = clamp(efRatio - 1, 0, RELATIVE_EFFORT_MAX_ADJUSTMENT);
+      const relativeEquivalentSeconds =
+        bonus > 0 ? rawProjectedSeconds * (1 - bonus) : populationEquivalentSeconds;
+      sessionEquivalentSeconds = Math.min(populationEquivalentSeconds, relativeEquivalentSeconds);
+      if (sessionEquivalentSeconds < populationEquivalentSeconds) {
+        flags.push('relative-effort-scored');
+      }
+    } else {
+      sessionEquivalentSeconds = populationEquivalentSeconds;
+    }
   }
   // IMPORTANT — monotonicity guarantee (see cardio-session-score-monotonicity
   // -bug.md): the per-session score must ALWAYS be anchored to THIS session's

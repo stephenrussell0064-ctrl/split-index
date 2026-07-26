@@ -165,7 +165,7 @@ export function StoredPredictionsPanel({
           ) : (
             <PremiumTease
               title="Race ladder & adaptive 1RM"
-              subtitle="Unlock your full Riegel race ladder and per-lift adaptive 1RM predictions with Premium."
+              subtitle="Unlock your full race ladder and per-lift adaptive 1RM predictions with Premium."
             >
               <PredictionsContent
                 benchmarks={[

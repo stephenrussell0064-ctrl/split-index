@@ -47,6 +47,10 @@ export interface ActivityScoreContext {
   temperatureCelsius?: number | null;
   /** Multi-session memory (seconds at the sport's benchmark distance), already blended by the caller — see cardio-predictions.ts. */
   storedPredictionSeconds?: number | null;
+  /** This athlete's own baseline efficiency factor from recent easy/recovery/long same-sport sessions — see personalEasyEffortBaselineEF in cardio-predictions.ts. */
+  easyEffortBaselineEF?: number | null;
+  /** Mistag guard reference — see personalRecentHardEffortBenchmarkSeconds in cardio-predictions.ts. */
+  recentHardEffortBenchmarkSeconds?: number | null;
   /** Structured interval/fartlek work-piece data — optional; see cardio/interval-scoring.ts. */
   intervalReps?: number | null;
   intervalWorkDistanceMeters?: number | null;
@@ -261,6 +265,8 @@ function scoreEnduranceSession(
     elevationMeters: input.elevationMeters,
     temperatureCelsius: input.temperatureCelsius,
     storedPredictionSeconds: input.storedPredictionSeconds,
+    easyEffortBaselineEF: input.easyEffortBaselineEF,
+    recentHardEffortBenchmarkSeconds: input.recentHardEffortBenchmarkSeconds,
     intervalReps: input.intervalReps,
     intervalWorkDistanceMeters: input.intervalWorkDistanceMeters,
     intervalWorkSeconds: input.intervalWorkSeconds,

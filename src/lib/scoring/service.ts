@@ -23,6 +23,10 @@ interface ScoreActivityInput {
   rpe?: number | null;
   /** Multi-session memory (seconds at the sport's benchmark distance), already blended by the caller — see cardio-predictions.ts. */
   storedPredictionSeconds?: number | null;
+  /** This athlete's own baseline efficiency factor from recent easy/recovery/long same-sport sessions — see personalEasyEffortBaselineEF in cardio-predictions.ts. */
+  easyEffortBaselineEF?: number | null;
+  /** Mistag guard reference — see personalRecentHardEffortBenchmarkSeconds in cardio-predictions.ts. */
+  recentHardEffortBenchmarkSeconds?: number | null;
   intervalReps?: number | null;
   intervalWorkDistanceMeters?: number | null;
   intervalWorkSeconds?: number | null;
@@ -131,6 +135,8 @@ export function scoreActivity(
       elevationMeters: input.elevationMeters,
       temperatureCelsius: input.temperatureCelsius,
       storedPredictionSeconds: input.storedPredictionSeconds,
+      easyEffortBaselineEF: input.easyEffortBaselineEF,
+      recentHardEffortBenchmarkSeconds: input.recentHardEffortBenchmarkSeconds,
       intervalReps: input.intervalReps,
       intervalWorkDistanceMeters: input.intervalWorkDistanceMeters,
       intervalWorkSeconds: input.intervalWorkSeconds,

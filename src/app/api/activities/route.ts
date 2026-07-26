@@ -16,6 +16,8 @@ import {
   blendPredictedBenchmark,
   effectiveStoredPrediction,
   sessionCountsAsQuality,
+  personalEasyEffortBaselineEF,
+  personalRecentHardEffortBenchmarkSeconds,
   RIEGEL_K,
 } from "@/lib/scoring/cardio-predictions";
 import {
@@ -297,6 +299,12 @@ export async function POST(request: Request) {
   // asymmetric-update blend (never overwrite it directly).
   let personalizedK: number | null = null;
   let tier1Prediction: ReturnType<typeof computeTier1Prediction> = null;
+  // Relative-effort scoring (user feedback): easy/recovery/long-tagged
+  // sessions get scored against this athlete's own easy-effort baseline
+  // instead of the population pace-vs-benchmark table — see
+  // personalEasyEffortBaselineEF in cardio-predictions.ts.
+  let easyEffortBaselineEF: number | null = null;
+  let recentHardEffortBenchmarkSeconds: number | null = null;
   if (isEnduranceSport(body.sport)) {
     benchmarkSport = mapSportToBenchmarkSport(body.sport);
     const { data: priorPrediction } = await supabase
@@ -329,6 +337,16 @@ export async function POST(request: Request) {
       }));
 
     personalizedK = personalizeRiegelKFromWindow(windowSessions, priorPrediction?.riegel_k ?? null);
+    easyEffortBaselineEF = personalEasyEffortBaselineEF(
+      benchmarkSport,
+      windowSessions,
+      personalizedK ?? undefined
+    );
+    recentHardEffortBenchmarkSeconds = personalRecentHardEffortBenchmarkSeconds(
+      benchmarkSport,
+      windowSessions,
+      personalizedK ?? undefined
+    );
 
     newPredictedBenchmarkSampleCount = (priorPrediction?.sample_count ?? 0) + 1;
     const sessionEquivalentSeconds = computeBodyBenchmarkEquivalentSeconds(
@@ -399,6 +417,8 @@ export async function POST(request: Request) {
           sessionType: body.session_type,
           rpe: body.rpe,
           storedPredictionSeconds: storedPredictionForScoring,
+          easyEffortBaselineEF,
+          recentHardEffortBenchmarkSeconds,
           intervalReps: body.interval_reps,
           intervalWorkDistanceMeters: body.interval_work_distance_meters,
           intervalWorkSeconds: body.interval_work_seconds,

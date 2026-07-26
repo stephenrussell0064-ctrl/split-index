@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { scoreCardioActivity, type CardioInput } from "./cardio-activity";
+import {
+  personalEasyEffortBaselineEF,
+  personalRecentHardEffortBenchmarkSeconds,
+  type EasyEffortSession,
+} from "./cardio-predictions";
 
 /**
  * Regression coverage for the monotonicity bug: a session's own pace must
@@ -147,5 +152,258 @@ describe("scoreCardioActivity — pace monotonicity", () => {
     });
     expect(result.score).toBe(result.paceScore);
     expect(result.score).toBeGreaterThan(800); // fast pace still reads as fast
+  });
+});
+
+/**
+ * Relative-effort scoring for easy/recovery/long-tagged sessions (user
+ * feedback: easy runs should score off how efficient THIS session was
+ * relative to this athlete's own typical easy effort, not off absolute
+ * pace-vs-benchmark — see personalEasyEffortBaselineEF in
+ * cardio-predictions.ts and the scoreCardioActivity branch that applies it).
+ */
+describe("scoreCardioActivity — relative-effort scoring for easy/recovery/long sessions", () => {
+  const base: CardioInput = {
+    type: "run",
+    benchmarkSport: "run",
+    distanceMeters: 8000,
+    durationSeconds: 2880, // 48:00 — deliberately easy pace
+    sex: "male",
+    age: 30,
+  };
+
+  const baselineSessions: EasyEffortSession[] = Array.from({ length: 3 }, () => ({
+    distanceMeters: 8000,
+    durationSeconds: 2880,
+    avgHR: 140,
+    sessionType: "easy",
+  }));
+  const baselineEF = personalEasyEffortBaselineEF("run", baselineSessions);
+
+  it("personalEasyEffortBaselineEF requires at least 3 qualifying sessions", () => {
+    expect(personalEasyEffortBaselineEF("run", baselineSessions.slice(0, 2))).toBeNull();
+    expect(baselineEF).not.toBeNull();
+    expect(baselineEF).toBeGreaterThan(0);
+  });
+
+  it("personalEasyEffortBaselineEF ignores non-easy session types", () => {
+    const mixed: EasyEffortSession[] = [
+      ...baselineSessions,
+      { distanceMeters: 5000, durationSeconds: 1000, avgHR: 190, sessionType: "race" },
+    ];
+    expect(personalEasyEffortBaselineEF("run", mixed)).toBe(baselineEF);
+  });
+
+  it("personalEasyEffortBaselineEF excludes sessions that look like mistagged hard efforts from the pool", () => {
+    // A near-race-pace 5k tagged "easy" (mirrors the reported case) should
+    // NOT drag the baseline up — it's excluded from the average entirely,
+    // same guard as scoring a session directly.
+    const withMistaggedSession: EasyEffortSession[] = [
+      ...baselineSessions,
+      { distanceMeters: 5000, durationSeconds: 1160, avgHR: 188, sessionType: "easy" }, // 19:20 5k tagged easy
+      { distanceMeters: 5000, durationSeconds: 1151, avgHR: 188, sessionType: "race" }, // establishes the hard-effort reference
+    ];
+    const contaminated = personalEasyEffortBaselineEF("run", withMistaggedSession);
+    expect(contaminated).toBe(baselineEF);
+  });
+
+  it("falls back to standard (session-type-agnostic) scoring when no baseline is available yet", () => {
+    const withoutBaseline = scoreCardioActivity({
+      ...base,
+      avgHR: 140,
+      sessionType: "easy",
+    });
+    const asRace = scoreCardioActivity({
+      ...base,
+      avgHR: 140,
+      sessionType: "race",
+    });
+    expect(withoutBaseline.score).toBe(asRace.score);
+    expect(withoutBaseline.flags).not.toContain("relative-effort-scored");
+  });
+
+  it("never applies relative-effort scoring to race/tempo/threshold sessions, even if a baseline is supplied", () => {
+    const asRaceWithBaseline = scoreCardioActivity({
+      ...base,
+      avgHR: 140,
+      sessionType: "race",
+      easyEffortBaselineEF: baselineEF,
+    });
+    const asRaceWithoutBaseline = scoreCardioActivity({
+      ...base,
+      avgHR: 140,
+      sessionType: "race",
+    });
+    expect(asRaceWithBaseline.score).toBe(asRaceWithoutBaseline.score);
+    expect(asRaceWithBaseline.flags).not.toContain("relative-effort-scored");
+  });
+
+  it("scores an easy session relative to the athlete's own baseline — bonus-only: more efficient than usual scores higher, less efficient never scores lower than standard scoring", () => {
+    // Same distance/duration as the baseline sessions (so pace is identical
+    // across all three) — only avgHR differs, isolating relative efficiency.
+    const atBaseline = scoreCardioActivity({
+      ...base,
+      avgHR: 140, // exactly the baseline HR -> efficiency ratio 1.0, no bonus
+      sessionType: "easy",
+      easyEffortBaselineEF: baselineEF,
+    });
+    const moreEfficient = scoreCardioActivity({
+      ...base,
+      avgHR: 120, // same pace, lower HR -> better efficiency than baseline -> bonus
+      sessionType: "easy",
+      easyEffortBaselineEF: baselineEF,
+    });
+    const lessEfficient = scoreCardioActivity({
+      ...base,
+      avgHR: 160, // same pace, higher HR -> worse efficiency than baseline -> no penalty
+      sessionType: "easy",
+      easyEffortBaselineEF: baselineEF,
+    });
+    const lessEfficientNoBaseline = scoreCardioActivity({
+      ...base,
+      avgHR: 160,
+      sessionType: "easy",
+    });
+
+    expect(atBaseline.flags).not.toContain("relative-effort-scored");
+    expect(moreEfficient.flags).toContain("relative-effort-scored");
+    expect(moreEfficient.score).toBeGreaterThan(atBaseline.score);
+    // Below-baseline efficiency is NEVER penalized relative to standard
+    // scoring — it just doesn't earn the bonus (bonus-only, same philosophy
+    // as the population HR adjustment above).
+    expect(lessEfficient.score).toBe(lessEfficientNoBaseline.score);
+    expect(lessEfficient.flags).not.toContain("relative-effort-scored");
+  });
+
+  it("is still monotonic for a fixed baseline — a faster easy run never scores lower than a slower one", () => {
+    const durations: number[] = [];
+    for (let s = 2400; s <= 3600; s += 60) durations.push(s);
+
+    const scores = durations.map(
+      (durationSeconds) =>
+        scoreCardioActivity({
+          ...base,
+          durationSeconds,
+          avgHR: 140,
+          sessionType: "easy",
+          easyEffortBaselineEF: baselineEF,
+        }).score
+    );
+
+    for (let i = 1; i < scores.length; i++) {
+      expect(scores[i]).toBeLessThanOrEqual(scores[i - 1]);
+    }
+  });
+
+  it("caps the relative-effort adjustment at ±20%, however extreme the efficiency ratio", () => {
+    // Ratio ~3.5x baseline (avgHR 40) vs. exactly at the +20% cap boundary
+    // (avgHR chosen so ratio is exactly 1.2) — both should clamp to the same
+    // adjustment and therefore produce the identical score.
+    const extremeRatio = scoreCardioActivity({
+      ...base,
+      avgHR: 40,
+      sessionType: "easy",
+      easyEffortBaselineEF: baselineEF,
+    });
+    const atCapBoundary = scoreCardioActivity({
+      ...base,
+      avgHR: 140 / 1.2, // efficiency ratio exactly 1.2 relative to baseline
+      sessionType: "easy",
+      easyEffortBaselineEF: baselineEF,
+    });
+    expect(extremeRatio.score).toBe(atCapBoundary.score);
+  });
+});
+
+/**
+ * Mistag guard: a session tagged easy/recovery/long whose own pace is
+ * suspiciously close to the athlete's fastest recent hard-effort pace is
+ * more likely a hard effort logged with the wrong tag than a genuine easy
+ * run — relative-effort scoring should fall back to standard scoring for
+ * it, rather than amplifying an already-fast, mistagged session further.
+ * Reproduces the real case found when reviewing this feature: a 5.00km in
+ * 19:20 (essentially race pace) logged as "easy".
+ */
+describe("scoreCardioActivity — mistag guard for relative-effort scoring", () => {
+  const base: CardioInput = {
+    type: "run",
+    benchmarkSport: "run",
+    distanceMeters: 0,
+    durationSeconds: 0,
+    sex: "male",
+    age: 30,
+  };
+
+  const easyBaselineSessions: EasyEffortSession[] = Array.from({ length: 3 }, () => ({
+    distanceMeters: 8000,
+    durationSeconds: 2880, // 48:00 easy pace
+    avgHR: 140,
+    sessionType: "easy",
+  }));
+  const easyBaselineEF = personalEasyEffortBaselineEF("run", easyBaselineSessions)!;
+
+  const hardEffortHistory: EasyEffortSession[] = [
+    { distanceMeters: 5000, durationSeconds: 1151, sessionType: "race" }, // 19:11 5k
+    { distanceMeters: 5000, durationSeconds: 1160, sessionType: "race" }, // 19:20 5k
+  ];
+  const hardEffortReferenceSeconds = personalRecentHardEffortBenchmarkSeconds(
+    "run",
+    hardEffortHistory
+  )!;
+
+  it("personalRecentHardEffortBenchmarkSeconds returns the fastest recent race/tempo/threshold projection", () => {
+    expect(hardEffortReferenceSeconds).not.toBeNull();
+    expect(hardEffortReferenceSeconds).toBeLessThanOrEqual(1151);
+  });
+
+  it("returns null with no qualifying hard-effort history, or for walk", () => {
+    expect(personalRecentHardEffortBenchmarkSeconds("run", easyBaselineSessions)).toBeNull();
+    expect(personalRecentHardEffortBenchmarkSeconds("walk", hardEffortHistory)).toBeNull();
+  });
+
+  it("falls back to standard scoring for a fast run mistagged easy, instead of amplifying it further", () => {
+    // 5.00km in 19:20 (1160s) tagged "easy" — essentially this athlete's own
+    // race pace, per hardEffortHistory above.
+    const mistagged = scoreCardioActivity({
+      ...base,
+      distanceMeters: 5000,
+      durationSeconds: 1160,
+      avgHR: 188,
+      sessionType: "easy",
+      easyEffortBaselineEF: easyBaselineEF,
+      recentHardEffortBenchmarkSeconds: hardEffortReferenceSeconds,
+    });
+    const sameSessionNoGuardData = scoreCardioActivity({
+      ...base,
+      distanceMeters: 5000,
+      durationSeconds: 1160,
+      avgHR: 188,
+      sessionType: "easy",
+      easyEffortBaselineEF: easyBaselineEF,
+      // recentHardEffortBenchmarkSeconds omitted — simulates no hard-effort
+      // history yet, so the guard can't engage and relative-effort scoring
+      // applies unchecked.
+    });
+
+    expect(mistagged.flags).toContain("easy-tag-pace-mismatch");
+    expect(mistagged.flags).not.toContain("relative-effort-scored");
+    // Without the guard, this same fast/mistagged session would have been
+    // amplified well above its standard pace-vs-benchmark score.
+    expect(sameSessionNoGuardData.flags).toContain("relative-effort-scored");
+    expect(sameSessionNoGuardData.score).toBeGreaterThan(mistagged.score);
+  });
+
+  it("a genuine easy run well below the athlete's hard-effort pace is unaffected by the guard", () => {
+    const genuineEasy = scoreCardioActivity({
+      ...base,
+      distanceMeters: 8000,
+      durationSeconds: 2880, // 48:00 — nowhere near 19-20min 5k race pace
+      avgHR: 120, // better efficiency than the 140bpm baseline -> earns the bonus
+      sessionType: "easy",
+      easyEffortBaselineEF: easyBaselineEF,
+      recentHardEffortBenchmarkSeconds: hardEffortReferenceSeconds,
+    });
+    expect(genuineEasy.flags).not.toContain("easy-tag-pace-mismatch");
+    expect(genuineEasy.flags).toContain("relative-effort-scored");
   });
 });

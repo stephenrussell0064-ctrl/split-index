@@ -21,6 +21,8 @@ import {
   blendPredictedBenchmark,
   effectiveStoredPrediction,
   sessionCountsAsQuality,
+  personalEasyEffortBaselineEF,
+  personalRecentHardEffortBenchmarkSeconds,
   RIEGEL_K,
 } from "@/lib/scoring/cardio-predictions";
 import {
@@ -173,6 +175,8 @@ async function scoreAndPersist(
   let lastQualityAt: string | null = null;
   let personalizedK: number | null = null;
   let tier1Prediction: ReturnType<typeof computeTier1Prediction> = null;
+  let easyEffortBaselineEF: number | null = null;
+  let recentHardEffortBenchmarkSeconds: number | null = null;
   if (isEnduranceSport(body.sport)) {
     benchmarkSport = mapSportToBenchmarkSport(body.sport);
     const { data: priorPrediction } = await supabase
@@ -207,6 +211,16 @@ async function scoreAndPersist(
       }));
 
     personalizedK = personalizeRiegelKFromWindow(windowSessions, priorPrediction?.riegel_k ?? null);
+    easyEffortBaselineEF = personalEasyEffortBaselineEF(
+      benchmarkSport,
+      windowSessions,
+      personalizedK ?? undefined
+    );
+    recentHardEffortBenchmarkSeconds = personalRecentHardEffortBenchmarkSeconds(
+      benchmarkSport,
+      windowSessions,
+      personalizedK ?? undefined
+    );
 
     newPredictedBenchmarkSampleCount = priorIsThisActivity
       ? (priorPrediction?.sample_count ?? 1)
@@ -279,6 +293,8 @@ async function scoreAndPersist(
       sessionType: body.session_type,
       rpe: body.rpe,
       storedPredictionSeconds: storedPredictionForScoring,
+      easyEffortBaselineEF,
+      recentHardEffortBenchmarkSeconds,
       intervalReps: body.interval_reps,
       intervalWorkDistanceMeters: body.interval_work_distance_meters,
       intervalWorkSeconds: body.interval_work_seconds,

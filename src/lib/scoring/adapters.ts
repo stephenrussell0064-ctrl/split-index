@@ -207,6 +207,8 @@ export function buildCardioInput(input: {
   fartlekOnDistanceMeters?: number | null;
   fartlekOnSeconds?: number | null;
   fartlekOnAvgHr?: number | null;
+  easyEffortBaselineEF?: number | null;
+  recentHardEffortBenchmarkSeconds?: number | null;
 }): CardioInput {
   const structuredInterval = {
     reps: input.intervalReps ?? 0,
@@ -242,6 +244,8 @@ export function buildCardioInput(input: {
     temperatureCelsius: input.temperatureCelsius ?? undefined,
     rpe: input.rpe ?? undefined,
     storedPredictionSeconds: input.storedPredictionSeconds ?? undefined,
+    easyEffortBaselineEF: input.easyEffortBaselineEF ?? undefined,
+    recentHardEffortBenchmarkSeconds: input.recentHardEffortBenchmarkSeconds ?? undefined,
     structuredInterval: isValidIntervalWorkPiece(structuredInterval) ? structuredInterval : undefined,
     structuredFartlek: isValidFartlekOnPiece(structuredFartlek) ? structuredFartlek : undefined,
   };

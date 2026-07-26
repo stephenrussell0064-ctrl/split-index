@@ -10,13 +10,16 @@ import { formatIndex } from "@/lib/utils/format";
 import { MilestoneToast } from "@/components/retention/milestone-toast";
 import { SportComparisonPanel } from "@/components/dashboard/sport-comparison";
 import type { SportComparisonStats } from "@/lib/utils/sport-comparison";
-import type { ScoreBreakdown, SportType } from "@/types";
+import type { ScoreBreakdown, SessionType, SportType } from "@/types";
 import { formatSplitBreakdown } from "@/lib/utils/scoring-display";
 import { cn } from "@/lib/utils/cn";
 import { CardioEnrichmentPanel } from "@/components/activities/cardio-enrichment-panel";
 import type { CardioEnrichment } from "@/lib/scoring/cardio";
 import { formatRiegelPrediction } from "@/lib/scoring/presentation";
 import type { Tier1Prediction } from "@/lib/scoring/cardio/race-prediction";
+
+/** Session types scored relative to the athlete's own history — mirrors RELATIVE_EFFORT_SESSION_TYPES in cardio-predictions.ts (kept as a local literal set to avoid a server-only import chain from a "use client" component). */
+const RELATIVE_EFFORT_SESSION_TYPES = new Set<SessionType>(["easy", "recovery", "long"]);
 
 const TIER1_CONFIDENCE_LABEL: Record<Tier1Prediction["confidence"], string> = {
   high: "High confidence",
@@ -51,6 +54,7 @@ export interface ScoreResultSummary {
   scoreBreakdown?: ScoreBreakdown;
   cardioEnrichment?: CardioEnrichment;
   tier1Prediction?: Tier1Prediction | null;
+  sessionType?: SessionType | null;
 }
 
 const REDIRECT_AFTER_MS = 6200;
@@ -138,6 +142,11 @@ export function SuccessScreen({
             {sportIndex}
           </p>
           <p className="mt-2 text-center text-sm font-medium">{result.sportLabel}</p>
+          {!isGym && result.sessionType && RELATIVE_EFFORT_SESSION_TYPES.has(result.sessionType) && (
+            <p className="mt-1 text-center text-xs italic text-muted">
+              Scored relative to your own recent easy-effort history, not absolute pace.
+            </p>
+          )}
           {isGym && result.strengthContext && (
             <p className="mt-2 text-center text-sm text-muted">{result.strengthContext}</p>
           )}
