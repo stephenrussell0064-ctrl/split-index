@@ -129,15 +129,15 @@ export function AnalyticsFilters({
         </button>
       </div>
 
-      {compareEnabled && (
-        <motion.p
-          initial={{ opacity: 0, height: 0 }}
-          animate={{ opacity: 1, height: "auto" }}
-          className="mt-3 text-[10px] uppercase tracking-wider text-muted"
-        >
-          Comparing {periodALabel} vs {periodBLabel}
-        </motion.p>
-      )}
+      <motion.p
+        initial={{ opacity: 0, height: 0 }}
+        animate={{ opacity: 1, height: "auto" }}
+        className="mt-3 text-[10px] uppercase tracking-wider text-muted"
+      >
+        {compareEnabled
+          ? `Comparing ${periodALabel} vs ${periodBLabel}`
+          : "Pick a period, then click Compare to see it side-by-side against another period"}
+      </motion.p>
     </motion.div>
   );
 }

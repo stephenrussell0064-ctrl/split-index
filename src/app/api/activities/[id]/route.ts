@@ -373,6 +373,9 @@ async function scoreAndPersist(
               },
             }
           : result.breakdown,
+      // Must reflect the activity's own date, not edit time — see the
+      // matching comment on split_index_history.recorded_at below.
+      created_at: body.started_at,
     })
     .select()
     .single();

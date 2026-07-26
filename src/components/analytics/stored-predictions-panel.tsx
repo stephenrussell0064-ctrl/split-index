@@ -88,7 +88,7 @@ function PredictionsContent({
           <p className="micro-label text-muted mb-2">
             Profile prediction · built from your full training history
           </p>
-          <div className="grid gap-2 sm:grid-cols-2">
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {benchmarks.map((b) => {
               const calibrating = tier2IsCalibrating(b.sampleCount);
               return (
@@ -125,7 +125,7 @@ function PredictionsContent({
           <p className="micro-label text-muted mb-2">
             {LADDER_TITLE[benchmark.sport] ?? "Race ladder"}
           </p>
-          <ul className="grid gap-1.5 sm:grid-cols-2 text-xs">
+          <ul className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3 text-xs">
             {Object.entries(ladder).map(([dist, sec]) => (
               <li key={dist} className="flex justify-between gap-2 tabular-nums glass rounded-lg px-3 py-1.5">
                 <span className="text-muted">{formatPredictionLabel(dist)}</span>
@@ -141,7 +141,7 @@ function PredictionsContent({
           <p className="micro-label text-muted mb-2 flex items-center gap-1.5">
             <Target className="h-3 w-3" /> Adaptive 1RM · every lift logged
           </p>
-          <ul className="space-y-1.5">
+          <ul className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
             {strengthEstimates.map((est) => (
               <li
                 key={est.exerciseName}

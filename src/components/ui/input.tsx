@@ -1,3 +1,4 @@
+import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 
 interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
@@ -52,23 +53,26 @@ export function Select({ label, error, options, className, id, ...props }: Selec
           {label}
         </label>
       )}
-      <select
-        id={selectId}
-        className={cn(
-          "h-11 w-full rounded-xl glass px-4 text-sm text-foreground",
-          "border border-white/10 focus:border-accent/50 focus:ring-1 focus:ring-accent/30 focus:outline-none",
-          "transition-all duration-200 appearance-none cursor-pointer",
-          error && "border-danger/50",
-          className
-        )}
-        {...props}
-      >
-        {options.map((opt) => (
-          <option key={opt.value} value={opt.value} className="bg-slate-900">
-            {opt.label}
-          </option>
-        ))}
-      </select>
+      <div className="relative">
+        <select
+          id={selectId}
+          className={cn(
+            "h-11 w-full rounded-xl glass px-4 pr-9 text-sm text-foreground",
+            "border border-white/10 focus:border-accent/50 focus:ring-1 focus:ring-accent/30 focus:outline-none",
+            "transition-all duration-200 appearance-none cursor-pointer",
+            error && "border-danger/50",
+            className
+          )}
+          {...props}
+        >
+          {options.map((opt) => (
+            <option key={opt.value} value={opt.value} className="bg-slate-900">
+              {opt.label}
+            </option>
+          ))}
+        </select>
+        <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+      </div>
       {error && <p className="text-xs text-danger">{error}</p>}
     </div>
   );

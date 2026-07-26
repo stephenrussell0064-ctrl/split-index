@@ -1,7 +1,11 @@
 export function formatDuration(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = seconds % 60;
+  // Round to whole seconds first — some callers pass a benchmark-equivalent
+  // time carrying floating-point noise (e.g. 433.3706000000000024), which
+  // would otherwise leak into the displayed string verbatim.
+  const rounded = Math.round(seconds);
+  const h = Math.floor(rounded / 3600);
+  const m = Math.floor((rounded % 3600) / 60);
+  const s = rounded % 60;
   if (h > 0) return `${h}h ${m}m`;
   if (m > 0) return `${m}m ${s}s`;
   return `${s}s`;

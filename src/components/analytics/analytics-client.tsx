@@ -262,19 +262,22 @@ export function AnalyticsClient({ data }: { data: AnalyticsPayload }) {
         ))}
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <InjuryRiskPanel
-          scores={data.scores}
-          isPremium={data.isPremium}
-          hrvToday={data.hrvToday}
-          hrvBaseline={data.hrvBaseline}
-        />
-        <StoredPredictionsPanel
-          benchmarks={data.predictedBenchmarks}
-          strengthEstimates={data.strengthEstimates}
-          isPremium={data.isPremium}
-        />
-      </div>
+      <InjuryRiskPanel
+        scores={data.scores}
+        isPremium={data.isPremium}
+        hrvToday={data.hrvToday}
+        hrvBaseline={data.hrvBaseline}
+      />
+      {/* Full-width, not paired in a 2-col grid with InjuryRiskPanel above —
+          this panel's race ladder + per-lift adaptive 1RM list is usually
+          much taller than the compact Recovery card, which left a large
+          empty gap under the shorter card when they shared equal-width
+          columns (user feedback). */}
+      <StoredPredictionsPanel
+        benchmarks={data.predictedBenchmarks}
+        strengthEstimates={data.strengthEstimates}
+        isPremium={data.isPremium}
+      />
 
       {compareEnabled && (
         data.isPremium ? (

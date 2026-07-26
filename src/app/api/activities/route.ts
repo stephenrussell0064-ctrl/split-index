@@ -511,6 +511,11 @@ export async function POST(request: Request) {
               },
             }
           : result.breakdown,
+      // Must reflect the activity's own date, not insert time — see the
+      // matching comment on split_index_history.recorded_at below. Without
+      // this, ACWR/injury-risk history windows and load rollups collapse
+      // toward "now" for backfilled or recomputed activities.
+      created_at: body.started_at,
     })
     .select()
     .single();

@@ -351,6 +351,11 @@ export async function POST() {
                 },
               }
             : result.breakdown,
+        // Must reflect the activity's own date, not recompute time — see the
+        // matching comment on split_index_history.recorded_at below. Without
+        // this, recomputing collapses every activity's workout_scores row
+        // onto "now", breaking ACWR/injury-risk history windows.
+        created_at: activity.started_at,
       });
 
       await supabase.from("split_index_history").delete().eq("activity_id", activity.id);
