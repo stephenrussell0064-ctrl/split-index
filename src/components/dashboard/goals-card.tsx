@@ -83,32 +83,40 @@ export function GoalsCard({ goals, currentIndex, className }: GoalsCardProps) {
                     )}
                   </div>
 
-                  {target !== null && progress !== null && (
-                    <div className="mt-2.5">
-                      <div className="flex justify-between text-[10px] tabular-nums text-muted">
-                        <span>
-                          {formatIndex(currentIndex)} / {formatIndex(target)}
-                        </span>
-                        <span>{Math.round(progress)}%</span>
-                      </div>
-                      <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/5">
-                        <motion.div
-                          initial={reducedMotion ? { width: `${progress}%` } : { width: 0 }}
-                          animate={{ width: `${progress}%` }}
-                          transition={{
-                            duration: 1,
-                            ease: [0.22, 1, 0.36, 1],
-                            delay: 0.4 + i * 0.1,
-                          }}
-                          className={cn(
-                            "h-full rounded-full",
-                            progress >= 100
-                              ? "bg-success"
-                              : "bg-gradient-to-r from-accent/70 to-accent"
-                          )}
-                        />
-                      </div>
+                  {/* A goal can outlive its own target — nothing here auto-marks
+                      `completed` in the DB, so without this check an already-
+                      surpassed target (e.g. 716 vs a 650 goal) kept reading as
+                      "in progress, N days left" instead of reflecting reality
+                      (user feedback: irrelevant/stale-looking dashboard data). */}
+                  {target !== null && progress !== null && progress >= 100 ? (
+                    <div className="mt-2.5 flex items-center gap-1.5 text-xs font-medium text-success">
+                      <Trophy className="h-3.5 w-3.5 shrink-0" />
+                      Achieved — {formatIndex(currentIndex)} vs {formatIndex(target)} target. Set a higher one?
                     </div>
+                  ) : (
+                    target !== null &&
+                    progress !== null && (
+                      <div className="mt-2.5">
+                        <div className="flex justify-between text-[10px] tabular-nums text-muted">
+                          <span>
+                            {formatIndex(currentIndex)} / {formatIndex(target)}
+                          </span>
+                          <span>{Math.round(progress)}%</span>
+                        </div>
+                        <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/5">
+                          <motion.div
+                            initial={reducedMotion ? { width: `${progress}%` } : { width: 0 }}
+                            animate={{ width: `${progress}%` }}
+                            transition={{
+                              duration: 1,
+                              ease: [0.22, 1, 0.36, 1],
+                              delay: 0.4 + i * 0.1,
+                            }}
+                            className="h-full rounded-full bg-gradient-to-r from-accent/70 to-accent"
+                          />
+                        </div>
+                      </div>
+                    )
                   )}
                 </motion.div>
               );

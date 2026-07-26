@@ -6,6 +6,8 @@
  * an absolute medical probability.
  */
 
+import { calculateACWR } from "@/lib/scoring/engine";
+
 export type InjuryRiskZone = "Undertraining" | "Optimal" | "Caution" | "Danger";
 
 export interface InjuryRiskResult {
@@ -50,4 +52,52 @@ export function hrvAdjustedRisk(
   const ratio = hrvToday / hrvBaseline; // <1 = suppressed = less recovered
   const modifier = ratio >= 1 ? -5 * (ratio - 1) : 25 * (1 - ratio);
   return Math.max(0, Math.min(95, Math.round(loadRiskIndex + modifier)));
+}
+
+export interface AcwrTrendPoint {
+  date: string;
+  acwr: number;
+  zone: InjuryRiskZone;
+}
+
+/**
+ * ACWR as a trend over time, not just today's snapshot (user feedback: "i
+ * want this data analytics displayed and detailed as much as possible for
+ * proper data analysis on all their trends and performances" — the injury-
+ * risk panel only ever showed the current ratio, with no way to see whether
+ * it's been climbing toward danger or settling back into the optimal band).
+ * Re-derives acute/chronic load as of each weekly checkpoint using the same
+ * 7d/28d windows as computeRecentLoads, just anchored to a past date instead
+ * of "now".
+ */
+export function computeAcwrTrend(
+  loadScores: { load_score: number; created_at: string }[],
+  weeks = 12
+): AcwrTrendPoint[] {
+  const day = 86400000;
+  const now = Date.now();
+  const timestamps = loadScores.map((s) => ({
+    load: s.load_score,
+    t: new Date(s.created_at).getTime(),
+  }));
+
+  const points: AcwrTrendPoint[] = [];
+  for (let w = weeks - 1; w >= 0; w--) {
+    const asOf = now - w * 7 * day;
+    const acute = timestamps
+      .filter((s) => s.t <= asOf && asOf - s.t <= 7 * day)
+      .reduce((sum, s) => sum + s.load, 0);
+    const chronicRaw =
+      timestamps
+        .filter((s) => s.t <= asOf && asOf - s.t <= 28 * day)
+        .reduce((sum, s) => sum + s.load, 0) / 4;
+    const acwr = calculateACWR(acute, chronicRaw || 1);
+    const { zone } = injuryRisk(acwr);
+    points.push({
+      date: new Date(asOf).toLocaleDateString("en-GB", { month: "short", day: "numeric" }),
+      acwr: Math.round(acwr * 100) / 100,
+      zone,
+    });
+  }
+  return points;
 }

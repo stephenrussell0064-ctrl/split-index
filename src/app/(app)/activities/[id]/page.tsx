@@ -19,6 +19,7 @@ import {
   resolveStrengthInsights,
 } from "@/lib/scoring/activity-insights";
 import { GymExerciseScoreList } from "@/components/activities/gym-exercise-score-list";
+import { SetActivityMode } from "@/components/layout/set-activity-mode";
 import { gateCardioEnrichment } from "@/lib/scoring/gates";
 import type { CardioEnrichment } from "@/lib/scoring/cardio/confidence";
 import type { ScoreBreakdown } from "@/types";
@@ -116,6 +117,7 @@ export default async function ActivityDetailPage({
 
   return (
     <div className="max-w-2xl mx-auto">
+      <SetActivityMode zone={zone} />
       <div className="flex items-start justify-between gap-4 mb-8">
         <div>
           <p className="micro-label text-muted mb-2">{SPORT_INDEX_LABELS[activity.sport as keyof typeof SPORT_INDEX_LABELS]}</p>

@@ -19,6 +19,8 @@ import { TrainingZonesChart } from "./training-zones-chart";
 import { ConsistencyScore } from "./consistency-score";
 import { PersonalRecordsTable } from "./personal-records-table";
 import { InjuryRiskPanel } from "./injury-risk-panel";
+import { AcwrTrendChart } from "./acwr-trend-chart";
+import { computeAcwrTrend } from "@/lib/scoring/injury-risk";
 import { StoredPredictionsPanel } from "./stored-predictions-panel";
 import { PremiumGate } from "./premium-gate";
 import { PremiumTease } from "@/components/premium/premium-tease";
@@ -141,6 +143,14 @@ export function AnalyticsClient({ data }: { data: AnalyticsPayload }) {
   const heatmapDays = useMemo(
     () => buildHeatmapDays(filteredActivities, filteredScores, data.timezone),
     [filteredActivities, filteredScores, data.timezone]
+  );
+
+  const acwrTrend = useMemo(
+    () =>
+      computeAcwrTrend(
+        data.scores.map((s) => ({ load_score: s.load_score, created_at: s.created_at }))
+      ),
+    [data.scores]
   );
 
   const periodMetricsA = useMemo(
@@ -268,6 +278,11 @@ export function AnalyticsClient({ data }: { data: AnalyticsPayload }) {
         hrvToday={data.hrvToday}
         hrvBaseline={data.hrvBaseline}
       />
+
+      <PremiumGate locked={!data.isPremium} feature="ACWR trend analysis">
+        <AcwrTrendChart data={acwrTrend} />
+      </PremiumGate>
+
       {/* Full-width, not paired in a 2-col grid with InjuryRiskPanel above —
           this panel's race ladder + per-lift adaptive 1RM list is usually
           much taller than the compact Recovery card, which left a large

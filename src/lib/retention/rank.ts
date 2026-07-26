@@ -21,6 +21,24 @@ export async function getGlobalRankPercentile(
   return Math.round((beaten / total) * 100);
 }
 
+/** The nearest athlete ranked just above this one, and how many index points it'd take to pass them — the "beat someone" competitive hook (user feedback: dashboard should give users "a competitive element to want to improve their score as well as beat others"). Null when this athlete is already #1 or ranking data doesn't exist yet. */
+export async function getNextRankTarget(
+  supabase: SupabaseClient,
+  userIndex: number
+): Promise<{ pointsToClose: number; nextIndex: number } | null> {
+  const { data } = await supabase
+    .from("profiles")
+    .select("current_split_index")
+    .gt("current_split_index", userIndex)
+    .order("current_split_index", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (!data?.current_split_index) return null;
+  const nextIndex = data.current_split_index as number;
+  return { pointsToClose: nextIndex - userIndex, nextIndex };
+}
+
 export async function seedRetentionNotifications(
   supabase: SupabaseClient,
   userId: string,

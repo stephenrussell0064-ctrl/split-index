@@ -1,25 +1,22 @@
 import { redirect } from "next/navigation";
 import { format } from "date-fns";
 import { createClient } from "@/lib/supabase/server";
-import { SplitBalanceGauge } from "@/components/dashboard/split-balance-gauge";
+import { EngineLabTrendCard } from "@/components/dashboard/engine-lab-trend-card";
 import { HeroStatWall } from "@/components/dashboard/hero-stat-wall";
 import { GymZonePanel, CardioZonePanel } from "@/components/dashboard/zone-panels";
 import { RecentWorkouts, AICoachCard } from "@/components/dashboard/workout-list";
 import { ActivityHeatmap, type HeatmapDay } from "@/components/dashboard/activity-heatmap";
-import { ConsistencyCard, CompositionCard } from "@/components/dashboard/training-cards";
+import { ConsistencyCard } from "@/components/dashboard/training-cards";
+import { WeekOverWeekCard } from "@/components/dashboard/week-over-week-card";
 import { RecommendationCard } from "@/components/dashboard/recommendation-card";
 import { GoalsCard, type DashboardGoal } from "@/components/dashboard/goals-card";
-import {
-  SplitTrendPanel,
-  SportBalanceRadar,
-  type TrendPoint,
-  type RadarAxis,
-} from "@/components/analytics/charts";
+import { SplitTrendPanel, type TrendPoint } from "@/components/analytics/charts";
+import { SportComparisonGrid } from "@/components/dashboard/sport-comparison-grid";
 import { PremiumGate } from "@/components/analytics/premium-gate";
 import { PremiumTease } from "@/components/premium/premium-tease";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { WeeklyTargetCard } from "@/components/retention/weekly-target-card";
 import { FocusWeekCard } from "@/components/retention/focus-week-card";
+import { NextRankCard } from "@/components/retention/next-rank-card";
 import { EmptyDashboardHero } from "@/components/retention/empty-dashboard-hero";
 import { FriendInviteBanner } from "@/components/retention/friend-invite-banner";
 import { ScoreDisclaimer } from "@/components/legal/score-disclaimer";
@@ -33,12 +30,13 @@ import {
 import { computeIndexes } from "@/lib/scoring/index-engine";
 import type { IndexResult } from "@/lib/scoring/index-engine";
 import { computeStreakMetrics } from "@/lib/retention/streak-utils";
-import { getGlobalRankPercentile, seedRetentionNotifications } from "@/lib/retention/rank";
+import { getGlobalRankPercentile, getNextRankTarget, seedRetentionNotifications } from "@/lib/retention/rank";
 import { isPremiumUser } from "@/lib/retention/trial";
 import { ACTIVATION_EVENT_SESSION_COUNT, PRICING } from "@/lib/pricing/config";
 import { computeSplitIndexProjection } from "@/lib/premium/projection";
 import { gateAiFeedback } from "@/lib/scoring/gates";
-import { formatIndex } from "@/lib/utils/format";
+import { formatIndex, formatTrend } from "@/lib/utils/format";
+import { cn } from "@/lib/utils/cn";
 import type { PersonalRecord, SplitIndexSnapshot, SportType } from "@/types";
 
 const DAY_MS = 86400000;
@@ -234,6 +232,11 @@ export default async function DashboardPage() {
     ? await getGlobalRankPercentile(supabase, current.split_index)
     : null;
 
+  const nextRankTarget =
+    premium && hasActivities && hasIndexHistory
+      ? await getNextRankTarget(supabase, current.split_index)
+      : null;
+
   const projection8Weeks = hasIndexHistory
     ? computeSplitIndexProjection(
         (fullHistory ?? []) as SplitIndexSnapshot[],
@@ -308,14 +311,14 @@ export default async function DashboardPage() {
     }))
     .reverse();
 
-  const radarData: RadarAxis[] = Array.from(sportAgg, ([sport, agg]) => {
-    const avg = Math.round(agg.sum / agg.count);
-    return {
-      axis: sport.replace("_", " "),
-      endurance: avg,
-      strength: 0,
-    };
-  }).slice(0, 6);
+  // Most-recent-first per sport (scores is already ordered by created_at
+  // desc from the query above) — powers SportComparisonGrid's "latest vs
+  // your own recent average" tiles, including gym unlike the old radar.
+  const scoresBySport: Record<string, number[]> = {};
+  for (const s of scores ?? []) {
+    const key = s.sport as string;
+    (scoresBySport[key] ??= []).push(s.sport_index as number);
+  }
 
   const scoreMap = Object.fromEntries(
     (scores ?? []).map((s) => [s.activity_id as string, s.sport_index as number])
@@ -422,59 +425,68 @@ export default async function DashboardPage() {
         </PremiumTease>
       )}
 
-      <SplitBalanceGauge
-        splitIndex={hasIndexHistory ? headlineValue : null}
-        headlineLabel={headlineLabel}
-        enduranceIndex={hasIndexHistory ? displayEnduranceIndex : null}
-        strengthIndex={hasIndexHistory ? displayStrengthIndex : null}
-        weeklyTrend={weeklyTrend}
-        enduranceWeight={
-          typeof profile.split_endurance_weight === "number"
-            ? profile.split_endurance_weight
-            : 0.5
-        }
-        hasHistory={hasIndexHistory}
-        showBreakdown={premium}
-      />
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+        <EngineLabTrendCard
+          data={trendData}
+          currentEndurance={displayEnduranceIndex}
+          currentStrength={displayStrengthIndex}
+          enduranceWeight={
+            typeof profile.split_endurance_weight === "number"
+              ? profile.split_endurance_weight
+              : 0.5
+          }
+          hasHistory={hasIndexHistory}
+          className="lg:col-span-2"
+        />
 
-      {hasIndexHistory && projection8Weeks !== null && (
-        <div className="lg:max-w-md">
-          {premium ? (
-            <Card glow="accent" padding="sm">
-              <CardHeader className="mb-1">
-                <CardTitle className="text-sm">8-week projection</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="index-display text-3xl font-bold text-accent tabular-nums">
-                  {formatIndex(projection8Weeks)}
-                </p>
-                <p className="mt-1 text-xs text-muted">
-                  Linear forecast from your recent index trend
-                </p>
-              </CardContent>
-            </Card>
-          ) : (
-            <PremiumTease
-              title="8-week Split Index projection"
-              subtitle="Premium unlocks trend projections, 90-day history, and period comparisons."
-            >
-              <Card padding="sm">
-                <CardHeader className="mb-1">
+        {hasIndexHistory && projection8Weeks !== null && (
+          <div className="lg:col-span-1">
+            {premium ? (
+              <Card glow="accent" padding="lg" className="flex h-full flex-col justify-center">
+                <CardHeader className="mb-2">
                   <CardTitle className="text-sm">8-week projection</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <p className="index-display text-3xl font-bold text-accent tabular-nums">
-                    •••
+                  <p className="index-display text-4xl font-bold text-accent tabular-nums">
+                    {formatIndex(projection8Weeks)}
                   </p>
-                  <p className="mt-1 text-xs text-muted">
-                    Linear forecast from your recent index trend
+                  <p
+                    className={cn(
+                      "mt-1 text-sm font-semibold tabular-nums",
+                      projection8Weeks >= headlineValue ? "text-success" : "text-danger"
+                    )}
+                  >
+                    {formatTrend(projection8Weeks - headlineValue)} from today
+                  </p>
+                  <p className="mt-3 text-xs text-muted">
+                    Linear forecast from your recent {headlineLabel.toLowerCase()} trend
                   </p>
                 </CardContent>
               </Card>
-            </PremiumTease>
-          )}
-        </div>
-      )}
+            ) : (
+              <PremiumTease
+                title="8-week Split Index projection"
+                subtitle="Premium unlocks trend projections, 90-day history, and period comparisons."
+                className="h-full"
+              >
+                <Card padding="lg" className="flex h-full flex-col justify-center">
+                  <CardHeader className="mb-2">
+                    <CardTitle className="text-sm">8-week projection</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="index-display text-4xl font-bold text-accent tabular-nums">
+                      •••
+                    </p>
+                    <p className="mt-3 text-xs text-muted">
+                      Linear forecast from your recent index trend
+                    </p>
+                  </CardContent>
+                </Card>
+              </PremiumTease>
+            )}
+          </div>
+        )}
+      </div>
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         <GymZonePanel
@@ -499,11 +511,20 @@ export default async function DashboardPage() {
           </PremiumGate>
         </div>
         <div className="lg:col-span-4">
-          <SportBalanceRadar data={radarData} />
+          <SportComparisonGrid scoresBySport={scoresBySport} />
         </div>
 
         <div className="lg:col-span-4">
-          <WeeklyTargetCard sessions={streakMetrics.weeklySessions} />
+          {premium ? (
+            <NextRankCard target={nextRankTarget} />
+          ) : (
+            <PremiumTease
+              title="Beat the next rank"
+              subtitle="Unlock Premium to see exactly how many points separate you from the athlete ahead."
+              showPreview={false}
+              className="h-full"
+            />
+          )}
         </div>
         <div className="lg:col-span-4">
           <FocusWeekCard
@@ -520,10 +541,7 @@ export default async function DashboardPage() {
           <ActivityHeatmap days={heatmapDays} />
         </div>
         <div className="lg:col-span-4">
-          <CompositionCard
-            enduranceIndex={current.endurance_index}
-            strengthIndex={current.strength_index}
-          />
+          <WeekOverWeekCard days={heatmapDays} />
         </div>
 
         <div className="lg:col-span-4">

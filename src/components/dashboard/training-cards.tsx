@@ -2,10 +2,8 @@
 
 import { useMemo } from "react";
 import { motion, useReducedMotion } from "framer-motion";
-import { Scale } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils/cn";
-import { formatIndex } from "@/lib/utils/format";
 import type { HeatmapDay } from "@/components/dashboard/activity-heatmap";
 
 /* ── Training consistency ────────────────────────────────────────────────── */
@@ -50,12 +48,32 @@ export function ConsistencyCard({
       });
     }
 
-    const completed = buckets.slice(0, -1); // exclude in-progress week
-    const hitWeeks = completed.filter(
-      (b) => b.sessions >= TARGET_SESSIONS_PER_WEEK
-    ).length;
+    // Completed weeks with zero sessions before this athlete's first-ever
+    // activity in the lookback window aren't a consistency failure — they
+    // just predate any training history — so they're excluded from the
+    // average rather than counted as a miss (user feedback: this showed a
+    // misleading 0% for a newer account with strong *recent* consistency,
+    // since the fixed 8-week window included pre-activity weeks).
+    const firstActiveIdx = buckets.findIndex((b) => b.sessions > 0);
+    const completed = buckets
+      .slice(0, -1) // exclude in-progress week
+      .filter((_, i) => firstActiveIdx === -1 || i >= firstActiveIdx);
+    // Partial credit per week (e.g. 2/4 sessions = 50%) rather than an
+    // all-or-nothing "did this week hit target" binary — the binary version
+    // could never read above 0% for an athlete consistently doing 2-3
+    // sessions against a 4-session target, even though that's genuinely
+    // solid training.
     const consistencyPct =
-      completed.length > 0 ? Math.round((hitWeeks / completed.length) * 100) : 0;
+      completed.length > 0
+        ? Math.round(
+            (completed.reduce(
+              (sum, b) => sum + Math.min(1, b.sessions / TARGET_SESSIONS_PER_WEEK),
+              0
+            ) /
+              completed.length) *
+              100
+          )
+        : 0;
 
     return { buckets, consistencyPct };
   }, [days, weeks]);
@@ -134,87 +152,3 @@ export function ConsistencyCard({
   );
 }
 
-/* ── Strength vs endurance composition ──────────────────────────────────── */
-
-interface CompositionCardProps {
-  enduranceIndex: number;
-  strengthIndex: number;
-  className?: string;
-}
-
-export function CompositionCard({
-  enduranceIndex,
-  strengthIndex,
-  className,
-}: CompositionCardProps) {
-  const reducedMotion = useReducedMotion();
-  const total = enduranceIndex + strengthIndex;
-  const endurancePct = total > 0 ? (enduranceIndex / total) * 100 : 50;
-  const tilt = endurancePct - 50;
-  const verdict =
-    Math.abs(tilt) < 2.5
-      ? "Perfectly hybrid"
-      : tilt > 0
-        ? "Endurance-leaning"
-        : "Strength-leaning";
-
-  return (
-    <Card className={cn("flex h-full flex-col", className)}>
-      <CardHeader className="mb-3">
-        <div className="flex items-center justify-between">
-          <CardTitle>50 / 50 Composition</CardTitle>
-          <Scale className="h-3.5 w-3.5 text-muted" />
-        </div>
-      </CardHeader>
-      <CardContent className="flex min-h-0 flex-1 flex-col justify-center gap-4">
-        <div className="flex items-baseline justify-between">
-          <div>
-            <p className="text-[10px] uppercase tracking-[0.15em] text-endurance">
-              Endurance
-            </p>
-            <p className="text-2xl font-bold tabular-nums text-endurance">
-              {formatIndex(enduranceIndex)}
-            </p>
-          </div>
-          <div className="text-right">
-            <p className="text-[10px] uppercase tracking-[0.15em] text-strength">
-              Strength
-            </p>
-            <p className="text-2xl font-bold tabular-nums text-strength">
-              {formatIndex(strengthIndex)}
-            </p>
-          </div>
-        </div>
-
-        {/* split gauge */}
-        <div className="relative">
-          <div className="flex h-3 overflow-hidden rounded-full bg-white/5">
-            <motion.div
-              initial={reducedMotion ? { width: `${endurancePct}%` } : { width: "50%" }}
-              animate={{ width: `${endurancePct}%` }}
-              transition={{ duration: 1.1, ease: [0.22, 1, 0.36, 1], delay: 0.4 }}
-              className="h-full rounded-l-full bg-gradient-to-r from-endurance/70 to-endurance"
-            />
-            <motion.div
-              initial={
-                reducedMotion ? { width: `${100 - endurancePct}%` } : { width: "50%" }
-              }
-              animate={{ width: `${100 - endurancePct}%` }}
-              transition={{ duration: 1.1, ease: [0.22, 1, 0.36, 1], delay: 0.4 }}
-              className="h-full rounded-r-full bg-gradient-to-l from-strength/70 to-strength"
-            />
-          </div>
-          {/* center marker for the ideal 50/50 */}
-          <div className="pointer-events-none absolute inset-y-[-4px] left-1/2 w-px -translate-x-1/2 bg-white/40" />
-        </div>
-
-        <div className="flex items-center justify-between">
-          <p className="text-xs text-muted">{verdict}</p>
-          <p className="text-xs tabular-nums text-muted">
-            {Math.round(endurancePct)} / {Math.round(100 - endurancePct)}
-          </p>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
