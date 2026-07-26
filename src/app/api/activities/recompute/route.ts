@@ -22,6 +22,7 @@ import {
   effectiveStoredPrediction,
   sessionCountsAsQuality,
   personalEasyEffortBaselineEF,
+  personalEasyEffortBaselinePaceSeconds,
   personalRecentHardEffortBenchmarkSeconds,
   terrainAdjustedSessionEF,
 } from "@/lib/scoring/cardio-predictions";
@@ -185,6 +186,7 @@ export async function POST() {
     let storedPredictionForScoring: number | null = null;
     let easyEffortBaselineEF: number | null = null;
     let recentHardEffortBenchmarkSeconds: number | null = null;
+    let easyEffortBaselinePaceSeconds: number | null = null;
     let sessionBenchmarkEquivalentSeconds: number | null = null;
     if (isEnduranceSport(activity.sport)) {
       benchmarkSport = mapSportToBenchmarkSport(activity.sport);
@@ -215,6 +217,11 @@ export async function POST() {
         personalizedK ?? undefined
       );
       recentHardEffortBenchmarkSeconds = personalRecentHardEffortBenchmarkSeconds(
+        benchmarkSport,
+        windowSessions,
+        personalizedK ?? undefined
+      );
+      easyEffortBaselinePaceSeconds = personalEasyEffortBaselinePaceSeconds(
         benchmarkSport,
         windowSessions,
         personalizedK ?? undefined
@@ -291,6 +298,7 @@ export async function POST() {
           storedPredictionSeconds: storedPredictionForScoring,
           easyEffortBaselineEF,
           recentHardEffortBenchmarkSeconds,
+          easyEffortBaselinePaceSeconds,
           intervalReps: activity.interval_reps,
           intervalWorkDistanceMeters: activity.interval_work_distance_meters,
           intervalWorkSeconds: activity.interval_work_seconds,

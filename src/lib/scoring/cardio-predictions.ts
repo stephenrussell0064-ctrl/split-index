@@ -589,3 +589,173 @@ export function personalEasyEffortBaselineEF(
   if (efs.length < MIN_EASY_BASELINE_SAMPLES) return null;
   return efs.reduce((a, b) => a + b, 0) / efs.length;
 }
+
+/**
+ * This athlete's own baseline PACE (Riegel-projected seconds at the sport's
+ * benchmark distance) from the same easy/recovery/long same-sport session
+ * pool as personalEasyEffortBaselineEF — deliberately HR-independent, unlike
+ * the EF baseline, so it can serve as a corroborating signal for the HR-zone
+ * below-base guard below (a signal derived from HR can't be used to sanity
+ * -check HR itself). Same mistag-guard filtering, same minimum-sample gate.
+ */
+export function personalEasyEffortBaselinePaceSeconds(
+  sport: BenchmarkSport,
+  sessions: EasyEffortSession[],
+  riegelK: number = RIEGEL_K
+): number | null {
+  if (sport === "walk") return null;
+  const hardEffortReferenceSeconds = personalRecentHardEffortBenchmarkSeconds(sport, sessions, riegelK);
+  const benchmarkDistance = BENCHMARK_DISTANCE_METERS[sport];
+
+  const projected = sessions
+    .filter((s) => !!s.sessionType && RELATIVE_EFFORT_SESSION_TYPES.has(s.sessionType))
+    .filter((s) => s.distanceMeters > 0 && s.durationSeconds > 0)
+    .map((s) => riegelEquivalentSeconds(s.durationSeconds, s.distanceMeters, benchmarkDistance, riegelK))
+    .filter((t) => {
+      if (hardEffortReferenceSeconds == null) return true;
+      return t >= hardEffortReferenceSeconds * MISTAG_GUARD_MAX_RATIO;
+    });
+  if (projected.length < MIN_EASY_BASELINE_SAMPLES) return null;
+  return projected.reduce((a, b) => a + b, 0) / projected.length;
+}
+
+// ---------------------------------------------------------------------------
+// Personalized heart-rate-zone scoring for easy/recovery/long sessions (user
+// feedback): rather than judging these sessions purely against a population
+// or EF-baseline reference, an athlete who knows their own resting/max HR
+// gets a fully personalized zone model. base = maxHR - restingHR is this
+// athlete's own aerobic "floor"; each 20% of restingHR above that marks a
+// new zone (5 zones span base..maxHR); target sits 30% of restingHR above
+// base (the low end of zone 2 — "textbook" easy effort). Landing at target
+// already earns a flat credit floor (user feedback: target "means they have
+// executed a really good easy run" — it shouldn't score as merely neutral
+// pace-based scoring), and the reward still ramps incrementally on top of
+// that floor: further below target (down to base) earns progressively
+// more; above target, a progressively larger penalty erodes the floor
+// (drifting toward max HR on a session tagged "easy" is a sign of
+// overexertion or mistagging). Applies to run/row/swim/cycle/ski;
+// walking is deliberately excluded (typically done at low, non-zone-driven
+// intensity — see computeHrZoneProfile). REPLACES (not stacks with) the
+// EF-baseline mechanism above when this athlete has both resting/max HR on
+// file — see scoreCardioActivity in cardio-activity.ts for the gating.
+// ---------------------------------------------------------------------------
+
+export interface HrZoneProfile {
+  /** maxHR - restingHR — this athlete's own aerobic floor. */
+  base: number;
+  /** base + 30% of restingHR — "textbook" easy effort; at or below this gets the full max credit. */
+  target: number;
+  /** 20% of restingHR — width of each of the 5 zones spanning base..maxHR. */
+  zoneWidth: number;
+  restingHR: number;
+  maxHR: number;
+}
+
+/** Sports the personalized HR-zone model applies to — walking is typically done at low, non-zone-driven intensity (user feedback), so it keeps the population/EF-baseline path instead. */
+export const HR_ZONE_SPORTS = new Set<BenchmarkSport>(["run", "row", "swim", "cycle", "ski"]);
+
+export function computeHrZoneProfile(
+  restingHR: number | null | undefined,
+  maxHR: number | null | undefined
+): HrZoneProfile | null {
+  if (!restingHR || restingHR <= 0 || !maxHR || maxHR <= restingHR) return null;
+  const base = maxHR - restingHR;
+  return {
+    base,
+    target: base + 0.3 * restingHR,
+    zoneWidth: 0.2 * restingHR,
+    restingHR,
+    maxHR,
+  };
+}
+
+/**
+ * Flat credit floor earned simply by landing at or below target (user
+ * feedback: "the target heart rate means that they have executed a really
+ * good easy run" — a well-executed easy effort at target shouldn't merely
+ * read as neutral pace-based scoring; it should score as the genuinely good
+ * session it is). Applied before the ramp below, so target isn't the
+ * "0% adjustment" point anymore — it's the ramp's own zero, sitting on top
+ * of this floor.
+ */
+export const HR_ZONE_TARGET_CREDIT = 0.11;
+
+/** Ramp amplitude on top of/below HR_ZONE_TARGET_CREDIT — the incremental reward for going easier than target, or the incremental penalty for drifting above it (user-confirmed magnitude). */
+export const HR_ZONE_MAX_ADJUSTMENT = 0.10;
+
+/**
+ * Below-base guard (user feedback: "I have just rowed what felt like zone
+ * 2-3 and it averaged at 156 which would be less than my base value,
+ * therefore it needs to be able to account for this potential error"). Any
+ * avgHR at/under base reads as "maximum possible ease" by the raw zone math,
+ * but HR readings drift day to day and modality to modality (rowing often
+ * reads lower than running for the same felt effort) — a boundary-hugging
+ * reading shouldn't blindly earn the full bonus reserved for a genuinely
+ * ultra-easy effort. This cross-checks the HR signal against an independent
+ * one (this session's own pace vs this athlete's HR-independent pace
+ * baseline, see personalEasyEffortBaselinePaceSeconds): a real ultra-easy
+ * effort should also be slower than normal, not just low-HR. Corroboration
+ * ramps 0->1 over PACE_CORROBORATION_MARGIN of slowdown past the baseline
+ * pace, floored at MIN_TRUST rather than dropping to zero outright (a HR
+ * reading alone is still weak evidence, not proof of error).
+ */
+const PACE_CORROBORATION_MARGIN = 0.05;
+const PACE_CORROBORATION_MIN_TRUST = 0.2;
+
+export function belowBasePaceCorroboration(
+  rawProjectedSeconds: number,
+  baselinePaceSeconds: number | null | undefined
+): number {
+  if (!baselinePaceSeconds || baselinePaceSeconds <= 0) return 1; // no baseline yet — trust the HR reading outright
+  const slowerFraction = (rawProjectedSeconds - baselinePaceSeconds) / baselinePaceSeconds;
+  return clamp(slowerFraction / PACE_CORROBORATION_MARGIN, PACE_CORROBORATION_MIN_TRUST, 1);
+}
+
+export interface HrZoneAdjustmentResult {
+  /** Signed: positive shrinks the equivalent time (credit), negative grows it (penalty). */
+  adjustmentFraction: number;
+  zone: "credit" | "neutral" | "penalty";
+  belowBaseGuardApplied: boolean;
+}
+
+/**
+ * HR_ZONE_TARGET_CREDIT is the floor, earned just for landing at or below
+ * target; the incremental ramp still applies on top of it in both
+ * directions (user feedback: "it should still have the incremental bonus
+ * below the target heart rate... below target should score higher and
+ * above target should score lower, by +-10%" — the credit/penalty stays
+ * relative and graduated across the whole HR range, it's just anchored to a
+ * buffed floor instead of plain neutral). Below target, the ramp adds up to
+ * HR_ZONE_MAX_ADJUSTMENT more credit by base (further below doesn't add
+ * more). Above target, the ramp subtracts up to HR_ZONE_MAX_ADJUSTMENT by
+ * maxHR. `paceCorroboration` (0-1, only consulted when avgHR <= base — see
+ * belowBasePaceCorroboration) scales back the RAMP's portion (not the
+ * target floor itself, which isn't an anomalous reading) when this
+ * session's pace doesn't corroborate an at/below-base HR reading. Omit to
+ * trust the HR reading outright (e.g. no pace baseline exists yet).
+ */
+export function hrZoneEffortAdjustment(
+  avgHR: number,
+  profile: HrZoneProfile,
+  paceCorroboration?: number | null
+): HrZoneAdjustmentResult {
+  const { base, target, maxHR } = profile;
+  if (avgHR <= target) {
+    const rampFraction = clamp((target - avgHR) / (target - base), 0, 1);
+    const belowBase = avgHR <= base;
+    const corroboration = belowBase ? (paceCorroboration ?? 1) : 1;
+    const adjustmentFraction = HR_ZONE_TARGET_CREDIT + rampFraction * corroboration * HR_ZONE_MAX_ADJUSTMENT;
+    return {
+      adjustmentFraction,
+      zone: "credit",
+      belowBaseGuardApplied: belowBase && corroboration < 1,
+    };
+  }
+  const penaltyRampFraction = clamp((avgHR - target) / (maxHR - target), 0, 1);
+  const adjustmentFraction = HR_ZONE_TARGET_CREDIT - penaltyRampFraction * HR_ZONE_MAX_ADJUSTMENT;
+  return {
+    adjustmentFraction,
+    zone: adjustmentFraction > 0 ? "credit" : adjustmentFraction < 0 ? "penalty" : "neutral",
+    belowBaseGuardApplied: false,
+  };
+}

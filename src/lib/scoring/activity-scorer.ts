@@ -51,6 +51,8 @@ export interface ActivityScoreContext {
   easyEffortBaselineEF?: number | null;
   /** Mistag guard reference — see personalRecentHardEffortBenchmarkSeconds in cardio-predictions.ts. */
   recentHardEffortBenchmarkSeconds?: number | null;
+  /** This athlete's own HR-independent baseline pace from recent easy/recovery/long same-sport sessions — corroborates the HR-zone below-base guard, see personalEasyEffortBaselinePaceSeconds in cardio-predictions.ts. */
+  easyEffortBaselinePaceSeconds?: number | null;
   /** Structured interval/fartlek work-piece data — optional; see cardio/interval-scoring.ts. */
   intervalReps?: number | null;
   intervalWorkDistanceMeters?: number | null;
@@ -267,6 +269,7 @@ function scoreEnduranceSession(
     storedPredictionSeconds: input.storedPredictionSeconds,
     easyEffortBaselineEF: input.easyEffortBaselineEF,
     recentHardEffortBenchmarkSeconds: input.recentHardEffortBenchmarkSeconds,
+    easyEffortBaselinePaceSeconds: input.easyEffortBaselinePaceSeconds,
     intervalReps: input.intervalReps,
     intervalWorkDistanceMeters: input.intervalWorkDistanceMeters,
     intervalWorkSeconds: input.intervalWorkSeconds,

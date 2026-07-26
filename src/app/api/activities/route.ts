@@ -17,6 +17,7 @@ import {
   effectiveStoredPrediction,
   sessionCountsAsQuality,
   personalEasyEffortBaselineEF,
+  personalEasyEffortBaselinePaceSeconds,
   personalRecentHardEffortBenchmarkSeconds,
   terrainAdjustedSessionEF,
 } from "@/lib/scoring/cardio-predictions";
@@ -311,6 +312,7 @@ export async function POST(request: Request) {
   // personalEasyEffortBaselineEF in cardio-predictions.ts.
   let easyEffortBaselineEF: number | null = null;
   let recentHardEffortBenchmarkSeconds: number | null = null;
+  let easyEffortBaselinePaceSeconds: number | null = null;
   // This session's own benchmark-equivalent — kept for personal-record
   // detection below (personal-records.ts), separate from the multi-session
   // blended prediction.
@@ -357,6 +359,11 @@ export async function POST(request: Request) {
       personalizedK ?? undefined
     );
     recentHardEffortBenchmarkSeconds = personalRecentHardEffortBenchmarkSeconds(
+      benchmarkSport,
+      windowSessions,
+      personalizedK ?? undefined
+    );
+    easyEffortBaselinePaceSeconds = personalEasyEffortBaselinePaceSeconds(
       benchmarkSport,
       windowSessions,
       personalizedK ?? undefined
@@ -443,6 +450,7 @@ export async function POST(request: Request) {
           storedPredictionSeconds: storedPredictionForScoring,
           easyEffortBaselineEF,
           recentHardEffortBenchmarkSeconds,
+          easyEffortBaselinePaceSeconds,
           intervalReps: body.interval_reps,
           intervalWorkDistanceMeters: body.interval_work_distance_meters,
           intervalWorkSeconds: body.interval_work_seconds,

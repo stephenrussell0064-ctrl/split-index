@@ -22,6 +22,7 @@ import {
   effectiveStoredPrediction,
   sessionCountsAsQuality,
   personalEasyEffortBaselineEF,
+  personalEasyEffortBaselinePaceSeconds,
   personalRecentHardEffortBenchmarkSeconds,
   terrainAdjustedSessionEF,
 } from "@/lib/scoring/cardio-predictions";
@@ -183,6 +184,7 @@ async function scoreAndPersist(
   let tier1Prediction: ReturnType<typeof computeTier1Prediction> = null;
   let easyEffortBaselineEF: number | null = null;
   let recentHardEffortBenchmarkSeconds: number | null = null;
+  let easyEffortBaselinePaceSeconds: number | null = null;
   let sessionBenchmarkEquivalentSeconds: number | null = null;
   if (isEnduranceSport(body.sport)) {
     benchmarkSport = mapSportToBenchmarkSport(body.sport);
@@ -228,6 +230,11 @@ async function scoreAndPersist(
       personalizedK ?? undefined
     );
     recentHardEffortBenchmarkSeconds = personalRecentHardEffortBenchmarkSeconds(
+      benchmarkSport,
+      windowSessions,
+      personalizedK ?? undefined
+    );
+    easyEffortBaselinePaceSeconds = personalEasyEffortBaselinePaceSeconds(
       benchmarkSport,
       windowSessions,
       personalizedK ?? undefined
@@ -316,6 +323,7 @@ async function scoreAndPersist(
       storedPredictionSeconds: storedPredictionForScoring,
       easyEffortBaselineEF,
       recentHardEffortBenchmarkSeconds,
+      easyEffortBaselinePaceSeconds,
       intervalReps: body.interval_reps,
       intervalWorkDistanceMeters: body.interval_work_distance_meters,
       intervalWorkSeconds: body.interval_work_seconds,

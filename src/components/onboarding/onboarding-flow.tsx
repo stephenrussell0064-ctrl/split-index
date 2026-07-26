@@ -45,6 +45,7 @@ const LIMITS = {
   height_cm: { min: 100, max: 250 },
   weight_kg: { min: 30, max: 300 },
   max_hr: { min: 100, max: 230 },
+  resting_hr: { min: 30, max: 120 },
   training_history_years: { min: 0, max: 80 },
 };
 
@@ -82,6 +83,7 @@ export function OnboardingFlow() {
     height_cm: "",
     weight_kg: "",
     max_hr: "",
+    resting_hr: "",
     experience: "" as ExperienceLevel | "",
     training_history_years: "",
     goals: [] as TrainingGoal[],
@@ -207,6 +209,8 @@ export function OnboardingFlow() {
         next.weight_kg = `Enter a weight between ${LIMITS.weight_kg.min} and ${LIMITS.weight_kg.max} kg`;
       if (form.max_hr !== "" && !inRange(form.max_hr, LIMITS.max_hr))
         next.max_hr = `Max heart rate must be between ${LIMITS.max_hr.min} and ${LIMITS.max_hr.max}`;
+      if (form.resting_hr !== "" && !inRange(form.resting_hr, LIMITS.resting_hr))
+        next.resting_hr = `Resting heart rate must be between ${LIMITS.resting_hr.min} and ${LIMITS.resting_hr.max}`;
     }
 
     if (current === 2) {
@@ -329,6 +333,7 @@ export function OnboardingFlow() {
       height_cm: Number(form.height_cm),
       weight_kg: Number(form.weight_kg),
       max_hr: Number(form.max_hr) || (derivedAge ? Math.round(220 - derivedAge) : null),
+      resting_hr: Number(form.resting_hr) || null,
       experience: form.experience as ExperienceLevel,
       training_history_years: Number(form.training_history_years) || 0,
       goals: form.goals,
@@ -593,6 +598,16 @@ export function OnboardingFlow() {
                     error={errors.max_hr}
                     onChange={(e) => update("max_hr", e.target.value)}
                     hint={`Optional — suggested: ${derivedAge ? Math.round(220 - derivedAge) : "220 - age"}`}
+                  />
+                  <Input
+                    label="Resting Heart Rate"
+                    type="number"
+                    min={LIMITS.resting_hr.min}
+                    max={LIMITS.resting_hr.max}
+                    value={form.resting_hr}
+                    error={errors.resting_hr}
+                    onChange={(e) => update("resting_hr", e.target.value)}
+                    hint="Optional — with max HR above, unlocks personalized heart-rate-zone scoring on easy/recovery/long sessions"
                   />
                 </>
               )}

@@ -27,6 +27,8 @@ interface ScoreActivityInput {
   easyEffortBaselineEF?: number | null;
   /** Mistag guard reference — see personalRecentHardEffortBenchmarkSeconds in cardio-predictions.ts. */
   recentHardEffortBenchmarkSeconds?: number | null;
+  /** This athlete's own HR-independent baseline pace from recent easy/recovery/long same-sport sessions — corroborates the HR-zone below-base guard, see personalEasyEffortBaselinePaceSeconds in cardio-predictions.ts. */
+  easyEffortBaselinePaceSeconds?: number | null;
   intervalReps?: number | null;
   intervalWorkDistanceMeters?: number | null;
   intervalWorkSeconds?: number | null;
@@ -137,6 +139,7 @@ export function scoreActivity(
       storedPredictionSeconds: input.storedPredictionSeconds,
       easyEffortBaselineEF: input.easyEffortBaselineEF,
       recentHardEffortBenchmarkSeconds: input.recentHardEffortBenchmarkSeconds,
+      easyEffortBaselinePaceSeconds: input.easyEffortBaselinePaceSeconds,
       intervalReps: input.intervalReps,
       intervalWorkDistanceMeters: input.intervalWorkDistanceMeters,
       intervalWorkSeconds: input.intervalWorkSeconds,

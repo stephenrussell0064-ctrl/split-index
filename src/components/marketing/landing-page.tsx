@@ -39,6 +39,9 @@ export function LandingPage() {
       <footer className="border-t border-white/[0.06] px-6 py-10 text-center text-xs text-white/55 md:px-[6vw]">
         <p>© {new Date().getFullYear()} Split Index · Strength & endurance scoring</p>
         <p className="mt-2 flex justify-center gap-4">
+          <Link href="/how-scoring-works" className="hover:text-white/80">
+            How scoring works
+          </Link>
           <Link href="/privacy" className="hover:text-white/80">
             Privacy
           </Link>

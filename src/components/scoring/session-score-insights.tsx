@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { PremiumTease } from "@/components/premium/premium-tease";
 import { cn } from "@/lib/utils/cn";
 import { formatIndex, formatWeight } from "@/lib/utils/format";
@@ -39,12 +40,33 @@ function RelativeEffortNote({ sessionType, flags }: { sessionType?: SessionType 
   let detail = "Scored relative to your own recent easy-effort history, not absolute pace.";
   if (flags?.includes("easy-tag-pace-mismatch")) {
     detail = "This pace looked more like a hard effort, so it was scored on the standard scale instead.";
+  } else if (flags?.includes("hr-zone-scored")) {
+    if (flags.includes("hr-zone-below-base-guard")) {
+      detail = "Your heart rate read very low for this effort — a partial credit applied since your pace didn't fully back it up.";
+    } else if (flags.includes("hr-zone-penalty")) {
+      detail = "Your heart rate drifted well above your target zone for an easy effort — credit reduced.";
+    } else if (flags.includes("hr-zone-above-target")) {
+      detail = "Your heart rate sat above your target zone — still credited, but less than a right-on-target effort.";
+    } else if (flags.includes("hr-zone-at-or-below-target")) {
+      detail = "Right at or below your target heart rate — a well-executed easy effort, credited in full.";
+    } else {
+      detail = "Scored on your personalized heart-rate zones.";
+    }
   } else if (flags?.includes("relative-effort-scored")) {
     detail = "This session beat your recent easy-effort average — pace credit applied.";
+  } else if (flags?.includes("hr-zone-assumed-target")) {
+    detail = "No heart-rate data for this session — scored as if executed right at your target heart-rate zone. This is an assumption, not a measurement, so it may not be accurate.";
+  } else if (flags?.includes("hr-zone-data-missing")) {
+    detail = "Add your resting & max heart rate in Settings to unlock more accurate, personalized effort scoring.";
   }
 
   return (
-    <p className="mt-2 text-xs text-muted italic">{detail}</p>
+    <p className="mt-2 text-xs text-muted italic">
+      {detail}{" "}
+      <Link href="/how-scoring-works" className="not-italic underline hover:text-foreground">
+        How is this scored?
+      </Link>
+    </p>
   );
 }
 
@@ -88,7 +110,17 @@ function CardioPremiumStats({
   sessionType?: SessionType | null;
   sport?: SportType | null;
 }) {
-  const hiddenFlags = new Set(["relative-effort-scored", "easy-tag-pace-mismatch"]);
+  const hiddenFlags = new Set([
+    "relative-effort-scored",
+    "easy-tag-pace-mismatch",
+    "hr-zone-scored",
+    "hr-zone-at-or-below-target",
+    "hr-zone-above-target",
+    "hr-zone-penalty",
+    "hr-zone-below-base-guard",
+    "hr-zone-data-missing",
+    "hr-zone-assumed-target",
+  ]);
   const remainingFlags = result.flags.filter((f) => !hiddenFlags.has(f));
   const predictionVerb = (sport && PREDICTION_VERB[sport]) || "run";
 

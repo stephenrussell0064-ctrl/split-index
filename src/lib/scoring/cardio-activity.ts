@@ -63,6 +63,11 @@ import {
   elevationDifficultyFraction,
   temperatureDifficultyFraction,
   terrainHeatEffortCreditMultiplier,
+  HR_ZONE_SPORTS,
+  HR_ZONE_TARGET_CREDIT,
+  computeHrZoneProfile,
+  hrZoneEffortAdjustment,
+  belowBasePaceCorroboration,
 } from "@/lib/scoring/cardio-predictions";
 import {
   intervalEquivalentPaceSecPerKm,
@@ -108,6 +113,8 @@ export interface CardioInput {
   easyEffortBaselineEF?: number | null;
   /** Mistag guard: this athlete's fastest recent race/tempo/threshold/interval/fartlek pace, Riegel-projected to the benchmark distance (see personalRecentHardEffortBenchmarkSeconds in cardio-predictions.ts). When an easy/recovery/long-tagged session's own pace is suspiciously close to this reference, it's more likely a hard effort logged with the wrong tag than a genuine easy run, so relative-effort scoring is skipped in favor of standard scoring. Omit/null to skip the guard (e.g. no hard-effort history yet). */
   recentHardEffortBenchmarkSeconds?: number | null;
+  /** This athlete's own HR-independent baseline pace (Riegel-projected seconds at the benchmark distance) from recent easy/recovery/long same-sport sessions — see personalEasyEffortBaselinePaceSeconds. Used only to corroborate an at/below-base HR-zone reading (see hrZoneEffortAdjustment's below-base guard); omit/null to trust a below-base reading outright. */
+  easyEffortBaselinePaceSeconds?: number | null;
 }
 
 export interface CardioResult {
@@ -453,7 +460,46 @@ export function scoreCardioActivity(input: CardioInput): CardioResult {
       rawProjectedSeconds < input.recentHardEffortBenchmarkSeconds * MISTAG_GUARD_MAX_RATIO;
     if (looksMistagged) flags.push('easy-tag-pace-mismatch');
 
+    // Personalized HR-zone scoring (user feedback) takes priority over the
+    // EF-baseline mechanism below when this athlete has both resting/max HR
+    // on file and this session has an avg HR reading, for the sports the
+    // zone model applies to (walking excluded — see HR_ZONE_SPORTS). It
+    // REPLACES, not stacks with, the EF-baseline bonus: symmetric credit
+    // below target, penalty above, both anchored to this athlete's own
+    // heart-rate reserve rather than a population or same-athlete-pace
+    // reference.
+    const zoneEligibleSport = HR_ZONE_SPORTS.has(input.benchmarkSport);
+    const hrZoneProfile = zoneEligibleSport ? computeHrZoneProfile(input.restingHR, input.maxHR) : null;
+    const hasHrZoneData = !!hrZoneProfile && !!input.avgHR;
+    if (isRelativeEffortSession && zoneEligibleSport && !hasHrZoneData) {
+      // Flags the caller/UI that this session's score would be more
+      // accurate with resting/max HR + an avg HR reading, even though it
+      // still gets a valid score via the EF-baseline/population fallback.
+      flags.push('hr-zone-data-missing');
+    }
+
     if (
+      isRelativeEffortSession &&
+      !looksMistagged &&
+      hrZoneProfile &&
+      input.avgHR &&
+      rawProjectedSeconds !== null
+    ) {
+      const belowBase = input.avgHR <= hrZoneProfile.base;
+      const paceCorroboration = belowBase
+        ? belowBasePaceCorroboration(rawProjectedSeconds, input.easyEffortBaselinePaceSeconds)
+        : undefined;
+      const zoneResult = hrZoneEffortAdjustment(input.avgHR, hrZoneProfile, paceCorroboration);
+      sessionEquivalentSeconds = rawProjectedSeconds * (1 - zoneResult.adjustmentFraction);
+      flags.push('hr-zone-scored');
+      // Flagged on HR position relative to target, not the resulting credit/
+      // penalty sign — every at/below-target session now clears the flat
+      // credit floor (HR_ZONE_TARGET_CREDIT), so "credit" alone can't tell
+      // the UI whether this session was actually above or below target.
+      flags.push(input.avgHR <= hrZoneProfile.target ? 'hr-zone-at-or-below-target' : 'hr-zone-above-target');
+      if (zoneResult.zone === 'penalty') flags.push('hr-zone-penalty');
+      if (zoneResult.belowBaseGuardApplied) flags.push('hr-zone-below-base-guard');
+    } else if (
       isRelativeEffortSession &&
       !looksMistagged &&
       input.easyEffortBaselineEF &&
@@ -469,6 +515,27 @@ export function scoreCardioActivity(input: CardioInput): CardioResult {
       if (sessionEquivalentSeconds < populationEquivalentSeconds) {
         flags.push('relative-effort-scored');
       }
+    } else if (
+      isRelativeEffortSession &&
+      zoneEligibleSport &&
+      !looksMistagged &&
+      !input.avgHR &&
+      rawProjectedSeconds !== null
+    ) {
+      // No avg HR reading at all for this session (the branches above both
+      // require one). User feedback: rather than judge a genuinely HR-blind
+      // easy/recovery/long session on the same absolute pace table as a race
+      // effort, assume it was executed at target — a well-paced,
+      // well-controlled easy run — and credit it accordingly. This is a
+      // guess, not a measurement, so it's clearly flagged for the UI
+      // (hr-zone-assumed-target) rather than presented as confidently as an
+      // actual HR-zone-scored session. A session that DOES have an avg HR
+      // reading but simply lacks a baseline/zones to compare it against
+      // falls through to the plain population branch below instead — real
+      // (if uncalibrated) HR data shouldn't be silently overridden by a
+      // guess.
+      sessionEquivalentSeconds = rawProjectedSeconds * (1 - HR_ZONE_TARGET_CREDIT);
+      flags.push('hr-zone-assumed-target');
     } else {
       sessionEquivalentSeconds = populationEquivalentSeconds;
     }
