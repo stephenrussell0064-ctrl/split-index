@@ -6,7 +6,12 @@ const SPORT_KEYWORDS: { keywords: string[]; sport: SportType }[] = [
   { keywords: ["walk", "walking", "hike"], sport: "walking" },
   { keywords: ["swim", "swimming"], sport: "swimming" },
   { keywords: ["row", "rowing", "erg"], sport: "rowing" },
-  { keywords: ["bike", "cycling", "cycle", "ride", "bicycle"], sport: "indoor_cycling" },
+  // Checked before the generic bike/cycle entry below — explicit
+  // trainer/indoor signals win; anything else generically bike-shaped
+  // defaults to outdoor_cycling, the more common case for a GPX/TCX/CSV
+  // file export (Slice F: sport-coverage gaps).
+  { keywords: ["trainer", "zwift", "peloton", "indoor bike", "indoor cycling", "spin"], sport: "indoor_cycling" },
+  { keywords: ["bike", "cycling", "cycle", "ride", "bicycle"], sport: "outdoor_cycling" },
   { keywords: ["ski", "skierg"], sport: "ski_erg" },
   { keywords: ["gym", "weight", "strength", "lift"], sport: "gym" },
 ];
@@ -55,7 +60,7 @@ function parseCsvLine(line: string): string[] {
   return fields;
 }
 
-function detectSport(raw: string | undefined): SportType {
+export function detectSport(raw: string | undefined): SportType {
   const value = (raw ?? "").toLowerCase();
   for (const { keywords, sport } of SPORT_KEYWORDS) {
     if (keywords.some((k) => value.includes(k))) return sport;

@@ -30,6 +30,7 @@ const PREDICTION_VERB: Record<SportType, string> = {
   ski_erg: "ski",
   bike_erg: "ride",
   indoor_cycling: "ride",
+  outdoor_cycling: "ride",
   gym: "lift",
 };
 

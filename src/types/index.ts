@@ -5,6 +5,7 @@ export type SportType =
   | "rowing"
   | "bike_erg"
   | "indoor_cycling"
+  | "outdoor_cycling"
   | "ski_erg"
   | "gym";
 

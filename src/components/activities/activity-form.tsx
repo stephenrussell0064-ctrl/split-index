@@ -226,7 +226,9 @@ export function ActivityForm({
       const power = parseNum(formState.avgPower);
       const bw = parseNum(formState.bodyweight) ?? profileWeightKg;
       if (
-        (currentSport === "bike_erg" || currentSport === "indoor_cycling") &&
+        (currentSport === "bike_erg" ||
+          currentSport === "indoor_cycling" ||
+          currentSport === "outdoor_cycling") &&
         power &&
         bw
       ) {

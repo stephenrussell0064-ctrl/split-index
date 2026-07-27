@@ -57,6 +57,7 @@ export function mapSportToBenchmarkSport(sport: SportType): BenchmarkSport {
       return "row";
     case "bike_erg":
     case "indoor_cycling":
+    case "outdoor_cycling":
       return "cycle";
     case "ski_erg":
       return "ski";

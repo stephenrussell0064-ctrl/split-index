@@ -12,6 +12,7 @@ const SPORT_TYPES: SportType[] = [
   "rowing",
   "bike_erg",
   "indoor_cycling",
+  "outdoor_cycling",
   "ski_erg",
   "gym",
 ];

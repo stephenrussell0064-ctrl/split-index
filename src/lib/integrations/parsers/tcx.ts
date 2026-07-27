@@ -30,9 +30,15 @@ function parseIsoDuration(iso: string | undefined): number | null {
   return h * 3600 + min * 60 + Math.round(s);
 }
 
-function detectSport(sportRaw: string | undefined): ExternalActivity["sport"] {
+export function detectSport(sportRaw: string | undefined): ExternalActivity["sport"] {
   const s = (sportRaw ?? "").toLowerCase();
-  if (s.includes("bike") || s.includes("cycl")) return "indoor_cycling";
+  if (s.includes("bike") || s.includes("cycl")) {
+    // Explicit trainer/indoor signal wins; a bare "Biking"/"Cycling" sport
+    // field (the common case for a TCX export) defaults to outdoor_cycling
+    // (Slice F: sport-coverage gaps).
+    const isIndoor = s.includes("trainer") || s.includes("indoor") || s.includes("zwift") || s.includes("spin");
+    return isIndoor ? "indoor_cycling" : "outdoor_cycling";
+  }
   if (s.includes("swim")) return "swimming";
   if (s.includes("row")) return "rowing";
   if (s.includes("walk")) return "walking";

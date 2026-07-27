@@ -12,8 +12,15 @@ describe("STRAVA_TYPE_TO_SPORT", () => {
     expect(STRAVA_TYPE_TO_SPORT.Walk).toBe("walking");
     expect(STRAVA_TYPE_TO_SPORT.Swim).toBe("swimming");
     expect(STRAVA_TYPE_TO_SPORT.Rowing).toBe("rowing");
-    expect(STRAVA_TYPE_TO_SPORT.Ride).toBe("indoor_cycling");
+    expect(STRAVA_TYPE_TO_SPORT.Ride).toBe("outdoor_cycling");
     expect(STRAVA_TYPE_TO_SPORT.WeightTraining).toBe("gym");
+  });
+
+  it("keeps VirtualRide on indoor_cycling (simulated/stationary) while genuinely outdoor ride types map to outdoor_cycling", () => {
+    expect(STRAVA_TYPE_TO_SPORT.VirtualRide).toBe("indoor_cycling");
+    expect(STRAVA_TYPE_TO_SPORT.GravelRide).toBe("outdoor_cycling");
+    expect(STRAVA_TYPE_TO_SPORT.MountainBikeRide).toBe("outdoor_cycling");
+    expect(STRAVA_TYPE_TO_SPORT.EBikeRide).toBe("outdoor_cycling");
   });
 
   it("leaves genuinely unsupported Strava types unmapped rather than guessing", () => {

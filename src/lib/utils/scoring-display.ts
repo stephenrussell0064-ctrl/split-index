@@ -132,6 +132,8 @@ export function sportMetricLabel(sport: SportType): string {
     case "bike_erg":
     case "indoor_cycling":
       return "power";
+    case "outdoor_cycling":
+      return "speed";
     case "gym":
       return "relative strength";
     default:

@@ -1,0 +1,14 @@
+-- Outdoor cycling (Slice F, item 1): road/gravel/MTB riding previously had
+-- no clean home — it had to be misfiled under "Indoor Cycling", which
+-- assumes a stationary-trainer context (no elevation, distance in raw
+-- erg-style meters rather than km). This is a distinct, first-class sport
+-- rather than a fork of an erg sport, matching how bike_erg and
+-- indoor_cycling are already both first-class despite sharing one scoring
+-- bucket downstream.
+--
+-- `sport_type` is a Postgres enum (see 001_initial_schema.sql); adding a
+-- value must run outside a transaction block, so this statement should be
+-- run on its own if your migration runner wraps files in a transaction
+-- (same rule 015_interval_fartlek_scoring.sql's `session_type` addition
+-- documented).
+ALTER TYPE sport_type ADD VALUE IF NOT EXISTS 'outdoor_cycling';

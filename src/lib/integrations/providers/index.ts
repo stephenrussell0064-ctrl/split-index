@@ -96,9 +96,10 @@ const STRAVA_API_BASE = "https://www.strava.com/api/v3";
  * anything unmapped (Strava has ~30 types: yoga, surfing, alpine skiing...)
  * is skipped rather than forced into the wrong bucket, since a wrong sport
  * assignment corrupts scoring worse than just not importing that session.
- * Outdoor "Ride" types land on indoor_cycling — the closest existing bucket,
- * since this app doesn't have a dedicated outdoor-cycling SportType yet
- * (see the product review's Slice F: sport-coverage gaps).
+ * Genuinely outdoor ride types (Ride/GravelRide/MountainBikeRide/EBikeRide)
+ * map to outdoor_cycling (Slice F: sport-coverage gaps) — VirtualRide stays
+ * on indoor_cycling since it's simulated/stationary (Zwift etc.), matching
+ * the trainer-context assumption indoor_cycling's scoring already makes.
  */
 export const STRAVA_TYPE_TO_SPORT: Partial<Record<string, SportType>> = {
   Run: "running",
@@ -109,11 +110,11 @@ export const STRAVA_TYPE_TO_SPORT: Partial<Record<string, SportType>> = {
   Swim: "swimming",
   Rowing: "rowing",
   VirtualRow: "rowing",
-  Ride: "indoor_cycling",
+  Ride: "outdoor_cycling",
   VirtualRide: "indoor_cycling",
-  GravelRide: "indoor_cycling",
-  MountainBikeRide: "indoor_cycling",
-  EBikeRide: "indoor_cycling",
+  GravelRide: "outdoor_cycling",
+  MountainBikeRide: "outdoor_cycling",
+  EBikeRide: "outdoor_cycling",
   WeightTraining: "gym",
   Workout: "gym",
   Crossfit: "gym",

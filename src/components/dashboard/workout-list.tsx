@@ -35,6 +35,7 @@ const sportMeta: Record<string, { icon: typeof Zap; color: string; bg: string }>
   rowing: { icon: Ship, color: "text-endurance", bg: "bg-endurance/10" },
   bike_erg: { icon: Bike, color: "text-endurance", bg: "bg-endurance/10" },
   indoor_cycling: { icon: Bike, color: "text-endurance", bg: "bg-endurance/10" },
+  outdoor_cycling: { icon: Bike, color: "text-endurance", bg: "bg-endurance/10" },
   ski_erg: { icon: Snowflake, color: "text-endurance", bg: "bg-endurance/10" },
   gym: { icon: Dumbbell, color: "text-strength", bg: "bg-strength/10" },
 };

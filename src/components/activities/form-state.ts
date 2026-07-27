@@ -95,6 +95,18 @@ export const SPORT_FIELDS: Record<SportType, SportFieldConfig> = {
   ski_erg: { distance: "m", split: true, derivableDistance: true, avgHr: true, sessionType: true, rpe: true },
   bike_erg: { distance: "m", power: true, avgHr: true, sessionType: true, rpe: true },
   indoor_cycling: { power: true, avgHr: true, sessionType: true, rpe: true },
+  // Unlike indoor_cycling (stationary trainer — no distance, no elevation),
+  // outdoor riding has real distance (in km, like running/walking, not
+  // erg-style meters) and real elevation gain; power stays optional since
+  // not every outdoor rider has a power meter.
+  outdoor_cycling: {
+    distance: "km",
+    elevation: true,
+    power: true,
+    avgHr: true,
+    sessionType: true,
+    rpe: true,
+  },
   gym: {},
 };
 
@@ -474,6 +486,7 @@ const payloadSchema = z.object({
     "rowing",
     "bike_erg",
     "indoor_cycling",
+    "outdoor_cycling",
     "ski_erg",
     "gym",
   ]),

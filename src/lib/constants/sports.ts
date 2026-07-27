@@ -8,6 +8,7 @@ export const SPORT_INDEX_LABELS: Record<SportType, string> = {
   rowing: "Rowing Index",
   bike_erg: "BikeErg Index",
   indoor_cycling: "Indoor Cycling Index",
+  outdoor_cycling: "Outdoor Cycling Index",
   ski_erg: "SkiErg Index",
   gym: "Gym Strength Index",
 };
@@ -19,6 +20,7 @@ export const ENDURANCE_SPORTS: SportType[] = [
   "rowing",
   "bike_erg",
   "indoor_cycling",
+  "outdoor_cycling",
   "ski_erg",
 ];
 
@@ -34,6 +36,7 @@ export const SPORTS: {
   { id: "rowing", name: "Rowing", icon: "🚣", category: "endurance" },
   { id: "bike_erg", name: "BikeErg", icon: "🚴", category: "endurance" },
   { id: "indoor_cycling", name: "Indoor Cycling", icon: "🚴", category: "endurance" },
+  { id: "outdoor_cycling", name: "Outdoor Cycling", icon: "🚵", category: "endurance" },
   { id: "ski_erg", name: "SkiErg", icon: "⛷️", category: "endurance" },
   { id: "gym", name: "Gym", icon: "🏋️", category: "strength" },
 ];

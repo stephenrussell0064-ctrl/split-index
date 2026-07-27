@@ -522,6 +522,9 @@ function FormSummaryStrip({
       pace = deriveSplitPer500m(distance, durationSeconds);
     } else if (sport === "bike_erg") {
       pace = deriveSpeedKmh(distance, durationSeconds);
+    } else if (sport === "outdoor_cycling") {
+      // distance is in km here (unlike bike_erg's raw meters) — convert before deriveSpeedKmh, which expects meters.
+      pace = deriveSpeedKmh(distance ? distance * 1000 : null, durationSeconds);
     }
     if (pace) chips.push({ label: "Pace", value: pace });
     const power = parseNum(state.avgPower);
@@ -566,6 +569,8 @@ function titlePlaceholder(sport: SportType): string {
       return "BikeErg threshold";
     case "indoor_cycling":
       return "Trainer session";
+    case "outdoor_cycling":
+      return "Afternoon road ride";
     case "gym":
       return "Lower body strength";
   }

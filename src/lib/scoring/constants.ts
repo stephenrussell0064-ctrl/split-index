@@ -39,6 +39,7 @@ export const ENDURANCE_SPORTS: EnduranceSport[] = [
   "rowing",
   "bike_erg",
   "indoor_cycling",
+  "outdoor_cycling",
   "ski_erg",
 ];
 
@@ -106,6 +107,11 @@ export const SPORT_REFERENCE_PACE: Record<EnduranceSport, number> = {
   rowing: 260, // 2:10/500m split → 260 sec/km equiv
   bike_erg: 90,
   indoor_cycling: 90,
+  // Same reference as bike_erg/indoor_cycling — all three already collapse
+  // into one shared "cycle" benchmark bucket downstream (mapSportToBenchmarkSport
+  // in adapters.ts), so there's no existing precedent for treating outdoor
+  // riding as a different physiological demand than erg/trainer cycling.
+  outdoor_cycling: 90,
   ski_erg: 250,
 };
 
