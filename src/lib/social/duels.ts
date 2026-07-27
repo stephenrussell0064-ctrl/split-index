@@ -4,9 +4,22 @@ export interface WorkoutScoreRow {
   user_id: string;
   load_score: number | null;
   created_at: string;
+  /** Set only on cardio sessions (null for gym) — see activity-scorer.ts. */
+  endurance_component: number | null;
+  /** Set only on gym sessions (null for cardio) — see activity-scorer.ts. */
+  strength_component: number | null;
 }
 
-/** Aggregates raw workout_scores rows into each participant's duel standing for the given metric — count of sessions logged, or summed training load (AU). */
+/**
+ * Aggregates raw workout_scores rows into each participant's duel standing
+ * for the given metric: count of sessions, summed training load (AU), or
+ * best single-session endurance/strength score during the window ("speed"/
+ * "strength" — a "who's faster/stronger right now" comparison, not a
+ * cumulative one, so logging more sessions doesn't itself win it). The
+ * component columns are naturally sport-scoped already (endurance_component
+ * is null on gym rows and vice versa), so a "strength" duel with no sport
+ * filter still only ever compares gym sessions.
+ */
 export function aggregateDuelScores(
   rows: WorkoutScoreRow[],
   metric: DuelMetric,
@@ -18,7 +31,15 @@ export function aggregateDuelScores(
   };
   for (const row of rows) {
     if (!(row.user_id in totals)) continue;
-    totals[row.user_id] += metric === "load" ? Number(row.load_score ?? 0) : 1;
+    if (metric === "load") {
+      totals[row.user_id] += Number(row.load_score ?? 0);
+    } else if (metric === "sessions") {
+      totals[row.user_id] += 1;
+    } else if (metric === "speed") {
+      totals[row.user_id] = Math.max(totals[row.user_id], Number(row.endurance_component ?? 0));
+    } else if (metric === "strength") {
+      totals[row.user_id] = Math.max(totals[row.user_id], Number(row.strength_component ?? 0));
+    }
   }
   return totals;
 }

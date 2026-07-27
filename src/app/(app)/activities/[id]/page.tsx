@@ -27,6 +27,24 @@ import type { ScoreBreakdown } from "@/types";
 import { formatRiegelPrediction } from "@/lib/scoring/presentation";
 import { tier2IsCalibrating, TIER2_MIN_SAMPLES_TO_DISPLAY } from "@/lib/scoring/cardio/race-prediction";
 
+/** predicted_benchmark_after_session.sport is a BenchmarkSport bucket (run/walk/row/swim/cycle/ski, cardio-benchmarks.ts) — this label was previously hardcoded to "5K"/"run" regardless of sport, so a rowing or swimming session wrongly showed "predicted 5K, updated by this run" (user feedback). */
+const BENCHMARK_LABEL: Record<string, string> = {
+  run: "5K",
+  walk: "walking pace",
+  row: "2K",
+  swim: "400m",
+  cycle: "20K",
+  ski: "2K",
+};
+const BENCHMARK_VERB: Record<string, string> = {
+  run: "run",
+  walk: "walk",
+  row: "row",
+  swim: "swim",
+  cycle: "ride",
+  ski: "ski",
+};
+
 export default async function ActivityDetailPage({
   params,
 }: {
@@ -196,7 +214,8 @@ export default async function ActivityDetailPage({
           {zone === "cardio" && predictedBenchmarkAfterSession && (
             <div className="mt-6 border-t border-white/10 pt-6">
               <p className="micro-label mb-2 text-muted">
-                Your predicted 5K, updated by this run
+                Your predicted {BENCHMARK_LABEL[predictedBenchmarkAfterSession.sport] ?? "time"}, updated
+                by this {BENCHMARK_VERB[predictedBenchmarkAfterSession.sport] ?? "session"}
               </p>
               {tier2IsCalibrating(predictedBenchmarkAfterSession.sampleCount) ? (
                 <p className="text-sm text-muted">

@@ -15,6 +15,8 @@ import type { FriendConnection } from "@/lib/social/types";
 const METRIC_LABELS: Record<DuelMetric, string> = {
   sessions: "Most sessions logged",
   load: "Most training load (AU)",
+  speed: "Best endurance score (speed)",
+  strength: "Best strength score",
 };
 
 const DURATION_OPTIONS = [

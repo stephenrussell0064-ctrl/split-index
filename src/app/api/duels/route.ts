@@ -4,7 +4,7 @@ import { fetchDuels } from "@/lib/social/queries";
 import type { DuelMetric } from "@/lib/social/types";
 import type { SportType } from "@/types";
 
-const DUEL_METRICS: DuelMetric[] = ["sessions", "load"];
+const DUEL_METRICS: DuelMetric[] = ["sessions", "load", "speed", "strength"];
 const SPORT_TYPES: SportType[] = [
   "running",
   "walking",

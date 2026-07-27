@@ -93,7 +93,7 @@ export interface ChallengeWithProgress {
   completed: boolean;
 }
 
-export type DuelMetric = "sessions" | "load";
+export type DuelMetric = "sessions" | "load" | "speed" | "strength";
 export type DuelStatus = "pending" | "accepted" | "declined" | "cancelled";
 
 export interface DuelParticipant {

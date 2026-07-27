@@ -184,7 +184,7 @@ export async function fetchDuels(
       const windowEnd = d.end_date < today ? d.end_date : today;
       let query = supabase
         .from("workout_scores")
-        .select("user_id, load_score, created_at")
+        .select("user_id, load_score, created_at, endurance_component, strength_component")
         .in("user_id", [d.challenger_id, d.opponent_id])
         .gte("created_at", `${d.start_date}T00:00:00.000Z`)
         .lt("created_at", duelWindowEndExclusive(windowEnd));

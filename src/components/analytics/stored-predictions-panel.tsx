@@ -5,6 +5,7 @@ import { TrendingUp, TrendingDown, Minus, Target } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { PremiumTease } from "@/components/premium/premium-tease";
 import { ScoringExplainerNote } from "@/components/scoring/scoring-explainer-note";
+import { isBodyweightOnlyExercise } from "@/lib/scoring/weight-entry";
 import { cn } from "@/lib/utils/cn";
 import { formatWeight } from "@/lib/utils/format";
 import {
@@ -154,6 +155,13 @@ function PredictionsContent({
           <p className="micro-label text-muted mb-2 flex items-center gap-1.5">
             <Target className="h-3 w-3" /> Adaptive 1RM · every lift logged
           </p>
+          {strengthEstimates.some((est) => isBodyweightOnlyExercise(est.exerciseName)) && (
+            <ScoringExplainerNote className="mb-2 mt-0">
+              For bodyweight-only lifts (Pull Up, Push Up, Dip, Muscle Up), this is the added
+              weight a weighted version would need to be equally hard for one rep — not your
+              bodyweight itself.
+            </ScoringExplainerNote>
+          )}
           <ul className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
             {strengthEstimates.map((est) => (
               <li

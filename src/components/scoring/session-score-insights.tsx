@@ -2,6 +2,7 @@
 
 import { PremiumTease } from "@/components/premium/premium-tease";
 import { ScoringExplainerNote } from "@/components/scoring/scoring-explainer-note";
+import { isBodyweightOnlyExercise } from "@/lib/scoring/weight-entry";
 import { cn } from "@/lib/utils/cn";
 import { formatIndex, formatWeight } from "@/lib/utils/format";
 import {
@@ -197,6 +198,12 @@ function StrengthRow({ result, liftName }: { result: ScoreStrengthResult; liftNa
         {isBeta ? " (beta)" : ""}
       </p>
       <p className="text-xs text-gym-muted tabular-nums">{result.bodyweightRatio}× bodyweight</p>
+      {isBodyweightOnlyExercise(liftName) && (
+        <ScoringExplainerNote className="text-gym-muted">
+          Est. 1RM here is the added weight a weighted {liftName.toLowerCase()} would need to be
+          equally hard for one rep — not your bodyweight, and not a literal weight you lifted.
+        </ScoringExplainerNote>
+      )}
       {result.nextTier && (
         <p className="mt-1 text-xs text-gym-accent/80 tabular-nums">
           +{formatWeight(result.nextTier.kgNeeded)} to reach {result.nextTier.tier}
