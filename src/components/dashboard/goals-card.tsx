@@ -1,8 +1,11 @@
 "use client";
 
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { motion, useReducedMotion } from "framer-motion";
 import { Target, CalendarDays, Trophy } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils/cn";
 import { formatIndex } from "@/lib/utils/format";
 
@@ -129,8 +132,29 @@ export function GoalsCard({ goals, currentIndex, className }: GoalsCardProps) {
 }
 
 function GoalsEmptyState({ currentIndex }: { currentIndex: number }) {
+  const router = useRouter();
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   // suggest a target one clean step up from the current index
   const suggested = Math.min(999, Math.ceil((currentIndex + 25) / 25) * 25);
+
+  async function setSuggestedGoal() {
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/goals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ targetSplitIndex: suggested }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Could not set goal");
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not set goal");
+      setSaving(false);
+    }
+  }
 
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-3 py-4 text-center">
@@ -147,6 +171,10 @@ function GoalsEmptyState({ currentIndex }: { currentIndex: number }) {
           by season&apos;s end?
         </p>
       </div>
+      <Button size="sm" variant="secondary" loading={saving} onClick={setSuggestedGoal}>
+        Set this goal
+      </Button>
+      {error && <p className="text-xs text-danger">{error}</p>}
     </div>
   );
 }

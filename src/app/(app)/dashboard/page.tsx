@@ -19,6 +19,7 @@ import { FocusWeekCard } from "@/components/retention/focus-week-card";
 import { NextRankCard } from "@/components/retention/next-rank-card";
 import { EmptyDashboardHero } from "@/components/retention/empty-dashboard-hero";
 import { FriendInviteBanner } from "@/components/retention/friend-invite-banner";
+import { CompleteProfileBanner } from "@/components/retention/complete-profile-banner";
 import { ScoreDisclaimer } from "@/components/legal/score-disclaimer";
 import { calculateTrend } from "@/lib/scoring/service";
 import { localDateKeyInTz, resolveTimezone } from "@/lib/utils/timezone";
@@ -31,7 +32,7 @@ import { computeIndexes } from "@/lib/scoring/index-engine";
 import type { IndexResult } from "@/lib/scoring/index-engine";
 import { computeStreakMetrics } from "@/lib/retention/streak-utils";
 import { getGlobalRankPercentile, getNextRankTarget, seedRetentionNotifications } from "@/lib/retention/rank";
-import { isPremiumUser } from "@/lib/retention/trial";
+import { isPremiumUser, hasSoftTrialAccess } from "@/lib/retention/trial";
 import { ACTIVATION_EVENT_SESSION_COUNT, PRICING } from "@/lib/pricing/config";
 import { computeSplitIndexProjection } from "@/lib/premium/projection";
 import { gateAiFeedback } from "@/lib/scoring/gates";
@@ -96,10 +97,14 @@ export default async function DashboardPage() {
 
   const userTimezone = resolveTimezone(profile.timezone);
 
-  const premium = isPremiumUser(
-    profile.subscription_tier,
-    profile.subscription_status
-  );
+  // Folds in a card-less signup trial (Slice D) so a brand-new user sees
+  // the full premium dashboard by default, without having to notice or
+  // activate anything in Settings — every gate below this line that reads
+  // `premium` extends automatically for the trial window, then reverts to
+  // the real free-tier view once it lapses (unless they've actually paid).
+  const premium =
+    isPremiumUser(profile.subscription_tier, profile.subscription_status) ||
+    hasSoftTrialAccess(profile.created_at, profile.subscription_tier, profile.subscription_status);
 
   const heatmapCutoff = isoDaysAgo(HEATMAP_DAYS);
   const trendCutoff = isoDaysAgo(premium ? 90 : 7);
@@ -196,6 +201,7 @@ export default async function DashboardPage() {
   ]);
 
   const hasActivities = (recentActivities?.length ?? 0) > 0;
+  const needsExtendedProfile = hasActivities && profile.experience == null;
   const hasIndexHistory = !!latestIndex;
   const sessionCount = allActivityDates?.length ?? 0;
   const showActivationPaywall =
@@ -570,6 +576,7 @@ export default async function DashboardPage() {
         </div>
       </div>
 
+      <CompleteProfileBanner needsProfile={needsExtendedProfile} />
       <FriendInviteBanner />
 
       <ScoreDisclaimer className="mt-2" />

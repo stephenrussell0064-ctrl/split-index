@@ -3,14 +3,22 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Check, User, Ruler, Dumbbell } from "lucide-react";
+import { Check, User, Ruler, Dumbbell, Compass } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Select, Textarea } from "@/components/ui/input";
-import { EXPERIENCE_LEVELS, GENDERS } from "@/lib/constants/sports";
+import { EXPERIENCE_LEVELS, GENDERS, TRAINING_GOALS } from "@/lib/constants/sports";
 import { createClient } from "@/lib/supabase/client";
 import { ageFromDateOfBirth, maxDobForMinAge, minDobForMaxAge } from "@/lib/utils/age";
-import type { ExperienceLevel, Gender, Profile } from "@/types";
+import { cn } from "@/lib/utils/cn";
+import type { ExperienceLevel, Gender, PrimaryMotivation, Profile, TrainingGoal } from "@/types";
+
+const MOTIVATIONS: Array<{ value: PrimaryMotivation; label: string }> = [
+  { value: "leaderboard", label: "Climb the leaderboard" },
+  { value: "beat_pr", label: "Beat my PR" },
+  { value: "predict_race", label: "Predict my next race" },
+  { value: "just_track", label: "Just track my training" },
+];
 
 interface ProfileFormProps {
   profile: Profile;
@@ -36,9 +44,18 @@ export function ProfileForm({ profile }: ProfileFormProps) {
     experience: profile.experience ?? "",
     training_history_years: profile.training_history_years?.toString() ?? "",
   });
+  const [goals, setGoals] = useState<TrainingGoal[]>(profile.goals ?? []);
+  const [primaryMotivation, setPrimaryMotivation] = useState<PrimaryMotivation | "">(
+    profile.primary_motivation ?? ""
+  );
 
   const update = (key: keyof typeof form, value: string) => {
     setForm((prev) => ({ ...prev, [key]: value }));
+    setSaved(false);
+  };
+
+  const toggleGoal = (goal: TrainingGoal) => {
+    setGoals((prev) => (prev.includes(goal) ? prev.filter((g) => g !== goal) : [...prev, goal]));
     setSaved(false);
   };
 
@@ -66,6 +83,8 @@ export function ProfileForm({ profile }: ProfileFormProps) {
         training_history_years: form.training_history_years
           ? Number(form.training_history_years)
           : null,
+        goals,
+        primary_motivation: primaryMotivation || null,
       })
       .eq("user_id", profile.user_id);
 
@@ -217,6 +236,57 @@ export function ProfileForm({ profile }: ProfileFormProps) {
               value={form.training_history_years}
               onChange={(e) => update("training_history_years", e.target.value)}
             />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Compass className="h-4 w-4 text-accent" />
+            <CardTitle>Goals &amp; Motivation</CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div>
+            <p className="text-sm font-medium text-muted mb-2">Training Goals</p>
+            <div className="flex flex-wrap gap-2">
+              {TRAINING_GOALS.map((g) => (
+                <button
+                  key={g.value}
+                  type="button"
+                  onClick={() => toggleGoal(g.value as TrainingGoal)}
+                  className={cn(
+                    "px-3 py-1.5 rounded-full text-xs font-medium transition-colors",
+                    goals.includes(g.value as TrainingGoal)
+                      ? "bg-accent text-accent-foreground"
+                      : "glass text-muted hover:text-foreground"
+                  )}
+                >
+                  {g.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <p className="text-sm font-medium text-muted mb-2">What brings you here?</p>
+            <div className="flex flex-wrap gap-2">
+              {MOTIVATIONS.map((m) => (
+                <button
+                  key={m.value}
+                  type="button"
+                  onClick={() => setPrimaryMotivation(m.value)}
+                  className={cn(
+                    "px-3 py-1.5 rounded-full text-xs font-medium transition-colors",
+                    primaryMotivation === m.value
+                      ? "bg-accent text-accent-foreground"
+                      : "glass text-muted hover:text-foreground"
+                  )}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
           </div>
         </CardContent>
       </Card>

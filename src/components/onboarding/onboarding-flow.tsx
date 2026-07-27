@@ -3,42 +3,31 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
-import { Sparkles, Target, TrendingUp, Dumbbell, Activity, Check, X, Loader2, Camera } from "lucide-react";
+import { Sparkles, Dumbbell, Activity, Check, X, Loader2, Camera } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
-import {
-  EXPERIENCE_LEVELS,
-  TRAINING_GOALS,
-  GENDERS,
-  SPORTS,
-} from "@/lib/constants/sports";
+import { GENDERS, SPORTS } from "@/lib/constants/sports";
 import { PRESET_AVATARS } from "@/lib/constants/avatars";
 import { createClient } from "@/lib/supabase/client";
 import { supabaseErrorMessage } from "@/lib/supabase/errors";
-import { formatIndex } from "@/lib/utils/format";
 import { validateUsernameFormat } from "@/lib/utils/username";
 import { ageFromDateOfBirth, maxDobForMinAge, minDobForMaxAge } from "@/lib/utils/age";
 import { cn } from "@/lib/utils/cn";
 import { ScoreRevealSequence } from "@/components/onboarding/score-reveal";
 import type { PostgrestError } from "@supabase/supabase-js";
-import type { Gender, ExperienceLevel, TrainingGoal, SportType, PrimaryMotivation } from "@/types";
-
-const MOTIVATIONS: Array<{ value: PrimaryMotivation; label: string }> = [
-  { value: "leaderboard", label: "Climb the leaderboard" },
-  { value: "beat_pr", label: "Beat my PR" },
-  { value: "predict_race", label: "Predict my next race" },
-  { value: "just_track", label: "Just track my training" },
-];
+import type { Gender, SportType } from "@/types";
 
 const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
 const ACCEPTED_AVATAR_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
 
 type UsernameStatus = "idle" | "checking" | "available" | "taken" | "invalid";
 
-const STEPS = ["Basics", "Body", "Training", "Sports", "Your Goal", "Ready"];
-
-const DEFAULT_GOAL_TARGET = 650;
+// Only what's needed to log a first session — experience, goals, and a
+// target index are collected later via the deferred "complete your
+// profile" prompt (Slice D: these come after the first score is seen, not
+// before it, so a casual user doesn't bounce at onboarding).
+const STEPS = ["Basics", "Body", "Sports", "Ready"];
 
 const LIMITS = {
   age: { min: 13, max: 120 },
@@ -46,7 +35,6 @@ const LIMITS = {
   weight_kg: { min: 30, max: 300 },
   max_hr: { min: 100, max: 230 },
   resting_hr: { min: 30, max: 120 },
-  training_history_years: { min: 0, max: 80 },
 };
 
 function inRange(value: string, { min, max }: { min: number; max: number }) {
@@ -61,8 +49,6 @@ export function OnboardingFlow() {
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitError, setSubmitError] = useState("");
-  const [targetIndex, setTargetIndex] = useState(DEFAULT_GOAL_TARGET);
-  const [primaryMotivation, setPrimaryMotivation] = useState<PrimaryMotivation | "">("");
   const [showReveal, setShowReveal] = useState(false);
   const [username, setUsername] = useState("");
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
@@ -84,9 +70,6 @@ export function OnboardingFlow() {
     weight_kg: "",
     max_hr: "",
     resting_hr: "",
-    experience: "" as ExperienceLevel | "",
-    training_history_years: "",
-    goals: [] as TrainingGoal[],
     preferred_sports: [] as SportType[],
   });
 
@@ -213,25 +196,8 @@ export function OnboardingFlow() {
         next.resting_hr = `Resting heart rate must be between ${LIMITS.resting_hr.min} and ${LIMITS.resting_hr.max}`;
     }
 
-    if (current === 2) {
-      if (!form.experience) next.experience = "Select an experience level";
-      if (
-        form.training_history_years !== "" &&
-        !inRange(form.training_history_years, LIMITS.training_history_years)
-      )
-        next.training_history_years = "Enter a value between 0 and 80";
-      if (form.goals.length === 0) next.goals = "Pick at least one goal";
-    }
-
-    if (current === 3 && form.preferred_sports.length === 0) {
+    if (current === 2 && form.preferred_sports.length === 0) {
       next.preferred_sports = "Pick at least one sport";
-    }
-
-    if (current === 4) {
-      if (targetIndex < 350 || targetIndex > 999) {
-        next.target = "Target must be between 350 and 999";
-      }
-      if (!primaryMotivation) next.primaryMotivation = "Pick what brings you here";
     }
 
     setErrors(next);
@@ -240,15 +206,6 @@ export function OnboardingFlow() {
 
   const handleContinue = () => {
     if (validateStep(step)) setStep(step + 1);
-  };
-
-  const toggleGoal = (goal: TrainingGoal) => {
-    update(
-      "goals",
-      form.goals.includes(goal)
-        ? form.goals.filter((g) => g !== goal)
-        : [...form.goals, goal]
-    );
   };
 
   const toggleSport = (sport: SportType) => {
@@ -275,7 +232,7 @@ export function OnboardingFlow() {
       return;
     }
 
-    if (!form.gender || !form.experience) {
+    if (!form.gender) {
       setSubmitError("Please go back and complete all required fields.");
       setLoading(false);
       return;
@@ -334,11 +291,7 @@ export function OnboardingFlow() {
       weight_kg: Number(form.weight_kg),
       max_hr: Number(form.max_hr) || (derivedAge ? Math.round(220 - derivedAge) : null),
       resting_hr: Number(form.resting_hr) || null,
-      experience: form.experience as ExperienceLevel,
-      training_history_years: Number(form.training_history_years) || 0,
-      goals: form.goals,
       preferred_sports: form.preferred_sports,
-      primary_motivation: primaryMotivation || null,
       onboarding_completed: true,
     };
 
@@ -385,24 +338,6 @@ export function OnboardingFlow() {
     if (metricsError) {
       setSubmitError(
         supabaseErrorMessage("Could not save your weight. Please try again.", metricsError)
-      );
-      setLoading(false);
-      return;
-    }
-
-    const deadline = new Date();
-    deadline.setMonth(deadline.getMonth() + 3);
-
-    const { error: goalError } = await supabase.from("goals").insert({
-      user_id: user.id,
-      title: `Reach Split Index ${formatIndex(targetIndex)}`,
-      target_split_index: targetIndex,
-      deadline: deadline.toISOString().slice(0, 10),
-    });
-
-    if (goalError) {
-      setSubmitError(
-        supabaseErrorMessage("Could not save your goal. Please try again.", goalError)
       );
       setLoading(false);
       return;
@@ -459,7 +394,7 @@ export function OnboardingFlow() {
           exit={{ opacity: 0, x: -24, filter: "blur(4px)" }}
           transition={{ type: "spring", stiffness: 400, damping: 30 }}
         >
-          {step < 4 && (
+          {step < 3 && (
             <Card className="space-y-4 mb-6">
               {step === 0 && (
                 <>
@@ -613,50 +548,6 @@ export function OnboardingFlow() {
               )}
 
               {step === 2 && (
-                <>
-                  <Select
-                    label="Experience Level"
-                    options={[{ value: "", label: "Select…" }, ...EXPERIENCE_LEVELS]}
-                    value={form.experience}
-                    error={errors.experience}
-                    onChange={(e) => update("experience", e.target.value)}
-                  />
-                  <Input
-                    label="Years Training"
-                    type="number"
-                    step={0.5}
-                    min={LIMITS.training_history_years.min}
-                    max={LIMITS.training_history_years.max}
-                    value={form.training_history_years}
-                    error={errors.training_history_years}
-                    onChange={(e) => update("training_history_years", e.target.value)}
-                  />
-                  <div>
-                    <p className="text-sm font-medium text-muted mb-2">Goals</p>
-                    <div className="flex flex-wrap gap-2">
-                      {TRAINING_GOALS.map((g) => (
-                        <button
-                          key={g.value}
-                          type="button"
-                          onClick={() => toggleGoal(g.value as TrainingGoal)}
-                          className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                            form.goals.includes(g.value as TrainingGoal)
-                              ? "bg-accent text-accent-foreground"
-                              : "glass text-muted hover:text-foreground"
-                          }`}
-                        >
-                          {g.label}
-                        </button>
-                      ))}
-                    </div>
-                    {errors.goals && (
-                      <p className="text-xs text-danger mt-2">{errors.goals}</p>
-                    )}
-                  </div>
-                </>
-              )}
-
-              {step === 3 && (
                 <div>
                   <p className="text-sm font-medium text-muted mb-3">
                     Preferred Sports
@@ -690,7 +581,7 @@ export function OnboardingFlow() {
             </Card>
           )}
 
-          {step === 4 && (
+          {step === 3 && (
             <div className="space-y-6 mb-6">
               <Card className="glass-strong holographic-border text-center py-10 px-6 overflow-hidden relative">
                 <div
@@ -726,70 +617,22 @@ export function OnboardingFlow() {
                 </div>
               </Card>
 
-              <Card className="space-y-4">
-                <div className="flex items-center gap-2">
-                  <Target className="h-4 w-4 text-accent" />
-                  <p className="text-sm font-semibold">Set your first goal</p>
-                </div>
-                <Input
-                  label="Target Split Index"
-                  type="number"
-                  min={350}
-                  max={999}
-                  value={String(targetIndex)}
-                  error={errors.target}
-                  onChange={(e) => setTargetIndex(Number(e.target.value))}
-                  hint="Aspirational target — your composite index builds from logged workouts"
-                />
-              </Card>
-
-              <Card className="space-y-3">
-                <p className="text-sm font-semibold">What&apos;s your main goal?</p>
-                <div className="flex flex-wrap gap-2">
-                  {MOTIVATIONS.map((m) => (
-                    <button
-                      key={m.value}
-                      type="button"
-                      onClick={() => setPrimaryMotivation(m.value)}
-                      className={cn(
-                        "px-3 py-1.5 rounded-full text-xs font-medium transition-colors",
-                        primaryMotivation === m.value
-                          ? "bg-accent text-accent-foreground"
-                          : "glass text-muted hover:text-foreground"
-                      )}
-                    >
-                      {m.label}
-                    </button>
-                  ))}
-                </div>
-                {errors.primaryMotivation && (
-                  <p className="text-xs text-danger">{errors.primaryMotivation}</p>
-                )}
+              <Card className="glass-strong text-center py-8 px-6">
+                <motion.div
+                  initial={{ scale: 0.8, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  transition={{ type: "spring", bounce: 0.4 }}
+                  className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-success/15 border border-success/30"
+                >
+                  <Sparkles className="h-7 w-7 text-success" />
+                </motion.div>
+                <h2 className="headline-tight text-xl font-bold">You&apos;re set</h2>
+                <p className="mt-2 text-sm text-muted max-w-sm mx-auto">
+                  Log your first workout to unlock your sport-specific index — goals
+                  and experience level can wait until after you&apos;ve seen your score.
+                </p>
               </Card>
             </div>
-          )}
-
-          {step === 5 && (
-            <Card className="glass-strong text-center py-12 px-6 mb-6">
-              <motion.div
-                initial={{ scale: 0.8, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                transition={{ type: "spring", bounce: 0.4 }}
-                className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-success/15 border border-success/30"
-              >
-                <Sparkles className="h-8 w-8 text-success" />
-              </motion.div>
-              <h2 className="headline-tight text-2xl font-bold">You&apos;re set</h2>
-              <p className="mt-2 text-sm text-muted max-w-sm mx-auto">
-                Profile locked in · Goal {formatIndex(targetIndex)}. Log your first
-                workout to unlock your sport-specific index and start building your
-                hybrid score.
-              </p>
-              <div className="mt-6 flex items-center justify-center gap-2 text-xs text-muted">
-                <TrendingUp className="h-4 w-4 text-accent" />
-                Scores update after every session
-              </div>
-            </Card>
           )}
 
           {submitError && (
@@ -797,12 +640,12 @@ export function OnboardingFlow() {
           )}
 
           <div className="flex gap-3">
-            {step > 0 && step < 5 && (
+            {step > 0 && step < 3 && (
               <Button variant="secondary" onClick={() => setStep(step - 1)}>
                 Back
               </Button>
             )}
-            {step < 5 ? (
+            {step < 3 ? (
               <Button className="flex-1" onClick={handleContinue}>
                 Continue
               </Button>

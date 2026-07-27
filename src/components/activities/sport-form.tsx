@@ -195,10 +195,15 @@ export function SportForm({
           per-set via RPE inside each exercise row. Rendering this for gym
           previously showed an empty "Effort" header with no control inside
           it, since both fields.sessionType and fields.rpe are unset for
-          gym (SPORT_FIELDS.gym === {}). */}
+          gym (SPORT_FIELDS.gym === {}).
+
+          Collapsed by default, like HR/Advanced/Notes below — session type
+          already defaults to "easy" and every field here is optional, so a
+          first-time casual logger sees a genuine distance + duration form
+          (Slice D: "distance, time, done — with everything else optional"),
+          not a session-type classifier they feel obligated to fill in. */}
       {!isGym && (
-        <section className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-5 sm:p-6 space-y-5">
-          <SectionLabel>Effort</SectionLabel>
+        <ExpandableSection title="Effort & session type" hint="Defaults to Easy — optional" tone="cardio">
           {fields.sessionType && (
             <Field label="Session type">
               <PillGroup
@@ -220,7 +225,7 @@ export function SportForm({
           {fields.sessionType && state.sessionType === "fartlek" && (
             <FartlekSubForm state={state} errors={errors} onUpdate={onUpdate} />
           )}
-        </section>
+        </ExpandableSection>
       )}
 
       {/* Progressive: HR & RPE */}
