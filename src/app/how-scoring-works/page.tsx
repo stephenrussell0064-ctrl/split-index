@@ -1,15 +1,84 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { BrandMark } from "@/components/brand/brand-mark";
+import { getAppUrl } from "@/lib/app-url";
+
+const PAGE_TITLE = "How Scoring Works";
+const PAGE_DESCRIPTION =
+  "How Split Index scores easy/recovery/long sessions via personalized heart-rate zones, strength via DOTS/IPF GL, race predictions via a personalized Riegel exponent, and injury risk via ACWR — not generic population formulas.";
 
 export const metadata: Metadata = {
-  title: "How Scoring Works",
-  description: "How Split Index scores easy/recovery/long sessions via personalized heart-rate zones, strength via DOTS/IPF GL, race predictions via a personalized Riegel exponent, and injury risk via ACWR.",
+  title: PAGE_TITLE,
+  description: PAGE_DESCRIPTION,
+  keywords: [
+    "Riegel formula",
+    "race time prediction",
+    "personalized heart rate zones",
+    "DOTS strength score",
+    "IPF GL",
+    "ACWR injury risk",
+    "acute chronic workload ratio",
+    "VDOT",
+    "training load",
+  ],
+  alternates: {
+    canonical: "/how-scoring-works",
+  },
+  openGraph: {
+    title: `${PAGE_TITLE} — Split Index`,
+    description: PAGE_DESCRIPTION,
+    type: "article",
+    url: "/how-scoring-works",
+    images: [{ url: "/splitindex-logo.png", width: 960, height: 240, alt: "Split Index" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: `${PAGE_TITLE} — Split Index`,
+    description: PAGE_DESCRIPTION,
+    images: ["/splitindex-logo.png"],
+  },
 };
 
+const TOC = [
+  { id: "generic-vs-personalized", label: "Why generic predictions fall short" },
+  { id: "easy-runs-scored-differently", label: "Why easy runs are scored differently" },
+  { id: "personalized-hr-zones", label: "Your personalized heart-rate zones" },
+  { id: "credit-and-penalty", label: "Credit and penalty" },
+  { id: "noisy-readings", label: "Guarding against noisy readings" },
+  { id: "without-hr-data", label: "Without heart-rate data" },
+  { id: "dots-gl", label: "Strength Index: DOTS and IPF GL" },
+  { id: "race-predictions", label: "Race predictions" },
+  { id: "injury-risk", label: "Injury risk (ACWR)" },
+] as const;
+
 export default function HowScoringWorksPage() {
+  const appUrl = getAppUrl();
+  const articleJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    headline: PAGE_TITLE,
+    description: PAGE_DESCRIPTION,
+    url: `${appUrl}/how-scoring-works`,
+    publisher: {
+      "@type": "Organization",
+      name: "Split Index",
+      url: appUrl,
+      logo: `${appUrl}/splitindex-icon.png`,
+    },
+    about: [
+      "Riegel race time prediction",
+      "Personalized heart-rate-zone training",
+      "DOTS and IPF GL strength scoring",
+      "Acute:Chronic Workload Ratio injury risk",
+    ],
+  };
+
   return (
     <div className="min-h-screen bg-[#050508] text-foreground">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(articleJsonLd) }}
+      />
       <header className="border-b border-white/[0.06] glass-strong">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-6 py-4">
           <BrandMark variant="compact" href="/" iconSize={30} wordmarkSize="sm" />
@@ -24,7 +93,7 @@ export default function HowScoringWorksPage() {
 
       <main className="mx-auto max-w-3xl px-6 py-12">
         <article className="glass-strong rounded-2xl border border-white/[0.08] p-8 md:p-10">
-          <header className="mb-10 border-b border-white/[0.06] pb-8">
+          <header className="mb-8 border-b border-white/[0.06] pb-8">
             <h1 className="text-3xl font-bold tracking-tight">How Scoring Works</h1>
             <p className="mt-2 text-sm text-muted">
               The methodology behind every number Split Index shows you — heart-rate-zone scoring,
@@ -32,8 +101,45 @@ export default function HowScoringWorksPage() {
             </p>
           </header>
 
+          <nav aria-label="Table of contents" className="mb-10 rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+            <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-muted/70">
+              On this page
+            </p>
+            <ul className="grid gap-1.5 text-xs sm:grid-cols-2">
+              {TOC.map((item) => (
+                <li key={item.id}>
+                  <a href={`#${item.id}`} className="text-muted transition-colors hover:text-foreground">
+                    {item.label}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </nav>
+
           <div className="prose-invert space-y-8 text-sm leading-relaxed text-muted">
-            <section>
+            <section id="generic-vs-personalized">
+              <h2 className="text-lg font-semibold text-foreground">Why generic predictions fall short</h2>
+              <p className="mt-3">
+                Most race-time calculators and fitness trackers predict your times with a single,
+                fixed formula applied identically to every athlete — the same population-average
+                exponent whether you&apos;re a sprinter-built 5K runner or an ultra-endurance
+                specialist, and the same &quot;easy pace&quot; credit whether your heart rate that day
+                was textbook-controlled or drifting toward your max. That&apos;s a reasonable default
+                with zero data on you — but it stops being the best available estimate the moment
+                real evidence about <em>your own</em> physiology exists.
+              </p>
+              <p className="mt-3">
+                Split Index starts from the same published, standard formulas everyone else does —
+                Riegel for race projections, DOTS/IPF GL for strength, ACWR for training load — but
+                personalizes every one of them to your own logged history as soon as there&apos;s
+                enough evidence to trust it, and is explicit about exactly when it&apos;s still
+                falling back to a population default versus using your own data. The rest of this
+                page is that methodology in full, not marketing copy — every constant and threshold
+                named below is the real one the engine runs.
+              </p>
+            </section>
+
+            <section id="easy-runs-scored-differently">
               <h2 className="text-lg font-semibold text-foreground">Why easy runs are scored differently</h2>
               <p className="mt-3">
                 A race, tempo, or interval session is meant to test your absolute pace — so it&apos;s
@@ -45,7 +151,7 @@ export default function HowScoringWorksPage() {
               </p>
             </section>
 
-            <section>
+            <section id="personalized-hr-zones">
               <h2 className="text-lg font-semibold text-foreground">Your personalized heart-rate zones</h2>
               <p className="mt-3">
                 If you provide your <strong>resting heart rate</strong> and <strong>max heart rate</strong> (in
@@ -78,7 +184,7 @@ export default function HowScoringWorksPage() {
               </ul>
             </section>
 
-            <section>
+            <section id="credit-and-penalty">
               <h2 className="text-lg font-semibold text-foreground">Credit and penalty</h2>
               <p className="mt-3">
                 Landing right at your target heart rate means you&apos;ve executed a genuinely good easy
@@ -115,7 +221,7 @@ export default function HowScoringWorksPage() {
               </p>
             </section>
 
-            <section>
+            <section id="noisy-readings">
               <h2 className="text-lg font-semibold text-foreground">Guarding against noisy readings</h2>
               <p className="mt-3">
                 Heart-rate monitors aren&apos;t perfect, and different activities can read differently for
@@ -128,7 +234,7 @@ export default function HowScoringWorksPage() {
               </p>
             </section>
 
-            <section>
+            <section id="without-hr-data">
               <h2 className="text-lg font-semibold text-foreground">Without heart-rate data</h2>
               <p className="mt-3">
                 If a session has an average HR reading but you haven&apos;t set up personalized zones yet,
@@ -234,6 +340,24 @@ export default function HowScoringWorksPage() {
                 relative risk against your own history, not an absolute probability of injury.
               </p>
             </section>
+          </div>
+
+          <div className="mt-12 rounded-2xl border border-accent/20 bg-accent/[0.04] p-6 text-center sm:p-8">
+            <p className="text-base font-semibold text-foreground">
+              Want your own numbers scored this way?
+            </p>
+            <p className="mx-auto mt-2 max-w-md text-sm text-muted">
+              If you&apos;re a runner or rower who&apos;s ever looked at a generic race-time
+              calculator and thought &quot;that&apos;s not really how <em>my</em> pace holds up over
+              distance&quot; — this is built for exactly that. Log a few sessions and Split Index
+              starts fitting the methodology above to your own data.
+            </p>
+            <Link
+              href="/signup"
+              className="mt-5 inline-flex items-center justify-center rounded-xl bg-accent px-6 py-2.5 text-sm font-semibold text-accent-foreground transition-colors hover:bg-accent/90"
+            >
+              Start free
+            </Link>
           </div>
         </article>
       </main>

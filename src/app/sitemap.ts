@@ -10,6 +10,10 @@ export default function sitemap(): MetadataRoute.Sitemap {
     priority: number;
   }> = [
     { path: "", changeFrequency: "weekly", priority: 1 },
+    // The methodology page is the product's real content/SEO asset (Slice
+    // E) — genuine, defensible rigor almost nobody outside the codebase
+    // knows exists otherwise. Previously missing from the sitemap entirely.
+    { path: "/how-scoring-works", changeFrequency: "monthly", priority: 0.8 },
     { path: "/login", changeFrequency: "yearly", priority: 0.3 },
     { path: "/signup", changeFrequency: "yearly", priority: 0.5 },
     { path: "/terms", changeFrequency: "yearly", priority: 0.2 },
