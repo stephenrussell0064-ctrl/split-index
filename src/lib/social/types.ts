@@ -93,6 +93,35 @@ export interface ChallengeWithProgress {
   completed: boolean;
 }
 
+export type DuelMetric = "sessions" | "load";
+export type DuelStatus = "pending" | "accepted" | "declined" | "cancelled";
+
+export interface DuelParticipant {
+  userId: string;
+  username: string | null;
+  displayName: string | null;
+  avatarUrl: string | null;
+  /** Live-computed standing for the duel window — sessions logged, or total load (AU). 0 until the duel is accepted and underway. */
+  score: number;
+}
+
+export interface DuelWithStandings {
+  id: string;
+  metric: DuelMetric;
+  sport: SportType | null;
+  startDate: string;
+  endDate: string;
+  status: DuelStatus;
+  /** Whether the viewing user sent this invite (vs. received it). */
+  isChallenger: boolean;
+  challenger: DuelParticipant;
+  opponent: DuelParticipant;
+  /** True once end_date has passed. */
+  ended: boolean;
+  /** Leading/winning user once accepted and standings differ; null while tied, pending, or declined/cancelled. */
+  leaderId: string | null;
+}
+
 export interface AchievementBadge {
   id: string;
   slug: string;

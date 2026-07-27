@@ -49,6 +49,10 @@ export async function DELETE() {
   // Friends where this user is the friend_id (reverse direction).
   await admin.from("friends").delete().eq("friend_id", user.id);
 
+  // Duels have no user_id column — either party can be challenger or opponent.
+  await admin.from("duels").delete().eq("challenger_id", user.id);
+  await admin.from("duels").delete().eq("opponent_id", user.id);
+
   const { error: authError } = await admin.auth.admin.deleteUser(user.id);
   if (authError) {
     return NextResponse.json({ error: authError.message }, { status: 500 });

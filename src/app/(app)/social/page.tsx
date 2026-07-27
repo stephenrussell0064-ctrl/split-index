@@ -5,6 +5,7 @@ import { fetchLeaderboardWithBracket } from "@/lib/social/leaderboard";
 import {
   fetchAchievements,
   fetchChallenges,
+  fetchDuels,
   fetchFriendsData,
 } from "@/lib/social/queries";
 import { computeTrainingStreak } from "@/lib/social/streaks";
@@ -39,6 +40,7 @@ export default async function SocialPage() {
     friendsData,
     challenges,
     achievements,
+    duels,
   ] = await Promise.all([
       supabase
         .from("activities")
@@ -60,6 +62,7 @@ export default async function SocialPage() {
       fetchFriendsData(supabase, user.id),
       fetchChallenges(supabase, user.id),
       fetchAchievements(supabase, user.id),
+      fetchDuels(supabase, user.id),
     ]);
 
   const streak = computeTrainingStreak(
@@ -78,6 +81,7 @@ export default async function SocialPage() {
       outgoing={friendsData.outgoing}
       challenges={challenges}
       achievements={achievements}
+      duels={duels}
       streak={streak}
     />
   );

@@ -78,3 +78,59 @@ export function scoreForPercentile(percentile: number): number {
 
   return TAIL_START_SCORE;
 }
+
+/**
+ * Inverse of scoreForPercentile — given any 0-999 Split Index score, returns
+ * "you outperform N% of the reference population" against the same
+ * published/derived standards the score curve itself was calibrated from.
+ * Unlike a peer leaderboard, this needs zero Split Index users of its own to
+ * be meaningful — it's the standards-based comparison Slice C leans on
+ * before real platform scale exists.
+ */
+export function percentileForScore(score: number): number {
+  const clamped = Math.max(0, Math.min(MAX_SCORE, score));
+
+  if (clamped >= TAIL_START_SCORE) {
+    if (clamped >= MAX_SCORE) return 99.9;
+    const ratio = (MAX_SCORE - clamped) / (MAX_SCORE - TAIL_START_SCORE);
+    const beyond = -Math.log(ratio) / TAIL_APPROACH_RATE;
+    return Math.min(99.9, TAIL_START_PERCENTILE + beyond);
+  }
+
+  const [p0, s0] = PERCENTILE_POINTS[0];
+  if (clamped <= s0) {
+    const [p1, s1] = PERCENTILE_POINTS[1];
+    const slope = (p1 - p0) / (s1 - s0);
+    return Math.max(0, p0 + slope * (clamped - s0));
+  }
+
+  for (let i = 0; i < PERCENTILE_POINTS.length - 1; i++) {
+    const [pA, sA] = PERCENTILE_POINTS[i];
+    const [pB, sB] = PERCENTILE_POINTS[i + 1];
+    if (clamped >= sA && clamped <= sB) {
+      const t = (clamped - sA) / (sB - sA);
+      return pA + (pB - pA) * t;
+    }
+  }
+
+  return TAIL_START_PERCENTILE;
+}
+
+/** Same tier labels/boundaries the score curve was calibrated against (StrengthTier in split-strength-engine.ts uses the same cutoffs) — kept here too since a generic Split Index score isn't strength-specific. */
+const STANDARDS_TIERS: Array<{ label: string; minScore: number }> = [
+  { label: "Beginner", minScore: 0 },
+  { label: "Intermediate", minScore: PERCENTILE_TO_SCORE[20] },
+  { label: "Semi-Pro", minScore: PERCENTILE_TO_SCORE[50] },
+  { label: "Advanced", minScore: PERCENTILE_TO_SCORE[80] },
+  { label: "Elite", minScore: PERCENTILE_TO_SCORE[95] },
+  { label: "World Class", minScore: PERCENTILE_TO_SCORE[99] },
+];
+
+/** The next standards-based tier above this score, and how many points away it is — a real, closeable target that needs no peer-user data at all. Null once already in the top tier. */
+export function nextStandardsTierTarget(
+  score: number
+): { label: string; pointsToClose: number } | null {
+  const next = STANDARDS_TIERS.find((t) => t.minScore > score);
+  if (!next) return null;
+  return { label: next.label, pointsToClose: next.minScore - score };
+}

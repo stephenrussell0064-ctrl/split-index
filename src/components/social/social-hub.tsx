@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
-import { Target, Trophy, Users, Medal } from "lucide-react";
+import { Target, Trophy, Users, Medal, Swords } from "lucide-react";
 import { LeaderboardPanel } from "@/components/social/leaderboard-panel";
 import { FriendsPanel } from "@/components/social/friends-panel";
 import { ChallengesPanel } from "@/components/social/challenges-panel";
+import { DuelsPanel } from "@/components/social/duels-panel";
 import { AchievementsPanel } from "@/components/social/achievements-panel";
 import { CompareModal } from "@/components/social/compare-modal";
 import { PageHeader } from "@/components/ui/page-header";
@@ -13,16 +14,18 @@ import type {
   AchievementBadge,
   BracketSummary,
   ChallengeWithProgress,
+  DuelWithStandings,
   FriendConnection,
   LeaderboardRow,
 } from "@/lib/social/types";
 import { cn } from "@/lib/utils/cn";
 
-type SocialTab = "leaderboards" | "friends" | "challenges" | "achievements";
+type SocialTab = "leaderboards" | "friends" | "duels" | "challenges" | "achievements";
 
 const TABS: { id: SocialTab; label: string; icon: typeof Trophy }[] = [
   { id: "leaderboards", label: "Leaderboards", icon: Trophy },
   { id: "friends", label: "Friends", icon: Users },
+  { id: "duels", label: "Duels", icon: Swords },
   { id: "challenges", label: "Challenges", icon: Target },
   { id: "achievements", label: "Achievements", icon: Medal },
 ];
@@ -38,6 +41,7 @@ interface SocialHubProps {
   outgoing: FriendConnection[];
   challenges: ChallengeWithProgress[];
   achievements: AchievementBadge[];
+  duels: DuelWithStandings[];
   streak: number;
 }
 
@@ -52,6 +56,7 @@ export function SocialHub({
   outgoing,
   challenges,
   achievements,
+  duels,
   streak,
 }: SocialHubProps) {
   const [tab, setTab] = useState<SocialTab>("leaderboards");
@@ -133,6 +138,10 @@ export function SocialHub({
             initialOutgoing={outgoing}
             onCompare={openCompare}
           />
+        )}
+
+        {tab === "duels" && (
+          <DuelsPanel initialDuels={duels} friends={friends} currentUserId={currentUserId} />
         )}
 
         {tab === "challenges" && (

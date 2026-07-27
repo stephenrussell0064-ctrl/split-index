@@ -10,6 +10,7 @@ import { CountUp } from "@/components/dashboard/count-up";
 import { cn } from "@/lib/utils/cn";
 import { formatIndex, formatTrend, formatPercent } from "@/lib/utils/format";
 import { formatRecordValue, sportLabel } from "@/components/analytics/personal-records-table";
+import type { RankPercentileResult } from "@/lib/retention/rank";
 import type { PersonalRecord } from "@/types";
 
 type Accent = "success" | "warning" | "danger" | "accent" | "muted";
@@ -71,8 +72,8 @@ export interface HeroStatWallProps {
   trainedToday: boolean;
   weeklySessions: number;
   weeklyTarget?: number;
-  /** "% of users beaten" — Top (100 - percentile)% globally, matching RankBadge. Null when not enough profiles exist yet, or gated for non-premium. */
-  rankPercentile: number | null;
+  /** "% of users/standard beaten". Null when not enough data exists yet, or gated for non-premium. */
+  rankPercentile: RankPercentileResult | null;
   isPremium: boolean;
   latestPr: PersonalRecord | null;
 }
@@ -164,7 +165,17 @@ export function HeroStatWall({
             accent={weeklySessions >= weeklyTarget ? "success" : "muted"}
           />
           {isPremium && rankPercentile !== null ? (
-            <StatTile icon={Trophy} label="Global rank" value={`Top ${100 - rankPercentile}%`} accent="warning" />
+            <StatTile
+              icon={Trophy}
+              label={rankPercentile.isPeerBased ? "Global rank" : "Standards rank"}
+              value={`Top ${Math.max(1, 100 - rankPercentile.percentile)}%`}
+              detail={
+                rankPercentile.isPeerBased
+                  ? `of ${rankPercentile.poolSize} athletes`
+                  : "vs published standard"
+              }
+              accent="warning"
+            />
           ) : (
             <StatTile
               icon={Trophy}

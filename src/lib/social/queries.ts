@@ -1,5 +1,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { AchievementBadge, ChallengeWithProgress, FriendConnection } from "./types";
+import type {
+  AchievementBadge,
+  ChallengeWithProgress,
+  DuelParticipant,
+  DuelWithStandings,
+  FriendConnection,
+} from "./types";
+import { aggregateDuelScores, duelWindowEndExclusive, pickLeader } from "./duels";
 
 function mapFriendProfile(row: {
   user_id: string;
@@ -136,6 +143,90 @@ export async function fetchChallenges(
       joined: !!mine,
       progress,
       completed: mine?.completed ?? false,
+    };
+  });
+}
+
+/**
+ * Friend-vs-friend duels (Slice C): standings are computed live from
+ * workout_scores at read time for each accepted duel's own window/sport,
+ * rather than maintained as a running counter that could drift out of sync.
+ */
+export async function fetchDuels(
+  supabase: SupabaseClient,
+  userId: string
+): Promise<DuelWithStandings[]> {
+  const { data: rows } = await supabase
+    .from("duels")
+    .select("*")
+    .or(`challenger_id.eq.${userId},opponent_id.eq.${userId}`)
+    .order("created_at", { ascending: false });
+
+  if (!rows?.length) return [];
+
+  const otherIds = Array.from(
+    new Set(rows.flatMap((d) => [d.challenger_id, d.opponent_id]))
+  );
+
+  const { data: profiles } = await supabase
+    .from("profiles")
+    .select("user_id, username, display_name, avatar_url")
+    .in("user_id", otherIds);
+
+  const profileMap = new Map((profiles ?? []).map((p) => [p.user_id, p]));
+  const today = new Date().toISOString().slice(0, 10);
+  const acceptedRows = rows.filter((d) => d.status === "accepted");
+
+  // One workout_scores query per accepted duel — each duel has its own
+  // window/sport filter, so these can't be safely merged into one query.
+  const scoreMaps = await Promise.all(
+    acceptedRows.map(async (d) => {
+      const windowEnd = d.end_date < today ? d.end_date : today;
+      let query = supabase
+        .from("workout_scores")
+        .select("user_id, load_score, created_at")
+        .in("user_id", [d.challenger_id, d.opponent_id])
+        .gte("created_at", `${d.start_date}T00:00:00.000Z`)
+        .lt("created_at", duelWindowEndExclusive(windowEnd));
+      if (d.sport) query = query.eq("sport", d.sport);
+      const { data } = await query;
+      return aggregateDuelScores(data ?? [], d.metric, [d.challenger_id, d.opponent_id]);
+    })
+  );
+
+  const scoresByDuelId = new Map(acceptedRows.map((d, i) => [d.id, scoreMaps[i]]));
+
+  return rows.map((d): DuelWithStandings => {
+    const scores = scoresByDuelId.get(d.id);
+    const challengerScore = scores?.[d.challenger_id] ?? 0;
+    const opponentScore = scores?.[d.opponent_id] ?? 0;
+
+    const toParticipant = (id: string, score: number): DuelParticipant => {
+      const p = profileMap.get(id);
+      return {
+        userId: id,
+        username: p?.username ?? null,
+        displayName: p?.display_name ?? null,
+        avatarUrl: p?.avatar_url ?? null,
+        score,
+      };
+    };
+
+    return {
+      id: d.id,
+      metric: d.metric,
+      sport: d.sport,
+      startDate: d.start_date,
+      endDate: d.end_date,
+      status: d.status,
+      isChallenger: d.challenger_id === userId,
+      challenger: toParticipant(d.challenger_id, challengerScore),
+      opponent: toParticipant(d.opponent_id, opponentScore),
+      ended: d.end_date < today,
+      leaderId:
+        d.status === "accepted"
+          ? pickLeader(d.challenger_id, challengerScore, d.opponent_id, opponentScore)
+          : null,
     };
   });
 }
