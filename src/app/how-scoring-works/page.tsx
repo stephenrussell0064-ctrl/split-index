@@ -4,7 +4,7 @@ import { BrandMark } from "@/components/brand/brand-mark";
 
 export const metadata: Metadata = {
   title: "How Scoring Works",
-  description: "How Split Index scores easy, recovery, and long endurance sessions using personalized heart-rate zones.",
+  description: "How Split Index scores easy/recovery/long sessions via personalized heart-rate zones, strength via DOTS/IPF GL, race predictions via a personalized Riegel exponent, and injury risk via ACWR.",
 };
 
 export default function HowScoringWorksPage() {
@@ -27,7 +27,8 @@ export default function HowScoringWorksPage() {
           <header className="mb-10 border-b border-white/[0.06] pb-8">
             <h1 className="text-3xl font-bold tracking-tight">How Scoring Works</h1>
             <p className="mt-2 text-sm text-muted">
-              Heart-rate-zone scoring for easy, recovery, and long sessions.
+              The methodology behind every number Split Index shows you — heart-rate-zone scoring,
+              DOTS/IPF GL strength, personalized race predictions, and ACWR injury risk.
             </p>
           </header>
 
@@ -140,6 +141,97 @@ export default function HowScoringWorksPage() {
                 heart-rate zone (a well-paced, well-controlled easy effort) and scores it accordingly.
                 This is a guess, not a measurement, so it&apos;s clearly flagged on the session, and it may
                 not be accurate for that specific run.
+              </p>
+            </section>
+
+            <section id="dots-gl">
+              <h2 className="text-lg font-semibold text-foreground">Strength Index: DOTS and IPF GL</h2>
+              <p className="mt-3">
+                A raw total (squat + bench + deadlift) rewards bodyweight above almost everything
+                else — a heavier lifter and a lighter lifter can move very different loads for the
+                same underlying strength. DOTS and IPF GL are published, sport-standard formulas
+                that adjust your total against your own bodyweight, so it can be compared fairly
+                against lifters of any size, or tracked meaningfully over time as your bodyweight
+                changes.
+              </p>
+              <p className="mt-3">
+                They&apos;re two independent formulas on two different scales — a DOTS score and a GL
+                score for the same lift are not directly comparable to each other. Track each on its
+                own axis over time rather than treating one as a conversion of the other.
+              </p>
+              <p className="mt-3">
+                Accessory and isolation lifts (anything outside squat/bench/deadlift) aren&apos;t part
+                of either formula — they&apos;re scored instead against ExRx bodyweight-ratio tiers, a
+                separate published standard for judging relative strength on lifts DOTS/GL don&apos;t
+                cover.
+              </p>
+            </section>
+
+            <section id="race-predictions">
+              <h2 className="text-lg font-semibold text-foreground">Race predictions</h2>
+              <p className="mt-3">
+                Predictions across distances use <strong>Riegel&apos;s formula</strong>
+                {" "}— <em>T2 = T1 × (D2/D1)^k</em> — the standard, published approach for translating a
+                known performance at one distance into a projected time at another. The exponent{" "}
+                <strong>k</strong> represents how much your pace naturally falls off as distance
+                increases; a generic population value (roughly 1.06) is the reasonable default for
+                an athlete with no history yet.
+              </p>
+              <p className="mt-3">
+                Once you&apos;ve logged enough races and hard efforts across a couple of different
+                distances, Split Index fits <strong>k</strong> to your own pace curve instead —
+                somewhere in a realistic 1.03–1.10 range — so the ladder reflects how your own
+                endurance actually degrades with distance, not a stranger&apos;s average. A real race
+                result at or near a benchmark distance is trusted close to fully; an inferred
+                projection from a different distance or session type is blended in more cautiously,
+                so one unusual session can&apos;t swing your prediction on its own.
+              </p>
+              <p className="mt-3">
+                Predictions stay in a &quot;calibrating&quot; state until there&apos;s enough evidence logged
+                to be worth showing — a single session isn&apos;t enough signal to project from
+                confidently.
+              </p>
+            </section>
+
+            <section id="injury-risk">
+              <h2 className="text-lg font-semibold text-foreground">Injury risk (ACWR)</h2>
+              <p className="mt-3">
+                The Injury Risk Index is built on the{" "}
+                <strong>Acute:Chronic Workload Ratio</strong> — your rolling 7-day training load
+                divided by your rolling 28-day average weekly load. It&apos;s widely used in sports
+                science as a proxy for whether recent training has spiked well above what your body
+                has adapted to, which is when soft-tissue injury risk rises.
+              </p>
+              <ul className="mt-3 list-disc space-y-2 pl-5">
+                <li>
+                  <strong>Below 0.8</strong> — Undertraining: recent load is well under your own
+                  baseline.
+                </li>
+                <li>
+                  <strong>0.8–1.3</strong> — Optimal: the well-supported sweet spot for building
+                  fitness without spiking risk.
+                </li>
+                <li>
+                  <strong>1.3–1.5</strong> — Caution: load is climbing meaningfully above your
+                  baseline.
+                </li>
+                <li>
+                  <strong>Above 1.5</strong> — Danger: a spike large enough that the research
+                  literature links it to materially higher injury risk.
+                </li>
+              </ul>
+              <p className="mt-3">
+                This needs a real baseline to mean anything — with less than ~2 weeks of consistent
+                logging, the 28-day window is mostly empty and the ratio collapses toward a fixed,
+                meaningless extreme rather than reflecting genuine overreaching, so it&apos;s hidden
+                until there&apos;s enough history behind it. If you log a morning HRV reading, it
+                nudges the index further — a suppressed HRV relative to your own baseline raises the
+                index a little beyond what load alone would say, since incomplete recovery is itself
+                a risk signal independent of training volume.
+              </p>
+              <p className="mt-3">
+                This is a training-load accountability tool, not a medical diagnosis — it reflects
+                relative risk against your own history, not an absolute probability of injury.
               </p>
             </section>
           </div>

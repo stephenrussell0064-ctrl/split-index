@@ -6,6 +6,7 @@ import { motion } from "framer-motion";
 import { ShieldAlert, HeartPulse } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { PremiumTease } from "@/components/premium/premium-tease";
+import { ScoringExplainerNote } from "@/components/scoring/scoring-explainer-note";
 import { cn } from "@/lib/utils/cn";
 import { computeRecentLoads } from "@/lib/scoring/service";
 import { calculateACWR } from "@/lib/scoring/engine";
@@ -79,6 +80,10 @@ function ReadoutContent({
           ? `Keep this week under ~${target} AU (currently ${Math.round(acuteLoad)}) to return to optimal.`
           : `This week's load (${Math.round(acuteLoad)} AU) is within the optimal target of ~${target} AU.`}
       </p>
+      <ScoringExplainerNote href="/how-scoring-works#injury-risk" className="sm:col-span-3 mt-0">
+        ACWR compares this week&apos;s training load to your rolling 4-week average — a ratio climbing
+        toward 1.5+ is linked to higher injury risk in sports-science research.
+      </ScoringExplainerNote>
       <p className="sm:col-span-3 text-[10px] uppercase tracking-wider text-muted">
         {hasHrv ? "Load + HRV (high precision)" : "Load-based (add HRV for precision)"}
       </p>
@@ -190,8 +195,8 @@ export function InjuryRiskPanel({
             />
           ) : (
             <PremiumTease
-              title="Injury Risk Index"
-              subtitle="ACWR-based recovery accountability — unlock your relative risk and optimal load target with Premium."
+              title="Know when to back off"
+              subtitle="Your Injury Risk Index (ACWR-based) flags a training-load spike before it becomes an injury — unlock your relative risk and optimal load target with Premium."
             >
               <ReadoutContent
                 risk={{ index: 32, relativeRisk: 2.1, acwr: 1.7, zone: "Caution" }}

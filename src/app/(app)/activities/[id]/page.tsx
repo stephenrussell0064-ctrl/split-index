@@ -11,6 +11,7 @@ import { computeSportComparison } from "@/lib/utils/sport-comparison";
 import { ActivityDetailActions } from "@/components/activities/activity-detail-actions";
 import { CardioEnrichmentPanel } from "@/components/activities/cardio-enrichment-panel";
 import { SessionScoreInsights } from "@/components/scoring/session-score-insights";
+import { ScoringExplainerNote } from "@/components/scoring/scoring-explainer-note";
 import { ScoreDisclaimer } from "@/components/legal/score-disclaimer";
 import { canAccessProfile } from "@/lib/premium/features";
 import { isPremiumUser } from "@/lib/retention/trial";
@@ -203,9 +204,15 @@ export default async function ActivityDetailPage({
                   {TIER2_MIN_SAMPLES_TO_DISPLAY} sessions logged
                 </p>
               ) : (
-                <p className="text-lg font-semibold tabular-nums text-foreground/90">
-                  {formatRiegelPrediction(predictedBenchmarkAfterSession.benchmarkSeconds)}
-                </p>
+                <>
+                  <p className="text-lg font-semibold tabular-nums text-foreground/90">
+                    {formatRiegelPrediction(predictedBenchmarkAfterSession.benchmarkSeconds)}
+                  </p>
+                  <ScoringExplainerNote href="/how-scoring-works#race-predictions">
+                    Built from your own race-pace evidence via Riegel&apos;s formula, not a generic
+                    time-only estimate — it sharpens with every hard effort and race you log.
+                  </ScoringExplainerNote>
+                </>
               )}
             </div>
           )}

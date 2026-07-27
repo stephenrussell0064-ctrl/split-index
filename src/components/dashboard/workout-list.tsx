@@ -323,8 +323,8 @@ export function AICoachCard({
         ) : (
           <>
             <PremiumTease
-              title="Full AI Coach analysis"
-              subtitle="Performance, recovery, and long-term insights — GPT-powered after every workout."
+              title="Know what to do next"
+              subtitle="A concrete, GPT-powered recommendation after every workout — what changed, what it means for recovery, and what to adjust next session."
             >
               <div className="space-y-2">
                 {coachSections.map((section) => {

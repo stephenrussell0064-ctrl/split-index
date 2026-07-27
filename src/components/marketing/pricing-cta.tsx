@@ -1,8 +1,32 @@
 import Link from "next/link";
+import { ShieldAlert, TrendingUp, Layers, Award } from "lucide-react";
 import { FREE_TIER_FEATURES, PREMIUM_TIER_FEATURES } from "@/lib/premium/features";
 import { PRICING, ANNUAL_MONTHLY_EQUIVALENT_GBP } from "@/lib/pricing/config";
 import { Button } from "@/components/ui/button";
 import { ScoreDisclaimer } from "@/components/legal/score-disclaimer";
+
+const OUTCOMES = [
+  {
+    icon: ShieldAlert,
+    title: "Know when to back off",
+    body: "Your Injury Risk Index tracks ACWR against your own training baseline, so a load spike shows up before it becomes an injury — not after.",
+  },
+  {
+    icon: TrendingUp,
+    title: "Know what you're capable of",
+    body: "Race predictions built on Riegel's formula, personalized to your own pace curve across distances — not a generic, one-size-fits-all exponent.",
+  },
+  {
+    icon: Layers,
+    title: "See the whole picture",
+    body: "One Split Index fusing Engine (cardio) and Lab (strength), backed by real trend history — not a single-sport snapshot that ignores half your training.",
+  },
+  {
+    icon: Award,
+    title: "Prove it",
+    body: "DOTS, IPF GL, and published age-graded standards — evidence-based benchmarks you can defend, not an arbitrary points system.",
+  },
+] as const;
 
 export function PricingSection() {
   return (
@@ -13,7 +37,21 @@ export function PricingSection() {
           Start free. Upgrade when you&apos;re hooked.
         </h2>
       </div>
-      <div className="mx-auto mt-14 grid max-w-4xl gap-6 md:grid-cols-2">
+
+      <div className="mx-auto mt-12 grid max-w-4xl gap-4 sm:grid-cols-2">
+        {OUTCOMES.map(({ icon: Icon, title, body }) => (
+          <div
+            key={title}
+            className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-5 text-left"
+          >
+            <Icon className="h-5 w-5 text-gym-accent" />
+            <p className="mt-3 font-display text-lg font-bold text-white">{title}</p>
+            <p className="mt-1.5 text-sm leading-relaxed text-white/55">{body}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="mx-auto mt-8 grid max-w-4xl gap-6 md:grid-cols-2">
         <article className="landing-price-card">
           <p className="text-[10px] uppercase tracking-[0.24em] text-white/45">Free</p>
           <p className="font-display mt-3 text-5xl font-black text-white">

@@ -1,7 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { PremiumTease } from "@/components/premium/premium-tease";
+import { ScoringExplainerNote } from "@/components/scoring/scoring-explainer-note";
 import { cn } from "@/lib/utils/cn";
 import { formatIndex, formatWeight } from "@/lib/utils/format";
 import {
@@ -60,14 +60,7 @@ function RelativeEffortNote({ sessionType, flags }: { sessionType?: SessionType 
     detail = "Add your resting & max heart rate in Settings to unlock more accurate, personalized effort scoring.";
   }
 
-  return (
-    <p className="mt-2 text-xs text-muted italic">
-      {detail}{" "}
-      <Link href="/how-scoring-works" className="not-italic underline hover:text-foreground">
-        How is this scored?
-      </Link>
-    </p>
-  );
+  return <ScoringExplainerNote>{detail}</ScoringExplainerNote>;
 }
 
 function CardioFreeStats({

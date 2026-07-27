@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { TrendingUp, TrendingDown, Minus, Target } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { PremiumTease } from "@/components/premium/premium-tease";
+import { ScoringExplainerNote } from "@/components/scoring/scoring-explainer-note";
 import { cn } from "@/lib/utils/cn";
 import { formatWeight } from "@/lib/utils/format";
 import {
@@ -89,6 +90,17 @@ function PredictionsContent({
           <p className="micro-label text-muted mb-2">
             Profile prediction · built from your full training history
           </p>
+          {benchmarks.some((b) => b.riegelK != null) ? (
+            <ScoringExplainerNote href="/how-scoring-works#race-predictions" className="mb-2 mt-0">
+              Uses Riegel&apos;s formula personalized to your own pace curve across distances — not a
+              generic exponent.
+            </ScoringExplainerNote>
+          ) : (
+            <ScoringExplainerNote href="/how-scoring-works#race-predictions" className="mb-2 mt-0">
+              Uses Riegel&apos;s formula with a population-average exponent — log races or hard efforts
+              across a couple of distances to personalize this to your own pace curve.
+            </ScoringExplainerNote>
+          )}
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {benchmarks.map((b) => {
               const calibrating = tier2IsCalibrating(b.sampleCount);

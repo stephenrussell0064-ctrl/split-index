@@ -8,6 +8,7 @@ import {
   formatLiftBreakdownLine,
 } from "@/lib/utils/scoring-display";
 import { PremiumTease } from "@/components/premium/premium-tease";
+import { ScoringExplainerNote } from "@/components/scoring/scoring-explainer-note";
 import { formatIndex } from "@/lib/utils/format";
 import type { ExRxTier } from "@/lib/scoring/strength/ratio-tiers";
 
@@ -55,10 +56,7 @@ export function GymStrengthPanel({
         </div>
 
         {hasHistory && dotsScore != null && showDotsGl && (
-          <div
-            className="text-right"
-            title="DOTS and IPF GL use different scales — don't compare them to each other, only track each over time."
-          >
+          <div className="text-right">
             <div className="flex items-baseline justify-end gap-4">
               <div>
                 <p className="font-mono text-2xl font-semibold tabular-nums text-gym-text">
@@ -124,11 +122,17 @@ export function GymStrengthPanel({
         </div>
       )}
 
-      <p className="mt-4 text-xs text-gym-muted leading-relaxed">
-        {showDotsGl
-          ? "SBD total scored via DOTS and IPF GL (different scales — track each over time) · accessories via ExRx ratio tiers"
-          : "Strength index shown — DOTS / GL tiers require Premium"}
-      </p>
+      {showDotsGl ? (
+        <ScoringExplainerNote href="/how-scoring-works#dots-gl" className="text-gym-muted">
+          DOTS and IPF GL are bodyweight-adjusted formulas — they let you compare your total fairly
+          against lifters of any size. Different scales, so track each on its own over time rather
+          than comparing DOTS to GL directly.
+        </ScoringExplainerNote>
+      ) : (
+        <p className="mt-4 text-xs text-gym-muted leading-relaxed">
+          Strength index shown — DOTS / GL tiers require Premium
+        </p>
+      )}
     </div>
   );
 }

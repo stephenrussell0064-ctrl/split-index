@@ -55,9 +55,11 @@ export const FREE_TIER_FEATURES = [
 ] as const;
 
 export const PREMIUM_TIER_FEATURES = [
+  "Injury Risk Index — know when to back off, before it becomes an injury",
+  "GPT AI Coach — a concrete recommendation after every workout",
+  "Race predictions personalized to your own pace curve, not a generic formula",
   "Full Strength Index with DOTS / IPF GL tiers",
   "Cardio HR accountability (TRIMP, EF, decoupling)",
-  "GPT AI Coach after every workout",
   "90-day trend history & period comparison",
   "8-week Split Index projections",
   "Global leaderboards & rank percentile",
