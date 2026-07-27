@@ -181,9 +181,20 @@ const PRIMARY_ANCHORS: Record<string, LiftAnchor> = {
   barbellRow: { anchorRatio: 0.687, category: "back", bodyPart: "pull" },
   frontSquat: { anchorRatio: 0.8103, category: "legs", bodyPart: "lowerBody" },
   inclineBench: { anchorRatio: 0.64, category: "chest", bodyPart: "upperBody" },
+  // Bodyweight-only and added-weight variants of the same movement are
+  // deliberately SEPARATE keys (user feedback: "Pull Up" etc. should score
+  // off reps alone with no weight input, while "Weighted Pull Up" etc. stay
+  // a distinct, separately-tracked exercise) — not just a UI label
+  // difference. Both twins reuse the identical anchorRatio: the underlying
+  // physics/anchor point doesn't change based on whether this specific set
+  // happened to have added load, and weightedCalisthenic1RM already handles
+  // addedKg=0 correctly (see the fix note on that function).
   weightedPullup: { anchorRatio: 0.3327, category: "back", bodyPart: "pull" },
+  pullUp: { anchorRatio: 0.3327, category: "back", bodyPart: "pull" },
   weightedDips: { anchorRatio: 0.4731, category: "chest", bodyPart: "upperBody" },
+  dip: { anchorRatio: 0.4731, category: "chest", bodyPart: "upperBody" },
   pushUp: { anchorRatio: 0.303, category: "chest", bodyPart: "upperBody" },
+  weightedPushUp: { anchorRatio: 0.303, category: "chest", bodyPart: "upperBody" },
   // No Strength Level population data for muscle-ups (not a mainstream
   // tracked lift there) — anchor reasoned from published calisthenics
   // standards instead (Fitness Volt): "Intermediate" is defined as ~1 rep
@@ -193,6 +204,7 @@ const PRIMARY_ANCHORS: Record<string, LiftAnchor> = {
   // Flag as an estimate, same honesty standard as the file's other
   // engineering approximations, until real logged data can validate it.
   muscleUp: { anchorRatio: 0.20, category: "back", bodyPart: "pull" },
+  weightedMuscleUp: { anchorRatio: 0.20, category: "back", bodyPart: "pull" },
 };
 
 type WeightAnchor = [ratio: number, score: number];
@@ -288,14 +300,19 @@ const LIFT_ALIASES: Record<string, string> = {
   "barbell row": "barbellRow", "pendlay row": "barbellRow", "chest supported row": "barbellRow", "seal row": "barbellRow", "t-bar row": "barbellRow", "meadows row": "barbellRow",
   "front squat": "frontSquat", "goblet squat": "frontSquat",
   "incline bench press": "inclineBench", "decline bench press": "inclineBench", "smith machine bench press": "inclineBench",
+  // Weighted variants are a separate key from the plain bodyweight ones —
+  // see the comment on PRIMARY_MAP above.
   "weighted pull up": "weightedPullup", "weighted pull-up": "weightedPullup", "weighted chin up": "weightedPullup",
-  "pull up": "weightedPullup", "pull-up": "weightedPullup", "chin up": "weightedPullup",
-  "weighted dips": "weightedDips", dips: "weightedDips", "chest dips": "weightedDips", "bench dips": "weightedDips",
-  "muscle up": "muscleUp", "muscle-up": "muscleUp", "weighted muscle up": "muscleUp", "weighted muscle-up": "muscleUp",
-  "bar muscle up": "muscleUp", "ring muscle up": "muscleUp",
+  "pull up": "pullUp", "pull-up": "pullUp", "chin up": "pullUp",
+  "weighted dips": "weightedDips",
+  dips: "dip", "chest dips": "dip", "bench dips": "dip", "ring dip": "dip", "ring dips": "dip",
+  "weighted ring dip": "weightedDips", "weighted ring dips": "weightedDips",
+  "muscle up": "muscleUp", "muscle-up": "muscleUp", "bar muscle up": "muscleUp", "ring muscle up": "muscleUp",
+  "weighted muscle up": "weightedMuscleUp", "weighted muscle-up": "weightedMuscleUp",
   "romanian deadlift": "deadlift", rdl: "deadlift", "stiff leg deadlift": "deadlift",
-  "push up": "pushUp", "push-up": "pushUp", "weighted push up": "pushUp", "weighted push-up": "pushUp",
+  "push up": "pushUp", "push-up": "pushUp",
   "diamond push up": "pushUp", "wide push up": "pushUp", "decline push up": "pushUp", "incline push up": "pushUp",
+  "weighted push up": "weightedPushUp", "weighted push-up": "weightedPushUp",
   // accessories
   "incline dumbbell press": "inclineDbPress", "decline dumbbell press": "inclineDbPress",
   "dumbbell bench press": "flatDbPress",
@@ -389,9 +406,13 @@ export const EXERCISE_CLASS: Record<string, ExerciseClass> = {
   frontSquat: "compound",
   inclineBench: "compound",
   weightedPullup: "compound",
+  pullUp: "compound",
   weightedDips: "compound",
+  dip: "compound",
   pushUp: "compound",
+  weightedPushUp: "compound",
   muscleUp: "compound",
+  weightedMuscleUp: "compound",
   inclineDbPress: "accessory",
   flatDbPress: "accessory",
   machineChestPress: "accessory",
@@ -461,7 +482,16 @@ const MIN_RATIO = 0.01;
  * climb). Resolve total-load 1RM first, then subtract bodyweight back out
  * to express the result the same way it was logged (added weight).
  */
-const BODYWEIGHT_RELATIVE_LIFTS = new Set<string>(["weightedPullup", "weightedDips", "pushUp", "muscleUp"]);
+const BODYWEIGHT_RELATIVE_LIFTS = new Set<string>([
+  "weightedPullup",
+  "pullUp",
+  "weightedDips",
+  "dip",
+  "pushUp",
+  "weightedPushUp",
+  "muscleUp",
+  "weightedMuscleUp",
+]);
 
 /**
  * Fraction of bodyweight actually under tension for bodyweight-relative
@@ -473,6 +503,7 @@ const BODYWEIGHT_RELATIVE_LIFTS = new Set<string>(["weightedPullup", "weightedDi
  */
 const BODYWEIGHT_FRACTIONS: Record<string, number> = {
   pushUp: 0.64,
+  weightedPushUp: 0.64,
 };
 
 function bodyweightFraction(resolvedKey: string): number {

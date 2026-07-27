@@ -219,6 +219,11 @@ function ExerciseRow({
   onFilterChange: (c: MuscleGroupCategory) => void;
 }) {
   const loadConfig = row.name.trim() ? getExerciseLoadConfig(row.name) : null;
+  // Pull Up / Dip / Push Up / Muscle Up — the plain bodyweight variant shows
+  // no weight field at all (user feedback: these "should not require you to
+  // have to add weight," and should stay a separate exercise/entry from
+  // "Weighted X"). Scoring always treats these as 0kg added.
+  const isBodyweightOnly = loadConfig?.noWeightInput === true;
   const showConventionPicker =
     loadConfig != null && loadConfig.allowedConventions.length > 1;
   const topSet = bestSetRow(row.sets);
@@ -227,8 +232,9 @@ function ExerciseRow({
   // the weight field blank — that's a valid "0kg added" entry, not a missing
   // one, so it must still score off reps-at-bodyweight rather than silently
   // producing no score.
-  const weightKg =
-    weightKgRaw ?? (row.weightEntryMode === "added" ? 0 : null);
+  const weightKg = isBodyweightOnly
+    ? 0
+    : (weightKgRaw ?? (row.weightEntryMode === "added" ? 0 : null));
   const reps = topSet ? parseNum(topSet.reps) : null;
   const rir = topSet?.repsInReserve.trim() ? parseNum(topSet.repsInReserve) : null;
   const resolved =
@@ -372,12 +378,21 @@ function ExerciseRow({
           </div>
         ) : loadConfig?.conventionNote ? (
           <p className="text-[11px] text-muted/70">{loadConfig.conventionNote}</p>
+        ) : isBodyweightOnly ? (
+          <p className="text-[11px] text-muted/70">
+            Bodyweight only — scored off reps. Log a &quot;Weighted {row.name}&quot; entry instead if you added load.
+          </p>
         ) : null}
 
         <div className="space-y-2">
-          <div className="hidden sm:grid grid-cols-[28px_1fr_1fr_0.7fr_0.7fr_40px] gap-2 px-1 text-[10px] font-semibold uppercase tracking-wider text-muted/60">
+          <div
+            className={cn(
+              "hidden sm:grid gap-2 px-1 text-[10px] font-semibold uppercase tracking-wider text-muted/60",
+              isBodyweightOnly ? "grid-cols-[28px_1fr_0.7fr_0.7fr_40px]" : "grid-cols-[28px_1fr_1fr_0.7fr_0.7fr_40px]"
+            )}
+          >
             <span>Set</span>
-            <span>{weightUnit}</span>
+            {!isBodyweightOnly && <span>{weightUnit}</span>}
             <span>Reps</span>
             <span>RIR</span>
             <span>RPE</span>
@@ -386,18 +401,25 @@ function ExerciseRow({
           {row.sets.map((set, setIndex) => (
             <div
               key={set.id}
-              className="grid grid-cols-[20px_1.4fr_0.6fr_0.55fr_0.55fr_auto] sm:grid-cols-[28px_1fr_1fr_0.7fr_0.7fr_40px] gap-2 items-center"
+              className={cn(
+                "grid gap-2 items-center",
+                isBodyweightOnly
+                  ? "grid-cols-[20px_0.6fr_0.55fr_0.55fr_auto] sm:grid-cols-[28px_1fr_0.7fr_0.7fr_40px]"
+                  : "grid-cols-[20px_1.4fr_0.6fr_0.55fr_0.55fr_auto] sm:grid-cols-[28px_1fr_1fr_0.7fr_0.7fr_40px]"
+              )}
             >
               <span className="text-xs text-muted/70 text-center tabular-nums">{setIndex + 1}</span>
-              <UnitInput
-                aria-label={`Set ${setIndex + 1} weight`}
-                value={set.weight}
-                unit={weightUnit}
-                placeholder={row.weightEntryMode === "added" ? "0 = bodyweight" : "60"}
-                invalid={!!errors[`ex.${row.id}.set.${set.id}.weight`]}
-                onChange={(e) => updateSet(set.id, { weight: e.target.value })}
-                className="h-11 sm:h-10"
-              />
+              {!isBodyweightOnly && (
+                <UnitInput
+                  aria-label={`Set ${setIndex + 1} weight`}
+                  value={set.weight}
+                  unit={weightUnit}
+                  placeholder={row.weightEntryMode === "added" ? "0 = bodyweight" : "60"}
+                  invalid={!!errors[`ex.${row.id}.set.${set.id}.weight`]}
+                  onChange={(e) => updateSet(set.id, { weight: e.target.value })}
+                  className="h-11 sm:h-10"
+                />
+              )}
               <UnitInput
                 aria-label={`Set ${setIndex + 1} reps`}
                 value={set.reps}

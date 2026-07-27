@@ -12,6 +12,8 @@ export interface ExerciseConfig {
   /** Convention the anchor ratio was calibrated in — scoring normalizes to this. */
   anchorConvention: LoadConvention;
   conventionNote?: string;
+  /** True for the plain bodyweight variant of a calisthenics lift (Pull Up, Dip, Push Up, Muscle Up) — the logging form shows no weight field at all for these; scoring always treats the load as 0kg added. The "Weighted X" twin is a separate exercise/config entry with a real weight field. */
+  noWeightInput?: boolean;
 }
 
 export interface ResolvedScoringWeight {
@@ -51,19 +53,43 @@ export const EXERCISE_LOAD_CONFIG: Record<string, ExerciseConfig> = {
     anchorConvention: "addedLoad",
     conventionNote: "Enter the weight ADDED to your bodyweight, not the total.",
   },
+  pullUp: {
+    defaultConvention: "addedLoad",
+    allowedConventions: ["addedLoad"],
+    anchorConvention: "addedLoad",
+    noWeightInput: true,
+  },
   weightedDips: {
     defaultConvention: "addedLoad",
     allowedConventions: ["addedLoad"],
     anchorConvention: "addedLoad",
     conventionNote: "Enter the weight ADDED to your bodyweight, not the total.",
   },
+  dip: {
+    defaultConvention: "addedLoad",
+    allowedConventions: ["addedLoad"],
+    anchorConvention: "addedLoad",
+    noWeightInput: true,
+  },
   pushUp: {
     defaultConvention: "addedLoad",
     allowedConventions: ["addedLoad"],
     anchorConvention: "addedLoad",
-    conventionNote: "Enter added load only (0 = bodyweight only).",
+    noWeightInput: true,
+  },
+  weightedPushUp: {
+    defaultConvention: "addedLoad",
+    allowedConventions: ["addedLoad"],
+    anchorConvention: "addedLoad",
+    conventionNote: "Enter the weight ADDED to your bodyweight, not the total.",
   },
   muscleUp: {
+    defaultConvention: "addedLoad",
+    allowedConventions: ["addedLoad"],
+    anchorConvention: "addedLoad",
+    noWeightInput: true,
+  },
+  weightedMuscleUp: {
     defaultConvention: "addedLoad",
     allowedConventions: ["addedLoad"],
     anchorConvention: "addedLoad",
@@ -177,22 +203,31 @@ const NAME_TO_CONFIG_KEY: Record<string, string> = {
   "weighted pull up": "weightedPullup",
   "weighted pull-up": "weightedPullup",
   "weighted chin up": "weightedPullup",
-  "pull up": "weightedPullup",
-  "pull-up": "weightedPullup",
-  "chin up": "weightedPullup",
+  "pull up": "pullUp",
+  "pull-up": "pullUp",
+  "chin up": "pullUp",
   "weighted dips": "weightedDips",
-  dips: "weightedDips",
-  "chest dips": "weightedDips",
+  dips: "dip",
+  "chest dips": "dip",
+  "bench dips": "dip",
+  "ring dip": "dip",
+  "ring dips": "dip",
+  "weighted ring dip": "weightedDips",
+  "weighted ring dips": "weightedDips",
   "push up": "pushUp",
   "push-up": "pushUp",
-  "weighted push up": "pushUp",
-  "weighted push-up": "pushUp",
+  "diamond push up": "pushUp",
+  "wide push up": "pushUp",
+  "decline push up": "pushUp",
+  "incline push up": "pushUp",
+  "weighted push up": "weightedPushUp",
+  "weighted push-up": "weightedPushUp",
   "muscle up": "muscleUp",
   "muscle-up": "muscleUp",
-  "weighted muscle up": "muscleUp",
-  "weighted muscle-up": "muscleUp",
   "bar muscle up": "muscleUp",
   "ring muscle up": "muscleUp",
+  "weighted muscle up": "weightedMuscleUp",
+  "weighted muscle-up": "weightedMuscleUp",
   "incline dumbbell press": "inclineDbPress",
   "decline dumbbell press": "inclineDbPress",
   "dumbbell bench press": "flatDbPress",
@@ -250,6 +285,11 @@ export function resolveConfigKey(exerciseName: string): string | null {
   const key = normalizeName(exerciseName);
   if (EXERCISE_LOAD_CONFIG[key]) return key;
   return NAME_TO_CONFIG_KEY[key] ?? null;
+}
+
+/** True for the plain bodyweight variant (Pull Up, Dip, Push Up, Muscle Up) — the logging form should show no weight field at all for these; the "Weighted X" twin is tracked as a separate exercise with a real weight field. */
+export function isBodyweightOnlyExercise(exerciseName: string): boolean {
+  return getExerciseLoadConfig(exerciseName).noWeightInput === true;
 }
 
 export function getExerciseLoadConfig(exerciseName: string): ExerciseConfig {
