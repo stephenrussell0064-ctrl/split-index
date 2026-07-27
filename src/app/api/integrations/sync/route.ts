@@ -75,6 +75,15 @@ async function syncUserProvider(
   return { jobId: job.id, ...result };
 }
 
+/**
+ * Bulk auto-sync for every connection with auto_sync enabled — invoked by
+ * the scheduled job configured in vercel.json (Vercel automatically sends
+ * `Authorization: Bearer $CRON_SECRET` to cron-configured paths when the
+ * CRON_SECRET env var is set on the project, which is what's checked below;
+ * a manually-supplied ?secret= query param works too, for triggering from
+ * outside Vercel's own scheduler). Requires CRON_SECRET to be set in the
+ * Vercel project's environment variables — this route 401s until it is.
+ */
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const isCron = searchParams.get("cron") === "1";

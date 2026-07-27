@@ -1,4 +1,4 @@
-import type { ActivityFormData, SportType } from "@/types";
+import type { ActivityFormData } from "@/types";
 
 export type IntegrationProviderId =
   | "strava"
@@ -87,12 +87,3 @@ export interface ImportJobRow {
   created_at: string;
   completed_at: string | null;
 }
-
-export const PROVIDER_SPORT_KEYWORDS: Record<IntegrationProviderId, Partial<Record<string, SportType>>> = {
-  strava: {},
-  garmin: {},
-  apple_health: {},
-  polar: {},
-  coros: {},
-  fitbit: {},
-};

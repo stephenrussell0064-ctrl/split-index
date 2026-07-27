@@ -10,6 +10,7 @@ import {
   LogOut,
   Shield,
   RefreshCw,
+  Link2,
 } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -178,6 +179,23 @@ export default function SettingsPage() {
           userId={profile.userId}
         />
       )}
+
+      {/* Connected devices */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Link2 className="h-4 w-4 text-accent" />
+            <CardTitle>Connected Devices</CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <Link href="/settings/integrations">
+            <Button variant="secondary" className="w-full">
+              Connect Strava & manage sync
+            </Button>
+          </Link>
+        </CardContent>
+      </Card>
 
       {/* Subscription */}
       <Card glow={premium ? undefined : "accent"}>
