@@ -5,6 +5,7 @@ import type {
   DuelParticipant,
   DuelWithStandings,
   FriendConnection,
+  SquadSummary,
 } from "./types";
 import { aggregateDuelScores, duelWindowEndExclusive, pickLeader } from "./duels";
 
@@ -229,6 +230,71 @@ export async function fetchDuels(
           : null,
     };
   });
+}
+
+/**
+ * Squads (Part 4): unlike duels' live workout_scores aggregation, a squad's
+ * head-to-head view just ranks members by their existing current_split_index
+ * — cheap, and already the number members recognize from their own dashboard.
+ */
+export async function fetchSquads(
+  supabase: SupabaseClient,
+  userId: string
+): Promise<SquadSummary[]> {
+  const { data: memberships } = await supabase
+    .from("squad_members")
+    .select("squad_id")
+    .eq("user_id", userId);
+
+  const squadIds = (memberships ?? []).map((m) => m.squad_id);
+  if (!squadIds.length) return [];
+
+  const [{ data: squads }, { data: allMembers }] = await Promise.all([
+    supabase.from("squads").select("*").in("id", squadIds),
+    supabase.from("squad_members").select("squad_id, user_id").in("squad_id", squadIds),
+  ]);
+
+  if (!squads?.length) return [];
+
+  const memberIds = Array.from(new Set((allMembers ?? []).map((m) => m.user_id)));
+  const { data: profiles } = await supabase
+    .from("profiles")
+    .select("user_id, username, display_name, avatar_url, current_split_index")
+    .in("user_id", memberIds);
+
+  const profileMap = new Map((profiles ?? []).map((p) => [p.user_id, p]));
+  const membersBySquad = new Map<string, string[]>();
+  for (const m of allMembers ?? []) {
+    const list = membersBySquad.get(m.squad_id) ?? [];
+    list.push(m.user_id);
+    membersBySquad.set(m.squad_id, list);
+  }
+
+  return squads
+    .map((s): SquadSummary => {
+      const members = (membersBySquad.get(s.id) ?? [])
+        .map((id) => {
+          const p = profileMap.get(id);
+          return {
+            userId: id,
+            username: p?.username ?? null,
+            displayName: p?.display_name ?? null,
+            avatarUrl: p?.avatar_url ?? null,
+            currentSplitIndex: p?.current_split_index ?? null,
+          };
+        })
+        .sort((a, b) => (b.currentSplitIndex ?? -1) - (a.currentSplitIndex ?? -1));
+
+      return {
+        id: s.id,
+        name: s.name,
+        inviteCode: s.invite_code,
+        createdBy: s.created_by,
+        createdAt: s.created_at,
+        members,
+      };
+    })
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
 
 export async function fetchAchievements(

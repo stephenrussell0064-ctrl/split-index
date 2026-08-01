@@ -139,6 +139,25 @@ export interface CompareSeries {
   data: { date: string; value: number }[];
 }
 
+export interface SquadMember {
+  userId: string;
+  username: string | null;
+  displayName: string | null;
+  avatarUrl: string | null;
+  currentSplitIndex: number | null;
+}
+
+export interface SquadSummary {
+  id: string;
+  name: string;
+  /** Only ever returned to members — used to invite others, not for display of "who's in what squad" elsewhere. */
+  inviteCode: string;
+  createdBy: string;
+  createdAt: string;
+  /** Ranked by current Split Index descending — the squad's own head-to-head view. */
+  members: SquadMember[];
+}
+
 export interface PublicProfile {
   userId: string;
   username: string;

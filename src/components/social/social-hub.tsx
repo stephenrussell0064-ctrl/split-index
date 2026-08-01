@@ -2,11 +2,12 @@
 
 import { useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
-import { Target, Trophy, Users, Medal, Swords } from "lucide-react";
+import { Target, Trophy, Users, Medal, Swords, Users2 } from "lucide-react";
 import { LeaderboardPanel } from "@/components/social/leaderboard-panel";
 import { FriendsPanel } from "@/components/social/friends-panel";
 import { ChallengesPanel } from "@/components/social/challenges-panel";
 import { DuelsPanel } from "@/components/social/duels-panel";
+import { SquadsPanel } from "@/components/social/squads-panel";
 import { AchievementsPanel } from "@/components/social/achievements-panel";
 import { CompareModal } from "@/components/social/compare-modal";
 import { PageHeader } from "@/components/ui/page-header";
@@ -17,16 +18,21 @@ import type {
   DuelWithStandings,
   FriendConnection,
   LeaderboardRow,
+  SquadSummary,
 } from "@/lib/social/types";
 import { cn } from "@/lib/utils/cn";
 
-type SocialTab = "leaderboards" | "friends" | "duels" | "challenges" | "achievements";
+type SocialTab = "squads" | "duels" | "friends" | "challenges" | "leaderboards" | "achievements";
 
+// Squads and Duels lead — real training partners you know, not anonymous
+// bracket peers. Leaderboards are demoted (kept, not removed) per the
+// interference-brief Part 4 social layer rework.
 const TABS: { id: SocialTab; label: string; icon: typeof Trophy }[] = [
-  { id: "leaderboards", label: "Leaderboards", icon: Trophy },
-  { id: "friends", label: "Friends", icon: Users },
+  { id: "squads", label: "Squads", icon: Users2 },
   { id: "duels", label: "Duels", icon: Swords },
+  { id: "friends", label: "Friends", icon: Users },
   { id: "challenges", label: "Challenges", icon: Target },
+  { id: "leaderboards", label: "Leaderboards", icon: Trophy },
   { id: "achievements", label: "Achievements", icon: Medal },
 ];
 
@@ -42,6 +48,7 @@ interface SocialHubProps {
   challenges: ChallengeWithProgress[];
   achievements: AchievementBadge[];
   duels: DuelWithStandings[];
+  squads: SquadSummary[];
   streak: number;
 }
 
@@ -57,9 +64,10 @@ export function SocialHub({
   challenges,
   achievements,
   duels,
+  squads,
   streak,
 }: SocialHubProps) {
-  const [tab, setTab] = useState<SocialTab>("leaderboards");
+  const [tab, setTab] = useState<SocialTab>("squads");
   const [compareOpen, setCompareOpen] = useState(false);
   const [compareTarget, setCompareTarget] = useState<{
     username?: string;
@@ -115,6 +123,8 @@ export function SocialHub({
         animate={{ opacity: 1, y: 0 }}
         transition={spring}
       >
+        {tab === "squads" && <SquadsPanel initialSquads={squads} currentUserId={currentUserId} />}
+
         {tab === "leaderboards" && (
           <div className="grid gap-6 lg:grid-cols-3">
             <div className="lg:col-span-2">

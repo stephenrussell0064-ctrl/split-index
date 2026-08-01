@@ -1,5 +1,6 @@
 "use client";
 
+import { Share2 } from "lucide-react";
 import {
   BarChart,
   Bar,
@@ -13,6 +14,7 @@ import {
 } from "recharts";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { ChartEmptyState, chartGridStroke, chartTickFill, chartTooltipStyle } from "@/components/analytics/charts";
+import { buttonVariants } from "@/components/ui/button";
 import { designTokens } from "@/lib/design/tokens";
 import { INTERFERENCE_CONFIG } from "@/lib/scoring/interference";
 import type { InterferenceReport } from "@/lib/scoring/interference";
@@ -25,9 +27,23 @@ function dayLabel(d: number): string {
 
 export function InterferenceDetail({ report }: { report: InterferenceReport }) {
   const { strengthToCardio, cardioToStrength } = report;
+  const hasRealFinding = !strengthToCardio.calibrating || !cardioToStrength.calibrating;
 
   return (
     <div className="space-y-6">
+      {hasRealFinding && (
+        <div className="flex justify-end">
+          <a
+            href="/api/interference/report-card"
+            target="_blank"
+            rel="noopener noreferrer"
+            className={buttonVariants({ variant: "secondary", size: "sm" })}
+          >
+            <Share2 className="h-3.5 w-3.5" />
+            Share as image
+          </a>
+        </div>
+      )}
       <Card>
         <CardHeader className="mb-2">
           <CardTitle>Strength → Cardio</CardTitle>

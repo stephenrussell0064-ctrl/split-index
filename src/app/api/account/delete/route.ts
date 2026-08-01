@@ -53,6 +53,12 @@ export async function DELETE() {
   await admin.from("duels").delete().eq("challenger_id", user.id);
   await admin.from("duels").delete().eq("opponent_id", user.id);
 
+  // Squad membership rows first (would cascade anyway via squads FK, but
+  // explicit here so a member leaving doesn't wait on squad deletion order);
+  // squads this user created cascade-delete their own squad_members rows too.
+  await admin.from("squad_members").delete().eq("user_id", user.id);
+  await admin.from("squads").delete().eq("created_by", user.id);
+
   const { error: authError } = await admin.auth.admin.deleteUser(user.id);
   if (authError) {
     return NextResponse.json({ error: authError.message }, { status: 500 });

@@ -7,6 +7,7 @@ import {
   fetchChallenges,
   fetchDuels,
   fetchFriendsData,
+  fetchSquads,
 } from "@/lib/social/queries";
 import { computeTrainingStreak } from "@/lib/social/streaks";
 import { isPremiumUser } from "@/lib/retention/trial";
@@ -41,6 +42,7 @@ export default async function SocialPage() {
     challenges,
     achievements,
     duels,
+    squads,
   ] = await Promise.all([
       supabase
         .from("activities")
@@ -63,6 +65,7 @@ export default async function SocialPage() {
       fetchChallenges(supabase, user.id),
       fetchAchievements(supabase, user.id),
       fetchDuels(supabase, user.id),
+      fetchSquads(supabase, user.id),
     ]);
 
   const streak = computeTrainingStreak(
@@ -82,6 +85,7 @@ export default async function SocialPage() {
       challenges={challenges}
       achievements={achievements}
       duels={duels}
+      squads={squads}
       streak={streak}
     />
   );
