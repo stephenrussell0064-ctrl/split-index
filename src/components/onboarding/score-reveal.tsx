@@ -231,6 +231,10 @@ export function ScoreRevealSequence({
           {tier && (
             <p className="text-sm font-semibold text-accent">{tier}</p>
           )}
+          <p className="mx-auto mt-6 max-w-sm text-xs leading-relaxed text-muted">
+            Keep logging both sides of your training and we&apos;ll show you something no other
+            app can: how your lifting and running actually affect each other.
+          </p>
           <Button
             className="mt-8"
             onClick={() => setPhase("trial-offer")}

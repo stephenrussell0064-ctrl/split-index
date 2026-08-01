@@ -423,12 +423,21 @@ export default async function DashboardPage() {
 
       {!hasActivities && <EmptyDashboardHero displayName={displayName} />}
 
+      {/*
+        Dashboard IA overhaul (interference brief Part 5): readiness,
+        today's plan, and the interference headline are the first thing a
+        returning user sees — not a Lab/Engine score summary. HeroStatWall
+        (the old opener) still exists and is one scroll away, demoted, not
+        removed.
+      */}
       {hasActivities && (
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
           <ReadinessCard readiness={readiness} className="lg:col-span-2" />
           <TodayCard plan={todayPlan} className="lg:col-span-1" />
         </div>
       )}
+
+      {hasActivities && <InterferenceRadarCard report={interferenceReport} />}
 
       {hasActivities && (
         <HeroStatWall
@@ -447,8 +456,6 @@ export default async function DashboardPage() {
           latestPr={(latestPersonalRecord as PersonalRecord | null) ?? null}
         />
       )}
-
-      {hasActivities && <InterferenceRadarCard report={interferenceReport} />}
 
       {showActivationPaywall && (
         <PremiumTease

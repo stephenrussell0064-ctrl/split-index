@@ -35,9 +35,9 @@ function loadRows(sessions: TimelineSession[]): { load_score: number; created_at
     .map((s) => ({ load_score: s.loadScore!, created_at: s.startedAt }));
 }
 
-function domainAcwr(sessions: TimelineSession[]): number | null {
+function domainAcwr(sessions: TimelineSession[], asOf: number): number | null {
   if (sessions.length === 0) return null;
-  const { acute, chronic } = computeRecentLoads(loadRows(sessions));
+  const { acute, chronic } = computeRecentLoads(loadRows(sessions), asOf);
   return calculateACWR(acute, chronic);
 }
 
@@ -57,8 +57,12 @@ function buildReason(readiness: number, gymElevated: boolean, cardioElevated: bo
   return "Moderate — nothing dramatic, but not fully fresh either.";
 }
 
-export function computeReadiness(sessions: TimelineSession[]): ReadinessResult {
-  const { acute, chronic } = computeRecentLoads(loadRows(sessions));
+/** `asOf` lets callers compute a historical snapshot — e.g. the Hybrid Athlete Report's readiness trend needs readiness "as of" the report's period start, not just today. */
+export function computeReadiness(
+  sessions: TimelineSession[],
+  asOf: number = Date.now()
+): ReadinessResult {
+  const { acute, chronic } = computeRecentLoads(loadRows(sessions), asOf);
   const overallAcwr = calculateACWR(acute, chronic);
   const fatigueScore = calculateFatigueScore(overallAcwr, acute);
   // daysSinceLastHardSession is hardcoded to 1 to match the existing
@@ -68,8 +72,8 @@ export function computeReadiness(sessions: TimelineSession[]): ReadinessResult {
   // which is a separate, pre-existing simplification unrelated to Part 2.
   const readiness = calculateRecoveryScore(fatigueScore, overallAcwr, 1);
 
-  const gymAcwr = domainAcwr(sessions.filter((s) => s.domain === "strength"));
-  const cardioAcwr = domainAcwr(sessions.filter((s) => s.domain === "cardio"));
+  const gymAcwr = domainAcwr(sessions.filter((s) => s.domain === "strength"), asOf);
+  const cardioAcwr = domainAcwr(sessions.filter((s) => s.domain === "cardio"), asOf);
   const gymElevated = gymAcwr !== null && gymAcwr > ACWR_OPTIMAL_HIGH;
   const cardioElevated = cardioAcwr !== null && cardioAcwr > ACWR_OPTIMAL_HIGH;
 

@@ -13,6 +13,7 @@ import {
   Settings,
   PlusCircle,
   MoreHorizontal,
+  Radar,
   X,
 } from "lucide-react";
 import { BrandMark } from "@/components/brand/brand-mark";
@@ -30,6 +31,10 @@ const primaryNav = [
 ];
 
 const secondaryNav = [
+  // First-class nav item for the Interference & Synergy Engine (interference
+  // brief Part 5) — deliberately not a sub-tab under Analytics, since it's
+  // the app's USP and needs to read as one everywhere in the product.
+  { href: "/interference", label: "Interference", icon: Radar },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/social", label: "Social", icon: Users },
   { href: "/settings", label: "Settings", icon: Settings },

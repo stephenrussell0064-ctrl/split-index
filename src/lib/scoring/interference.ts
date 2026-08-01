@@ -306,3 +306,10 @@ export function computeInterferenceReport(sessions: TimelineSession[]): Interfer
     cardioToStrength: computeCardioToStrength(sessions),
   };
 }
+
+/** The single most useful sentence from a report — prefers the strength->cardio direction (usually the more actionable one) once it's real, falling back to the reverse direction, then to a gathering-data message. Shared by the shareable report card and the Hybrid Athlete Report. */
+export function pickInterferenceHeadline(report: InterferenceReport): string {
+  if (!report.strengthToCardio.calibrating) return report.strengthToCardio.summary;
+  if (!report.cardioToStrength.calibrating) return report.cardioToStrength.summary;
+  return "Still gathering paired training data — check back after a few more logged sessions.";
+}

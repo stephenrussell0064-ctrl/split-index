@@ -198,19 +198,20 @@ export function calculateTrend(current: number, previous: number): number {
   return Math.round((current - previous) * 10) / 10;
 }
 
+/** `asOf` lets callers compute a historical snapshot (e.g. the Hybrid Athlete Report's readiness trend) rather than always anchoring to the real current time. */
 export function computeRecentLoads(
-  loadScores: { load_score: number; created_at: string }[]
+  loadScores: { load_score: number; created_at: string }[],
+  asOf: number = Date.now()
 ): { acute: number; chronic: number } {
-  const now = Date.now();
   const day = 86400000;
 
   const acute = loadScores
-    .filter((s) => now - new Date(s.created_at).getTime() <= 7 * day)
+    .filter((s) => asOf - new Date(s.created_at).getTime() <= 7 * day)
     .reduce((sum, s) => sum + s.load_score, 0);
 
   const chronic =
     loadScores
-      .filter((s) => now - new Date(s.created_at).getTime() <= 28 * day)
+      .filter((s) => asOf - new Date(s.created_at).getTime() <= 28 * day)
       .reduce((sum, s) => sum + s.load_score, 0) / 4;
 
   return { acute, chronic: chronic || 1 };

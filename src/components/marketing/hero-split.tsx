@@ -192,6 +192,9 @@ export function HeroSplit() {
           <p className="mt-1 text-[10px] uppercase tracking-[0.3em] text-white/60">
             Split Index
           </p>
+          <p className="mt-1.5 max-w-[16ch] text-[10px] leading-tight text-white/45">
+            See how they affect each other
+          </p>
         </div>
       </div>
 

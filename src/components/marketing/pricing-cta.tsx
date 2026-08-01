@@ -1,11 +1,16 @@
 import Link from "next/link";
-import { ShieldAlert, TrendingUp, Layers, Award } from "lucide-react";
+import { ShieldAlert, TrendingUp, Radar, Award } from "lucide-react";
 import { FREE_TIER_FEATURES, PREMIUM_TIER_FEATURES } from "@/lib/premium/features";
 import { PRICING, ANNUAL_MONTHLY_EQUIVALENT_GBP } from "@/lib/pricing/config";
 import { Button } from "@/components/ui/button";
 import { ScoreDisclaimer } from "@/components/legal/score-disclaimer";
 
 const OUTCOMES = [
+  {
+    icon: Radar,
+    title: "See how lifting and running actually affect each other",
+    body: "Not a strength score and a cardio score side by side — real analysis, mined from your own paired history, of whether leg day is hurting your next run and vice versa. Nobody else has both halves of your training on one timeline.",
+  },
   {
     icon: ShieldAlert,
     title: "Know when to back off",
@@ -15,11 +20,6 @@ const OUTCOMES = [
     icon: TrendingUp,
     title: "Know what you're capable of",
     body: "Race predictions built on Riegel's formula, personalized to your own pace curve across distances — not a generic, one-size-fits-all exponent.",
-  },
-  {
-    icon: Layers,
-    title: "See the whole picture",
-    body: "One Split Index fusing Engine (cardio) and Lab (strength), backed by real trend history — not a single-sport snapshot that ignores half your training.",
   },
   {
     icon: Award,

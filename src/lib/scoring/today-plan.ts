@@ -34,7 +34,8 @@ function suggestionFor(readiness: number): { intensity: SuggestedIntensity; labe
   return { intensity: "easy", label: "Recovery day — easy movement only, or take the day fully off." };
 }
 
-function buildTargetPaceLabel(benchmark: StoredPredictedBenchmark | null): string | null {
+/** Shared with the Hybrid Athlete Report — same "reuse the existing Tier 2 prediction, don't recalculate" rule applies there too. */
+export function buildTargetPaceLabel(benchmark: StoredPredictedBenchmark | null): string | null {
   if (!benchmark || tier2IsCalibrating(benchmark.sampleCount)) return null;
   return `Target: ${formatRiegelPrediction(benchmark.benchmarkSeconds)} for your next 5K attempt`;
 }

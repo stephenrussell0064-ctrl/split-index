@@ -4,6 +4,10 @@
     {
       "path": "/api/integrations/sync?cron=1",
       "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/hybrid-reports",
+      "schedule": "0 7 1 * *"
     }
   ]
 }
