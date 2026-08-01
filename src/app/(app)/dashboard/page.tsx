@@ -21,7 +21,14 @@ import { EmptyDashboardHero } from "@/components/retention/empty-dashboard-hero"
 import { FriendInviteBanner } from "@/components/retention/friend-invite-banner";
 import { CompleteProfileBanner } from "@/components/retention/complete-profile-banner";
 import { InterferenceRadarCard } from "@/components/analytics/interference-radar-card";
-import { fetchInterferenceReport } from "@/lib/scoring/interference-data";
+import { ReadinessCard } from "@/components/dashboard/readiness-card";
+import { TodayCard } from "@/components/dashboard/today-card";
+import { INTERFERENCE_LOOKBACK_DAYS } from "@/lib/scoring/interference-data";
+import { getCrossDomainTimeline } from "@/lib/scoring/timeline";
+import { computeInterferenceReport } from "@/lib/scoring/interference";
+import { computeReadiness } from "@/lib/scoring/readiness";
+import { buildTodayPlan } from "@/lib/scoring/today-plan";
+import { getPredictedBenchmark } from "@/lib/scoring/predicted-benchmark";
 import { ScoreDisclaimer } from "@/components/legal/score-disclaimer";
 import { calculateTrend } from "@/lib/scoring/service";
 import { localDateKeyInTz, resolveTimezone } from "@/lib/utils/timezone";
@@ -110,7 +117,10 @@ export default async function DashboardPage() {
 
   const heatmapCutoff = isoDaysAgo(HEATMAP_DAYS);
   const trendCutoff = isoDaysAgo(premium ? 90 : 7);
-  const interferenceReportPromise = fetchInterferenceReport(supabase, user.id);
+  const crossDomainSessionsPromise = getCrossDomainTimeline(supabase, user.id, {
+    since: isoDaysAgo(INTERFERENCE_LOOKBACK_DAYS),
+  });
+  const predictedRunBenchmarkPromise = getPredictedBenchmark(supabase, user.id, "run");
 
   const [
     { data: latestIndex },
@@ -203,7 +213,13 @@ export default async function DashboardPage() {
       .maybeSingle(),
   ]);
 
-  const interferenceReport = await interferenceReportPromise;
+  const [crossDomainSessions, predictedRunBenchmark] = await Promise.all([
+    crossDomainSessionsPromise,
+    predictedRunBenchmarkPromise,
+  ]);
+  const interferenceReport = computeInterferenceReport(crossDomainSessions);
+  const readiness = computeReadiness(crossDomainSessions);
+  const todayPlan = buildTodayPlan(readiness, interferenceReport, predictedRunBenchmark);
 
   const hasActivities = (recentActivities?.length ?? 0) > 0;
   const needsExtendedProfile = hasActivities && profile.experience == null;
@@ -406,6 +422,13 @@ export default async function DashboardPage() {
       </div>
 
       {!hasActivities && <EmptyDashboardHero displayName={displayName} />}
+
+      {hasActivities && (
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+          <ReadinessCard readiness={readiness} className="lg:col-span-2" />
+          <TodayCard plan={todayPlan} className="lg:col-span-1" />
+        </div>
+      )}
 
       {hasActivities && (
         <HeroStatWall
