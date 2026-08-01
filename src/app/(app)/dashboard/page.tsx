@@ -20,6 +20,8 @@ import { NextRankCard } from "@/components/retention/next-rank-card";
 import { EmptyDashboardHero } from "@/components/retention/empty-dashboard-hero";
 import { FriendInviteBanner } from "@/components/retention/friend-invite-banner";
 import { CompleteProfileBanner } from "@/components/retention/complete-profile-banner";
+import { InterferenceRadarCard } from "@/components/analytics/interference-radar-card";
+import { fetchInterferenceReport } from "@/lib/scoring/interference-data";
 import { ScoreDisclaimer } from "@/components/legal/score-disclaimer";
 import { calculateTrend } from "@/lib/scoring/service";
 import { localDateKeyInTz, resolveTimezone } from "@/lib/utils/timezone";
@@ -108,6 +110,7 @@ export default async function DashboardPage() {
 
   const heatmapCutoff = isoDaysAgo(HEATMAP_DAYS);
   const trendCutoff = isoDaysAgo(premium ? 90 : 7);
+  const interferenceReportPromise = fetchInterferenceReport(supabase, user.id);
 
   const [
     { data: latestIndex },
@@ -199,6 +202,8 @@ export default async function DashboardPage() {
       .limit(1)
       .maybeSingle(),
   ]);
+
+  const interferenceReport = await interferenceReportPromise;
 
   const hasActivities = (recentActivities?.length ?? 0) > 0;
   const needsExtendedProfile = hasActivities && profile.experience == null;
@@ -419,6 +424,8 @@ export default async function DashboardPage() {
           latestPr={(latestPersonalRecord as PersonalRecord | null) ?? null}
         />
       )}
+
+      {hasActivities && <InterferenceRadarCard report={interferenceReport} />}
 
       {showActivationPaywall && (
         <PremiumTease

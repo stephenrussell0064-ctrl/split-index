@@ -1,0 +1,188 @@
+import { describe, expect, it } from "vitest";
+import { computeInterferenceReport, INTERFERENCE_CONFIG } from "./interference";
+import type { TimelineSession } from "./timeline";
+
+let idCounter = 0;
+function nextId(): string {
+  idCounter += 1;
+  return `activity-${idCounter}`;
+}
+
+function cardio(
+  dayOffset: number,
+  overrides: Partial<TimelineSession> = {}
+): TimelineSession {
+  return {
+    activityId: nextId(),
+    sport: "running",
+    domain: "cardio",
+    startedAt: new Date(Date.UTC(2026, 0, 1 + dayOffset, 8)).toISOString(),
+    durationSeconds: 2400,
+    sessionType: "easy",
+    avgHeartRate: 140,
+    avgPaceSecondsPerKm: 330,
+    loadScore: 40,
+    enduranceComponent: 500,
+    strengthComponent: null,
+    efficiencyFactor: 5.0,
+    ...overrides,
+  };
+}
+
+function strength(
+  dayOffset: number,
+  overrides: Partial<TimelineSession> = {}
+): TimelineSession {
+  return {
+    activityId: nextId(),
+    sport: "gym",
+    domain: "strength",
+    startedAt: new Date(Date.UTC(2026, 0, 1 + dayOffset, 18)).toISOString(),
+    durationSeconds: 3600,
+    sessionType: null,
+    avgHeartRate: null,
+    avgPaceSecondsPerKm: null,
+    loadScore: 60,
+    enduranceComponent: null,
+    strengthComponent: 500,
+    efficiencyFactor: null,
+    ...overrides,
+  };
+}
+
+describe("computeInterferenceReport — strength-to-cardio direction", () => {
+  it("reports calibrating with no sessions", () => {
+    const report = computeInterferenceReport([]);
+    expect(report.strengthToCardio.calibrating).toBe(true);
+    expect(report.strengthToCardio.summary).toMatch(/gathering data/i);
+  });
+
+  it("reports calibrating below MIN_PAIRED_SESSIONS", () => {
+    const sessions = [
+      strength(1),
+      cardio(2, { efficiencyFactor: 4.5, avgHeartRate: 146 }),
+    ];
+    const report = computeInterferenceReport(sessions);
+    expect(report.strengthToCardio.calibrating).toBe(true);
+  });
+
+  it("detects a real interference pattern that decays by day 3, once enough pairs exist", () => {
+    const sessions: TimelineSession[] = [
+      // Day-1-after-strength cluster: EF down 10%, HR up 6bpm
+      strength(1),
+      cardio(2, { efficiencyFactor: 4.5, avgHeartRate: 146 }),
+      strength(5),
+      cardio(6, { efficiencyFactor: 4.5, avgHeartRate: 146 }),
+      strength(9),
+      cardio(10, { efficiencyFactor: 4.5, avgHeartRate: 146 }),
+      // Day-3-after-strength cluster: nearly recovered
+      strength(13),
+      cardio(16, { efficiencyFactor: 4.95, avgHeartRate: 141 }),
+      strength(20),
+      cardio(23, { efficiencyFactor: 4.95, avgHeartRate: 141 }),
+      // Rested baseline: 2+ full rest days before, EF at true baseline
+      cardio(28, { efficiencyFactor: 5.0, avgHeartRate: 140 }),
+      cardio(33, { efficiencyFactor: 5.0, avgHeartRate: 140 }),
+      cardio(38, { efficiencyFactor: 5.0, avgHeartRate: 140 }),
+    ];
+
+    const report = computeInterferenceReport(sessions);
+    const finding = report.strengthToCardio;
+
+    expect(finding.calibrating).toBe(false);
+    expect(finding.primarySport).toBe("running");
+
+    const dayOne = finding.decayByDay.find((d) => d.daysSinceStrength === 1)!;
+    expect(dayOne.efDeltaPct).toBeCloseTo(-10, 0);
+    expect(dayOne.hrDeltaBpm).toBe(6);
+
+    const dayThree = finding.decayByDay.find((d) => d.daysSinceStrength === 3)!;
+    expect(Math.abs(dayThree.efDeltaPct!)).toBeLessThan(3);
+
+    expect(finding.summary).toMatch(/cost you/i);
+    expect(finding.summary).toMatch(/10%/);
+    expect(finding.summary).toMatch(/recovering by day 3/i);
+  });
+
+  it("reports no measurable interference when EF barely moves", () => {
+    const sessions: TimelineSession[] = [
+      strength(1),
+      cardio(2, { efficiencyFactor: 4.98, avgHeartRate: 141 }),
+      strength(5),
+      cardio(6, { efficiencyFactor: 4.97, avgHeartRate: 140 }),
+      strength(9),
+      cardio(10, { efficiencyFactor: 5.02, avgHeartRate: 139 }),
+      strength(13),
+      cardio(14, { efficiencyFactor: 5.0, avgHeartRate: 140 }),
+      strength(17),
+      cardio(18, { efficiencyFactor: 4.99, avgHeartRate: 140 }),
+      cardio(23, { efficiencyFactor: 5.0, avgHeartRate: 140 }),
+      cardio(28, { efficiencyFactor: 5.0, avgHeartRate: 140 }),
+      cardio(33, { efficiencyFactor: 5.0, avgHeartRate: 140 }),
+    ];
+
+    const report = computeInterferenceReport(sessions);
+    expect(report.strengthToCardio.calibrating).toBe(false);
+    expect(report.strengthToCardio.summary).toMatch(/no measurable interference/i);
+  });
+
+  it("only compares session types the app already treats as steady-effort (easy/recovery/long)", () => {
+    const sessions: TimelineSession[] = [
+      strength(1),
+      // A "race" session shouldn't be lumped in with easy-effort comparisons.
+      cardio(2, { sessionType: "race", efficiencyFactor: 3.0, avgHeartRate: 180 }),
+    ];
+    const report = computeInterferenceReport(sessions);
+    // With the race session excluded, there's nothing left to compare — still calibrating.
+    expect(report.strengthToCardio.calibrating).toBe(true);
+  });
+
+  it("segments by sport and picks the most-logged qualifying sport", () => {
+    const sessions: TimelineSession[] = [
+      // 2 rowing sessions (minority)
+      cardio(2, { sport: "rowing", efficiencyFactor: 2.0, avgHeartRate: 150 }),
+      cardio(9, { sport: "rowing", efficiencyFactor: 2.0, avgHeartRate: 150 }),
+      // 3 running sessions (majority)
+      cardio(4, { sport: "running", efficiencyFactor: 5.0, avgHeartRate: 140 }),
+      cardio(11, { sport: "running", efficiencyFactor: 5.0, avgHeartRate: 140 }),
+      cardio(18, { sport: "running", efficiencyFactor: 5.0, avgHeartRate: 140 }),
+    ];
+    const report = computeInterferenceReport(sessions);
+    expect(report.strengthToCardio.primarySport).toBe("running");
+  });
+});
+
+describe("computeInterferenceReport — cardio-to-strength direction", () => {
+  it("reports calibrating below MIN_PAIRED_SESSIONS gym sessions", () => {
+    const sessions = [strength(1), strength(3)];
+    const report = computeInterferenceReport(sessions);
+    expect(report.cardioToStrength.calibrating).toBe(true);
+  });
+
+  it("detects strength performance dropping in high-recent-cardio-volume weeks", () => {
+    const sessions: TimelineSession[] = [];
+    // Low cardio volume weeks -> strong lifts
+    for (const day of [1, 8, 15, 22]) {
+      sessions.push(strength(day, { strengthComponent: 700 }));
+    }
+    // High cardio volume in the 7 days before these lifts -> weaker lifts
+    for (const day of [30, 37, 44, 51]) {
+      sessions.push(cardio(day - 3, { loadScore: 200 }));
+      sessions.push(cardio(day - 5, { loadScore: 200 }));
+      sessions.push(strength(day, { strengthComponent: 600 }));
+    }
+
+    const report = computeInterferenceReport(sessions);
+    expect(report.cardioToStrength.calibrating).toBe(false);
+    expect(report.cardioToStrength.deltaPct).toBeLessThan(0);
+    expect(report.cardioToStrength.summary).toMatch(/cost you/i);
+  });
+});
+
+describe("INTERFERENCE_CONFIG", () => {
+  it("matches the brief's named constants", () => {
+    expect(INTERFERENCE_CONFIG.MIN_PAIRED_SESSIONS).toBe(5);
+    expect(INTERFERENCE_CONFIG.LOOKBACK_DAYS_STRENGTH_EFFECT_ON_CARDIO).toBe(3);
+    expect(INTERFERENCE_CONFIG.LOOKBACK_DAYS_CARDIO_EFFECT_ON_STRENGTH).toBe(7);
+  });
+});
