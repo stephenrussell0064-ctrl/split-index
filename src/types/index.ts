@@ -1,3 +1,5 @@
+import type { ActivitySource } from "@/lib/integrations/types";
+
 export type SportType =
   | "running"
   | "walking"
@@ -470,4 +472,8 @@ export interface ActivityFormData {
   rpe?: number;
   notes?: string;
   exercises?: GymExerciseInput[];
+  /** Defaults to "manual" server-side when omitted — set to "gps" by the background run-tracking flow (Capacitor-conversion brief, Part 3). */
+  source?: ActivitySource;
+  /** True when background GPS tracking was interrupted mid-session (permission revoked, OS killed the process, a sampling gap beyond what normal GPS dropout explains) — never score a partial track as if it were a complete, clean effort. */
+  is_partial_track?: boolean;
 }

@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { format } from "date-fns";
-import { Activity, PlusCircle } from "lucide-react";
+import { Activity, PlusCircle, MapPin } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { TrainZoneSwipe } from "@/components/layout/train-zone-swipe";
 import { Button } from "@/components/ui/button";
@@ -88,6 +88,12 @@ export default async function CardioPage() {
             </div>
             <div className="flex flex-wrap gap-2">
               <RepeatLastButton logHref="/cardio/log" />
+              <Link href="/cardio/gps-run">
+                <Button variant="secondary">
+                  <MapPin className="h-4 w-4" />
+                  GPS run
+                </Button>
+              </Link>
               <Link href="/cardio/log">
                 <Button className="bg-cardio-accent hover:bg-cardio-accent/90 text-white border-0">
                   <PlusCircle className="h-4 w-4" />

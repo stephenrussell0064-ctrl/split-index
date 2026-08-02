@@ -203,7 +203,8 @@ export async function POST(request: Request) {
       rpe: body.rpe,
       notes: body.notes,
       is_draft: false,
-      source: "manual",
+      source: body.source ?? "manual",
+      is_partial_track: body.is_partial_track ?? false,
       metadata: {
         ...(bodyweightKg ? { bodyweight_kg: bodyweightKg } : {}),
         ...(body.exercise_notes ? { exercise_notes: body.exercise_notes } : {}),

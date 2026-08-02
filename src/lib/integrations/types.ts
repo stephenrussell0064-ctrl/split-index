@@ -17,7 +17,8 @@ export type ActivitySource =
   | "coros"
   | "fitbit"
   | "csv"
-  | "file";
+  | "file"
+  | "gps";
 
 export type ImportStep = "parsing" | "validating" | "scoring" | "done";
 
