@@ -66,6 +66,34 @@ describe("computeInterferenceReport — strength-to-cardio direction", () => {
     expect(report.strengthToCardio.calibrating).toBe(true);
   });
 
+  it("names the real blocker when plenty of easy-effort sessions exist but none fall near a strength session (live-bug regression)", () => {
+    // A user who logs 10 easy runs on a weekly cadence and only 2 gym
+    // sessions clustered far from any of them (e.g. only at the very end)
+    // should NOT see the generic "gathering data" — plenty of qualifying
+    // cardio is logged, it's just never close enough in time to a
+    // strength session to pair against.
+    const sessions: TimelineSession[] = [
+      strength(1),
+      strength(2),
+      cardio(20, { efficiencyFactor: 5.0, avgHeartRate: 140 }),
+      cardio(27, { efficiencyFactor: 5.0, avgHeartRate: 140 }),
+      cardio(34, { efficiencyFactor: 5.0, avgHeartRate: 140 }),
+      cardio(41, { efficiencyFactor: 5.0, avgHeartRate: 140 }),
+      cardio(48, { efficiencyFactor: 5.0, avgHeartRate: 140 }),
+      cardio(55, { efficiencyFactor: 5.0, avgHeartRate: 140 }),
+    ];
+
+    const report = computeInterferenceReport(sessions);
+    const finding = report.strengthToCardio;
+
+    expect(finding.calibrating).toBe(true);
+    expect(finding.sampleCount).toBe(0);
+    expect(finding.totalQualifyingSessions).toBe(6);
+    expect(finding.summary).toMatch(/logged 6 easy-effort running session/i);
+    expect(finding.summary).toMatch(/none within \d+ days/i);
+    expect(finding.summary).not.toMatch(/^gathering data/i);
+  });
+
   it("detects a real interference pattern that decays by day 3, once enough pairs exist", () => {
     const sessions: TimelineSession[] = [
       // Day-1-after-strength cluster: EF down 10%, HR up 6bpm

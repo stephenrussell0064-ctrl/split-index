@@ -54,7 +54,7 @@ export function InterferenceRadarCard({
           transition={{ duration: 0.5 }}
           className="space-y-3"
         >
-          {bothCalibrating ? (
+          {strengthToCardio.totalQualifyingSessions === 0 && cardioToStrength.sampleCount === 0 ? (
             <p className="text-sm text-muted">
               Gathering data — log both a strength and a cardio session across a few weeks and
               we&apos;ll show you something no other app can: how your lifting and running

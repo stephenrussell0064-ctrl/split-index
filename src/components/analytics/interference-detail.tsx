@@ -52,9 +52,7 @@ export function InterferenceDetail({ report }: { report: InterferenceReport }) {
         </CardHeader>
         <CardContent>
           {strengthToCardio.calibrating ? (
-            <ChartEmptyState
-              message={`Gathering data — ${strengthToCardio.sampleCount}/${strengthToCardio.minSamples} comparable easy-effort sessions logged`}
-            />
+            <ChartEmptyState message={strengthToCardio.summary} />
           ) : (
             <>
               <p className="mb-4 text-sm font-medium text-foreground/90">{strengthToCardio.summary}</p>
@@ -123,9 +121,7 @@ export function InterferenceDetail({ report }: { report: InterferenceReport }) {
         </CardHeader>
         <CardContent>
           {cardioToStrength.calibrating ? (
-            <ChartEmptyState
-              message={`Gathering data — ${cardioToStrength.sampleCount}/${cardioToStrength.minSamples} gym sessions logged`}
-            />
+            <ChartEmptyState message={cardioToStrength.summary} />
           ) : (
             <>
               <p className="mb-4 text-sm font-medium text-foreground/90">{cardioToStrength.summary}</p>

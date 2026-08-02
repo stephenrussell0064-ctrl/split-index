@@ -47,6 +47,8 @@ export interface StrengthToCardioFinding {
   minSamples: number;
   /** The cardio sport this finding is based on (the athlete's most-logged qualifying sport — comparing pace/EF across different sports isn't meaningful). */
   primarySport: string | null;
+  /** Total easy/recovery/long primarySport sessions with HR+EF data, regardless of proximity to a strength session — lets the calibrating message distinguish "not enough easy-effort cardio logged at all" from "plenty logged, just none near a strength session yet". */
+  totalQualifyingSessions: number;
   decayByDay: DayBucketStat[];
   summary: string;
 }
@@ -99,6 +101,7 @@ function computeStrengthToCardio(sessions: TimelineSession[]): StrengthToCardioF
       sampleCount: 0,
       minSamples,
       primarySport: null,
+      totalQualifyingSessions: 0,
       decayByDay: [],
       summary: "Gathering data — log a few more easy/recovery cardio sessions to unlock this.",
     };
@@ -171,13 +174,27 @@ function computeStrengthToCardio(sessions: TimelineSession[]): StrengthToCardioF
     postStrengthTotal < minSamples || restedBaseline.length < 2 || restedEF === null;
 
   if (calibrating) {
+    const sportLabel = primarySport.replace("_", " ");
+    // The confusing case: plenty of easy-effort sessions logged (so the
+    // athlete sees a real, non-zero "sessions" count elsewhere and expects
+    // a finding), but none of them happen to fall within the decay window
+    // after a strength session — a temporal-proximity gap, not a logging-
+    // volume gap. Naming this explicitly instead of just "X/5 logged" is
+    // the difference between "makes sense, I need to log closer together"
+    // and "why does this say 0 when I've logged so much".
+    const summary =
+      postStrengthTotal === 0 && primarySessions.length > 0
+        ? `You've logged ${primarySessions.length} easy-effort ${sportLabel} session${primarySessions.length === 1 ? "" : "s"}, but none within ${INTERFERENCE_CONFIG.LOOKBACK_DAYS_STRENGTH_EFFECT_ON_CARDIO} days of a strength session yet — log one soon after your next gym day to start building this.`
+        : `Gathering data — ${postStrengthTotal}/${minSamples} comparable sessions logged.`;
+
     return {
       calibrating: true,
       sampleCount: postStrengthTotal,
       minSamples,
       primarySport,
+      totalQualifyingSessions: primarySessions.length,
       decayByDay: [],
-      summary: `Gathering data — ${postStrengthTotal}/${minSamples} comparable sessions logged.`,
+      summary,
     };
   }
 
@@ -188,6 +205,7 @@ function computeStrengthToCardio(sessions: TimelineSession[]): StrengthToCardioF
     sampleCount: postStrengthTotal,
     minSamples,
     primarySport,
+    totalQualifyingSessions: primarySessions.length,
     decayByDay,
     summary,
   };
