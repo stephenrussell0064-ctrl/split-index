@@ -1,4 +1,5 @@
 import { MAX_INDEX, MIN_INDEX } from "@/lib/scoring/constants";
+import { ScoringInputError } from "@/lib/scoring/input-guards";
 import type { Gender, GymExerciseInput, Profile, ScoreBreakdown } from "@/types";
 import { COMMON_EXERCISES } from "@/lib/constants/sports";
 import { totalVolumeKg } from "@/lib/activities/gym-sets";
@@ -189,8 +190,12 @@ export interface StrengthEngineResult {
   }>;
 }
 
+/** Never default to male (Part F) — same rule as requireScoringSex in adapters.ts, duplicated here rather than imported to keep this module's own input validated at its own boundary. */
 function resolveStrengthSex(gender: Gender | null): StrengthSex {
-  return gender === "female" ? "female" : "male";
+  if (gender === "female" || gender === "male") return gender;
+  throw new ScoringInputError(
+    "Set your sex (male or female) in your profile before scoring — it's required for fair strength and cardio benchmarks."
+  );
 }
 
 function normalizeName(name: string): string {
