@@ -1,6 +1,5 @@
 "use client";
 
-import { Share2 } from "lucide-react";
 import {
   BarChart,
   Bar,
@@ -14,7 +13,7 @@ import {
 } from "recharts";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { ChartEmptyState, chartGridStroke, chartTickFill, chartTooltipStyle } from "@/components/analytics/charts";
-import { buttonVariants } from "@/components/ui/button";
+import { ShareImageButton } from "@/components/analytics/share-image-button";
 import { designTokens } from "@/lib/design/tokens";
 import { INTERFERENCE_CONFIG } from "@/lib/scoring/interference";
 import type { InterferenceReport } from "@/lib/scoring/interference";
@@ -33,15 +32,13 @@ export function InterferenceDetail({ report }: { report: InterferenceReport }) {
     <div className="space-y-6">
       {hasRealFinding && (
         <div className="flex justify-end">
-          <a
+          <ShareImageButton
             href="/api/interference/report-card"
-            target="_blank"
-            rel="noopener noreferrer"
-            className={buttonVariants({ variant: "secondary", size: "sm" })}
-          >
-            <Share2 className="h-3.5 w-3.5" />
-            Share as image
-          </a>
+            filename="interference-report.png"
+            shareTitle="My Split Index Interference Report"
+            shareText="Here's what leg day does to my running — tracked with Split Index."
+            label="Share as image"
+          />
         </div>
       )}
       <Card>

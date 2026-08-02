@@ -30,12 +30,20 @@ export async function GET() {
     .single();
 
   const report = await fetchInterferenceReport(supabase, user.id);
+
+  // Next-stage report Section D: never generate a shareable card for a
+  // placeholder or population-average-disguised-as-personal result — only
+  // once a real, non-"gathering data" finding exists in at least one
+  // direction. The UI already hides the share entry point below this
+  // threshold; this is the same gate enforced server-side too.
+  if (report.strengthToCardio.calibrating && report.cardioToStrength.calibrating) {
+    return new Response("Not enough paired training data yet", { status: 404 });
+  }
+
   const name = profile?.display_name ?? profile?.username ?? "This athlete";
   const headline = !report.strengthToCardio.calibrating
     ? report.strengthToCardio.summary
-    : !report.cardioToStrength.calibrating
-      ? report.cardioToStrength.summary
-      : `${name} is still gathering paired training data — check back after a few more logged sessions.`;
+    : report.cardioToStrength.summary;
   const secondary =
     !report.strengthToCardio.calibrating && !report.cardioToStrength.calibrating
       ? report.cardioToStrength.summary

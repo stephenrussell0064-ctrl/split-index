@@ -4,6 +4,7 @@ import Link from "next/link";
 import { motion, useReducedMotion } from "framer-motion";
 import { Radar, ChevronRight } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { ShareImageButton } from "@/components/analytics/share-image-button";
 import { cn } from "@/lib/utils/cn";
 import type { InterferenceReport } from "@/lib/scoring/interference";
 
@@ -30,9 +31,20 @@ export function InterferenceRadarCard({
   return (
     <Card glow="accent" className={cn("relative overflow-hidden", className)}>
       <CardHeader className="mb-2">
-        <div className="flex items-center gap-2">
-          <Radar className="h-4 w-4 text-accent" />
-          <CardTitle>Interference Radar</CardTitle>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Radar className="h-4 w-4 text-accent" />
+            <CardTitle>Interference Radar</CardTitle>
+          </div>
+          {!bothCalibrating && (
+            <ShareImageButton
+              href="/api/interference/report-card"
+              filename="interference-report.png"
+              shareTitle="My Split Index Interference Report"
+              shareText="Here's what leg day does to my running — tracked with Split Index."
+              label="Share"
+            />
+          )}
         </div>
       </CardHeader>
       <CardContent>
