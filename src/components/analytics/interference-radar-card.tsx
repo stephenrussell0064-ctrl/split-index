@@ -6,6 +6,7 @@ import { Radar, ChevronRight } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { ShareImageButton } from "@/components/analytics/share-image-button";
 import { cn } from "@/lib/utils/cn";
+import { hasShareableFinding } from "@/lib/scoring/interference";
 import type { InterferenceReport } from "@/lib/scoring/interference";
 
 /**
@@ -26,7 +27,7 @@ export function InterferenceRadarCard({
   const reducedMotion = useReducedMotion();
   const { strengthToCardio, cardioToStrength } = report;
 
-  const bothCalibrating = strengthToCardio.calibrating && cardioToStrength.calibrating;
+  const hasFinding = hasShareableFinding(report);
 
   return (
     <Card glow="accent" className={cn("relative overflow-hidden", className)}>
@@ -36,7 +37,7 @@ export function InterferenceRadarCard({
             <Radar className="h-4 w-4 text-accent" />
             <CardTitle>Interference Radar</CardTitle>
           </div>
-          {!bothCalibrating && (
+          {hasFinding && (
             <ShareImageButton
               href="/api/interference/report-card"
               filename="interference-report.png"
@@ -64,7 +65,9 @@ export function InterferenceRadarCard({
             <>
               <div>
                 <p className="micro-label mb-1 text-muted/70">Strength → Cardio</p>
-                <p className="text-sm">{strengthToCardio.summary}</p>
+                <p className="text-sm">
+                  {strengthToCardio.weeklyFallback?.summary ?? strengthToCardio.summary}
+                </p>
               </div>
               <div className="border-t border-white/5 pt-3">
                 <p className="micro-label mb-1 text-muted/70">Cardio → Strength</p>

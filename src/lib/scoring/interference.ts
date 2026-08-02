@@ -29,6 +29,11 @@ function daysBetween(laterIso: string, earlierIso: string): number {
   return Math.round((dateOnlyUtcMs(laterIso) - dateOnlyUtcMs(earlierIso)) / DAY_MS);
 }
 
+/** A rolling 7-day bucket key (not a calendar Mon-Sun week, just a consistent 7-day grouping) — used only by the weekly fallback comparison below. */
+function weekKey(iso: string): number {
+  return Math.floor(dateOnlyUtcMs(iso) / (7 * DAY_MS));
+}
+
 function average(values: number[]): number | null {
   if (values.length === 0) return null;
   return values.reduce((sum, v) => sum + v, 0) / values.length;
@@ -41,6 +46,25 @@ export interface DayBucketStat {
   hrDeltaBpm: number | null;
 }
 
+/**
+ * A coarser fallback comparison used only while the precise day-level
+ * pairing above doesn't have enough proximate samples yet: splits the
+ * athlete's own qualifying easy-effort sessions into weeks that contained a
+ * strength session vs weeks that didn't, and compares average efficiency
+ * between the two groups. Still genuinely personal (mined from the same
+ * athlete's own data), just a coarser time-grain than "the day after leg
+ * day" — never a population average, and null unless both groups have
+ * enough samples to be a real comparison rather than noise.
+ */
+export interface WeeklyInterferenceFallback {
+  weeksWithStrengthAvgEF: number;
+  weeksWithoutStrengthAvgEF: number;
+  deltaPct: number;
+  sampleCountWithStrength: number;
+  sampleCountWithoutStrength: number;
+  summary: string;
+}
+
 export interface StrengthToCardioFinding {
   calibrating: boolean;
   sampleCount: number;
@@ -51,6 +75,8 @@ export interface StrengthToCardioFinding {
   totalQualifyingSessions: number;
   decayByDay: DayBucketStat[];
   summary: string;
+  /** Populated only while `calibrating` is true and there's enough weekly-pattern data to say something real at a coarser grain than the day-level pairing needs. Null once the precise finding is ready (or if there still isn't enough data at any grain). */
+  weeklyFallback: WeeklyInterferenceFallback | null;
 }
 
 export interface CardioToStrengthFinding {
@@ -83,6 +109,49 @@ function mostRecentBefore(
   return best;
 }
 
+const MIN_WEEKLY_FALLBACK_SAMPLES_PER_GROUP = 2;
+
+/** See WeeklyInterferenceFallback — null unless both "weeks with a strength session" and "weeks without" have enough qualifying sessions to compare. */
+function computeWeeklyFallback(
+  primarySessions: TimelineSession[],
+  allSessions: TimelineSession[],
+  sportLabel: string
+): WeeklyInterferenceFallback | null {
+  const strengthWeeks = new Set(
+    allSessions.filter((s) => s.domain === "strength").map((s) => weekKey(s.startedAt))
+  );
+  if (strengthWeeks.size === 0) return null;
+
+  const withStrength = primarySessions.filter((s) => strengthWeeks.has(weekKey(s.startedAt)));
+  const withoutStrength = primarySessions.filter((s) => !strengthWeeks.has(weekKey(s.startedAt)));
+
+  if (
+    withStrength.length < MIN_WEEKLY_FALLBACK_SAMPLES_PER_GROUP ||
+    withoutStrength.length < MIN_WEEKLY_FALLBACK_SAMPLES_PER_GROUP
+  ) {
+    return null;
+  }
+
+  const withAvg = average(withStrength.map((s) => s.efficiencyFactor!));
+  const withoutAvg = average(withoutStrength.map((s) => s.efficiencyFactor!));
+  if (withAvg === null || withoutAvg === null || withoutAvg === 0) return null;
+
+  const deltaPct = Math.round(((withAvg - withoutAvg) / withoutAvg) * 1000) / 10;
+  const summary =
+    Math.abs(deltaPct) < 3
+      ? `No measurable weekly pattern yet — your ${sportLabel} efficiency looks about the same whether or not a strength session happened that week.`
+      : `Cardio efficiency runs about ${Math.abs(deltaPct)}% ${deltaPct < 0 ? "lower" : "higher"} in weeks that include a strength session, based on your own logged pattern.`;
+
+  return {
+    weeksWithStrengthAvgEF: Math.round(withAvg * 1000) / 1000,
+    weeksWithoutStrengthAvgEF: Math.round(withoutAvg * 1000) / 1000,
+    deltaPct,
+    sampleCountWithStrength: withStrength.length,
+    sampleCountWithoutStrength: withoutStrength.length,
+    summary,
+  };
+}
+
 function computeStrengthToCardio(sessions: TimelineSession[]): StrengthToCardioFinding {
   const minSamples = INTERFERENCE_CONFIG.MIN_PAIRED_SESSIONS;
 
@@ -104,6 +173,7 @@ function computeStrengthToCardio(sessions: TimelineSession[]): StrengthToCardioF
       totalQualifyingSessions: 0,
       decayByDay: [],
       summary: "Gathering data — log a few more easy/recovery cardio sessions to unlock this.",
+      weeklyFallback: null,
     };
   }
 
@@ -195,6 +265,7 @@ function computeStrengthToCardio(sessions: TimelineSession[]): StrengthToCardioF
       totalQualifyingSessions: primarySessions.length,
       decayByDay: [],
       summary,
+      weeklyFallback: computeWeeklyFallback(primarySessions, sessions, sportLabel),
     };
   }
 
@@ -208,6 +279,7 @@ function computeStrengthToCardio(sessions: TimelineSession[]): StrengthToCardioF
     totalQualifyingSessions: primarySessions.length,
     decayByDay,
     summary,
+    weeklyFallback: null,
   };
 }
 
@@ -325,9 +397,19 @@ export function computeInterferenceReport(sessions: TimelineSession[]): Interfer
   };
 }
 
-/** The single most useful sentence from a report — prefers the strength->cardio direction (usually the more actionable one) once it's real, falling back to the reverse direction, then to a gathering-data message. Shared by the shareable report card and the Hybrid Athlete Report. */
+/** True once there's any real, non-"gathering data" signal to show or share — either direction's precise finding, or the coarser weekly fallback. Never true for a placeholder/population-average result. */
+export function hasShareableFinding(report: InterferenceReport): boolean {
+  return (
+    !report.strengthToCardio.calibrating ||
+    !report.cardioToStrength.calibrating ||
+    report.strengthToCardio.weeklyFallback !== null
+  );
+}
+
+/** The single most useful sentence from a report — prefers the strength->cardio direction (usually the more actionable one) once it's real, falling back to the reverse direction, then the coarser weekly fallback, then a gathering-data message. Shared by the shareable report card and the Hybrid Athlete Report. */
 export function pickInterferenceHeadline(report: InterferenceReport): string {
   if (!report.strengthToCardio.calibrating) return report.strengthToCardio.summary;
   if (!report.cardioToStrength.calibrating) return report.cardioToStrength.summary;
+  if (report.strengthToCardio.weeklyFallback) return report.strengthToCardio.weeklyFallback.summary;
   return "Still gathering paired training data — check back after a few more logged sessions.";
 }

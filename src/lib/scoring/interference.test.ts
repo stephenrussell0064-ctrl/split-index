@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeInterferenceReport, INTERFERENCE_CONFIG } from "./interference";
+import { computeInterferenceReport, hasShareableFinding, INTERFERENCE_CONFIG } from "./interference";
 import type { TimelineSession } from "./timeline";
 
 let idCounter = 0;
@@ -92,6 +92,60 @@ describe("computeInterferenceReport — strength-to-cardio direction", () => {
     expect(finding.summary).toMatch(/logged 6 easy-effort running session/i);
     expect(finding.summary).toMatch(/none within \d+ days/i);
     expect(finding.summary).not.toMatch(/^gathering data/i);
+  });
+
+  it("falls back to a coarser weekly comparison when day-level pairs are too sparse but weekly pattern data exists", () => {
+    // 3 easy runs land the same day as a strength session (lower EF), 6 land
+    // in weeks with no strength session at all (higher EF). Day-level
+    // pairing has only 3 same-day pairs — below MIN_PAIRED_SESSIONS — so the
+    // precise finding stays calibrating, but there's enough for the coarser
+    // weekly bucket comparison.
+    const sessions: TimelineSession[] = [
+      cardio(10, { efficiencyFactor: 5.0, avgHeartRate: 140 }),
+      cardio(15, { efficiencyFactor: 5.0, avgHeartRate: 140 }),
+      strength(40),
+      cardio(40, { efficiencyFactor: 4.5, avgHeartRate: 146 }),
+      cardio(60, { efficiencyFactor: 5.0, avgHeartRate: 140 }),
+      cardio(65, { efficiencyFactor: 5.0, avgHeartRate: 140 }),
+      strength(80),
+      cardio(80, { efficiencyFactor: 4.5, avgHeartRate: 146 }),
+      cardio(100, { efficiencyFactor: 5.0, avgHeartRate: 140 }),
+      cardio(105, { efficiencyFactor: 5.0, avgHeartRate: 140 }),
+      strength(120),
+      cardio(120, { efficiencyFactor: 4.5, avgHeartRate: 146 }),
+    ];
+
+    const report = computeInterferenceReport(sessions);
+    const finding = report.strengthToCardio;
+
+    expect(finding.calibrating).toBe(true);
+    expect(finding.sampleCount).toBeLessThan(INTERFERENCE_CONFIG.MIN_PAIRED_SESSIONS);
+
+    const fallback = finding.weeklyFallback;
+    expect(fallback).not.toBeNull();
+    expect(fallback!.sampleCountWithStrength).toBe(3);
+    expect(fallback!.sampleCountWithoutStrength).toBe(6);
+    expect(fallback!.weeksWithStrengthAvgEF).toBeCloseTo(4.5, 5);
+    expect(fallback!.weeksWithoutStrengthAvgEF).toBeCloseTo(5.0, 5);
+    expect(fallback!.deltaPct).toBeCloseTo(-10, 0);
+    expect(fallback!.summary).toMatch(/10% lower/i);
+    expect(fallback!.summary).toMatch(/weeks that include a strength session/i);
+
+    // A real (if coarser) finding exists, so this should count as shareable.
+    expect(hasShareableFinding(report)).toBe(true);
+  });
+
+  it("has no weekly fallback when one of the two groups has fewer than 2 samples", () => {
+    const sessions: TimelineSession[] = [
+      strength(1),
+      cardio(1, { efficiencyFactor: 4.5, avgHeartRate: 146 }),
+      cardio(30, { efficiencyFactor: 5.0, avgHeartRate: 140 }),
+    ];
+
+    const report = computeInterferenceReport(sessions);
+    expect(report.strengthToCardio.calibrating).toBe(true);
+    expect(report.strengthToCardio.weeklyFallback).toBeNull();
+    expect(hasShareableFinding(report)).toBe(false);
   });
 
   it("detects a real interference pattern that decays by day 3, once enough pairs exist", () => {

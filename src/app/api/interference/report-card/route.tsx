@@ -1,6 +1,7 @@
 import { ImageResponse } from "next/og";
 import { createClient } from "@/lib/supabase/server";
 import { fetchInterferenceReport } from "@/lib/scoring/interference-data";
+import { hasShareableFinding, pickInterferenceHeadline } from "@/lib/scoring/interference";
 
 const CARD_WIDTH = 1200;
 const CARD_HEIGHT = 630;
@@ -34,16 +35,15 @@ export async function GET() {
   // Next-stage report Section D: never generate a shareable card for a
   // placeholder or population-average-disguised-as-personal result — only
   // once a real, non-"gathering data" finding exists in at least one
-  // direction. The UI already hides the share entry point below this
-  // threshold; this is the same gate enforced server-side too.
-  if (report.strengthToCardio.calibrating && report.cardioToStrength.calibrating) {
+  // direction (including the coarser weekly fallback). The UI already
+  // hides the share entry point below this threshold; this is the same
+  // gate enforced server-side too.
+  if (!hasShareableFinding(report)) {
     return new Response("Not enough paired training data yet", { status: 404 });
   }
 
   const name = profile?.display_name ?? profile?.username ?? "This athlete";
-  const headline = !report.strengthToCardio.calibrating
-    ? report.strengthToCardio.summary
-    : report.cardioToStrength.summary;
+  const headline = pickInterferenceHeadline(report);
   const secondary =
     !report.strengthToCardio.calibrating && !report.cardioToStrength.calibrating
       ? report.cardioToStrength.summary

@@ -15,7 +15,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { ChartEmptyState, chartGridStroke, chartTickFill, chartTooltipStyle } from "@/components/analytics/charts";
 import { ShareImageButton } from "@/components/analytics/share-image-button";
 import { designTokens } from "@/lib/design/tokens";
-import { INTERFERENCE_CONFIG } from "@/lib/scoring/interference";
+import { INTERFERENCE_CONFIG, hasShareableFinding } from "@/lib/scoring/interference";
 import type { InterferenceReport } from "@/lib/scoring/interference";
 
 function dayLabel(d: number): string {
@@ -26,7 +26,7 @@ function dayLabel(d: number): string {
 
 export function InterferenceDetail({ report }: { report: InterferenceReport }) {
   const { strengthToCardio, cardioToStrength } = report;
-  const hasRealFinding = !strengthToCardio.calibrating || !cardioToStrength.calibrating;
+  const hasRealFinding = hasShareableFinding(report);
 
   return (
     <div className="space-y-6">
@@ -52,7 +52,59 @@ export function InterferenceDetail({ report }: { report: InterferenceReport }) {
         </CardHeader>
         <CardContent>
           {strengthToCardio.calibrating ? (
-            <ChartEmptyState message={strengthToCardio.summary} />
+            strengthToCardio.weeklyFallback ? (
+              <>
+                <p className="mb-1 text-sm font-medium text-foreground/90">
+                  {strengthToCardio.weeklyFallback.summary}
+                </p>
+                <p className="mb-4 text-xs text-muted">
+                  Still gathering day-by-day pairs ({strengthToCardio.sampleCount}/
+                  {strengthToCardio.minSamples}) — this is a coarser weekly comparison in the
+                  meantime. It upgrades to the precise day-after chart once you log cardio within a
+                  few days of a strength session.
+                </p>
+                <div role="img" aria-label="Cardio efficiency in weeks with vs without a strength session">
+                  <ResponsiveContainer width="100%" height={160}>
+                    <BarChart
+                      data={[
+                        {
+                          label: "Weeks without strength",
+                          value: strengthToCardio.weeklyFallback.weeksWithoutStrengthAvgEF,
+                        },
+                        {
+                          label: "Weeks with strength",
+                          value: strengthToCardio.weeklyFallback.weeksWithStrengthAvgEF,
+                        },
+                      ]}
+                      layout="vertical"
+                      margin={{ top: 8, right: 24, left: 8, bottom: 0 }}
+                    >
+                      <CartesianGrid horizontal={false} strokeDasharray="3 6" stroke={chartGridStroke} />
+                      <XAxis type="number" hide domain={["dataMin - dataMin * 0.05", "dataMax + dataMax * 0.05"]} />
+                      <YAxis
+                        type="category"
+                        dataKey="label"
+                        axisLine={false}
+                        tickLine={false}
+                        tick={{ fontSize: 11, fill: chartTickFill }}
+                        width={140}
+                      />
+                      <Tooltip contentStyle={chartTooltipStyle} formatter={(value) => [value, "Avg efficiency factor"]} />
+                      <Bar dataKey="value" radius={[0, 4, 4, 0]} fill={designTokens.strengthAccent} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+                <p className="mt-2 text-xs text-muted">
+                  Based on {strengthToCardio.weeklyFallback.sampleCountWithStrength} qualifying{" "}
+                  {strengthToCardio.primarySport?.replace("_", " ")} session
+                  {strengthToCardio.weeklyFallback.sampleCountWithStrength === 1 ? "" : "s"} in weeks with
+                  a strength session, vs {strengthToCardio.weeklyFallback.sampleCountWithoutStrength} in
+                  weeks without.
+                </p>
+              </>
+            ) : (
+              <ChartEmptyState message={strengthToCardio.summary} />
+            )
           ) : (
             <>
               <p className="mb-4 text-sm font-medium text-foreground/90">{strengthToCardio.summary}</p>

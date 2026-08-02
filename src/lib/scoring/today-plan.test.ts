@@ -25,6 +25,7 @@ const calibratingInterference: InterferenceReport = {
     primarySport: null,
     totalQualifyingSessions: 1,
     decayByDay: [],
+    weeklyFallback: null,
     summary: "Gathering data.",
   },
   cardioToStrength: {
@@ -84,6 +85,7 @@ describe("buildTodayPlan", () => {
         totalQualifyingSessions: 6,
         decayByDay: [{ daysSinceStrength: 1, sampleCount: 3, efDeltaPct: -10, hrDeltaBpm: 6 }],
         summary: "Strength sessions cost you...",
+        weeklyFallback: null,
       },
     };
     const plan = buildTodayPlan(readiness({ readiness: 85 }), interference, null);
@@ -101,6 +103,7 @@ describe("buildTodayPlan", () => {
         totalQualifyingSessions: 6,
         decayByDay: [{ daysSinceStrength: 1, sampleCount: 3, efDeltaPct: -10, hrDeltaBpm: 6 }],
         summary: "Strength sessions cost you...",
+        weeklyFallback: null,
       },
     };
     const plan = buildTodayPlan(readiness({ readiness: 25 }), interference, null);
