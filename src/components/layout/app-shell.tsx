@@ -299,7 +299,8 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
         </nav>
 
         <main className="lg:pl-64">
-          <div className="mode-content mx-auto max-w-7xl px-4 py-6 pb-24 lg:px-8 lg:py-8 lg:pb-8">
+          {/* pt-[max(...)] matches the bottom nav's existing safe-area technique below — content still clears the status bar/notch when the native shell draws under it (capacitor.config.ts ios.contentInset: "never"); a no-op on web where the env() resolves to 0. */}
+          <div className="mode-content mx-auto max-w-7xl px-4 pt-[max(1.5rem,env(safe-area-inset-top))] pb-24 lg:px-8 lg:pb-8 lg:pt-[max(2rem,env(safe-area-inset-top))]">
             {showTopBar && <AppTopBar mode={mode} />}
             {/*
               No `mode="wait"` here on purpose: it forces the outgoing page to
