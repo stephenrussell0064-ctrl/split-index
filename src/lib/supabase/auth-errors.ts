@@ -38,7 +38,7 @@ const AUTH_CODE_MESSAGES: Record<string, string> = {
   over_email_send_rate_limit:
     "Too many emails sent to this address. Please wait a while and try again.",
   email_not_confirmed:
-    "Please confirm your email before signing in. Check your inbox for the link.",
+    "Please confirm your email before signing in — check your inbox for the 6-digit code.",
   user_not_found: "No account found for that email.",
   validation_failed: "Please check your email and password and try again.",
   unexpected_failure:
