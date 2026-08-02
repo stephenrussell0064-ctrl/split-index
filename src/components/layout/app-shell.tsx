@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils/cn";
 import { SidebarAccount } from "@/components/layout/sidebar-account";
 import { AppTopBar } from "@/components/layout/app-top-bar";
 import { ModeOverrideProvider, useModeOverride } from "@/components/layout/mode-override-context";
+import { NativeBillingBootstrap } from "@/components/layout/native-billing-bootstrap";
 
 type AppMode = "neutral" | "gym" | "cardio";
 
@@ -90,6 +91,7 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
     // own background no longer covers it — exactly when a user is typing.
     // dvh (dynamic viewport height) tracks the real visible viewport.
     <div className="min-h-dvh" data-mode={mode}>
+      <NativeBillingBootstrap />
       {/*
         Themed background lives on a FIXED, viewport-covering backdrop rather
         than on the growing content wrapper. A min-height wrapper's painted

@@ -1,10 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils/cn";
 import { Button } from "@/components/ui/button";
 import { PRICING, ANNUAL_MONTHLY_EQUIVALENT_GBP } from "@/lib/pricing/config";
 import { startStripeCheckout } from "@/lib/stripe/start-checkout";
+import { isNativePlatform } from "@/lib/native/platform";
+import {
+  fetchNativeOfferings,
+  purchaseNativeSku,
+  restoreNativePurchases,
+  type NativeOfferingPackage,
+} from "@/lib/native/billing";
 import type { SubscriptionSku } from "@/types";
 
 const SKUS: Array<{
@@ -44,10 +51,37 @@ interface SkuPickerProps {
 export function SkuPicker({ ctaLabel, onError, className }: SkuPickerProps) {
   const [selected, setSelected] = useState<SubscriptionSku>("annual");
   const [loading, setLoading] = useState(false);
+  const [native, setNative] = useState(false);
+  const [nativeOfferings, setNativeOfferings] = useState<NativeOfferingPackage[]>([]);
+
+  // Apple/Google both require in-app subscriptions to go through their own
+  // billing — Stripe cannot process a purchase inside the native app, so
+  // the whole checkout path branches here rather than deeper down.
+  useEffect(() => {
+    if (!isNativePlatform()) return;
+    fetchNativeOfferings()
+      .then((offerings) => {
+        setNative(true);
+        setNativeOfferings(offerings);
+      })
+      .catch(() => setNative(true));
+  }, []);
 
   const handleCheckout = async () => {
     setLoading(true);
     onError?.("");
+
+    if (native) {
+      const result = await purchaseNativeSku(selected);
+      if (result.ok) {
+        window.location.reload();
+        return;
+      }
+      if (!result.cancelled) onError?.(result.message);
+      setLoading(false);
+      return;
+    }
+
     const result = await startStripeCheckout(selected);
     if (result.ok) {
       window.location.href = result.url;
@@ -56,6 +90,9 @@ export function SkuPicker({ ctaLabel, onError, className }: SkuPickerProps) {
     onError?.(result.message);
     setLoading(false);
   };
+
+  const nativePriceFor = (sku: SubscriptionSku) =>
+    nativeOfferings.find((o) => o.sku === sku)?.priceString;
 
   const defaultCta = (sku: SubscriptionSku) =>
     sku === "lifetime" ? `Get lifetime access — £${PRICING.LIFETIME_GBP}` : `Start your ${PRICING.TRIAL_DAYS}-day free trial`;
@@ -85,9 +122,9 @@ export function SkuPicker({ ctaLabel, onError, className }: SkuPickerProps) {
               <p className="text-xs uppercase tracking-wide text-muted mb-1">
                 {option.label}
               </p>
-              <p className="text-lg font-bold">{option.price}</p>
+              <p className="text-lg font-bold">{nativePriceFor(option.sku) ?? option.price}</p>
               <p className="text-xs text-muted mt-0.5">
-                {option.sku === "annual" ? (
+                {!native && option.sku === "annual" ? (
                   <>
                     <span className="line-through opacity-60">
                       £{PRICING.MONTHLY_GBP}/mo billed monthly
@@ -106,6 +143,25 @@ export function SkuPicker({ ctaLabel, onError, className }: SkuPickerProps) {
       <Button className="w-full" loading={loading} onClick={handleCheckout}>
         {(ctaLabel ?? defaultCta)(selected)}
       </Button>
+
+      {native && (
+        <button
+          type="button"
+          className="mt-3 w-full text-center text-xs text-muted underline-offset-2 hover:underline"
+          onClick={async () => {
+            setLoading(true);
+            const result = await restoreNativePurchases();
+            if (result.ok) {
+              window.location.reload();
+              return;
+            }
+            onError?.(result.message);
+            setLoading(false);
+          }}
+        >
+          Restore purchases
+        </button>
+      )}
     </div>
   );
 }

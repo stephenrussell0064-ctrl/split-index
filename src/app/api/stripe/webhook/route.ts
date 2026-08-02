@@ -48,6 +48,7 @@ export async function POST(request: Request) {
             subscription_tier: "premium",
             subscription_status: subscription.status as "active" | "trialing",
             subscription_sku: sku,
+            subscription_source: "stripe",
           })
           .eq("user_id", userId);
       }
@@ -64,6 +65,7 @@ export async function POST(request: Request) {
             subscription_tier: "free",
             subscription_status: "canceled",
             subscription_sku: null,
+            subscription_source: null,
           })
           .eq("user_id", userId);
       }
@@ -84,6 +86,7 @@ export async function POST(request: Request) {
             subscription_tier: "premium",
             subscription_status: "active",
             subscription_sku: "lifetime",
+            subscription_source: "stripe",
           })
           .eq("user_id", userId);
       }

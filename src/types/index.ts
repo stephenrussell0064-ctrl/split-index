@@ -64,6 +64,9 @@ export type SubscriptionStatus =
 
 export type SubscriptionSku = "monthly" | "annual" | "lifetime";
 
+/** Which billing system last granted the current subscription_tier/status — Stripe (web checkout) or RevenueCat (native StoreKit/Play Billing). Null once the subscription lapses. */
+export type SubscriptionSource = "stripe" | "revenuecat";
+
 /** Answer to the onboarding "What's your main goal?" question — distinct from `goals` (training focus). */
 export type PrimaryMotivation = "leaderboard" | "beat_pr" | "predict_race" | "just_track";
 
@@ -99,6 +102,7 @@ export interface Profile {
   subscription_tier: SubscriptionTier;
   subscription_status: SubscriptionStatus | null;
   subscription_sku: SubscriptionSku | null;
+  subscription_source: SubscriptionSource | null;
   primary_motivation: PrimaryMotivation | null;
   stripe_customer_id: string | null;
   /** IANA timezone for local-day workout grouping (e.g. Europe/London). */
