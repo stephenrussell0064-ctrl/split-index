@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { MapPin, Square, AlertTriangle } from "lucide-react";
+import { MapPin, Square, AlertTriangle, Gauge } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/input";
@@ -173,14 +173,21 @@ export default function GpsRunPage() {
       {phase === "idle" && (
         <Card padding="lg">
           <div className="flex flex-col items-center py-10 text-center">
-            <MapPin className="mb-4 h-10 w-10 text-accent" />
-            <p className="mb-6 text-sm text-muted">
+            <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-accent/15">
+              <MapPin className="h-8 w-8 text-accent" />
+            </div>
+            <p className="mb-8 max-w-xs text-sm text-muted">
               Background location tracking continues even with the screen off — put your phone away
               once you start.
             </p>
-            <Button size="lg" onClick={handleStart}>
-              Start run
-            </Button>
+            <button
+              type="button"
+              onClick={handleStart}
+              aria-label="Start run"
+              className="flex h-24 w-24 items-center justify-center rounded-full bg-accent text-accent-foreground shadow-xl shadow-accent/30 transition-transform active:scale-95"
+            >
+              <span className="text-sm font-bold uppercase tracking-wide">Start</span>
+            </button>
           </div>
         </Card>
       )}
@@ -191,11 +198,18 @@ export default function GpsRunPage() {
             <p className="index-display mb-2 text-6xl font-bold tabular-nums">
               {formatElapsed(elapsedSeconds)}
             </p>
-            <p className="mb-8 text-xs text-muted">Tracking in the background — screen can lock.</p>
-            <Button size="lg" variant="destructive" onClick={handleStop}>
-              <Square className="h-4 w-4" />
-              Stop run
-            </Button>
+            <p className="mb-10 flex items-center gap-1.5 text-xs text-muted">
+              <span className="pulse-dot h-1.5 w-1.5 rounded-full bg-danger" aria-hidden />
+              Tracking in the background — screen can lock
+            </p>
+            <button
+              type="button"
+              onClick={handleStop}
+              aria-label="Stop run"
+              className="flex h-24 w-24 items-center justify-center rounded-full bg-danger text-white shadow-xl shadow-danger/30 transition-transform active:scale-95"
+            >
+              <Square className="h-8 w-8" fill="currentColor" />
+            </button>
           </div>
         </Card>
       )}
@@ -212,12 +226,18 @@ export default function GpsRunPage() {
             </div>
           )}
 
-          <div className="mb-6 grid grid-cols-2 gap-4 text-center">
-            <div>
+          <div className="mb-6 grid grid-cols-2 gap-4">
+            <div className="flex flex-col items-center rounded-2xl bg-white/[0.03] py-4 text-center">
+              <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-full bg-cardio-accent/15 text-cardio-accent">
+                <MapPin className="h-4.5 w-4.5" />
+              </div>
               <p className="micro-label text-muted">Distance</p>
               <p className="text-2xl font-bold tabular-nums">{(summary.distanceMeters / 1000).toFixed(2)} km</p>
             </div>
-            <div>
+            <div className="flex flex-col items-center rounded-2xl bg-white/[0.03] py-4 text-center">
+              <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-full bg-accent/15 text-accent">
+                <Gauge className="h-4.5 w-4.5" />
+              </div>
               <p className="micro-label text-muted">Pace</p>
               <p className="text-2xl font-bold tabular-nums">{formatPace(summary.avgPaceSecondsPerKm)}</p>
             </div>

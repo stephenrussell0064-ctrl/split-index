@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
 import { motion, useReducedMotion } from "framer-motion";
-import { Flame, HeartPulse, Zap, CalendarCheck, Trophy, Medal, type LucideIcon } from "lucide-react";
+import { Flame, HeartPulse, Zap, Trophy, Medal, type LucideIcon } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { MetricValue } from "@/components/ui/metric-label";
+import { ProgressRing } from "@/components/ui/progress-ring";
 import { CountUp } from "@/components/dashboard/count-up";
 import { cn } from "@/lib/utils/cn";
 import { formatIndex, formatTrend, formatPercent } from "@/lib/utils/format";
@@ -21,6 +22,14 @@ const ACCENT_TEXT: Record<Accent, string> = {
   danger: "text-danger",
   accent: "text-accent",
   muted: "text-muted",
+};
+
+const ACCENT_BADGE: Record<Accent, string> = {
+  success: "bg-success/15 text-success",
+  warning: "bg-warning/15 text-warning",
+  danger: "bg-danger/15 text-danger",
+  accent: "bg-accent/15 text-accent",
+  muted: "bg-white/8 text-muted",
 };
 
 function StatTile({
@@ -40,11 +49,11 @@ function StatTile({
 }) {
   const content = (
     <Card padding="sm" interactive className="h-full">
-      <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-[0.12em] text-muted">
-        <Icon className={cn("h-3.5 w-3.5", ACCENT_TEXT[accent])} />
-        {label}
+      <div className={cn("mb-2 flex h-9 w-9 items-center justify-center rounded-full", ACCENT_BADGE[accent])}>
+        <Icon className="h-4.5 w-4.5" />
       </div>
-      <p className={cn("index-display mt-1.5 text-2xl font-bold tabular-nums", ACCENT_TEXT[accent])}>
+      <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted">{label}</p>
+      <p className={cn("index-display mt-1 text-2xl font-bold tabular-nums", ACCENT_TEXT[accent])}>
         {value}
       </p>
       {detail && <p className="mt-0.5 truncate text-[11px] text-muted">{detail}</p>}
@@ -110,7 +119,23 @@ export function HeroStatWall({
       transition={{ duration: 0.5 }}
     >
       <Card glow="accent" padding="lg" className="relative overflow-hidden">
-        <div className="flex flex-wrap items-end justify-between gap-4">
+        <div className="flex flex-wrap items-center gap-6">
+          <ProgressRing
+            progress={weeklyTarget > 0 ? weeklySessions / weeklyTarget : 0}
+            size={84}
+            strokeWidth={7}
+            colorClassName={weeklySessions >= weeklyTarget ? "text-success" : "text-accent"}
+            trackClassName="text-white/8"
+          >
+            <div className="text-center">
+              <p className="index-display text-lg font-bold tabular-nums leading-none">
+                {weeklySessions}
+                <span className="text-xs text-muted">/{weeklyTarget}</span>
+              </p>
+              <p className="mt-1 text-[8px] font-semibold uppercase tracking-wider text-muted">This week</p>
+            </div>
+          </ProgressRing>
+
           <div>
             <p className="micro-label mb-1 text-muted">{headlineLabel}</p>
             {hasHistory && headlineValue !== null ? (
@@ -137,7 +162,7 @@ export function HeroStatWall({
           </div>
         </div>
 
-        <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
           <StatTile
             icon={HeartPulse}
             label="Recovery"
@@ -157,12 +182,6 @@ export function HeroStatWall({
             detail={streakAtRisk ? "At risk — log today" : trainedToday ? "Secured today" : undefined}
             accent={streakAtRisk ? "warning" : streak > 0 ? "accent" : "muted"}
             href={streakAtRisk ? "/activities/new" : undefined}
-          />
-          <StatTile
-            icon={CalendarCheck}
-            label="This week"
-            value={`${weeklySessions}/${weeklyTarget}`}
-            accent={weeklySessions >= weeklyTarget ? "success" : "muted"}
           />
           {isPremium && rankPercentile !== null ? (
             <StatTile

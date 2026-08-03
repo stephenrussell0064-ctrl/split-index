@@ -260,42 +260,78 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
           )}
         </AnimatePresence>
 
-        <nav className="fixed bottom-0 left-0 right-0 z-40 flex items-center justify-around border-t border-white/5 glass-strong px-1 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] lg:hidden">
-          {[...primaryNav, { href: logHref, label: "Log", shortLabel: "Log", icon: PlusCircle, mode }].map(
-            (item) => {
-              const active = isActive(item.href) || (item.label === "Log" && pathname.endsWith("/log"));
-              const Icon = item.icon;
-              const accentClass =
-                "mode" in item && item.mode === "gym"
-                  ? "text-gym-accent"
-                  : "mode" in item && item.mode === "cardio"
-                    ? "text-cardio-accent"
-                    : "text-accent";
+        <nav className="fixed bottom-0 left-0 right-0 z-40 flex items-center justify-around border-t border-white/5 glass-strong px-1 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] lg:hidden">
+          {[primaryNav[0], primaryNav[1]].map((item) => {
+            const active = isActive(item.href);
+            const Icon = item.icon;
+            const accentClass =
+              item.mode === "gym"
+                ? "text-gym-accent"
+                : item.mode === "cardio"
+                  ? "text-cardio-accent"
+                  : "text-accent";
 
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={cn(
-                    "flex flex-col items-center gap-0.5 rounded-xl px-2 py-1.5 text-[10px] transition-colors min-w-0",
-                    active ? accentClass : "text-muted"
-                  )}
-                >
-                  <Icon className="h-5 w-5 shrink-0" />
-                  <span className="truncate">{item.shortLabel}</span>
-                </Link>
-              );
-            }
-          )}
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn(
+                  "flex min-w-0 flex-col items-center gap-1 rounded-2xl px-3 py-2 text-[10px] font-medium transition-colors",
+                  active ? cn("bg-white/8", accentClass) : "text-muted"
+                )}
+              >
+                <Icon className="h-6 w-6 shrink-0" />
+                <span className="truncate">{item.shortLabel}</span>
+              </Link>
+            );
+          })}
+
+          <Link
+            href={logHref}
+            aria-label="Log workout"
+            className={cn(
+              "-mt-6 flex h-14 w-14 shrink-0 items-center justify-center rounded-full shadow-lg transition-transform active:scale-95",
+              mode === "gym"
+                ? "bg-gym-accent text-gym-bg shadow-gym-accent/30"
+                : mode === "cardio"
+                  ? "bg-cardio-accent text-white shadow-cardio-accent/30"
+                  : "bg-accent text-accent-foreground shadow-accent/30"
+            )}
+          >
+            <PlusCircle className="h-7 w-7" />
+          </Link>
+
+          {[primaryNav[2]].map((item) => {
+            const active = isActive(item.href);
+            const Icon = item.icon;
+            const accentClass = item.mode === "cardio" ? "text-cardio-accent" : "text-accent";
+
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn(
+                  "flex min-w-0 flex-col items-center gap-1 rounded-2xl px-3 py-2 text-[10px] font-medium transition-colors",
+                  active ? cn("bg-white/8", accentClass) : "text-muted"
+                )}
+              >
+                <Icon className="h-6 w-6 shrink-0" />
+                <span className="truncate">{item.shortLabel}</span>
+              </Link>
+            );
+          })}
+
           <button
             type="button"
             onClick={() => setMoreOpen((v) => !v)}
             className={cn(
-              "flex flex-col items-center gap-0.5 rounded-xl px-2 py-1.5 text-[10px] transition-colors min-w-0",
-              moreOpen || secondaryNav.some((item) => isActive(item.href)) ? "text-accent" : "text-muted"
+              "flex min-w-0 flex-col items-center gap-1 rounded-2xl px-3 py-2 text-[10px] font-medium transition-colors",
+              moreOpen || secondaryNav.some((item) => isActive(item.href))
+                ? "bg-white/8 text-accent"
+                : "text-muted"
             )}
           >
-            <MoreHorizontal className="h-5 w-5 shrink-0" />
+            <MoreHorizontal className="h-6 w-6 shrink-0" />
             <span className="truncate">More</span>
           </button>
         </nav>

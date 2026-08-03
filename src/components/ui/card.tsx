@@ -17,7 +17,7 @@ export function Card({
   return (
     <div
       className={cn(
-        "glass rounded-2xl border border-white/[0.05] transition-colors duration-200 hover:border-white/[0.08]",
+        "glass rounded-[1.75rem] border border-white/[0.06] shadow-[0_8px_30px_-12px_rgba(0,0,0,0.5)] transition-colors duration-200 hover:border-white/[0.1]",
         padding === "sm" && "p-5",
         padding === "md" && "p-5 md:p-6",
         padding === "lg" && "p-6 md:p-8",
