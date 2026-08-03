@@ -8,4 +8,8 @@ export const PRESET_AVATARS: Array<{ id: string; url: string; label: string }> =
   { id: "swimming", url: "/avatars/avatar-swimming.png", label: "Swimming" },
   { id: "yoga", url: "/avatars/avatar-yoga.png", label: "Yoga" },
   { id: "boxing", url: "/avatars/avatar-boxing.png", label: "Boxing" },
+  { id: "hiking", url: "/avatars/avatar-hiking.svg", label: "Hiking" },
+  { id: "rowing", url: "/avatars/avatar-rowing.svg", label: "Rowing" },
+  { id: "climbing", url: "/avatars/avatar-climbing.svg", label: "Climbing" },
+  { id: "dancing", url: "/avatars/avatar-dancing.svg", label: "Dancing" },
 ];

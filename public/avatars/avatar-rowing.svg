@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <radialGradient id="g" cx="50%" cy="42%" r="65%">
+      <stop offset="0%" stop-color="#baff5c" />
+      <stop offset="45%" stop-color="#3ddc1f" />
+      <stop offset="100%" stop-color="#052b0a" />
+    </radialGradient>
+  </defs>
+  <rect x="8" y="8" width="496" height="496" rx="90" fill="url(#g)" stroke="#000" stroke-width="26" />
+  <!-- thin cable running from the handle off to the machine -->
+  <path d="M170 232 L400 232" fill="none" stroke="#000" stroke-width="10" stroke-linecap="round" />
+  <g fill="none" stroke="#000" stroke-width="34" stroke-linecap="round" stroke-linejoin="round">
+    <!-- bent legs, drive position -->
+    <path d="M234 312 L306 284 L358 322" />
+    <!-- torso leaning back into the pull -->
+    <path d="M234 312 L262 220" />
+    <!-- pulling arm to the handle -->
+    <path d="M262 220 L206 244 L172 232" />
+  </g>
+  <circle cx="266" cy="182" r="32" fill="#000" />
+</svg>

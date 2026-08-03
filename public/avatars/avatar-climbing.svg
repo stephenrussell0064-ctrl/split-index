@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <radialGradient id="g" cx="50%" cy="42%" r="65%">
+      <stop offset="0%" stop-color="#baff5c" />
+      <stop offset="45%" stop-color="#3ddc1f" />
+      <stop offset="100%" stop-color="#052b0a" />
+    </radialGradient>
+  </defs>
+  <rect x="8" y="8" width="496" height="496" rx="90" fill="url(#g)" stroke="#000" stroke-width="26" />
+  <!-- climbing holds -->
+  <circle cx="360" cy="160" r="16" fill="#000" />
+  <circle cx="180" cy="230" r="16" fill="#000" />
+  <circle cx="330" cy="380" r="16" fill="#000" />
+  <g fill="none" stroke="#000" stroke-width="34" stroke-linecap="round" stroke-linejoin="round">
+    <!-- reaching arm up to the high hold -->
+    <path d="M270 260 L320 210 L360 168" />
+    <!-- other arm to the side hold -->
+    <path d="M270 260 L220 250 L184 234" />
+    <!-- torso -->
+    <path d="M270 260 L262 310" />
+    <!-- planted leg, pushing off the low hold -->
+    <path d="M262 310 L300 350 L332 384" />
+    <!-- other leg, braced against the wall -->
+    <path d="M262 310 L214 340 L196 400" />
+  </g>
+  <circle cx="272" cy="228" r="30" fill="#000" />
+</svg>
