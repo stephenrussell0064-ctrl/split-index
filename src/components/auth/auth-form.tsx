@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion, useReducedMotion } from "framer-motion";
@@ -12,6 +12,12 @@ import { Input } from "@/components/ui/input";
 import { createClient } from "@/lib/supabase/client";
 import { authErrorMessage } from "@/lib/supabase/auth-errors";
 import { buildAuthCallbackUrl } from "@/lib/supabase/auth-callback-url";
+import { isNativePlatform } from "@/lib/native/platform";
+import {
+  nativeOAuthRedirectUrl,
+  openNativeOAuthUrl,
+  registerNativeOAuthRedirectListener,
+} from "@/lib/native/oauth";
 
 type Phase = "form" | "otp";
 
@@ -33,6 +39,8 @@ export function AuthForm({
   const [message, setMessage] = useState("");
 
   const authCallbackUrl = (nextPath = "/dashboard") => buildAuthCallbackUrl(undefined, nextPath);
+
+  useEffect(() => registerNativeOAuthRedirectListener(), []);
 
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -160,16 +168,31 @@ export function AuthForm({
     setError("");
     try {
       const supabase = createClient();
-      // No `?next=` query param — Supabase's redirectTo allowlist match is
-      // exact against the bare callback URL registered in the dashboard
-      // (see buildAuthCallbackUrl); /auth/callback still routes correctly
-      // by onboarding state without it.
-      const { error } = await supabase.auth.signInWithOAuth({
+      const native = isNativePlatform();
+
+      // Google refuses to complete sign-in inside an embedded webview, which
+      // the app's own main webview is — on native, the OAuth screens run in
+      // a separate in-app browser instead (see lib/native/oauth.ts), and
+      // skipBrowserRedirect keeps this call from navigating the main webview
+      // itself away from the app.
+      const { data, error } = await supabase.auth.signInWithOAuth({
         provider: "google",
-        options: { redirectTo: buildAuthCallbackUrl(undefined, null) },
+        options: native
+          ? { redirectTo: nativeOAuthRedirectUrl(), skipBrowserRedirect: true }
+          : // No `?next=` query param — Supabase's redirectTo allowlist match is
+            // exact against the bare callback URL registered in the dashboard
+            // (see buildAuthCallbackUrl); /auth/callback still routes correctly
+            // by onboarding state without it.
+            { redirectTo: buildAuthCallbackUrl(undefined, null) },
       });
+
       if (error) {
         setError(authErrorMessage(error, "Google sign-in failed. Please try again."));
+        return;
+      }
+
+      if (native && data?.url) {
+        await openNativeOAuthUrl(data.url);
       }
     } catch (err) {
       setError(authErrorMessage(err, "Google sign-in failed. Please try again."));

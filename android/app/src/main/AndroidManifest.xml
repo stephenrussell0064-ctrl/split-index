@@ -22,6 +22,17 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- OAuth redirect deep link — Google's sign-in flow can't complete
+                 inside the app's own embedded webview, so it runs in a separate
+                 in-app browser (@capacitor/browser) and redirects back here via
+                 this custom scheme instead of an https:// URL. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="co.uk.splitindex.app" />
+            </intent-filter>
+
         </activity>
 
         <provider
