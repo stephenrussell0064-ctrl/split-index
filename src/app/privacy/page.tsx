@@ -75,10 +75,8 @@ export default function PrivacyPolicyPage() {
                   numbers.
                 </li>
                 <li>
-                  <strong>OAuth and integration data:</strong> when you sign in with Google
-                  or connect third-party fitness services (such as Strava or
-                  Garmin), we receive account identifiers and activity data authorised by
-                  you through those providers.
+                  <strong>OAuth data:</strong> when you sign in with Google, we receive
+                  account identifiers authorised by you through that provider.
                 </li>
                 <li>
                   <strong>Social features:</strong> friend connections, leaderboard
@@ -167,10 +165,6 @@ export default function PrivacyPolicyPage() {
                 </li>
                 <li>
                   <strong>Google</strong> — OAuth sign-in (when you choose to use it);
-                </li>
-                <li>
-                  <strong>Strava and Garmin</strong> — activity import when you connect
-                  these integrations;
                 </li>
                 <li>
                   <strong>OpenAI</strong> — AI-generated coaching feedback based on your

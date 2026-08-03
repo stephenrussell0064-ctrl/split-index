@@ -338,10 +338,3 @@ export const GENDERS = [
   { value: "prefer_not_to_say", label: "Prefer not to say" },
 ];
 
-// OAuth integrations (Strava, Garmin, etc.) are intentionally not listed here —
-// the connect UI is removed per MASTER-BRIEF.md §9 while the backend routes/
-// tables stay in place so the feature can return later without a rebuild.
-export const IMPORT_SOURCES = [
-  { id: "csv", name: "CSV Upload", status: "available" },
-  { id: "manual", name: "Manual Entry", status: "available" },
-] as const;

@@ -32,7 +32,6 @@ import { SportForm, type UpdateField } from "./sport-form";
 import { SuccessScreen, type ScoreResultSummary } from "./success-screen";
 import { useDraftAutosave, type DraftStatus } from "./use-autosave";
 import { LogQuickActions } from "./log-quick-actions";
-import { FileImportDropzone } from "./file-import-dropzone";
 import { submitActivityRequest } from "@/lib/activities/submit-activity";
 import type { CardioEnrichment } from "@/lib/scoring/cardio";
 import { useSetModeOverride } from "@/components/layout/mode-override-context";
@@ -85,7 +84,6 @@ export function ActivityForm({
   profileExperience = null,
   zoneMode = "generic",
   enduranceOnly = false,
-  showFileImport = false,
   successRedirect,
 }: {
   profileWeightKg?: number | null;
@@ -101,7 +99,6 @@ export function ActivityForm({
   profileExperience?: ExperienceLevel | null;
   zoneMode?: "gym" | "cardio" | "generic";
   enduranceOnly?: boolean;
-  showFileImport?: boolean;
   successRedirect?: string;
 }) {
   const isEdit = mode === "edit";
@@ -432,12 +429,6 @@ export function ActivityForm({
             ) : (
               <SportPicker onSelect={selectSport} draftSports={draftSports} />
             )}
-            {showFileImport && (
-              <div className="mt-8 rounded-2xl border border-cardio-border/30 p-5">
-                <p className="micro-label text-cardio-muted mb-3">Import file</p>
-                <FileImportDropzone compact />
-              </div>
-            )}
           </motion.div>
         )}
 
@@ -539,12 +530,6 @@ export function ActivityForm({
                 onSaveTemplate={saveAsTemplate}
                 savingTemplate={savingTemplate}
               />
-            )}
-
-            {showFileImport && !isEdit && (
-              <div className="mb-6">
-                <FileImportDropzone sport={sport} compact />
-              </div>
             )}
 
             {/* Sport switcher strip — generic create mode only */}

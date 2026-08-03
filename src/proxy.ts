@@ -7,7 +7,7 @@ import { updateSession } from "@/lib/supabase/proxy";
 // throttling at all (activity logging, account deletion, etc).
 const WINDOW_MS = 60_000;
 const MAX_REQUESTS_PER_WINDOW = 60;
-const UNTHROTTLED_API_PREFIXES = ["/api/stripe/webhook", "/api/cron", "/api/integrations/sync"];
+const UNTHROTTLED_API_PREFIXES = ["/api/stripe/webhook", "/api/cron"];
 
 const hits = new Map<string, { count: number; resetAt: number }>();
 

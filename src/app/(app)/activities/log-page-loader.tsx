@@ -17,7 +17,6 @@ interface LogPageProps {
   sport: SportType | null;
   zoneMode: "gym" | "cardio";
   enduranceOnly?: boolean;
-  showFileImport?: boolean;
   searchParams?: Promise<{ repeat?: string; plan?: string; template?: string }>;
 }
 
@@ -25,7 +24,6 @@ export async function loadLogPage({
   sport,
   zoneMode,
   enduranceOnly,
-  showFileImport,
   searchParams,
 }: LogPageProps) {
   const supabase = await createClient();
@@ -144,7 +142,6 @@ export async function loadLogPage({
       initialRepeatState={initialRepeatState}
       zoneMode={zoneMode}
       enduranceOnly={enduranceOnly}
-      showFileImport={showFileImport}
       successRedirect={zoneMode === "gym" ? "/gym" : "/cardio"}
       profileGender={profile.gender}
       profileExperience={profile.experience}

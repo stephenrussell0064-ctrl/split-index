@@ -7,7 +7,6 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
 import { SkuPicker } from "@/components/pricing/sku-picker";
-import { CsvBootstrapStep } from "@/components/onboarding/csv-bootstrap-step";
 import { tierForScore } from "@/lib/scoring/split-strength-engine";
 import { PRICING } from "@/lib/pricing/config";
 import type { SportType } from "@/types";
@@ -18,7 +17,7 @@ const QUICK_LIFTS = [
   { name: "Deadlift", muscle: "Back" },
 ];
 
-type Phase = "calculating" | "quick-input" | "revealing" | "csv-bootstrap" | "trial-offer";
+type Phase = "calculating" | "quick-input" | "revealing" | "trial-offer";
 
 interface ScoreRevealSequenceProps {
   hasGym: boolean;
@@ -238,17 +237,13 @@ export function ScoreRevealSequence({
           </p>
           <Button
             className="mt-8"
-            onClick={() => setPhase("csv-bootstrap")}
+            onClick={() => setPhase("trial-offer")}
           >
             Continue
           </Button>
         </div>
       </Card>
     );
-  }
-
-  if (phase === "csv-bootstrap") {
-    return <CsvBootstrapStep onContinue={() => setPhase("trial-offer")} />;
   }
 
   return (

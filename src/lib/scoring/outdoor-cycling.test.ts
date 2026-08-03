@@ -2,9 +2,6 @@ import { describe, expect, it } from "vitest";
 import { mapSportToBenchmarkSport, mapSportToCardioType } from "./adapters";
 import { SPORT_FIELDS } from "@/components/activities/form-state";
 import { SPORT_INDEX_LABELS, SPORTS } from "@/lib/constants/sports";
-import { detectSport as detectSportCsv } from "@/lib/integrations/csv-parser";
-import { detectSport as detectSportTcx } from "@/lib/integrations/parsers/tcx";
-import { STRAVA_TYPE_TO_SPORT } from "@/lib/integrations/providers/index";
 
 /**
  * outdoor_cycling (Slice F: sport-coverage gaps) shares its scoring bucket
@@ -36,35 +33,5 @@ describe("outdoor_cycling form config", () => {
   it("is present in the sport catalog and index-label map", () => {
     expect(SPORTS.some((s) => s.id === "outdoor_cycling")).toBe(true);
     expect(SPORT_INDEX_LABELS.outdoor_cycling).toBe("Outdoor Cycling Index");
-  });
-});
-
-describe("import sport-detection routes generic bike/cycle text to outdoor_cycling, trainer signals to indoor_cycling", () => {
-  it("CSV keyword detection", () => {
-    expect(detectSportCsv("cycling")).toBe("outdoor_cycling");
-    expect(detectSportCsv("Road Ride")).toBe("outdoor_cycling");
-    expect(detectSportCsv("Zwift ride")).toBe("indoor_cycling");
-    expect(detectSportCsv("Peloton class")).toBe("indoor_cycling");
-    expect(detectSportCsv("Trainer session")).toBe("indoor_cycling");
-  });
-
-  it("TCX sport-field detection", () => {
-    expect(detectSportTcx("Cycling")).toBe("outdoor_cycling");
-    expect(detectSportTcx("Bike Ride")).toBe("outdoor_cycling");
-    expect(detectSportTcx("Indoor Cycling")).toBe("indoor_cycling");
-    expect(detectSportTcx("Zwift Cycling")).toBe("indoor_cycling");
-  });
-});
-
-describe("Strava outdoor ride types map to outdoor_cycling, VirtualRide stays indoor_cycling", () => {
-  it("genuinely outdoor ride types", () => {
-    expect(STRAVA_TYPE_TO_SPORT.Ride).toBe("outdoor_cycling");
-    expect(STRAVA_TYPE_TO_SPORT.GravelRide).toBe("outdoor_cycling");
-    expect(STRAVA_TYPE_TO_SPORT.MountainBikeRide).toBe("outdoor_cycling");
-    expect(STRAVA_TYPE_TO_SPORT.EBikeRide).toBe("outdoor_cycling");
-  });
-
-  it("simulated/stationary ride stays indoor", () => {
-    expect(STRAVA_TYPE_TO_SPORT.VirtualRide).toBe("indoor_cycling");
   });
 });

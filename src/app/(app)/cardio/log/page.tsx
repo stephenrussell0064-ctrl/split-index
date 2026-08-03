@@ -9,7 +9,6 @@ export default function CardioLogPage({
     sport: null,
     zoneMode: "cardio",
     enduranceOnly: true,
-    showFileImport: true,
     searchParams,
   });
 }
