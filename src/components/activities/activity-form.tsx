@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
 import { AlertCircle, ArrowLeft, Check, CloudUpload, RotateCcw, Trash2, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -461,21 +462,21 @@ export function ActivityForm({
                   Change sport
                 </button>
               ) : !isEdit ? (
-                <a
+                <Link
                   href={zoneMode === "gym" ? "/gym" : "/cardio"}
                   className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-foreground min-h-[44px]"
                 >
                   <ArrowLeft className="h-4 w-4" />
                   Back to {zoneMode === "gym" ? "The Lab" : "The Engine"}
-                </a>
+                </Link>
               ) : (
-                <a
+                <Link
                   href={activityId ? `/activities/${activityId}` : "/activities"}
                   className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-foreground min-h-[44px]"
                 >
                   <ArrowLeft className="h-4 w-4" />
                   Back to activity
-                </a>
+                </Link>
               )}
 
               <div

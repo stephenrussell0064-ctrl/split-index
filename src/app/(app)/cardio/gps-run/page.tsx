@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { MapPin, Square, AlertTriangle, Gauge } from "lucide-react";
@@ -11,7 +11,12 @@ import { PageHeader } from "@/components/ui/page-header";
 import { SESSION_TYPES } from "@/lib/constants/sports";
 import { isNativePlatform } from "@/lib/native/platform";
 import { startGpsSession, stopGpsSession, recoverOrphanedSession } from "@/lib/native/gps-tracking";
-import { PARTIAL_REASON_LABEL, type GpsTrackSummary, type GpsPoint } from "@/lib/scoring/gps-track";
+import {
+  PARTIAL_REASON_LABEL,
+  haversineDistanceMeters,
+  type GpsTrackSummary,
+  type GpsPoint,
+} from "@/lib/scoring/gps-track";
 import type { SessionType } from "@/types";
 
 // Leaflet touches `window` at import time — ssr: false keeps it out of the
@@ -53,6 +58,8 @@ export default function GpsRunPage() {
   const [livePoints, setLivePoints] = useState<GpsPoint[]>([]);
   const [sessionType, setSessionType] = useState<SessionType>("easy");
   const [saving, setSaving] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [stopping, setStopping] = useState(false);
   const [error, setError] = useState("");
   const startedAtRef = useRef<number>(0);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -72,25 +79,52 @@ export default function GpsRunPage() {
     };
   }, []);
 
+  // Live distance/pace during tracking — the same haversine sum the final
+  // summary uses, just run incrementally over whatever points have arrived
+  // so far, so the bottom-half metrics aren't just a stopwatch.
+  const liveDistanceMeters = useMemo(() => {
+    let total = 0;
+    for (let i = 1; i < livePoints.length; i++) {
+      total += haversineDistanceMeters(livePoints[i - 1], livePoints[i]);
+    }
+    return total;
+  }, [livePoints]);
+
+  const livePaceSecondsPerKm =
+    liveDistanceMeters > 0 ? elapsedSeconds / (liveDistanceMeters / 1000) : null;
+
   async function handleStart() {
+    if (starting) return; // guards against a double-tap firing two watchers
+    setStarting(true);
     setError("");
     setLivePoints([]);
-    await startGpsSession((point) => setLivePoints((prev) => [...prev, point]));
-    startedAtRef.current = Date.now();
-    setPhase("tracking");
-    tickRef.current = setInterval(() => {
-      setElapsedSeconds(Math.floor((Date.now() - startedAtRef.current) / 1000));
-    }, 1000);
+    try {
+      await startGpsSession((point) => setLivePoints((prev) => [...prev, point]));
+      startedAtRef.current = Date.now();
+      setPhase("tracking");
+      tickRef.current = setInterval(() => {
+        setElapsedSeconds(Math.floor((Date.now() - startedAtRef.current) / 1000));
+      }, 1000);
+    } finally {
+      setStarting(false);
+    }
   }
 
   async function handleStop() {
-    if (tickRef.current) clearInterval(tickRef.current);
-    const result = await stopGpsSession();
-    setSummary(result);
-    setPhase("reviewing");
+    if (stopping) return;
+    setStopping(true);
+    try {
+      if (tickRef.current) clearInterval(tickRef.current);
+      const result = await stopGpsSession();
+      setSummary(result);
+      setPhase("reviewing");
+    } finally {
+      setStopping(false);
+    }
   }
 
   async function submitSummary(trackSummary: GpsTrackSummary, startedAtIso: string) {
+    if (saving) return;
     setSaving(true);
     setError("");
     try {
@@ -144,6 +178,57 @@ export default function GpsRunPage() {
     );
   }
 
+  // Tracking is a full-bleed overlay (escapes the app shell's padded content
+  // area entirely) rather than a card in the normal page flow — the map
+  // needs real screen real estate to be legible while running, not a
+  // 200px-tall preview.
+  if (phase === "tracking") {
+    return (
+      <div className="fixed inset-0 z-50 flex flex-col bg-background">
+        <div className="relative h-1/2 w-full shrink-0">
+          <GpsMap points={livePoints} className="h-full w-full" />
+          <div
+            className="pointer-events-none absolute left-4 flex items-center gap-1.5 rounded-full bg-black/60 px-3 py-1.5 text-xs text-white backdrop-blur-sm"
+            style={{ top: "max(1rem, calc(env(safe-area-inset-top) + 0.5rem))" }}
+          >
+            <span className="pulse-dot h-1.5 w-1.5 rounded-full bg-danger" aria-hidden />
+            Tracking — screen can lock
+          </div>
+        </div>
+
+        <div className="flex flex-1 flex-col items-center justify-between px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-6">
+          <div className="flex flex-1 flex-col items-center justify-center">
+            <p className="index-display text-6xl font-bold tabular-nums">
+              {formatElapsed(elapsedSeconds)}
+            </p>
+            <div className="mt-8 grid w-full max-w-xs grid-cols-2 gap-4 text-center">
+              <div>
+                <p className="micro-label text-muted">Distance</p>
+                <p className="text-2xl font-bold tabular-nums">
+                  {(liveDistanceMeters / 1000).toFixed(2)} km
+                </p>
+              </div>
+              <div>
+                <p className="micro-label text-muted">Pace</p>
+                <p className="text-2xl font-bold tabular-nums">{formatPace(livePaceSecondsPerKm)}</p>
+              </div>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleStop}
+            disabled={stopping}
+            aria-label="Stop run"
+            className="flex h-16 w-16 items-center justify-center rounded-full bg-danger text-white shadow-lg shadow-danger/30 transition-transform active:scale-95 disabled:opacity-60"
+          >
+            <Square className="h-6 w-6" fill="currentColor" />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader eyebrow="The Engine" title="GPS Run" subtitle="Lock your phone. Tracking keeps going." />
@@ -190,34 +275,13 @@ export default function GpsRunPage() {
             <button
               type="button"
               onClick={handleStart}
+              disabled={starting}
               aria-label="Start run"
-              className="flex h-24 w-24 items-center justify-center rounded-full bg-accent text-accent-foreground shadow-xl shadow-accent/30 transition-transform active:scale-95"
+              className="flex h-24 w-24 items-center justify-center rounded-full bg-accent text-accent-foreground shadow-xl shadow-accent/30 transition-transform active:scale-95 disabled:opacity-60"
             >
-              <span className="text-sm font-bold uppercase tracking-wide">Start</span>
-            </button>
-          </div>
-        </Card>
-      )}
-
-      {phase === "tracking" && (
-        <Card padding="lg">
-          <GpsMap points={livePoints} className="mb-6 h-56 w-full overflow-hidden rounded-2xl" />
-
-          <div className="flex flex-col items-center pb-2 text-center">
-            <p className="index-display mb-2 text-6xl font-bold tabular-nums">
-              {formatElapsed(elapsedSeconds)}
-            </p>
-            <p className="mb-10 flex items-center gap-1.5 text-xs text-muted">
-              <span className="pulse-dot h-1.5 w-1.5 rounded-full bg-danger" aria-hidden />
-              Tracking in the background — screen can lock
-            </p>
-            <button
-              type="button"
-              onClick={handleStop}
-              aria-label="Stop run"
-              className="flex h-24 w-24 items-center justify-center rounded-full bg-danger text-white shadow-xl shadow-danger/30 transition-transform active:scale-95"
-            >
-              <Square className="h-8 w-8" fill="currentColor" />
+              <span className="text-sm font-bold uppercase tracking-wide">
+                {starting ? "…" : "Start"}
+              </span>
             </button>
           </div>
         </Card>
