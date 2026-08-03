@@ -62,8 +62,13 @@ export interface GpsSessionHandle {
  * Starts a new tracking session. Any previously-persisted session is
  * discarded here — callers are expected to have already recovered/resolved
  * an orphaned session (see `recoverOrphanedSession`) before calling this.
+ *
+ * `onPoint` fires for every accepted fix, live, so the UI can draw the route
+ * on a map as the run happens — it's purely a rendering hook, not the
+ * source of truth (Preferences persistence above is), so a missed callback
+ * during a brief app suspend never loses data, just a map redraw.
  */
-export async function startGpsSession(): Promise<GpsSessionHandle> {
+export async function startGpsSession(onPoint?: (point: GpsPoint) => void): Promise<GpsSessionHandle> {
   const startedAt = Date.now();
   await writeSession({ points: [], startedAt, permissionRevoked: false });
 
@@ -95,6 +100,7 @@ export async function startGpsSession(): Promise<GpsSessionHandle> {
         time: position.time ?? Date.now(),
       };
       await writeSession({ ...current, points: [...current.points, point] });
+      onPoint?.(point);
     }
   );
 

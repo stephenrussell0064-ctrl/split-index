@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import { MapPin, Square, AlertTriangle, Gauge } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,8 +11,12 @@ import { PageHeader } from "@/components/ui/page-header";
 import { SESSION_TYPES } from "@/lib/constants/sports";
 import { isNativePlatform } from "@/lib/native/platform";
 import { startGpsSession, stopGpsSession, recoverOrphanedSession } from "@/lib/native/gps-tracking";
-import { PARTIAL_REASON_LABEL, type GpsTrackSummary } from "@/lib/scoring/gps-track";
+import { PARTIAL_REASON_LABEL, type GpsTrackSummary, type GpsPoint } from "@/lib/scoring/gps-track";
 import type { SessionType } from "@/types";
+
+// Leaflet touches `window` at import time — ssr: false keeps it out of the
+// server render entirely rather than crashing it.
+const GpsMap = dynamic(() => import("@/components/cardio/gps-map"), { ssr: false });
 
 function formatElapsed(seconds: number): string {
   const h = Math.floor(seconds / 3600);
@@ -45,6 +50,7 @@ export default function GpsRunPage() {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [summary, setSummary] = useState<GpsTrackSummary | null>(null);
   const [orphaned, setOrphaned] = useState<GpsTrackSummary | null>(null);
+  const [livePoints, setLivePoints] = useState<GpsPoint[]>([]);
   const [sessionType, setSessionType] = useState<SessionType>("easy");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -68,7 +74,8 @@ export default function GpsRunPage() {
 
   async function handleStart() {
     setError("");
-    await startGpsSession();
+    setLivePoints([]);
+    await startGpsSession((point) => setLivePoints((prev) => [...prev, point]));
     startedAtRef.current = Date.now();
     setPhase("tracking");
     tickRef.current = setInterval(() => {
@@ -194,7 +201,9 @@ export default function GpsRunPage() {
 
       {phase === "tracking" && (
         <Card padding="lg">
-          <div className="flex flex-col items-center py-10 text-center">
+          <GpsMap points={livePoints} className="mb-6 h-56 w-full overflow-hidden rounded-2xl" />
+
+          <div className="flex flex-col items-center pb-2 text-center">
             <p className="index-display mb-2 text-6xl font-bold tabular-nums">
               {formatElapsed(elapsedSeconds)}
             </p>
@@ -216,6 +225,10 @@ export default function GpsRunPage() {
 
       {phase === "reviewing" && summary && (
         <Card padding="lg">
+          {livePoints.length > 0 && (
+            <GpsMap points={livePoints} className="mb-6 h-48 w-full overflow-hidden rounded-2xl" />
+          )}
+
           {summary.isPartial && summary.partialReason && (
             <div className="mb-4 flex items-start gap-2 rounded-xl border border-warning/30 bg-warning/5 p-3 text-xs text-warning">
               <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
