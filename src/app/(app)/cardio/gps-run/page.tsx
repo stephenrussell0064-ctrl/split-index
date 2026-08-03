@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import dynamic from "next/dynamic";
 import { MapPin, Square, AlertTriangle, Gauge, Mountain, HeartPulse, Zap, Flag } from "lucide-react";
 import { Card } from "@/components/ui/card";
@@ -391,7 +392,17 @@ export default function GpsRunPage() {
   // instead of stacking them, since a portrait-only layout squishes both
   // panes into unusable slivers when the phone is rotated.
   if (phase === "tracking") {
-    return (
+    // Portaled to document.body rather than returned in place — this HUD is
+    // deliberately dark regardless of app theme, but it still renders inside
+    // the page tree, which sits under the cardio (light-mode) shell wrapper.
+    // That wrapper remaps any `text-white`/`bg-white`/`border-white` utility
+    // it finds as a descendant (so shared components stay legible on the
+    // light cardio background elsewhere on this same page) — the remap has
+    // no way to know this particular subtree wants to stay dark, so it was
+    // flattening this screen's contrast to near-invisible. Escaping to
+    // body sidesteps the wrapper's CSS selectors entirely instead of trying
+    // to out-specificity them one utility at a time.
+    return createPortal(
       <div className="fixed inset-0 z-50 flex flex-col bg-background landscape:flex-row">
         <div className="relative h-1/2 w-full shrink-0 landscape:h-full landscape:w-1/2">
           <GpsMap points={livePoints} className="h-full w-full" />
@@ -473,7 +484,8 @@ export default function GpsRunPage() {
             </button>
           </div>
         </div>
-      </div>
+      </div>,
+      document.body
     );
   }
 

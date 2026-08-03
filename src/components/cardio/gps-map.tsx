@@ -62,16 +62,16 @@ function InvalidateSizeOnResize() {
 
 /**
  * Loaded via next/dynamic({ ssr: false }) — Leaflet touches `window` at
- * import time, so this can never run during SSR. Dark CARTO basemap tiles
- * (free, no API key) rather than default OSM tiles, to match the app's dark
- * theme instead of a jarring bright-white map dropped into a dark card.
+ * import time, so this can never run during SSR. Light CARTO basemap tiles
+ * (free, no API key) to match the app's light cardio theme instead of a
+ * dark map fighting the surrounding light UI.
  */
 export default function GpsMap({ points, className }: GpsMapProps) {
   if (points.length === 0) {
     return (
       <div
         className={cn(
-          "flex items-center justify-center border border-white/15 bg-white/10 text-sm font-medium text-white",
+          "flex items-center justify-center border border-[#0c1a24]/10 bg-[#eef6ff] text-sm font-medium text-[#0c1a24]",
           className
         )}
       >
@@ -98,14 +98,14 @@ export default function GpsMap({ points, className }: GpsMapProps) {
         className="h-full w-full"
       >
         <TileLayer
-          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+          url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
         />
-        <Polyline positions={positions} pathOptions={{ color: "#3dff6e", weight: 4 }} />
+        <Polyline positions={positions} pathOptions={{ color: "#3ba6ff", weight: 4 }} />
         <CircleMarker
           center={[latest.latitude, latest.longitude]}
           radius={7}
-          pathOptions={{ color: "#ffffff", fillColor: "#3dff6e", fillOpacity: 1, weight: 2 }}
+          pathOptions={{ color: "#ffffff", fillColor: "#3ba6ff", fillOpacity: 1, weight: 2 }}
         />
         <FollowRoute points={points} />
         <InvalidateSizeOnResize />
