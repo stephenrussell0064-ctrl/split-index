@@ -10,7 +10,12 @@ import { RELATIVE_EFFORT_SESSION_TYPES } from "./cardio-predictions";
 import type { TimelineSession } from "./timeline";
 
 export const INTERFERENCE_CONFIG = {
-  MIN_PAIRED_SESSIONS: 5,
+  // Lowered from 5: still a real statistical minimum (this is the athlete's
+  // own paired history, not a population claim, so it can't drop to 1-2
+  // without risking a "confidently wrong" finding from noise) but low enough
+  // that a normally-active hybrid athlete sees their first real result
+  // within a couple of weeks rather than a full training block.
+  MIN_PAIRED_SESSIONS: 3,
   LOOKBACK_DAYS_STRENGTH_EFFECT_ON_CARDIO: 3, // how many days post-leg-day to track decay
   LOOKBACK_DAYS_CARDIO_EFFECT_ON_STRENGTH: 7, // weekly volume window for the reverse direction
   /** A cardio session preceded by this many rest days (no session at all) or more is the "rested baseline" to compare against. */

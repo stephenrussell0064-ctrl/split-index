@@ -12,7 +12,7 @@ import {
   Cell,
 } from "recharts";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { ChartEmptyState, chartGridStroke, chartTickFill, chartTooltipStyle } from "@/components/analytics/charts";
+import { chartGridStroke, chartTickFill, chartTooltipStyle } from "@/components/analytics/charts";
 import { ShareImageButton } from "@/components/analytics/share-image-button";
 import { designTokens } from "@/lib/design/tokens";
 import { INTERFERENCE_CONFIG, hasShareableFinding } from "@/lib/scoring/interference";
@@ -22,6 +22,43 @@ function dayLabel(d: number): string {
   if (d === 0) return "Same day";
   if (d === 1) return "+1 day";
   return `+${d} days`;
+}
+
+/**
+ * Replaces a flat "gathering data" placeholder with a visible progress bar
+ * toward the real finding — the screen should feel like it's building
+ * toward something concrete no matter how little is logged yet, not like a
+ * dead end until an arbitrary session count is hit.
+ */
+function SessionsProgress({
+  current,
+  target,
+  message,
+}: {
+  current: number;
+  target: number;
+  message: string;
+}) {
+  const pct = target > 0 ? Math.min(100, Math.round((current / target) * 100)) : 0;
+  return (
+    <div className="flex min-h-[200px] flex-col items-center justify-center gap-4 rounded-xl px-6 py-8 text-center">
+      <div className="w-full max-w-xs">
+        <div className="mb-2 flex items-center justify-between text-xs text-muted">
+          <span>Progress toward your first finding</span>
+          <span className="tabular-nums">
+            {current}/{target}
+          </span>
+        </div>
+        <div className="h-2 w-full overflow-hidden rounded-full bg-white/8">
+          <div
+            className="h-full rounded-full bg-accent transition-all duration-500"
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      </div>
+      <p className="max-w-xs text-sm text-muted">{message}</p>
+    </div>
+  );
 }
 
 export function InterferenceDetail({ report }: { report: InterferenceReport }) {
@@ -103,7 +140,11 @@ export function InterferenceDetail({ report }: { report: InterferenceReport }) {
                 </p>
               </>
             ) : (
-              <ChartEmptyState message={strengthToCardio.summary} />
+              <SessionsProgress
+                current={strengthToCardio.sampleCount}
+                target={strengthToCardio.minSamples}
+                message={strengthToCardio.summary}
+              />
             )
           ) : (
             <>
@@ -173,7 +214,11 @@ export function InterferenceDetail({ report }: { report: InterferenceReport }) {
         </CardHeader>
         <CardContent>
           {cardioToStrength.calibrating ? (
-            <ChartEmptyState message={cardioToStrength.summary} />
+            <SessionsProgress
+              current={cardioToStrength.sampleCount}
+              target={cardioToStrength.minSamples}
+              message={cardioToStrength.summary}
+            />
           ) : (
             <>
               <p className="mb-4 text-sm font-medium text-foreground/90">{cardioToStrength.summary}</p>

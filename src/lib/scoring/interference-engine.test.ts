@@ -59,9 +59,9 @@ function strength(dayOffset: number, overrides: Partial<TimelineSession> = {}): 
 }
 
 describe("Interference Engine — never renders below MIN_PAIRED_SESSIONS", () => {
-  it("strength->cardio direction stays calibrating with 4 qualifying pairs (one below the gate of 5)", () => {
+  it("strength->cardio direction stays calibrating with 2 qualifying pairs (one below the gate of 3)", () => {
     const sessions: TimelineSession[] = [];
-    for (let week = 0; week < 4; week++) {
+    for (let week = 0; week < 2; week++) {
       const day = week * 7;
       sessions.push(strength(day));
       sessions.push(cardio(day + 1, { efficiencyFactor: efFromPaceAndHr(308, 150) }));
@@ -74,9 +74,9 @@ describe("Interference Engine — never renders below MIN_PAIRED_SESSIONS", () =
     expect(report.strengthToCardio.decayByDay).toEqual([]);
   });
 
-  it("cardio->strength direction stays calibrating with 4 gym sessions (one below the gate of 5)", () => {
+  it("cardio->strength direction stays calibrating with 2 gym sessions (one below the gate of 3)", () => {
     const sessions: TimelineSession[] = [];
-    for (let week = 0; week < 4; week++) {
+    for (let week = 0; week < 2; week++) {
       sessions.push(strength(week * 7));
     }
 

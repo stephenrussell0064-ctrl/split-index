@@ -263,7 +263,7 @@ describe("computeInterferenceReport — cardio-to-strength direction", () => {
 
 describe("INTERFERENCE_CONFIG", () => {
   it("matches the brief's named constants", () => {
-    expect(INTERFERENCE_CONFIG.MIN_PAIRED_SESSIONS).toBe(5);
+    expect(INTERFERENCE_CONFIG.MIN_PAIRED_SESSIONS).toBe(3);
     expect(INTERFERENCE_CONFIG.LOOKBACK_DAYS_STRENGTH_EFFECT_ON_CARDIO).toBe(3);
     expect(INTERFERENCE_CONFIG.LOOKBACK_DAYS_CARDIO_EFFECT_ON_STRENGTH).toBe(7);
   });
