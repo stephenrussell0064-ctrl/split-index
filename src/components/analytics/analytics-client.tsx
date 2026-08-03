@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
+import { ChevronRight } from "lucide-react";
 import { ActivityHeatmap } from "@/components/dashboard/activity-heatmap";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
@@ -201,21 +202,25 @@ export function AnalyticsClient({ data }: { data: AnalyticsPayload }) {
       label: "Split Index",
       value: latest ? formatIndex(latest.split_index) : "—",
       color: "text-accent",
+      href: "#trends",
     },
     {
       label: "Recovery",
       value: latest ? formatPercent(latest.recovery_score) : "—",
       color: "text-success",
+      href: "#recovery",
     },
     {
       label: "Fatigue",
       value: latest ? formatPercent(latest.fatigue_score) : "—",
       color: "text-warning",
+      href: "#recovery",
     },
     {
       label: "Sessions",
       value: String(filteredActivities.length),
       color: "text-foreground",
+      href: "#consistency",
     },
   ];
 
@@ -256,28 +261,35 @@ export function AnalyticsClient({ data }: { data: AnalyticsPayload }) {
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {summaryStats.map((stat, i) => (
-          <motion.div
+          <motion.a
             key={stat.label}
+            href={stat.href}
             initial={reducedMotion ? false : { opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ ...spring, delay: i * 0.05 }}
+            className="block"
           >
-            <Card padding="sm" glow={i === 0 ? "accent" : "none"} interactive>
-              <MetricLabel>{stat.label}</MetricLabel>
+            <Card padding="sm" glow={i === 0 ? "accent" : "none"} interactive className="cursor-pointer">
+              <div className="flex items-center justify-between">
+                <MetricLabel>{stat.label}</MetricLabel>
+                <ChevronRight className="h-3 w-3 text-muted/50" />
+              </div>
               <MetricValue size="md" className={`mt-1.5 ${stat.color}`}>
                 {stat.value}
               </MetricValue>
             </Card>
-          </motion.div>
+          </motion.a>
         ))}
       </div>
 
-      <InjuryRiskPanel
-        scores={data.scores}
-        isPremium={data.isPremium}
-        hrvToday={data.hrvToday}
-        hrvBaseline={data.hrvBaseline}
-      />
+      <div id="recovery" className="scroll-mt-6">
+        <InjuryRiskPanel
+          scores={data.scores}
+          isPremium={data.isPremium}
+          hrvToday={data.hrvToday}
+          hrvBaseline={data.hrvBaseline}
+        />
+      </div>
 
       <PremiumGate locked={!data.isPremium} feature="ACWR trend analysis">
         <AcwrTrendChart data={acwrTrend} />
@@ -308,14 +320,18 @@ export function AnalyticsClient({ data }: { data: AnalyticsPayload }) {
       )}
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <PremiumGate locked={yearlyLocked} feature="Yearly trend analysis">
-          <TrendPanel data={trendData} granularity={granularity} />
-        </PremiumGate>
-        <ConsistencyScore
-          activities={filteredActivities}
-          heatmapDays={heatmapDays}
-          targetSessionsPerWeek={data.targetSessionsPerWeek}
-        />
+        <div id="trends" className="scroll-mt-6">
+          <PremiumGate locked={yearlyLocked} feature="Yearly trend analysis">
+            <TrendPanel data={trendData} granularity={granularity} />
+          </PremiumGate>
+        </div>
+        <div id="consistency" className="scroll-mt-6">
+          <ConsistencyScore
+            activities={filteredActivities}
+            heatmapDays={heatmapDays}
+            targetSessionsPerWeek={data.targetSessionsPerWeek}
+          />
+        </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">

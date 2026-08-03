@@ -1,7 +1,7 @@
 "use client";
 
-import { motion } from "framer-motion";
-import { GitCompare, Filter } from "lucide-react";
+import { useState } from "react";
+import { GitCompare, ChevronDown } from "lucide-react";
 import { Select } from "@/components/ui/input";
 import { SPORTS } from "@/lib/constants/sports";
 import { cn } from "@/lib/utils/cn";
@@ -16,10 +16,10 @@ const PERIOD_PRESETS: { value: PeriodPreset; label: string }[] = [
   { value: "last_year", label: "Last year" },
 ];
 
-const GRANULARITY_OPTIONS: { value: TrendGranularity; label: string }[] = [
-  { value: "week", label: "Weekly" },
-  { value: "month", label: "Monthly" },
-  { value: "year", label: "Yearly" },
+const GRANULARITY_OPTIONS: { value: TrendGranularity; label: string; short: string }[] = [
+  { value: "week", label: "Weekly", short: "W" },
+  { value: "month", label: "Monthly", short: "M" },
+  { value: "year", label: "Yearly", short: "Y" },
 ];
 
 interface AnalyticsFiltersProps {
@@ -37,6 +37,14 @@ interface AnalyticsFiltersProps {
   periodBLabel: string;
 }
 
+/**
+ * Compact by default (user feedback: the filter bar at the top was too
+ * large — a permanently-sticky, multi-row block with a label over every
+ * field, eating real screen space before any actual data appeared). One
+ * dense, non-sticky row now; Period A/B + Compare — the least frequently
+ * touched controls — live behind a disclosure instead of always being
+ * rendered, since most visits just want the sport/granularity toggle.
+ */
 export function AnalyticsFilters({
   sport,
   onSportChange,
@@ -51,93 +59,99 @@ export function AnalyticsFilters({
   periodALabel,
   periodBLabel,
 }: AnalyticsFiltersProps) {
+  const [comparisonOpen, setComparisonOpen] = useState(compareEnabled);
+
   const sportOptions = [
     { value: "all", label: "All sports" },
     ...SPORTS.map((s) => ({ value: s.id, label: s.name })),
   ];
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: -8 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="glass-strong sticky top-0 z-20 rounded-2xl border border-white/[0.08] p-4 md:p-5"
-    >
-      <div className="flex flex-wrap items-end gap-4">
-        <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted">
-          <Filter className="h-3.5 w-3.5" />
-          Filters
-        </div>
+    <div className="glass rounded-xl border border-white/[0.06] p-2.5">
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          value={sport}
+          onChange={(e) => onSportChange(e.target.value as SportFilter)}
+          aria-label="Filter by sport"
+          className="h-9 min-w-0 flex-1 rounded-lg border border-white/[0.08] bg-white/[0.02] px-2.5 text-xs text-foreground sm:max-w-[150px] sm:flex-none"
+        >
+          {sportOptions.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
 
-        <div className="min-w-[140px] flex-1 sm:max-w-[180px]">
-          <Select
-            label="Sport"
-            value={sport}
-            onChange={(e) => onSportChange(e.target.value as SportFilter)}
-            options={sportOptions}
-          />
-        </div>
-
-        <div className="flex gap-1 rounded-xl border border-white/[0.06] glass p-1">
+        <div className="flex gap-0.5 rounded-lg border border-white/[0.06] glass p-0.5">
           {GRANULARITY_OPTIONS.map((g) => (
             <button
               key={g.value}
               type="button"
               onClick={() => onGranularityChange(g.value)}
+              aria-label={g.label}
               className={cn(
-                "rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-200",
+                "h-8 w-8 rounded-md text-xs font-semibold transition-all duration-200",
                 granularity === g.value
                   ? "bg-accent text-accent-foreground shadow-md shadow-accent/25"
                   : "text-muted hover:bg-white/[0.04] hover:text-foreground"
               )}
             >
-              {g.label}
+              {g.short}
             </button>
           ))}
         </div>
 
-        <div className="min-w-[140px] flex-1 sm:max-w-[160px]">
-          <Select
-            label="Period A"
-            value={periodA}
-            onChange={(e) => onPeriodAChange(e.target.value as PeriodPreset)}
-            options={PERIOD_PRESETS}
-          />
-        </div>
-
-        <div className="min-w-[140px] flex-1 sm:max-w-[160px]">
-          <Select
-            label="Period B"
-            value={periodB}
-            onChange={(e) => onPeriodBChange(e.target.value as PeriodPreset)}
-            options={PERIOD_PRESETS}
-            disabled={!compareEnabled}
-          />
-        </div>
-
         <button
           type="button"
-          onClick={() => onCompareToggle(!compareEnabled)}
+          onClick={() => {
+            const next = !comparisonOpen;
+            setComparisonOpen(next);
+            if (!next) onCompareToggle(false);
+          }}
           className={cn(
-            "flex h-11 items-center gap-2 rounded-xl px-4 text-sm font-medium transition-all",
-            compareEnabled
+            "ml-auto flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium transition-all",
+            comparisonOpen
               ? "bg-accent/20 text-accent border border-accent/30"
               : "glass border border-white/10 text-muted hover:text-foreground"
           )}
         >
-          <GitCompare className="h-4 w-4" />
+          <GitCompare className="h-3.5 w-3.5" />
           Compare
+          <ChevronDown
+            className={cn("h-3 w-3 transition-transform", comparisonOpen && "rotate-180")}
+          />
         </button>
       </div>
 
-      <motion.p
-        initial={{ opacity: 0, height: 0 }}
-        animate={{ opacity: 1, height: "auto" }}
-        className="mt-3 text-[10px] uppercase tracking-wider text-muted"
-      >
-        {compareEnabled
-          ? `Comparing ${periodALabel} vs ${periodBLabel}`
-          : "Pick a period, then click Compare to see it side-by-side against another period"}
-      </motion.p>
-    </motion.div>
+      {comparisonOpen && (
+        <div className="mt-2.5 flex flex-wrap items-center gap-2 border-t border-white/[0.06] pt-2.5">
+          <Select
+            value={periodA}
+            onChange={(e) => onPeriodAChange(e.target.value as PeriodPreset)}
+            options={PERIOD_PRESETS}
+            className="h-9 min-w-[130px] flex-1 sm:flex-none"
+          />
+          <span className="text-xs text-muted">vs</span>
+          <Select
+            value={periodB}
+            onChange={(e) => onPeriodBChange(e.target.value as PeriodPreset)}
+            options={PERIOD_PRESETS}
+            className="h-9 min-w-[130px] flex-1 sm:flex-none"
+          />
+          <button
+            type="button"
+            onClick={() => onCompareToggle(!compareEnabled)}
+            className={cn(
+              "h-9 rounded-lg border px-3 text-xs font-medium transition-colors",
+              compareEnabled
+                ? "border-accent/30 bg-accent/20 text-accent"
+                : "border-white/10 text-muted hover:text-foreground"
+            )}
+          >
+            {compareEnabled ? `Comparing ${periodALabel} vs ${periodBLabel}` : "Show comparison"}
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
