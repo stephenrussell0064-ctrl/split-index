@@ -29,6 +29,38 @@ function FollowRoute({ points }: { points: GpsPoint[] }) {
 }
 
 /**
+ * Leaflet caches its container's pixel size at construction time and never
+ * re-measures on its own — CSS layout changes (the flex container settling
+ * after first paint, a device rotation) don't fire a resize event Leaflet
+ * listens for. Without telling it to re-measure, every subsequent pan/zoom
+ * computes pixel offsets against a stale size, and the error compounds the
+ * further the map pans from its initial center — exactly why this only
+ * became visible "after a few minutes of following," not immediately, and
+ * why rotating to landscape broke the layout outright.
+ */
+function InvalidateSizeOnResize() {
+  const map = useMap();
+
+  useEffect(() => {
+    const container = map.getContainer();
+
+    // Once for the very first paint settling (flex/dvh layout can still be
+    // adjusting on the frame this mounts).
+    const initialTimer = setTimeout(() => map.invalidateSize(), 100);
+
+    const observer = new ResizeObserver(() => map.invalidateSize());
+    observer.observe(container);
+
+    return () => {
+      clearTimeout(initialTimer);
+      observer.disconnect();
+    };
+  }, [map]);
+
+  return null;
+}
+
+/**
  * Loaded via next/dynamic({ ssr: false }) — Leaflet touches `window` at
  * import time, so this can never run during SSR. Dark CARTO basemap tiles
  * (free, no API key) rather than default OSM tiles, to match the app's dark
@@ -71,6 +103,7 @@ export default function GpsMap({ points, className }: GpsMapProps) {
           pathOptions={{ color: "#ffffff", fillColor: "#3dff6e", fillOpacity: 1, weight: 2 }}
         />
         <FollowRoute points={points} />
+        <InvalidateSizeOnResize />
       </MapContainer>
     </div>
   );
