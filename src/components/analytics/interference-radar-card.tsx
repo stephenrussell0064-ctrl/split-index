@@ -64,13 +64,13 @@ export function InterferenceRadarCard({
           ) : (
             <>
               <div>
-                <p className="micro-label mb-1 text-muted/70">Strength → Cardio</p>
+                <p className="micro-label mb-1 text-muted/70">Does lifting slow your cardio?</p>
                 <p className="text-sm">
                   {strengthToCardio.weeklyFallback?.summary ?? strengthToCardio.summary}
                 </p>
               </div>
               <div className="border-t border-white/5 pt-3">
-                <p className="micro-label mb-1 text-muted/70">Cardio → Strength</p>
+                <p className="micro-label mb-1 text-muted/70">Does cardio weaken your lifting?</p>
                 <p className="text-sm">{cardioToStrength.summary}</p>
               </div>
             </>

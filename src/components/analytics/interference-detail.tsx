@@ -10,13 +10,23 @@ import {
   CartesianGrid,
   ReferenceLine,
   Cell,
+  LabelList,
 } from "recharts";
+import { Dumbbell, HeartPulse } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { chartGridStroke, chartTickFill, chartTooltipStyle } from "@/components/analytics/charts";
 import { ShareImageButton } from "@/components/analytics/share-image-button";
+import { cn } from "@/lib/utils/cn";
 import { designTokens } from "@/lib/design/tokens";
-import { INTERFERENCE_CONFIG, hasShareableFinding } from "@/lib/scoring/interference";
+import {
+  INTERFERENCE_CONFIG,
+  hasShareableFinding,
+  type DayBucketStat,
+} from "@/lib/scoring/interference";
 import type { InterferenceReport } from "@/lib/scoring/interference";
+
+const GOOD_COLOR = designTokens.strengthAccent; // no measurable cost
+const BAD_COLOR = "#ef4444"; // measurable cost
 
 /** Small visual flag next to a finding built from below-target sample size — the summary text already spells out the caveat in full; this is just the at-a-glance version. */
 function EarlyDataBadge() {
@@ -28,9 +38,32 @@ function EarlyDataBadge() {
 }
 
 function dayLabel(d: number): string {
-  if (d === 0) return "Same day";
-  if (d === 1) return "+1 day";
-  return `+${d} days`;
+  if (d === 0) return "That day";
+  if (d === 1) return "Next day";
+  return `${d} days later`;
+}
+
+/**
+ * The one number that actually answers the question, in the same visual
+ * language as a Split Index score — big, colored, unmissable — instead of
+ * making the reader parse a bar chart's axis to find it themselves (user
+ * feedback: "very difficult to read and visualise").
+ */
+function HeadlineStat({ deltaPct, sentence }: { deltaPct: number | null; sentence: string }) {
+  const isCost = deltaPct !== null && deltaPct < -3;
+  const color = deltaPct === null ? "text-muted" : isCost ? "text-danger" : "text-strength-accent";
+
+  return (
+    <div className="mb-5 flex items-center gap-4">
+      {deltaPct !== null && (
+        <p className={cn("index-display shrink-0 text-4xl font-bold tabular-nums", color)}>
+          {deltaPct > 0 ? "+" : ""}
+          {deltaPct}%
+        </p>
+      )}
+      <p className="text-sm leading-snug text-foreground/90">{sentence}</p>
+    </div>
+  );
 }
 
 /**
@@ -70,12 +103,34 @@ function SessionsProgress({
   );
 }
 
+/** The day-1 (or day-0 fallback) bucket — same pick the plain-language summary sentence is built from, so the big headline number and the sentence always agree. */
+function pickHeadlineBucket(decayByDay: DayBucketStat[]): DayBucketStat | null {
+  const dayOne = decayByDay.find((d) => d.daysSinceStrength === 1 && d.sampleCount > 0);
+  if (dayOne) return dayOne;
+  return decayByDay.find((d) => d.daysSinceStrength === 0 && d.sampleCount > 0) ?? null;
+}
+
 export function InterferenceDetail({ report }: { report: InterferenceReport }) {
   const { strengthToCardio, cardioToStrength } = report;
   const hasRealFinding = hasShareableFinding(report);
+  const headlineBucket = pickHeadlineBucket(strengthToCardio.decayByDay);
 
   return (
     <div className="space-y-6">
+      {/* Plain-language primer — what these two cards actually answer,
+          before any chart or percentage. User feedback: the page dropped
+          straight into dense charts with no explanation of the point. */}
+      <Card padding="md" className="border border-accent/15 bg-accent/[0.03]">
+        <p className="text-sm leading-relaxed text-foreground/90">
+          Split Index is the only place tracking both your lifting and your cardio on one
+          timeline, so it can answer something no single-sport app can: does a hard gym session
+          make your next run feel harder than it should — and does a heavy training week in the
+          gym vs. a big cardio week actually change your strength? The two cards below answer
+          each direction using only <span className="font-medium text-foreground">your own</span>{" "}
+          logged history, never a generic population tip.
+        </p>
+      </Card>
+
       {hasRealFinding && (
         <div className="flex justify-end">
           <ShareImageButton
@@ -89,23 +144,25 @@ export function InterferenceDetail({ report }: { report: InterferenceReport }) {
       )}
       <Card>
         <CardHeader className="mb-2">
-          <CardTitle className="flex items-center">
-            Strength → Cardio
+          <CardTitle className="flex items-center text-sm font-semibold normal-case tracking-normal text-foreground">
+            <Dumbbell className="mr-2 h-4 w-4 text-strength-accent" />
+            Does lifting slow down your cardio?
             {!strengthToCardio.calibrating && strengthToCardio.lowConfidence && <EarlyDataBadge />}
           </CardTitle>
           <p className="text-xs text-muted">
-            Cardio efficiency (pace : heart-rate) at each day since your last strength session,
-            compared against your own rested baseline — a real rest gap before the session, no
-            strength influence at all.
+            Compares how efficiently you run/row/swim (pace for the heart-rate effort it took) on
+            the days right after a strength session, against a normal day where you were fully
+            rested with no lifting nearby.
           </p>
         </CardHeader>
         <CardContent>
           {strengthToCardio.calibrating ? (
             strengthToCardio.weeklyFallback ? (
               <>
-                <p className="mb-1 text-sm font-medium text-foreground/90">
-                  {strengthToCardio.weeklyFallback.summary}
-                </p>
+                <HeadlineStat
+                  deltaPct={strengthToCardio.weeklyFallback.deltaPct}
+                  sentence={strengthToCardio.weeklyFallback.summary}
+                />
                 <p className="mb-4 text-xs text-muted">
                   Still gathering day-by-day pairs ({strengthToCardio.sampleCount}/
                   {strengthToCardio.minSamples}) — this is a coarser weekly comparison in the
@@ -113,20 +170,20 @@ export function InterferenceDetail({ report }: { report: InterferenceReport }) {
                   few days of a strength session.
                 </p>
                 <div role="img" aria-label="Cardio efficiency in weeks with vs without a strength session">
-                  <ResponsiveContainer width="100%" height={160}>
+                  <ResponsiveContainer width="100%" height={140}>
                     <BarChart
                       data={[
                         {
-                          label: "Weeks without strength",
+                          label: "Normal week",
                           value: strengthToCardio.weeklyFallback.weeksWithoutStrengthAvgEF,
                         },
                         {
-                          label: "Weeks with strength",
+                          label: "Strength-training week",
                           value: strengthToCardio.weeklyFallback.weeksWithStrengthAvgEF,
                         },
                       ]}
                       layout="vertical"
-                      margin={{ top: 8, right: 24, left: 8, bottom: 0 }}
+                      margin={{ top: 8, right: 36, left: 8, bottom: 0 }}
                     >
                       <CartesianGrid horizontal={false} strokeDasharray="3 6" stroke={chartGridStroke} />
                       <XAxis type="number" hide domain={["dataMin - dataMin * 0.05", "dataMax + dataMax * 0.05"]} />
@@ -138,8 +195,10 @@ export function InterferenceDetail({ report }: { report: InterferenceReport }) {
                         tick={{ fontSize: 11, fill: chartTickFill }}
                         width={140}
                       />
-                      <Tooltip contentStyle={chartTooltipStyle} formatter={(value) => [value, "Avg efficiency factor"]} />
-                      <Bar dataKey="value" radius={[0, 4, 4, 0]} fill={designTokens.strengthAccent} />
+                      <Tooltip contentStyle={chartTooltipStyle} formatter={(value) => [value, "How efficiently you ran"]} />
+                      <Bar dataKey="value" radius={[0, 4, 4, 0]} fill={designTokens.strengthAccent}>
+                        <LabelList dataKey="value" position="right" style={{ fill: chartTickFill, fontSize: 11 }} />
+                      </Bar>
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -160,12 +219,15 @@ export function InterferenceDetail({ report }: { report: InterferenceReport }) {
             )
           ) : (
             <>
-              <p className="mb-4 text-sm font-medium text-foreground/90">{strengthToCardio.summary}</p>
+              <HeadlineStat
+                deltaPct={headlineBucket?.efDeltaPct ?? null}
+                sentence={strengthToCardio.summary}
+              />
               <div role="img" aria-label="Efficiency delta by days since last strength session">
                 <ResponsiveContainer width="100%" height={220}>
                   <BarChart
                     data={strengthToCardio.decayByDay.filter((d) => d.sampleCount > 0)}
-                    margin={{ top: 8, right: 4, left: -8, bottom: 0 }}
+                    margin={{ top: 20, right: 4, left: -8, bottom: 0 }}
                   >
                     <CartesianGrid vertical={false} strokeDasharray="3 6" stroke={chartGridStroke} />
                     <XAxis
@@ -182,22 +244,35 @@ export function InterferenceDetail({ report }: { report: InterferenceReport }) {
                       width={40}
                       tickFormatter={(v) => `${v}%`}
                     />
-                    <ReferenceLine y={0} stroke={chartGridStroke} />
+                    <ReferenceLine
+                      y={0}
+                      stroke={chartGridStroke}
+                      label={{
+                        value: "0% = your normal rested pace",
+                        position: "insideTopLeft",
+                        fill: chartTickFill,
+                        fontSize: 10,
+                      }}
+                    />
                     <Tooltip
                       contentStyle={chartTooltipStyle}
-                      formatter={(value) => [`${value}%`, "Efficiency vs rested baseline"]}
+                      formatter={(value) => [`${value}%`, "vs. your normal rested pace"]}
                       labelFormatter={(v) => dayLabel(Number(v))}
                     />
                     <Bar dataKey="efDeltaPct" radius={[4, 4, 4, 4]}>
+                      <LabelList
+                        dataKey="efDeltaPct"
+                        position="top"
+                        formatter={(v) => `${Number(v) > 0 ? "+" : ""}${v}%`}
+                        style={{ fontSize: 10, fill: chartTickFill }}
+                      />
                       {strengthToCardio.decayByDay
                         .filter((d) => d.sampleCount > 0)
                         .map((d) => (
                           <Cell
                             key={d.daysSinceStrength}
                             fill={
-                              d.efDeltaPct !== null && d.efDeltaPct < 0
-                                ? "#ef4444"
-                                : designTokens.strengthAccent
+                              d.efDeltaPct !== null && d.efDeltaPct < -3 ? BAD_COLOR : GOOD_COLOR
                             }
                           />
                         ))}
@@ -207,8 +282,9 @@ export function InterferenceDetail({ report }: { report: InterferenceReport }) {
               </div>
               <p className="mt-2 text-xs text-muted">
                 Based on {strengthToCardio.sampleCount} qualifying {strengthToCardio.primarySport?.replace("_", " ")}{" "}
-                sessions (easy/recovery/long effort only — the same sessions the app already
-                treats as steady-state).
+                sessions tagged easy/recovery/long — deliberately slow efforts, so a real change in
+                how they feel is a genuine signal, not just you running faster or slower on
+                purpose.
               </p>
             </>
           )}
@@ -217,14 +293,15 @@ export function InterferenceDetail({ report }: { report: InterferenceReport }) {
 
       <Card>
         <CardHeader className="mb-2">
-          <CardTitle className="flex items-center">
-            Cardio → Strength
+          <CardTitle className="flex items-center text-sm font-semibold normal-case tracking-normal text-foreground">
+            <HeartPulse className="mr-2 h-4 w-4 text-cardio-accent" />
+            Does cardio weaken your lifting?
             {!cardioToStrength.calibrating && cardioToStrength.lowConfidence && <EarlyDataBadge />}
           </CardTitle>
           <p className="text-xs text-muted">
-            Strength performance in gym sessions preceded by a high-cardio-volume week (last{" "}
-            {INTERFERENCE_CONFIG.LOOKBACK_DAYS_CARDIO_EFFECT_ON_STRENGTH} days) vs. a lower-volume
-            week.
+            Compares your strength score in gym sessions that followed a heavy cardio week (last{" "}
+            {INTERFERENCE_CONFIG.LOOKBACK_DAYS_CARDIO_EFFECT_ON_STRENGTH} days) against gym
+            sessions that followed a lighter one.
           </p>
         </CardHeader>
         <CardContent>
@@ -236,16 +313,16 @@ export function InterferenceDetail({ report }: { report: InterferenceReport }) {
             />
           ) : (
             <>
-              <p className="mb-4 text-sm font-medium text-foreground/90">{cardioToStrength.summary}</p>
+              <HeadlineStat deltaPct={cardioToStrength.deltaPct} sentence={cardioToStrength.summary} />
               <div role="img" aria-label="Strength score in high vs low cardio-volume weeks">
-                <ResponsiveContainer width="100%" height={160}>
+                <ResponsiveContainer width="100%" height={140}>
                   <BarChart
                     data={[
-                      { label: "Lower cardio week", value: cardioToStrength.lowCardioAvgStrengthComponent },
-                      { label: "Higher cardio week", value: cardioToStrength.highCardioAvgStrengthComponent },
+                      { label: "Lighter cardio week", value: cardioToStrength.lowCardioAvgStrengthComponent },
+                      { label: "Heavy cardio week", value: cardioToStrength.highCardioAvgStrengthComponent },
                     ]}
                     layout="vertical"
-                    margin={{ top: 8, right: 24, left: 8, bottom: 0 }}
+                    margin={{ top: 8, right: 36, left: 8, bottom: 0 }}
                   >
                     <CartesianGrid horizontal={false} strokeDasharray="3 6" stroke={chartGridStroke} />
                     <XAxis type="number" hide />
@@ -258,14 +335,17 @@ export function InterferenceDetail({ report }: { report: InterferenceReport }) {
                       width={120}
                     />
                     <Tooltip contentStyle={chartTooltipStyle} formatter={(value) => [value, "Strength score"]} />
-                    <Bar dataKey="value" radius={[0, 4, 4, 0]} fill={designTokens.strengthAccent} />
+                    <Bar dataKey="value" radius={[0, 4, 4, 0]} fill={designTokens.cardioAccent}>
+                      <LabelList dataKey="value" position="right" style={{ fill: chartTickFill, fontSize: 11 }} />
+                    </Bar>
                   </BarChart>
                 </ResponsiveContainer>
               </div>
               <p className="mt-2 text-xs text-muted">
                 Based on {cardioToStrength.sampleCount} gym sessions, split by whether their
                 trailing {INTERFERENCE_CONFIG.LOOKBACK_DAYS_CARDIO_EFFECT_ON_STRENGTH}-day cardio
-                load was above or below your own median.
+                load was above or below your own median — not an absolute threshold, so it always
+                compares against what&apos;s actually heavy or light for you.
               </p>
             </>
           )}
