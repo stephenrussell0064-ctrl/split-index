@@ -391,7 +391,7 @@ export default function GpsRunPage() {
         <div className="relative h-1/2 w-full shrink-0 landscape:h-full landscape:w-1/2">
           <GpsMap points={livePoints} className="h-full w-full" />
           <div
-            className="pointer-events-none absolute left-4 flex items-center gap-1.5 rounded-full bg-black/70 px-3 py-1.5 text-xs font-medium text-white backdrop-blur-sm"
+            className="pointer-events-none absolute left-4 flex items-center gap-1.5 rounded-full border border-white/20 bg-black px-3 py-1.5 text-xs font-bold text-white shadow-lg"
             style={{ top: "max(1rem, calc(env(safe-area-inset-top) + 0.5rem))" }}
           >
             <span className="pulse-dot h-1.5 w-1.5 rounded-full bg-danger" aria-hidden />

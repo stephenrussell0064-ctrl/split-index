@@ -69,7 +69,12 @@ function InvalidateSizeOnResize() {
 export default function GpsMap({ points, className }: GpsMapProps) {
   if (points.length === 0) {
     return (
-      <div className={cn("flex items-center justify-center bg-white/[0.03] text-xs text-muted", className)}>
+      <div
+        className={cn(
+          "flex items-center justify-center border border-white/15 bg-white/10 text-sm font-medium text-white",
+          className
+        )}
+      >
         Waiting for GPS fix…
       </div>
     );
