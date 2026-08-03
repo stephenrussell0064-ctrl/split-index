@@ -54,7 +54,7 @@ describe("computeInterferenceReport — strength-to-cardio direction", () => {
   it("reports calibrating with no sessions", () => {
     const report = computeInterferenceReport([]);
     expect(report.strengthToCardio.calibrating).toBe(true);
-    expect(report.strengthToCardio.summary).toMatch(/gathering data/i);
+    expect(report.strengthToCardio.summary).toMatch(/log a few/i);
   });
 
   it("reports calibrating below MIN_PAIRED_SESSIONS", () => {
@@ -235,10 +235,16 @@ describe("computeInterferenceReport — strength-to-cardio direction", () => {
 });
 
 describe("computeInterferenceReport — cardio-to-strength direction", () => {
-  it("reports calibrating below MIN_PAIRED_SESSIONS gym sessions", () => {
+  it("hard-blocks with only a single gym session (can't split into two groups at all)", () => {
+    const report = computeInterferenceReport([strength(1)]);
+    expect(report.cardioToStrength.calibrating).toBe(true);
+  });
+
+  it("shows a real, flagged-low-confidence finding with just 2 gym sessions below MIN_PAIRED_SESSIONS rather than hard-blocking", () => {
     const sessions = [strength(1), strength(3)];
     const report = computeInterferenceReport(sessions);
-    expect(report.cardioToStrength.calibrating).toBe(true);
+    expect(report.cardioToStrength.calibrating).toBe(false);
+    expect(report.cardioToStrength.lowConfidence).toBe(true);
   });
 
   it("detects strength performance dropping in high-recent-cardio-volume weeks", () => {

@@ -71,7 +71,10 @@ export interface WeeklyInterferenceFallback {
 }
 
 export interface StrengthToCardioFinding {
+  /** True only when there's truly nothing to compute yet (zero qualifying sessions, or no rested baseline at all) — the UI should show a "keep logging" placeholder. False as soon as ANY real comparison exists, however thin. */
   calibrating: boolean;
+  /** True whenever a real finding exists but sample size is still below minSamples — the UI shows the finding alongside an explicit reliability caveat instead of hiding it (user feedback: "show relevant data regardless of how many exercises completed, just inform the user it's less reliable with fewer sessions"). Always false when calibrating is true (nothing to caveat). */
+  lowConfidence: boolean;
   sampleCount: number;
   minSamples: number;
   /** The cardio sport this finding is based on (the athlete's most-logged qualifying sport — comparing pace/EF across different sports isn't meaningful). */
@@ -85,7 +88,10 @@ export interface StrengthToCardioFinding {
 }
 
 export interface CardioToStrengthFinding {
+  /** True only when there's truly nothing to compute yet — see StrengthToCardioFinding.calibrating. */
   calibrating: boolean;
+  /** See StrengthToCardioFinding.lowConfidence. */
+  lowConfidence: boolean;
   sampleCount: number;
   minSamples: number;
   highCardioAvgStrengthComponent: number | null;
@@ -172,12 +178,13 @@ function computeStrengthToCardio(sessions: TimelineSession[]): StrengthToCardioF
   if (qualifying.length === 0) {
     return {
       calibrating: true,
+      lowConfidence: false,
       sampleCount: 0,
       minSamples,
       primarySport: null,
       totalQualifyingSessions: 0,
       decayByDay: [],
-      summary: "Gathering data — log a few more easy/recovery cardio sessions to unlock this.",
+      summary: "Log a few easy/recovery cardio sessions to unlock this — nothing to compare yet.",
       weeklyFallback: null,
     };
   }
@@ -245,10 +252,13 @@ function computeStrengthToCardio(sessions: TimelineSession[]): StrengthToCardioF
     });
   }
 
-  const calibrating =
-    postStrengthTotal < minSamples || restedBaseline.length < 2 || restedEF === null;
+  // Hard block ONLY when there's truly nothing to compute — no post-strength
+  // sample at all, or no rested baseline to compare it against. Below
+  // minSamples but above zero is real data; user feedback: show it, with a
+  // reliability caveat, rather than hiding it behind a sample-count wall.
+  const noDataAtAll = postStrengthTotal === 0 || restedBaseline.length === 0 || restedEF === null;
 
-  if (calibrating) {
+  if (noDataAtAll) {
     const sportLabel = primarySport.replace("_", " ");
     // The confusing case: plenty of easy-effort sessions logged (so the
     // athlete sees a real, non-zero "sessions" count elsewhere and expects
@@ -260,10 +270,11 @@ function computeStrengthToCardio(sessions: TimelineSession[]): StrengthToCardioF
     const summary =
       postStrengthTotal === 0 && primarySessions.length > 0
         ? `You've logged ${primarySessions.length} easy-effort ${sportLabel} session${primarySessions.length === 1 ? "" : "s"}, but none within ${INTERFERENCE_CONFIG.LOOKBACK_DAYS_STRENGTH_EFFECT_ON_CARDIO} days of a strength session yet — log one soon after your next gym day to start building this.`
-        : `Gathering data — ${postStrengthTotal}/${minSamples} comparable sessions logged.`;
+        : `Log a rested (no strength session nearby) ${sportLabel} session to give this a baseline to compare against.`;
 
     return {
       calibrating: true,
+      lowConfidence: false,
       sampleCount: postStrengthTotal,
       minSamples,
       primarySport,
@@ -274,10 +285,12 @@ function computeStrengthToCardio(sessions: TimelineSession[]): StrengthToCardioF
     };
   }
 
-  const summary = buildStrengthToCardioSummary(decayByDay, primarySport);
+  const lowConfidence = postStrengthTotal < minSamples || restedBaseline.length < 2;
+  const summary = buildStrengthToCardioSummary(decayByDay, primarySport, lowConfidence, postStrengthTotal);
 
   return {
     calibrating: false,
+    lowConfidence,
     sampleCount: postStrengthTotal,
     minSamples,
     primarySport,
@@ -288,15 +301,24 @@ function computeStrengthToCardio(sessions: TimelineSession[]): StrengthToCardioF
   };
 }
 
-function buildStrengthToCardioSummary(decayByDay: DayBucketStat[], sport: string): string {
+function buildStrengthToCardioSummary(
+  decayByDay: DayBucketStat[],
+  sport: string,
+  lowConfidence = false,
+  sampleCount = 0
+): string {
   const sportLabel = sport.replace("_", " ");
   // The day-after (d=1) is the most intuitive framing; fall back to same-day if that's all there is.
   const dayOne = decayByDay.find((d) => d.daysSinceStrength === 1 && d.sampleCount > 0);
   const dayZero = decayByDay.find((d) => d.daysSinceStrength === 0 && d.sampleCount > 0);
   const headline = dayOne ?? dayZero;
 
+  const caveat = lowConfidence
+    ? ` Based on just ${sampleCount} session${sampleCount === 1 ? "" : "s"} so far — treat this as directional, not definitive, until you've logged more.`
+    : "";
+
   if (!headline || headline.efDeltaPct === null || Math.abs(headline.efDeltaPct) < 3) {
-    return `No measurable interference — your ${sportLabel} sessions hold up well after strength training.`;
+    return `No measurable interference yet — your ${sportLabel} sessions hold up well after strength training.${caveat}`;
   }
 
   const direction = headline.efDeltaPct < 0 ? "cost you" : "actually help";
@@ -314,7 +336,7 @@ function buildStrengthToCardioSummary(decayByDay: DayBucketStat[], sport: string
     ? `, recovering by day ${recoveryDay.daysSinceStrength}`
     : "";
 
-  return `Strength sessions ${direction} roughly ${magnitude}% efficiency${hrPart} on ${sportLabel} ${when}${recoveryPart}.`;
+  return `Strength sessions ${direction} roughly ${magnitude}% efficiency${hrPart} on ${sportLabel} ${when}${recoveryPart}.${caveat}`;
 }
 
 function computeCardioToStrength(sessions: TimelineSession[]): CardioToStrengthFinding {
@@ -325,15 +347,20 @@ function computeCardioToStrength(sessions: TimelineSession[]): CardioToStrengthF
     (s) => s.domain === "strength" && s.strengthComponent != null
   );
 
-  if (strengthSessions.length < minSamples) {
+  // Hard block only when there literally aren't enough gym sessions to
+  // split into two groups at all (need at least one on each side of the
+  // trailing-cardio-load split). Below minSamples but >= 2 still gets a
+  // real, flagged-low-confidence comparison — see lowConfidence below.
+  if (strengthSessions.length < 2) {
     return {
       calibrating: true,
+      lowConfidence: false,
       sampleCount: strengthSessions.length,
       minSamples,
       highCardioAvgStrengthComponent: null,
       lowCardioAvgStrengthComponent: null,
       deltaPct: null,
-      summary: `Gathering data — ${strengthSessions.length}/${minSamples} gym sessions logged.`,
+      summary: `Log a few more gym sessions to unlock this — need at least 2 to compare.`,
     };
   }
 
@@ -364,28 +391,34 @@ function computeCardioToStrength(sessions: TimelineSession[]): CardioToStrengthF
   const highAvg = average(high.map((x) => x.session.strengthComponent!));
   const lowAvg = average(low.map((x) => x.session.strengthComponent!));
 
-  if (high.length < 2 || low.length < 2 || highAvg === null || lowAvg === null || lowAvg === 0) {
+  if (high.length < 1 || low.length < 1 || highAvg === null || lowAvg === null || lowAvg === 0) {
     return {
       calibrating: true,
+      lowConfidence: false,
       sampleCount: strengthSessions.length,
       minSamples,
       highCardioAvgStrengthComponent: null,
       lowCardioAvgStrengthComponent: null,
       deltaPct: null,
-      summary: `Gathering data — need a wider mix of high- and low-cardio-volume weeks to compare.`,
+      summary: `Log a wider mix of high- and low-cardio-volume weeks to unlock this comparison.`,
     };
   }
 
+  const lowConfidence = strengthSessions.length < minSamples || high.length < 2 || low.length < 2;
   const deltaPct = Math.round(((highAvg - lowAvg) / lowAvg) * 1000) / 10;
+  const caveat = lowConfidence
+    ? ` Based on just ${strengthSessions.length} gym session${strengthSessions.length === 1 ? "" : "s"} so far — treat this as directional, not definitive, until you've logged more.`
+    : "";
   const summary =
     Math.abs(deltaPct) < 3
-      ? "No measurable interference — your lifting holds up well regardless of your recent cardio volume."
+      ? `No measurable interference yet — your lifting holds up well regardless of your recent cardio volume.${caveat}`
       : `Heavy cardio weeks ${deltaPct < 0 ? "cost you" : "coincide with"} roughly ${Math.abs(
           deltaPct
-        )}% strength performance compared to lighter cardio weeks.`;
+        )}% strength performance compared to lighter cardio weeks.${caveat}`;
 
   return {
     calibrating: false,
+    lowConfidence,
     sampleCount: strengthSessions.length,
     minSamples,
     highCardioAvgStrengthComponent: Math.round(highAvg),
@@ -402,19 +435,30 @@ export function computeInterferenceReport(sessions: TimelineSession[]): Interfer
   };
 }
 
-/** True once there's any real, non-"gathering data" signal to show or share — either direction's precise finding, or the coarser weekly fallback. Never true for a placeholder/population-average result. */
+/**
+ * True once there's a genuinely CONFIDENT (not just low-confidence-but-real)
+ * signal to share publicly — deliberately a higher bar than what the
+ * Interference page itself shows, since this feeds a shareable image/report
+ * rather than the athlete's own private dashboard. A directional, small-n
+ * finding is useful to show the athlete with a caveat; it's not something
+ * that should go out as a shareable claim.
+ */
 export function hasShareableFinding(report: InterferenceReport): boolean {
   return (
-    !report.strengthToCardio.calibrating ||
-    !report.cardioToStrength.calibrating ||
+    (!report.strengthToCardio.calibrating && !report.strengthToCardio.lowConfidence) ||
+    (!report.cardioToStrength.calibrating && !report.cardioToStrength.lowConfidence) ||
     report.strengthToCardio.weeklyFallback !== null
   );
 }
 
-/** The single most useful sentence from a report — prefers the strength->cardio direction (usually the more actionable one) once it's real, falling back to the reverse direction, then the coarser weekly fallback, then a gathering-data message. Shared by the shareable report card and the Hybrid Athlete Report. */
+/** The single most useful sentence from a report — prefers the strength->cardio direction (usually the more actionable one) once it's real, falling back to the reverse direction, then the coarser weekly fallback, then a gathering-data message. Shared by the shareable report card and the Hybrid Athlete Report — same confident-only bar as hasShareableFinding. */
 export function pickInterferenceHeadline(report: InterferenceReport): string {
-  if (!report.strengthToCardio.calibrating) return report.strengthToCardio.summary;
-  if (!report.cardioToStrength.calibrating) return report.cardioToStrength.summary;
+  if (!report.strengthToCardio.calibrating && !report.strengthToCardio.lowConfidence) {
+    return report.strengthToCardio.summary;
+  }
+  if (!report.cardioToStrength.calibrating && !report.cardioToStrength.lowConfidence) {
+    return report.cardioToStrength.summary;
+  }
   if (report.strengthToCardio.weeklyFallback) return report.strengthToCardio.weeklyFallback.summary;
   return "Still gathering paired training data — check back after a few more logged sessions.";
 }

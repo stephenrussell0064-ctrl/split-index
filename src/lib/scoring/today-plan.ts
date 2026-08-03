@@ -43,11 +43,16 @@ export function buildTargetPaceLabel(benchmark: StoredPredictedBenchmark | null)
 function buildDeloadNudge(readiness: ReadinessResult, interference: InterferenceReport): string | null {
   if (readiness.readiness >= READINESS_EASY_THRESHOLD) return null;
 
+  // Requires full confidence (not just lowConfidence-but-real), unlike the
+  // Interference page itself — this drives an actionable "take a deload"
+  // nudge, not a caveatable chart, so it shouldn't fire off a thin sample.
   const strengthHurting =
     !interference.strengthToCardio.calibrating &&
+    !interference.strengthToCardio.lowConfidence &&
     interference.strengthToCardio.decayByDay.some((d) => d.efDeltaPct !== null && d.efDeltaPct < -3);
   const cardioHurting =
     !interference.cardioToStrength.calibrating &&
+    !interference.cardioToStrength.lowConfidence &&
     interference.cardioToStrength.deltaPct !== null &&
     interference.cardioToStrength.deltaPct < -3;
 

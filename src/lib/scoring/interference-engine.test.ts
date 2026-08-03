@@ -58,8 +58,8 @@ function strength(dayOffset: number, overrides: Partial<TimelineSession> = {}): 
   };
 }
 
-describe("Interference Engine — never renders below MIN_PAIRED_SESSIONS", () => {
-  it("strength->cardio direction stays calibrating with 2 qualifying pairs (one below the gate of 3)", () => {
+describe("Interference Engine — shows a flagged low-confidence finding below MIN_PAIRED_SESSIONS rather than hiding it", () => {
+  it("strength->cardio direction renders a real (lowConfidence) finding with 2 qualifying pairs (one below the gate of 3), not a hard block", () => {
     const sessions: TimelineSession[] = [];
     for (let week = 0; week < 2; week++) {
       const day = week * 7;
@@ -70,20 +70,30 @@ describe("Interference Engine — never renders below MIN_PAIRED_SESSIONS", () =
 
     const report = computeInterferenceReport(sessions);
     expect(report.strengthToCardio.sampleCount).toBeLessThan(INTERFERENCE_CONFIG.MIN_PAIRED_SESSIONS);
-    expect(report.strengthToCardio.calibrating).toBe(true);
-    expect(report.strengthToCardio.decayByDay).toEqual([]);
+    expect(report.strengthToCardio.calibrating).toBe(false);
+    expect(report.strengthToCardio.lowConfidence).toBe(true);
+    expect(report.strengthToCardio.decayByDay.length).toBeGreaterThan(0);
+    expect(report.strengthToCardio.summary).toMatch(/directional, not definitive/i);
   });
 
-  it("cardio->strength direction stays calibrating with 2 gym sessions (one below the gate of 3)", () => {
-    const sessions: TimelineSession[] = [];
-    for (let week = 0; week < 2; week++) {
-      sessions.push(strength(week * 7));
-    }
+  it("cardio->strength direction still hard-blocks with only 1 total gym session (can't split into two groups at all)", () => {
+    const report = computeInterferenceReport([strength(0)]);
+    expect(report.cardioToStrength.calibrating).toBe(true);
+    expect(report.cardioToStrength.deltaPct).toBeNull();
+  });
+
+  it("cardio->strength direction renders a real (lowConfidence) finding with just 2 gym sessions once they differ in trailing cardio load", () => {
+    const sessions: TimelineSession[] = [
+      cardio(0, { loadScore: 80 }),
+      strength(1),
+      strength(10),
+    ];
 
     const report = computeInterferenceReport(sessions);
     expect(report.cardioToStrength.sampleCount).toBeLessThan(INTERFERENCE_CONFIG.MIN_PAIRED_SESSIONS);
-    expect(report.cardioToStrength.calibrating).toBe(true);
-    expect(report.cardioToStrength.deltaPct).toBeNull();
+    expect(report.cardioToStrength.calibrating).toBe(false);
+    expect(report.cardioToStrength.lowConfidence).toBe(true);
+    expect(report.cardioToStrength.deltaPct).not.toBeNull();
   });
 });
 

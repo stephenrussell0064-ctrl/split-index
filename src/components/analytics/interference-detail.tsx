@@ -18,6 +18,15 @@ import { designTokens } from "@/lib/design/tokens";
 import { INTERFERENCE_CONFIG, hasShareableFinding } from "@/lib/scoring/interference";
 import type { InterferenceReport } from "@/lib/scoring/interference";
 
+/** Small visual flag next to a finding built from below-target sample size — the summary text already spells out the caveat in full; this is just the at-a-glance version. */
+function EarlyDataBadge() {
+  return (
+    <span className="ml-2 rounded-full bg-warning/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-warning">
+      Early data
+    </span>
+  );
+}
+
 function dayLabel(d: number): string {
   if (d === 0) return "Same day";
   if (d === 1) return "+1 day";
@@ -80,7 +89,10 @@ export function InterferenceDetail({ report }: { report: InterferenceReport }) {
       )}
       <Card>
         <CardHeader className="mb-2">
-          <CardTitle>Strength → Cardio</CardTitle>
+          <CardTitle className="flex items-center">
+            Strength → Cardio
+            {!strengthToCardio.calibrating && strengthToCardio.lowConfidence && <EarlyDataBadge />}
+          </CardTitle>
           <p className="text-xs text-muted">
             Cardio efficiency (pace : heart-rate) at each day since your last strength session,
             compared against your own rested baseline — a real rest gap before the session, no
@@ -205,7 +217,10 @@ export function InterferenceDetail({ report }: { report: InterferenceReport }) {
 
       <Card>
         <CardHeader className="mb-2">
-          <CardTitle>Cardio → Strength</CardTitle>
+          <CardTitle className="flex items-center">
+            Cardio → Strength
+            {!cardioToStrength.calibrating && cardioToStrength.lowConfidence && <EarlyDataBadge />}
+          </CardTitle>
           <p className="text-xs text-muted">
             Strength performance in gym sessions preceded by a high-cardio-volume week (last{" "}
             {INTERFERENCE_CONFIG.LOOKBACK_DAYS_CARDIO_EFFECT_ON_STRENGTH} days) vs. a lower-volume

@@ -20,6 +20,7 @@ function readiness(overrides: Partial<ReadinessResult> = {}): ReadinessResult {
 const calibratingInterference: InterferenceReport = {
   strengthToCardio: {
     calibrating: true,
+    lowConfidence: false,
     sampleCount: 1,
     minSamples: 5,
     primarySport: null,
@@ -30,6 +31,7 @@ const calibratingInterference: InterferenceReport = {
   },
   cardioToStrength: {
     calibrating: true,
+    lowConfidence: false,
     sampleCount: 1,
     minSamples: 5,
     highCardioAvgStrengthComponent: null,
@@ -79,6 +81,7 @@ describe("buildTodayPlan", () => {
       ...calibratingInterference,
       strengthToCardio: {
         calibrating: false,
+        lowConfidence: false,
         sampleCount: 6,
         minSamples: 5,
         primarySport: "running",
@@ -97,6 +100,7 @@ describe("buildTodayPlan", () => {
       ...calibratingInterference,
       strengthToCardio: {
         calibrating: false,
+        lowConfidence: false,
         sampleCount: 6,
         minSamples: 5,
         primarySport: "running",
