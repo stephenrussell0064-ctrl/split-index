@@ -14,6 +14,11 @@ import { isNativePlatform } from "@/lib/native/platform";
 import { startGpsSession, stopGpsSession, recoverOrphanedSession } from "@/lib/native/gps-tracking";
 import { connectHeartRateMonitor, disconnectHeartRateMonitor } from "@/lib/native/heart-rate";
 import {
+  isAirPodsHeartRateSupported,
+  startAirPodsHeartRate,
+  stopAirPodsHeartRate,
+} from "@/lib/native/airpods-heart-rate";
+import {
   PARTIAL_REASON_LABEL,
   haversineDistanceMeters,
   elevationGainMeters,
@@ -71,7 +76,8 @@ export default function GpsRunPage() {
   const [hrReadings, setHrReadings] = useState<HrReading[]>([]);
   const [liveBpm, setLiveBpm] = useState<number | null>(null);
   const [hrDeviceName, setHrDeviceName] = useState<string | null>(null);
-  const [connectingHr, setConnectingHr] = useState(false);
+  const [hrSource, setHrSource] = useState<"ble" | "airpods" | null>(null);
+  const [connectingHr, setConnectingHr] = useState<"ble" | "airpods" | null>(null);
   const [hrError, setHrError] = useState("");
   const [saving, setSaving] = useState(false);
   const [starting, setStarting] = useState(false);
@@ -117,7 +123,7 @@ export default function GpsRunPage() {
 
   async function handleConnectHeartRate() {
     if (connectingHr) return;
-    setConnectingHr(true);
+    setConnectingHr("ble");
     setHrError("");
     try {
       const device = await connectHeartRateMonitor((reading) => {
@@ -125,16 +131,40 @@ export default function GpsRunPage() {
         setHrReadings((prev) => [...prev, reading]);
       });
       setHrDeviceName(device.name);
+      setHrSource("ble");
     } catch {
       setHrError("Couldn't connect — make sure the monitor is on and in pairing range.");
     } finally {
-      setConnectingHr(false);
+      setConnectingHr(null);
+    }
+  }
+
+  async function handleConnectAirPods() {
+    if (connectingHr) return;
+    setConnectingHr("airpods");
+    setHrError("");
+    try {
+      await startAirPodsHeartRate((reading) => {
+        setLiveBpm(reading.bpm);
+        setHrReadings((prev) => [...prev, reading]);
+      });
+      setHrDeviceName("AirPods (Apple Health)");
+      setHrSource("airpods");
+    } catch {
+      setHrError("Couldn't start — check Health access is allowed for Split Index in Settings.");
+    } finally {
+      setConnectingHr(null);
     }
   }
 
   async function handleDisconnectHeartRate() {
-    await disconnectHeartRateMonitor();
+    if (hrSource === "airpods") {
+      await stopAirPodsHeartRate();
+    } else {
+      await disconnectHeartRateMonitor();
+    }
     setHrDeviceName(null);
+    setHrSource(null);
     setLiveBpm(null);
   }
 
@@ -179,7 +209,7 @@ export default function GpsRunPage() {
         setSegments((prev) => [...prev, { type: segmentType, startTime: segmentStartRef.current, endTime: now }]);
       }
       const result = await stopGpsSession();
-      await disconnectHeartRateMonitor();
+      if (hrSource) await handleDisconnectHeartRate();
       setSummary(result);
       setPhase("reviewing");
     } finally {
@@ -193,7 +223,7 @@ export default function GpsRunPage() {
     setStopping(true);
     try {
       await stopGpsSession();
-      await disconnectHeartRateMonitor();
+      if (hrSource) await handleDisconnectHeartRate();
     } finally {
       setStopping(false);
       resetToIdle();
@@ -213,6 +243,7 @@ export default function GpsRunPage() {
     setHrReadings([]);
     setLiveBpm(null);
     setHrDeviceName(null);
+    setHrSource(null);
     setElapsedSeconds(0);
     setError("");
   }
@@ -511,22 +542,39 @@ export default function GpsRunPage() {
                   </button>
                 </div>
               ) : (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="w-full"
-                  loading={connectingHr}
-                  onClick={handleConnectHeartRate}
-                >
-                  <HeartPulse className="h-4 w-4" />
-                  Connect heart rate monitor
-                </Button>
+                <div className="flex flex-col gap-2">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="w-full"
+                    loading={connectingHr === "ble"}
+                    disabled={connectingHr === "airpods"}
+                    onClick={handleConnectHeartRate}
+                  >
+                    <HeartPulse className="h-4 w-4" />
+                    Connect Bluetooth heart rate monitor
+                  </Button>
+                  {isAirPodsHeartRateSupported() && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="w-full"
+                      loading={connectingHr === "airpods"}
+                      disabled={connectingHr === "ble"}
+                      onClick={handleConnectAirPods}
+                    >
+                      <HeartPulse className="h-4 w-4" />
+                      Use AirPods heart rate
+                    </Button>
+                  )}
+                </div>
               )}
               {hrError && <p className="mt-2 text-xs text-danger">{hrError}</p>}
               <p className="mt-2 text-xs text-muted">
-                Works with Garmin watches and Polar/Wahoo-style chest straps (standard Bluetooth
-                heart rate broadcast). Whoop doesn&apos;t broadcast to third-party apps, so it
-                can&apos;t pair here.
+                Bluetooth works with Garmin watches and Polar/Wahoo-style chest straps. AirPods
+                heart rate runs through Apple Health — the first run will ask for Health access
+                and briefly show an Apple workout indicator. Whoop doesn&apos;t broadcast to
+                third-party apps, so it can&apos;t pair here.
               </p>
             </div>
 
