@@ -74,6 +74,8 @@
 	<array>
 		<string>location</string>
 	</array>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Split Index connects to your heart rate monitor (Garmin, Polar, or other standard Bluetooth devices) during a run.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

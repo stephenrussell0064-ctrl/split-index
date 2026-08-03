@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { haversineDistanceMeters, summarizeGpsTrack, GPS_TRACKING_CONFIG, type GpsPoint } from "./gps-track";
+import {
+  haversineDistanceMeters,
+  summarizeGpsTrack,
+  elevationGainMeters,
+  summarizeIntervalSegments,
+  summarizeFartlekSegments,
+  GPS_TRACKING_CONFIG,
+  type GpsPoint,
+  type HrReading,
+  type RunSegment,
+} from "./gps-track";
 
 function point(overrides: Partial<GpsPoint> = {}): GpsPoint {
   return {
@@ -116,5 +126,91 @@ describe("summarizeGpsTrack", () => {
     const summary = summarizeGpsTrack(points, { endedCleanly: true, permissionRevoked: false });
     // +10 (100->110), -5 ignored, +15 (105->120) = 25m gain.
     expect(summary.elevationGainMeters).toBeCloseTo(25, 0);
+  });
+});
+
+describe("elevationGainMeters", () => {
+  it("returns null when no point has an altitude reading", () => {
+    const points = buildCleanTrack(5, 10).map((p) => ({ ...p, altitude: null }));
+    expect(elevationGainMeters(points)).toBeNull();
+  });
+
+  it("sums only ascending deltas, live-partial sequences included", () => {
+    const points: GpsPoint[] = [
+      point({ altitude: 100, time: 0 }),
+      point({ altitude: 108, time: 10_000 }),
+      point({ altitude: 103, time: 20_000 }),
+    ];
+    // +8 (100->108), -5 ignored = 8m gain, even mid-run with only 3 fixes so far.
+    expect(elevationGainMeters(points)).toBeCloseTo(8, 0);
+  });
+});
+
+function segment(type: "hard" | "easy", startTime: number, endTime: number): RunSegment {
+  return { type, startTime, endTime };
+}
+
+describe("summarizeIntervalSegments", () => {
+  it("returns null when no hard segment was ever marked", () => {
+    const points = buildCleanTrack(11, 30);
+    expect(summarizeIntervalSegments(points, [], [segment("easy", 0, 300_000)])).toBeNull();
+  });
+
+  it("averages varying real-world rep lengths into a uniform reps/work/rest shape", () => {
+    // 11 points, 100m/30s apart -> 0..300s, 0..1000m.
+    const points = buildCleanTrack(11, 30);
+    const hrReadings: HrReading[] = [
+      { bpm: 160, time: 20_000 },
+      { bpm: 170, time: 80_000 },
+      { bpm: 150, time: 220_000 },
+      { bpm: 180, time: 280_000 },
+    ];
+    // Two hard reps (0-90s ~300m, 180-300s ~400m) separated by one easy/rest window (90-180s).
+    const segments: RunSegment[] = [
+      segment("hard", 0, 90_000),
+      segment("easy", 90_000, 180_000),
+      segment("hard", 180_000, 300_000),
+    ];
+
+    const result = summarizeIntervalSegments(points, hrReadings, segments);
+    expect(result).not.toBeNull();
+    expect(result!.reps).toBe(2);
+    expect(result!.restSeconds).toBe(90);
+    // Average per-rep distance: (~300m + ~400m) / 2 reps.
+    expect(result!.workDistanceMeters).toBeGreaterThan(300);
+    expect(result!.workDistanceMeters).toBeLessThan(400);
+    // Average per-rep duration: (90s + 120s) / 2 = 105s.
+    expect(result!.workSecondsPerRep).toBe(105);
+    // Only HR readings inside the two hard windows count (all 4, in this fixture).
+    expect(result!.workAvgHr).toBe(Math.round((160 + 170 + 150 + 180) / 4));
+  });
+
+  it("ignores zero-length (never-closed) segments", () => {
+    const points = buildCleanTrack(11, 30);
+    const segments: RunSegment[] = [segment("hard", 100_000, 100_000)];
+    expect(summarizeIntervalSegments(points, [], segments)).toBeNull();
+  });
+});
+
+describe("summarizeFartlekSegments", () => {
+  it("returns null when no hard segment was ever marked", () => {
+    const points = buildCleanTrack(11, 30);
+    expect(summarizeFartlekSegments(points, [], [segment("easy", 0, 300_000)])).toBeNull();
+  });
+
+  it("sums total hard-effort distance/time across all 'on' segments, no rep averaging", () => {
+    const points = buildCleanTrack(11, 30);
+    const hrReadings: HrReading[] = [{ bpm: 165, time: 20_000 }, { bpm: 175, time: 250_000 }];
+    const segments: RunSegment[] = [
+      segment("hard", 0, 60_000),
+      segment("easy", 60_000, 150_000),
+      segment("hard", 150_000, 270_000),
+    ];
+
+    const result = summarizeFartlekSegments(points, hrReadings, segments);
+    expect(result).not.toBeNull();
+    expect(result!.onSeconds).toBe(60 + 120);
+    expect(result!.onAvgHr).toBe(Math.round((165 + 175) / 2));
+    expect(result!.onDistanceMeters).toBeGreaterThan(0);
   });
 });
