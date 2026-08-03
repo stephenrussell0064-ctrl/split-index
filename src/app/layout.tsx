@@ -1,7 +1,8 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Space_Grotesk, Unbounded } from "next/font/google";
 import "./globals.css";
 import { ClientBootstrap } from "@/components/providers/client-bootstrap";
+import { LaunchOverlay } from "@/components/providers/launch-overlay";
 import { getAppUrl } from "@/lib/app-url";
 
 const geistSans = Geist({
@@ -50,6 +51,18 @@ export const metadata: Metadata = {
   },
 };
 
+// viewport-fit: "cover" lets the native app draw edge-to-edge under the
+// notch/Dynamic Island/status bar (capacitor.config.ts ios.contentInset:
+// "never") — without it, env(safe-area-inset-*) always resolves to 0 in
+// WebKit, and every safe-area-aware max(1.5rem, env(...)) fallback in this
+// app silently collapses to a fixed 24px instead of the real ~47-59px
+// status bar height, which is why top-bar content was colliding with it.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+};
+
 const organizationJsonLd = {
   "@context": "https://schema.org",
   "@type": "Organization",
@@ -74,6 +87,7 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
         />
         <ClientBootstrap />
+        <LaunchOverlay />
         {children}
       </body>
     </html>

@@ -337,8 +337,8 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
         </nav>
 
         <main className="lg:pl-64">
-          {/* pt-[max(...)] matches the bottom nav's existing safe-area technique below — content still clears the status bar/notch when the native shell draws under it (capacitor.config.ts ios.contentInset: "never"); a no-op on web where the env() resolves to 0. */}
-          <div className="mode-content mx-auto max-w-7xl px-4 pt-[max(1.5rem,env(safe-area-inset-top))] pb-24 lg:px-8 lg:pb-8 lg:pt-[max(2rem,env(safe-area-inset-top))]">
+          {/* calc(env(...) + gap) rather than a bare max() — the status bar height alone with no breathing room left the top bar sitting flush against the battery/signal icons; adding a fixed gap on top of the real inset (now resolvable at all thanks to viewport-fit: cover in layout.tsx) gives real clearance instead. A no-op on web where env() resolves to 0. */}
+          <div className="mode-content mx-auto max-w-7xl px-4 pt-[max(1.5rem,calc(env(safe-area-inset-top)+0.75rem))] pb-24 lg:px-8 lg:pb-8 lg:pt-[max(2rem,calc(env(safe-area-inset-top)+0.75rem))]">
             {showTopBar && <AppTopBar mode={mode} />}
             {/*
               No `mode="wait"` here on purpose: it forces the outgoing page to

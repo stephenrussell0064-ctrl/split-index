@@ -20,7 +20,12 @@ const config: CapacitorConfig = {
     // from NEXT_PUBLIC_APP_URL, which is still the apex) is followed inside
     // the app rather than kicked out to Safari — Capacitor's default behavior
     // for any navigation to a host it doesn't recognize.
-    url: "https://www.splitindex.co.uk",
+    //
+    // /login rather than the bare marketing homepage — someone opening the
+    // native app has already downloaded it, so there's nothing left to sell
+    // them; /login itself redirects straight to /dashboard if they're
+    // already signed in, so this only actually shows for a signed-out user.
+    url: "https://www.splitindex.co.uk/login",
     cleartext: false,
     allowNavigation: ["splitindex.co.uk", "www.splitindex.co.uk", "*.splitindex.co.uk"],
   },
@@ -40,7 +45,14 @@ const config: CapacitorConfig = {
   },
   plugins: {
     SplashScreen: {
-      launchShowDuration: 400,
+      // A fixed launchShowDuration hides the splash on a timer regardless of
+      // whether the remote page (server.url, over the network) has actually
+      // loaded yet — that gap showed as a blank black screen after the logo
+      // disappeared. autoHide: false keeps the native splash up until
+      // LaunchOverlay (src/components/providers/launch-overlay.tsx) calls
+      // SplashScreen.hide() itself, once there's an animated JS screen ready
+      // to take over — no gap, no fixed guess at how long loading will take.
+      launchAutoHide: false,
       backgroundColor: "#0a0a0f",
       androidSplashResourceName: "splash",
       showSpinner: false,
