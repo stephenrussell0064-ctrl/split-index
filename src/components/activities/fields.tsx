@@ -64,8 +64,11 @@ export function Field({ label, error, hint, htmlFor, children, className }: Fiel
   );
 }
 
+// text-base (16px), not text-sm — see components/ui/input.tsx for why: iOS
+// auto-zooms into a sub-16px input and the zoom doesn't reset on SPA route
+// changes, leaving the whole app looking zoomed-in afterward.
 const inputBase =
-  "h-11 w-full rounded-xl glass px-4 text-sm text-foreground placeholder:text-muted/40 " +
+  "h-11 w-full rounded-xl glass px-4 text-base text-foreground placeholder:text-muted/40 " +
   "border border-white/10 focus:border-accent/50 focus:ring-1 focus:ring-accent/30 " +
   "transition-colors duration-200 outline-none tabular-nums";
 

@@ -537,7 +537,7 @@ function MuscleSelect({
         aria-label="Muscle group"
         onChange={(e) => onChange(e.target.value)}
         className={cn(
-          "w-full appearance-none rounded-xl glass pl-3 pr-9 text-sm text-foreground",
+          "w-full appearance-none rounded-xl glass pl-3 pr-9 text-base text-foreground",
           "border border-white/10 transition-colors duration-200",
           "cursor-pointer focus:border-accent/50 focus:ring-1 focus:ring-accent/30 outline-none",
           invalid && "border-danger/50",
@@ -675,7 +675,7 @@ function ExerciseNameInput({
             if (ex) onPick(ex.name, ex.muscle);
           }}
           className={cn(
-            "w-full appearance-none rounded-xl border border-gym-border/50 bg-gym-bg-elevated pl-3 pr-9 py-3 text-sm text-gym-text",
+            "w-full appearance-none rounded-xl border border-gym-border/50 bg-gym-bg-elevated pl-3 pr-9 py-3 text-base text-gym-text",
             "cursor-pointer focus:border-gym-accent/60 focus:ring-1 focus:ring-gym-accent/30 outline-none min-h-[48px]",
             invalid && "border-danger/50"
           )}

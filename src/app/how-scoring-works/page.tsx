@@ -74,7 +74,7 @@ export default function HowScoringWorksPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#050508] text-foreground">
+    <div className="min-h-dvh bg-[#050508] text-foreground">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(articleJsonLd) }}

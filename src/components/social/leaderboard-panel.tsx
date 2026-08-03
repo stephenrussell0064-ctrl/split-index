@@ -602,7 +602,7 @@ function DimensionLeaderboard({
         <select
           value={selectedExercise}
           onChange={(e) => onSelectExercise(e.target.value)}
-          className="w-full rounded-xl border border-white/10 glass px-3 py-2.5 text-sm text-foreground outline-none focus:border-accent/50"
+          className="w-full rounded-xl border border-white/10 glass px-3 py-2.5 text-base text-foreground outline-none focus:border-accent/50"
         >
           {COMMON_EXERCISES.map((ex) => (
             <option key={ex.name} value={ex.name} className="bg-[#0c0f0c]">

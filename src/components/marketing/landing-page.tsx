@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 
 export function LandingPage() {
   return (
-    <div className="landing-page relative min-h-screen bg-[#050605] text-white">
+    <div className="landing-page relative min-h-dvh bg-[#050605] text-white">
       <div className="landing-grain pointer-events-none fixed inset-0 z-[100]" aria-hidden />
 
       <header className="sticky top-0 z-50 flex h-16 items-center justify-between border-b border-white/[0.06] bg-[#050605]/80 px-4 backdrop-blur-md sm:px-6 md:px-[6vw]">

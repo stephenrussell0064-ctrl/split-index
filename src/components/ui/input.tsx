@@ -23,7 +23,12 @@ export function Input({ label, error, hint, className, id, ...props }: InputProp
       <input
         id={inputId}
         className={cn(
-          "h-11 w-full rounded-xl glass px-4 text-sm text-foreground placeholder:text-muted/40",
+          // text-base (16px), not text-sm — iOS auto-zooms into any input
+          // whose font-size is under 16px, and since this is an SPA (no
+          // full page reload on navigation) that zoom doesn't reset when
+          // you leave the page, leaving the whole app looking "zoomed in
+          // and not fitting" afterward.
+          "h-11 w-full rounded-xl glass px-4 text-base text-foreground placeholder:text-muted/40",
           "border border-white/10 focus:border-accent/50 focus:ring-1 focus:ring-accent/30 focus:outline-none",
           "transition-all duration-200",
           error && "border-danger/50 focus:border-danger/50 focus:ring-danger/30",
@@ -57,7 +62,7 @@ export function Select({ label, error, options, className, id, ...props }: Selec
         <select
           id={selectId}
           className={cn(
-            "h-11 w-full rounded-xl glass px-4 pr-9 text-sm text-foreground",
+            "h-11 w-full rounded-xl glass px-4 pr-9 text-base text-foreground",
             "border border-white/10 focus:border-accent/50 focus:ring-1 focus:ring-accent/30 focus:outline-none",
             "transition-all duration-200 appearance-none cursor-pointer",
             error && "border-danger/50",
@@ -96,7 +101,7 @@ export function Textarea({ label, error, className, id, ...props }: TextareaProp
       <textarea
         id={textareaId}
         className={cn(
-          "min-h-[100px] w-full rounded-xl glass px-4 py-3 text-sm text-foreground placeholder:text-muted/40",
+          "min-h-[100px] w-full rounded-xl glass px-4 py-3 text-base text-foreground placeholder:text-muted/40",
           "border border-white/10 focus:border-accent/50 focus:ring-1 focus:ring-accent/30 focus:outline-none",
           "transition-all duration-200 resize-none",
           error && "border-danger/50",

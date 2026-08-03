@@ -12,7 +12,7 @@ const CONTACT_EMAIL = "support@splitindex.co.uk";
 
 export default function TermsOfServicePage() {
   return (
-    <div className="min-h-screen bg-[#050508] text-foreground">
+    <div className="min-h-dvh bg-[#050508] text-foreground">
       <header className="border-b border-white/[0.06] glass-strong">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-6 py-4">
           <BrandMark variant="compact" href="/" iconSize={30} wordmarkSize="sm" />
