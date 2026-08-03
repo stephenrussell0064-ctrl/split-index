@@ -501,12 +501,12 @@ export default function GpsRunPage() {
 
             <div className="mb-8 w-full max-w-xs">
               {hrDeviceName ? (
-                <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-sm">
-                  <span className="flex items-center gap-2 text-foreground/90">
+                <div className="flex items-center justify-between rounded-xl border border-white/15 bg-white/10 px-4 py-2.5 text-sm">
+                  <span className="flex items-center gap-2 font-medium text-white">
                     <HeartPulse className="h-4 w-4 text-danger" />
                     {hrDeviceName}
                   </span>
-                  <button type="button" onClick={handleDisconnectHeartRate} className="text-xs text-muted hover:text-foreground">
+                  <button type="button" onClick={handleDisconnectHeartRate} className="text-xs text-white/70 hover:text-white">
                     Disconnect
                   </button>
                 </div>
@@ -525,8 +525,8 @@ export default function GpsRunPage() {
               {hrError && <p className="mt-2 text-xs text-danger">{hrError}</p>}
               <p className="mt-2 text-xs text-muted">
                 Works with Garmin watches and Polar/Wahoo-style chest straps (standard Bluetooth
-                heart rate broadcast). AirPods have no heart-rate sensor, and Whoop doesn&apos;t
-                broadcast to third-party apps, so neither can pair here.
+                heart rate broadcast). Whoop doesn&apos;t broadcast to third-party apps, so it
+                can&apos;t pair here.
               </p>
             </div>
 
@@ -562,36 +562,36 @@ export default function GpsRunPage() {
           )}
 
           <div className="mb-6 grid grid-cols-2 gap-4">
-            <div className="flex flex-col items-center rounded-2xl bg-white/[0.03] py-4 text-center">
-              <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-full bg-cardio-accent/15 text-cardio-accent">
+            <div className="flex flex-col items-center rounded-2xl border border-white/15 bg-white/10 py-4 text-center">
+              <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-full bg-cardio-accent/20 text-cardio-accent">
                 <MapPin className="h-4.5 w-4.5" />
               </div>
-              <p className="micro-label text-muted">Distance</p>
-              <p className="text-2xl font-bold tabular-nums">{(summary.distanceMeters / 1000).toFixed(2)} km</p>
+              <p className="micro-label text-white/70">Distance</p>
+              <p className="text-2xl font-bold tabular-nums text-white">{(summary.distanceMeters / 1000).toFixed(2)} km</p>
             </div>
-            <div className="flex flex-col items-center rounded-2xl bg-white/[0.03] py-4 text-center">
-              <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-full bg-accent/15 text-accent">
+            <div className="flex flex-col items-center rounded-2xl border border-white/15 bg-white/10 py-4 text-center">
+              <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-full bg-accent/20 text-accent">
                 <Gauge className="h-4.5 w-4.5" />
               </div>
-              <p className="micro-label text-muted">Pace</p>
-              <p className="text-2xl font-bold tabular-nums">{formatPace(summary.avgPaceSecondsPerKm)}</p>
+              <p className="micro-label text-white/70">Pace</p>
+              <p className="text-2xl font-bold tabular-nums text-white">{formatPace(summary.avgPaceSecondsPerKm)}</p>
             </div>
             {summary.elevationGainMeters !== null && (
-              <div className="flex flex-col items-center rounded-2xl bg-white/[0.03] py-4 text-center">
-                <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-full bg-warning/15 text-warning">
+              <div className="flex flex-col items-center rounded-2xl border border-white/15 bg-white/10 py-4 text-center">
+                <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-full bg-warning/20 text-warning">
                   <Mountain className="h-4.5 w-4.5" />
                 </div>
-                <p className="micro-label text-muted">Elevation gain</p>
-                <p className="text-2xl font-bold tabular-nums">{Math.round(summary.elevationGainMeters)} m</p>
+                <p className="micro-label text-white/70">Elevation gain</p>
+                <p className="text-2xl font-bold tabular-nums text-white">{Math.round(summary.elevationGainMeters)} m</p>
               </div>
             )}
             {hrReadings.length > 0 && (
-              <div className="flex flex-col items-center rounded-2xl bg-white/[0.03] py-4 text-center">
-                <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-full bg-danger/15 text-danger">
+              <div className="flex flex-col items-center rounded-2xl border border-white/15 bg-white/10 py-4 text-center">
+                <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-full bg-danger/20 text-danger">
                   <HeartPulse className="h-4.5 w-4.5" />
                 </div>
-                <p className="micro-label text-muted">Avg heart rate</p>
-                <p className="text-2xl font-bold tabular-nums">
+                <p className="micro-label text-white/70">Avg heart rate</p>
+                <p className="text-2xl font-bold tabular-nums text-white">
                   {Math.round(hrReadings.reduce((sum, r) => sum + r.bpm, 0) / hrReadings.length)} bpm
                 </p>
               </div>

@@ -5,11 +5,11 @@ import type { HrReading } from "@/lib/scoring/gps-track";
 /**
  * Standard Bluetooth SIG Heart Rate Service/Measurement UUIDs (0x180D/0x2A37)
  * — the vendor-neutral GATT profile Garmin watches and Polar/Wahoo-style
- * chest straps broadcast to any listener, not a vendor SDK. This is a
- * deliberate scope boundary: AirPods have no heart-rate sensor in any
- * shipped model, and Whoop is a closed ecosystem that doesn't expose this
- * standard service to third-party apps — neither can ever appear in the
- * device picker this module drives, no matter how the plugin is configured.
+ * chest straps broadcast to any listener, not a vendor SDK. AirPods Pro's
+ * heart-rate sensor and Whoop don't broadcast this standard service to
+ * third-party apps, so neither appears in the device picker this module
+ * drives — AirPods route heart rate through Apple HealthKit instead, a
+ * separate integration.
  */
 const HEART_RATE_SERVICE = numberToUUID(0x180d);
 const HEART_RATE_MEASUREMENT_CHARACTERISTIC = numberToUUID(0x2a37);
