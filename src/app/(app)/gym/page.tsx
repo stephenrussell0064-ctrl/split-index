@@ -8,8 +8,14 @@ import { Button } from "@/components/ui/button";
 import { GymStrengthPanel } from "@/components/dashboard/gym-strength-panel";
 import { GymQuickStart } from "@/components/gym/gym-quick-start";
 import { WorkoutPlansDisclosure } from "@/components/gym/workout-plans-disclosure";
+import { RecommendedSplitCard } from "@/components/gym/recommended-split-card";
 import { formatIndex, formatDuration } from "@/lib/utils/format";
 import { canAccessProfile } from "@/lib/premium/features";
+import {
+  recommendNextGymSplit,
+  GYM_RECOMMENDATION_CONFIG,
+  type LoggedGymSet,
+} from "@/lib/scoring/gym-recommendation";
 import type { ExRxTier } from "@/lib/scoring/strength/ratio-tiers";
 import type { ScoreBreakdown } from "@/types";
 
@@ -88,6 +94,42 @@ export default async function GymPage() {
     }
   }
 
+  // Balanced-split recommendation: mine muscle-group training recency/volume
+  // from the same lookback window the pure engine expects, so "what should I
+  // train next" reflects actual logged sets, not a generic program.
+  const lookbackSince = new Date(
+    Date.now() - GYM_RECOMMENDATION_CONFIG.LOOKBACK_DAYS * 86400000 // eslint-disable-line react-hooks/purity -- server component
+  ).toISOString();
+  const { data: recentGymActivities } = await supabase
+    .from("activities")
+    .select("id, started_at")
+    .eq("user_id", user.id)
+    .eq("sport", "gym")
+    .eq("is_draft", false)
+    .gte("started_at", lookbackSince);
+
+  const activityDateById = new Map(
+    (recentGymActivities ?? []).map((a) => [a.id as string, a.started_at as string])
+  );
+  const recentActivityIds = [...activityDateById.keys()];
+
+  const { data: recentExercises } =
+    recentActivityIds.length > 0
+      ? await supabase
+          .from("gym_exercises")
+          .select("muscle_group, activity_id")
+          .in("activity_id", recentActivityIds)
+      : { data: [] as { muscle_group: string; activity_id: string }[] };
+
+  const loggedSets: LoggedGymSet[] = (recentExercises ?? [])
+    .map((e) => {
+      const startedAt = activityDateById.get(e.activity_id as string);
+      return startedAt ? { muscleGroup: e.muscle_group as string, startedAt } : null;
+    })
+    .filter((s): s is LoggedGymSet => s !== null);
+
+  const recommendation = recommendNextGymSplit(loggedSets);
+
   return (
     <TrainZoneSwipe mode="gym">
       <div className="bg-gym-zone rounded-2xl overflow-hidden border border-gym-border/40 min-h-[80vh]">
@@ -120,6 +162,8 @@ export default async function GymPage() {
                 showDotsGl={showDotsGl}
                 className="mb-8"
               />
+
+              {hasHistory && <RecommendedSplitCard recommendation={recommendation} className="mb-8" />}
 
               <WorkoutPlansDisclosure />
 

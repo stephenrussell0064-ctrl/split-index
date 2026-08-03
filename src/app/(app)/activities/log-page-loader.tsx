@@ -9,6 +9,11 @@ import {
   nextSetId,
 } from "@/components/activities/form-state";
 import { defaultWeightEntryMode } from "@/lib/scoring/weight-entry";
+import {
+  recommendNextGymSplit,
+  GYM_RECOMMENDATION_CONFIG,
+  type LoggedGymSet,
+} from "@/lib/scoring/gym-recommendation";
 import type { SportType } from "@/types";
 import type { WorkoutFormState } from "@/components/activities/form-state";
 
@@ -16,7 +21,7 @@ interface LogPageProps {
   sport: SportType | null;
   zoneMode: "gym" | "cardio";
   enduranceOnly?: boolean;
-  searchParams?: Promise<{ plan?: string; template?: string }>;
+  searchParams?: Promise<{ plan?: string; template?: string; recommend?: string }>;
 }
 
 export async function loadLogPage({
@@ -81,6 +86,66 @@ export async function loadLogPage({
           })),
           notes: "",
         })),
+      };
+    }
+  } else if (params.recommend && zoneMode === "gym") {
+    // recommend=1 → prefill with lib/scoring/gym-recommendation.ts's pick,
+    // recomputed here (not passed through the URL) so it's always based on
+    // whatever's actually logged at the moment the form opens.
+    const lookbackSince = new Date(
+      Date.now() - GYM_RECOMMENDATION_CONFIG.LOOKBACK_DAYS * 86400000
+    ).toISOString();
+    const { data: recentGymActivities } = await supabase
+      .from("activities")
+      .select("id, started_at")
+      .eq("user_id", user.id)
+      .eq("sport", "gym")
+      .eq("is_draft", false)
+      .gte("started_at", lookbackSince);
+
+    const activityDateById = new Map(
+      (recentGymActivities ?? []).map((a) => [a.id as string, a.started_at as string])
+    );
+    const recentActivityIds = [...activityDateById.keys()];
+
+    const { data: recentExercises } =
+      recentActivityIds.length > 0
+        ? await supabase
+            .from("gym_exercises")
+            .select("muscle_group, activity_id")
+            .in("activity_id", recentActivityIds)
+        : { data: [] as { muscle_group: string; activity_id: string }[] };
+
+    const loggedSets: LoggedGymSet[] = (recentExercises ?? [])
+      .map((e) => {
+        const startedAt = activityDateById.get(e.activity_id as string);
+        return startedAt ? { muscleGroup: e.muscle_group as string, startedAt } : null;
+      })
+      .filter((s): s is LoggedGymSet => s !== null);
+
+    const recommendation = recommendNextGymSplit(loggedSets);
+
+    if (recommendation.recommendedGroups.length > 0) {
+      const base = createDefaultState("gym", profile.weight_kg);
+      initialRepeatState = {
+        ...base,
+        title: "Recommended session",
+        exercises: recommendation.recommendedGroups.flatMap((group) =>
+          group.exerciseNames.map((name) => ({
+            id: nextRowId(),
+            name,
+            muscleGroup: group.muscleGroup,
+            weightEntryMode: defaultWeightEntryMode(name),
+            sets: Array.from({ length: 3 }, () => ({
+              id: nextSetId(),
+              weight: "",
+              reps: "8",
+              rpe: "",
+              repsInReserve: "",
+            })),
+            notes: "",
+          }))
+        ),
       };
     }
   }
