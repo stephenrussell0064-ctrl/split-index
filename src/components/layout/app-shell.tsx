@@ -41,6 +41,16 @@ const secondaryNav = [
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
+// The main tab roots — every other page reached by drilling in (activity
+// detail, edit forms, gps-run, a social profile, settings/billing, etc.)
+// gets a back button in the top bar. Exact match, not prefix: /gym/log is
+// reached by tapping "Log session" from The Lab, so it needs a back button
+// too even though it shares the /gym prefix with the tab root itself.
+const TOP_LEVEL_ROUTES = new Set<string>([
+  ...primaryNav.map((item) => item.href),
+  ...secondaryNav.map((item) => item.href),
+]);
+
 function resolveMode(pathname: string): AppMode {
   if (pathname.startsWith("/gym")) return "gym";
   if (pathname.startsWith("/cardio")) return "cardio";
@@ -71,6 +81,7 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
   // currently selected instead (see mode-override-context.tsx).
   const mode = pathnameMode !== "neutral" ? pathnameMode : (modeOverride ?? "neutral");
   const showTopBar = pathname !== "/onboarding";
+  const showBackButton = !TOP_LEVEL_ROUTES.has(pathname);
   const logHref = logHrefForMode(mode);
   const [moreOpen, setMoreOpen] = useState(false);
   const [lastPathname, setLastPathname] = useState(pathname);
@@ -339,7 +350,7 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
         <main className="lg:pl-64">
           {/* calc(env(...) + gap) rather than a bare max() — the status bar height alone with no breathing room left the top bar sitting flush against the battery/signal icons; adding a fixed gap on top of the real inset (now resolvable at all thanks to viewport-fit: cover in layout.tsx) gives real clearance instead. A no-op on web where env() resolves to 0. */}
           <div className="mode-content mx-auto max-w-7xl px-4 pt-[max(1.5rem,calc(env(safe-area-inset-top)+0.75rem))] pb-24 lg:px-8 lg:pb-8 lg:pt-[max(2rem,calc(env(safe-area-inset-top)+0.75rem))]">
-            {showTopBar && <AppTopBar mode={mode} />}
+            {showTopBar && <AppTopBar mode={mode} showBack={showBackButton} />}
             {/*
               No `mode="wait"` here on purpose: it forces the outgoing page to
               fully fade out (200ms) before the incoming one starts fading in

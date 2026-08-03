@@ -2,13 +2,47 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Crown } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Crown, ChevronLeft } from "lucide-react";
 import { NotificationBell } from "@/components/retention/notification-bell";
 import { PremiumBadge } from "@/components/retention/premium-badge";
 import { createClient } from "@/lib/supabase/client";
 import { isPremiumUser } from "@/lib/retention/trial";
 
-export function AppTopBar({ mode = "neutral" }: { mode?: "neutral" | "gym" | "cardio" }) {
+function BackButton() {
+  const router = useRouter();
+
+  function handleBack() {
+    // A direct link/deep-link into a sub-page (shared URL, browser refresh)
+    // has no in-app history to go back to — router.back() would just leave
+    // the app/close the tab. history.length > 1 means this tab has
+    // somewhere real to return to.
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      router.back();
+    } else {
+      router.push("/dashboard");
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleBack}
+      aria-label="Back"
+      className="-ml-2 flex h-9 w-9 items-center justify-center rounded-full text-foreground/80 transition-colors hover:bg-white/8 hover:text-foreground"
+    >
+      <ChevronLeft className="h-5 w-5" />
+    </button>
+  );
+}
+
+export function AppTopBar({
+  mode = "neutral",
+  showBack = false,
+}: {
+  mode?: "neutral" | "gym" | "cardio";
+  showBack?: boolean;
+}) {
   const [premium, setPremium] = useState(false);
 
   useEffect(() => {
@@ -47,18 +81,20 @@ export function AppTopBar({ mode = "neutral" }: { mode?: "neutral" | "gym" | "ca
 
   return (
     <div className="mb-6 flex items-center justify-between gap-2">
-      {modeLabel && (
-        <span
-          className={
-            mode === "gym"
-              ? "micro-label text-gym-accent/80"
-              : "micro-label text-cardio-accent/80"
-          }
-        >
-          {modeLabel}
-        </span>
-      )}
-      {!modeLabel && <span />}
+      <div className="flex items-center gap-1.5">
+        {showBack && <BackButton />}
+        {modeLabel && (
+          <span
+            className={
+              mode === "gym"
+                ? "micro-label text-gym-accent/80"
+                : "micro-label text-cardio-accent/80"
+            }
+          >
+            {modeLabel}
+          </span>
+        )}
+      </div>
       <div className="flex items-center gap-2">
       {premium ? (
         <PremiumBadge />
