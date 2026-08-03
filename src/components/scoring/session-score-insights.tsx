@@ -43,16 +43,19 @@ function RelativeEffortNote({ sessionType, flags }: { sessionType?: SessionType 
   if (flags?.includes("easy-tag-pace-mismatch")) {
     detail = "This pace looked more like a hard effort, so it was scored on the standard scale instead.";
   } else if (flags?.includes("hr-zone-scored")) {
+    const estimatedNote = flags.includes("hr-zone-resting-hr-estimated")
+      ? " Your resting heart rate is estimated from your experience level — add the real value in Settings for more accurate scoring."
+      : "";
     if (flags.includes("hr-zone-below-base-guard")) {
-      detail = "Your heart rate read very low for this effort — a partial credit applied since your pace didn't fully back it up.";
+      detail = `Your heart rate read very low for this effort — a partial credit applied since your pace didn't fully back it up.${estimatedNote}`;
     } else if (flags.includes("hr-zone-penalty")) {
-      detail = "Your heart rate drifted well above your target zone for an easy effort — credit reduced.";
+      detail = `Your heart rate drifted well above your target zone for an easy effort — credit reduced.${estimatedNote}`;
     } else if (flags.includes("hr-zone-above-target")) {
-      detail = "Your heart rate sat above your target zone — still credited, but less than a right-on-target effort.";
+      detail = `Your heart rate sat above your target zone — still credited, but less than a right-on-target effort.${estimatedNote}`;
     } else if (flags.includes("hr-zone-at-or-below-target")) {
-      detail = "Right at or below your target heart rate — a well-executed easy effort, credited in full.";
+      detail = `Right at or below your target heart rate — a well-executed easy effort, credited in full.${estimatedNote}`;
     } else {
-      detail = "Scored on your personalized heart-rate zones.";
+      detail = `Scored on your personalized heart-rate zones.${estimatedNote}`;
     }
   } else if (flags?.includes("relative-effort-scored")) {
     detail = "This session beat your recent easy-effort average — pace credit applied.";
@@ -114,6 +117,7 @@ function CardioPremiumStats({
     "hr-zone-penalty",
     "hr-zone-below-base-guard",
     "hr-zone-data-missing",
+    "hr-zone-resting-hr-estimated",
     "hr-zone-assumed-target",
   ]);
   const remainingFlags = result.flags.filter((f) => !hiddenFlags.has(f));

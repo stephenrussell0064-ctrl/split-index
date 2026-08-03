@@ -218,6 +218,24 @@ export function estimateMaxHR(age: number): number {
 }
 
 /**
+ * Population-typical resting HR by experience tier — used only when an
+ * athlete has a measured max HR but never answered the (optional) resting
+ * HR onboarding question. Without this, computeHrZoneProfile requires BOTH
+ * values and returns null, silently dropping every easy/recovery/long
+ * session for that athlete to the much weaker EF-baseline/population
+ * fallback (user feedback: this made easy efforts score far too low for
+ * anyone who'd skipped just that one field). Trained endurance athletes
+ * genuinely run a lower resting HR than untrained ones (greater stroke
+ * volume) — the same population pattern the Riegel-k experience tiers
+ * elsewhere in this file already lean on. Flagged as estimated wherever
+ * it's used (see hr-zone-resting-hr-estimated) rather than presented with
+ * the same confidence as a measured value.
+ */
+export function estimateRestingHR(experience: CardioInput['experience']): number {
+  return experience === 'advanced' ? 58 : experience === 'beginner' ? 72 : 65;
+}
+
+/**
  * VO2max via the heart-rate-ratio method (Uth et al. 2004).
  * Requires a resting HR and a max HR (measured preferred, else age-estimated).
  * Returns null when resting HR is unavailable.
@@ -484,13 +502,26 @@ export function scoreCardioActivity(input: CardioInput): CardioResult {
     // heart-rate reserve rather than a population or same-athlete-pace
     // reference.
     const zoneEligibleSport = HR_ZONE_SPORTS.has(input.benchmarkSport);
-    const hrZoneProfile = zoneEligibleSport ? computeHrZoneProfile(input.restingHR, input.maxHR) : null;
+    // A real, measured resting HR is still preferred — but requiring it
+    // outright meant an athlete who simply skipped that one (optional,
+    // unlike max HR) onboarding question got NONE of this mechanism's
+    // personalized easy-effort credit, on every relative-effort session,
+    // forever, silently falling back to the much weaker EF-baseline/
+    // population path instead (user feedback: easy efforts scoring far too
+    // low). An experience-tier estimate still personalizes on this
+    // athlete's own actual max HR and avg HR reading; it's flagged as
+    // estimated so the UI can be honest about the reduced confidence.
+    const restingHRIsEstimated = !input.restingHR && !!input.maxHR;
+    const effectiveRestingHR = input.restingHR ?? (input.maxHR ? estimateRestingHR(input.experience) : null);
+    const hrZoneProfile = zoneEligibleSport ? computeHrZoneProfile(effectiveRestingHR, input.maxHR) : null;
     const hasHrZoneData = !!hrZoneProfile && !!input.avgHR;
     if (isRelativeEffortSession && zoneEligibleSport && !hasHrZoneData) {
       // Flags the caller/UI that this session's score would be more
       // accurate with resting/max HR + an avg HR reading, even though it
       // still gets a valid score via the EF-baseline/population fallback.
       flags.push('hr-zone-data-missing');
+    } else if (isRelativeEffortSession && zoneEligibleSport && hasHrZoneData && restingHRIsEstimated) {
+      flags.push('hr-zone-resting-hr-estimated');
     }
 
     if (

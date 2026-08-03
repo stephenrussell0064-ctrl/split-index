@@ -7,7 +7,7 @@ import {
   HR_ZONE_TARGET_CREDIT,
   riegelEquivalentSeconds,
 } from "./cardio-predictions";
-import { scoreCardioActivity, type CardioInput } from "./cardio-activity";
+import { scoreCardioActivity, estimateRestingHR, type CardioInput } from "./cardio-activity";
 
 /**
  * Personalized heart-rate-zone scoring (user feedback): "max heart rate -
@@ -17,6 +17,20 @@ import { scoreCardioActivity, type CardioInput } from "./cardio-activity";
  * example: max=207, resting=50 -> base=157, zones 157-167/167-177/177-187/
  * 187-197/197-207, target=172.
  */
+describe("estimateRestingHR", () => {
+  it("estimates a lower resting HR for more trained experience tiers", () => {
+    const beginner = estimateRestingHR("beginner");
+    const intermediate = estimateRestingHR("intermediate");
+    const advanced = estimateRestingHR("advanced");
+    expect(beginner).toBeGreaterThan(intermediate);
+    expect(intermediate).toBeGreaterThan(advanced);
+  });
+
+  it("defaults to the intermediate estimate for an undefined experience", () => {
+    expect(estimateRestingHR(undefined)).toBe(estimateRestingHR("intermediate"));
+  });
+});
+
 describe("computeHrZoneProfile", () => {
   it("matches the user's own worked example exactly", () => {
     const profile = computeHrZoneProfile(50, 207);
@@ -192,7 +206,7 @@ describe("scoreCardioActivity — HR-zone wiring", () => {
     expect(above.flags).toContain("hr-zone-above-target");
   });
 
-  it("falls back to the EF-baseline mechanism when resting/max HR aren't both on file", () => {
+  it("falls back to the EF-baseline mechanism when NEITHER resting nor max HR is on file", () => {
     const result = scoreCardioActivity({
       ...base,
       restingHR: undefined,
@@ -202,6 +216,39 @@ describe("scoreCardioActivity — HR-zone wiring", () => {
     });
     expect(result.flags).not.toContain("hr-zone-scored");
     expect(result.flags).toContain("hr-zone-data-missing");
+  });
+
+  it("still uses the HR-zone mechanism (via an estimated resting HR) when only max HR is on file — real-account bug regression: skipping the optional resting-HR onboarding question used to silently disable HR-zone scoring entirely for every easy/recovery/long session going forward", () => {
+    const result = scoreCardioActivity({
+      ...base,
+      restingHR: undefined,
+      maxHR: 207,
+      avgHR: 150,
+    });
+    expect(result.flags).toContain("hr-zone-scored");
+    expect(result.flags).toContain("hr-zone-resting-hr-estimated");
+    expect(result.flags).not.toContain("hr-zone-data-missing");
+  });
+
+  it("scores a real easy row that regressed to 416 with population-only scoring meaningfully higher once the estimated-resting-HR fallback engages", () => {
+    // Real data: 9630m/2400s/168bpm avg easy row, max_hr=206 on file, resting_hr
+    // never set. Previously fell all the way through to raw pace-vs-benchmark
+    // scoring (416) since computeHrZoneProfile requires both HR values.
+    const result = scoreCardioActivity({
+      type: "row",
+      benchmarkSport: "row",
+      distanceMeters: 9630,
+      durationSeconds: 2400,
+      sex: "male",
+      age: 18,
+      sessionType: "easy",
+      maxHR: 206,
+      restingHR: undefined,
+      avgHR: 168,
+      experience: "intermediate",
+    });
+    expect(result.flags).toContain("hr-zone-scored");
+    expect(result.score).toBeGreaterThan(600);
   });
 
   it("flags hr-zone-data-missing when zone data exists but this session has no avg HR reading", () => {
