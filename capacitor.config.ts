@@ -13,8 +13,16 @@ const config: CapacitorConfig = {
   appName: "Split Index",
   webDir: "public",
   server: {
-    url: "https://splitindex.co.uk",
+    // The apex domain 308-redirects to www at the edge (Vercel) — pointing
+    // straight at the canonical host avoids that redirect firing as the very
+    // first thing the WebView does. allowNavigation covers both hosts anyway
+    // so any other same-site redirect (Stripe/Supabase/OAuth callbacks built
+    // from NEXT_PUBLIC_APP_URL, which is still the apex) is followed inside
+    // the app rather than kicked out to Safari — Capacitor's default behavior
+    // for any navigation to a host it doesn't recognize.
+    url: "https://www.splitindex.co.uk",
     cleartext: false,
+    allowNavigation: ["splitindex.co.uk", "www.splitindex.co.uk", "*.splitindex.co.uk"],
   },
   ios: {
     // Lets the web content draw under the status bar/notch; the app itself

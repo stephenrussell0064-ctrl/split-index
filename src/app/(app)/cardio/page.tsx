@@ -88,16 +88,16 @@ export default async function CardioPage() {
             </div>
             <div className="flex flex-wrap gap-2">
               <RepeatLastButton logHref="/cardio/log" />
-              <Link href="/cardio/gps-run">
+              <Link href="/cardio/log">
                 <Button variant="secondary">
-                  <MapPin className="h-4 w-4" />
-                  GPS run
+                  <PlusCircle className="h-4 w-4" />
+                  Log manually
                 </Button>
               </Link>
-              <Link href="/cardio/log">
+              <Link href="/cardio/gps-run">
                 <Button className="bg-cardio-accent hover:bg-cardio-accent/90 text-white border-0">
-                  <PlusCircle className="h-4 w-4" />
-                  Log cardio session
+                  <MapPin className="h-4 w-4" />
+                  Start GPS run
                 </Button>
               </Link>
             </div>
