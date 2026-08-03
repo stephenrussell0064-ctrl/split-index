@@ -8,7 +8,6 @@ import { RecentWorkouts, AICoachCard } from "@/components/dashboard/workout-list
 import { ActivityHeatmap, type HeatmapDay } from "@/components/dashboard/activity-heatmap";
 import { ConsistencyCard } from "@/components/dashboard/training-cards";
 import { WeekOverWeekCard } from "@/components/dashboard/week-over-week-card";
-import { RecommendationCard } from "@/components/dashboard/recommendation-card";
 import { GoalsCard, type DashboardGoal } from "@/components/dashboard/goals-card";
 import { SplitTrendPanel, type TrendPoint } from "@/components/analytics/charts";
 import { SportComparisonGrid } from "@/components/dashboard/sport-comparison-grid";
@@ -458,12 +457,6 @@ export default async function DashboardPage() {
 
       {hasActivities && <InterferenceRadarCard report={interferenceReport} />}
 
-      {/* Retention hooks (complete-profile nudge, friend invite) moved up
-          from the very bottom of a long page — buried there, most users
-          scrolling for their score never saw them. */}
-      <CompleteProfileBanner needsProfile={needsExtendedProfile} />
-      <FriendInviteBanner />
-
       {showActivationPaywall && (
         <PremiumTease
           title={`Start your ${PRICING.TRIAL_DAYS}-day free trial`}
@@ -564,6 +557,17 @@ export default async function DashboardPage() {
           <SportComparisonGrid scoresBySport={scoresBySport} />
         </div>
 
+        {/* Consistency and week-over-week are both derived from the same
+            heatmapDays source as the heatmap itself — stacked alongside it
+            in one row instead of each getting a full-width row of their own. */}
+        <div className="lg:col-span-8 overflow-x-auto">
+          <ActivityHeatmap days={heatmapDays} />
+        </div>
+        <div className="flex flex-col gap-5 lg:col-span-4">
+          <ConsistencyCard days={heatmapDays} className="flex-1" />
+          <WeekOverWeekCard days={heatmapDays} className="flex-1" />
+        </div>
+
         <div className="lg:col-span-4">
           {premium ? (
             <NextRankCard target={nextRankTarget} />
@@ -584,29 +588,18 @@ export default async function DashboardPage() {
           />
         </div>
         <div className="lg:col-span-4">
-          <ConsistencyCard days={heatmapDays} />
-        </div>
-
-        <div className="lg:col-span-8 overflow-x-auto">
-          <ActivityHeatmap days={heatmapDays} />
-        </div>
-        <div className="lg:col-span-4">
-          <WeekOverWeekCard days={heatmapDays} />
-        </div>
-
-        <div className="lg:col-span-4">
-          <RecommendationCard
-            aiRecommendation={premium ? aiFeedback?.next_workout_recommendation ?? null : null}
-            recovery={recovery}
-            fatigue={fatigue}
-            weakerSide={weakerSide}
-          />
-        </div>
-        <div className="lg:col-span-4">
           <GoalsCard
             goals={(goals ?? []) as DashboardGoal[]}
             currentIndex={hasIndexHistory ? current.split_index : 0}
           />
+        </div>
+
+        {/* Retention hooks — below the athlete's actual data rather than
+            above it, since they're a nudge, not something the user came
+            here to see. */}
+        <div className="lg:col-span-12 space-y-5">
+          <CompleteProfileBanner needsProfile={needsExtendedProfile} />
+          <FriendInviteBanner />
         </div>
 
         <div className="lg:col-span-7">

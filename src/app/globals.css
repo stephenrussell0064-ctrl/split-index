@@ -176,10 +176,25 @@ body {
   border-color: rgba(255, 255, 255, 0.12);
 }
 
-/* Glow utilities — minimal */
-.glow-accent,
-.glow-endurance,
-.glow-strength,
+/* Glow utilities — a soft color wash at the top of the card, not a heavy
+   drop-shadow (that's what these were pared back from) — enough to give
+   the highest-priority cards on a page a visual lead over identical-looking
+   neighbors without the previous gaudy neon-box-shadow look. */
+.glow-accent {
+  background-image: radial-gradient(ellipse 120% 90% at 50% 0%, rgba(61, 255, 110, 0.07), transparent 65%);
+  box-shadow: none;
+}
+
+.glow-endurance {
+  background-image: radial-gradient(ellipse 120% 90% at 50% 0%, rgba(59, 166, 255, 0.08), transparent 65%);
+  box-shadow: none;
+}
+
+.glow-strength {
+  background-image: radial-gradient(ellipse 120% 90% at 50% 0%, rgba(61, 255, 110, 0.08), transparent 65%);
+  box-shadow: none;
+}
+
 .glow-gym,
 .glow-cardio,
 .glow-pulse {
