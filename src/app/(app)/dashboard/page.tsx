@@ -1,4 +1,6 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
+import { ChevronRight } from "lucide-react";
 import { format } from "date-fns";
 import { createClient } from "@/lib/supabase/server";
 import { EngineLabTrendCard } from "@/components/dashboard/engine-lab-trend-card";
@@ -17,8 +19,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FocusWeekCard } from "@/components/retention/focus-week-card";
 import { NextRankCard } from "@/components/retention/next-rank-card";
 import { EmptyDashboardHero } from "@/components/retention/empty-dashboard-hero";
-import { FriendInviteBanner } from "@/components/retention/friend-invite-banner";
-import { CompleteProfileBanner } from "@/components/retention/complete-profile-banner";
 import { InterferenceRadarCard } from "@/components/analytics/interference-radar-card";
 import { ReadinessCard } from "@/components/dashboard/readiness-card";
 import { TodayCard } from "@/components/dashboard/today-card";
@@ -221,7 +221,6 @@ export default async function DashboardPage() {
   const todayPlan = buildTodayPlan(readiness, interferenceReport, predictedRunBenchmark);
 
   const hasActivities = (recentActivities?.length ?? 0) > 0;
-  const needsExtendedProfile = hasActivities && profile.experience == null;
   const hasIndexHistory = !!latestIndex;
   const sessionCount = allActivityDates?.length ?? 0;
   const showActivationPaywall =
@@ -544,6 +543,17 @@ export default async function DashboardPage() {
         />
       </div>
 
+      <div className="flex items-end justify-between">
+        <p className="micro-label text-muted">Your data</p>
+        <Link
+          href="/analytics"
+          className="group flex items-center gap-1 text-xs font-medium text-accent hover:text-accent/80"
+        >
+          Full analytics
+          <ChevronRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+        </Link>
+      </div>
+
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
         <div className="lg:col-span-8">
           <PremiumGate
@@ -592,14 +602,6 @@ export default async function DashboardPage() {
             goals={(goals ?? []) as DashboardGoal[]}
             currentIndex={hasIndexHistory ? current.split_index : 0}
           />
-        </div>
-
-        {/* Retention hooks — below the athlete's actual data rather than
-            above it, since they're a nudge, not something the user came
-            here to see. */}
-        <div className="lg:col-span-12 space-y-5">
-          <CompleteProfileBanner needsProfile={needsExtendedProfile} />
-          <FriendInviteBanner />
         </div>
 
         <div className="lg:col-span-7">
