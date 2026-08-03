@@ -387,8 +387,10 @@ function ExerciseRow({
         <div className="space-y-2">
           <div
             className={cn(
-              "hidden sm:grid gap-2 px-1 text-[10px] font-semibold uppercase tracking-wider text-muted/60",
-              isBodyweightOnly ? "grid-cols-[28px_1fr_0.7fr_0.7fr_40px]" : "grid-cols-[28px_1fr_1fr_0.7fr_0.7fr_40px]"
+              "grid gap-2 px-1 text-[10px] font-semibold uppercase tracking-wider text-muted/60",
+              isBodyweightOnly
+                ? "grid-cols-[20px_0.6fr_0.55fr_0.55fr_auto] sm:grid-cols-[28px_1fr_0.7fr_0.7fr_40px]"
+                : "grid-cols-[20px_1.4fr_0.6fr_0.55fr_0.55fr_auto] sm:grid-cols-[28px_1fr_1fr_0.7fr_0.7fr_40px]"
             )}
           >
             <span>Set</span>

@@ -588,7 +588,7 @@ export function ActivityForm({
             </div>
 
             {/* Submit — sticky on mobile */}
-            <div className="sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom))] lg:bottom-4 z-20 -mx-1 mt-6 space-y-3 rounded-2xl border border-white/[0.08] bg-background/95 p-4 backdrop-blur-md lg:static lg:mx-0 lg:border-0 lg:bg-transparent lg:p-0 lg:backdrop-blur-none">
+            <div className="mode-surface-elevated sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom))] lg:bottom-4 z-20 -mx-1 mt-6 space-y-3 rounded-2xl border border-white/[0.08] p-4 backdrop-blur-md lg:static lg:mx-0 lg:border-0 lg:bg-transparent lg:p-0 lg:backdrop-blur-none">
               <AnimatePresence initial={false}>
                 {submitError && (
                   <motion.div

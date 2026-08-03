@@ -298,6 +298,29 @@ body {
   background-color: rgba(12, 26, 36, 0.04);
 }
 
+/**
+ * Mode-aware opaque surface for elements that need a solid backdrop
+ * regardless of gym (dark) vs cardio (light) theme — e.g. a sticky bar
+ * over scrolling content, where a transparent/mismatched background would
+ * let underlying text show through or clash with the surrounding theme.
+ * --background itself is deliberately NOT remapped by the cardio override
+ * above (unlike --foreground/--muted/--accent/--glass) since most of the
+ * app relies on it staying the page's true background; this is the
+ * explicit escape hatch for the few elements that need to invert instead.
+ * Scoped to below the `lg` breakpoint (matching Tailwind's `lg:` cutoff)
+ * so it never fights with a `lg:bg-transparent` override on the same
+ * element for a desktop layout that doesn't want this treatment at all.
+ */
+@media (max-width: 1023.98px) {
+  .mode-surface-elevated {
+    background: rgba(6, 6, 6, 0.95);
+  }
+
+  [data-mode="cardio"] .mode-content .mode-surface-elevated {
+    background: rgba(255, 255, 255, 0.95);
+  }
+}
+
 [data-mode="cardio"] .mode-content [class*="text-white"] {
   color: var(--cardio-text);
 }
