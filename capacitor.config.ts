@@ -22,6 +22,14 @@ const config: CapacitorConfig = {
     // still sits correctly rather than looking like a bare wrapped website.
     contentInset: "never",
   },
+  android: {
+    // Required by @capacitor-community/background-geolocation — without
+    // this, Android silently stops delivering location updates after ~5
+    // minutes in the background (github.com/capacitor-community/background-geolocation/issues/89),
+    // which would make a real lock-screen GPS test fail for a config
+    // reason rather than a real bug.
+    useLegacyBridge: true,
+  },
   plugins: {
     SplashScreen: {
       launchShowDuration: 400,

@@ -66,5 +66,13 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Split Index uses your location to track distance and pace during a run.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Split Index tracks your run in the background so tracking keeps going even with your phone locked.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+	</array>
 </dict>
 </plist>
