@@ -150,8 +150,13 @@ export default function GpsRunPage() {
       });
       setHrDeviceName("AirPods (Apple Health)");
       setHrSource("airpods");
-    } catch {
-      setHrError("Couldn't start — check Health access is allowed for Split Index in Settings.");
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : "";
+      setHrError(
+        detail
+          ? `Couldn't start AirPods heart rate: ${detail}`
+          : "Couldn't start — check Health access is allowed for Split Index in Settings."
+      );
     } finally {
       setConnectingHr(null);
     }
