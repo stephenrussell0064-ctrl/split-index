@@ -3,7 +3,7 @@ import { loadLogPage } from "@/app/(app)/activities/log-page-loader";
 export default function GymLogPage({
   searchParams,
 }: {
-  searchParams: Promise<{ repeat?: string; plan?: string; template?: string }>;
+  searchParams: Promise<{ plan?: string; template?: string }>;
 }) {
   return loadLogPage({
     sport: "gym",

@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { ActivityForm } from "@/components/activities/activity-form";
-import { activityToFormState } from "@/lib/activities/db-form";
 import { isPremiumUser } from "@/lib/retention/trial";
 import { getWorkoutPlan } from "@/lib/constants/workout-plans";
 import {
@@ -17,7 +16,7 @@ interface LogPageProps {
   sport: SportType | null;
   zoneMode: "gym" | "cardio";
   enduranceOnly?: boolean;
-  searchParams?: Promise<{ repeat?: string; plan?: string; template?: string }>;
+  searchParams?: Promise<{ plan?: string; template?: string }>;
 }
 
 export async function loadLogPage({
@@ -44,42 +43,9 @@ export async function loadLogPage({
   if (!profile?.onboarding_completed) redirect("/onboarding");
 
   const params = searchParams ? await searchParams : {};
-  const repeatSport = sport ?? (zoneMode === "gym" ? "gym" : "running");
   let initialRepeatState: WorkoutFormState | undefined;
 
-  if (params.repeat && repeatSport) {
-    // repeat=1 → most recent session; repeat=<uuid> → that specific session
-    let query = supabase
-      .from("activities")
-      .select("*")
-      .eq("user_id", user.id)
-      .eq("is_draft", false);
-
-    if (params.repeat === "1") {
-      query = query.eq("sport", repeatSport).order("started_at", { ascending: false });
-    } else {
-      query = query.eq("id", params.repeat);
-    }
-
-    const { data: lastActivity } = await query.limit(1).maybeSingle();
-
-    if (lastActivity) {
-      let exercises: Parameters<typeof activityToFormState>[1] = [];
-      if (lastActivity.sport === "gym") {
-        const { data: exRows } = await supabase
-          .from("gym_exercises")
-          .select("*")
-          .eq("activity_id", lastActivity.id)
-          .order("order_index");
-        exercises = exRows ?? [];
-      }
-      initialRepeatState = activityToFormState(
-        lastActivity,
-        exercises,
-        profile.weight_kg
-      );
-    }
-  } else if (params.template && zoneMode === "gym") {
+  if (params.template && zoneMode === "gym") {
     const { data: template } = await supabase
       .from("session_templates")
       .select("name, template_data")

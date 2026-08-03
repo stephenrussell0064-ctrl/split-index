@@ -5,7 +5,6 @@ import { Activity, PlusCircle, MapPin } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { TrainZoneSwipe } from "@/components/layout/train-zone-swipe";
 import { Button } from "@/components/ui/button";
-import { RepeatLastButton } from "@/components/activities/repeat-last-button";
 import { formatIndex, formatDuration, formatDistance } from "@/lib/utils/format";
 import { SPORT_INDEX_LABELS, ENDURANCE_SPORTS } from "@/lib/constants/sports";
 import type { SportType } from "@/types";
@@ -87,7 +86,6 @@ export default async function CardioPage() {
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <RepeatLastButton logHref="/cardio/log" />
               <Link href="/cardio/log">
                 <Button variant="secondary">
                   <PlusCircle className="h-4 w-4" />

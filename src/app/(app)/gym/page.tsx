@@ -1,24 +1,17 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { format } from "date-fns";
-import { ClipboardList, PlusCircle, RotateCcw } from "lucide-react";
+import { PlusCircle } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { TrainZoneSwipe } from "@/components/layout/train-zone-swipe";
 import { Button } from "@/components/ui/button";
 import { GymStrengthPanel } from "@/components/dashboard/gym-strength-panel";
 import { GymQuickStart } from "@/components/gym/gym-quick-start";
-import { RepeatLastButton } from "@/components/activities/repeat-last-button";
+import { WorkoutPlansDisclosure } from "@/components/gym/workout-plans-disclosure";
 import { formatIndex, formatDuration } from "@/lib/utils/format";
 import { canAccessProfile } from "@/lib/premium/features";
-import { WORKOUT_PLANS } from "@/lib/constants/workout-plans";
 import type { ExRxTier } from "@/lib/scoring/strength/ratio-tiers";
 import type { ScoreBreakdown } from "@/types";
-
-const LEVEL_LABELS: Record<string, string> = {
-  beginner: "Beginner",
-  intermediate: "Intermediate",
-  advanced: "Advanced",
-};
 
 export default async function GymPage() {
   const supabase = await createClient();
@@ -95,16 +88,6 @@ export default async function GymPage() {
     }
   }
 
-  const recentForQuickStart = (gymActivities ?? []).map((a) => {
-    const score = gymScores?.find((s) => s.activity_id === a.id);
-    return {
-      id: a.id as string,
-      title: (a.title as string) ?? "Gym session",
-      startedAt: format(new Date(a.started_at as string), "MMM d"),
-      sportIndex: score ? (score.sport_index as number) : undefined,
-    };
-  });
-
   return (
     <TrainZoneSwipe mode="gym">
       <div className="bg-gym-zone rounded-2xl overflow-hidden border border-gym-border/40 min-h-[80vh]">
@@ -117,7 +100,6 @@ export default async function GymPage() {
               </h1>
             </div>
             <div className="flex flex-wrap gap-2">
-              <RepeatLastButton logHref="/gym/log" />
               <Link href="/gym/log">
                 <Button className="bg-gym-accent hover:bg-gym-accent/90 text-[#04120a] border-0 font-semibold">
                   <PlusCircle className="h-4 w-4" />
@@ -139,37 +121,7 @@ export default async function GymPage() {
                 className="mb-8"
               />
 
-              <div className="mb-8">
-                <div className="mb-4 flex items-center gap-2">
-                  <ClipboardList className="h-4 w-4 text-gym-accent" />
-                  <p className="micro-label text-gym-muted">All workout plans</p>
-                </div>
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                  {WORKOUT_PLANS.map((plan) => (
-                    <Link
-                      key={plan.id}
-                      href={`/gym/log?plan=${plan.id}`}
-                      className="group glass-gym rounded-2xl border border-gym-border/40 p-5 transition-all duration-200 hover:border-gym-accent/50 hover:shadow-[0_0_32px_-10px_var(--gym-glow)]"
-                    >
-                      <div className="mb-3 flex items-center justify-between">
-                        <span className="rounded-full bg-gym-accent/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-gym-accent">
-                          {LEVEL_LABELS[plan.level]}
-                        </span>
-                        <span className="text-[10px] uppercase tracking-wider text-gym-muted">
-                          ~{plan.durationMinutes} min
-                        </span>
-                      </div>
-                      <p className="font-semibold text-gym-text group-hover:text-gym-accent transition-colors">
-                        {plan.name}
-                      </p>
-                      <p className="mt-1 text-xs text-gym-muted">{plan.focus}</p>
-                      <p className="mt-3 text-xs text-gym-muted">
-                        {plan.exercises.length} exercises
-                      </p>
-                    </Link>
-                  ))}
-                </div>
-              </div>
+              <WorkoutPlansDisclosure />
 
               {hasHistory && (
                 <div className="glass-gym rounded-2xl p-6">
@@ -199,13 +151,6 @@ export default async function GymPage() {
                               {formatIndex(score.sport_index as number)}
                             </span>
                           )}
-                          <Link
-                            href={`/gym/log?repeat=${a.id}`}
-                            aria-label={`Repeat ${(a.title as string) ?? "gym session"}`}
-                            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-gym-border/50 text-gym-accent transition-colors hover:bg-gym-accent/10"
-                          >
-                            <RotateCcw className="h-4 w-4" />
-                          </Link>
                         </li>
                       );
                     })}
@@ -221,7 +166,7 @@ export default async function GymPage() {
             </div>
 
             <aside className="min-w-0 lg:sticky lg:top-24 lg:self-start">
-              <GymQuickStart recentSessions={recentForQuickStart} />
+              <GymQuickStart />
             </aside>
           </div>
         </div>

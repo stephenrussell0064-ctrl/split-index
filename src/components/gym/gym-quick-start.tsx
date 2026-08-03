@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Bookmark, ChevronRight, Dumbbell, RotateCcw } from "lucide-react";
+import { Bookmark, ChevronRight, Dumbbell } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { WORKOUT_PLANS } from "@/lib/constants/workout-plans";
 import type { WorkoutFormState } from "@/components/activities/form-state";
@@ -13,18 +13,7 @@ interface TemplateRow {
   template_data: WorkoutFormState;
 }
 
-interface RecentSession {
-  id: string;
-  title: string;
-  startedAt: string;
-  sportIndex?: number;
-}
-
-export function GymQuickStart({
-  recentSessions,
-}: {
-  recentSessions: RecentSession[];
-}) {
+export function GymQuickStart() {
   const [templates, setTemplates] = useState<TemplateRow[]>([]);
   const [loadingTemplates, setLoadingTemplates] = useState(true);
 
@@ -74,37 +63,6 @@ export function GymQuickStart({
           ))}
         </div>
       </div>
-
-      {/* Previous workouts */}
-      {recentSessions.length > 0 && (
-        <div className="glass-gym rounded-2xl border border-gym-border/40 p-5">
-          <div className="mb-4 flex items-center gap-2">
-            <RotateCcw className="h-4 w-4 text-gym-accent" />
-            <p className="micro-label text-gym-muted">Repeat a session</p>
-          </div>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {recentSessions.slice(0, 4).map((session) => (
-              <Link
-                key={session.id}
-                href={`/gym/log?repeat=${session.id}`}
-                className="flex items-center justify-between rounded-xl border border-gym-border/30 bg-gym-bg/50 px-4 py-3 transition-colors hover:border-gym-accent/40 hover:bg-gym-accent/5"
-              >
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-gym-text truncate">
-                    {session.title}
-                  </p>
-                  <p className="text-[10px] text-gym-muted">{session.startedAt}</p>
-                </div>
-                {session.sportIndex !== undefined && (
-                  <span className="font-mono text-sm font-bold text-gym-accent tabular-nums">
-                    {session.sportIndex}
-                  </span>
-                )}
-              </Link>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Saved templates */}
       {!loadingTemplates && templates.length > 0 && (
