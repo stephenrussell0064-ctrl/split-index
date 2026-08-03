@@ -424,21 +424,13 @@ export default async function DashboardPage() {
       {!hasActivities && <EmptyDashboardHero displayName={displayName} />}
 
       {/*
-        Dashboard IA overhaul (interference brief Part 5): readiness,
-        today's plan, and the interference headline are the first thing a
-        returning user sees — not a Lab/Engine score summary. HeroStatWall
-        (the old opener) still exists and is one scroll away, demoted, not
-        removed.
+        Redesign brief: the boldest, most "hook"-y content (headline index,
+        streak, recovery, rank) leads the page now — the first thing a
+        returning user sees, not something they scroll to find. Readiness /
+        today's plan / interference stay immediately after, still above the
+        fold, per the earlier dashboard IA overhaul (interference brief
+        Part 5) that moved them up from further down the page.
       */}
-      {hasActivities && (
-        <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
-          <ReadinessCard readiness={readiness} className="lg:col-span-2" />
-          <TodayCard plan={todayPlan} className="lg:col-span-1" />
-        </div>
-      )}
-
-      {hasActivities && <InterferenceRadarCard report={interferenceReport} />}
-
       {hasActivities && (
         <HeroStatWall
           headlineLabel={headlineLabel}
@@ -456,6 +448,21 @@ export default async function DashboardPage() {
           latestPr={(latestPersonalRecord as PersonalRecord | null) ?? null}
         />
       )}
+
+      {hasActivities && (
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+          <ReadinessCard readiness={readiness} className="lg:col-span-2" />
+          <TodayCard plan={todayPlan} className="lg:col-span-1" />
+        </div>
+      )}
+
+      {hasActivities && <InterferenceRadarCard report={interferenceReport} />}
+
+      {/* Retention hooks (complete-profile nudge, friend invite) moved up
+          from the very bottom of a long page — buried there, most users
+          scrolling for their score never saw them. */}
+      <CompleteProfileBanner needsProfile={needsExtendedProfile} />
+      <FriendInviteBanner />
 
       {showActivationPaywall && (
         <PremiumTease
@@ -612,9 +619,6 @@ export default async function DashboardPage() {
           />
         </div>
       </div>
-
-      <CompleteProfileBanner needsProfile={needsExtendedProfile} />
-      <FriendInviteBanner />
 
       <ScoreDisclaimer className="mt-2" />
     </div>
