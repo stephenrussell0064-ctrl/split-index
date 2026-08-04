@@ -3,11 +3,14 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 60;
+	objectVersion = 70;
 	objects = {
 
 /* Begin PBXBuildFile section */
+		075CD833F22079FDFE695F99 /* MainViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 339AD66125F5C3C038A95501 /* MainViewController.swift */; };
 		2FAD9763203C412B000D30F8 /* config.xml in Resources */ = {isa = PBXBuildFile; fileRef = 2FAD9762203C412B000D30F8 /* config.xml */; };
+		3CF22481AD63A24515A72F48 /* HeartRateWorkoutPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 338FBDBD569DD1923954F771 /* HeartRateWorkoutPlugin.swift */; };
+		3E38E33CB312398DB591C71A /* StepCadencePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06E549172EFD899E1B52C9C3 /* StepCadencePlugin.swift */; };
 		4D22ABE92AF431CB00220026 /* CapApp-SPM in Frameworks */ = {isa = PBXBuildFile; productRef = 4D22ABE82AF431CB00220026 /* CapApp-SPM */; };
 		50379B232058CBB4000EE86E /* capacitor.config.json in Resources */ = {isa = PBXBuildFile; fileRef = 50379B222058CBB4000EE86E /* capacitor.config.json */; };
 		504EC3081FED79650016851F /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 504EC3071FED79650016851F /* AppDelegate.swift */; };
@@ -16,13 +19,42 @@
 		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
 		9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9582B6822FE993A50072D4E8 /* SceneDelegate.swift */; };
-		3CF22481AD63A24515A72F48 /* HeartRateWorkoutPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 338FBDBD569DD1923954F771 /* HeartRateWorkoutPlugin.swift */; };
-		075CD833F22079FDFE695F99 /* MainViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 339AD66125F5C3C038A95501 /* MainViewController.swift */; };
-		3E38E33CB312398DB591C71A /* StepCadencePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06E549172EFD899E1B52C9C3 /* StepCadencePlugin.swift */; };
+		EEBF54E53022651800657F01 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EEBF54E43022651800657F01 /* WidgetKit.framework */; };
+		EEBF54E73022651800657F01 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EEBF54E63022651800657F01 /* SwiftUI.framework */; };
+		EEBF54F83022651900657F01 /* SplitIndexWidgetsExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = EEBF54E23022651800657F01 /* SplitIndexWidgetsExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		1C0C770ACA8D1A32B338CC6E /* SplitIndexActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = B06D17B99535773D2986A555 /* SplitIndexActivityAttributes.swift */; };
+		B67CD127024B78C9493D382A /* LiveActivityPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98252592C588BFFF1721B263 /* LiveActivityPlugin.swift */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		EEBF54F63022651900657F01 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = EEBF54E13022651800657F01;
+			remoteInfo = SplitIndexWidgetsExtension;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		EEBF54F93022651900657F01 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				EEBF54F83022651900657F01 /* SplitIndexWidgetsExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		06E549172EFD899E1B52C9C3 /* StepCadencePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StepCadencePlugin.swift; sourceTree = "<group>"; };
 		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
+		338FBDBD569DD1923954F771 /* HeartRateWorkoutPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeartRateWorkoutPlugin.swift; sourceTree = "<group>"; };
+		339AD66125F5C3C038A95501 /* MainViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainViewController.swift; sourceTree = "<group>"; };
 		50379B222058CBB4000EE86E /* capacitor.config.json */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.json; path = capacitor.config.json; sourceTree = "<group>"; };
 		504EC3041FED79650016851F /* App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = App.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		504EC3071FED79650016851F /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
@@ -33,11 +65,27 @@
 		50B271D01FEDC1A000F3C39B /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
 		9582B6822FE993A50072D4E8 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
-		338FBDBD569DD1923954F771 /* HeartRateWorkoutPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeartRateWorkoutPlugin.swift; sourceTree = "<group>"; };
-		339AD66125F5C3C038A95501 /* MainViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainViewController.swift; sourceTree = "<group>"; };
-		06E549172EFD899E1B52C9C3 /* StepCadencePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StepCadencePlugin.swift; sourceTree = "<group>"; };
 		DDF7CC0A247F567D9441DF09 /* App.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = App.entitlements; sourceTree = "<group>"; };
+		EEBF54E23022651800657F01 /* SplitIndexWidgetsExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = SplitIndexWidgetsExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		EEBF54E43022651800657F01 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
+		EEBF54E63022651800657F01 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
+		B06D17B99535773D2986A555 /* SplitIndexActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitIndexWidgets/SplitIndexActivityAttributes.swift; sourceTree = "<group>"; };
+		98252592C588BFFF1721B263 /* LiveActivityPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityPlugin.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		EEBF54FC3022651900657F01 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = EEBF54E13022651800657F01 /* SplitIndexWidgetsExtension */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		EEBF54E83022651800657F01 /* SplitIndexWidgets */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (EEBF54FC3022651900657F01 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = SplitIndexWidgets; sourceTree = "<group>"; };
+/* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		504EC3011FED79650016851F /* Frameworks */ = {
@@ -45,6 +93,15 @@
 			buildActionMask = 2147483647;
 			files = (
 				4D22ABE92AF431CB00220026 /* CapApp-SPM in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		EEBF54DF3022651800657F01 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				EEBF54E73022651800657F01 /* SwiftUI.framework in Frameworks */,
+				EEBF54E53022651800657F01 /* WidgetKit.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -56,6 +113,9 @@
 			children = (
 				958DCC722DB07C7200EA8C5F /* debug.xcconfig */,
 				504EC3061FED79650016851F /* App */,
+				EEBF54E83022651800657F01 /* SplitIndexWidgets */,
+				B06D17B99535773D2986A555 /* SplitIndexActivityAttributes.swift */,
+				EEBF54E33022651800657F01 /* Frameworks */,
 				504EC3051FED79650016851F /* Products */,
 			);
 			sourceTree = "<group>";
@@ -64,6 +124,7 @@
 			isa = PBXGroup;
 			children = (
 				504EC3041FED79650016851F /* App.app */,
+				EEBF54E23022651800657F01 /* SplitIndexWidgetsExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -75,6 +136,7 @@
 				338FBDBD569DD1923954F771 /* HeartRateWorkoutPlugin.swift */,
 				339AD66125F5C3C038A95501 /* MainViewController.swift */,
 				06E549172EFD899E1B52C9C3 /* StepCadencePlugin.swift */,
+				98252592C588BFFF1721B263 /* LiveActivityPlugin.swift */,
 				DDF7CC0A247F567D9441DF09 /* App.entitlements */,
 				50379B222058CBB4000EE86E /* capacitor.config.json */,
 				504EC3071FED79650016851F /* AppDelegate.swift */,
@@ -88,6 +150,15 @@
 			path = App;
 			sourceTree = "<group>";
 		};
+		EEBF54E33022651800657F01 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				EEBF54E43022651800657F01 /* WidgetKit.framework */,
+				EEBF54E63022651800657F01 /* SwiftUI.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -98,10 +169,12 @@
 				504EC3001FED79650016851F /* Sources */,
 				504EC3011FED79650016851F /* Frameworks */,
 				504EC3021FED79650016851F /* Resources */,
+				EEBF54F93022651900657F01 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				EEBF54F73022651900657F01 /* PBXTargetDependency */,
 			);
 			name = App;
 			packageProductDependencies = (
@@ -111,6 +184,28 @@
 			productReference = 504EC3041FED79650016851F /* App.app */;
 			productType = "com.apple.product-type.application";
 		};
+		EEBF54E13022651800657F01 /* SplitIndexWidgetsExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = EEBF54FD3022651900657F01 /* Build configuration list for PBXNativeTarget "SplitIndexWidgetsExtension" */;
+			buildPhases = (
+				EEBF54DE3022651800657F01 /* Sources */,
+				EEBF54DF3022651800657F01 /* Frameworks */,
+				EEBF54E03022651800657F01 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				EEBF54E83022651800657F01 /* SplitIndexWidgets */,
+			);
+			name = SplitIndexWidgetsExtension;
+			packageProductDependencies = (
+			);
+			productName = SplitIndexWidgetsExtension;
+			productReference = EEBF54E23022651800657F01 /* SplitIndexWidgetsExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -118,13 +213,16 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
-				LastSwiftUpdateCheck = 0920;
+				LastSwiftUpdateCheck = 2660;
 				LastUpgradeCheck = 2660;
 				TargetAttributes = {
 					504EC3031FED79650016851F = {
 						CreatedOnToolsVersion = 9.2;
 						LastSwiftMigration = 1100;
 						ProvisioningStyle = Automatic;
+					};
+					EEBF54E13022651800657F01 = {
+						CreatedOnToolsVersion = 26.6;
 					};
 				};
 			};
@@ -145,6 +243,7 @@
 			projectRoot = "";
 			targets = (
 				504EC3031FED79650016851F /* App */,
+				EEBF54E13022651800657F01 /* SplitIndexWidgetsExtension */,
 			);
 		};
 /* End PBXProject section */
@@ -163,6 +262,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		EEBF54E03022651800657F01 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -175,10 +281,27 @@
 				3CF22481AD63A24515A72F48 /* HeartRateWorkoutPlugin.swift in Sources */,
 				075CD833F22079FDFE695F99 /* MainViewController.swift in Sources */,
 				3E38E33CB312398DB591C71A /* StepCadencePlugin.swift in Sources */,
+				1C0C770ACA8D1A32B338CC6E /* SplitIndexActivityAttributes.swift in Sources */,
+				B67CD127024B78C9493D382A /* LiveActivityPlugin.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		EEBF54DE3022651800657F01 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		EEBF54F73022651900657F01 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = EEBF54E13022651800657F01 /* SplitIndexWidgetsExtension */;
+			targetProxy = EEBF54F63022651900657F01 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin PBXVariantGroup section */
 		504EC30B1FED79650016851F /* Main.storyboard */ = {
@@ -367,6 +490,80 @@
 			};
 			name = Release;
 		};
+		EEBF54FA3022651900657F01 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = SplitIndexWidgets/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = SplitIndexWidgets;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 16.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 1.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = co.uk.splitindex.app.SplitIndexWidgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		EEBF54FB3022651900657F01 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = SplitIndexWidgets/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = SplitIndexWidgets;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 16.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 1.0;
+				MTL_FAST_MATH = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = co.uk.splitindex.app.SplitIndexWidgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -384,6 +581,15 @@
 			buildConfigurations = (
 				504EC3171FED79650016851F /* Debug */,
 				504EC3181FED79650016851F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		EEBF54FD3022651900657F01 /* Build configuration list for PBXNativeTarget "SplitIndexWidgetsExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				EEBF54FA3022651900657F01 /* Debug */,
+				EEBF54FB3022651900657F01 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

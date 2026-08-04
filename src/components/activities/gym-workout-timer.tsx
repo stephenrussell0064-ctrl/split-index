@@ -3,6 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import { Play, Pause, RotateCcw, Timer as TimerIcon } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
+import {
+  isLiveActivitySupported,
+  startLiveActivity,
+  updateLiveActivity,
+  endLiveActivity,
+} from "@/lib/native/live-activity";
 
 const REST_PRESETS_SECONDS = [60, 90, 120, 180];
 
@@ -76,6 +82,15 @@ export function GymWorkoutTimer({
   const [running, setRunning] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const liveActivityStartedRef = useRef(false);
+
+  // Ends a lingering Live Activity if the user navigates away mid-workout
+  // without tapping Reset — otherwise the lock-screen card would never clear.
+  useEffect(() => {
+    return () => {
+      if (liveActivityStartedRef.current) endLiveActivity();
+    };
+  }, []);
 
   useEffect(() => {
     if (!running) return;
@@ -85,13 +100,36 @@ export function GymWorkoutTimer({
     };
   }, [running]);
 
+  function toggleRunning() {
+    setRunning((r) => !r);
+    if (!liveActivityStartedRef.current && isLiveActivitySupported()) {
+      liveActivityStartedRef.current = true;
+      startLiveActivity("gymTimer", "Gym Workout", { elapsedSeconds: elapsed });
+    }
+  }
+
   function resetStopwatch() {
     setRunning(false);
     setElapsed(0);
+    if (liveActivityStartedRef.current) {
+      liveActivityStartedRef.current = false;
+      endLiveActivity();
+    }
   }
 
   const [restRemaining, setRestRemaining] = useState<number | null>(null);
   const alertFiredRef = useRef(false);
+
+  // Keeps the lock-screen Live Activity (started via toggleRunning) in step
+  // with both clocks — a no-op via updateLiveActivity's own internal guard
+  // until the activity has actually been started.
+  useEffect(() => {
+    updateLiveActivity({
+      elapsedSeconds: elapsed,
+      restRemainingSeconds: restRemaining ?? undefined,
+      restDone: restRemaining !== null && restRemaining <= 0,
+    });
+  }, [elapsed, restRemaining]);
 
   useEffect(() => {
     if (restRemaining === null) return;
@@ -120,7 +158,7 @@ export function GymWorkoutTimer({
         <div className="flex items-center gap-3">
           <button
             type="button"
-            onClick={() => setRunning((r) => !r)}
+            onClick={toggleRunning}
             aria-label={running ? "Pause workout timer" : "Start workout timer"}
             className={cn(
               "flex h-14 w-14 shrink-0 items-center justify-center rounded-full transition-all",

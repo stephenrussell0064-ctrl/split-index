@@ -24,6 +24,7 @@ import {
   startStepCadence,
   stopStepCadence,
 } from "@/lib/native/step-cadence";
+import { isLiveActivitySupported, startLiveActivity, updateLiveActivity, endLiveActivity } from "@/lib/native/live-activity";
 import {
   PARTIAL_REASON_LABEL,
   haversineDistanceMeters,
@@ -157,6 +158,21 @@ export default function GpsRunPage() {
   const livePaceSecondsPerKm =
     liveDistanceMeters > 0 ? elapsedSeconds / (liveDistanceMeters / 1000) : null;
 
+  // Keeps the lock-screen Live Activity in step with the tracking HUD.
+  // Depending on elapsedSeconds (which ticks every second) rather than
+  // driving this from the setInterval callback itself avoids a stale
+  // closure over distance/pace/heart-rate/cadence — a fresh effect runs
+  // each render with whatever those values currently are.
+  useEffect(() => {
+    if (phase !== "tracking") return;
+    updateLiveActivity({
+      elapsedSeconds,
+      distanceKm: liveDistanceMeters / 1000,
+      paceOrSpeedText: formatPaceOrSpeed(sport, livePaceSecondsPerKm),
+      heartRateBpm: liveBpm ?? undefined,
+    });
+  }, [phase, elapsedSeconds, liveDistanceMeters, livePaceSecondsPerKm, liveBpm, sport]);
+
   async function handleConnectHeartRate() {
     if (connectingHr) return;
     setConnectingHr("ble");
@@ -236,6 +252,13 @@ export default function GpsRunPage() {
       tickRef.current = setInterval(() => {
         setElapsedSeconds(Math.floor((Date.now() - startedAtRef.current) / 1000));
       }, 1000);
+      if (isLiveActivitySupported()) {
+        startLiveActivity(
+          "gpsTracking",
+          GPS_SPORTS.find((s) => s.value === sport)?.label ?? "GPS Tracking",
+          { elapsedSeconds: 0, distanceKm: 0 }
+        );
+      }
     } finally {
       setStarting(false);
     }
@@ -263,6 +286,7 @@ export default function GpsRunPage() {
       const result = await stopGpsSession();
       if (hrSource) await handleDisconnectHeartRate();
       if (isOnFootSport) await stopStepCadence().catch(() => {});
+      await endLiveActivity();
       setSummary(result);
       setPhase("reviewing");
     } finally {
@@ -278,6 +302,7 @@ export default function GpsRunPage() {
       await stopGpsSession();
       if (hrSource) await handleDisconnectHeartRate();
       if (isOnFootSport) await stopStepCadence().catch(() => {});
+      await endLiveActivity();
     } finally {
       setStopping(false);
       resetToIdle();

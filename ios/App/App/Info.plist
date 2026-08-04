@@ -83,6 +83,8 @@
 	<string>Split Index starts a workout session so AirPods Pro's heart-rate sensor turns on during a run — the workout itself isn't saved to Health.</string>
 	<key>NSMotionUsageDescription</key>
 	<string>Split Index counts your steps during a run or walk to show your cadence.</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
