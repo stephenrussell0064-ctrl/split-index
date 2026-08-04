@@ -43,6 +43,16 @@ function formatMMSS(totalSeconds: number): string {
   return `${m}:${String(sec).padStart(2, "0")}`;
 }
 
+/** Workout stopwatch can run well past an hour — unlike the rest timer, it needs an hour segment or a long session reads as e.g. "127:30" instead of "2:07:30". */
+function formatElapsed(totalSeconds: number): string {
+  const s = Math.max(0, Math.round(totalSeconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+  return `${m}:${String(sec).padStart(2, "0")}`;
+}
+
 /**
  * Built-in gym workout timer (user feedback: "I want the gym logging to be
  * focused around you working out at the same time as you logging"). Two
@@ -52,6 +62,11 @@ function formatMMSS(totalSeconds: number): string {
  * a rest timer between sets (the actual "timing sets" ask) with one-tap
  * presets and an audible+vibration alert so you don't have to keep checking
  * the screen mid-set.
+ *
+ * Rendered as a sticky bar above the app's bottom nav (see sport-form.tsx)
+ * rather than buried inside the collapsible Metrics section, so it stays
+ * reachable and visible no matter how far down the exercise list you've
+ * scrolled — the whole point of a timer you're meant to glance at mid-set.
  */
 export function GymWorkoutTimer({
   onUseDuration,
@@ -100,7 +115,7 @@ export function GymWorkoutTimer({
   const restDone = restActive && restRemaining <= 0;
 
   return (
-    <div className="mb-5 space-y-3 rounded-2xl border border-gym-border/30 bg-gym-bg/40 p-4">
+    <div className="space-y-3 rounded-2xl border border-gym-border/40 bg-gym-bg/70 p-3.5 shadow-lg backdrop-blur-md">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <button
@@ -108,20 +123,22 @@ export function GymWorkoutTimer({
             onClick={() => setRunning((r) => !r)}
             aria-label={running ? "Pause workout timer" : "Start workout timer"}
             className={cn(
-              "flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition-colors",
-              running ? "bg-warning/20 text-warning" : "bg-gym-accent/20 text-gym-accent"
+              "flex h-14 w-14 shrink-0 items-center justify-center rounded-full transition-all",
+              running
+                ? "bg-warning/20 text-warning shadow-[0_0_0_3px_rgba(234,179,8,0.15)]"
+                : "bg-gym-accent/20 text-gym-accent shadow-[0_0_0_3px_rgba(0,230,95,0.12)]"
             )}
           >
             {running ? (
-              <Pause className="h-4.5 w-4.5" />
+              <Pause className="h-5.5 w-5.5" />
             ) : (
-              <Play className="h-4.5 w-4.5" fill="currentColor" />
+              <Play className="h-5.5 w-5.5" fill="currentColor" />
             )}
           </button>
           <div>
             <p className="micro-label text-gym-muted">Workout time</p>
-            <p className="index-display text-2xl font-bold tabular-nums text-gym-text">
-              {formatMMSS(elapsed)}
+            <p className="index-display text-3xl font-bold tabular-nums leading-tight text-gym-text">
+              {formatElapsed(elapsed)}
             </p>
           </div>
         </div>
@@ -130,7 +147,7 @@ export function GymWorkoutTimer({
             <button
               type="button"
               onClick={() => onUseDuration(elapsed)}
-              className="rounded-full border border-gym-accent/30 px-3 py-1.5 text-xs font-medium text-gym-accent transition-colors hover:bg-gym-accent/10"
+              className="rounded-full border border-gym-accent/30 px-3.5 py-2 text-xs font-semibold text-gym-accent transition-colors hover:bg-gym-accent/10"
             >
               Use as duration
             </button>
@@ -139,9 +156,9 @@ export function GymWorkoutTimer({
             type="button"
             onClick={resetStopwatch}
             aria-label="Reset workout timer"
-            className="flex h-9 w-9 items-center justify-center rounded-full text-gym-muted transition-colors hover:bg-white/5 hover:text-gym-text"
+            className="flex h-10 w-10 items-center justify-center rounded-full text-gym-muted transition-colors hover:bg-white/5 hover:text-gym-text"
           >
-            <RotateCcw className="h-4 w-4" />
+            <RotateCcw className="h-4.5 w-4.5" />
           </button>
         </div>
       </div>
@@ -150,10 +167,10 @@ export function GymWorkoutTimer({
         {restActive ? (
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
-              <TimerIcon className={cn("h-4 w-4", restDone ? "text-danger" : "text-gym-accent")} />
+              <TimerIcon className={cn("h-4.5 w-4.5", restDone ? "text-danger" : "text-gym-accent")} />
               <p
                 className={cn(
-                  "index-display text-xl font-bold tabular-nums",
+                  "index-display text-2xl font-bold tabular-nums",
                   restDone ? "text-danger" : "text-gym-text"
                 )}
               >
@@ -163,7 +180,7 @@ export function GymWorkoutTimer({
             <button
               type="button"
               onClick={() => setRestRemaining(null)}
-              className="rounded-full border border-white/10 px-3 py-1 text-xs text-gym-muted transition-colors hover:text-gym-text"
+              className="rounded-full border border-white/10 px-3.5 py-1.5 text-xs font-medium text-gym-muted transition-colors hover:text-gym-text"
             >
               Dismiss
             </button>
@@ -176,7 +193,7 @@ export function GymWorkoutTimer({
                 key={s}
                 type="button"
                 onClick={() => startRest(s)}
-                className="rounded-full border border-gym-border/40 px-3 py-1.5 text-xs font-medium text-gym-text/90 transition-colors hover:border-gym-accent/40 hover:text-gym-accent"
+                className="rounded-full border border-gym-border/50 bg-white/[0.02] px-3.5 py-1.5 text-xs font-semibold text-gym-text/90 transition-colors hover:border-gym-accent/40 hover:text-gym-accent"
               >
                 {s}s
               </button>

@@ -57,9 +57,10 @@ public class HeartRateWorkoutPlugin: CAPPlugin, CAPBridgedPlugin {
             call.reject("AirPods heart rate needs iOS 26 or later.")
             return
         }
+        let activityType = call.getString("activityType") ?? "running"
         let workoutSession = HeartRateWorkoutSession(plugin: self)
         activeSession = workoutSession
-        workoutSession.start(call)
+        workoutSession.start(call, activityType: activityType)
     }
 
     @objc func stop(_ call: CAPPluginCall) {
@@ -85,7 +86,7 @@ private class HeartRateWorkoutSession: NSObject, HKWorkoutSessionDelegate, HKLiv
         self.plugin = plugin
     }
 
-    func start(_ call: CAPPluginCall) {
+    func start(_ call: CAPPluginCall, activityType: String) {
         guard HKHealthStore.isHealthDataAvailable() else {
             call.reject("HealthKit is not available on this device")
             return
@@ -107,14 +108,25 @@ private class HeartRateWorkoutSession: NSObject, HKWorkoutSessionDelegate, HKLiv
                 return
             }
             DispatchQueue.main.async {
-                self.beginWorkoutSession(call)
+                self.beginWorkoutSession(call, activityType: activityType)
             }
         }
     }
 
-    private func beginWorkoutSession(_ call: CAPPluginCall) {
+    /// Maps the JS-side GPS sport ("running"/"outdoor_cycling"/"walking") to the
+    /// matching HealthKit activity type, so a bike ride or walk logged via
+    /// AirPods HR doesn't show up mislabeled as a run in Apple Health.
+    private func healthKitActivityType(for activityType: String) -> HKWorkoutActivityType {
+        switch activityType {
+        case "outdoor_cycling": return .cycling
+        case "walking": return .walking
+        default: return .running
+        }
+    }
+
+    private func beginWorkoutSession(_ call: CAPPluginCall, activityType: String) {
         let configuration = HKWorkoutConfiguration()
-        configuration.activityType = .running
+        configuration.activityType = healthKitActivityType(for: activityType)
         configuration.locationType = .outdoor
 
         do {

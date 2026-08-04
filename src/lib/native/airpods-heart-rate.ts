@@ -2,9 +2,12 @@ import { registerPlugin, type PluginListenerHandle } from "@capacitor/core";
 import { isNativePlatform, getNativePlatform } from "./platform";
 import type { HrReading } from "@/lib/scoring/gps-track";
 
+/** Matches the GpsSport union in the gps-run page — HealthKit's own activityType enum is much larger, but these are the only three GPS tracking supports. */
+export type AirPodsWorkoutSport = "running" | "outdoor_cycling" | "walking";
+
 interface HeartRateWorkoutPlugin {
   isAvailable(): Promise<{ available: boolean }>;
-  start(): Promise<{ started: boolean }>;
+  start(options: { activityType: AirPodsWorkoutSport }): Promise<{ started: boolean }>;
   stop(): Promise<{ stopped: boolean }>;
   addListener(
     eventName: "heartRate",
@@ -38,7 +41,10 @@ export function isAirPodsHeartRateSupported(): boolean {
  * Throws with a user-facing message on authorization denial or a HealthKit
  * error — callers should catch and surface it, same as the BLE HR path.
  */
-export async function startAirPodsHeartRate(onReading: (reading: HrReading) => void): Promise<void> {
+export async function startAirPodsHeartRate(
+  activityType: AirPodsWorkoutSport,
+  onReading: (reading: HrReading) => void
+): Promise<void> {
   const { available } = await HeartRateWorkout.isAvailable();
   if (!available) {
     throw new Error("HealthKit isn't available on this device.");
@@ -53,7 +59,7 @@ export async function startAirPodsHeartRate(onReading: (reading: HrReading) => v
     // rather than interrupting the run in progress.
   });
 
-  await HeartRateWorkout.start();
+  await HeartRateWorkout.start({ activityType });
 }
 
 export async function stopAirPodsHeartRate(): Promise<void> {

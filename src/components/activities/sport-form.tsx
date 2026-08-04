@@ -33,6 +33,7 @@ import {
   type WorkoutFormState,
 } from "./form-state";
 import { GymExercises } from "./gym-form";
+import { GymWorkoutTimer } from "./gym-workout-timer";
 import { formatRelativeStrength } from "@/lib/utils/scoring-display";
 
 export type UpdateField = <K extends keyof WorkoutFormState>(
@@ -130,15 +131,33 @@ export function SportForm({
 
       {/* Metrics — distance upfront for cardio; exercises for gym */}
       {isGym ? (
-        <ExpandableSection title="Metrics · Strength work" defaultOpen hint="Exercises, sets, reps">
-          <GymExercises
-            state={state}
-            errors={errors}
-            onUpdate={onUpdate}
-            embedded
-            profileGender={profileGender}
-          />
-        </ExpandableSection>
+        <>
+          {/* Sticky above the bottom nav (not inside the collapsible section
+              below) so it's reachable however far you've scrolled through
+              the exercise list, matching the sticky submit bar's own offset
+              in activity-form.tsx so the two don't collide. */}
+          <div className="sticky top-[max(0.75rem,env(safe-area-inset-top))] z-30 lg:static">
+            <GymWorkoutTimer
+              onUseDuration={(totalSeconds) => {
+                const h = Math.floor(totalSeconds / 3600);
+                const m = Math.floor((totalSeconds % 3600) / 60);
+                const s = Math.round(totalSeconds % 60);
+                onUpdate("hours", h > 0 ? String(h) : "");
+                onUpdate("minutes", String(m));
+                onUpdate("seconds", String(s));
+              }}
+            />
+          </div>
+          <ExpandableSection title="Metrics · Strength work" defaultOpen hint="Exercises, sets, reps">
+            <GymExercises
+              state={state}
+              errors={errors}
+              onUpdate={onUpdate}
+              embedded
+              profileGender={profileGender}
+            />
+          </ExpandableSection>
+        </>
       ) : (
         <section className="rounded-2xl border border-cardio-border/30 bg-cardio-bg-elevated/5 p-5 sm:p-6 space-y-5">
           <SectionLabel>Metrics</SectionLabel>

@@ -20,10 +20,11 @@ import {
   resolveStrengthInsights,
 } from "@/lib/scoring/activity-insights";
 import { GymExerciseScoreList } from "@/components/activities/gym-exercise-score-list";
+import { RawStatsPanel } from "@/components/activities/raw-stats-panel";
 import { SetActivityMode } from "@/components/layout/set-activity-mode";
 import { gateCardioEnrichment } from "@/lib/scoring/gates";
 import type { CardioEnrichment } from "@/lib/scoring/cardio/confidence";
-import type { ScoreBreakdown } from "@/types";
+import type { ScoreBreakdown, SportType } from "@/types";
 import { formatRiegelPrediction } from "@/lib/scoring/presentation";
 import { tier2IsCalibrating, TIER2_MIN_SAMPLES_TO_DISPLAY } from "@/lib/scoring/cardio/race-prediction";
 
@@ -165,6 +166,19 @@ export default async function ActivityDetailPage({
           />
         </div>
       </div>
+
+      {zone === "cardio" && (
+        <RawStatsPanel
+          sport={activity.sport as SportType}
+          durationSeconds={activity.duration_seconds as number}
+          distanceMeters={(activity.distance_meters as number | null) ?? null}
+          elevationMeters={(activity.elevation_meters as number | null) ?? null}
+          avgHeartRate={(activity.avg_heart_rate as number | null) ?? null}
+          avgPaceSecondsPerKm={(activity.avg_pace_seconds_per_km as number | null) ?? null}
+          avgCadence={(activity.avg_cadence as number | null) ?? null}
+          temperatureCelsius={(activity.temperature_celsius as number | null) ?? null}
+        />
+      )}
 
       {sportIndex !== undefined && (
         <div

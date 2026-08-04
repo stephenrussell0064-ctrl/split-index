@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import dynamic from "next/dynamic";
-import { MapPin, Square, AlertTriangle, Gauge, Mountain, HeartPulse, Zap, Flag } from "lucide-react";
+import { MapPin, Square, AlertTriangle, Gauge, Mountain, HeartPulse, Zap, Flag, Thermometer, Footprints } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/input";
@@ -19,6 +19,11 @@ import {
   startAirPodsHeartRate,
   stopAirPodsHeartRate,
 } from "@/lib/native/airpods-heart-rate";
+import {
+  isStepCadenceSupported,
+  startStepCadence,
+  stopStepCadence,
+} from "@/lib/native/step-cadence";
 import {
   PARTIAL_REASON_LABEL,
   haversineDistanceMeters,
@@ -39,6 +44,15 @@ const GpsMap = dynamic(() => import("@/components/cardio/gps-map"), { ssr: false
 /** Interval/fartlek are the only session types with a designed-around hard/easy segment toggle — every other type just tracks a single continuous effort. */
 const SEGMENT_TRACKED_TYPES = new Set<SessionType>(["interval", "fartlek"]);
 
+/** GPS tracking supports these three outdoor endurance sports — cycling shows speed instead of pace below, and cadence only applies to the two on-foot sports. */
+type GpsSport = "running" | "outdoor_cycling" | "walking";
+
+const GPS_SPORTS: { value: GpsSport; label: string }[] = [
+  { value: "running", label: "Running" },
+  { value: "outdoor_cycling", label: "Outdoor Cycling" },
+  { value: "walking", label: "Walking" },
+];
+
 function formatElapsed(seconds: number): string {
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
@@ -53,6 +67,22 @@ function formatPace(secondsPerKm: number | null): string {
   const m = Math.floor(secondsPerKm / 60);
   const s = Math.round(secondsPerKm % 60);
   return `${m}:${String(s).padStart(2, "0")}/km`;
+}
+
+/** Cyclists think in speed (km/h), not pace (min/km) — same underlying seconds-per-km number, just inverted for display. */
+function formatSpeed(secondsPerKm: number | null): string {
+  if (secondsPerKm === null || secondsPerKm <= 0) return "—";
+  const kmh = 3600 / secondsPerKm;
+  return `${kmh.toFixed(1)} km/h`;
+}
+
+/** Cycling shows speed; running/walking show pace — same stored `avgPaceSecondsPerKm` number either way. */
+function formatPaceOrSpeed(sport: GpsSport, secondsPerKm: number | null): string {
+  return sport === "outdoor_cycling" ? formatSpeed(secondsPerKm) : formatPace(secondsPerKm);
+}
+
+function paceOrSpeedLabel(sport: GpsSport): string {
+  return sport === "outdoor_cycling" ? "Speed" : "Pace";
 }
 
 type Phase = "idle" | "tracking" | "reviewing" | "overview";
@@ -71,6 +101,7 @@ export default function GpsRunPage() {
   const [summary, setSummary] = useState<GpsTrackSummary | null>(null);
   const [orphaned, setOrphaned] = useState<GpsTrackSummary | null>(null);
   const [livePoints, setLivePoints] = useState<GpsPoint[]>([]);
+  const [sport, setSport] = useState<GpsSport>("running");
   const [sessionType, setSessionType] = useState<SessionType>("easy");
   const [segments, setSegments] = useState<RunSegment[]>([]);
   const [segmentType, setSegmentType] = useState<"hard" | "easy">("easy");
@@ -80,6 +111,8 @@ export default function GpsRunPage() {
   const [hrSource, setHrSource] = useState<"ble" | "airpods" | null>(null);
   const [connectingHr, setConnectingHr] = useState<"ble" | "airpods" | null>(null);
   const [hrError, setHrError] = useState("");
+  const [liveCadence, setLiveCadence] = useState<number | null>(null);
+  const [cadenceReadings, setCadenceReadings] = useState<number[]>([]);
   const [saving, setSaving] = useState(false);
   const [starting, setStarting] = useState(false);
   const [stopping, setStopping] = useState(false);
@@ -92,6 +125,8 @@ export default function GpsRunPage() {
 
   const native = isNativePlatform();
   const isSegmentTracked = SEGMENT_TRACKED_TYPES.has(sessionType);
+  /** Cadence (steps/min) only means anything on foot — cycling cadence is pedal RPM, a different sensor entirely, out of scope here. */
+  const isOnFootSport = sport === "running" || sport === "walking";
 
   useEffect(() => {
     if (!native) return;
@@ -145,7 +180,7 @@ export default function GpsRunPage() {
     setConnectingHr("airpods");
     setHrError("");
     try {
-      await startAirPodsHeartRate((reading) => {
+      await startAirPodsHeartRate(sport, (reading) => {
         setLiveBpm(reading.bpm);
         setHrReadings((prev) => [...prev, reading]);
       });
@@ -182,8 +217,19 @@ export default function GpsRunPage() {
     setSegments([]);
     setSegmentType("easy");
     setHrReadings([]);
+    setLiveCadence(null);
+    setCadenceReadings([]);
     try {
       await startGpsSession((point) => setLivePoints((prev) => [...prev, point]));
+      if (isOnFootSport && isStepCadenceSupported()) {
+        // Best-effort — a missing Motion & Fitness permission or an older
+        // device without the M-series coprocessor just means no cadence
+        // tile shows up later, never something that should block the run.
+        startStepCadence((cadence) => {
+          setLiveCadence(cadence);
+          setCadenceReadings((prev) => [...prev, cadence]);
+        }).catch(() => {});
+      }
       startedAtRef.current = Date.now();
       segmentStartRef.current = startedAtRef.current;
       setPhase("tracking");
@@ -216,6 +262,7 @@ export default function GpsRunPage() {
       }
       const result = await stopGpsSession();
       if (hrSource) await handleDisconnectHeartRate();
+      if (isOnFootSport) await stopStepCadence().catch(() => {});
       setSummary(result);
       setPhase("reviewing");
     } finally {
@@ -230,6 +277,7 @@ export default function GpsRunPage() {
     try {
       await stopGpsSession();
       if (hrSource) await handleDisconnectHeartRate();
+      if (isOnFootSport) await stopStepCadence().catch(() => {});
     } finally {
       setStopping(false);
       resetToIdle();
@@ -250,6 +298,8 @@ export default function GpsRunPage() {
     setLiveBpm(null);
     setHrDeviceName(null);
     setHrSource(null);
+    setLiveCadence(null);
+    setCadenceReadings([]);
     setElapsedSeconds(0);
     setError("");
   }
@@ -257,8 +307,8 @@ export default function GpsRunPage() {
   function buildOverviewResult(data: Record<string, unknown>): ScoreResultSummary {
     const sportIndex = (data.sportIndex as number | undefined) ?? 0;
     return {
-      sport: "running",
-      sportLabel: SPORT_INDEX_LABELS.running,
+      sport,
+      sportLabel: SPORT_INDEX_LABELS[sport],
       sportIndex,
       splitIndex: (data.splitIndex as number | undefined) ?? 0,
       previousSplitIndex: (data.previousSplitIndex as number | undefined) ?? sportIndex,
@@ -294,6 +344,11 @@ export default function GpsRunPage() {
           ? Math.round(hrReadings.reduce((sum, r) => sum + r.bpm, 0) / hrReadings.length)
           : undefined;
       const maxHeartRate = hrReadings.length > 0 ? Math.max(...hrReadings.map((r) => r.bpm)) : undefined;
+      const avgCadence =
+        cadenceReadings.length > 0
+          ? Math.round(cadenceReadings.reduce((sum, c) => sum + c, 0) / cadenceReadings.length)
+          : undefined;
+      const startPoint = livePoints[0];
 
       let segmentFields: Record<string, number | undefined> = {};
       if (sessionType === "interval") {
@@ -322,7 +377,7 @@ export default function GpsRunPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          sport: "running",
+          sport,
           started_at: startedAtIso,
           duration_seconds: trackSummary.durationSeconds,
           distance_meters: trackSummary.distanceMeters,
@@ -330,9 +385,15 @@ export default function GpsRunPage() {
           avg_pace_seconds_per_km: trackSummary.avgPaceSecondsPerKm ?? undefined,
           avg_heart_rate: avgHeartRate,
           max_heart_rate: maxHeartRate,
+          avg_cadence: avgCadence,
           session_type: sessionType,
           source: "gps",
           is_partial_track: trackSummary.isPartial,
+          // Starting coordinates only — used server-side to auto-fetch the
+          // temperature at run time (no manual entry needed for GPS runs).
+          // Never persisted as their own column, just consumed once.
+          start_latitude: startPoint?.latitude,
+          start_longitude: startPoint?.longitude,
           ...segmentFields,
         }),
       });
@@ -444,8 +505,10 @@ export default function GpsRunPage() {
                 </p>
               </div>
               <div className="rounded-2xl border border-white/15 bg-white/10 py-3">
-                <p className="micro-label text-white/70">Pace</p>
-                <p className="text-2xl font-bold tabular-nums text-white">{formatPace(livePaceSecondsPerKm)}</p>
+                <p className="micro-label text-white/70">{paceOrSpeedLabel(sport)}</p>
+                <p className="text-2xl font-bold tabular-nums text-white">
+                  {formatPaceOrSpeed(sport, livePaceSecondsPerKm)}
+                </p>
               </div>
               {liveElevationGainMeters !== null && (
                 <div className="rounded-2xl border border-white/15 bg-white/10 py-3">
@@ -459,6 +522,12 @@ export default function GpsRunPage() {
                 <div className="rounded-2xl border border-white/15 bg-white/10 py-3">
                   <p className="micro-label text-white/70">Heart rate</p>
                   <p className="text-2xl font-bold tabular-nums text-white">{liveBpm} bpm</p>
+                </div>
+              )}
+              {liveCadence !== null && (
+                <div className="rounded-2xl border border-white/15 bg-white/10 py-3">
+                  <p className="micro-label text-white/70">Cadence</p>
+                  <p className="text-2xl font-bold tabular-nums text-white">{liveCadence} spm</p>
                 </div>
               )}
             </div>
@@ -491,7 +560,11 @@ export default function GpsRunPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader eyebrow="The Engine" title="GPS Run" subtitle="Lock your phone. Tracking keeps going." />
+      <PageHeader
+        eyebrow="The Engine"
+        title="GPS Tracking"
+        subtitle="Lock your phone. Tracking keeps going."
+      />
 
       {orphaned && (
         <Card padding="sm" className="border border-warning/30 bg-warning/5">
@@ -532,6 +605,14 @@ export default function GpsRunPage() {
               Background location tracking continues even with the screen off — put your phone away
               once you start.
             </p>
+
+            <Select
+              label="Sport"
+              value={sport}
+              onChange={(e) => setSport(e.target.value as GpsSport)}
+              options={GPS_SPORTS}
+              className="mb-4 w-full max-w-xs"
+            />
 
             <Select
               label="Session type"
@@ -590,8 +671,7 @@ export default function GpsRunPage() {
               <p className="mt-2 text-xs text-muted">
                 Bluetooth works with Garmin watches and Polar/Wahoo-style chest straps. AirPods
                 heart rate runs through Apple Health — the first run will ask for Health access
-                and briefly show an Apple workout indicator. Whoop doesn&apos;t broadcast to
-                third-party apps, so it can&apos;t pair here.
+                and briefly show an Apple workout indicator.
               </p>
             </div>
 
@@ -638,8 +718,10 @@ export default function GpsRunPage() {
               <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-full bg-accent/20 text-accent">
                 <Gauge className="h-4.5 w-4.5" />
               </div>
-              <p className="micro-label text-white/70">Pace</p>
-              <p className="text-2xl font-bold tabular-nums text-white">{formatPace(summary.avgPaceSecondsPerKm)}</p>
+              <p className="micro-label text-white/70">{paceOrSpeedLabel(sport)}</p>
+              <p className="text-2xl font-bold tabular-nums text-white">
+                {formatPaceOrSpeed(sport, summary.avgPaceSecondsPerKm)}
+              </p>
             </div>
             {summary.elevationGainMeters !== null && (
               <div className="flex flex-col items-center rounded-2xl border border-white/15 bg-white/10 py-4 text-center">
@@ -661,7 +743,24 @@ export default function GpsRunPage() {
                 </p>
               </div>
             )}
+            {cadenceReadings.length > 0 && (
+              <div className="flex flex-col items-center rounded-2xl border border-white/15 bg-white/10 py-4 text-center">
+                <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-full bg-cardio-accent/20 text-cardio-accent">
+                  <Footprints className="h-4.5 w-4.5" />
+                </div>
+                <p className="micro-label text-white/70">Avg cadence</p>
+                <p className="text-2xl font-bold tabular-nums text-white">
+                  {Math.round(cadenceReadings.reduce((sum, c) => sum + c, 0) / cadenceReadings.length)} spm
+                </p>
+              </div>
+            )}
           </div>
+
+          <p className="mb-6 flex items-center gap-1.5 text-xs text-muted">
+            <Thermometer className="h-3.5 w-3.5" />
+            Temperature is recorded automatically from your starting location — you&apos;ll see it
+            on the saved activity.
+          </p>
 
           {isSegmentTracked && segments.filter((s) => s.type === "hard").length > 0 && (
             <div className="mb-6 flex items-start gap-2 rounded-xl border border-accent/25 bg-accent/5 p-3 text-xs text-foreground/90">

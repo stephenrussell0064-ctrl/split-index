@@ -17,6 +17,12 @@ export function formatPace(secondsPerKm: number): string {
   return `${m}:${s.toString().padStart(2, "0")}/km`;
 }
 
+/** Cyclists think in speed (km/h), not pace (min/km) — same stored seconds-per-km number, just inverted for display. */
+export function formatSpeed(secondsPerKm: number): string {
+  if (secondsPerKm <= 0) return "—";
+  return `${(3600 / secondsPerKm).toFixed(1)} km/h`;
+}
+
 export function formatDistance(meters: number): string {
   if (meters >= 1000) return `${(meters / 1000).toFixed(2)} km`;
   return `${Math.round(meters)} m`;

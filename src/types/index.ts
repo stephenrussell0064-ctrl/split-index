@@ -447,6 +447,9 @@ export interface ActivityFormData {
   avg_split_seconds?: number;
   stroke_type?: string;
   temperature_celsius?: number;
+  /** Starting coordinates for a GPS-tracked session — consumed server-side to auto-fetch temperature_celsius when it isn't already set; never persisted as their own column. */
+  start_latitude?: number;
+  start_longitude?: number;
   session_type?: SessionType;
   /** Structured interval reps — optional; omit to score off the whole-session average as before. */
   interval_reps?: number;

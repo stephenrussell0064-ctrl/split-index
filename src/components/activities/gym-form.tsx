@@ -30,7 +30,6 @@ import {
 } from "@/lib/scoring/weight-entry";
 import type { Gender } from "@/types";
 import { DerivedChip, Field, FieldError, GlassInput, MicroLabel, UnitInput } from "./fields";
-import { GymWorkoutTimer } from "./gym-workout-timer";
 import {
   bestSetRow,
   createExerciseRow,
@@ -117,17 +116,6 @@ export function GymExercises({
 
   const inner = (
     <>
-      <GymWorkoutTimer
-        onUseDuration={(totalSeconds) => {
-          const h = Math.floor(totalSeconds / 3600);
-          const m = Math.floor((totalSeconds % 3600) / 60);
-          const s = Math.round(totalSeconds % 60);
-          onUpdate("hours", h > 0 ? String(h) : "");
-          onUpdate("minutes", String(m));
-          onUpdate("seconds", String(s));
-        }}
-      />
-
       <div className="flex flex-wrap items-center justify-between gap-3">
         {!embedded && <MicroLabel className="text-muted/70">Strength work</MicroLabel>}
         <div className="flex flex-wrap gap-2 ml-auto">

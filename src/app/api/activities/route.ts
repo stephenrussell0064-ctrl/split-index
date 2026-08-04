@@ -50,6 +50,7 @@ import {
 import { fetchExerciseHistory } from "@/lib/activities/exercise-history";
 import { defaultWeightEntryMode } from "@/lib/scoring/weight-entry";
 import type { WeightEntryMode } from "@/lib/scoring/weight-entry";
+import { fetchCurrentTemperatureCelsius } from "@/lib/weather/fetch-temperature";
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -173,6 +174,20 @@ export async function POST(request: Request) {
 
   const loads = computeRecentLoads(recentScores ?? []);
 
+  // GPS-tracked outdoor sessions send their starting coordinates instead of
+  // a manually-typed temperature — auto-fetch it server-side so the user
+  // never has to enter it. Manual log entries already carry their own
+  // temperature_celsius from the form, so this only fires when that's absent.
+  let temperatureCelsius = body.temperature_celsius;
+  if (
+    temperatureCelsius === undefined &&
+    typeof body.start_latitude === "number" &&
+    typeof body.start_longitude === "number"
+  ) {
+    temperatureCelsius =
+      (await fetchCurrentTemperatureCelsius(body.start_latitude, body.start_longitude)) ?? undefined;
+  }
+
   const { data: activity, error: activityError } = await supabase
     .from("activities")
     .insert({
@@ -190,7 +205,7 @@ export async function POST(request: Request) {
       avg_pace_seconds_per_km: body.avg_pace_seconds_per_km,
       avg_split_seconds: body.avg_split_seconds,
       stroke_type: body.stroke_type,
-      temperature_celsius: body.temperature_celsius,
+      temperature_celsius: temperatureCelsius,
       session_type: body.session_type,
       interval_reps: body.interval_reps,
       interval_work_distance_meters: body.interval_work_distance_meters,
