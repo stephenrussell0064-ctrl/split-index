@@ -400,7 +400,15 @@ function computeCardioToStrength(sessions: TimelineSession[]): CardioToStrengthF
       highCardioAvgStrengthComponent: null,
       lowCardioAvgStrengthComponent: null,
       deltaPct: null,
-      summary: `Log a wider mix of high- and low-cardio-volume weeks to unlock this comparison.`,
+      // More concrete than "log a wider mix" — names the specific gap
+      // (missing strength scores on some sessions vs. a real lack of
+      // cardio-volume variety) so the user knows what to actually change,
+      // matching the same "name the specific gap" treatment
+      // computeStrengthToCardio already gives its own calibrating cases.
+      summary:
+        highAvg === null || lowAvg === null
+          ? `Some of your recent gym sessions are missing a strength score to compare — log a few more complete sessions to unlock this.`
+          : `Your last ${strengthSessions.length} gym sessions have followed similarly light cardio weeks — log a gym session after a genuinely heavier cardio week (or a fully rested one) to give this a real spread to compare.`,
     };
   }
 

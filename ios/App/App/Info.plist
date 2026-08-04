@@ -76,7 +76,7 @@
 		<string>workout-processing</string>
 	</array>
 	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>Split Index connects to your heart rate monitor (Garmin, Polar, or other standard Bluetooth devices) during a run.</string>
+	<string>Split Index connects to your heart rate monitor or rowing machine (Garmin, Polar, Concept2, or other standard Bluetooth devices) during a session.</string>
 	<key>NSHealthShareUsageDescription</key>
 	<string>Split Index reads your heart rate from Apple Health (including AirPods Pro) during a run.</string>
 	<key>NSHealthUpdateUsageDescription</key>

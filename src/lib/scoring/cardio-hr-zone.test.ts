@@ -5,6 +5,7 @@ import {
   belowBasePaceCorroboration,
   HR_ZONE_MAX_ADJUSTMENT,
   HR_ZONE_TARGET_CREDIT,
+  PACE_CORROBORATION_MIN_TRUST,
   riegelEquivalentSeconds,
 } from "./cardio-predictions";
 import { scoreCardioActivity, estimateRestingHR, type CardioInput } from "./cardio-activity";
@@ -116,9 +117,9 @@ describe("hrZoneEffortAdjustment — buffed target floor + graduated ramp both s
  * therefore it needs to be able to account for this potential error").
  */
 describe("belowBasePaceCorroboration — below-base guard", () => {
-  it("trusts the HR reading outright (corroboration=1) when no pace baseline exists yet", () => {
-    expect(belowBasePaceCorroboration(1500, undefined)).toBe(1);
-    expect(belowBasePaceCorroboration(1500, null)).toBe(1);
+  it("floors at partial trust (not full trust) when no pace baseline exists yet to corroborate against — this is precisely the unverified case the guard exists for", () => {
+    expect(belowBasePaceCorroboration(1500, undefined)).toBe(PACE_CORROBORATION_MIN_TRUST);
+    expect(belowBasePaceCorroboration(1500, null)).toBe(PACE_CORROBORATION_MIN_TRUST);
   });
 
   it("floors at partial trust (not zero) when this session's pace matches the athlete's normal easy pace exactly", () => {
@@ -325,5 +326,54 @@ describe("scoreCardioActivity — assumed-target fallback with no HR data at all
       recentHardEffortBenchmarkSeconds: 100000, // absurdly fast reference -> this session reads as mistagged
     });
     expect(mistagged.flags).not.toContain("hr-zone-assumed-target");
+  });
+});
+
+/**
+ * Regression for the below-base guard's "no baseline yet" default (user
+ * feedback: a 7km/30min/152bpm row scored 860 — near-elite territory —
+ * despite the athlete's real 2k best being ~7:00-7:05). Root cause:
+ * belowBasePaceCorroboration used to return full trust (1) whenever no
+ * personal easy-effort pace baseline existed, making the guard inert for
+ * anyone without 3+ prior qualifying easy sessions logged in that sport —
+ * exactly the situation it exists to protect against. Fixed to floor at
+ * PACE_CORROBORATION_MIN_TRUST instead, same as an actively-uncorroborated
+ * reading.
+ */
+describe("scoreCardioActivity — below-base guard regression (no baseline yet)", () => {
+  const rowingInput: CardioInput = {
+    type: "row",
+    benchmarkSport: "row",
+    distanceMeters: 7000,
+    durationSeconds: 1800, // 7km in 30 minutes
+    sex: "male",
+    age: 30,
+    sessionType: "easy",
+    restingHR: 50,
+    maxHR: 207, // base=157, target=172 — 152bpm avg sits below base
+    avgHR: 152,
+  };
+
+  it("no longer inflates a below-base reading to near-elite territory when there's no easy-row history to corroborate it", () => {
+    const result = scoreCardioActivity(rowingInput);
+    // Previously ~860 (full below-base credit, no corroboration check at all).
+    // With the fix, the credit is capped at the guard's own MIN_TRUST floor
+    // (13% instead of 21%), landing meaningfully lower — still generous
+    // relative to a raw, uncredited Riegel projection (~211), but no longer
+    // reading as elite/99th-percentile for a submaximal steady-state piece.
+    expect(result.score).toBeLessThan(700);
+    expect(result.score).toBeGreaterThan(500);
+  });
+
+  it("still grants full below-base credit once a real easy-row pace baseline corroborates it", () => {
+    // Same session, but this athlete now has an established easy-effort
+    // pace baseline that this 152bpm effort's pace genuinely corroborates
+    // (well below that baseline pace) — full trust is appropriate here.
+    const withBaseline = scoreCardioActivity({
+      ...rowingInput,
+      easyEffortBaselinePaceSeconds: 420, // this athlete's normal easy-row 2k-equivalent pace
+    });
+    const withoutBaseline = scoreCardioActivity(rowingInput);
+    expect(withBaseline.score).toBeGreaterThan(withoutBaseline.score);
   });
 });

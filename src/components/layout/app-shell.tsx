@@ -20,6 +20,7 @@ import { BrandMark } from "@/components/brand/brand-mark";
 import { cn } from "@/lib/utils/cn";
 import { SidebarAccount } from "@/components/layout/sidebar-account";
 import { AppTopBar } from "@/components/layout/app-top-bar";
+import { EdgeSwipeBack } from "@/components/layout/edge-swipe-back";
 import { ModeOverrideProvider, useModeOverride } from "@/components/layout/mode-override-context";
 import { NativeBillingBootstrap } from "@/components/layout/native-billing-bootstrap";
 
@@ -367,7 +368,7 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
                   exit={{ opacity: 0, x: -12, position: "absolute", top: 0, left: 0, right: 0 }}
                   transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
                 >
-                  {children}
+                  <EdgeSwipeBack enabled={showBackButton}>{children}</EdgeSwipeBack>
                 </motion.div>
               </AnimatePresence>
             </div>

@@ -51,13 +51,15 @@ describe("updatePrediction / blendPredictedBenchmark — relative-trend evidence
     expect(result).toBeGreaterThan(STORED * 0.98);
   });
 
-  it("never penalizes a below-baseline easy run beyond what the absolute gate already does", () => {
+  it("nudges the prediction slightly slower for a below-baseline easy run — deliberate revision of the original always-improve-only design (user feedback: account for fatigue/declining fitness, not just improvement)", () => {
     const withWorseEfficiency = updatePrediction(STORED, 1800, {
       sessionType: "easy",
       thisSessionEF: 1.0, // below baseline
       baselineEF: 1.1,
     });
-    expect(withWorseEfficiency).toBe(STORED);
+    expect(withWorseEfficiency).toBeGreaterThan(STORED);
+    // Still deliberately tiny — capped at the same small magnitude as the improvement side.
+    expect(withWorseEfficiency).toBeLessThan(STORED * 1.02 + 0.01);
   });
 
   it("only applies to easy/recovery/long session types, not race/tempo/threshold", () => {
@@ -85,16 +87,20 @@ describe("updatePrediction / blendPredictedBenchmark — relative-trend evidence
     expect(extreme).toBeGreaterThanOrEqual(STORED * 0.98 - 0.01);
   });
 
-  it("has no effect when the session already clears the absolute IMPROVE_RATE/REGRESS_RATE gates", () => {
-    // Genuinely faster absolute equivalent (900s) already triggers IMPROVE_RATE
-    // regardless of context.
-    const withContext = updatePrediction(STORED, 900, {
+  it("layers as a small additional adjustment even when the session already clears the absolute IMPROVE_RATE/REGRESS_RATE gates (user feedback: keep the prediction visibly alive between quality efforts, including when two identical quality efforts would otherwise produce a literal zero-delta update)", () => {
+    // Genuinely faster absolute equivalent (900s) already triggers IMPROVE_RATE,
+    // and the easy-run trend nudge now layers on top of that primary result
+    // rather than only ever being reachable as a last-resort fallback.
+    const withWorseTrend = updatePrediction(STORED, 900, {
       sessionType: "easy",
       thisSessionEF: 1.0,
-      baselineEF: 1.5, // would look like a big regression if the trend nudge applied
+      baselineEF: 1.5, // reads as a declining trend on top of the fast absolute time
     });
     const withoutContext = updatePrediction(STORED, 900);
-    expect(withContext).toBe(withoutContext);
+    expect(withWorseTrend).toBeGreaterThan(withoutContext);
+    // Still a small layer on top of the primary IMPROVE_RATE result, not a
+    // wholesale reversal of the genuine faster-time evidence.
+    expect(withWorseTrend).toBeLessThan(STORED);
   });
 
   it("blendPredictedBenchmark threads context through the same way", () => {
@@ -162,6 +168,34 @@ describe("updatePrediction — direct race-distance evidence snaps fully, not th
 
   it("DIRECT_EVIDENCE_IMPROVE_RATE is a full 1.0 snap, distinct from IMPROVE_RATE's 55% blend", () => {
     expect(DIRECT_EVIDENCE_IMPROVE_RATE).toBe(1.0);
+  });
+
+  it("two identical direct-race efforts still produce a literal zero-delta update on their own — this is mathematically inevitable for a point-estimate blend, not a rate-tuning bug (user feedback: a repeat 18:25 5k left the prediction frozen at 18:25)", () => {
+    const direct = isDirectBenchmarkDistance(5000, BENCHMARK_DISTANCE_METERS.run);
+    const afterFirstRace = updatePrediction(STORED, RACED, { sessionType: "race", isDirectBenchmarkDistance: direct });
+    expect(afterFirstRace).toBe(RACED);
+    // Second race exactly matches the now-stored prediction -> zero delta -> unchanged by the primary blend alone.
+    const afterSecondRace = updatePrediction(afterFirstRace, RACED, { sessionType: "race", isDirectBenchmarkDistance: direct });
+    expect(afterSecondRace).toBe(RACED);
+  });
+
+  it("differing easy-run trend context on an otherwise-identical direct-race repeat DOES produce a small amount of movement — the widened easy-run trend layer is the mechanism that can move a prediction the primary evidence-based blend cannot", () => {
+    const direct = isDirectBenchmarkDistance(5000, BENCHMARK_DISTANCE_METERS.run);
+    const afterFirstRace = updatePrediction(STORED, RACED, { sessionType: "race", isDirectBenchmarkDistance: direct });
+    // The repeat evidence itself is still a "race" (trend layer doesn't apply to race sessions,
+    // by design — comparing a maximal race effort's own EF to an easy-effort baseline isn't a
+    // meaningful comparison). This demonstrates the layer's actual, currently-safe reach: an
+    // easy/recovery/long session logged around the same time can still move the number even
+    // when the headline race number hasn't, addressing the literal "recent recovery and easy
+    // runs" part of the ask. A full fix for two literally-identical RACE repeats needs separate,
+    // date-ordered trend-tracking plumbing not implemented here (see cardio-predictions.ts's
+    // updatePrediction doc comment).
+    const easyRunAfterward = updatePrediction(afterFirstRace, afterFirstRace + 400, {
+      sessionType: "easy",
+      thisSessionEF: 1.15,
+      baselineEF: 1.1,
+    });
+    expect(easyRunAfterward).toBeLessThan(afterFirstRace);
   });
 });
 

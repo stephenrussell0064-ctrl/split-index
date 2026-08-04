@@ -150,6 +150,13 @@ function CardioPremiumStats({
           <dd className="font-medium tabular-nums">{Math.round(result.confidence * 100)}%</dd>
         </div>
       </dl>
+      {(result.trimp !== null || result.efficiencyFactor !== null || result.decouplingPct !== null) && (
+        <ScoringExplainerNote href="/how-scoring-works#trimp">
+          TRIMP is training cost (duration × intensity); efficiency factor is speed per
+          heartbeat, best read as a trend against your own history; decoupling is how much your
+          heart rate drifted upward relative to pace.
+        </ScoringExplainerNote>
+      )}
       {result.predictions && (
         <div className="border-t border-white/5 pt-4">
           <p className="text-[10px] uppercase tracking-wider text-muted mb-2">

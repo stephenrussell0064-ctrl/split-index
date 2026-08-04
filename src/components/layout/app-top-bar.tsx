@@ -8,26 +8,15 @@ import { NotificationBell } from "@/components/retention/notification-bell";
 import { PremiumBadge } from "@/components/retention/premium-badge";
 import { createClient } from "@/lib/supabase/client";
 import { isPremiumUser } from "@/lib/retention/trial";
+import { navigateBack } from "@/lib/utils/navigate-back";
 
 function BackButton() {
   const router = useRouter();
 
-  function handleBack() {
-    // A direct link/deep-link into a sub-page (shared URL, browser refresh)
-    // has no in-app history to go back to — router.back() would just leave
-    // the app/close the tab. history.length > 1 means this tab has
-    // somewhere real to return to.
-    if (typeof window !== "undefined" && window.history.length > 1) {
-      router.back();
-    } else {
-      router.push("/dashboard");
-    }
-  }
-
   return (
     <button
       type="button"
-      onClick={handleBack}
+      onClick={() => navigateBack(router)}
       aria-label="Back"
       className="-ml-2 flex h-9 w-9 items-center justify-center rounded-full text-foreground/80 transition-colors hover:bg-white/8 hover:text-foreground"
     >

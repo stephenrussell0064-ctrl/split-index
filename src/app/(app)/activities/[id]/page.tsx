@@ -175,6 +175,7 @@ export default async function ActivityDetailPage({
           elevationMeters={(activity.elevation_meters as number | null) ?? null}
           avgHeartRate={(activity.avg_heart_rate as number | null) ?? null}
           avgPaceSecondsPerKm={(activity.avg_pace_seconds_per_km as number | null) ?? null}
+          avgSplitSeconds={(activity.avg_split_seconds as number | null) ?? null}
           avgCadence={(activity.avg_cadence as number | null) ?? null}
           temperatureCelsius={(activity.temperature_celsius as number | null) ?? null}
         />

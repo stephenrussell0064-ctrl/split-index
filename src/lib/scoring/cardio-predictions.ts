@@ -323,10 +323,19 @@ export function isQualityEffort(storedSeconds: number, equivSeconds: number): bo
  * NOTHING — if it beat the athlete's own recent easy-effort baseline (the
  * same relative-effort comparison the primary score uses), that's a small,
  * indirect signal of improved fitness, distinct from and much weaker than
- * an outright faster absolute time. Deliberately tiny and bonus-only: this
- * is inferred from an easy run, not demonstrated on a fast one, so it can
- * only ever nudge the prediction a small fraction of a percent — nowhere
- * near IMPROVE_RATE's 55% pull for genuine faster-time evidence.
+ * an outright faster absolute time. Deliberately tiny: this is inferred from
+ * an easy run, not demonstrated on a fast one, so it can only ever nudge the
+ * prediction a small fraction of a percent — nowhere near IMPROVE_RATE's 55%
+ * pull for genuine faster-time evidence.
+ *
+ * Bidirectional (user feedback: "account for fatigue, fitness, and recent
+ * recovery and easy runs" — a partial, deliberate revision of the original
+ * Part E1 "easy runs never move prediction slower" tenet). A run whose own
+ * efficiency reads WORSE than the athlete's baseline is now allowed to nudge
+ * the prediction slightly slower too, at the same tiny magnitude — real
+ * information about fatigue/declining fitness between quality efforts,
+ * capped just as tightly as the improvement side so a single off day can't
+ * meaningfully move the number on its own.
  */
 export interface RelativeEffortTrendContext {
   sessionType?: SessionType | null;
@@ -339,36 +348,57 @@ export interface RelativeEffortTrendContext {
 }
 
 const EASY_TREND_SENSITIVITY = 0.3;
-/** Max prediction nudge from relative-trend evidence alone — deliberately far smaller than IMPROVE_RATE/REGRESS_RATE since it's inferred, not demonstrated. */
-const EASY_TREND_MAX_IMPROVEMENT_FRACTION = 0.02;
+/** Max prediction nudge from relative-trend evidence alone, either direction — deliberately far smaller than IMPROVE_RATE/REGRESS_RATE since it's inferred, not demonstrated. */
+const EASY_TREND_MAX_ADJUSTMENT_FRACTION = 0.02;
 
-function easyTrendImprovementNudge(storedSec: number, context?: RelativeEffortTrendContext): number {
+/**
+ * Compares this session's own efficiency against the athlete's personal easy
+ * baseline and returns a small, capped, signed nudge (positive = faster,
+ * negative = slower) — or `storedSec` unchanged when the session isn't
+ * easy/recovery/long, or there's no EF data to compare. Applied as an
+ * additional small layer in `updatePrediction` below, not a replacement for
+ * the primary evidence-based blend.
+ */
+function easyTrendNudge(storedSec: number, context?: RelativeEffortTrendContext): number {
   if (!context?.sessionType || !RELATIVE_EFFORT_SESSION_TYPES.has(context.sessionType)) return storedSec;
   if (!context.thisSessionEF || !context.baselineEF) return storedSec;
   const efRatio = context.thisSessionEF / context.baselineEF;
-  const nudgeFraction = clamp((efRatio - 1) * EASY_TREND_SENSITIVITY, 0, EASY_TREND_MAX_IMPROVEMENT_FRACTION);
+  const nudgeFraction = clamp(
+    (efRatio - 1) * EASY_TREND_SENSITIVITY,
+    -EASY_TREND_MAX_ADJUSTMENT_FRACTION,
+    EASY_TREND_MAX_ADJUSTMENT_FRACTION
+  );
   return storedSec * (1 - nudgeFraction);
 }
 
 /**
- * Asymmetric memory update (Part E1): easy runs never move prediction slower.
- * `context` (optional) enables the relative-trend nudge above for sessions
- * that don't clear the absolute QUALITY_PROXIMITY gate.
+ * Asymmetric memory update (Part E1): a faster race/quality effort pulls the
+ * prediction down fast; a slower one only nudges it when it's still a
+ * genuine quality effort. On top of whichever of those fires, an
+ * easy/recovery/long session's own efficiency-trend nudge (`easyTrendNudge`)
+ * is layered on as a small additional adjustment — this is what keeps the
+ * prediction visibly alive between quality efforts (including when two
+ * quality efforts land on an identical number and would otherwise produce a
+ * literal zero-delta update) rather than only reachable as a last-resort
+ * fallback. `context` (optional) enables it; sessions whose type isn't
+ * easy/recovery/long pass through unaffected by this layer.
  */
 export function updatePrediction(
   storedSec: number,
   equivSec: number,
   context?: RelativeEffortTrendContext
 ): number {
+  let primary: number;
   if (equivSec < storedSec) {
     const isDirectRaceEvidence = context?.isDirectBenchmarkDistance && context.sessionType === "race";
     const rate = isDirectRaceEvidence ? DIRECT_EVIDENCE_IMPROVE_RATE : IMPROVE_RATE;
-    return storedSec + (equivSec - storedSec) * rate;
+    primary = storedSec + (equivSec - storedSec) * rate;
+  } else if (isQualityEffort(storedSec, equivSec)) {
+    primary = storedSec + (equivSec - storedSec) * REGRESS_RATE;
+  } else {
+    primary = storedSec;
   }
-  if (isQualityEffort(storedSec, equivSec)) {
-    return storedSec + (equivSec - storedSec) * REGRESS_RATE;
-  }
-  return easyTrendImprovementNudge(storedSec, context);
+  return easyTrendNudge(primary, context);
 }
 
 /**
@@ -727,13 +757,19 @@ export const HR_ZONE_MAX_ADJUSTMENT = 0.10;
  * reading alone is still weak evidence, not proof of error).
  */
 const PACE_CORROBORATION_MARGIN = 0.05;
-const PACE_CORROBORATION_MIN_TRUST = 0.2;
+export const PACE_CORROBORATION_MIN_TRUST = 0.2;
 
 export function belowBasePaceCorroboration(
   rawProjectedSeconds: number,
   baselinePaceSeconds: number | null | undefined
 ): number {
-  if (!baselinePaceSeconds || baselinePaceSeconds <= 0) return 1; // no baseline yet — trust the HR reading outright
+  // No baseline yet is exactly the situation this guard exists for — an
+  // at/below-base HR reading with nothing to corroborate it against gets
+  // the same MIN_TRUST floor as a reading that's actively contradicted by
+  // pace, not full trust (previously `return 1` here made the guard inert
+  // for anyone without 3+ prior easy-effort sessions, which is precisely
+  // when a boundary-hugging HR reading is least verified).
+  if (!baselinePaceSeconds || baselinePaceSeconds <= 0) return PACE_CORROBORATION_MIN_TRUST;
   const slowerFraction = (rawProjectedSeconds - baselinePaceSeconds) / baselinePaceSeconds;
   return clamp(slowerFraction / PACE_CORROBORATION_MARGIN, PACE_CORROBORATION_MIN_TRUST, 1);
 }

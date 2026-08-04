@@ -46,6 +46,9 @@ const TOC = [
   { id: "credit-and-penalty", label: "Credit and penalty" },
   { id: "noisy-readings", label: "Guarding against noisy readings" },
   { id: "without-hr-data", label: "Without heart-rate data" },
+  { id: "trimp", label: "TRIMP" },
+  { id: "efficiency-factor", label: "Efficiency factor" },
+  { id: "decoupling", label: "Decoupling" },
   { id: "dots-gl", label: "Strength Index: DOTS and IPF GL" },
   { id: "race-predictions", label: "Race predictions" },
   { id: "injury-risk", label: "Injury risk (ACWR)" },
@@ -247,6 +250,53 @@ export default function HowScoringWorksPage() {
                 heart-rate zone (a well-paced, well-controlled easy effort) and scores it accordingly.
                 This is a guess, not a measurement, so it&apos;s clearly flagged on the session, and it may
                 not be accurate for that specific run.
+              </p>
+            </section>
+
+            <section id="trimp">
+              <h2 className="text-lg font-semibold text-foreground">TRIMP</h2>
+              <p className="mt-3">
+                TRIMP (Training Impulse) is a single number blending how long a session lasted
+                and how hard your heart was working throughout it — a rough measure of a
+                workout&apos;s total training &quot;cost,&quot; rather than a score of how well it
+                went. A short, easy jog and a much longer one at the same intensity produce very
+                different TRIMP values even though both might score similarly on effort quality.
+              </p>
+              <p className="mt-3">
+                As a rough guide: under 50 reads as light, 50–100 as moderate, 100–150 as hard,
+                and above 150 as very hard. A 45-minute easy run might land around 60–80
+                (moderate); a hard interval session can push past 150. It uses the published
+                Banister TRIMP formula (1991), weighted for your sex and heart-rate reserve.
+              </p>
+            </section>
+
+            <section id="efficiency-factor">
+              <h2 className="text-lg font-semibold text-foreground">Efficiency factor</h2>
+              <p className="mt-3">
+                Efficiency factor is how much speed (or power, for erg/bike sessions) you&apos;re
+                getting per heartbeat — a rough proxy for aerobic fitness at a given effort. It has
+                no fixed &quot;good&quot; or &quot;bad&quot; number: Split Index doesn&apos;t
+                compare your efficiency factor against anyone else&apos;s, only against your own
+                history. Trending upward over weeks at a similar effort means your aerobic
+                fitness is genuinely improving; trending downward can be a sign of fatigue,
+                illness, or detraining.
+              </p>
+              <p className="mt-3">
+                Erg/bike sessions show this as watts per beat-per-minute; pace-based sessions
+                (running, rowing, swimming without a power meter) show it as meters-per-minute per
+                beat-per-minute — the two aren&apos;t on the same scale, so don&apos;t compare a
+                power-based reading against a pace-based one.
+              </p>
+            </section>
+
+            <section id="decoupling">
+              <h2 className="text-lg font-semibold text-foreground">Decoupling</h2>
+              <p className="mt-3">
+                Decoupling compares your heart rate in the first half of a session against the
+                second half, at a similar pace or power. A small amount of upward drift (your
+                heart rate creeping higher for the same output) is normal, especially in heat or
+                on longer efforts. A larger drift is a sign of fading aerobic durability or
+                accumulated fatigue — even on a session that felt evenly paced throughout.
               </p>
             </section>
 

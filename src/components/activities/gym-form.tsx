@@ -4,7 +4,6 @@ import { useMemo, useState } from "react";
 import { AnimatePresence, motion, useMotionValue, useTransform, PanInfo } from "framer-motion";
 import {
   ChevronDown,
-  Copy,
   Dumbbell,
   Plus,
   Search,
@@ -71,20 +70,6 @@ export function GymExercises({
 
   const addRow = () => {
     onUpdate("exercises", [...rows, createExerciseRow(rows[rows.length - 1])]);
-  };
-
-  const duplicateRow = (id: string) => {
-    const source = rows.find((r) => r.id === id);
-    if (!source) return;
-    const copy = createExerciseRow(source);
-    copy.name = source.name;
-    copy.muscleGroup = source.muscleGroup;
-    copy.weightEntryMode = source.weightEntryMode;
-    copy.sets = source.sets.map((s) => createSetRow(s));
-    const idx = rows.findIndex((r) => r.id === id);
-    const next = [...rows];
-    next.splice(idx + 1, 0, copy);
-    onUpdate("exercises", next);
   };
 
   const removeRow = (id: string) => {
@@ -158,7 +143,6 @@ export function GymExercises({
               canRemove={rows.length > 1}
               profileGender={profileGender}
               onUpdate={(patch) => updateRow(row.id, patch)}
-              onDuplicate={() => duplicateRow(row.id)}
               onRemove={() => removeRow(row.id)}
               onFilterChange={setMuscleFilter}
             />
@@ -202,7 +186,6 @@ function ExerciseRow({
   canRemove,
   profileGender,
   onUpdate,
-  onDuplicate,
   onRemove,
   onFilterChange,
 }: {
@@ -214,7 +197,6 @@ function ExerciseRow({
   canRemove: boolean;
   profileGender?: Gender | null;
   onUpdate: (patch: Partial<ExerciseRowState>) => void;
-  onDuplicate: () => void;
   onRemove: () => void;
   onFilterChange: (c: MuscleGroupCategory) => void;
 }) {
@@ -487,14 +469,6 @@ function ExerciseRow({
             </span>
           </div>
           <div className="flex gap-1">
-            <button
-              type="button"
-              aria-label="Duplicate exercise"
-              onClick={onDuplicate}
-              className="rounded-lg p-2 text-muted transition-colors duration-200 hover:bg-white/5 hover:text-foreground min-h-[44px] min-w-[44px] flex items-center justify-center"
-            >
-              <Copy className="h-4 w-4" />
-            </button>
             {canRemove && (
               <button
                 type="button"

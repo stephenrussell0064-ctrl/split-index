@@ -3,6 +3,7 @@
 import { formatIndex } from "@/lib/utils/format";
 import { cn } from "@/lib/utils/cn";
 import { PremiumTease } from "@/components/premium/premium-tease";
+import { ScoringExplainerNote } from "@/components/scoring/scoring-explainer-note";
 import type { CardioEnrichment } from "@/lib/scoring/cardio";
 
 function EnrichmentContent({
@@ -62,6 +63,10 @@ function EnrichmentContent({
                 ({enrichment.trimp.label.replace("_", " ")})
               </span>
             </dd>
+            <ScoringExplainerNote href="/how-scoring-works#trimp" className="mt-1">
+              A blend of how long and how hard this session was — one number for its total
+              training cost.
+            </ScoringExplainerNote>
           </div>
         )}
         {enrichment.efficiencyFactor && (
@@ -72,6 +77,10 @@ function EnrichmentContent({
             <dd className="font-medium tabular-nums">
               {enrichment.efficiencyFactor.displayValue}
             </dd>
+            <ScoringExplainerNote href="/how-scoring-works#efficiency-factor" className="mt-1">
+              How much {enrichment.efficiencyFactor.unit === "power_per_hr" ? "power" : "speed"}{" "}
+              you got per heartbeat — compare it to your own past sessions, not anyone else&apos;s.
+            </ScoringExplainerNote>
           </div>
         )}
         {enrichment.decoupling && (
@@ -82,6 +91,10 @@ function EnrichmentContent({
             <dd className="text-muted text-xs leading-relaxed">
               {enrichment.decoupling.note}
             </dd>
+            <ScoringExplainerNote href="/how-scoring-works#decoupling" className="mt-1">
+              How much your heart rate drifted upward relative to pace across the session — a
+              sign of fading form or building fatigue, even on an even-paced effort.
+            </ScoringExplainerNote>
           </div>
         )}
       </dl>

@@ -9,6 +9,15 @@ function paceOrSpeed(sport: SportType, secondsPerKm: number): { label: string; v
     : { label: "Pace", value: formatPace(secondsPerKm) };
 }
 
+/** Rowing/ski-erg sports think in split (min:sec per 500m), a distinct stored column from avg_pace_seconds_per_km — the latter is never populated for these sports at all. */
+const SPLIT_SPORTS = new Set<SportType>(["rowing", "ski_erg"]);
+
+function formatSplit(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = Math.round(seconds % 60);
+  return `${m}:${String(s).padStart(2, "0")} /500m`;
+}
+
 interface RawStatsPanelProps {
   sport: SportType;
   durationSeconds: number;
@@ -16,6 +25,7 @@ interface RawStatsPanelProps {
   elevationMeters: number | null;
   avgHeartRate: number | null;
   avgPaceSecondsPerKm: number | null;
+  avgSplitSeconds: number | null;
   avgCadence: number | null;
   temperatureCelsius: number | null;
 }
@@ -34,10 +44,12 @@ export function RawStatsPanel({
   elevationMeters,
   avgHeartRate,
   avgPaceSecondsPerKm,
+  avgSplitSeconds,
   avgCadence,
   temperatureCelsius,
 }: RawStatsPanelProps) {
   const pace = avgPaceSecondsPerKm !== null ? paceOrSpeed(sport, avgPaceSecondsPerKm) : null;
+  const split = SPLIT_SPORTS.has(sport) && avgSplitSeconds !== null ? formatSplit(avgSplitSeconds) : null;
   /** Cadence only means anything on foot — cycling cadence is pedal RPM, a different sensor entirely. */
   const showCadence = avgCadence !== null && sport !== "outdoor_cycling";
 
@@ -47,6 +59,7 @@ export function RawStatsPanel({
       ? { label: "Distance", value: formatDistance(distanceMeters), icon: MapPin }
       : null,
     pace ? { label: pace.label, value: pace.value, icon: Gauge } : null,
+    split ? { label: "Avg split", value: split, icon: Gauge } : null,
     elevationMeters !== null
       ? { label: "Elevation gain", value: `${Math.round(elevationMeters)} m`, icon: Mountain }
       : null,
