@@ -35,6 +35,13 @@ export interface IndexResult {
 const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
 
 /**
+ * How many of the most recent same-side sessions the headline index rolls up
+ * from — deliberately small so the number tracks current fitness, not a
+ * lifetime average dragged down by sessions from months ago (user feedback).
+ */
+const RECENT_WINDOW_SIZE = 10;
+
+/**
  * Side index from recent activities: a confidence-weighted blend of the
  * athlete's *best* recent effort (ceiling = what they're capable of) and their
  * *median* recent effort (floor = what they hold consistently). 70/30 toward
@@ -44,7 +51,7 @@ function sideIndex(activities: ActivityScore[], side: 'lab' | 'engine'): number 
   const rows = activities
     .filter(a => a.side === side)
     .sort((a, b) => +new Date(b.date) - +new Date(a.date))
-    .slice(0, 20); // recent window
+    .slice(0, RECENT_WINDOW_SIZE);
   if (rows.length === 0) return null;
 
   const weighted = rows.map(r => ({ v: r.score, w: clamp(r.confidence, 0.1, 1) }));

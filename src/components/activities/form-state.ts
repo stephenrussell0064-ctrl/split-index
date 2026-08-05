@@ -498,6 +498,7 @@ const payloadSchema = z.object({
   avg_heart_rate: z.number().int().min(30).max(250).optional(),
   avg_power_watts: z.number().positive().optional(),
   avg_split_seconds: z.number().positive().optional(),
+  avg_pace_seconds_per_km: z.number().positive().optional(),
   stroke_type: z.string().optional(),
   temperature_celsius: z.number().min(-40).max(55).optional(),
   session_type: z.enum(SESSION_TYPE_VALUES).optional(),
@@ -601,6 +602,19 @@ export function validateAndBuildPayload(
   if (derivesDistance && avgSplit != null && duration > 0) {
     distanceMeters = Math.round((duration / avgSplit) * 500);
   }
+
+  // Pace (seconds/km) for the km-distance sports (running, walking, outdoor
+  // cycling) — mirrors avgSplit's role for rowing/ski erg above, but this was
+  // previously never computed here at all: the live on-screen pace preview
+  // (derivePacePerKm) was display-only and never made it into the submitted
+  // payload, so avg_pace_seconds_per_km stayed null in the DB for every
+  // manually-logged run, and the activity detail page's "Pace" tile (and any
+  // future split display) had nothing to show for these sessions even though
+  // GPS-tracked runs populate it fine.
+  const avgPace =
+    fields.distance === "km" && distanceMeters != null && distanceMeters > 0 && duration > 0
+      ? duration / (distanceMeters / 1000)
+      : undefined;
 
   const elevation = fields.elevation
     ? requireNumber("elevation", state.elevation, { min: 0, label: "Elevation" })
@@ -791,6 +805,7 @@ export function validateAndBuildPayload(
     avg_heart_rate: avgHr !== undefined ? Math.round(avgHr) : undefined,
     avg_power_watts: avgPower !== undefined ? Math.round(avgPower) : undefined,
     avg_split_seconds: avgSplit,
+    avg_pace_seconds_per_km: avgPace,
     stroke_type: fields.stroke ? state.strokeType : undefined,
     temperature_celsius: temperature,
     session_type: fields.sessionType ? state.sessionType : "easy",
