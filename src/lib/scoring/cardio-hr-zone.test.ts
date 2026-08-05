@@ -162,11 +162,15 @@ describe("hrZoneEffortAdjustment — below-base guard scales only the ramp, neve
 });
 
 /**
- * End-to-end wiring in scoreCardioActivity: the HR-zone mechanism REPLACES
- * (not stacks with) the EF-baseline relative-effort bonus when both
- * restingHR/maxHR are on file (user-confirmed design decision), applies to
+ * End-to-end wiring in scoreCardioActivity: the HR-zone mechanism is the
+ * primary scorer when both restingHR/maxHR are on file, applies to
  * run/row/swim/cycle/ski but not walk, and flags sessions that would score
- * more accurately with HR-zone data.
+ * more accurately with HR-zone data. A personal easy-effort EF baseline (when
+ * also available) now STACKS an additional bonus-only credit on top of the
+ * zone result rather than being ignored (user feedback: HR-zone position
+ * alone can't tell a well-executed long easy run apart from one where
+ * fitness has genuinely regressed — this session's own EF vs. this
+ * athlete's easy-run baseline EF can).
  */
 describe("scoreCardioActivity — HR-zone wiring", () => {
   const base: CardioInput = {
@@ -181,10 +185,27 @@ describe("scoreCardioActivity — HR-zone wiring", () => {
     maxHR: 207,
   };
 
-  it("uses the HR-zone mechanism (not the EF-baseline one) when restingHR/maxHR + avgHR are present", () => {
-    const result = scoreCardioActivity({ ...base, avgHR: 150, easyEffortBaselineEF: 1.0 });
+  it("uses the HR-zone mechanism as the primary scorer when restingHR/maxHR + avgHR are present", () => {
+    const result = scoreCardioActivity({ ...base, avgHR: 150 });
     expect(result.flags).toContain("hr-zone-scored");
     expect(result.flags).not.toContain("relative-effort-scored");
+  });
+
+  it("stacks a bonus-only EF-baseline credit on top of the zone result when this session's EF exceeds the personal baseline", () => {
+    const withoutBaseline = scoreCardioActivity({ ...base, avgHR: 150 });
+    const withBaseline = scoreCardioActivity({ ...base, avgHR: 150, easyEffortBaselineEF: 1.0 });
+    expect(withBaseline.flags).toContain("hr-zone-scored");
+    expect(withBaseline.flags).toContain("relative-effort-scored");
+    // Stacked bonus is additive credit only — it can never make the score
+    // worse than the zone-only result.
+    expect(withBaseline.score).toBeGreaterThanOrEqual(withoutBaseline.score);
+  });
+
+  it("never lowers the score when this session's EF is below the personal baseline (bonus-only, no penalty)", () => {
+    const withoutBaseline = scoreCardioActivity({ ...base, avgHR: 150 });
+    const belowBaseline = scoreCardioActivity({ ...base, avgHR: 150, easyEffortBaselineEF: 1e6 });
+    expect(belowBaseline.flags).not.toContain("relative-effort-scored");
+    expect(belowBaseline.score).toBe(withoutBaseline.score);
   });
 
   it("at target, scores at least 550 for a 5:30/km 10km (user-specified floor)", () => {

@@ -545,6 +545,27 @@ export function scoreCardioActivity(input: CardioInput): CardioResult {
       flags.push(input.avgHR <= hrZoneProfile.target ? 'hr-zone-at-or-below-target' : 'hr-zone-above-target');
       if (zoneResult.zone === 'penalty') flags.push('hr-zone-penalty');
       if (zoneResult.belowBaseGuardApplied) flags.push('hr-zone-below-base-guard');
+
+      // Stacked fitness-maintenance bonus (user feedback): HR-zone position
+      // alone doesn't know this athlete's demonstrated race fitness — a
+      // deliberately slow, well-controlled long run at low HR can look only
+      // modestly better than average on zone math alone, even though the
+      // athlete's own recent easy-effort efficiency shows they haven't lost
+      // fitness. Reuses the same personal-EF-baseline signal as the
+      // population-branch's relative-effort mechanism below, just stacked on
+      // top of the zone result instead of substituted for it. Bonus-only
+      // (efRatio > 1 required) and capped at the same
+      // RELATIVE_EFFORT_MAX_ADJUSTMENT, so this can only improve — never
+      // worsen — the zone-computed score, and never revisits
+      // storedPredictionSeconds.
+      if (input.easyEffortBaselineEF && thisSessionEF) {
+        const efRatio = thisSessionEF / input.easyEffortBaselineEF;
+        const stackedBonus = clamp(efRatio - 1, 0, RELATIVE_EFFORT_MAX_ADJUSTMENT);
+        if (stackedBonus > 0) {
+          sessionEquivalentSeconds *= 1 - stackedBonus;
+          flags.push('relative-effort-scored');
+        }
+      }
     } else if (
       isRelativeEffortSession &&
       !looksMistagged &&
