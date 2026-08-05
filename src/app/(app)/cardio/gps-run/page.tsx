@@ -158,15 +158,19 @@ export default function GpsRunPage() {
   const livePaceSecondsPerKm =
     liveDistanceMeters > 0 ? elapsedSeconds / (liveDistanceMeters / 1000) : null;
 
-  // Keeps the lock-screen Live Activity in step with the tracking HUD.
-  // Depending on elapsedSeconds (which ticks every second) rather than
-  // driving this from the setInterval callback itself avoids a stale
-  // closure over distance/pace/heart-rate/cadence — a fresh effect runs
-  // each render with whatever those values currently are.
+  // Keeps the lock-screen Live Activity's distance/pace/HR in step with the
+  // tracking HUD — the elapsed clock itself doesn't need a push at all
+  // (startedAtRef.current, sent once at start, is enough for the widget's
+  // native Text(_:style:.timer) to keep ticking correctly on its own, even
+  // through a screen lock — see live-activity.ts). Depending on
+  // elapsedSeconds (which ticks every second) rather than driving this from
+  // the setInterval callback itself avoids a stale closure over
+  // distance/pace/heart-rate/cadence — a fresh effect runs each render with
+  // whatever those values currently are.
   useEffect(() => {
     if (phase !== "tracking") return;
     updateLiveActivity({
-      elapsedSeconds,
+      startDateEpochMs: startedAtRef.current,
       distanceKm: liveDistanceMeters / 1000,
       paceOrSpeedText: formatPaceOrSpeed(sport, livePaceSecondsPerKm),
       heartRateBpm: liveBpm ?? undefined,
@@ -256,7 +260,7 @@ export default function GpsRunPage() {
         startLiveActivity(
           "gpsTracking",
           GPS_SPORTS.find((s) => s.value === sport)?.label ?? "GPS Tracking",
-          { elapsedSeconds: 0, distanceKm: 0 }
+          { startDateEpochMs: startedAtRef.current, distanceKm: 0 }
         );
       }
     } finally {

@@ -164,19 +164,20 @@ interface LiftAnchor {
  * table — all fixtures are ±3 of scoreStrength()'s output for these anchors).
  */
 const PRIMARY_ANCHORS: Record<string, LiftAnchor> = {
-  // Bench/deadlift anchorRatio now only a fallback reference (50th-percentile
-  // ratio, kept in sync with WEIGHT_RATIO_ANCHOR_TABLES below) — actual
-  // scoring for these two goes through the corrected anchor table instead
-  // (Part G, scoring-calibration-rewrite). Previous single-anchor value
-  // (0.785, "recalibrated so 120×4/110×6/100×9 ≈ 800 @ 80kg BW") scored a
-  // real bench PB (140kg @ 83kg BW) at ~850 "Elite" — a full tier more
+  // Bench/deadlift anchorRatio now only a fallback reference (kept in sync
+  // with whichever ratio scores ~500 in WEIGHT_RATIO_ANCHOR_TABLES below) —
+  // actual scoring for these two goes through the corrected anchor table
+  // instead (Part G, scoring-calibration-rewrite; re-anchored again per user
+  // feedback — see that table's own doc comment). Previous single-anchor
+  // value (0.785, "recalibrated so 120×4/110×6/100×9 ≈ 800 @ 80kg BW") scored
+  // a real bench PB (140kg @ 83kg BW) at ~850 "Elite" — a full tier more
   // generous than Strength Level's population data implies (~752, Advanced).
-  bench: { anchorRatio: 98 / 83, category: "chest", bodyPart: "upperBody" },
+  bench: { anchorRatio: 81 / 83, category: "chest", bodyPart: "upperBody" },
   squat: { anchorRatio: 0.9984, category: "legs", bodyPart: "lowerBody" },
   // Deadlift was already close to accurate (200kg @ 83kg BW -> 770 vs. the
   // corrected 725) — least-urgent of the two, still corrected for
   // consistency now the table exists.
-  deadlift: { anchorRatio: 152 / 83, category: "back", bodyPart: "pull" },
+  deadlift: { anchorRatio: 128 / 83, category: "back", bodyPart: "pull" },
   ohp: { anchorRatio: 0.4213, category: "shoulders", bodyPart: "upperBody" },
   barbellRow: { anchorRatio: 0.687, category: "back", bodyPart: "pull" },
   frontSquat: { anchorRatio: 0.8103, category: "legs", bodyPart: "lowerBody" },
@@ -233,19 +234,33 @@ type WeightAnchor = [ratio: number, score: number];
  * can be derived by applying their existing documented multiplier
  * relationship to the now-corrected compound-lift anchors, rather than
  * needing independent population data for every accessory movement.
+ *
+ * Re-anchored again (user feedback): Strength Level's *own* 50th percentile
+ * (98kg @ 83kg BW, ~1.2x bodyweight for one rep) is the median of a
+ * self-selected population of people who log serious lifts online — not the
+ * median of "people who go to the gym," let alone all adults. Scoring that
+ * lift a flat 475 ("just barely Semi-Pro") undersold what most people would
+ * call a genuinely good bench. Fix: what used to read as Strength Level's
+ * 50th percentile now scores what used to be roughly its 70-75th (650, deep
+ * into Semi-Pro) — the bottom two anchors (5th/20th) move up with it so the
+ * curve stays smooth — while the TOP two anchors (80th/95th, 132kg/169kg)
+ * are deliberately left untouched: those were the ones a previous pass
+ * (Part G) already corrected against real advanced/elite lifter data (a
+ * 140kg PB landing at ~752 "Advanced" rather than an over-generous 850
+ * "Elite"), and re-shifting those too would undo that fix, not extend it.
  */
 const WEIGHT_RATIO_ANCHOR_TABLES: Partial<Record<string, WeightAnchor[]>> = {
   bench: [
-    [47 / REFERENCE_BODYWEIGHT_KG, 125],
-    [70 / REFERENCE_BODYWEIGHT_KG, 250],
-    [98 / REFERENCE_BODYWEIGHT_KG, 475],
+    [47 / REFERENCE_BODYWEIGHT_KG, 150],
+    [70 / REFERENCE_BODYWEIGHT_KG, 400],
+    [98 / REFERENCE_BODYWEIGHT_KG, 650],
     [132 / REFERENCE_BODYWEIGHT_KG, 725],
     [169 / REFERENCE_BODYWEIGHT_KG, 850],
   ],
   deadlift: [
-    [78 / REFERENCE_BODYWEIGHT_KG, 125],
-    [112 / REFERENCE_BODYWEIGHT_KG, 250],
-    [152 / REFERENCE_BODYWEIGHT_KG, 475],
+    [78 / REFERENCE_BODYWEIGHT_KG, 150],
+    [112 / REFERENCE_BODYWEIGHT_KG, 400],
+    [152 / REFERENCE_BODYWEIGHT_KG, 650],
     [200 / REFERENCE_BODYWEIGHT_KG, 725],
     [250 / REFERENCE_BODYWEIGHT_KG, 850],
   ],

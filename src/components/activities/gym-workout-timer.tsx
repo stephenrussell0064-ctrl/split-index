@@ -8,6 +8,7 @@ import {
   startLiveActivity,
   updateLiveActivity,
   endLiveActivity,
+  getLiveActivityState,
 } from "@/lib/native/live-activity";
 
 const REST_PRESETS_SECONDS = [60, 90, 120, 180];
@@ -69,10 +70,18 @@ function formatElapsed(totalSeconds: number): string {
  * presets and an audible+vibration alert so you don't have to keep checking
  * the screen mid-set.
  *
- * Rendered as a sticky bar above the app's bottom nav (see sport-form.tsx)
- * rather than buried inside the collapsible Metrics section, so it stays
- * reachable and visible no matter how far down the exercise list you've
- * scrolled — the whole point of a timer you're meant to glance at mid-set.
+ * Both clocks are anchored to real wall-clock timestamps (epoch ms), not
+ * incrementing counters — a plain `setInterval(() => setElapsed(e => e+1))`
+ * silently drifts (or on iOS, stops advancing entirely) the moment the
+ * WebView is backgrounded or the screen locks, which is exactly what made
+ * both the in-app clock and the lock-screen Live Activity freeze (user
+ * feedback: "gets stuck when I leave my phone locked... or when I click off
+ * the app"). Re-deriving elapsed/remaining from `Date.now()` on every
+ * render/tick means the displayed numbers are always correct the instant
+ * the app is looked at again, and the native Live Activity ticks
+ * independently on the OS side using the same reference timestamps (see
+ * live-activity.ts / SplitIndexWidgetsLiveActivity.swift) — no more
+ * per-second pushes required at all, only on real state changes.
  */
 export function GymWorkoutTimer({
   onUseDuration,
@@ -80,9 +89,23 @@ export function GymWorkoutTimer({
   onUseDuration: (totalSeconds: number) => void;
 }) {
   const [running, setRunning] = useState(false);
-  const [elapsed, setElapsed] = useState(0);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  /** Frozen total (ms) accumulated across all PAST running segments — the source of truth while paused. */
+  const [pausedElapsedMs, setPausedElapsedMs] = useState(0);
+  /** Adjusted epoch ms for the CURRENT running segment (`now - pausedElapsedMs` at the moment of start/resume) — meaningless while paused. Plain state, not a ref: its value is read during render (to derive the displayed clock), and React refs aren't meant to be read outside effects/handlers. */
+  const [effectiveStartMs, setEffectiveStartMs] = useState<number | null>(null);
+  /** Absolute epoch ms the rest countdown ends at; null when no rest is active. */
+  const [restEndMs, setRestEndMs] = useState<number | null>(null);
   const liveActivityStartedRef = useRef(false);
+  const alertFiredRef = useRef(false);
+  /** Bumped once a second purely to force a re-render while something is ticking — the actual numbers are always recomputed fresh from Date.now(), never accumulated from this. */
+  const [, setTick] = useState(0);
+
+  const now = Date.now(); // eslint-disable-line react-hooks/purity -- intentional: re-deriving from the wall clock every render is the fix for the drift/freeze bug this file's doc comment describes, not a bug itself
+  const elapsedMs = running && effectiveStartMs != null ? now - effectiveStartMs : pausedElapsedMs;
+  const elapsed = Math.floor(elapsedMs / 1000);
+  const restRemaining = restEndMs !== null ? Math.ceil((restEndMs - now) / 1000) : null;
+  const restActive = restEndMs !== null;
+  const restDone = restActive && restRemaining !== null && restRemaining <= 0;
 
   // Ends a lingering Live Activity if the user navigates away mid-workout
   // without tapping Reset — otherwise the lock-screen card would never clear.
@@ -92,65 +115,152 @@ export function GymWorkoutTimer({
     };
   }, []);
 
+  // Forces a re-render every second while either clock is live — neither
+  // clock's actual value comes from this tick (both are recomputed from
+  // Date.now() above), so a throttled/delayed tick just means a stale
+  // repaint until the next one fires, never a wrong number.
   useEffect(() => {
-    if (!running) return;
-    intervalRef.current = setInterval(() => setElapsed((prev) => prev + 1), 1000);
+    if (!running && !restActive) return;
+    const t = setInterval(() => setTick((n) => n + 1), 1000);
+    return () => clearInterval(t);
+  }, [running, restActive]);
+
+  // Fires the rest-over alert exactly once per rest, and reconciles the
+  // Live Activity's `restDone` hint (native re-derives "done" from the date
+  // itself too, but this keeps the JS-driven hint in step for consistency).
+  useEffect(() => {
+    if (!restDone) {
+      alertFiredRef.current = false;
+      return;
+    }
+    if (alertFiredRef.current) return;
+    alertFiredRef.current = true;
+    playRestOverAlert();
+    if (liveActivityStartedRef.current) {
+      updateLiveActivity({
+        startDateEpochMs: effectiveStartMs ?? now,
+        isPaused: !running,
+        pausedElapsedSeconds: Math.round(pausedElapsedMs / 1000),
+        restEndDateEpochMs: restEndMs ?? undefined,
+        restDone: true,
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- deliberately only re-fires on the restDone transition itself
+  }, [restDone]);
+
+  // Reconciles local state with whatever the lock screen last did —
+  // Pause/Resume and Add Rest are interactive Live Activity buttons (see
+  // GymTimerIntents.swift) that mutate the Activity directly from the
+  // widget extension's process, with no way to call back into this
+  // already-running page. Runs whenever the app becomes visible again,
+  // which is also exactly when a backgrounded setInterval's drift needs
+  // correcting anyway.
+  useEffect(() => {
+    if (!isLiveActivitySupported()) return;
+    async function resync() {
+      if (!liveActivityStartedRef.current) return;
+      const snapshot = await getLiveActivityState();
+      if (!snapshot.found) return;
+      if (snapshot.isPaused) {
+        setPausedElapsedMs(snapshot.pausedElapsedSeconds * 1000);
+        setEffectiveStartMs(null);
+        setRunning(false);
+      } else {
+        setEffectiveStartMs(snapshot.startDateEpochMs);
+        setRunning(true);
+      }
+      setRestEndMs(snapshot.restEndDateEpochMs ?? null);
+    }
+    function onVisible() {
+      if (document.visibilityState === "visible") resync();
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", resync);
     return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", resync);
     };
-  }, [running]);
+  }, []);
 
   function toggleRunning() {
-    setRunning((r) => !r);
+    const t = Date.now();
+    if (running) {
+      const frozenMs = effectiveStartMs != null ? t - effectiveStartMs : pausedElapsedMs;
+      setPausedElapsedMs(frozenMs);
+      setEffectiveStartMs(null);
+      setRunning(false);
+      if (liveActivityStartedRef.current) {
+        updateLiveActivity({
+          startDateEpochMs: t,
+          isPaused: true,
+          pausedElapsedSeconds: Math.round(frozenMs / 1000),
+          restEndDateEpochMs: restEndMs ?? undefined,
+          restDone,
+        });
+      }
+      return;
+    }
+    const effectiveStart = t - pausedElapsedMs;
+    setEffectiveStartMs(effectiveStart);
+    setRunning(true);
     if (!liveActivityStartedRef.current && isLiveActivitySupported()) {
       liveActivityStartedRef.current = true;
-      startLiveActivity("gymTimer", "Gym Workout", { elapsedSeconds: elapsed });
+      startLiveActivity("gymTimer", "Gym Workout", {
+        startDateEpochMs: effectiveStart,
+        isPaused: false,
+        pausedElapsedSeconds: 0,
+        restEndDateEpochMs: restEndMs ?? undefined,
+      });
+    } else if (liveActivityStartedRef.current) {
+      updateLiveActivity({
+        startDateEpochMs: effectiveStart,
+        isPaused: false,
+        restEndDateEpochMs: restEndMs ?? undefined,
+        restDone,
+      });
     }
   }
 
   function resetStopwatch() {
     setRunning(false);
-    setElapsed(0);
+    setPausedElapsedMs(0);
+    setEffectiveStartMs(null);
+    setRestEndMs(null);
     if (liveActivityStartedRef.current) {
       liveActivityStartedRef.current = false;
       endLiveActivity();
     }
   }
 
-  const [restRemaining, setRestRemaining] = useState<number | null>(null);
-  const alertFiredRef = useRef(false);
-
-  // Keeps the lock-screen Live Activity (started via toggleRunning) in step
-  // with both clocks — a no-op via updateLiveActivity's own internal guard
-  // until the activity has actually been started.
-  useEffect(() => {
-    updateLiveActivity({
-      elapsedSeconds: elapsed,
-      restRemainingSeconds: restRemaining ?? undefined,
-      restDone: restRemaining !== null && restRemaining <= 0,
-    });
-  }, [elapsed, restRemaining]);
-
-  useEffect(() => {
-    if (restRemaining === null) return;
-    if (restRemaining <= 0) {
-      if (!alertFiredRef.current) {
-        alertFiredRef.current = true;
-        playRestOverAlert();
-      }
-      return;
-    }
-    const t = setTimeout(() => setRestRemaining((r) => (r !== null ? r - 1 : null)), 1000);
-    return () => clearTimeout(t);
-  }, [restRemaining]);
-
   function startRest(seconds: number) {
     alertFiredRef.current = false;
-    setRestRemaining(seconds);
+    const t = Date.now(); // eslint-disable-line react-hooks/purity -- event handler, not render; anchors the rest countdown's end instant
+    const endMs = t + seconds * 1000;
+    setRestEndMs(endMs);
+    if (liveActivityStartedRef.current) {
+      updateLiveActivity({
+        startDateEpochMs: effectiveStartMs ?? t,
+        isPaused: !running,
+        pausedElapsedSeconds: Math.round(pausedElapsedMs / 1000),
+        restEndDateEpochMs: endMs,
+        restDone: false,
+      });
+    }
   }
 
-  const restActive = restRemaining !== null;
-  const restDone = restActive && restRemaining <= 0;
+  function dismissRest() {
+    setRestEndMs(null);
+    if (liveActivityStartedRef.current) {
+      const t = Date.now();
+      updateLiveActivity({
+        startDateEpochMs: effectiveStartMs ?? t,
+        isPaused: !running,
+        pausedElapsedSeconds: Math.round(pausedElapsedMs / 1000),
+        restEndDateEpochMs: undefined,
+        restDone: false,
+      });
+    }
+  }
 
   return (
     <div className="space-y-3 rounded-2xl border border-gym-border/40 bg-gym-bg/70 p-3.5 shadow-lg backdrop-blur-md">
@@ -212,12 +322,12 @@ export function GymWorkoutTimer({
                   restDone ? "text-danger" : "text-gym-text"
                 )}
               >
-                {restDone ? "Rest over!" : formatMMSS(restRemaining)}
+                {restDone ? "Rest over!" : formatMMSS(restRemaining ?? 0)}
               </p>
             </div>
             <button
               type="button"
-              onClick={() => setRestRemaining(null)}
+              onClick={dismissRest}
               className="rounded-full border border-white/10 px-3.5 py-1.5 text-xs font-medium text-gym-muted transition-colors hover:text-gym-text"
             >
               Dismiss

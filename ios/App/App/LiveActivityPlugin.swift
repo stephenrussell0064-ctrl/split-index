@@ -25,6 +25,7 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "start", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "update", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "end", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getState", returnType: CAPPluginReturnPromise),
     ]
 
     private var session: Any?
@@ -79,6 +80,24 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             call.resolve(["ended": true])
         }
     }
+
+    /// Lets the JS side pull the CURRENT lock-screen state back into its own
+    /// React state — needed because an interactive Live Activity button
+    /// (Pause/Resume, Add Rest — see GymTimerIntents.swift in the widget
+    /// extension) updates the Activity directly from the extension's own
+    /// process, with no way to call back into this already-running JS
+    /// context. Calling this on app-resume (see live-activity.ts /
+    /// gym-workout-timer.tsx's visibilitychange listener) is how a
+    /// lock-screen tap gets reflected in the open app's UI too. Resolves
+    /// `{ found: false }` rather than rejecting when nothing's running —
+    /// this is a routine, expected case (no workout active), not an error.
+    @objc func getState(_ call: CAPPluginCall) {
+        guard #available(iOS 16.2, *), let activeSession = session as? LiveActivitySession else {
+            call.resolve(["found": false])
+            return
+        }
+        call.resolve(activeSession.currentStateDict())
+    }
 }
 
 @available(iOS 16.2, *)
@@ -106,14 +125,37 @@ private class LiveActivitySession {
     /// Every field is optional from the JS side (a gym-timer update never sends distance, a GPS
     /// update never sends rest-timer fields) — pulled generically here rather than in two
     /// separate parsing paths, since the shape only differs by which keys happen to be present.
+    /// Epoch-millisecond doubles cross the JS bridge cleanly (a native Date isn't JSON-representable),
+    /// converted to Date here at the boundary.
     static func contentState(from call: CAPPluginCall) -> SplitIndexActivityAttributes.ContentState {
-        SplitIndexActivityAttributes.ContentState(
-            elapsedSeconds: call.getInt("elapsedSeconds") ?? 0,
+        let startMs = call.getDouble("startDateEpochMs") ?? (Date().timeIntervalSince1970 * 1000)
+        let restMs = call.getDouble("restEndDateEpochMs")
+        return SplitIndexActivityAttributes.ContentState(
+            startDate: Date(timeIntervalSince1970: startMs / 1000),
+            isPaused: call.getBool("isPaused") ?? false,
+            pausedElapsedSeconds: call.getInt("pausedElapsedSeconds") ?? 0,
             distanceKm: call.getDouble("distanceKm"),
             paceOrSpeedText: call.getString("paceOrSpeedText"),
             heartRateBpm: call.getInt("heartRateBpm"),
-            restRemainingSeconds: call.getInt("restRemainingSeconds"),
+            restEndDate: restMs.map { Date(timeIntervalSince1970: $0 / 1000) },
             restDone: call.getBool("restDone") ?? false
         )
+    }
+
+    /// Inverse of `contentState(from:)` — serializes the live Activity's
+    /// current state back to a JS-readable dict for `LiveActivityPlugin.getState()`.
+    func currentStateDict() -> [String: Any] {
+        let state = activity.content.state
+        var dict: [String: Any] = [
+            "found": true,
+            "startDateEpochMs": state.startDate.timeIntervalSince1970 * 1000,
+            "isPaused": state.isPaused,
+            "pausedElapsedSeconds": state.pausedElapsedSeconds,
+            "restDone": state.restDone,
+        ]
+        if let restEndDate = state.restEndDate {
+            dict["restEndDateEpochMs"] = restEndDate.timeIntervalSince1970 * 1000
+        }
+        return dict
     }
 }

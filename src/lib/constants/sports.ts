@@ -246,6 +246,7 @@ export const COMMON_EXERCISES: ExerciseDefinition[] = [
   { name: "Reverse Curl", muscle: "Biceps", category: "arms", kind: "accessory" },
   { name: "Wrist Curl", muscle: "Biceps", category: "arms", kind: "accessory" },
   // Arms — triceps
+  { name: "Tricep Press", muscle: "Triceps", category: "arms", kind: "accessory" },
   { name: "Tricep Pushdown", muscle: "Triceps", category: "arms", kind: "accessory" },
   { name: "Rope Pushdown", muscle: "Triceps", category: "arms", kind: "accessory" },
   { name: "Single Arm Pushdown", muscle: "Triceps", category: "arms", kind: "accessory" },

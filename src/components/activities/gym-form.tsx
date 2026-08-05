@@ -588,8 +588,15 @@ function ExerciseNameInput({
         <button
           type="button"
           onClick={() => {
+            // Clearing only `customMode` isn't enough: the render condition
+            // above (`customMode || (value && !knownExercise)`) re-enters
+            // custom mode on the very next render whenever `value` still
+            // holds unrecognized custom text — which it always does right
+            // after typing a custom name. That made this button silently
+            // no-op instead of returning to the picker.
             setCustomMode(false);
             setSearch("");
+            onChange("");
           }}
           className="text-xs text-gym-accent hover:text-gym-accent/80"
         >

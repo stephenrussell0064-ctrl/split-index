@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		075CD833F22079FDFE695F99 /* MainViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 339AD66125F5C3C038A95501 /* MainViewController.swift */; };
+		1C0C770ACA8D1A32B338CC6E /* SplitIndexWidgets/SplitIndexActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = B06D17B99535773D2986A555 /* SplitIndexWidgets/SplitIndexActivityAttributes.swift */; };
 		2FAD9763203C412B000D30F8 /* config.xml in Resources */ = {isa = PBXBuildFile; fileRef = 2FAD9762203C412B000D30F8 /* config.xml */; };
 		3CF22481AD63A24515A72F48 /* HeartRateWorkoutPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 338FBDBD569DD1923954F771 /* HeartRateWorkoutPlugin.swift */; };
 		3E38E33CB312398DB591C71A /* StepCadencePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06E549172EFD899E1B52C9C3 /* StepCadencePlugin.swift */; };
@@ -19,11 +20,10 @@
 		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
 		9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9582B6822FE993A50072D4E8 /* SceneDelegate.swift */; };
+		B67CD127024B78C9493D382A /* LiveActivityPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98252592C588BFFF1721B263 /* LiveActivityPlugin.swift */; };
 		EEBF54E53022651800657F01 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EEBF54E43022651800657F01 /* WidgetKit.framework */; };
 		EEBF54E73022651800657F01 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EEBF54E63022651800657F01 /* SwiftUI.framework */; };
 		EEBF54F83022651900657F01 /* SplitIndexWidgetsExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = EEBF54E23022651800657F01 /* SplitIndexWidgetsExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		1C0C770ACA8D1A32B338CC6E /* SplitIndexActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = B06D17B99535773D2986A555 /* SplitIndexActivityAttributes.swift */; };
-		B67CD127024B78C9493D382A /* LiveActivityPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98252592C588BFFF1721B263 /* LiveActivityPlugin.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -65,12 +65,12 @@
 		50B271D01FEDC1A000F3C39B /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
 		9582B6822FE993A50072D4E8 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
+		98252592C588BFFF1721B263 /* LiveActivityPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityPlugin.swift; sourceTree = "<group>"; };
+		B06D17B99535773D2986A555 /* SplitIndexWidgets/SplitIndexActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitIndexWidgets/SplitIndexActivityAttributes.swift; sourceTree = "<group>"; };
 		DDF7CC0A247F567D9441DF09 /* App.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = App.entitlements; sourceTree = "<group>"; };
 		EEBF54E23022651800657F01 /* SplitIndexWidgetsExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = SplitIndexWidgetsExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		EEBF54E43022651800657F01 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		EEBF54E63022651800657F01 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
-		B06D17B99535773D2986A555 /* SplitIndexActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitIndexWidgets/SplitIndexActivityAttributes.swift; sourceTree = "<group>"; };
-		98252592C588BFFF1721B263 /* LiveActivityPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityPlugin.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -114,7 +114,7 @@
 				958DCC722DB07C7200EA8C5F /* debug.xcconfig */,
 				504EC3061FED79650016851F /* App */,
 				EEBF54E83022651800657F01 /* SplitIndexWidgets */,
-				B06D17B99535773D2986A555 /* SplitIndexActivityAttributes.swift */,
+				B06D17B99535773D2986A555 /* SplitIndexWidgets/SplitIndexActivityAttributes.swift */,
 				EEBF54E33022651800657F01 /* Frameworks */,
 				504EC3051FED79650016851F /* Products */,
 			);
@@ -281,7 +281,7 @@
 				3CF22481AD63A24515A72F48 /* HeartRateWorkoutPlugin.swift in Sources */,
 				075CD833F22079FDFE695F99 /* MainViewController.swift in Sources */,
 				3E38E33CB312398DB591C71A /* StepCadencePlugin.swift in Sources */,
-				1C0C770ACA8D1A32B338CC6E /* SplitIndexActivityAttributes.swift in Sources */,
+				1C0C770ACA8D1A32B338CC6E /* SplitIndexWidgets/SplitIndexActivityAttributes.swift in Sources */,
 				B67CD127024B78C9493D382A /* LiveActivityPlugin.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

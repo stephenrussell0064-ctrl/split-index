@@ -28,32 +28,37 @@ function scoreAtOneRM(liftKey: string, targetOneRMKg: number, overrides: Partial
 }
 
 describe("scoreStrength — bench/deadlift corrected anchors (Part G)", () => {
-  it("bench: 140kg @ 83kg BW now scores ~752 (Advanced), not 850 (Elite)", () => {
+  it("bench: 140kg @ 83kg BW still scores ~752 (Advanced), not 850 (Elite) — untouched by the re-anchor below", () => {
     const result = scoreAtOneRM("bench", 140);
     expect(result.score).toBeCloseTo(752, -1); // within ~10 points
     expect(result.tier).toBe("Advanced");
   });
 
-  it("bench matches the Strength Level anchor points exactly", () => {
-    expect(scoreAtOneRM("bench", 47).score).toBeCloseTo(125, 0);
-    expect(scoreAtOneRM("bench", 70).score).toBeCloseTo(250, 0);
-    expect(scoreAtOneRM("bench", 98).score).toBeCloseTo(475, 0);
-    expect(scoreAtOneRM("bench", 132).score).toBeCloseTo(725, 0);
-    expect(scoreAtOneRM("bench", 169).score).toBeCloseTo(850, 0);
+  it("bench matches the re-anchored table exactly (user feedback: Strength Level's own 50th percentile undersold a genuinely good lift)", () => {
+    expect(scoreAtOneRM("bench", 47).score).toBeCloseTo(150, 0);
+    expect(scoreAtOneRM("bench", 70).score).toBeCloseTo(400, 0);
+    expect(scoreAtOneRM("bench", 98).score).toBeCloseTo(650, 0);
+    expect(scoreAtOneRM("bench", 132).score).toBeCloseTo(725, 0); // unchanged — Part G's Advanced boundary
+    expect(scoreAtOneRM("bench", 169).score).toBeCloseTo(850, 0); // unchanged — Part G's Elite boundary
   });
 
-  it("deadlift: 200kg @ 83kg BW now scores 725 (Advanced), not 770", () => {
+  it("bench: 100kg @ 83kg BW (a genuinely good lift) now scores well above 'merely average' 500, not ~501", () => {
+    const result = scoreAtOneRM("bench", 100);
+    expect(result.score).toBeGreaterThan(600);
+  });
+
+  it("deadlift: 200kg @ 83kg BW still scores 725 (Advanced), not 770 — untouched by the re-anchor below", () => {
     const result = scoreAtOneRM("deadlift", 200);
     expect(result.score).toBeCloseTo(725, 0);
     expect(result.tier).toBe("Advanced");
   });
 
-  it("deadlift matches the Strength Level anchor points exactly", () => {
-    expect(scoreAtOneRM("deadlift", 78).score).toBeCloseTo(125, 0);
-    expect(scoreAtOneRM("deadlift", 112).score).toBeCloseTo(250, 0);
-    expect(scoreAtOneRM("deadlift", 152).score).toBeCloseTo(475, 0);
-    expect(scoreAtOneRM("deadlift", 200).score).toBeCloseTo(725, 0);
-    expect(scoreAtOneRM("deadlift", 250).score).toBeCloseTo(850, 0);
+  it("deadlift matches the re-anchored table exactly", () => {
+    expect(scoreAtOneRM("deadlift", 78).score).toBeCloseTo(150, 0);
+    expect(scoreAtOneRM("deadlift", 112).score).toBeCloseTo(400, 0);
+    expect(scoreAtOneRM("deadlift", 152).score).toBeCloseTo(650, 0);
+    expect(scoreAtOneRM("deadlift", 200).score).toBeCloseTo(725, 0); // unchanged
+    expect(scoreAtOneRM("deadlift", 250).score).toBeCloseTo(850, 0); // unchanged
   });
 
   it("is monotonic — a heavier lift never scores lower than a lighter one", () => {
@@ -73,7 +78,7 @@ describe("scoreStrength — bench/deadlift corrected anchors (Part G)", () => {
   });
 
   it("nextTier still resolves to a sensible kg target for anchor-table lifts", () => {
-    const result = scoreAtOneRM("bench", 90); // between 70 (250) and 98 (475) anchors — Beginner/Intermediate band
+    const result = scoreAtOneRM("bench", 90); // between 70 (400) and 98 (650) anchors
     expect(result.nextTier).not.toBeNull();
     expect(result.nextTier!.kgNeeded).toBeGreaterThan(0);
   });
