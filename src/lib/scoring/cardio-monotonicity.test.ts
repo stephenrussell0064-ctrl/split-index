@@ -207,7 +207,7 @@ describe("scoreCardioActivity — relative-effort scoring for easy/recovery/long
     expect(contaminated).toBe(baselineEF);
   });
 
-  it("falls back to standard (session-type-agnostic) scoring when no baseline is available yet", () => {
+  it("falls back to population scoring (plus the baseline-independent long-run distance credit) when no personal baseline is available yet", () => {
     const withoutBaseline = scoreCardioActivity({
       ...base,
       avgHR: 140,
@@ -218,8 +218,15 @@ describe("scoreCardioActivity — relative-effort scoring for easy/recovery/long
       avgHR: 140,
       sessionType: "race",
     });
-    expect(withoutBaseline.score).toBe(asRace.score);
+    // No baseline-driven relative-effort credit fires without a baseline...
     expect(withoutBaseline.flags).not.toContain("relative-effort-scored");
+    // ...but the long-run distance credit (user feedback: "the longer you
+    // run, the harder it is at any split" — see longRunDistanceCredit)
+    // applies to any easy/recovery/long-tagged session independent of
+    // whether a personal baseline exists yet, so this can score AT LEAST as
+    // well as the identical race-tagged session — bonus-only, same
+    // philosophy as every other easy-session credit in this file.
+    expect(withoutBaseline.score).toBeGreaterThanOrEqual(asRace.score);
   });
 
   it("never applies relative-effort scoring to race/tempo/threshold sessions, even if a baseline is supplied", () => {

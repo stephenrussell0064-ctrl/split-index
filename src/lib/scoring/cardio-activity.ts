@@ -240,6 +240,29 @@ function enduranceVolumeBonus(durationSeconds: number): number {
   return MAX_VOLUME_BONUS * (minutes / (minutes + VOLUME_HALF_SATURATION_MINUTES));
 }
 
+// Long-run endurance credit for easy/recovery/long-tagged sessions (user
+// feedback: "the longer you run, the harder it is at any split, therefore
+// these should be scoring higher for the further distance" — the pure
+// pace/HR equivalent above doesn't reflect this at all: Riegel's exponent
+// actually discounts a LONGER session's projected 5K time relative to a
+// shorter one at the same pace/HR, the opposite of what sustaining that
+// effort for longer actually demonstrates). Distinct from
+// `enduranceVolumeBonus` above — that's a separate, secondary metric folded
+// only into `executionScore`, never the primary score (see this file's
+// monotonicity-guarantee comment); this credit instead nudges
+// `sessionEquivalentSeconds` itself, bonus-only, so it flows into BOTH the
+// score and the predictions ladder the same way the HR-zone/EF-baseline
+// credits already do. Saturates well short of 1.0 — a very long run is real
+// evidence of aerobic durability, not proof of unlimited 5K speed.
+const LONG_RUN_DISTANCE_CREDIT_MAX = 0.12;
+const LONG_RUN_CREDIT_HALF_SATURATION_MINUTES = 75; // minutes at which half of the max credit is earned
+
+export function longRunDistanceCredit(durationSeconds: number): number {
+  if (durationSeconds <= 0) return 0;
+  const minutes = durationSeconds / 60;
+  return LONG_RUN_DISTANCE_CREDIT_MAX * (minutes / (minutes + LONG_RUN_CREDIT_HALF_SATURATION_MINUTES));
+}
+
 /** Rewards climbing — the same pace/HR is a harder effort on hillier terrain. Shares its difficulty curve (elevationDifficultyFraction) with relative-effort scoring's much smaller terrain credit — see cardio-predictions.ts. */
 function elevationDifficultyBonus(elevationMeters?: number | null, distanceMeters?: number | null): number {
   return elevationDifficultyFraction(elevationMeters, distanceMeters) * MAX_ELEVATION_BONUS;
@@ -589,11 +612,24 @@ export function scoreCardioActivity(input: CardioInput): CardioResult {
     // adjustment already applied above (hrAdjustedEquivalentSeconds).
     // Race/tempo/threshold/interval/fartlek sessions are untouched: those
     // ARE meant to measure absolute pace capability.
+    // Race-tagged sessions skip the population HR-adjustment credit entirely
+    // (user feedback: "it isn't possible to get an average of your max heart
+    // rate... if you've just done a 5km at 3:50 188bpm average it is
+    // unlikely for you to run [meaningfully faster] next time"). A sustained
+    // hard effort's AVERAGE heart rate is always well below one's true
+    // instantaneous max — that gap is a mechanical property of how HR ramps
+    // over minutes, not unused reserve, so treating it as headroom
+    // systematically over-credits an effort that was already a genuine
+    // best-effort race result. Tempo/threshold/interval/fartlek sessions are
+    // untouched: those genuinely ARE run below the athlete's ceiling on
+    // purpose, and the credit there is real (validated against a real
+    // tempo run: 6km @ 4:06/km @ 178bpm correctly predicted faster).
+    const raceCreditAvgHR = input.sessionType === 'race' ? undefined : input.avgHR;
     const populationEquivalentSeconds = computeSessionBenchmarkEquivalentSeconds(
       input.benchmarkSport,
       input.distanceMeters,
       input.durationSeconds,
-      input.avgHR,
+      raceCreditAvgHR,
       riegelK,
       personalization
     );
@@ -739,6 +775,19 @@ export function scoreCardioActivity(input: CardioInput): CardioResult {
       flags.push('hr-zone-assumed-target');
     } else {
       sessionEquivalentSeconds = populationEquivalentSeconds;
+    }
+
+    // Long-run distance credit — see LONG_RUN_DISTANCE_CREDIT_MAX's doc
+    // comment. Same "regardless of which branch scored it" philosophy as the
+    // easy-session floor below: a well-executed long easy run deserves this
+    // credit whether it was scored by the HR-zone mechanism, the EF-baseline
+    // stack, assumed-target, or plain population fallback.
+    if (isRelativeEffortSession && !looksMistagged && sessionEquivalentSeconds !== null) {
+      const distanceCredit = longRunDistanceCredit(input.durationSeconds);
+      if (distanceCredit > 0) {
+        sessionEquivalentSeconds *= 1 - distanceCredit;
+        if (distanceCredit > LONG_RUN_DISTANCE_CREDIT_MAX * 0.5) flags.push('long-run-distance-credit');
+      }
     }
 
     // Easy-session score floor — see EASY_SCORE_FLOOR_FRACTION's doc comment.
