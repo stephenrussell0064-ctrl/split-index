@@ -125,12 +125,12 @@ describe("long-run distance credit for easy/recovery/long-tagged sessions", () =
   it("saturates — the credit itself approaches its cap rather than growing without bound", () => {
     const marathonCredit = longRunDistanceCredit(42.195 * 330); // ~3h52m
     const ultraCredit = longRunDistanceCredit(80 * 330); // ~7h20m
-    expect(marathonCredit).toBeLessThan(0.12);
-    expect(ultraCredit).toBeLessThan(0.12);
+    expect(marathonCredit).toBeLessThan(0.18);
+    expect(ultraCredit).toBeLessThan(0.18);
     // Both are well past the half-saturation point (75 min) — doubling the
     // duration again barely moves the credit, unlike the near-linear growth
     // at short durations.
-    expect(ultraCredit - marathonCredit).toBeLessThan(0.015);
+    expect(ultraCredit - marathonCredit).toBeLessThan(0.02);
   });
 
   it("doesn't apply to a session that looks like a mistagged hard effort", () => {

@@ -429,12 +429,13 @@ describe("scoreCardioActivity — below-base guard regression (no baseline yet)"
     // (13% instead of 21%), landing meaningfully lower — still generous
     // relative to a raw, uncredited Riegel projection (~211), but no longer
     // reading as elite/99th-percentile for a submaximal steady-state piece.
-    // Upper bound loosened slightly (700 -> 800) after the long-run distance
-    // credit was added (user feedback: "the longer you run, the harder it
-    // is at any split") — this 30-minute row also legitimately earns a small
-    // slice of that credit; 749 is comfortably below the 850+ "near-elite"
-    // territory this test exists to guard against.
-    expect(result.score).toBeLessThan(800);
+    // Upper bound loosened after the long-run distance credit was added,
+    // then again after that credit's magnitude was bumped up (user
+    // feedback: "the longer you run, the harder it is at any split... need
+    // to be credited slightly more") — this 30-minute row also legitimately
+    // earns a slice of that credit; still comfortably below the 850+
+    // "near-elite" territory this test exists to guard against.
+    expect(result.score).toBeLessThan(820);
     expect(result.score).toBeGreaterThan(500);
   });
 

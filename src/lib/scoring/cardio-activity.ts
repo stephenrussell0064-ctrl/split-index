@@ -254,8 +254,11 @@ function enduranceVolumeBonus(durationSeconds: number): number {
 // score and the predictions ladder the same way the HR-zone/EF-baseline
 // credits already do. Saturates well short of 1.0 — a very long run is real
 // evidence of aerobic durability, not proof of unlimited 5K speed.
-const LONG_RUN_DISTANCE_CREDIT_MAX = 0.12;
-const LONG_RUN_CREDIT_HALF_SATURATION_MINUTES = 75; // minutes at which half of the max credit is earned
+// Raised from 0.12/75min (user feedback: "the long runs need to be credited
+// in the 5km prediction slightly more") — both the cap and the ramp-up
+// speed nudged up modestly rather than reworking the curve's shape.
+const LONG_RUN_DISTANCE_CREDIT_MAX = 0.18;
+const LONG_RUN_CREDIT_HALF_SATURATION_MINUTES = 60; // minutes at which half of the max credit is earned
 
 export function longRunDistanceCredit(durationSeconds: number): number {
   if (durationSeconds <= 0) return 0;
