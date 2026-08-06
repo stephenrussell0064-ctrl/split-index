@@ -1,6 +1,7 @@
 import ActivityKit
 import WidgetKit
 import SwiftUI
+import AppIntents
 
 /// Split Index brand green (matches --strength-accent / --gym-accent in the
 /// web app's design system, src/app/globals.css) — used throughout instead
