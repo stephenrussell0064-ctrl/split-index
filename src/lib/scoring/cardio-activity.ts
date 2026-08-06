@@ -828,16 +828,35 @@ export function scoreCardioActivity(input: CardioInput): CardioResult {
       // "run" for VO2max-method purposes, which meant they silently got a
       // running Riegel ladder (wrong distances/exponent for walking, and
       // no ladder was requested for cycling either).
+      //
+      // Anchored on `anchorSeconds` (this session's effort/HR-adjusted
+      // benchmark-equivalent — the same number the score itself is built
+      // from), NOT the raw input.distanceMeters/durationSeconds. Riegel
+      // assumes whatever time it's fed was run flat-out; feeding it an
+      // easy/recovery/long session's actual (deliberately slower) pace
+      // made every ladder entry read as if that easy pace were an all-out
+      // effort. Because Riegel's exponent scales with the distance ratio,
+      // that error is tiny at 5K/10K (small ratio from most logged
+      // distances) but balloons at half/marathon (4-8x ratio) — exactly
+      // the "5K/10K read fine, half/marathon are very off" pattern from
+      // user feedback. anchorSeconds already corrects for this (HR-zone
+      // credit, easy-effort baseline, easy-session floor, interval
+      // work-piece pace — see sessionEquivalentSeconds above), and is
+      // already expressed at the sport's benchmark distance, so a
+      // well-executed easy run now predicts the same race times a
+      // flat-out effort at that same demonstrated fitness would.
+      if (anchorSeconds === null) return null;
+      const benchmarkDistance = BENCHMARK_DISTANCE_METERS[input.benchmarkSport];
       switch (input.benchmarkSport) {
         case 'run':
-          return riegelPredictions(input.distanceMeters, input.durationSeconds, input.experience);
+          return riegelPredictions(benchmarkDistance, anchorSeconds, input.experience);
         case 'row':
         case 'ski':
         case 'swim':
           return sportRacePredictions(
             input.benchmarkSport,
-            input.distanceMeters,
-            input.durationSeconds,
+            benchmarkDistance,
+            anchorSeconds,
             input.experience
           );
         case 'walk':
