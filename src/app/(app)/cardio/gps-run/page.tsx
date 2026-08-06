@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import dynamic from "next/dynamic";
-import { MapPin, Square, AlertTriangle, Gauge, Mountain, HeartPulse, Zap, Flag, Thermometer, Footprints } from "lucide-react";
+import { MapPin, Square, AlertTriangle, Gauge, Mountain, HeartPulse, Zap, Flag, Thermometer, Footprints, TrendingUp } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/input";
@@ -12,6 +12,8 @@ import { SuccessScreen, type ScoreResultSummary } from "@/components/activities/
 import { SESSION_TYPES } from "@/lib/constants/sports";
 import { SPORT_INDEX_LABELS } from "@/lib/constants/sports";
 import { isNativePlatform } from "@/lib/native/platform";
+import { createClient } from "@/lib/supabase/client";
+import { livePredictionLadder, type LivePredictionEntry } from "@/lib/scoring/cardio-activity";
 import { startGpsSession, stopGpsSession, recoverOrphanedSession } from "@/lib/native/gps-tracking";
 import { connectHeartRateMonitor, disconnectHeartRateMonitor } from "@/lib/native/heart-rate";
 import {
@@ -86,6 +88,23 @@ function paceOrSpeedLabel(sport: GpsSport): string {
   return sport === "outdoor_cycling" ? "Speed" : "Pace";
 }
 
+function formatRaceTime(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.round(seconds % 60);
+  const mm = String(m).padStart(2, "0");
+  const ss = String(s).padStart(2, "0");
+  return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
+/** Same 0-999 tier bands used everywhere else in the app (500=Intermediate/Semi-Pro, 725=Advanced, 850=Elite) — colored so a glance at the predicted-scores strip reads at a glance, not just as a bare number. */
+function scoreAccentClass(score: number): string {
+  if (score >= 850) return "text-warning";
+  if (score >= 725) return "text-cardio-accent";
+  if (score >= 475) return "text-strength-accent";
+  return "text-muted";
+}
+
 type Phase = "idle" | "tracking" | "reviewing" | "overview";
 
 /**
@@ -120,6 +139,11 @@ export default function GpsRunPage() {
   const [error, setError] = useState("");
   const [overviewResult, setOverviewResult] = useState<ScoreResultSummary | null>(null);
   const [overviewIsPremium, setOverviewIsPremium] = useState(false);
+  const [profile, setProfile] = useState<{
+    restingHr: number | null;
+    maxHr: number | null;
+    sex: "male" | "female";
+  } | null>(null);
   const startedAtRef = useRef<number>(0);
   const segmentStartRef = useRef<number>(0);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -134,6 +158,35 @@ export default function GpsRunPage() {
     recoverOrphanedSession().then((recovered) => {
       if (recovered) setOrphaned(recovered);
     });
+  }, [native]);
+
+  // Fetched once, purely for the live/in-review score-prediction ladder
+  // below — the same resting/max HR + sex a saved run would be scored
+  // against, so the live number is a genuine estimate, not a guess.
+  useEffect(() => {
+    if (!native) return;
+    let cancelled = false;
+    const supabase = createClient();
+    (async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user || cancelled) return;
+      const { data } = await supabase
+        .from("profiles")
+        .select("resting_hr, max_hr, gender")
+        .eq("user_id", user.id)
+        .single();
+      if (cancelled || !data) return;
+      setProfile({
+        restingHr: data.resting_hr,
+        maxHr: data.max_hr,
+        sex: data.gender === "female" ? "female" : "male",
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [native]);
 
   useEffect(() => {
@@ -155,8 +208,47 @@ export default function GpsRunPage() {
 
   const liveElevationGainMeters = useMemo(() => elevationGainMeters(livePoints), [livePoints]);
 
+  /** Avg Split — this run's average pace from the very start, same number as the whole-session average shown after saving. Kept as its own explicitly-labeled tile (user feedback: needs to be unambiguous this is the RUN's average, not the instantaneous pace below). */
   const livePaceSecondsPerKm =
     liveDistanceMeters > 0 ? elapsedSeconds / (liveDistanceMeters / 1000) : null;
+
+  /** Current Pace — a rolling last-60-seconds window, distinct from Avg Split above. Falls back to the whole-run average until there's at least 60s/two GPS fixes of recent data to compute a genuine rolling number from. */
+  const currentPaceSecondsPerKm = useMemo(() => {
+    if (livePoints.length < 2) return null;
+    const cutoff = livePoints[livePoints.length - 1].time - 60_000;
+    const recent = livePoints.filter((p) => p.time >= cutoff);
+    if (recent.length < 2) return livePaceSecondsPerKm;
+    let meters = 0;
+    for (let i = 1; i < recent.length; i++) meters += haversineDistanceMeters(recent[i - 1], recent[i]);
+    const seconds = (recent[recent.length - 1].time - recent[0].time) / 1000;
+    return meters > 0 && seconds > 0 ? seconds / (meters / 1000) : livePaceSecondsPerKm;
+  }, [livePoints, livePaceSecondsPerKm]);
+
+  /** Live score-prediction ladder (user feedback: "based off the current pace, heart rate... extrapolate a score prediction for set distances") — running only (see LIVE_LADDER_METERS), and only once there's enough real distance for a Riegel projection to mean anything rather than just amplifying GPS noise. */
+  const livePrediction: LivePredictionEntry[] | null = useMemo(() => {
+    if (sport !== "running" || !profile || liveDistanceMeters < 400) return null;
+    return livePredictionLadder("run", liveDistanceMeters, elapsedSeconds, liveBpm, profile.sex, {
+      restingHR: profile.restingHr,
+      maxHR: profile.maxHr,
+    });
+  }, [sport, profile, liveDistanceMeters, elapsedSeconds, liveBpm]);
+
+  /** Same ladder, computed from the FINAL stopped-tracking summary for the reviewing (pre-save) screen — an honest "if you saved this as-is" estimate, still not the actual score (see livePredictionLadder's doc comment on why). */
+  const reviewPrediction: LivePredictionEntry[] | null = useMemo(() => {
+    if (sport !== "running" || !profile || !summary || summary.distanceMeters < 400) return null;
+    const reviewAvgBpm =
+      hrReadings.length > 0
+        ? Math.round(hrReadings.reduce((sum, r) => sum + r.bpm, 0) / hrReadings.length)
+        : null;
+    return livePredictionLadder(
+      "run",
+      summary.distanceMeters,
+      summary.durationSeconds,
+      reviewAvgBpm,
+      profile.sex,
+      { restingHR: profile.restingHr, maxHR: profile.maxHr }
+    );
+  }, [sport, profile, summary, hrReadings]);
 
   // Keeps the lock-screen Live Activity's distance/pace/HR in step with the
   // tracking HUD — the elapsed clock itself doesn't need a push at all
@@ -505,9 +597,13 @@ export default function GpsRunPage() {
           </div>
         </div>
 
-        <div className="flex flex-1 flex-col items-center justify-between overflow-y-auto px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-6 landscape:h-full landscape:justify-center landscape:gap-6 landscape:py-6">
-          <div className="flex flex-1 flex-col items-center justify-center landscape:flex-none">
-            <p className="index-display text-6xl font-bold tabular-nums text-white">
+        <div className="flex flex-1 flex-col items-center justify-between overflow-y-auto px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-5 landscape:h-full landscape:justify-center landscape:gap-6 landscape:py-6">
+          <div className="flex w-full flex-1 flex-col items-center justify-center landscape:flex-none">
+            <div className="flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full bg-gradient-to-br from-cardio-accent to-strength-accent" aria-hidden />
+              <p className="micro-label text-white/60">Elapsed</p>
+            </div>
+            <p className="index-display bg-gradient-to-br from-white to-white/70 bg-clip-text text-6xl font-extrabold tabular-nums text-transparent">
               {formatElapsed(elapsedSeconds)}
             </p>
 
@@ -515,7 +611,7 @@ export default function GpsRunPage() {
               <button
                 type="button"
                 onClick={toggleSegment}
-                className={`mt-4 flex items-center gap-2 rounded-full px-5 py-2 text-sm font-bold uppercase tracking-wide transition-colors ${
+                className={`mt-3 flex items-center gap-2 rounded-full px-5 py-2 text-sm font-bold uppercase tracking-wide transition-colors ${
                   segmentType === "hard"
                     ? "bg-danger text-white shadow-lg shadow-danger/30"
                     : "bg-white/15 text-white"
@@ -526,40 +622,92 @@ export default function GpsRunPage() {
               </button>
             )}
 
-            <div className="mt-8 grid w-full max-w-xs grid-cols-2 gap-3 text-center">
-              <div className="rounded-2xl border border-white/15 bg-white/10 py-3">
-                <p className="micro-label text-white/70">Distance</p>
-                <p className="text-2xl font-bold tabular-nums text-white">
-                  {(liveDistanceMeters / 1000).toFixed(2)} km
+            {/* Hero row — Distance + Avg Split, the two numbers a runner glances at most, given real visual weight over the rest of the grid. */}
+            <div className="mt-6 grid w-full max-w-sm grid-cols-2 gap-3">
+              <div className="rounded-2xl border border-cardio-accent/30 bg-gradient-to-br from-cardio-accent/20 to-cardio-accent/5 py-4 text-center shadow-lg shadow-cardio-accent/10">
+                <div className="mb-1 flex items-center justify-center gap-1.5">
+                  <MapPin className="h-3.5 w-3.5 text-cardio-accent" />
+                  <p className="micro-label text-cardio-accent-soft">Distance</p>
+                </div>
+                <p className="index-display text-3xl font-extrabold tabular-nums text-white">
+                  {(liveDistanceMeters / 1000).toFixed(2)}
+                  <span className="ml-1 text-base font-semibold text-white/50">km</span>
                 </p>
               </div>
-              <div className="rounded-2xl border border-white/15 bg-white/10 py-3">
-                <p className="micro-label text-white/70">{paceOrSpeedLabel(sport)}</p>
-                <p className="text-2xl font-bold tabular-nums text-white">
+              <div className="rounded-2xl border border-strength-accent/30 bg-gradient-to-br from-strength-accent/20 to-strength-accent/5 py-4 text-center shadow-lg shadow-strength-accent/10">
+                <div className="mb-1 flex items-center justify-center gap-1.5">
+                  <Gauge className="h-3.5 w-3.5 text-strength-accent" />
+                  <p className="micro-label text-strength-accent">Avg Split</p>
+                </div>
+                <p className="index-display text-3xl font-extrabold tabular-nums text-white">
                   {formatPaceOrSpeed(sport, livePaceSecondsPerKm)}
                 </p>
+                <p className="mt-0.5 text-[10px] text-white/50">
+                  average {paceOrSpeedLabel(sport).toLowerCase()} for this run
+                </p>
               </div>
+            </div>
+
+            {/* Secondary tiles — smaller, everything else at a glance. */}
+            <div className="mt-3 grid w-full max-w-sm grid-cols-2 gap-2.5 text-center">
+              <div className="rounded-xl border border-white/10 bg-white/[0.06] py-2.5">
+                <p className="micro-label text-white/50">Current pace</p>
+                <p className="text-lg font-bold tabular-nums text-white">
+                  {formatPaceOrSpeed(sport, currentPaceSecondsPerKm)}
+                </p>
+              </div>
+              {liveBpm !== null && (
+                <div className="rounded-xl border border-danger/25 bg-danger/10 py-2.5">
+                  <p className="micro-label text-danger/80">Heart rate</p>
+                  <p className="flex items-center justify-center gap-1 text-lg font-bold tabular-nums text-white">
+                    <HeartPulse className="h-3.5 w-3.5 text-danger" fill="currentColor" />
+                    {liveBpm}
+                  </p>
+                </div>
+              )}
               {liveElevationGainMeters !== null && (
-                <div className="rounded-2xl border border-white/15 bg-white/10 py-3">
-                  <p className="micro-label text-white/70">Elevation</p>
-                  <p className="text-2xl font-bold tabular-nums text-white">
+                <div className="rounded-xl border border-warning/25 bg-warning/10 py-2.5">
+                  <p className="micro-label text-warning/80">Elevation</p>
+                  <p className="text-lg font-bold tabular-nums text-white">
                     {Math.round(liveElevationGainMeters)} m
                   </p>
                 </div>
               )}
-              {liveBpm !== null && (
-                <div className="rounded-2xl border border-white/15 bg-white/10 py-3">
-                  <p className="micro-label text-white/70">Heart rate</p>
-                  <p className="text-2xl font-bold tabular-nums text-white">{liveBpm} bpm</p>
-                </div>
-              )}
               {liveCadence !== null && (
-                <div className="rounded-2xl border border-white/15 bg-white/10 py-3">
-                  <p className="micro-label text-white/70">Cadence</p>
-                  <p className="text-2xl font-bold tabular-nums text-white">{liveCadence} spm</p>
+                <div className="rounded-xl border border-white/10 bg-white/[0.06] py-2.5">
+                  <p className="micro-label text-white/50">Cadence</p>
+                  <p className="text-lg font-bold tabular-nums text-white">{liveCadence} spm</p>
                 </div>
               )}
             </div>
+
+            {/* Live score-prediction ladder — running only, once there's enough distance for a real Riegel projection (see livePrediction memo). */}
+            {livePrediction && (
+              <div className="mt-4 w-full max-w-sm">
+                <div className="mb-1.5 flex items-center gap-1.5 px-0.5">
+                  <TrendingUp className="h-3.5 w-3.5 text-cardio-accent-soft" />
+                  <p className="micro-label text-white/60">
+                    Predicted at this pace &amp; effort
+                  </p>
+                </div>
+                <div className="flex gap-2 overflow-x-auto pb-1">
+                  {livePrediction.map((entry) => (
+                    <div
+                      key={entry.label}
+                      className="flex min-w-[5.5rem] shrink-0 flex-col items-center rounded-xl border border-white/10 bg-white/[0.06] px-3 py-2 text-center"
+                    >
+                      <p className="micro-label text-white/50">{entry.label}</p>
+                      <p className="text-sm font-bold tabular-nums text-white">
+                        {formatRaceTime(entry.seconds)}
+                      </p>
+                      <p className={`text-xs font-bold tabular-nums ${scoreAccentClass(entry.score)}`}>
+                        {Math.round(entry.score)}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-4">
@@ -735,55 +883,88 @@ export default function GpsRunPage() {
             </div>
           )}
 
-          <div className="mb-6 grid grid-cols-2 gap-4">
-            <div className="flex flex-col items-center rounded-2xl border border-white/15 bg-white/10 py-4 text-center">
-              <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-full bg-cardio-accent/20 text-cardio-accent">
-                <MapPin className="h-4.5 w-4.5" />
+          {/* Hero row — Distance + Avg Split, same explicit labeling and color treatment as the live tracking HUD (user feedback: make it unambiguous this pace number is the whole run's average, not an instantaneous reading). */}
+          <div className="mb-3 grid grid-cols-2 gap-3">
+            <div className="rounded-2xl border border-cardio-accent/30 bg-gradient-to-br from-cardio-accent/20 to-cardio-accent/5 py-4 text-center shadow-lg shadow-cardio-accent/10">
+              <div className="mb-1 flex items-center justify-center gap-1.5">
+                <MapPin className="h-3.5 w-3.5 text-cardio-accent" />
+                <p className="micro-label text-cardio-accent-soft">Distance</p>
               </div>
-              <p className="micro-label text-white/70">Distance</p>
-              <p className="text-2xl font-bold tabular-nums text-white">{(summary.distanceMeters / 1000).toFixed(2)} km</p>
-            </div>
-            <div className="flex flex-col items-center rounded-2xl border border-white/15 bg-white/10 py-4 text-center">
-              <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-full bg-accent/20 text-accent">
-                <Gauge className="h-4.5 w-4.5" />
-              </div>
-              <p className="micro-label text-white/70">{paceOrSpeedLabel(sport)}</p>
-              <p className="text-2xl font-bold tabular-nums text-white">
-                {formatPaceOrSpeed(sport, summary.avgPaceSecondsPerKm)}
+              <p className="index-display text-3xl font-extrabold tabular-nums text-white">
+                {(summary.distanceMeters / 1000).toFixed(2)}
+                <span className="ml-1 text-base font-semibold text-white/50">km</span>
               </p>
             </div>
+            <div className="rounded-2xl border border-strength-accent/30 bg-gradient-to-br from-strength-accent/20 to-strength-accent/5 py-4 text-center shadow-lg shadow-strength-accent/10">
+              <div className="mb-1 flex items-center justify-center gap-1.5">
+                <Gauge className="h-3.5 w-3.5 text-strength-accent" />
+                <p className="micro-label text-strength-accent">Avg Split</p>
+              </div>
+              <p className="index-display text-3xl font-extrabold tabular-nums text-white">
+                {formatPaceOrSpeed(sport, summary.avgPaceSecondsPerKm)}
+              </p>
+              <p className="mt-0.5 text-[10px] text-white/50">
+                average {paceOrSpeedLabel(sport).toLowerCase()} for this run
+              </p>
+            </div>
+          </div>
+
+          <div className="mb-6 grid grid-cols-2 gap-2.5">
             {summary.elevationGainMeters !== null && (
-              <div className="flex flex-col items-center rounded-2xl border border-white/15 bg-white/10 py-4 text-center">
-                <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-full bg-warning/20 text-warning">
-                  <Mountain className="h-4.5 w-4.5" />
+              <div className="flex flex-col items-center rounded-xl border border-warning/25 bg-warning/10 py-3 text-center">
+                <div className="mb-1 flex items-center gap-1.5 text-warning/80">
+                  <Mountain className="h-4 w-4" />
+                  <p className="micro-label">Elevation gain</p>
                 </div>
-                <p className="micro-label text-white/70">Elevation gain</p>
-                <p className="text-2xl font-bold tabular-nums text-white">{Math.round(summary.elevationGainMeters)} m</p>
+                <p className="text-lg font-bold tabular-nums text-white">{Math.round(summary.elevationGainMeters)} m</p>
               </div>
             )}
             {hrReadings.length > 0 && (
-              <div className="flex flex-col items-center rounded-2xl border border-white/15 bg-white/10 py-4 text-center">
-                <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-full bg-danger/20 text-danger">
-                  <HeartPulse className="h-4.5 w-4.5" />
+              <div className="flex flex-col items-center rounded-xl border border-danger/25 bg-danger/10 py-3 text-center">
+                <div className="mb-1 flex items-center gap-1.5 text-danger/80">
+                  <HeartPulse className="h-4 w-4" fill="currentColor" />
+                  <p className="micro-label">Avg heart rate</p>
                 </div>
-                <p className="micro-label text-white/70">Avg heart rate</p>
-                <p className="text-2xl font-bold tabular-nums text-white">
+                <p className="text-lg font-bold tabular-nums text-white">
                   {Math.round(hrReadings.reduce((sum, r) => sum + r.bpm, 0) / hrReadings.length)} bpm
                 </p>
               </div>
             )}
             {cadenceReadings.length > 0 && (
-              <div className="flex flex-col items-center rounded-2xl border border-white/15 bg-white/10 py-4 text-center">
-                <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-full bg-cardio-accent/20 text-cardio-accent">
-                  <Footprints className="h-4.5 w-4.5" />
+              <div className="flex flex-col items-center rounded-xl border border-white/15 bg-white/[0.06] py-3 text-center">
+                <div className="mb-1 flex items-center gap-1.5 text-white/60">
+                  <Footprints className="h-4 w-4" />
+                  <p className="micro-label">Avg cadence</p>
                 </div>
-                <p className="micro-label text-white/70">Avg cadence</p>
-                <p className="text-2xl font-bold tabular-nums text-white">
+                <p className="text-lg font-bold tabular-nums text-white">
                   {Math.round(cadenceReadings.reduce((sum, c) => sum + c, 0) / cadenceReadings.length)} spm
                 </p>
               </div>
             )}
           </div>
+
+          {reviewPrediction && (
+            <div className="mb-6">
+              <div className="mb-1.5 flex items-center gap-1.5 px-0.5">
+                <TrendingUp className="h-3.5 w-3.5 text-cardio-accent-soft" />
+                <p className="micro-label text-white/60">Predicted at this pace &amp; effort</p>
+              </div>
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {reviewPrediction.map((entry) => (
+                  <div
+                    key={entry.label}
+                    className="flex min-w-[5.5rem] shrink-0 flex-col items-center rounded-xl border border-white/10 bg-white/[0.06] px-3 py-2 text-center"
+                  >
+                    <p className="micro-label text-white/50">{entry.label}</p>
+                    <p className="text-sm font-bold tabular-nums text-white">{formatRaceTime(entry.seconds)}</p>
+                    <p className={`text-xs font-bold tabular-nums ${scoreAccentClass(entry.score)}`}>
+                      {Math.round(entry.score)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           <p className="mb-6 flex items-center gap-1.5 text-xs text-muted">
             <Thermometer className="h-3.5 w-3.5" />

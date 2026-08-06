@@ -58,6 +58,7 @@ import {
   computeSessionBenchmarkEquivalentSeconds,
   computeIntervalBenchmarkEquivalentSeconds,
   riegelEquivalentSeconds,
+  RIEGEL_K,
   RELATIVE_EFFORT_SESSION_TYPES,
   MISTAG_GUARD_MAX_RATIO,
   elevationDifficultyFraction,
@@ -377,6 +378,65 @@ export function walkPacePredictions(
   const out: Record<string, number> = {};
   for (const d of WALK_LADDER_METERS) out[String(d)] = pacePerKm * (d / 1000);
   return out;
+}
+
+export interface LivePredictionEntry {
+  label: string;
+  meters: number;
+  seconds: number;
+  score: number;
+}
+
+const LIVE_LADDER_METERS: Partial<Record<BenchmarkSport, Array<{ meters: number; label: string }>>> = {
+  run: [
+    { meters: 5000, label: "5K" },
+    { meters: 10000, label: "10K" },
+    { meters: 21097.5, label: "Half Marathon" },
+    { meters: 42195, label: "Marathon" },
+  ],
+};
+
+/**
+ * Live in-progress score/time prediction ladder (user feedback: "based off
+ * the current pace, heart rate you are able to extrapolate a score
+ * prediction for set distances") — for a GPS-tracked session that's still
+ * running, not a finished one. Pure and client-computable: no DB access, no
+ * multi-session memory, just this session's own pace/HR so far projected
+ * forward via the same Riegel + HR-adjustment pipeline the real score uses
+ * (`computeSessionBenchmarkEquivalentSeconds`), then re-projected across the
+ * standard race ladder from the benchmark distance. Deliberately NOT the
+ * same number this session will actually score once saved — that also runs
+ * through the easy-session floor and EF-baseline stacking (see
+ * scoreCardioActivity), neither of which make sense for a still-in-progress
+ * session with no completed history of "this" run to floor against — this
+ * is an honest live estimate, not a preview of the final score.
+ */
+export function livePredictionLadder(
+  benchmarkSport: BenchmarkSport,
+  distanceMeters: number,
+  durationSeconds: number,
+  avgHR: number | null | undefined,
+  sex: Sex,
+  personalization?: { restingHR?: number | null; maxHR?: number | null },
+  personalizedK?: number | null
+): LivePredictionEntry[] | null {
+  const ladder = LIVE_LADDER_METERS[benchmarkSport];
+  if (!ladder) return null;
+  const benchmarkEquivalentSeconds = computeSessionBenchmarkEquivalentSeconds(
+    benchmarkSport,
+    distanceMeters,
+    durationSeconds,
+    avgHR,
+    undefined,
+    personalization
+  );
+  if (benchmarkEquivalentSeconds === null) return null;
+  const benchmarkDistance = BENCHMARK_DISTANCE_METERS[benchmarkSport];
+  const k = personalizedK ?? RIEGEL_K;
+  return ladder.map(({ meters, label }) => {
+    const seconds = benchmarkEquivalentSeconds * Math.pow(meters / benchmarkDistance, k);
+    return { label, meters, seconds, score: timeToScore(benchmarkSport, seconds, sex) };
+  });
 }
 
 /** Banister TRIMP — exponentially-weighted training load. */
