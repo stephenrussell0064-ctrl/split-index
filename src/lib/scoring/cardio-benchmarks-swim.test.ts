@@ -24,4 +24,11 @@ describe("timeToScore — swim (Swimming Regimen percentile anchors)", () => {
     const female = timeToScore("swim", 320, "female");
     expect(female).toBeGreaterThan(male);
   });
+
+  it("999 is reserved for the actual 400m freestyle world record (user feedback: never achieved unless it's a world record for age/gender)", () => {
+    expect(timeToScore("swim", 3 * 60 + 39.96, "male")).toBe(999); // Lukas Märtens 2025
+    expect(timeToScore("swim", 3 * 60 + 45, "male")).toBeLessThan(999);
+    expect(timeToScore("swim", 3 * 60 + 54.18, "female")).toBe(999); // Summer McIntosh 2025
+    expect(timeToScore("swim", 4 * 60, "female")).toBeLessThan(999);
+  });
 });

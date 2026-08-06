@@ -206,6 +206,79 @@ function clampScore(x: number): number {
 }
 
 /**
+ * Real, dated world/world-best times per benchmark sport and sex (user
+ * feedback: "make a rule where 999 is never achieved unless this is a
+ * world record for age and gender") — 999 is now reserved for actually
+ * matching or beating one of these, not for extrapolating the fast-end
+ * anchor slope indefinitely. Checked against each SEX'S OWN record
+ * directly (not run through the population FEMALE_CARDIO_FACTORS
+ * multiplier) — that factor is tuned for ordinary-pace comparisons, and
+ * the real male/female gap narrows noticeably at the elite/WR tail, so
+ * converting a near-record female time through the flat population factor
+ * would misrepresent how close it truly is to HER record.
+ *
+ * "...for age" is handled for free by the caller's existing age-grading
+ * (enduranceAgeGradeFactor) — scoreCardioActivity already multiplies the
+ * benchmark-equivalent time by this factor before it reaches timeToScore,
+ * so an older athlete's age-graded-equivalent time is what's actually
+ * compared here, exactly how real age-graded record tables work (age
+ * factor x performance vs open-class standard). Callers that pass a raw,
+ * non-age-graded time get compared against the open/absolute record
+ * instead — a stricter but still reasonable fallback.
+ *
+ * Cycle and walk are intentionally excluded: cycling's 20km TT benchmark
+ * has no single canonical world-record time (road time-trial records vary
+ * hugely by course and conditions, unlike a track/pool/erg record), and
+ * walk is scored on pace rather than a competitive-record event. Both
+ * keep the prior linear-extrapolation-capped-at-999 behavior until a
+ * defensible reference exists — flagged as a known gap, not silently
+ * guessed at.
+ */
+const WORLD_RECORD_SECONDS: Partial<Record<BenchmarkSport, { male: number; female: number }>> = {
+  run: { male: 12 * 60 + 49, female: 13 * 60 + 54 }, // 5K road: Berihu Aregawi 12:49 (2021); Beatrice Chebet 13:54 (2024)
+  row: { male: 5 * 60 + 33.4, female: 6 * 60 + 21.1 }, // Concept2 2000m: Simon van Dorp 5:33.4 (2026); Brooke Mooney 6:21.1 (2021)
+  swim: { male: 3 * 60 + 39.96, female: 3 * 60 + 54.18 }, // 400m freestyle (LC): Lukas Märtens 3:39.96 (2025); Summer McIntosh 3:54.18 (2025)
+};
+
+/**
+ * Replaces simple linear extrapolation beyond the fastest defined anchor
+ * with an asymptotic approach toward 999 that only actually REACHES 999 at
+ * or beyond the real world record — see WORLD_RECORD_SECONDS above. Times
+ * at or slower than the fastest anchor are untouched (normal interpolation
+ * still applies); only the "faster than any anchor" extrapolation zone is
+ * affected. All of `rawSeconds`/`realFastestAnchorSeconds`/
+ * `worldRecordSeconds` must already be in the SAME real, actual-clock-time
+ * unit system (i.e. already converted back out of any population female-
+ * factor adjustment) — see call sites.
+ */
+function applyWorldRecordCeiling(
+  linearScore: number,
+  rawSeconds: number,
+  realFastestAnchorSeconds: number,
+  realFastestAnchorScore: number,
+  worldRecordSeconds: number | undefined
+): number {
+  if (!worldRecordSeconds) return linearScore; // no record on file for this sport/sex — keep prior behavior
+  if (rawSeconds > realFastestAnchorSeconds) return linearScore; // not in extrapolation territory at all
+  if (rawSeconds <= worldRecordSeconds) return 999; // matched or beat the actual record
+  const progress = clamp01(
+    (realFastestAnchorSeconds - rawSeconds) / (realFastestAnchorSeconds - worldRecordSeconds)
+  ); // 0 at the anchor, ->1 approaching the record
+  const asymptotic =
+    realFastestAnchorScore + (999 - realFastestAnchorScore) * (1 - Math.exp(-progress * 4));
+  return Math.min(998, asymptotic); // stays visibly short of 999 until the record itself is reached
+}
+
+function clamp01(x: number): number {
+  return Math.max(0, Math.min(1, x));
+}
+
+/** The [seconds, score] pair with the lowest seconds (fastest time / highest score) in an anchor table. */
+function fastestAnchorIn(anchors: Anchor[]): Anchor {
+  return anchors.reduce((a, b) => (a[0] < b[0] ? a : b));
+}
+
+/**
  * Endurance age-grading factor (age → multiplier on the benchmark-equivalent
  * time before scoring). Older athletes lose aerobic capacity with age, so the
  * same finish time is a stronger performance at 55 than at 30; grading their
@@ -252,7 +325,13 @@ export function timeToScore(sport: BenchmarkSport, seconds: number, sex: "male" 
 
   if (sport === "row") {
     const table = sex === "female" ? ROW_2K_ANCHORS_FEMALE : ROW_2K_ANCHORS_MALE;
-    return clampScore(interpolateAnchors(table, seconds));
+    const linear = interpolateAnchors(table, seconds);
+    const wr = WORLD_RECORD_SECONDS.row;
+    if (!wr) return clampScore(linear);
+    const [anchorSeconds, anchorScore] = fastestAnchorIn(table);
+    return clampScore(
+      applyWorldRecordCeiling(linear, seconds, anchorSeconds, anchorScore, sex === "female" ? wr.female : wr.male)
+    );
   }
 
   if (sport === "ski") {
@@ -261,10 +340,29 @@ export function timeToScore(sport: BenchmarkSport, seconds: number, sex: "male" 
     // doesn't have its own sex-specific percentile data the way row now does.
     const rowEquivalent = skiToRowEquivalentSeconds(seconds);
     const adjusted = sex === "female" ? rowEquivalent / FEMALE_CARDIO_FACTORS.ski : rowEquivalent;
-    return clampScore(interpolateAnchors(ROW_2K_ANCHORS_MALE, adjusted));
+    const linear = interpolateAnchors(ROW_2K_ANCHORS_MALE, adjusted);
+    const wr = WORLD_RECORD_SECONDS.row;
+    if (!wr) return clampScore(linear);
+    // `adjusted` is already a male-row-equivalent value (sex folded in
+    // above), so it's compared directly against row's own male record —
+    // no separate ski world record on file.
+    const [anchorSeconds, anchorScore] = fastestAnchorIn(ROW_2K_ANCHORS_MALE);
+    return clampScore(applyWorldRecordCeiling(linear, adjusted, anchorSeconds, anchorScore, wr.male));
   }
 
   const factor = FEMALE_CARDIO_FACTORS[sport];
   const adjusted = sex === "female" ? seconds / factor : seconds;
-  return clampScore(interpolateAnchors(ANCHOR_TABLES[sport], adjusted));
+  const linear = interpolateAnchors(ANCHOR_TABLES[sport], adjusted);
+  const wr = WORLD_RECORD_SECONDS[sport];
+  if (!wr) return clampScore(linear);
+  // Checked against RAW seconds (this sex's own actual clock time), not the
+  // population-factor-adjusted value — see WORLD_RECORD_SECONDS's doc
+  // comment for why. The anchor's own fastest point is mapped back into
+  // this sex's real time units the same way, so both sides of the
+  // comparison stay in a consistent unit system.
+  const [anchorSeconds, anchorScore] = fastestAnchorIn(ANCHOR_TABLES[sport]);
+  const realAnchorSeconds = sex === "female" ? anchorSeconds * factor : anchorSeconds;
+  return clampScore(
+    applyWorldRecordCeiling(linear, seconds, realAnchorSeconds, anchorScore, sex === "female" ? wr.female : wr.male)
+  );
 }

@@ -25,4 +25,11 @@ describe("timeToScore — row (Part B corrected anchors)", () => {
     // (125), not Intermediate (the QA-flagged bug this corrects).
     expect(timeToScore("row", 486.9, "male")).toBeLessThan(250);
   });
+
+  it("999 is reserved for the actual Concept2 2000m world record (user feedback: never achieved unless it's a world record for age/gender)", () => {
+    expect(timeToScore("row", 5 * 60 + 33.4, "male")).toBe(999); // Simon van Dorp, 2026
+    expect(timeToScore("row", 5 * 60 + 40, "male")).toBeLessThan(999);
+    expect(timeToScore("row", 6 * 60 + 21.1, "female")).toBe(999); // Brooke Mooney, 2021
+    expect(timeToScore("row", 6 * 60 + 30, "female")).toBeLessThan(999);
+  });
 });

@@ -30,8 +30,13 @@ describe("timeToScore — run (general-population recalibrated anchors)", () => 
     expect(score32).toBeLessThan(475);
   });
 
-  it("an exceptional (sub-15:00) time is scored at or near the ceiling, not merely 'very good'", () => {
-    expect(timeToScore("run", 900, "male")).toBe(999); // 15:00 — beyond the 99th-percentile anchor
+  it("an exceptional (sub-15:00) time scores very high but doesn't hit the 999 ceiling — that's reserved for the actual world record", () => {
+    // See the 999-reserved-for-world-record tests below: 15:00 is a
+    // genuinely outstanding time but nowhere near the men's 5K world
+    // record (12:49), so it approaches but doesn't reach 999.
+    const score = timeToScore("run", 900, "male"); // 15:00
+    expect(score).toBeGreaterThan(950);
+    expect(score).toBeLessThan(999);
   });
 
   it("still applies the female multiplier on top (no sex-specific data at this population re-basis either)", () => {
@@ -43,5 +48,38 @@ describe("timeToScore — run (general-population recalibrated anchors)", () => 
   it("never returns a score below 0 or above 1000, even for extreme inputs", () => {
     expect(timeToScore("run", 60, "male")).toBeLessThanOrEqual(1000); // absurdly fast
     expect(timeToScore("run", 20000, "male")).toBeGreaterThanOrEqual(0); // absurdly slow
+  });
+});
+
+/**
+ * 999 reserved for the actual world record (user feedback: "make a rule
+ * where 999 is never achieved unless this is a world record for age and
+ * gender") — not for extrapolating the fast-end anchor slope indefinitely.
+ * Checked against each sex's own real record directly (Berihu Aregawi's
+ * 12:49 men's 5K road record, Beatrice Chebet's 13:54 women's), not the
+ * population female factor, since the real male/female gap narrows at the
+ * elite tail. "...for age" comes for free from the caller's existing
+ * age-grading (enduranceAgeGradeFactor) multiplying the time before it
+ * reaches timeToScore — this test file calls timeToScore directly (no age
+ * grading applied), so it's exercising the open/absolute record.
+ */
+describe("timeToScore — run world-record ceiling", () => {
+  it("only reaches 999 at or beyond the men's 5K world record (12:49)", () => {
+    expect(timeToScore("run", 12 * 60 + 49, "male")).toBe(999); // exact record
+    expect(timeToScore("run", 12 * 60 + 48, "male")).toBe(999); // beats it
+    expect(timeToScore("run", 12 * 60 + 50, "male")).toBeLessThan(999); // one second slower
+  });
+
+  it("only reaches 999 at or beyond the women's 5K world record (13:54)", () => {
+    expect(timeToScore("run", 13 * 60 + 54, "female")).toBe(999);
+    expect(timeToScore("run", 14 * 60, "female")).toBeLessThan(999);
+  });
+
+  it("approaches 999 smoothly as the time nears the record, rather than jumping", () => {
+    const scores = [16 * 60, 15 * 60, 14 * 60, 13 * 60].map((s) => timeToScore("run", s, "male"));
+    for (let i = 1; i < scores.length; i++) {
+      expect(scores[i]).toBeGreaterThan(scores[i - 1]);
+      expect(scores[i]).toBeLessThanOrEqual(999);
+    }
   });
 });
