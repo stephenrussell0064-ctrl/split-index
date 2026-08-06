@@ -53,6 +53,8 @@ export interface ActivityScoreContext {
   recentHardEffortBenchmarkSeconds?: number | null;
   /** This athlete's own HR-independent baseline pace from recent easy/recovery/long same-sport sessions — corroborates the HR-zone below-base guard, see personalEasyEffortBaselinePaceSeconds in cardio-predictions.ts. */
   easyEffortBaselinePaceSeconds?: number | null;
+  /** This athlete's own recent ALREADY-SCORED easy/recovery/long same-sport session scores — sets a bonus-only floor under a well-executed easy effort's score, see EASY_SCORE_FLOOR_FRACTION in cardio-activity.ts. */
+  recentEasyEffortScores?: number[] | null;
   /** Structured interval/fartlek work-piece data — optional; see cardio/interval-scoring.ts. */
   intervalReps?: number | null;
   intervalWorkDistanceMeters?: number | null;
@@ -270,6 +272,7 @@ function scoreEnduranceSession(
     easyEffortBaselineEF: input.easyEffortBaselineEF,
     recentHardEffortBenchmarkSeconds: input.recentHardEffortBenchmarkSeconds,
     easyEffortBaselinePaceSeconds: input.easyEffortBaselinePaceSeconds,
+    recentEasyEffortScores: input.recentEasyEffortScores,
     intervalReps: input.intervalReps,
     intervalWorkDistanceMeters: input.intervalWorkDistanceMeters,
     intervalWorkSeconds: input.intervalWorkSeconds,

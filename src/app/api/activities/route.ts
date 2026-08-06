@@ -22,6 +22,7 @@ import {
   personalRecentHardEffortBenchmarkSeconds,
   terrainAdjustedSessionEF,
   isDirectBenchmarkDistance,
+  RELATIVE_EFFORT_SESSION_TYPES,
 } from "@/lib/scoring/cardio-predictions";
 import {
   computeTier1Prediction,
@@ -331,6 +332,7 @@ export async function POST(request: Request) {
   let easyEffortBaselineEF: number | null = null;
   let recentHardEffortBenchmarkSeconds: number | null = null;
   let easyEffortBaselinePaceSeconds: number | null = null;
+  let recentEasyEffortScores: number[] | null = null;
   // This session's own benchmark-equivalent — kept for personal-record
   // detection below (personal-records.ts), separate from the multi-session
   // blended prediction.
@@ -348,18 +350,18 @@ export async function POST(request: Request) {
     const { data: windowActivities } = await supabase
       .from("activities")
       .select(
-        "sport, started_at, duration_seconds, distance_meters, avg_heart_rate, session_type, elevation_meters, temperature_celsius"
+        "sport, started_at, duration_seconds, distance_meters, avg_heart_rate, session_type, elevation_meters, temperature_celsius, workout_scores(sport_index)"
       )
       .eq("user_id", user.id)
       .eq("is_draft", false)
       .gte("started_at", windowCutoff);
 
-    const windowSessions: HistorySession[] = (windowActivities ?? [])
-      .filter(
-        (row) =>
-          mapSportToBenchmarkSport(row.sport) === benchmarkSport &&
-          row.distance_meters != null
-      )
+    const sameSportWindowActivities = (windowActivities ?? []).filter(
+      (row) => mapSportToBenchmarkSport(row.sport) === benchmarkSport
+    );
+
+    const windowSessions: HistorySession[] = sameSportWindowActivities
+      .filter((row) => row.distance_meters != null)
       .map((row) => ({
         distanceMeters: row.distance_meters as number,
         durationSeconds: row.duration_seconds,
@@ -369,6 +371,19 @@ export async function POST(request: Request) {
         elevationMeters: row.elevation_meters ?? undefined,
         temperatureCelsius: row.temperature_celsius ?? undefined,
       }));
+
+    // Easy-session score floor (user feedback: a well-executed easy run
+    // "should not deviate that far from my normal scores") — see
+    // EASY_SCORE_FLOOR_FRACTION's doc comment in cardio-activity.ts. Reuses
+    // the same 90-day/same-sport window already fetched above rather than a
+    // separate query.
+    recentEasyEffortScores = sameSportWindowActivities
+      .filter((row) => row.session_type && RELATIVE_EFFORT_SESSION_TYPES.has(row.session_type))
+      .map((row) => {
+        const ws = Array.isArray(row.workout_scores) ? row.workout_scores[0] : row.workout_scores;
+        return ws?.sport_index as number | undefined;
+      })
+      .filter((s): s is number => s != null);
 
     personalizedK = personalizeRiegelKFromWindow(windowSessions, priorPrediction?.riegel_k ?? null);
     easyEffortBaselineEF = personalEasyEffortBaselineEF(
@@ -473,6 +488,7 @@ export async function POST(request: Request) {
           easyEffortBaselineEF,
           recentHardEffortBenchmarkSeconds,
           easyEffortBaselinePaceSeconds,
+          recentEasyEffortScores,
           intervalReps: body.interval_reps,
           intervalWorkDistanceMeters: body.interval_work_distance_meters,
           intervalWorkSeconds: body.interval_work_seconds,

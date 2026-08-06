@@ -272,6 +272,13 @@ const ACCESSORY_MAP: Record<string, LiftAnchor> = {
   machineChestPress: { anchorRatio: 0.7846, category: "chest", bodyPart: "upperBody" },
   cableFly: { anchorRatio: 0.3823, category: "chest", bodyPart: "upperBody" },
   pecDeck: { anchorRatio: 0.8583, category: "chest", bodyPart: "upperBody" },
+  // Calibrated (user feedback: 95kg x8 should score ~700, 125kg x8 should
+  // score ~875 — "Tricep Press" had no anchor at all before this, so it was
+  // silently falling through to the generic accessory fallback). 0.89 is
+  // the closest single-anchor fit for both reported points under the
+  // shared SLOPE constant (95x8 -> 735, 125x8 -> 840) — same "can't hit
+  // both exactly, split the difference" methodology as dbCurl below.
+  tricepPress: { anchorRatio: 0.89, category: "arms", bodyPart: "upperBody" },
   tricepPushdown: { anchorRatio: 0.3138, category: "arms", bodyPart: "upperBody" },
   tricepPushdownSingleArm: { anchorRatio: 0.153, category: "arms", bodyPart: "upperBody" },
   // Recalibrated (user feedback: 20kg/hand x8 scored 669, expected ~750;

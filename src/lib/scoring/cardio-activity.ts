@@ -115,6 +115,8 @@ export interface CardioInput {
   recentHardEffortBenchmarkSeconds?: number | null;
   /** This athlete's own HR-independent baseline pace (Riegel-projected seconds at the benchmark distance) from recent easy/recovery/long same-sport sessions — see personalEasyEffortBaselinePaceSeconds. Used only to corroborate an at/below-base HR-zone reading (see hrZoneEffortAdjustment's below-base guard); omit/null to trust a below-base reading outright. */
   easyEffortBaselinePaceSeconds?: number | null;
+  /** This athlete's own recent ALREADY-SCORED easy/recovery/long same-sport session scores (0-1000, most recent first or any order — only the median is used) — see EASY_SCORE_FLOOR_FRACTION below. A well-executed easy effort at a deliberately slower pace shouldn't score far below this athlete's demonstrated normal range for that same kind of session (user feedback), so this sets a bonus-only floor under the pace-derived score. Distinct from and safer than storedPredictionSeconds: these are real, settled past outcomes, not a lagging cross-session memory, so using them here can't reintroduce the monotonicity bug that constraint exists for. Omit/null (or fewer than MIN_RECENT_EASY_SCORES) to skip the floor entirely. */
+  recentEasyEffortScores?: number[] | null;
 }
 
 export interface CardioResult {
@@ -160,6 +162,48 @@ const MAX_NORMALIZATION_RATIO = 1.6;
 // more credit than a population-wide number could safely assume for
 // everyone.
 const RELATIVE_EFFORT_MAX_ADJUSTMENT = 0.20;
+
+// Easy-session score floor (user feedback: a well-executed easy/recovery/
+// long run "should not deviate that far from my normal scores" despite a
+// deliberately slower pace) — the floor sits at this fraction of the
+// athlete's own recent median easy-effort score, not 1.0, so a genuinely
+// off day can still score below normal; it just can't collapse arbitrarily
+// far below it the way pure pace/HR-zone math alone sometimes did.
+const EASY_SCORE_FLOOR_FRACTION = 0.85;
+// Same minimum-sample-size philosophy as MIN_EASY_BASELINE_SAMPLES in
+// cardio-predictions.ts (kept independent rather than imported — this is a
+// different signal, real settled scores rather than a pace/EF baseline) —
+// one lucky or unlucky recent score shouldn't set the floor for everyone after it.
+const MIN_RECENT_EASY_SCORES = 3;
+
+function median(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+}
+
+/**
+ * Inverse of timeToScore via binary search — timeToScore is monotonic
+ * (strictly decreasing) in seconds for a fixed sport/sex, so this always
+ * converges. Exists only so the easy-session floor above can be expressed
+ * as an adjustment to the equivalent-seconds fed into the anchor table —
+ * the same mechanism every other credit in this file uses — rather than a
+ * direct post-hoc bump to paceScore itself, which the file header
+ * documents as never happening.
+ */
+function secondsForScore(sport: BenchmarkSport, targetScore: number, sex: 'male' | 'female'): number {
+  let lo = 1; // ~world-record-adjacent, upper score bound
+  let hi = 100_000; // ~27.8 hours, lower score bound
+  for (let i = 0; i < 40; i++) {
+    const mid = (lo + hi) / 2;
+    if (timeToScore(sport, mid, sex) > targetScore) {
+      lo = mid; // still scoring above target — this session needs to be slower to hit it
+    } else {
+      hi = mid;
+    }
+  }
+  return (lo + hi) / 2;
+}
 
 // Volume/terrain/environment bonuses — orthogonal to the pace/HR-based base
 // score above. A long session, a hilly one, or one done in harsh heat/cold
@@ -605,6 +649,27 @@ export function scoreCardioActivity(input: CardioInput): CardioResult {
       flags.push('hr-zone-assumed-target');
     } else {
       sessionEquivalentSeconds = populationEquivalentSeconds;
+    }
+
+    // Easy-session score floor — see EASY_SCORE_FLOOR_FRACTION's doc comment.
+    // Deliberately NOT gated on which branch above scored this session
+    // (HR-zone, EF-baseline-stacked, assumed-target, or plain population):
+    // this is a last-resort safety net for a well-executed easy effort
+    // regardless of which upstream mechanism under-credited it.
+    if (
+      isRelativeEffortSession &&
+      !looksMistagged &&
+      sessionEquivalentSeconds !== null &&
+      input.recentEasyEffortScores &&
+      input.recentEasyEffortScores.length >= MIN_RECENT_EASY_SCORES
+    ) {
+      const floorScore = median(input.recentEasyEffortScores) * EASY_SCORE_FLOOR_FRACTION;
+      const ageFactorForFloor = enduranceAgeGradeFactor(input.age);
+      const floorSeconds = secondsForScore(input.benchmarkSport, floorScore, input.sex) / ageFactorForFloor;
+      if (floorSeconds < sessionEquivalentSeconds) {
+        sessionEquivalentSeconds = floorSeconds;
+        flags.push('easy-session-floor-applied');
+      }
     }
   }
   // IMPORTANT — monotonicity guarantee (see cardio-session-score-monotonicity

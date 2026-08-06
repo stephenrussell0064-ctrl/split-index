@@ -27,6 +27,7 @@ import {
   personalRecentHardEffortBenchmarkSeconds,
   terrainAdjustedSessionEF,
   isDirectBenchmarkDistance,
+  RELATIVE_EFFORT_SESSION_TYPES,
 } from "@/lib/scoring/cardio-predictions";
 import {
   computeTier1Prediction,
@@ -187,6 +188,7 @@ async function scoreAndPersist(
   let easyEffortBaselineEF: number | null = null;
   let recentHardEffortBenchmarkSeconds: number | null = null;
   let easyEffortBaselinePaceSeconds: number | null = null;
+  let recentEasyEffortScores: number[] | null = null;
   let sessionBenchmarkEquivalentSeconds: number | null = null;
   if (isEnduranceSport(body.sport)) {
     benchmarkSport = mapSportToBenchmarkSport(body.sport);
@@ -202,19 +204,19 @@ async function scoreAndPersist(
     const { data: windowActivities } = await supabase
       .from("activities")
       .select(
-        "sport, started_at, duration_seconds, distance_meters, avg_heart_rate, session_type, elevation_meters, temperature_celsius"
+        "sport, started_at, duration_seconds, distance_meters, avg_heart_rate, session_type, elevation_meters, temperature_celsius, workout_scores(sport_index)"
       )
       .eq("user_id", userId)
       .eq("is_draft", false)
       .neq("id", excludeActivityId ?? "")
       .gte("started_at", windowCutoff);
 
-    const windowSessions: HistorySession[] = (windowActivities ?? [])
-      .filter(
-        (row) =>
-          mapSportToBenchmarkSport(row.sport) === benchmarkSport &&
-          row.distance_meters != null
-      )
+    const sameSportWindowActivities = (windowActivities ?? []).filter(
+      (row) => mapSportToBenchmarkSport(row.sport) === benchmarkSport
+    );
+
+    const windowSessions: HistorySession[] = sameSportWindowActivities
+      .filter((row) => row.distance_meters != null)
       .map((row) => ({
         distanceMeters: row.distance_meters as number,
         durationSeconds: row.duration_seconds,
@@ -224,6 +226,18 @@ async function scoreAndPersist(
         elevationMeters: row.elevation_meters ?? undefined,
         temperatureCelsius: row.temperature_celsius ?? undefined,
       }));
+
+    // Easy-session score floor — see EASY_SCORE_FLOOR_FRACTION's doc comment
+    // in cardio-activity.ts. Reuses the same window/exclusion already
+    // fetched above (excludeActivityId keeps this activity's OWN previous
+    // score from floor-ing its own re-score).
+    recentEasyEffortScores = sameSportWindowActivities
+      .filter((row) => row.session_type && RELATIVE_EFFORT_SESSION_TYPES.has(row.session_type))
+      .map((row) => {
+        const ws = Array.isArray(row.workout_scores) ? row.workout_scores[0] : row.workout_scores;
+        return ws?.sport_index as number | undefined;
+      })
+      .filter((s): s is number => s != null);
 
     personalizedK = personalizeRiegelKFromWindow(windowSessions, priorPrediction?.riegel_k ?? null);
     easyEffortBaselineEF = personalEasyEffortBaselineEF(
@@ -330,6 +344,7 @@ async function scoreAndPersist(
       easyEffortBaselineEF,
       recentHardEffortBenchmarkSeconds,
       easyEffortBaselinePaceSeconds,
+      recentEasyEffortScores,
       intervalReps: body.interval_reps,
       intervalWorkDistanceMeters: body.interval_work_distance_meters,
       intervalWorkSeconds: body.interval_work_seconds,

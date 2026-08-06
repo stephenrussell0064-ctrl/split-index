@@ -208,6 +208,53 @@ describe("scoreCardioActivity — HR-zone wiring", () => {
     expect(belowBaseline.score).toBe(withoutBaseline.score);
   });
 
+  describe("easy-session score floor (user feedback: a good easy run 'should not deviate that far from my normal scores')", () => {
+    it("raises a below-floor score up to 85% of the recent easy-session median", () => {
+      // Deliberately slow/high-HR so the zone math alone lands low.
+      const low = scoreCardioActivity({ ...base, avgHR: 195 });
+      const floored = scoreCardioActivity({
+        ...base,
+        avgHR: 195,
+        recentEasyEffortScores: [700, 720, 680],
+      });
+      expect(low.score).toBeLessThan(Math.round(700 * 0.85));
+      expect(floored.score).toBeGreaterThanOrEqual(Math.round(700 * 0.85) - 2); // rounding tolerance
+      expect(floored.flags).toContain("easy-session-floor-applied");
+    });
+
+    it("never lowers a score that already clears the floor (bonus-only)", () => {
+      const withoutFloor = scoreCardioActivity({ ...base, avgHR: 150 });
+      const withFloor = scoreCardioActivity({
+        ...base,
+        avgHR: 150,
+        recentEasyEffortScores: [100, 120, 90], // floor far below what this session already scores
+      });
+      expect(withFloor.flags).not.toContain("easy-session-floor-applied");
+      expect(withFloor.score).toBe(withoutFloor.score);
+    });
+
+    it("requires at least 3 recent scores before applying — one or two data points shouldn't set everyone's floor", () => {
+      const result = scoreCardioActivity({
+        ...base,
+        avgHR: 195,
+        recentEasyEffortScores: [700, 720],
+      });
+      expect(result.flags).not.toContain("easy-session-floor-applied");
+    });
+
+    it("a genuinely mistagged (race-pace) 'easy' session is exempt from the floor, same as the other relative-effort mechanisms", () => {
+      const result = scoreCardioActivity({
+        ...base,
+        durationSeconds: 1500, // 2:30/km 10km — clearly race pace, not easy
+        avgHR: 195,
+        recentHardEffortBenchmarkSeconds: 1600,
+        recentEasyEffortScores: [700, 720, 680],
+      });
+      expect(result.flags).toContain("easy-tag-pace-mismatch");
+      expect(result.flags).not.toContain("easy-session-floor-applied");
+    });
+  });
+
   it("at target, scores at least 550 for a 5:30/km 10km (user-specified floor)", () => {
     const atTarget = scoreCardioActivity({ ...base, avgHR: 172 });
     expect(atTarget.score).toBeGreaterThanOrEqual(550);

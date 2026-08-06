@@ -130,6 +130,48 @@ describe("scoreStrength — dumbbell curl recalibration", () => {
 });
 
 /**
+ * Tricep Press calibration (user feedback: 95kg x8 should score ~700, 125kg
+ * x8 should score ~875 — "Tricep Press" had no anchor/alias at all before
+ * this, so every set silently fell through to the generic accessory
+ * fallback). Same "closest single-anchor fit for both" methodology as
+ * dumbbell curl above — 0.89 lands at 95x8 -> ~735, 125x8 -> ~840.
+ */
+describe("scoreStrength — tricep press calibration", () => {
+  function scoreTricepPress(weightKg: number, reps: number) {
+    return scoreStrength({
+      liftKey: "Tricep Press",
+      exerciseName: "Tricep Press",
+      history: [],
+      latestSet: { weightKg, reps },
+      bodyweightKg: 83,
+      sex: "male",
+      age: 30,
+      isPremium: false,
+    });
+  }
+
+  it("resolves to a real calibrated anchor, not the generic fallback", () => {
+    expect(scoreTricepPress(95, 8).source).toBe("accessory");
+  });
+
+  it("95kg x8 scores close to 700", () => {
+    const result = scoreTricepPress(95, 8);
+    expect(result.score).toBeGreaterThan(680);
+    expect(result.score).toBeLessThan(760);
+  });
+
+  it("125kg x8 scores close to 875", () => {
+    const result = scoreTricepPress(125, 8);
+    expect(result.score).toBeGreaterThan(800);
+    expect(result.score).toBeLessThan(900);
+  });
+
+  it("heavier weight for the same reps never scores lower (monotonic)", () => {
+    expect(scoreTricepPress(125, 8).score).toBeGreaterThan(scoreTricepPress(95, 8).score);
+  });
+});
+
+/**
  * Muscle-up bodyweight-relative scoring (user feedback: muscle-ups were
  * entirely unrecognized — fell through to the generic "total weight"
  * default, so bodyweight-only sets scored as if 0kg was the total load

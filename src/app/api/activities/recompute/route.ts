@@ -26,7 +26,9 @@ import {
   personalRecentHardEffortBenchmarkSeconds,
   terrainAdjustedSessionEF,
   isDirectBenchmarkDistance,
+  RELATIVE_EFFORT_SESSION_TYPES,
 } from "@/lib/scoring/cardio-predictions";
+import type { SessionType } from "@/types";
 import {
   computeWindowedTier2Seconds,
   personalizeRiegelKFromWindow,
@@ -139,6 +141,15 @@ export async function POST() {
   // previously-replayed same-sport sessions, never future ones.
   const predictedBenchmarkRiegelK: Partial<Record<BenchmarkSport, number>> = {};
   const sessionsBySport: Partial<Record<BenchmarkSport, HistorySession[]>> = {};
+  // Easy-session score floor (user feedback: a well-executed easy run
+  // "should not deviate that far from my normal scores") — see
+  // EASY_SCORE_FLOOR_FRACTION's doc comment in cardio-activity.ts. Same
+  // oldest-first replay discipline as sessionsBySport/predictedBenchmark*
+  // above: each activity only ever sees ALREADY-REPLAYED prior sessions'
+  // real scores, appended after (not before) this activity is itself scored.
+  const easyEffortScoresBySport: Partial<
+    Record<BenchmarkSport, Array<{ sessionType: string | null; startedAt: string; score: number }>>
+  > = {};
 
   // Personal records (personal-records.ts) — recompute is the authoritative
   // full rebuild: replayed oldest-first, so the best-per-metric accumulated
@@ -188,6 +199,7 @@ export async function POST() {
     let easyEffortBaselineEF: number | null = null;
     let recentHardEffortBenchmarkSeconds: number | null = null;
     let easyEffortBaselinePaceSeconds: number | null = null;
+    let recentEasyEffortScores: number[] | null = null;
     let sessionBenchmarkEquivalentSeconds: number | null = null;
     if (isEnduranceSport(activity.sport)) {
       benchmarkSport = mapSportToBenchmarkSport(activity.sport);
@@ -208,6 +220,14 @@ export async function POST() {
       const windowSessions = priorSessions.filter(
         (s) => new Date(s.startedAt).getTime() >= windowCutoff
       );
+      recentEasyEffortScores = (easyEffortScoresBySport[benchmarkSport] ?? [])
+        .filter(
+          (s) =>
+            new Date(s.startedAt).getTime() >= windowCutoff &&
+            s.sessionType &&
+            RELATIVE_EFFORT_SESSION_TYPES.has(s.sessionType as SessionType)
+        )
+        .map((s) => s.score);
       const personalizedK = personalizeRiegelKFromWindow(
         windowSessions,
         predictedBenchmarkRiegelK[benchmarkSport] ?? null
@@ -304,6 +324,7 @@ export async function POST() {
           easyEffortBaselineEF,
           recentHardEffortBenchmarkSeconds,
           easyEffortBaselinePaceSeconds,
+          recentEasyEffortScores,
           intervalReps: activity.interval_reps,
           intervalWorkDistanceMeters: activity.interval_work_distance_meters,
           intervalWorkSeconds: activity.interval_work_seconds,
@@ -420,6 +441,16 @@ export async function POST() {
         started_at: activity.started_at,
         score_breakdown: result.breakdown as unknown as Record<string, unknown>,
       });
+      if (benchmarkSport) {
+        easyEffortScoresBySport[benchmarkSport] = [
+          ...(easyEffortScoresBySport[benchmarkSport] ?? []),
+          {
+            sessionType: activity.session_type,
+            startedAt: activity.started_at as string,
+            score: result.sportIndex,
+          },
+        ];
+      }
       if (result.enduranceComponent != null) enduranceIndices.push(result.enduranceComponent);
       if (result.strengthComponent != null) strengthIndices.push(result.strengthComponent);
       splitIndices.push(result.splitIndex);

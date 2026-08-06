@@ -211,6 +211,7 @@ export function buildCardioInput(input: {
   easyEffortBaselineEF?: number | null;
   recentHardEffortBenchmarkSeconds?: number | null;
   easyEffortBaselinePaceSeconds?: number | null;
+  recentEasyEffortScores?: number[] | null;
 }): CardioInput {
   const structuredInterval = {
     reps: input.intervalReps ?? 0,
@@ -249,6 +250,7 @@ export function buildCardioInput(input: {
     easyEffortBaselineEF: input.easyEffortBaselineEF ?? undefined,
     recentHardEffortBenchmarkSeconds: input.recentHardEffortBenchmarkSeconds ?? undefined,
     easyEffortBaselinePaceSeconds: input.easyEffortBaselinePaceSeconds ?? undefined,
+    recentEasyEffortScores: input.recentEasyEffortScores ?? undefined,
     structuredInterval: isValidIntervalWorkPiece(structuredInterval) ? structuredInterval : undefined,
     structuredFartlek: isValidFartlekOnPiece(structuredFartlek) ? structuredFartlek : undefined,
   };
