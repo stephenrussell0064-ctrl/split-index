@@ -52,11 +52,14 @@ const predictions = riegelPredictions(5000, fiveKSeconds, "intermediate");
 
 console.log("── Cardio: 22:30 5K ──");
 assertNear("VO2max with HR", withHr.vo2max ?? 0, 58.1, 0.5);
-// Primary score now comes from the benchmark anchor table (MASTER-BRIEF.md
-// §4): 22:30/5k sits on the 575 anchor, +~39 from the endurance-volume
-// bonus, then the HR-adjustment nudges it up further since 165bpm is below
-// the 175 running reference (proven fitness at a lower HR).
-assertNear("Session score with HR", withHr.score, 614, 5);
+// Primary score comes from the benchmark anchor table (MASTER-BRIEF.md §4),
+// recalibrated to general-population 5K data rather than competitive-runner
+// data (user feedback: "I want split index scores to be for the average
+// people getting into running not elite athletes" — see the anchor table's
+// own doc comment in cardio-benchmarks.ts). 22:30/5k now interpolates to
+// ~702 on that curve, then the HR-adjustment nudges it up further since
+// 165bpm is below the 175 running reference (proven fitness at a lower HR).
+assertNear("Session score with HR", withHr.score, 726, 5);
 console.log(`  Riegel 10K: ${formatRace(predictions?.["10000"] ?? 0)} (expect 46:54)`);
 console.log(`  Riegel half: ${formatRace(predictions?.["21097.5"] ?? 0)} (expect 1:43:30)`);
 console.log(`  Riegel marathon: ${formatRace(predictions?.["42195"] ?? 0)} (expect 3:35:48)`);

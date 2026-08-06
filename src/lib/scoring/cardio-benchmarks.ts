@@ -39,42 +39,37 @@ export const SKI_FROM_ROW_PACE = 1.0357;
 type Anchor = [seconds: number, score: number];
 
 /**
- * Corrected against the Motera 5k times chart QA reconstruction (male,
- * general/non-age-specific) — read directly off the chart at every
- * available point rather than reduced to a handful of tier-boundary
- * anchors, so the interpolated curve hugs the real chart closely
- * throughout. Reverted here from a briefly-tried Run Regimen (single-
- * source, sex-specific, percentile-convention) table after direct
- * comparison — Stephen judged Motera's numbers more accurate for run
- * specifically. Row/cycle/swim are unaffected by this reversal (Row was
- * already Motera-consistent via RowingRegimen; cycle/swim have no Motera
- * equivalent to compare against and haven't been flagged as wrong).
- * Excludes the chart's 14:00 row (flagged extrapolated/outside-anchors in
- * the source — non-monotonic relative to 15:00, an artifact, not real
- * data). No sex-specific Motera data available in the same dense format,
- * so female runners use the existing female cardio factor (1.152) on this
- * male curve, same as swim/cycle/walk/ski.
+ * Recalibrated to the general population of 5K runners rather than
+ * competitive/club-level runners (user feedback: "I want split index scores
+ * to be for the average people getting into running not elite athletes").
+ * The prior Motera-chart-derived table put its 50th-percentile point at
+ * 25:00 — 5-7 minutes faster than real population data, which meant the
+ * whole curve (fast end included) read as calibrated toward serious
+ * competitive runners rather than the average person who runs a 5K. Same
+ * 5/20/50/80/95/99th-percentile convention as row/cycle below, built from
+ * cross-referenced public race-result aggregators (not a single source):
+ * PacePercentile.com's aggregate database (RunRepeat + Running USA + World
+ * Athletics results) and RunDida's combined-population percentile table
+ * both independently converge on ~30:00 for the 50th percentile and ~23:00
+ * for the 75th, and RunRepeat's own 34-million-result "State of Running"
+ * study puts the men's median at 31:28 (close, slightly slower) — 30:00 is
+ * a reasoned middle point across these, not the single most extreme number
+ * found. The fast end moved too: a 15:00 5K is genuinely national/
+ * professional-class, not just "95th percentile of people who run 5Ks," so
+ * pinning 99th-percentile-of-the-general-population at 17:00 (not 15:00)
+ * is consistent with the same population re-basis, not a separate
+ * adjustment. 20th/5th percentile points are extrapolated from the same
+ * sources' slower tiers (sparser data at that end, lower confidence).
+ * Female runners still use the existing female cardio factor (1.152) on
+ * this male curve, unchanged.
  */
 const RUN_5K_ANCHORS: Anchor[] = [
-  [900, 950], // 15:00
-  [960, 910], // 16:00
-  [1020, 870], // 17:00
-  [1050, 850], // 17:30
-  [1110, 775], // 18:30
-  [1170, 708.3], // 19:30
-  [1200, 675], // 20:00
-  [1290, 615], // 21:30
-  [1350, 575], // 22:30
-  [1440, 530], // 24:00
-  [1500, 500], // 25:00
-  [1620, 440], // 27:00
-  [1740, 380], // 29:00
-  [1800, 350], // 30:00
-  [1980, 305], // 33:00
-  [2160, 260], // 36:00
-  [2220, 245], // 37:00
-  [2400, 200], // 40:00
-  [2640, 170], // 44:00
+  [1020, 925], // 17:00 — 99th percentile
+  [1140, 850], // 19:00 — 95th percentile
+  [1305, 725], // 21:45 — 80th percentile
+  [1800, 475], // 30:00 — 50th percentile (median)
+  [2310, 250], // 38:30 — 20th percentile
+  [2940, 125], // 49:00 — 5th percentile
 ];
 
 /**

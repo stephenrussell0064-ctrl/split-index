@@ -210,10 +210,14 @@ describe("scoreCardioActivity — HR-zone wiring", () => {
 
   describe("easy-session score floor (user feedback: a good easy run 'should not deviate that far from my normal scores')", () => {
     it("raises a below-floor score up to 85% of the recent easy-session median", () => {
-      // Deliberately slow/high-HR so the zone math alone lands low.
-      const low = scoreCardioActivity({ ...base, avgHR: 195 });
+      // Deliberately slow pace/high-HR so the zone math alone lands low —
+      // needs a genuinely slow pace under the recalibrated (general-
+      // population) anchor table, since a merely-easy 5:30/km pace no
+      // longer scores low enough on its own to need the floor.
+      const slowBase = { ...base, durationSeconds: 4800 }; // 8:00/km 10km
+      const low = scoreCardioActivity({ ...slowBase, avgHR: 195 });
       const floored = scoreCardioActivity({
-        ...base,
+        ...slowBase,
         avgHR: 195,
         recentEasyEffortScores: [700, 720, 680],
       });

@@ -131,9 +131,12 @@ describe("scoreCardioActivity — pace monotonicity", () => {
       elevationMeters: 66,
       temperatureCelsius: 12,
     });
-    // score (paceScore) itself is modest, reflecting genuine easy pace —
-    // that's correct and expected, not a bug.
-    expect(easyLongRun.score).toBeLessThan(600);
+    // score (paceScore) itself reflects genuine (not race-pace) effort —
+    // that's correct and expected, not a bug. Bound raised after the run
+    // anchor table was recalibrated to general-population data (a ~5:16/km
+    // pace now reads as solidly better than the new, slower population
+    // median, rather than merely average).
+    expect(easyLongRun.score).toBeLessThan(700);
     // executionScore credits the long/hilly session well above neutral (500).
     expect(easyLongRun.executionScore).not.toBeNull();
     expect(easyLongRun.executionScore!).toBeGreaterThan(550);
