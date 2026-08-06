@@ -201,6 +201,7 @@ export async function POST() {
     let easyEffortBaselinePaceSeconds: number | null = null;
     let recentEasyEffortScores: number[] | null = null;
     let sessionBenchmarkEquivalentSeconds: number | null = null;
+    let personalizedK: number | null = null;
     if (isEnduranceSport(activity.sport)) {
       benchmarkSport = mapSportToBenchmarkSport(activity.sport);
       const rawPrior = predictedBenchmarkSeconds[benchmarkSport] ?? null;
@@ -228,7 +229,7 @@ export async function POST() {
             RELATIVE_EFFORT_SESSION_TYPES.has(s.sessionType as SessionType)
         )
         .map((s) => s.score);
-      const personalizedK = personalizeRiegelKFromWindow(
+      personalizedK = personalizeRiegelKFromWindow(
         windowSessions,
         predictedBenchmarkRiegelK[benchmarkSport] ?? null
       );
@@ -325,6 +326,7 @@ export async function POST() {
           recentHardEffortBenchmarkSeconds,
           easyEffortBaselinePaceSeconds,
           recentEasyEffortScores,
+          personalizedRiegelK: personalizedK,
           intervalReps: activity.interval_reps,
           intervalWorkDistanceMeters: activity.interval_work_distance_meters,
           intervalWorkSeconds: activity.interval_work_seconds,

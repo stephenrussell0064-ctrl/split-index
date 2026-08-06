@@ -11,7 +11,7 @@ import {
   TIER2_MIN_SAMPLES_TO_DISPLAY,
   type HistorySession,
 } from "./race-prediction";
-import { RIEGEL_K, RIEGEL_K_MIN, RIEGEL_K_MAX } from "@/lib/scoring/cardio-predictions";
+import { RIEGEL_K, RIEGEL_K_MIN, RIEGEL_K_MAX, impliedRiegelK } from "@/lib/scoring/cardio-predictions";
 
 describe("Tier 1 — per-session prediction", () => {
   it("never returns a bare point estimate — rangeSeconds always brackets predictedSeconds", () => {
@@ -180,6 +180,42 @@ describe("Riegel k personalization from window history", () => {
     expect(result!).toBeGreaterThan(RIEGEL_K); // starts from RIEGEL_K default, moves toward 1.10
     expect(result!).toBeLessThanOrEqual(RIEGEL_K_MAX);
     expect(result!).toBeGreaterThanOrEqual(RIEGEL_K_MIN);
+  });
+
+  /**
+   * Real-account regression: a 5K racer's own logged history (three ~18:25
+   * 5K races + a genuinely easy 12.52km run) implied k~1.6 (clamped to the
+   * ceiling) when the easy run was mixed in as "the longer distance" —
+   * nonsense, since the easy run's pace was never flat-out. Excluding
+   * easy/recovery/long-tagged sessions from the evidence pool fixes this:
+   * with only same-distance race data, there isn't yet a genuine second
+   * distance to imply a k from, so the stored value should pass through
+   * unchanged rather than be corrupted by the easy run's slow pace.
+   */
+  it("ignores easy/recovery/long-tagged sessions when deriving the implied k (real-account bug)", () => {
+    const raceSessions: HistorySession[] = [
+      { distanceMeters: 5000, durationSeconds: 1105, sessionType: "race", startedAt: new Date().toISOString() },
+      { distanceMeters: 5000, durationSeconds: 1151, sessionType: "race", startedAt: new Date().toISOString() },
+      { distanceMeters: 5000, durationSeconds: 1160, sessionType: "race", startedAt: new Date().toISOString() },
+    ];
+    const easyLongRun: HistorySession = {
+      distanceMeters: 12520,
+      durationSeconds: 3929,
+      sessionType: "easy",
+      startedAt: new Date().toISOString(),
+    };
+
+    // Sanity check: WITHOUT the session-type filter, this exact real data
+    // would imply k > 1.10 (clamped to the ceiling) — confirming the bug
+    // this fix addresses is real, not hypothetical.
+    const impliedRaw = impliedRiegelK(5000, 1105, 12520, 3929);
+    expect(impliedRaw).toBe(RIEGEL_K_MAX);
+
+    const result = personalizeRiegelKFromWindow([...raceSessions, easyLongRun], null);
+    // All comparable-effort (race) sessions are the same distance (5000m) —
+    // no genuine cross-distance evidence yet, so the stored value (null)
+    // passes through unchanged instead of being corrupted by the easy run.
+    expect(result).toBeNull();
   });
 });
 

@@ -31,6 +31,8 @@ interface ScoreActivityInput {
   easyEffortBaselinePaceSeconds?: number | null;
   /** This athlete's own recent ALREADY-SCORED easy/recovery/long same-sport session scores — sets a bonus-only floor under a well-executed easy effort's score, see EASY_SCORE_FLOOR_FRACTION in cardio-activity.ts. */
   recentEasyEffortScores?: number[] | null;
+  /** This athlete's own personal Riegel k from their cross-distance race/tempo history — see personalizeRiegelKFromWindow in cardio/race-prediction.ts. */
+  personalizedRiegelK?: number | null;
   intervalReps?: number | null;
   intervalWorkDistanceMeters?: number | null;
   intervalWorkSeconds?: number | null;
@@ -143,6 +145,7 @@ export function scoreActivity(
       recentHardEffortBenchmarkSeconds: input.recentHardEffortBenchmarkSeconds,
       easyEffortBaselinePaceSeconds: input.easyEffortBaselinePaceSeconds,
       recentEasyEffortScores: input.recentEasyEffortScores,
+      personalizedRiegelK: input.personalizedRiegelK,
       intervalReps: input.intervalReps,
       intervalWorkDistanceMeters: input.intervalWorkDistanceMeters,
       intervalWorkSeconds: input.intervalWorkSeconds,

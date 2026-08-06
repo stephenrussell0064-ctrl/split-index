@@ -345,6 +345,7 @@ async function scoreAndPersist(
       recentHardEffortBenchmarkSeconds,
       easyEffortBaselinePaceSeconds,
       recentEasyEffortScores,
+      personalizedRiegelK: personalizedK,
       intervalReps: body.interval_reps,
       intervalWorkDistanceMeters: body.interval_work_distance_meters,
       intervalWorkSeconds: body.interval_work_seconds,

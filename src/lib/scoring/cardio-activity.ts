@@ -118,6 +118,19 @@ export interface CardioInput {
   easyEffortBaselinePaceSeconds?: number | null;
   /** This athlete's own recent ALREADY-SCORED easy/recovery/long same-sport session scores (0-1000, most recent first or any order — only the median is used) — see EASY_SCORE_FLOOR_FRACTION below. A well-executed easy effort at a deliberately slower pace shouldn't score far below this athlete's demonstrated normal range for that same kind of session (user feedback), so this sets a bonus-only floor under the pace-derived score. Distinct from and safer than storedPredictionSeconds: these are real, settled past outcomes, not a lagging cross-session memory, so using them here can't reintroduce the monotonicity bug that constraint exists for. Omit/null (or fewer than MIN_RECENT_EASY_SCORES) to skip the floor entirely. */
   recentEasyEffortScores?: number[] | null;
+  /**
+   * This athlete's own personal Riegel k (see personalizeRiegelKFromWindow
+   * in cardio/race-prediction.ts) derived from their own cross-distance
+   * race/tempo/threshold history — overrides the flat system default
+   * (RIEGEL_K) for BOTH this session's own score anchor (the distance ->
+   * benchmark-distance projection every branch below runs through) and the
+   * outward-facing predictions ladder, so a genuine endurance or speed bias
+   * in this athlete's own data is reflected everywhere Riegel is used, not
+   * just the separate Tier 1/Tier 2 race-prediction memory. Omit/null to
+   * fall back to the system default everywhere (e.g. not enough of this
+   * athlete's own comparable-effort, cross-distance evidence yet).
+   */
+  personalizedRiegelK?: number | null;
 }
 
 export interface CardioResult {
@@ -517,7 +530,25 @@ export function scoreCardioActivity(input: CardioInput): CardioResult {
     input.maxHR && input.maxHR > 0 ? input.maxHR : estimateMaxHR(input.age);
   if (input.restingHR && input.restingHR > 0) flags.push('hr-personalized');
 
-  const personalization = { restingHR: input.restingHR, maxHR: hrMaxForPersonalization };
+  // Estimate resting HR from experience tier when not set — the same
+  // fallback the HR-zone mechanism below already uses for easy/recovery/long
+  // sessions, hoisted here so the PLAIN population HR-adjustment path
+  // (resolveReferenceHR in cardio-predictions.ts) gets it too. Without this,
+  // any tempo/race/threshold session for an athlete who hadn't set a resting
+  // HR fell back to a flat, sport-generic reference (175bpm for running)
+  // instead of one scaled to this athlete's own actual max HR — user
+  // feedback: a hard 6km tempo (178bpm, well below this athlete's real max)
+  // earned ~0% HR credit and read as barely faster than raw pace, because
+  // resolveReferenceHR silently drops all personalization whenever
+  // restingHR is null, even with maxHR known and an estimate one call away.
+  const restingHRIsEstimated = !input.restingHR && !!input.maxHR;
+  const effectiveRestingHR = input.restingHR ?? (input.maxHR ? estimateRestingHR(input.experience) : null);
+
+  const personalization = { restingHR: effectiveRestingHR, maxHR: hrMaxForPersonalization };
+  // This athlete's own personal Riegel k (see CardioInput.personalizedRiegelK)
+  // — falls back to the system default (RIEGEL_K, via each callee's own
+  // default parameter) when absent, same as before this was threaded in.
+  const riegelK = input.personalizedRiegelK ?? undefined;
   let sessionEquivalentSeconds: number | null;
   if (isValidIntervalWorkPiece(input.structuredInterval)) {
     sessionEquivalentSeconds = computeIntervalBenchmarkEquivalentSeconds(
@@ -525,7 +556,7 @@ export function scoreCardioActivity(input: CardioInput): CardioResult {
       intervalTotalWorkDistanceMeters(input.structuredInterval),
       intervalEquivalentPaceSecPerKm(input.structuredInterval),
       input.structuredInterval.workAvgHeartRate,
-      undefined,
+      riegelK,
       personalization
     );
     flags.push('interval-work-piece-scored');
@@ -535,7 +566,7 @@ export function scoreCardioActivity(input: CardioInput): CardioResult {
       input.structuredFartlek.onDistanceMeters,
       fartlekEquivalentPaceSecPerKm(input.structuredFartlek),
       input.structuredFartlek.onAvgHeartRate,
-      undefined,
+      riegelK,
       personalization
     );
     flags.push('fartlek-work-piece-scored');
@@ -563,7 +594,7 @@ export function scoreCardioActivity(input: CardioInput): CardioResult {
       input.distanceMeters,
       input.durationSeconds,
       input.avgHR,
-      undefined,
+      riegelK,
       personalization
     );
 
@@ -588,7 +619,8 @@ export function scoreCardioActivity(input: CardioInput): CardioResult {
           : riegelEquivalentSeconds(
               input.durationSeconds,
               input.distanceMeters,
-              BENCHMARK_DISTANCE_METERS[input.benchmarkSport]
+              BENCHMARK_DISTANCE_METERS[input.benchmarkSport],
+              riegelK
             )
         : null;
     const looksMistagged =
@@ -615,8 +647,6 @@ export function scoreCardioActivity(input: CardioInput): CardioResult {
     // low). An experience-tier estimate still personalizes on this
     // athlete's own actual max HR and avg HR reading; it's flagged as
     // estimated so the UI can be honest about the reduced confidence.
-    const restingHRIsEstimated = !input.restingHR && !!input.maxHR;
-    const effectiveRestingHR = input.restingHR ?? (input.maxHR ? estimateRestingHR(input.experience) : null);
     const hrZoneProfile = zoneEligibleSport ? computeHrZoneProfile(effectiveRestingHR, input.maxHR) : null;
     const hasHrZoneData = !!hrZoneProfile && !!input.avgHR;
     if (isRelativeEffortSession && zoneEligibleSport && !hasHrZoneData) {
@@ -847,9 +877,14 @@ export function scoreCardioActivity(input: CardioInput): CardioResult {
       // flat-out effort at that same demonstrated fitness would.
       if (anchorSeconds === null) return null;
       const benchmarkDistance = BENCHMARK_DISTANCE_METERS[input.benchmarkSport];
+      // Also personalized (input.personalizedRiegelK) rather than the
+      // experience-tier default below, when available — this athlete's own
+      // realized cross-distance k should drive how far the ladder extends
+      // OUT from the benchmark distance too, not just how the benchmark
+      // equivalent itself was computed above.
       switch (input.benchmarkSport) {
         case 'run':
-          return riegelPredictions(benchmarkDistance, anchorSeconds, input.experience);
+          return riegelPredictions(benchmarkDistance, anchorSeconds, input.experience, input.personalizedRiegelK);
         case 'row':
         case 'ski':
         case 'swim':
@@ -857,7 +892,8 @@ export function scoreCardioActivity(input: CardioInput): CardioResult {
             input.benchmarkSport,
             benchmarkDistance,
             anchorSeconds,
-            input.experience
+            input.experience,
+            input.personalizedRiegelK
           );
         case 'walk':
           return walkPacePredictions(input.distanceMeters, input.durationSeconds);

@@ -40,6 +40,7 @@ import {
   computeSessionBenchmarkEquivalentSeconds,
   impliedRiegelK,
   personalizedRiegelK,
+  RELATIVE_EFFORT_SESSION_TYPES,
   type HrPersonalization,
 } from "@/lib/scoring/cardio-predictions";
 
@@ -295,12 +296,28 @@ const MIN_DISTANCE_SEPARATION_FRACTION = 0.15;
  * dominated by pacing noise, not the real speed/endurance trade-off).
  * Returns the unchanged stored value when there isn't enough distance
  * separation to trust a new implied k.
+ *
+ * Restricted to sessions NOT tagged easy/recovery/long (user feedback: a
+ * runner's actual 5K race paired with a genuinely easy long run implied a
+ * k of ~1.6, clamped to the ceiling — nonsense, since Riegel's k describes
+ * how flat-out pace decays with distance, and an easy run's pace is by
+ * design nowhere near flat-out. Mixing effort levels into "two different
+ * distances" produces a k that measures pacing choice, not the athlete's
+ * real endurance curve, and — left unfixed — would make every long-run
+ * projection MORE conservative than the system default, the opposite of
+ * what personalizing k is for). Only race/tempo/threshold/interval/
+ * fartlek-tagged (or untagged) sessions count as comparable-effort
+ * evidence here — the same HARD_EFFORT_SESSION_TYPES boundary already used
+ * by the easy-baseline helpers below.
  */
 export function personalizeRiegelKFromWindow(
   sessions: HistorySession[],
   storedK: number | null
 ): number | null {
-  const valid = sessions.filter((s) => s.distanceMeters > 0 && s.durationSeconds > 0);
+  const comparableEffort = sessions.filter(
+    (s) => !s.sessionType || !RELATIVE_EFFORT_SESSION_TYPES.has(s.sessionType)
+  );
+  const valid = comparableEffort.filter((s) => s.distanceMeters > 0 && s.durationSeconds > 0);
   if (valid.length < 2) return storedK;
 
   const sorted = [...valid].sort((a, b) => a.distanceMeters - b.distanceMeters);
