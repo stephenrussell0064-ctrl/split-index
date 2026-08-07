@@ -793,6 +793,31 @@ export function scoreCardioActivity(input: CardioInput): CardioResult {
       }
     }
 
+    // Overall stacking cap (user feedback: a real 19.14km run at a genuine
+    // long-run pace scored as if its 5K equivalent were ~17:33 — implausibly
+    // fast). The HR-zone credit above (up to 21%), its stacked EF-baseline
+    // bonus (up to another 20%), and the long-run distance credit (up to
+    // 18%) were each independently reasoned and capped on their own, but
+    // multiplying all three together compounds to a far larger combined
+    // discount than any single mechanism was designed to allow (up to ~48%
+    // off the raw pace-projected time). This caps the TOTAL combined credit
+    // across every relative-effort mechanism above, not any one of them
+    // individually — a genuinely well-executed easy/recovery/long session
+    // can still earn meaningful credit, just not an unbounded stack of them.
+    const MAX_TOTAL_RELATIVE_EFFORT_DISCOUNT = 0.30;
+    if (
+      isRelativeEffortSession &&
+      !looksMistagged &&
+      sessionEquivalentSeconds !== null &&
+      rawProjectedSeconds !== null
+    ) {
+      const flooredByStackCap = rawProjectedSeconds * (1 - MAX_TOTAL_RELATIVE_EFFORT_DISCOUNT);
+      if (sessionEquivalentSeconds < flooredByStackCap) {
+        sessionEquivalentSeconds = flooredByStackCap;
+        flags.push('relative-effort-discount-capped');
+      }
+    }
+
     // Easy-session score floor — see EASY_SCORE_FLOOR_FRACTION's doc comment.
     // Deliberately NOT gated on which branch above scored this session
     // (HR-zone, EF-baseline-stacked, assumed-target, or plain population):
