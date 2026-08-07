@@ -804,10 +804,18 @@ export function scoreCardioActivity(input: CardioInput): CardioResult {
     // across every relative-effort mechanism above, not any one of them
     // individually — a genuinely well-executed easy/recovery/long session
     // can still earn meaningful credit, just not an unbounded stack of them.
-    // Lowered from 0.30 (user feedback, after the demonstrated-best ceiling
-    // below still wasn't enough: "this is still too high for a score, and
-    // the credit for these runs needs to be reduced slightly").
-    const MAX_TOTAL_RELATIVE_EFFORT_DISCOUNT = 0.25;
+    //
+    // A separate demonstrated-best ceiling (floor sessionEquivalentSeconds
+    // at this athlete's own recent race pace) was tried and reverted (user
+    // feedback: "i dont want a ceiling in place, i want the natural credit
+    // reduced slightly on every run") — it fixed the one reported case but
+    // made every session that happened to hit it converge on the identical
+    // number, regardless of how different their actual paces/distances
+    // were. This single knob instead scales every relative-effort session's
+    // credit down uniformly, preserving natural variation between sessions.
+    // Lowered progressively across rounds of real-data feedback: 0.30 ->
+    // 0.25 -> 0.20.
+    const MAX_TOTAL_RELATIVE_EFFORT_DISCOUNT = 0.20;
     if (
       isRelativeEffortSession &&
       !looksMistagged &&
@@ -818,37 +826,6 @@ export function scoreCardioActivity(input: CardioInput): CardioResult {
       if (sessionEquivalentSeconds < flooredByStackCap) {
         sessionEquivalentSeconds = flooredByStackCap;
         flags.push('relative-effort-discount-capped');
-      }
-    }
-
-    // Demonstrated-capability ceiling (user feedback, with real numbers: a
-    // 19.14km easy run at 47bpm resting HR credited all the way to a 17:33
-    // predicted 5K — FASTER than this athlete's own actual best-ever 5K
-    // (18:25), because their genuinely low resting HR alone makes 166bpm
-    // read as "at/below target," and that credit is legitimate on its own
-    // terms. `recentHardEffortBenchmarkSeconds` (this athlete's fastest
-    // recent race/tempo/threshold pace, already computed and passed in for
-    // the mistag guard above) is real, DEMONSTRATED evidence of this
-    // athlete's actual capability — an easy run's credited equivalent
-    // should be allowed to approach it, never exceed it.
-    //
-    // Floored at a small margin ABOVE (slower than) the literal PR, not
-    // the PR itself (user feedback, after landing exactly on the PR still
-    // read as too generous: "this is still too high... the credit for
-    // these runs needs to be reduced slightly") — an easy training run can
-    // look close to race fitness, but shouldn't fully match a dedicated
-    // race effort at the same distance.
-    const DEMONSTRATED_BEST_MARGIN = 1.03;
-    if (
-      isRelativeEffortSession &&
-      !looksMistagged &&
-      sessionEquivalentSeconds !== null &&
-      input.recentHardEffortBenchmarkSeconds != null
-    ) {
-      const demonstratedBestFloor = input.recentHardEffortBenchmarkSeconds * DEMONSTRATED_BEST_MARGIN;
-      if (sessionEquivalentSeconds < demonstratedBestFloor) {
-        sessionEquivalentSeconds = demonstratedBestFloor;
-        flags.push('relative-effort-capped-at-demonstrated-best');
       }
     }
 

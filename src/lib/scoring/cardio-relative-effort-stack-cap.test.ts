@@ -11,6 +11,14 @@ import { scoreCardioActivity, type CardioInput } from "./cardio-activity";
  * to the same sessionEquivalentSeconds for an easy/recovery/long-tagged
  * session — compounding to as much as ~48% off the raw pace-projected time,
  * far beyond what any single mechanism was designed to allow on its own.
+ *
+ * A separate demonstrated-best ceiling (floor at this athlete's own recent
+ * race pace) was tried and reverted (user feedback: "i dont want a ceiling
+ * in place, i want the natural credit reduced slightly on every run") — it
+ * fixed the one reported case but made every session that hit it converge
+ * on the identical number regardless of how different their actual paces
+ * were. This stack cap alone is the mechanism now — lowered progressively
+ * across rounds of real-data feedback: 0.30 -> 0.25 -> 0.20.
  */
 describe("scoreCardioActivity — overall stacking cap on relative-effort credit", () => {
   it("caps the combined discount even when every stackable bonus maxes out simultaneously", () => {
@@ -32,12 +40,10 @@ describe("scoreCardioActivity — overall stacking cap on relative-effort credit
     expect(result.flags).toContain("relative-effort-discount-capped");
 
     // The raw (uncredited) Riegel projection at the system default k is the
-    // reference point the cap measures against. Lowered from 30% to 25%
-    // (user feedback: "the credit for these runs needs to be reduced
-    // slightly").
+    // reference point the cap measures against.
     const rawProjectedSeconds = 6060 * Math.pow(5000 / 19140, 1.08);
     const actualDiscount = 1 - result.predictions!["5000"] / rawProjectedSeconds;
-    expect(actualDiscount).toBeLessThanOrEqual(0.26); // 25% cap + small floating-point/age-factor slack
+    expect(actualDiscount).toBeLessThanOrEqual(0.21); // 20% cap + small floating-point/age-factor slack
   });
 
   it("doesn't touch a session where the individual mechanisms never approached the cap", () => {
@@ -58,58 +64,26 @@ describe("scoreCardioActivity — overall stacking cap on relative-effort credit
     expect(result.flags).not.toContain("relative-effort-discount-capped");
   });
 
-  it("never credits an easy run's equivalent at or faster than the athlete's own demonstrated best, staying a small margin behind it (real-account regression)", () => {
-    // Real reported case: 19.14km/1:41:31/166bpm easy run, resting HR 47
-    // (genuinely low, so 166bpm reads as "at/below target" for this
-    // athlete's own zones) credited all the way to a 17:33 predicted 5K —
-    // FASTER than their actual best-ever 5K (18:25). Capping it at exactly
-    // the PR (1105s) still read as too generous per follow-up feedback
-    // ("this is still too high... credit needs to be reduced slightly"),
-    // so the floor sits a small margin (3%) slower than the literal PR —
-    // an easy run can approach race fitness, not fully match it.
-    const input: CardioInput = {
-      type: "run",
-      benchmarkSport: "run",
-      distanceMeters: 19140,
-      durationSeconds: 6091,
-      sex: "male",
+  it("different easy/long sessions still land on different numbers — no shared ceiling to converge on", () => {
+    // Direct check against the specific complaint that motivated reverting
+    // the demonstrated-best ceiling: two genuinely different sessions
+    // (different distance, pace, and HR) should score differently, not
+    // collapse onto the same capped value.
+    const base = {
+      type: "run" as const,
+      benchmarkSport: "run" as const,
+      sex: "male" as const,
       age: 19,
       restingHR: 47,
       maxHR: 205,
-      experience: "intermediate",
-      avgHR: 166,
-      sessionType: "easy",
-      elevationMeters: 119,
-      temperatureCelsius: 19,
+      experience: "intermediate" as const,
+      sessionType: "easy" as const,
       personalizedRiegelK: 1.087,
-      recentHardEffortBenchmarkSeconds: 1105, // their real 18:25 5K PR
+      recentHardEffortBenchmarkSeconds: 1105, // their real 18:25 5K PR — informational only, no longer a hard ceiling
     };
-    const result = scoreCardioActivity(input);
-    expect(result.flags).toContain("relative-effort-capped-at-demonstrated-best");
-    // Slower than the PR (never matches or beats it)...
-    expect(result.predictions!["5000"]).toBeGreaterThan(1105);
-    // ...but still within a modest margin of it, not an arbitrary distance away.
-    expect(result.predictions!["5000"]).toBeLessThan(1105 * 1.1);
-  });
-
-  it("only caps at the demonstrated best when that evidence is actually on file — no history means no ceiling to apply", () => {
-    const noHistory: CardioInput = {
-      type: "run",
-      benchmarkSport: "run",
-      distanceMeters: 19140,
-      durationSeconds: 6091,
-      sex: "male",
-      age: 19,
-      restingHR: 47,
-      maxHR: 205,
-      experience: "intermediate",
-      avgHR: 166,
-      sessionType: "easy",
-      elevationMeters: 119,
-      temperatureCelsius: 19,
-    };
-    const result = scoreCardioActivity(noHistory);
-    expect(result.flags).not.toContain("relative-effort-capped-at-demonstrated-best");
+    const nineteenKm = scoreCardioActivity({ ...base, distanceMeters: 19140, durationSeconds: 6091, avgHR: 166 });
+    const twelveKm = scoreCardioActivity({ ...base, distanceMeters: 12520, durationSeconds: 3929, avgHR: 166 });
+    expect(nineteenKm.predictions!["5000"]).not.toBeCloseTo(twelveKm.predictions!["5000"], 0);
   });
 
   it("never applies to race/tempo sessions — the cap is scoped to relative-effort (easy/recovery/long) scoring only", () => {
