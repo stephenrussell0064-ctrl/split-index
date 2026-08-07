@@ -56,6 +56,58 @@ describe("scoreCardioActivity — overall stacking cap on relative-effort credit
     expect(result.flags).not.toContain("relative-effort-discount-capped");
   });
 
+  it("never credits an easy run's equivalent faster than the athlete's own demonstrated best (real-account regression)", () => {
+    // Real reported case: 19.14km/1:41:31/166bpm easy run, resting HR 47
+    // (genuinely low, so 166bpm reads as "at/below target" for this
+    // athlete's own zones) credited all the way to a 17:33 predicted 5K —
+    // FASTER than their actual best-ever 5K (18:25) — even after the 30%
+    // stack cap above, since the HR-zone credit alone is legitimate on its
+    // own terms. The missing piece: recentHardEffortBenchmarkSeconds (their
+    // real, demonstrated best) should be a hard ceiling credit can approach
+    // but never beat.
+    const input: CardioInput = {
+      type: "run",
+      benchmarkSport: "run",
+      distanceMeters: 19140,
+      durationSeconds: 6091,
+      sex: "male",
+      age: 19,
+      restingHR: 47,
+      maxHR: 205,
+      experience: "intermediate",
+      avgHR: 166,
+      sessionType: "easy",
+      elevationMeters: 119,
+      temperatureCelsius: 19,
+      personalizedRiegelK: 1.087,
+      recentHardEffortBenchmarkSeconds: 1105, // their real 18:25 5K PR
+    };
+    const result = scoreCardioActivity(input);
+    expect(result.flags).toContain("relative-effort-capped-at-demonstrated-best");
+    // Capped at exactly their proven best, not faster.
+    expect(result.predictions!["5000"]).toBeCloseTo(1105, 0);
+  });
+
+  it("only caps at the demonstrated best when that evidence is actually on file — no history means no ceiling to apply", () => {
+    const noHistory: CardioInput = {
+      type: "run",
+      benchmarkSport: "run",
+      distanceMeters: 19140,
+      durationSeconds: 6091,
+      sex: "male",
+      age: 19,
+      restingHR: 47,
+      maxHR: 205,
+      experience: "intermediate",
+      avgHR: 166,
+      sessionType: "easy",
+      elevationMeters: 119,
+      temperatureCelsius: 19,
+    };
+    const result = scoreCardioActivity(noHistory);
+    expect(result.flags).not.toContain("relative-effort-capped-at-demonstrated-best");
+  });
+
   it("never applies to race/tempo sessions — the cap is scoped to relative-effort (easy/recovery/long) scoring only", () => {
     const race: CardioInput = {
       type: "run",

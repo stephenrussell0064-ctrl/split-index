@@ -818,6 +818,30 @@ export function scoreCardioActivity(input: CardioInput): CardioResult {
       }
     }
 
+    // Demonstrated-capability ceiling (user feedback, with real numbers: a
+    // 19.14km easy run at 47bpm resting HR credited all the way to a 17:33
+    // predicted 5K — FASTER than this athlete's own actual best-ever 5K
+    // (18:25) despite the 30% stack cap above, because their genuinely low
+    // resting HR alone makes 166bpm read as "at/below target," and that
+    // credit is legitimate on its own terms. What's missing is a check
+    // against reality: `recentHardEffortBenchmarkSeconds` (this athlete's
+    // fastest recent race/tempo/threshold pace, already computed and passed
+    // in for the mistag guard above) is real, DEMONSTRATED evidence of this
+    // athlete's actual capability — an easy run's credited equivalent
+    // should be allowed to approach it, never exceed it. HR-zone credit can
+    // make a good easy run look as good as your PR; it can't make it better
+    // than your PR.
+    if (
+      isRelativeEffortSession &&
+      !looksMistagged &&
+      sessionEquivalentSeconds !== null &&
+      input.recentHardEffortBenchmarkSeconds != null &&
+      sessionEquivalentSeconds < input.recentHardEffortBenchmarkSeconds
+    ) {
+      sessionEquivalentSeconds = input.recentHardEffortBenchmarkSeconds;
+      flags.push('relative-effort-capped-at-demonstrated-best');
+    }
+
     // Easy-session score floor — see EASY_SCORE_FLOOR_FRACTION's doc comment.
     // Deliberately NOT gated on which branch above scored this session
     // (HR-zone, EF-baseline-stacked, assumed-target, or plain population):
