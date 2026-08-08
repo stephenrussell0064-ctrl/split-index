@@ -5,6 +5,7 @@ import {
   endOfMonth,
   startOfYear,
   endOfYear,
+  subDays,
   subWeeks,
   subMonths,
   subYears,
@@ -138,7 +139,20 @@ export function buildTrendSeries(
   );
 
   if (granularity === "week") {
-    return collapseToLastPerDay(sorted).map((h) => ({
+    // Bug (user feedback: the week/month/year toggle "doesn't work"):
+    // history passed in can span up to a year, but this branch labeled
+    // every point with just a weekday name ("Mon", "Tue", ...) and no date
+    // — with more than 7 real days of history that's up to 52+ points all
+    // sharing the same 7 x-axis labels, rendering as a scrambled, unreadable
+    // chart that looked identical regardless of which toggle was selected.
+    // Fix: actually window to the last 7 days before collapsing, so "week"
+    // shows what it says — one point per day, this week only.
+    // 6 days back + today = exactly 7 distinct calendar days, so "EEE"
+    // weekday labels stay unique (subDays(now, 7) would include an 8th day
+    // and wrap a weekday label back onto itself).
+    const weekStart = subDays(new Date(), 6);
+    const lastWeek = sorted.filter((h) => new Date(h.recorded_at) >= weekStart);
+    return collapseToLastPerDay(lastWeek).map((h) => ({
       date: format(new Date(h.recorded_at), "EEE"),
       split: h.split_index,
       endurance: h.endurance_index,
