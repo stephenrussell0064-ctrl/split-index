@@ -134,8 +134,8 @@ export function HeroSplit() {
             Every set scored against your history and international strength standards.
           </p>
           <GaugeRing
-            value={724}
-            max={1000}
+            value={72.4}
+            max={100}
             color="#3DFF6E"
             track="#1B241D"
             label="Strength Index"
@@ -165,8 +165,8 @@ export function HeroSplit() {
             Pace, heart rate and splits fused into one honest endurance score.
           </p>
           <GaugeRing
-            value={691}
-            max={1000}
+            value={69.1}
+            max={100}
             color="#3BA6FF"
             track="#DCEAF7"
             label="Running Index"
@@ -188,7 +188,7 @@ export function HeroSplit() {
         style={{ left: `${split}%` }}
       >
         <div className="composite-ring">
-          <p className="font-display text-[52px] font-black text-white">708</p>
+          <p className="font-display text-[52px] font-black text-white">70.8</p>
           <p className="mt-1 text-[10px] uppercase tracking-[0.3em] text-white/60">
             Split Index
           </p>

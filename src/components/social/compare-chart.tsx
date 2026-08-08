@@ -62,6 +62,7 @@ export function CompareChart({ series, height = 260 }: CompareChartProps) {
           tickLine={false}
           tick={{ fontSize: 10 }}
           width={44}
+          tickFormatter={(v) => formatIndex(Number(v))}
         />
         <Tooltip
           contentStyle={chartTooltipStyle}

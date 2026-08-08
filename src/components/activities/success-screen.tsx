@@ -147,7 +147,7 @@ export function SuccessScreen({
               isGym ? "text-gym-accent" : "text-cardio-accent"
             )}
           >
-            {sportIndex}
+            {formatIndex(sportIndex)}
           </p>
           <p className="mt-2 text-center text-sm font-medium">{result.sportLabel}</p>
           {!isGym && result.sessionType && RELATIVE_EFFORT_SESSION_TYPES.has(result.sessionType) && (

@@ -2,7 +2,7 @@ import { REFERENCE_WATTS_PER_KG } from "@/lib/scoring/constants";
 import { referencePaceForSport } from "@/lib/scoring/engine";
 import { EXRX_TIER_LABELS, type ExRxTier } from "@/lib/scoring/strength/ratio-tiers";
 import type { EnduranceSport, ExperienceLevel, Gender, SportType } from "@/types";
-import { formatPace } from "@/lib/utils/format";
+import { formatIndex, formatPace } from "@/lib/utils/format";
 
 /** e.g. 1.23 → "1.2× bodyweight" */
 export function formatRelativeStrength(ratio: number, short = false): string {
@@ -48,14 +48,14 @@ export function formatStrengthHeadline(
   return `DOTS ${formatDOTS(dots)} · bodyweight-adjusted total`;
 }
 
-/** Split Index breakdown copy: "412 cardio + 388 strength" */
+/** Split Index breakdown copy: "41.2 cardio + 38.8 strength" (0–100 display scale) */
 export function formatSplitBreakdown(
   enduranceIndex: number,
   strengthIndex: number,
   enduranceWeightPct = 50
 ): string {
   const strPct = 100 - enduranceWeightPct;
-  return `${Math.round(enduranceIndex)} cardio + ${Math.round(strengthIndex)} strength (${enduranceWeightPct}/${strPct})`;
+  return `${formatIndex(enduranceIndex)} cardio + ${formatIndex(strengthIndex)} strength (${enduranceWeightPct}/${strPct})`;
 }
 
 /** Per-lift breakdown line with optional ExRx tier. */

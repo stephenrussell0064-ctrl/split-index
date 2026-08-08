@@ -67,7 +67,7 @@ export function GymZonePanel({
                         animate={{ height: `${(s.score / maxScore) * 100}%` }}
                         transition={{ delay: 0.3 + i * 0.05, duration: 0.5 }}
                         className="flex-1 rounded-t bg-gradient-to-t from-gym-accent/80 to-gym-accent-soft/40 min-h-[4px]"
-                        title={`${s.score}`}
+                        title={formatIndex(s.score)}
                       />
                     ))}
                   </div>

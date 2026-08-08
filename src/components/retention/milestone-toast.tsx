@@ -9,6 +9,7 @@ import {
   getCelebratedMilestones,
   type IndexMilestone,
 } from "@/lib/retention/milestones";
+import { formatIndex } from "@/lib/utils/format";
 
 interface MilestoneToastProps {
   previousIndex: number;
@@ -51,7 +52,7 @@ export function MilestoneToast({
           <div>
             <p className="text-sm font-semibold">Index milestone</p>
             <p className="text-xs text-muted">
-              You crossed {milestone} — elite territory awaits.
+              You crossed {formatIndex(milestone)} — elite territory awaits.
             </p>
           </div>
         </motion.div>

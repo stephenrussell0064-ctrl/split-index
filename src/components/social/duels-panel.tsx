@@ -9,8 +9,16 @@ import { Select } from "@/components/ui/input";
 import { UserAvatar } from "@/components/social/user-avatar";
 import { SPORTS } from "@/lib/constants/sports";
 import { format } from "date-fns";
+import { formatIndex } from "@/lib/utils/format";
 import type { DuelMetric, DuelWithStandings } from "@/lib/social/types";
 import type { FriendConnection } from "@/lib/social/types";
+
+/** "speed"/"strength" duels compare raw Split Index (0–1000 internal) scores — rescale for display. "sessions"/"load" are plain counts/AU, not index-scale. */
+function formatDuelScore(score: number, metric: DuelMetric): string {
+  return metric === "speed" || metric === "strength"
+    ? formatIndex(score)
+    : Math.round(score).toLocaleString();
+}
 
 const METRIC_LABELS: Record<DuelMetric, string> = {
   sessions: "Most sessions logged",
@@ -72,7 +80,7 @@ function DuelRow({
                 <Crown className="ml-1 inline h-3 w-3 text-warning" />
               )}
             </p>
-            <p className="text-lg font-bold tabular-nums">{me.score}</p>
+            <p className="text-lg font-bold tabular-nums">{formatDuelScore(me.score, duel.metric)}</p>
           </div>
         </div>
         <Swords className="h-4 w-4 shrink-0 text-muted" />
@@ -84,7 +92,7 @@ function DuelRow({
               )}
               {participantName(them)}
             </p>
-            <p className="text-lg font-bold tabular-nums">{them.score}</p>
+            <p className="text-lg font-bold tabular-nums">{formatDuelScore(them.score, duel.metric)}</p>
           </div>
           <UserAvatar name={participantName(them)} avatarUrl={them.avatarUrl} size="sm" />
         </div>

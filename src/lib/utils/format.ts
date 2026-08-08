@@ -28,13 +28,26 @@ export function formatDistance(meters: number): string {
   return `${Math.round(meters)} m`;
 }
 
+/**
+ * Split Index scores are computed internally on a 0–1000 scale (all
+ * calibration, tests, and stored history stay in that space — rescaling
+ * there would mean re-deriving every anchor/threshold in this codebase).
+ * This is the single rescale-to-display boundary: divide by 10 for the
+ * user-facing 0–100 scale, decimals only where the result isn't a whole
+ * number (user feedback: "rescale all scores from 0-1000 to 0-100, using
+ * decimals where required").
+ */
+const DISPLAY_SCALE = 10;
+
 export function formatIndex(value: number): string {
-  return Math.round(value).toLocaleString();
+  const rescaled = value / DISPLAY_SCALE;
+  return Number.isInteger(rescaled) ? rescaled.toLocaleString() : rescaled.toFixed(1);
 }
 
 export function formatTrend(value: number): string {
-  const sign = value >= 0 ? "+" : "";
-  return `${sign}${value.toFixed(1)}`;
+  const rescaled = value / DISPLAY_SCALE;
+  const sign = rescaled >= 0 ? "+" : "";
+  return `${sign}${rescaled.toFixed(1)}`;
 }
 
 export function formatWeight(kg: number): string {

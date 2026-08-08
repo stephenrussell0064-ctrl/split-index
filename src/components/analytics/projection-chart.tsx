@@ -53,6 +53,7 @@ export function ProjectionChart({ data }: ProjectionChartProps) {
                   tickLine={false}
                   tick={{ fontSize: 10 }}
                   width={44}
+                  tickFormatter={(v) => formatIndex(Number(v))}
                 />
                 <Tooltip
                   contentStyle={chartTooltipStyle}

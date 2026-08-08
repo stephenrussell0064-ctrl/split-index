@@ -2,6 +2,7 @@ import { Share2, TrendingUp, TrendingDown, Gauge } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { buttonVariants } from "@/components/ui/button";
 import { PremiumTease } from "@/components/premium/premium-tease";
+import { formatIndex } from "@/lib/utils/format";
 import type { HybridAthleteReport } from "@/lib/scoring/hybrid-report";
 
 const SAMPLE_REPORT: HybridAthleteReport = {
@@ -26,7 +27,7 @@ function ReportContent({ report }: { report: HybridAthleteReport }) {
           <p className="micro-label mb-1 text-muted">Split Index trend</p>
           {report.scoreTrend.startIndex !== null && report.scoreTrend.endIndex !== null ? (
             <div className="flex items-center gap-2">
-              <p className="text-2xl font-bold tabular-nums">{report.scoreTrend.endIndex}</p>
+              <p className="text-2xl font-bold tabular-nums">{formatIndex(report.scoreTrend.endIndex)}</p>
               <span
                 className={`flex items-center gap-1 text-xs font-medium ${scoreUp ? "text-success" : "text-danger"}`}
               >

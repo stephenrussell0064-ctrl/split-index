@@ -9,6 +9,7 @@ import { Input, Select } from "@/components/ui/input";
 import { SkuPicker } from "@/components/pricing/sku-picker";
 import { tierForScore } from "@/lib/scoring/split-strength-engine";
 import { PRICING } from "@/lib/pricing/config";
+import { formatIndex } from "@/lib/utils/format";
 import type { SportType } from "@/types";
 
 const QUICK_LIFTS = [
@@ -225,7 +226,7 @@ export function ScoreRevealSequence({
           >
             <Sparkles className="h-6 w-6 text-accent" />
             <span className="font-display text-6xl font-black tabular-nums">
-              {displayValue}
+              {formatIndex(displayValue)}
             </span>
           </motion.div>
           {tier && (

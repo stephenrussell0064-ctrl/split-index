@@ -82,12 +82,12 @@ export function ProductShowcase() {
               <div className="grid grid-cols-2 gap-3 p-4">
                 <div className="rounded-xl border border-gym-accent/20 bg-gym-bg p-4">
                   <p className="text-[9px] uppercase tracking-widest text-gym-accent">The Lab</p>
-                  <p className="font-display mt-2 text-2xl font-bold text-gym-accent">724</p>
+                  <p className="font-display mt-2 text-2xl font-bold text-gym-accent">72.4</p>
                   <Sparkline color="#3DFF6E" points="0,22 12,18 24,14 36,10 48,8 60,6 72,4" />
                 </div>
                 <div className="rounded-xl border border-cardio-accent/25 bg-cardio-bg p-4">
                   <p className="text-[9px] uppercase tracking-widest text-[#0B69C7]">The Engine</p>
-                  <p className="font-display mt-2 text-2xl font-bold text-cardio-accent">691</p>
+                  <p className="font-display mt-2 text-2xl font-bold text-cardio-accent">69.1</p>
                   <Sparkline color="#3BA6FF" points="0,20 12,16 24,18 36,12 48,14 60,8 72,10" />
                 </div>
               </div>
@@ -98,9 +98,9 @@ export function ProductShowcase() {
               <p className="text-[9px] uppercase tracking-widest text-white/40">Logbook</p>
               <div className="mt-3 space-y-2">
                 {[
-                  { zone: "lab", title: "Push Day", score: "718", pts: "0,18 18,14 36,10 54,8 72,6" },
-                  { zone: "eng", title: "5K Run", score: "684", pts: "0,20 18,16 36,12 54,14 72,8" },
-                  { zone: "lab", title: "Pull Day", score: "731", pts: "0,22 18,20 36,16 54,12 72,10" },
+                  { zone: "lab", title: "Push Day", score: "71.8", pts: "0,18 18,14 36,10 54,8 72,6" },
+                  { zone: "eng", title: "5K Run", score: "68.4", pts: "0,20 18,16 36,12 54,14 72,8" },
+                  { zone: "lab", title: "Pull Day", score: "73.1", pts: "0,22 18,20 36,16 54,12 72,10" },
                 ].map((row) => (
                   <div
                     key={row.title}

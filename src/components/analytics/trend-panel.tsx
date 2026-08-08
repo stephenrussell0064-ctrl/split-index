@@ -96,6 +96,7 @@ export function TrendPanel({ data, granularity }: TrendPanelProps) {
                   tickLine={false}
                   tick={{ fontSize: 10 }}
                   width={44}
+                  tickFormatter={(v) => formatIndex(Number(v))}
                 />
                 <Tooltip
                   contentStyle={chartTooltipStyle}

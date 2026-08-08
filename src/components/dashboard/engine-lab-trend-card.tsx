@@ -125,7 +125,13 @@ export function EngineLabTrendCard({
             </defs>
             <CartesianGrid vertical={false} strokeDasharray="3 6" stroke={chartGridStroke} />
             <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: chartTickFill }} />
-            <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: chartTickFill }} width={32} />
+            <YAxis
+              axisLine={false}
+              tickLine={false}
+              tick={{ fontSize: 10, fill: chartTickFill }}
+              width={32}
+              tickFormatter={(v) => formatIndex(Number(v))}
+            />
             <Tooltip
               contentStyle={chartTooltipStyle}
               formatter={(value, name) => [formatIndex(Number(value)), name === "endurance" ? "Engine" : "Lab"]}

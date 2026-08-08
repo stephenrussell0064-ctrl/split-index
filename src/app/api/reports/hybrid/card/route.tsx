@@ -2,6 +2,7 @@ import { ImageResponse } from "next/og";
 import { createClient } from "@/lib/supabase/server";
 import { fetchLatestHybridReport } from "@/lib/scoring/hybrid-report-data";
 import { isPremiumUser } from "@/lib/retention/trial";
+import { formatIndex } from "@/lib/utils/format";
 
 const CARD_WIDTH = 1200;
 const CARD_HEIGHT = 630;
@@ -35,7 +36,7 @@ export async function GET() {
   const name = profile.display_name ?? profile.username ?? "This athlete";
   const scoreLine =
     report.scoreTrend.startIndex !== null && report.scoreTrend.endIndex !== null
-      ? `Split Index ${report.scoreTrend.startIndex} → ${report.scoreTrend.endIndex} (${
+      ? `Split Index ${formatIndex(report.scoreTrend.startIndex)} → ${formatIndex(report.scoreTrend.endIndex)} (${
           report.scoreTrend.deltaPct !== null && report.scoreTrend.deltaPct >= 0 ? "+" : ""
         }${report.scoreTrend.deltaPct ?? "—"}%)`
       : "Split Index — building history this period";
