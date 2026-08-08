@@ -115,6 +115,7 @@ function RaceRow({ race, onDelete }: { race: PlannedRace; onDelete: (id: string)
 
 export function UpcomingRacesPanel() {
   const [races, setRaces] = useState<PlannedRace[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -126,19 +127,35 @@ export function UpcomingRacesPanel() {
   const [elevationGainMeters, setElevationGainMeters] = useState("");
 
   async function loadRaces() {
-    const res = await fetch("/api/races");
-    if (res.ok) {
+    try {
+      const res = await fetch("/api/races");
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setLoadError(body.error ?? `Could not load races (${res.status})`);
+        return;
+      }
       const data = await res.json();
       setRaces(data.races);
+      setLoadError(null);
+    } catch {
+      setLoadError("Could not reach the server — check your connection and try again.");
     }
   }
 
   useEffect(() => {
     void (async () => {
-      const res = await fetch("/api/races");
-      if (res.ok) {
+      try {
+        const res = await fetch("/api/races");
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          setLoadError(body.error ?? `Could not load races (${res.status})`);
+          return;
+        }
         const data = await res.json();
         setRaces(data.races);
+        setLoadError(null);
+      } catch {
+        setLoadError("Could not reach the server — check your connection and try again.");
       }
     })();
   }, []);
@@ -257,7 +274,18 @@ export function UpcomingRacesPanel() {
           </form>
         )}
 
-        {races === null ? (
+        {loadError ? (
+          <div className="py-4 text-center">
+            <p className="text-sm text-danger">{loadError}</p>
+            <button
+              type="button"
+              onClick={() => loadRaces()}
+              className="mt-2 text-xs text-accent underline"
+            >
+              Try again
+            </button>
+          </div>
+        ) : races === null ? (
           <p className="py-4 text-center text-sm text-muted">Loading…</p>
         ) : races.length === 0 ? (
           <p className="py-4 text-center text-sm text-muted">

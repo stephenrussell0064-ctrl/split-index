@@ -20,6 +20,7 @@ import { FocusWeekCard } from "@/components/retention/focus-week-card";
 import { NextRankCard } from "@/components/retention/next-rank-card";
 import { EmptyDashboardHero } from "@/components/retention/empty-dashboard-hero";
 import { InterferenceRadarCard } from "@/components/analytics/interference-radar-card";
+import { UpcomingRacesPanel } from "@/components/analytics/upcoming-races-panel";
 import { ReadinessCard } from "@/components/dashboard/readiness-card";
 import { TodayCard } from "@/components/dashboard/today-card";
 import { INTERFERENCE_LOOKBACK_DAYS } from "@/lib/scoring/interference-data";
@@ -446,6 +447,13 @@ export default async function DashboardPage() {
           latestPr={(latestPersonalRecord as PersonalRecord | null) ?? null}
         />
       )}
+
+      {/* User feedback: "i want this feature on the dashboard, and easy to
+          find" — not gated behind hasActivities, since adding an upcoming
+          race is useful even before a user has logged their first session
+          (they still get a base prediction once they have one, and can add
+          the race itself right away). */}
+      <UpcomingRacesPanel />
 
       {hasActivities && (
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
