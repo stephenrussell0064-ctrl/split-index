@@ -114,6 +114,7 @@ export function InterferenceDetail({ report }: { report: InterferenceReport }) {
   const { strengthToCardio, cardioToStrength } = report;
   const hasRealFinding = hasShareableFinding(report);
   const headlineBucket = pickHeadlineBucket(strengthToCardio.decayByDay);
+  const populatedBuckets = strengthToCardio.decayByDay.filter((d) => d.sampleCount > 0);
 
   return (
     <div className="space-y-6">
@@ -251,52 +252,58 @@ export function InterferenceDetail({ report }: { report: InterferenceReport }) {
                 deltaPct={headlineBucket?.efDeltaPct ?? null}
                 sentence={strengthToCardio.summary}
               />
-              <div role="img" aria-label="Efficiency delta by days since last strength session">
-                <ResponsiveContainer width="100%" height={220}>
-                  <BarChart
-                    data={strengthToCardio.decayByDay.filter((d) => d.sampleCount > 0)}
-                    margin={{ top: 20, right: 4, left: -8, bottom: 0 }}
-                  >
-                    <CartesianGrid vertical={false} strokeDasharray="3 6" stroke={chartGridStroke} />
-                    <XAxis
-                      dataKey="daysSinceStrength"
-                      tickFormatter={(v) => dayLabel(Number(v))}
-                      axisLine={false}
-                      tickLine={false}
-                      tick={{ fontSize: 10, fill: chartTickFill }}
-                    />
-                    <YAxis
-                      axisLine={false}
-                      tickLine={false}
-                      tick={{ fontSize: 10, fill: chartTickFill }}
-                      width={40}
-                      tickFormatter={(v) => `${v}%`}
-                    />
-                    <ReferenceLine
-                      y={0}
-                      stroke={chartGridStroke}
-                      label={{
-                        value: "0% = your normal rested pace",
-                        position: "insideTopLeft",
-                        fill: chartTickFill,
-                        fontSize: 10,
-                      }}
-                    />
-                    <Tooltip
-                      contentStyle={chartTooltipStyle}
-                      formatter={(value) => [`${value}%`, "vs. your normal rested pace"]}
-                      labelFormatter={(v) => dayLabel(Number(v))}
-                    />
-                    <Bar dataKey="efDeltaPct" radius={[4, 4, 4, 4]}>
-                      <LabelList
-                        dataKey="efDeltaPct"
-                        position="top"
-                        formatter={(v) => `${Number(v) > 0 ? "+" : ""}${v}%`}
-                        style={{ fontSize: 10, fill: chartTickFill }}
+              {/* A bar chart with only one populated day-bucket renders as a
+                  single bar filling nearly the whole width, on an axis
+                  Recharts auto-pads out with headroom (e.g. 0% to -4% for a
+                  real -1.3% value) — visually implies something far more
+                  dramatic than it is and adds confusion, not clarity (user
+                  feedback, with a screenshot of exactly this: "this graph
+                  is still too difficult to read and understand"). The
+                  headline stat above already states the number plainly;
+                  the chart only earns its place once there's more than one
+                  distinct day to actually compare. */}
+              {populatedBuckets.length > 1 ? (
+                <div role="img" aria-label="Efficiency delta by days since last strength session">
+                  <ResponsiveContainer width="100%" height={220}>
+                    <BarChart data={populatedBuckets} margin={{ top: 20, right: 4, left: -8, bottom: 0 }}>
+                      <CartesianGrid vertical={false} strokeDasharray="3 6" stroke={chartGridStroke} />
+                      <XAxis
+                        dataKey="daysSinceStrength"
+                        tickFormatter={(v) => dayLabel(Number(v))}
+                        axisLine={false}
+                        tickLine={false}
+                        tick={{ fontSize: 10, fill: chartTickFill }}
                       />
-                      {strengthToCardio.decayByDay
-                        .filter((d) => d.sampleCount > 0)
-                        .map((d) => (
+                      <YAxis
+                        axisLine={false}
+                        tickLine={false}
+                        tick={{ fontSize: 10, fill: chartTickFill }}
+                        width={40}
+                        tickFormatter={(v) => `${v}%`}
+                      />
+                      <ReferenceLine
+                        y={0}
+                        stroke={chartGridStroke}
+                        label={{
+                          value: "0% = your normal rested pace",
+                          position: "insideTopLeft",
+                          fill: chartTickFill,
+                          fontSize: 10,
+                        }}
+                      />
+                      <Tooltip
+                        contentStyle={chartTooltipStyle}
+                        formatter={(value) => [`${value}%`, "vs. your normal rested pace"]}
+                        labelFormatter={(v) => dayLabel(Number(v))}
+                      />
+                      <Bar dataKey="efDeltaPct" radius={[4, 4, 4, 4]}>
+                        <LabelList
+                          dataKey="efDeltaPct"
+                          position="top"
+                          formatter={(v) => `${Number(v) > 0 ? "+" : ""}${v}%`}
+                          style={{ fontSize: 10, fill: chartTickFill }}
+                        />
+                        {populatedBuckets.map((d) => (
                           <Cell
                             key={d.daysSinceStrength}
                             fill={
@@ -304,10 +311,17 @@ export function InterferenceDetail({ report }: { report: InterferenceReport }) {
                             }
                           />
                         ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <p className="rounded-xl border border-white/5 bg-white/[0.02] px-4 py-3 text-xs text-muted">
+                  A day-by-day breakdown appears once you&apos;ve logged {strengthToCardio.primarySport?.replace("_", " ")}{" "}
+                  sessions on more than one day relative to a strength session — right now everything
+                  so far falls on &quot;{dayLabel(headlineBucket?.daysSinceStrength ?? 0).toLowerCase()}&quot;.
+                </p>
+              )}
               <p className="mt-2 text-xs text-muted">
                 Based on {strengthToCardio.sampleCount} qualifying {strengthToCardio.primarySport?.replace("_", " ")}{" "}
                 sessions tagged easy/recovery/long — deliberately slow efforts, so a real change in

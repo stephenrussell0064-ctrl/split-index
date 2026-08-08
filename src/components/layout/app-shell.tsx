@@ -78,8 +78,15 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
   const modeOverride = useModeOverride();
   // The pathname's own mode always wins when it has one (/gym, /cardio) —
   // the override only fills in for pages whose pathname can't encode a mode
-  // (the generic log/edit activity forms), themed off whatever sport is
-  // currently selected instead (see mode-override-context.tsx).
+  // (the generic log/edit activity forms, activity detail), themed off
+  // whatever sport is currently selected/being viewed instead (see
+  // mode-override-context.tsx). A `?zone=` query-param approach (read
+  // synchronously via useSearchParams, no post-hydration delay) was tried
+  // here first to close the flash-of-wrong-theme gap entirely, but
+  // useSearchParams() in a component wrapping the whole app shell forces
+  // every page under it out of static prerendering — broke the production
+  // build on /activities/new. Reverted; see mode-override-context.tsx for
+  // the (real, but narrower) useLayoutEffect fix that's in place instead.
   const mode = pathnameMode !== "neutral" ? pathnameMode : (modeOverride ?? "neutral");
   const showTopBar = pathname !== "/onboarding";
   const showBackButton = !TOP_LEVEL_ROUTES.has(pathname);

@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useLayoutEffect, useState, type ReactNode } from "react";
 
 /**
  * The gym ("The Lab", dark theme) vs cardio ("The Engine", light theme)
@@ -45,13 +45,24 @@ export function useModeOverride(): ModeOverride {
 
 /**
  * Called by a page whose pathname doesn't encode a mode (generic log/edit
- * forms) to theme the shell off the currently-selected sport instead.
- * Automatically clears itself on unmount so leaving the page doesn't leave
- * a stale override behind for whatever's rendered next.
+ * forms, and — as a fallback for entry points without a `?zone=` query
+ * param, see app-shell.tsx — activity detail) to theme the shell off the
+ * currently-selected sport instead. Automatically clears itself on unmount
+ * so leaving the page doesn't leave a stale override behind for whatever's
+ * rendered next.
+ *
+ * useLayoutEffect, not useEffect: this only ever fires post-hydration
+ * anyway (an SSR'd page still paints once with no override applied, since
+ * the server can't run this hook), but useLayoutEffect flushes the mode
+ * change to the DOM before the browser paints that hydrated frame, instead
+ * of after — closing a second, easily-missed flash where the page stayed
+ * on the wrong theme for an extra tick post-hydration before starting its
+ * transition. Real but narrower gap than the query-param fix in
+ * app-shell.tsx actually closes; kept as a fallback, not the primary fix.
  */
 export function useSetModeOverride(mode: ModeOverride): void {
   const { setOverride } = useModeOverrideContext();
-  useEffect(() => {
+  useLayoutEffect(() => {
     setOverride(mode);
     return () => setOverride(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
