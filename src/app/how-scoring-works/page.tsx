@@ -314,6 +314,32 @@ export default async function HowScoringWorksPage() {
               </p>
             </section>
 
+            <section id="fitness-estimates">
+              <h2 className="text-lg font-semibold text-foreground">Lactate threshold and VO2max</h2>
+              <p className="mt-3">
+                Neither of these is a lab measurement — no consumer wearable measures actual blood
+                lactate or gas exchange, Garmin included. Both are estimated from your own logged
+                training the same way every mainstream platform does it.
+              </p>
+              <p className="mt-3">
+                <strong className="text-foreground">Lactate threshold</strong> uses your own
+                sessions explicitly tagged &quot;Threshold&quot; or &quot;Tempo&quot; — sustained
+                efforts of 15 to 70 minutes. Races are deliberately excluded: a 5K sits near your
+                VO2max effort, a marathon sits well below threshold, and mixing the two in would
+                corrupt the estimate. The average heart rate and pace across your most recent
+                (up to 3) qualifying sessions becomes the reading — more sessions means higher
+                confidence, not a different number.
+              </p>
+              <p className="mt-3">
+                <strong className="text-foreground">VO2max</strong> uses Jack Daniels and Jimmy
+                Gilbert&apos;s published VDOT formula, applied to your most recent logged race, or
+                your predicted 5K time if you haven&apos;t logged a race recently. VDOT corrects
+                for how long an effort was sustained, which is why it&apos;s calculated from a
+                genuine hard effort rather than an easy run — feeding it an easy pace would read
+                as a much lower fitness level than you actually have.
+              </p>
+            </section>
+
             <section id="dots-gl">
               <h2 className="text-lg font-semibold text-foreground">Strength Index: DOTS and IPF GL</h2>
               <p className="mt-3">

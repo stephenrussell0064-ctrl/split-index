@@ -23,10 +23,12 @@ import { InjuryRiskPanel } from "./injury-risk-panel";
 import { AcwrTrendChart } from "./acwr-trend-chart";
 import { computeAcwrTrend } from "@/lib/scoring/injury-risk";
 import { StoredPredictionsPanel } from "./stored-predictions-panel";
+import { FitnessEstimatesPanel } from "./fitness-estimates-panel";
 import { PremiumGate } from "./premium-gate";
 import { PremiumTease } from "@/components/premium/premium-tease";
 import {
   buildFatigueRecoverySeries,
+  buildFitnessEstimates,
   buildHeatmapDays,
   buildHrZoneDistribution,
   buildMovingAverages,
@@ -101,6 +103,11 @@ export function AnalyticsClient({ data }: { data: AnalyticsPayload }) {
   const trendData = useMemo(
     () => buildTrendSeries(data.indexHistory, granularity),
     [data.indexHistory, granularity]
+  );
+
+  const fitnessEstimates = useMemo(
+    () => buildFitnessEstimates(data.activities, data.predictedBenchmarks),
+    [data.activities, data.predictedBenchmarks]
   );
 
   const movingAvgData = useMemo(
@@ -296,6 +303,17 @@ export function AnalyticsClient({ data }: { data: AnalyticsPayload }) {
         benchmarks={data.predictedBenchmarks}
         strengthEstimates={data.strengthEstimates}
         isPremium={data.isPremium}
+      />
+
+      {/* User feedback: "what other data can I add in that we don't
+          already have, e.g. can you compute a lactate threshold or
+          additional features which Garmin has." Sits alongside the other
+          prediction panels, above every graph — same reasoning as
+          StoredPredictionsPanel above. Self-hides when neither estimate
+          has enough data yet, rather than showing two empty states. */}
+      <FitnessEstimatesPanel
+        lactateThreshold={fitnessEstimates.lactateThreshold}
+        vo2max={fitnessEstimates.vo2max}
       />
 
       <div id="recovery" className="scroll-mt-6">

@@ -24,6 +24,7 @@ import type {
   MovingAveragePoint,
   PeriodMetrics,
   PeriodPreset,
+  PredictedBenchmark,
   ProjectionPoint,
   SportFilter,
   TrendGranularity,
@@ -34,6 +35,12 @@ import type { SplitIndexSnapshot } from "@/types";
 
 import { forecastSplitIndexFromHistory } from "@/lib/premium/projection";
 import { localDateKeyInTz, resolveTimezone } from "@/lib/utils/timezone";
+import {
+  estimateLactateThreshold,
+  estimateRaceEffortVo2Max,
+  type LactateThresholdEstimate,
+  type RaceEffortVo2MaxEstimate,
+} from "@/lib/scoring/cardio/fitness-estimates";
 
 const DAY_MS = 86400000;
 
@@ -338,6 +345,44 @@ const SESSION_COLORS: Record<string, string> = {
   long: "#10b981",
   other: "#94a3b8",
 };
+
+/**
+ * Lactate threshold + race-effort VO2max (user feedback: "can you compute
+ * a lactate threshold or additional features which Garmin has"). Cardio
+ * activities only — gym sessions have no HR/pace/distance to draw from.
+ */
+export function buildFitnessEstimates(
+  activities: AnalyticsActivity[],
+  predictedBenchmarks: PredictedBenchmark[]
+): {
+  lactateThreshold: LactateThresholdEstimate | null;
+  vo2max: RaceEffortVo2MaxEstimate | null;
+} {
+  const cardioActivities = activities.filter((a) => a.sport !== "gym");
+
+  const lactateThreshold = estimateLactateThreshold(
+    cardioActivities.map((a) => ({
+      sport: a.sport,
+      sessionType: a.session_type,
+      startedAt: a.started_at,
+      durationSeconds: a.duration_seconds,
+      distanceMeters: a.distance_meters,
+      avgHeartRate: a.avg_heart_rate,
+    }))
+  );
+
+  const raceSessions = cardioActivities
+    .filter((a) => a.session_type === "race" && a.sport === "running")
+    .map((a) => ({
+      distanceMeters: a.distance_meters,
+      durationSeconds: a.duration_seconds,
+      startedAt: a.started_at,
+    }));
+  const predicted5k = predictedBenchmarks.find((b) => b.sport === "run")?.benchmarkSeconds ?? null;
+  const vo2max = estimateRaceEffortVo2Max(raceSessions, predicted5k);
+
+  return { lactateThreshold, vo2max };
+}
 
 export function buildSessionTypeDistribution(
   activities: AnalyticsActivity[]
