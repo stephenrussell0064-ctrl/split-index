@@ -122,6 +122,42 @@ export async function POST() {
   let recomputed = 0;
   const failures: Array<{ id: string; error: string }> = [];
 
+  // Backfill avg_pace_seconds_per_km for older activities logged before the
+  // manual-entry form started computing it (user feedback: an old run's
+  // activity detail page showed no pace/split at all, only duration/
+  // distance/elevation/HR/temperature). GPS-tracked runs already populate
+  // this at capture time; only running/walking/outdoor_cycling use a
+  // km-based pace (rowing/ski-erg use avg_split_seconds instead, already
+  // captured at log time — no equivalent gap there).
+  const KM_PACE_SPORTS = new Set(["running", "walking", "outdoor_cycling"]);
+  const paceBackfills: Array<{ id: string; avg_pace_seconds_per_km: number }> = [];
+  for (const activity of activities ?? []) {
+    if (
+      KM_PACE_SPORTS.has(activity.sport as string) &&
+      activity.avg_pace_seconds_per_km == null &&
+      typeof activity.distance_meters === "number" &&
+      activity.distance_meters > 0 &&
+      typeof activity.duration_seconds === "number" &&
+      activity.duration_seconds > 0
+    ) {
+      paceBackfills.push({
+        id: activity.id as string,
+        avg_pace_seconds_per_km: activity.duration_seconds / (activity.distance_meters / 1000),
+      });
+    }
+  }
+  if (paceBackfills.length > 0) {
+    await Promise.all(
+      paceBackfills.map(({ id, avg_pace_seconds_per_km }) =>
+        supabase.from("activities").update({ avg_pace_seconds_per_km }).eq("id", id)
+      )
+    );
+    for (const { id, avg_pace_seconds_per_km } of paceBackfills) {
+      const activity = (activities ?? []).find((a) => a.id === id);
+      if (activity) activity.avg_pace_seconds_per_km = avg_pace_seconds_per_km;
+    }
+  }
+
   // Built incrementally, oldest-first, so scoring activity N only ever sees
   // history from activities strictly before it — never a future session's
   // sets influencing a past one's adaptive 1RM estimate.

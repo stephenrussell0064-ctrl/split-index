@@ -163,7 +163,15 @@ function CardioPremiumStats({
             At this pace, you could {predictionVerb}:
           </p>
           <ul className="grid gap-1.5 sm:grid-cols-2 text-xs">
-            {Object.entries(result.predictions).map(([dist, sec]) => (
+            {Object.entries(result.predictions)
+              // JS object key order sorts integer-like keys (e.g. "42195")
+              // numerically ahead of any key containing a decimal point
+              // (e.g. "21097.5", the half-marathon distance in meters),
+              // regardless of insertion order — silently put Marathon
+              // before Half in every ladder (user feedback: "why is half
+              // below marathon"). Sort explicitly by the real distance.
+              .sort(([a], [b]) => Number(a) - Number(b))
+              .map(([dist, sec]) => (
               <li key={dist} className="tabular-nums">
                 <span className="text-muted">{formatPredictionLabel(dist)} in </span>
                 <span className="font-medium">{formatRiegelPrediction(sec)}</span>

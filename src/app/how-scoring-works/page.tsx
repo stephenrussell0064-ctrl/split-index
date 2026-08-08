@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { BrandMark } from "@/components/brand/brand-mark";
 import { getAppUrl } from "@/lib/app-url";
+import { createClient } from "@/lib/supabase/server";
 
 const PAGE_TITLE = "How Scoring Works";
 const PAGE_DESCRIPTION =
@@ -54,7 +55,20 @@ const TOC = [
   { id: "injury-risk", label: "Injury risk (ACWR)" },
 ] as const;
 
-export default function HowScoringWorksPage() {
+export default async function HowScoringWorksPage() {
+  // This page is public (linked from search/marketing, sees anonymous
+  // traffic) but is also linked from inside the signed-in app via every
+  // ScoringExplainerNote — a logged-in visitor clicking back had no way
+  // back INTO the app, only to the public marketing homepage (user
+  // feedback: "there is no way back to get to home page"). Route signed-in
+  // visitors to their dashboard, everyone else to the marketing homepage.
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const backHref = user ? "/dashboard" : "/";
+  const backLabel = user ? "Back to Split Index" : "Back to home";
+
   const appUrl = getAppUrl();
   const articleJsonLd = {
     "@context": "https://schema.org",
@@ -84,12 +98,12 @@ export default function HowScoringWorksPage() {
       />
       <header className="border-b border-white/[0.06] glass-strong">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-6 py-4">
-          <BrandMark variant="compact" href="/" iconSize={30} wordmarkSize="sm" />
+          <BrandMark variant="compact" href={backHref} iconSize={30} wordmarkSize="sm" />
           <Link
-            href="/"
+            href={backHref}
             className="text-sm text-muted transition-colors hover:text-foreground"
           >
-            Back to home
+            {backLabel}
           </Link>
         </div>
       </header>

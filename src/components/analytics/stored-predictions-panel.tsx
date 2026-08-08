@@ -140,7 +140,15 @@ function PredictionsContent({
             {LADDER_TITLE[benchmark.sport] ?? "Race ladder"}
           </p>
           <ul className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3 text-xs">
-            {Object.entries(ladder).map(([dist, sec]) => (
+            {Object.entries(ladder)
+              // JS object key order sorts integer-like keys (e.g. "42195")
+              // numerically ahead of any key containing a decimal point
+              // (e.g. "21097.5", the half-marathon distance in meters),
+              // regardless of insertion order — silently put Marathon
+              // before Half in every ladder (user feedback: "why is half
+              // below marathon"). Sort explicitly by the real distance.
+              .sort(([a], [b]) => Number(a) - Number(b))
+              .map(([dist, sec]) => (
               <li key={dist} className="flex justify-between gap-2 tabular-nums glass rounded-lg px-3 py-1.5">
                 <span className="text-muted">{formatPredictionLabel(dist)}</span>
                 <span className="font-medium">{formatRiegelPrediction(sec)}</span>

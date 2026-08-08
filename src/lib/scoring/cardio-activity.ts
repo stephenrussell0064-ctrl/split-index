@@ -814,7 +814,14 @@ export function scoreCardioActivity(input: CardioInput): CardioResult {
     // were. This single knob instead scales every relative-effort session's
     // credit down uniformly, preserving natural variation between sessions.
     // Lowered progressively across rounds of real-data feedback: 0.30 ->
-    // 0.25 -> 0.20.
+    // 0.25 -> 0.20. A further blanket cut to 0.15 was tried and reverted —
+    // it fixed one above-target case but also flattened legitimate
+    // differentiation between below-target/at-target/efficiency-bonus
+    // sessions that were never near the cap before (several regression
+    // tests broke: "below target scores higher than at target" started
+    // tying, etc.) — a global cap can't distinguish "genuinely easy, low
+    // HR" from "borderline-hard effort mistagged easy" without punishing
+    // the former too.
     const MAX_TOTAL_RELATIVE_EFFORT_DISCOUNT = 0.20;
     if (
       isRelativeEffortSession &&
@@ -826,6 +833,31 @@ export function scoreCardioActivity(input: CardioInput): CardioResult {
       if (sessionEquivalentSeconds < flooredByStackCap) {
         sessionEquivalentSeconds = flooredByStackCap;
         flags.push('relative-effort-discount-capped');
+      }
+    }
+
+    // Tighter cap specifically for above-target HR (user feedback: an
+    // 18.24km run at 4:55/km, 173bpm — HR actually ABOVE this athlete's own
+    // target zone, i.e. a borderline-hard effort, not a deep-recovery one —
+    // still scored 900/17:34 against a real 18:30 5K best under the general
+    // 20% cap; wanted ~18:45 at most). Scoped to ONLY above-target sessions
+    // rather than lowering the general cap again: a session whose HR
+    // already reads as harder than this athlete's own target has less
+    // business earning near-max relative-effort credit than one that
+    // genuinely stayed easy, and tightening it here doesn't touch (or
+    // flatten) the below/at-target credit the general cap already governs.
+    const MAX_ABOVE_TARGET_DISCOUNT = 0.15;
+    if (
+      isRelativeEffortSession &&
+      !looksMistagged &&
+      sessionEquivalentSeconds !== null &&
+      rawProjectedSeconds !== null &&
+      flags.includes('hr-zone-above-target')
+    ) {
+      const flooredByAboveTargetCap = rawProjectedSeconds * (1 - MAX_ABOVE_TARGET_DISCOUNT);
+      if (sessionEquivalentSeconds < flooredByAboveTargetCap) {
+        sessionEquivalentSeconds = flooredByAboveTargetCap;
+        flags.push('above-target-discount-capped');
       }
     }
 

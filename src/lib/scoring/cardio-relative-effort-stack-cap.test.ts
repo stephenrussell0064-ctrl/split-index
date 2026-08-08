@@ -17,8 +17,14 @@ import { scoreCardioActivity, type CardioInput } from "./cardio-activity";
  * in place, i want the natural credit reduced slightly on every run") — it
  * fixed the one reported case but made every session that hit it converge
  * on the identical number regardless of how different their actual paces
- * were. This stack cap alone is the mechanism now — lowered progressively
- * across rounds of real-data feedback: 0.30 -> 0.25 -> 0.20.
+ * were. The general cap settled at 0.20 (lowered progressively: 0.30 ->
+ * 0.25 -> 0.20) after a further blanket cut to 0.15 broke legitimate
+ * differentiation between below/at-target and efficiency-bonus sessions.
+ * A SEPARATE, tighter cap (0.15) applies only to sessions whose HR read
+ * above the athlete's own target zone — a borderline-hard effort has less
+ * business earning near-max relative-effort credit than a genuinely easy
+ * one, and scoping the tighter cap to just that case avoids flattening
+ * everything else.
  */
 describe("scoreCardioActivity — overall stacking cap on relative-effort credit", () => {
   it("caps the combined discount even when every stackable bonus maxes out simultaneously", () => {
@@ -43,7 +49,7 @@ describe("scoreCardioActivity — overall stacking cap on relative-effort credit
     // reference point the cap measures against.
     const rawProjectedSeconds = 6060 * Math.pow(5000 / 19140, 1.08);
     const actualDiscount = 1 - result.predictions!["5000"] / rawProjectedSeconds;
-    expect(actualDiscount).toBeLessThanOrEqual(0.21); // 20% cap + small floating-point/age-factor slack
+    expect(actualDiscount).toBeLessThanOrEqual(0.21); // 20% general cap + small floating-point/age-factor slack
   });
 
   it("doesn't touch a session where the individual mechanisms never approached the cap", () => {
@@ -84,6 +90,31 @@ describe("scoreCardioActivity — overall stacking cap on relative-effort credit
     const nineteenKm = scoreCardioActivity({ ...base, distanceMeters: 19140, durationSeconds: 6091, avgHR: 166 });
     const twelveKm = scoreCardioActivity({ ...base, distanceMeters: 12520, durationSeconds: 3929, avgHR: 166 });
     expect(nineteenKm.predictions!["5000"]).not.toBeCloseTo(twelveKm.predictions!["5000"], 0);
+  });
+
+  it("a hard-HR easy run (HR above the athlete's own target zone) stays well behind their real PR (real-account regression)", () => {
+    // Real reported case: 18.24km at 4:55/km, 173bpm avg — HR actually
+    // ABOVE this athlete's target zone (not a deep-recovery effort),
+    // scored 900/17:34 against a real 18:30 5K best. Wanted ~18:45 at most.
+    const input: CardioInput = {
+      type: "run",
+      benchmarkSport: "run",
+      distanceMeters: 18240,
+      durationSeconds: Math.round(18.24 * 295), // 4:55/km
+      sex: "male",
+      age: 19,
+      restingHR: 47,
+      maxHR: 205,
+      experience: "intermediate",
+      avgHR: 173,
+      sessionType: "easy",
+      personalizedRiegelK: 1.087,
+      recentHardEffortBenchmarkSeconds: 1110, // real 18:30 5K best
+    };
+    const result = scoreCardioActivity(input);
+    expect(result.flags).toContain("hr-zone-above-target");
+    expect(result.predictions!["5000"]).toBeGreaterThan(1110); // slower than the real PR
+    expect(result.predictions!["5000"]).toBeLessThanOrEqual(1110 * 1.03); // within ~3% of the ~18:45 target
   });
 
   it("never applies to race/tempo sessions — the cap is scoped to relative-effort (easy/recovery/long) scoring only", () => {
