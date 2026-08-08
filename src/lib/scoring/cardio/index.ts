@@ -14,3 +14,8 @@ export {
   type LactateThresholdEstimate,
   type RaceEffortVo2MaxEstimate,
 } from "./fitness-estimates";
+export {
+  applyRaceConditionAdjustments,
+  type RaceConditionInputs,
+  type RaceConditionAdjustment,
+} from "./race-conditions";

@@ -24,6 +24,7 @@ import { AcwrTrendChart } from "./acwr-trend-chart";
 import { computeAcwrTrend } from "@/lib/scoring/injury-risk";
 import { StoredPredictionsPanel } from "./stored-predictions-panel";
 import { FitnessEstimatesPanel } from "./fitness-estimates-panel";
+import { UpcomingRacesPanel } from "./upcoming-races-panel";
 import { PremiumGate } from "./premium-gate";
 import { PremiumTease } from "@/components/premium/premium-tease";
 import {
@@ -315,6 +316,17 @@ export function AnalyticsClient({ data }: { data: AnalyticsPayload }) {
         lactateThreshold={fitnessEstimates.lactateThreshold}
         vo2max={fitnessEstimates.vo2max}
       />
+
+      {/* User feedback: "would it be possible to have a section where
+          people can enter the run event they are doing... and Split Index
+          would be able to give advice on the terrain, the elevation and
+          the weather on the day to give more specifically tailored race
+          predictions" — with a concrete example: predicted 39:00 for a
+          10K, actually ran 40:33, attributed to heat/wind on a flat
+          course. Self-contained client component (own fetch/CRUD), not
+          server-fetched data like the panels above — it manages its own
+          add/delete flow. */}
+      <UpcomingRacesPanel />
 
       <div id="recovery" className="scroll-mt-6">
         <InjuryRiskPanel
