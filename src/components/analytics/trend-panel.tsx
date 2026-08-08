@@ -60,6 +60,9 @@ export function TrendPanel({ data, granularity }: TrendPanelProps) {
               ))}
             </div>
           </div>
+          <p className="mt-1 text-xs text-muted">
+            Your Split Index and its two halves (endurance, strength) over time.
+          </p>
         </CardHeader>
         <CardContent className="min-h-0 flex-1">
           {data.length < 2 ? (

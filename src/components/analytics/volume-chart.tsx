@@ -41,6 +41,10 @@ export function VolumeChart({ data, metric = "load" }: VolumeChartProps) {
       <Card className="flex h-full flex-col">
         <CardHeader className="mb-2">
           <CardTitle>Training Volume · 12W</CardTitle>
+          <p className="mt-1 text-xs text-muted">
+            How much you trained each week — switch between load, duration, and distance
+            with the tabs below.
+          </p>
         </CardHeader>
         <CardContent className="min-h-0 flex-1">
           {!hasData ? (

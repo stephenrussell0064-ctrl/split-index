@@ -29,6 +29,11 @@ export function TrainingZonesChart({ zones, usesHr }: TrainingZonesChartProps) {
               {usesHr ? "HR zones" : "Session types"}
             </span>
           </div>
+          <p className="mt-1 text-xs text-muted">
+            {usesHr
+              ? "Time spent in each heart-rate zone — most training should sit in the easier zones."
+              : "Breakdown by logged session type, since heart-rate data isn't available yet."}
+          </p>
         </CardHeader>
         <CardContent className="min-h-0 flex-1">
           {total === 0 ? (

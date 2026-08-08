@@ -33,6 +33,10 @@ export function ProjectionChart({ data }: ProjectionChartProps) {
       <Card className="flex h-full flex-col" glow="accent">
         <CardHeader className="mb-2">
           <CardTitle>Fitness Projections · 7D / 30D</CardTitle>
+          <p className="mt-1 text-xs text-muted">
+            Where your Split Index is headed if your current trend continues — a forecast,
+            not a guarantee.
+          </p>
         </CardHeader>
         <CardContent className="min-h-0 flex-1">
           {data.length < 3 ? (

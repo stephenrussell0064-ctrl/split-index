@@ -37,6 +37,10 @@ export function FatigueRecoveryChart({ data }: FatigueRecoveryChartProps) {
               ACWR overlay
             </span>
           </div>
+          <p className="mt-1 text-xs text-muted">
+            How run-down vs. recovered you are day to day, with acute:chronic workload
+            overlaid to flag when fatigue is climbing faster than your body adapts.
+          </p>
         </CardHeader>
         <CardContent className="min-h-0 flex-1">
           {data.length < 2 ? (

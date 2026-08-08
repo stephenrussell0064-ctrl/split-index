@@ -32,6 +32,10 @@ export function MovingAverageChart({ data }: MovingAverageChartProps) {
       <Card className="flex h-full flex-col">
         <CardHeader className="mb-2">
           <CardTitle>Moving Averages · 7D / 28D</CardTitle>
+          <p className="mt-1 text-xs text-muted">
+            Smooths day-to-day noise — the 7-day line reacts fast, the 28-day line shows
+            whether you&apos;re genuinely trending up or down.
+          </p>
         </CardHeader>
         <CardContent className="min-h-0 flex-1">
           {data.length < 7 ? (

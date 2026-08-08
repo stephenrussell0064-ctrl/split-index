@@ -282,6 +282,22 @@ export function AnalyticsClient({ data }: { data: AnalyticsPayload }) {
         ))}
       </div>
 
+      {/* Reprioritized above every graph on this page (user feedback:
+          "reprioritize analytics tab — surface 1RM/race predictions above
+          graphs"). Race ladder + per-lift adaptive 1RM predictions are the
+          most directly actionable numbers on this tab — what to expect on
+          race day, what you could lift next — so they lead, ahead of the
+          ACWR trend chart and every other visualization below. Full-width
+          rather than paired in a 2-col grid with the (much shorter)
+          Recovery panel: that left a large empty gap under the shorter
+          card when they shared equal-width columns (earlier user
+          feedback). */}
+      <StoredPredictionsPanel
+        benchmarks={data.predictedBenchmarks}
+        strengthEstimates={data.strengthEstimates}
+        isPremium={data.isPremium}
+      />
+
       <div id="recovery" className="scroll-mt-6">
         <InjuryRiskPanel
           scores={data.scores}
@@ -294,17 +310,6 @@ export function AnalyticsClient({ data }: { data: AnalyticsPayload }) {
       <PremiumGate locked={!data.isPremium} feature="ACWR trend analysis">
         <AcwrTrendChart data={acwrTrend} />
       </PremiumGate>
-
-      {/* Full-width, not paired in a 2-col grid with InjuryRiskPanel above —
-          this panel's race ladder + per-lift adaptive 1RM list is usually
-          much taller than the compact Recovery card, which left a large
-          empty gap under the shorter card when they shared equal-width
-          columns (user feedback). */}
-      <StoredPredictionsPanel
-        benchmarks={data.predictedBenchmarks}
-        strengthEstimates={data.strengthEstimates}
-        isPremium={data.isPremium}
-      />
 
       {compareEnabled && (
         data.isPremium ? (

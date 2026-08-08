@@ -80,6 +80,10 @@ export function IntensityDistribution({
       <Card className="flex h-full flex-col">
         <CardHeader className="mb-2">
           <CardTitle>Intensity Distribution</CardTitle>
+          <p className="mt-1 text-xs text-muted">
+            How your sessions split across easy/moderate/hard effort — a healthy mix is
+            mostly easy with a smaller share genuinely hard.
+          </p>
         </CardHeader>
         <CardContent className="grid min-h-0 flex-1 gap-6 sm:grid-cols-2">
           <DonutChart data={sessionTypes} title="Session types" />

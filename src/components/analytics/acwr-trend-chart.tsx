@@ -25,6 +25,11 @@ export function AcwrTrendChart({ data }: { data: AcwrTrendPoint[] }) {
           <CardTitle>ACWR Trend</CardTitle>
           <span className="text-[10px] uppercase tracking-wider text-muted">acute ÷ chronic load</span>
         </div>
+        <p className="mt-1 text-xs text-muted">
+          This week&apos;s training load compared to your last month&apos;s average — a
+          ratio climbing well above 1.5 means you&apos;ve ramped up faster than your body
+          has adapted.
+        </p>
       </CardHeader>
       <CardContent className="min-h-0 flex-1">
         {data.length < 2 ? (
