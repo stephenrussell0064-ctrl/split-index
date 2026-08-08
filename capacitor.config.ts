@@ -58,14 +58,22 @@ const config: CapacitorConfig = {
   },
   plugins: {
     SplashScreen: {
-      // A fixed launchShowDuration hides the splash on a timer regardless of
-      // whether the remote page (server.url, over the network) has actually
-      // loaded yet — that gap showed as a blank black screen after the logo
-      // disappeared. autoHide: false keeps the native splash up until
-      // LaunchOverlay (src/components/providers/launch-overlay.tsx) calls
-      // SplashScreen.hide() itself, once there's an animated JS screen ready
-      // to take over — no gap, no fixed guess at how long loading will take.
-      launchAutoHide: false,
+      // Verified live in the iOS Simulator while building the errorPath
+      // fallback below: launchAutoHide: false (no timer at all) means the
+      // native splash only ever hides when LaunchOverlay
+      // (src/components/providers/launch-overlay.tsx) calls
+      // SplashScreen.hide() — which only runs once the real app's JS has
+      // loaded. When server.url can't be reached at all (no signal), that
+      // JS never loads, so the splash sat forever on top of the errorPath
+      // page below, hiding it completely — the exact "app looks frozen"
+      // symptom this was supposed to fix, just moved one layer down.
+      // launchAutoHide: true + a generous launchShowDuration restores a
+      // dead-man's-switch: LaunchOverlay's explicit hide() still wins
+      // immediately on any normal load (well under 8s), so the online
+      // experience is unchanged; offline.html only becomes visible once
+      // the timer fires if nothing ever called hide() first.
+      launchAutoHide: true,
+      launchShowDuration: 8000,
       backgroundColor: "#0a0a0f",
       androidSplashResourceName: "splash",
       showSpinner: false,
