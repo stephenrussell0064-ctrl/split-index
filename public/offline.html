@@ -12,8 +12,12 @@
 
     No Capacitor plugin access on this page (Capacitor's own documented
     constraint for server.errorPath on Android) — pure static HTML/CSS/JS,
-    no framework, no build step. Its only job is "don't look broken" and
-    offer a retry, not to replace any app functionality.
+    no framework, no build step. Its own job is "don't look broken" and
+    offer a retry, not to replace any app functionality — but it links to
+    offline-track.html, a separate page (normal bundled content, so it
+    DOES get plugin access) that can actually start a real GPS session
+    with zero connection. User feedback: "when running with no service...
+    there is no way to run the app without data, to log exercises."
   -->
   <style>
     :root {
@@ -69,20 +73,31 @@
       color: #d4d4d8;
       text-align: left;
     }
-    button {
-      margin-top: 24px;
+    button, a.track {
+      display: inline-block;
+      margin-top: 12px;
       appearance: none;
       border: none;
       border-radius: 12px;
       padding: 13px 28px;
       font-size: 15px;
       font-weight: 600;
-      color: #04120a;
-      background: #3dff6e;
       cursor: pointer;
       min-height: 44px;
+      text-decoration: none;
+      box-sizing: border-box;
     }
-    button:active {
+    #retry {
+      color: #04120a;
+      background: #3dff6e;
+    }
+    a.track {
+      color: #f5f5f7;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      line-height: 20px;
+    }
+    button:active, a.track:active {
       opacity: 0.85;
     }
     .status {
@@ -101,7 +116,12 @@
     <div class="note">
       Already tracking a run? GPS keeps recording in the background even with the app screen showing this — you won't lose your data. Anything already logged will sync automatically once you're back online.
     </div>
-    <button id="retry">Try again</button>
+    <div>
+      <button id="retry">Try again</button>
+    </div>
+    <div>
+      <a class="track" href="offline-track.html">Start tracking a run offline →</a>
+    </div>
     <p class="status" id="status"></p>
   </div>
   <script>

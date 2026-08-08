@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Split Index — Offline Tracking</title>
+  <!--
+    User feedback: offline.html (the Capacitor server.errorPath fallback)
+    could show a "no connection" message but had no way to actually start
+    a GPS session — errorPath pages have no Capacitor plugin access on
+    Android (Capacitor's own documented constraint), so nothing loaded via
+    errorPath can ever call the GPS/storage plugins.
+
+    This page is deliberately NOT loaded via errorPath — it's normal
+    bundled webDir content (public/), reached via a link from offline.html
+    (and reachable directly at /offline-track.html any time). Normal
+    bundled content gets full native plugin access on both platforms,
+    which is the whole reason this has to be a separate page rather than
+    a feature bolted onto offline.html itself.
+
+    Writes to the EXACT SAME Preferences keys/shape as the real app's
+    native tracker (src/lib/native/gps-tracking.ts's startGpsSession) —
+    gps-tracking-session: {points, startedAt, permissionRevoked} and
+    gps-tracking-watcher-id — so the existing recoverOrphanedSession()
+    flow on /cardio/gps-run picks this up automatically, with its full
+    sport-selection/review/save UI, the next time the real app opens with
+    a connection. This page never tries to submit anything itself — no
+    network, no auth, no scoring engine here, deliberately. Its only job
+    is "record real GPS points to native storage," which is the one thing
+    that's actually impossible to do without plugin access.
+
+    No framework, no build step, hand-registers the two plugins it needs
+    via the raw Capacitor.registerPlugin() bridge (window.Capacitor,
+    injected natively) rather than importing the npm packages — there's
+    no bundler wired up for public/ static assets, and this is a small
+    enough surface that hand-written vanilla JS calling the same
+    documented plugin methods (addWatcher/removeWatcher, get/set/remove)
+    is safer than adding a new build pipeline for one file.
+  -->
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; padding: 0; height: 100%;
+      background: #0a0a0f; color: #f5f5f7;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    body {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      padding: 24px;
+      padding-top: max(24px, env(safe-area-inset-top));
+      padding-bottom: max(24px, env(safe-area-inset-bottom));
+    }
+    .card { max-width: 380px; width: 100%; text-align: center; }
+    h1 { font-size: 20px; font-weight: 700; margin: 0 0 10px; letter-spacing: -0.01em; }
+    p { font-size: 14px; line-height: 1.55; color: #a1a1aa; margin: 0 0 8px; }
+    .stats {
+      margin-top: 20px;
+      font-variant-numeric: tabular-nums;
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      min-height: 40px;
+    }
+    .note {
+      margin-top: 20px;
+      padding: 14px 16px;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      font-size: 13px;
+      color: #d4d4d8;
+      text-align: left;
+    }
+    button {
+      margin-top: 24px;
+      appearance: none; border: none; border-radius: 12px;
+      padding: 13px 28px; font-size: 15px; font-weight: 600;
+      cursor: pointer; min-height: 48px; width: 100%;
+    }
+    #startBtn { color: #04120a; background: #3dff6e; }
+    #stopBtn { color: #fff; background: #ef4444; display: none; }
+    #status { margin-top: 14px; font-size: 13px; color: #a1a1aa; min-height: 18px; }
+    a.back { display: inline-block; margin-top: 20px; font-size: 13px; color: #71717a; text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Offline run tracking</h1>
+    <p>Records real GPS points straight to this device — no connection needed. Review and save it in Split Index normally once you're back online.</p>
+    <div class="stats" id="stats">—</div>
+    <button id="startBtn" type="button">Start tracking</button>
+    <button id="stopBtn" type="button">Stop</button>
+    <p id="status"></p>
+    <div class="note">This won't score or save your run by itself — it just records the route. Reopen the real Split Index app once you have signal again and it'll pick this session up automatically to review and save.</div>
+    <a class="back" href="offline.html">← Back</a>
+  </div>
+  <!--
+    Verified live in the iOS Simulator: the native runtime only injects
+    minimal Capacitor primitives (isNativePlatform/getPlatform) directly
+    into a WebView page. The full registerPlugin()/Plugins proxy machinery
+    normally comes from @capacitor/core's own bundled JS running inside
+    the app's webpack/Next.js bundle — which this standalone, no-bundler
+    page doesn't have. Without this script, window.Capacitor.registerPlugin
+    was undefined here, so nothing could actually call the native plugins.
+    This is a straight copy of node_modules/@capacitor/core/dist/capacitor.js
+    (re-copy after any @capacitor/core version bump) — it safely *extends*
+    the existing native window.Capacitor object (reuses it via
+    `r = t.Capacitor || {}`) rather than replacing it, so this doesn't
+    fight with whatever the native side already set up.
+  -->
+  <script src="vendor/capacitor-core.js"></script>
+  <script>
+    (function () {
+      "use strict";
+      var SESSION_KEY = "gps-tracking-session";
+      var WATCHER_ID_KEY = "gps-tracking-watcher-id";
+      var DISTANCE_FILTER_METERS = 10;
+      var EARTH_RADIUS_METERS = 6371000;
+
+      var statsEl = document.getElementById("stats");
+      var statusEl = document.getElementById("status");
+      var startBtn = document.getElementById("startBtn");
+      var stopBtn = document.getElementById("stopBtn");
+
+      var debugLog = [];
+      function getPlugin(name) {
+        var Capacitor = window.Capacitor;
+        if (!Capacitor) {
+          debugLog.push(name + ": window.Capacitor missing");
+          return null;
+        }
+        if (typeof Capacitor.registerPlugin !== "function") {
+          debugLog.push(name + ": Capacitor.registerPlugin is not a function (" + typeof Capacitor.registerPlugin + ")");
+          return null;
+        }
+        if (Capacitor.Plugins && Capacitor.Plugins[name]) {
+          debugLog.push(name + ": found pre-registered in Capacitor.Plugins");
+          return Capacitor.Plugins[name];
+        }
+        try {
+          var plugin = Capacitor.registerPlugin(name);
+          debugLog.push(name + ": registerPlugin() returned " + typeof plugin);
+          return plugin;
+        } catch (e) {
+          debugLog.push(name + ": registerPlugin() threw — " + (e && e.message ? e.message : String(e)));
+          return null;
+        }
+      }
+
+      var Preferences = getPlugin("Preferences");
+      var BackgroundGeolocation = getPlugin("BackgroundGeolocation");
+
+      var watcherId = null;
+      var startedAt = null;
+      var points = [];
+      var timerInterval = null;
+
+      function toRadians(deg) { return (deg * Math.PI) / 180; }
+
+      function haversineMeters(a, b) {
+        var dLat = toRadians(b.latitude - a.latitude);
+        var dLon = toRadians(b.longitude - a.longitude);
+        var lat1 = toRadians(a.latitude);
+        var lat2 = toRadians(b.latitude);
+        var h =
+          Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+          Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        return EARTH_RADIUS_METERS * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+      }
+
+      function totalDistanceMeters() {
+        var d = 0;
+        for (var i = 1; i < points.length; i++) d += haversineMeters(points[i - 1], points[i]);
+        return d;
+      }
+
+      function formatDuration(totalSeconds) {
+        var m = Math.floor(totalSeconds / 60);
+        var s = Math.floor(totalSeconds % 60);
+        return m + ":" + (s < 10 ? "0" : "") + s;
+      }
+
+      function updateStats() {
+        if (!startedAt) return;
+        var elapsedSeconds = (Date.now() - startedAt) / 1000;
+        var km = totalDistanceMeters() / 1000;
+        statsEl.textContent = formatDuration(elapsedSeconds) + "   " + km.toFixed(2) + " km";
+      }
+
+      async function persistSession() {
+        if (!Preferences) return;
+        await Preferences.set({
+          key: SESSION_KEY,
+          value: JSON.stringify({ points: points, startedAt: startedAt, permissionRevoked: false }),
+        });
+      }
+
+      startBtn.addEventListener("click", async function () {
+        if (!BackgroundGeolocation || !Preferences) {
+          statusEl.textContent =
+            "Couldn't reach GPS on this device. (" + debugLog.join(" | ") + ")";
+          return;
+        }
+
+        startBtn.disabled = true;
+        startedAt = Date.now();
+        points = [];
+        await persistSession();
+
+        try {
+          watcherId = await BackgroundGeolocation.addWatcher(
+            {
+              backgroundTitle: "Split Index",
+              backgroundMessage: "Tracking your run (offline)",
+              requestPermissions: true,
+              distanceFilter: DISTANCE_FILTER_METERS,
+            },
+            function (position, error) {
+              if (error) {
+                if (error.code === "NOT_AUTHORIZED") {
+                  statusEl.textContent = "Location permission was denied — check Settings.";
+                }
+                return;
+              }
+              if (!position) return;
+              points.push({
+                latitude: position.latitude,
+                longitude: position.longitude,
+                accuracy: position.accuracy,
+                altitude: position.altitude,
+                time: position.time || Date.now(),
+              });
+              persistSession();
+              updateStats();
+            }
+          );
+          await Preferences.set({ key: WATCHER_ID_KEY, value: watcherId });
+          statusEl.textContent = "Tracking — keep the app open or leave it in the background.";
+          startBtn.style.display = "none";
+          stopBtn.style.display = "";
+          updateStats();
+          timerInterval = setInterval(updateStats, 1000);
+        } catch (e) {
+          statusEl.textContent = "Could not start tracking: " + (e && e.message ? e.message : String(e));
+          startBtn.disabled = false;
+        }
+      });
+
+      stopBtn.addEventListener("click", async function () {
+        stopBtn.disabled = true;
+        if (watcherId && BackgroundGeolocation) {
+          try {
+            await BackgroundGeolocation.removeWatcher({ id: watcherId });
+          } catch (e) {
+            // Already-removed/unavailable watcher isn't fatal — the session
+            // data itself is what matters, and it's already persisted.
+          }
+        }
+        if (timerInterval) clearInterval(timerInterval);
+        // Deliberately NOT clearing SESSION_KEY here (unlike the real app's
+        // stopGpsSession) — leaving it in Preferences is exactly what makes
+        // recoverOrphanedSession() find and surface it later.
+        statusEl.textContent =
+          "Stopped and saved on this device. Open Split Index normally once you're back online to review and save it.";
+        stopBtn.style.display = "none";
+      });
+
+      if (!window.Capacitor || !window.Capacitor.isNativePlatform || !window.Capacitor.isNativePlatform()) {
+        statusEl.textContent = "This page only works inside the Split Index app, not a regular browser.";
+        startBtn.disabled = true;
+      }
+    })();
+  </script>
+</body>
+</html>
