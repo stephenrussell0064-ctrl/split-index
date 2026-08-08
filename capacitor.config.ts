@@ -28,6 +28,19 @@ const config: CapacitorConfig = {
     url: "https://www.splitindex.co.uk/login",
     cleartext: false,
     allowNavigation: ["splitindex.co.uk", "www.splitindex.co.uk", "*.splitindex.co.uk"],
+    // User-reported: at a race with no signal, the app couldn't open at
+    // all — the WebView had nothing to fall back to when server.url
+    // failed to load. errorPath points it at a locally-bundled static
+    // page (public/offline.html, ships inside the app package since
+    // webDir is "public") instead of a blank/frozen screen. It has no
+    // Capacitor plugin access (Capacitor's own documented constraint for
+    // this specific config on Android), so it can't launch GPS tracking
+    // itself — its only job is "don't look broken" plus a retry button.
+    // Native background GPS tracking (lib/native/gps-tracking.ts) and the
+    // offline submit queue (lib/activities/offline-queue.ts) already don't
+    // depend on the WebView being reachable, so a session already started
+    // before losing signal is unaffected either way.
+    errorPath: "offline.html",
   },
   ios: {
     // Lets the web content draw under the status bar/notch; the app itself
