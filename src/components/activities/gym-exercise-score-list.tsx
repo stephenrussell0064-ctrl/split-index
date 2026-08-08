@@ -25,11 +25,21 @@ function insightForExercise(
   insights: GatedStrengthInsight[] | null
 ): GatedStrengthInsight | undefined {
   if (!insights?.length) return undefined;
+  // Most reliable: an explicit index tag set at scoring time. Immune to
+  // alias resolution (liftKey can differ from the logged exercise name)
+  // and to the results array being shorter than the exercise list (an
+  // exercise with no valid best set is skipped during scoring).
+  const byIndex = insights.find((row) => {
+    const result = row.result as { exerciseIndex?: number } | undefined;
+    return result?.exerciseIndex === index;
+  });
+  if (byIndex) return byIndex;
   const byName = insights.find(
     (row) => row.name.toLowerCase() === exerciseName.toLowerCase()
   );
   if (byName) return byName;
-  // Persisted breakdown uses canonical lift keys — fall back to log order.
+  // Older, already-persisted results predate exerciseIndex — fall back to
+  // log order only when it's actually safe to assume 1:1 correspondence.
   if (insights.length === exerciseCount && index < insights.length) {
     return insights[index];
   }

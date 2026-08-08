@@ -16,6 +16,8 @@ import {
   GYM_RECOMMENDATION_CONFIG,
   type LoggedGymSet,
 } from "@/lib/scoring/gym-recommendation";
+import { requireScoringSex } from "@/lib/scoring/adapters";
+import { calculateOverallDotsGl } from "@/lib/scoring/strength/overall-dots-gl";
 import type { ExRxTier } from "@/lib/scoring/strength/ratio-tiers";
 import type { ScoreBreakdown } from "@/types";
 
@@ -29,7 +31,7 @@ export default async function GymPage() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("onboarding_completed, subscription_tier, subscription_status")
+    .select("onboarding_completed, subscription_tier, subscription_status, weight_kg, gender")
     .eq("user_id", user.id)
     .single();
 
@@ -94,6 +96,36 @@ export default async function GymPage() {
     }
   }
 
+  // Overall/profile DOTS & IPF GL — the athlete's best-ever squat/bench/
+  // deadlift across every logged gym session, not just the most recently
+  // logged one. Shown alongside (never instead of) the per-workout number
+  // so it's unambiguous which is which: user feedback flagged the dashboard
+  // DOTS/GL as "wrong" against a reference calculator when it was really
+  // just reflecting a single session that didn't touch all three lifts.
+  const { data: allGymActivities } = await supabase
+    .from("activities")
+    .select("id")
+    .eq("user_id", user.id)
+    .eq("sport", "gym")
+    .eq("is_draft", false);
+  const allGymActivityIds = (allGymActivities ?? []).map((a) => a.id as string);
+  const { data: allTimeExercises } =
+    allGymActivityIds.length > 0
+      ? await supabase
+          .from("gym_exercises")
+          .select("exercise_name, estimated_1rm_kg")
+          .in("activity_id", allGymActivityIds)
+      : { data: [] as { exercise_name: string; estimated_1rm_kg: number | null }[] };
+
+  const overallDotsGl =
+    profile?.weight_kg && profile.weight_kg > 0
+      ? calculateOverallDotsGl(
+          allTimeExercises ?? [],
+          profile.weight_kg,
+          requireScoringSex(profile.gender)
+        )
+      : null;
+
   // Balanced-split recommendation: mine muscle-group training recency/volume
   // from the same lookback window the pure engine expects, so "what should I
   // train next" reflects actual logged sets, not a generic program.
@@ -157,6 +189,9 @@ export default async function GymPage() {
                 strengthIndex={hasHistory ? strengthIndex : null}
                 dotsScore={breakdown.dots_score ?? null}
                 glPoints={breakdown.gl_points ?? null}
+                overallDotsScore={overallDotsGl?.dotsScore ?? null}
+                overallGlPoints={overallDotsGl?.glPoints ?? null}
+                overallLiftsLogged={overallDotsGl?.liftsLogged}
                 lifts={lifts}
                 hasHistory={hasHistory}
                 showDotsGl={showDotsGl}

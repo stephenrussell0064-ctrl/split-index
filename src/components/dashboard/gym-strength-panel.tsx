@@ -22,23 +22,59 @@ interface LiftRow {
 
 interface GymStrengthPanelProps {
   strengthIndex: number | null;
+  /** This workout's own SBD total — only the lifts logged in the latest session. */
   dotsScore?: number | null;
   glPoints?: number | null;
+  /** Profile-wide: best-ever squat/bench/deadlift across every logged session. */
+  overallDotsScore?: number | null;
+  overallGlPoints?: number | null;
+  overallLiftsLogged?: number;
   lifts?: LiftRow[];
   hasHistory: boolean;
   showDotsGl?: boolean;
   className?: string;
 }
 
+function DotsGlPair({
+  dotsScore,
+  glPoints,
+}: {
+  dotsScore: number;
+  glPoints?: number | null;
+}) {
+  return (
+    <div className="flex items-baseline justify-end gap-4">
+      <div>
+        <p className="font-mono text-2xl font-semibold tabular-nums text-gym-text">
+          {formatDOTS(dotsScore)}
+        </p>
+        <p className="text-[10px] text-gym-muted uppercase tracking-wider mt-0.5">DOTS</p>
+      </div>
+      {glPoints != null && (
+        <div>
+          <p className="font-mono text-2xl font-semibold tabular-nums text-gym-text">
+            {formatGL(glPoints)}
+          </p>
+          <p className="text-[10px] text-gym-muted uppercase tracking-wider mt-0.5">IPF GL</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function GymStrengthPanel({
   strengthIndex,
   dotsScore,
   glPoints,
+  overallDotsScore,
+  overallGlPoints,
+  overallLiftsLogged,
   lifts = [],
   hasHistory,
   showDotsGl = true,
   className,
 }: GymStrengthPanelProps) {
+  const hasOverall = overallDotsScore != null && overallDotsScore > 0;
   return (
     <div className={cn("glass-gym rounded-2xl p-6 sm:p-8", className)}>
       <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
@@ -56,27 +92,30 @@ export function GymStrengthPanel({
         </div>
 
         {hasHistory && dotsScore != null && showDotsGl && (
-          <div className="text-right">
-            <div className="flex items-baseline justify-end gap-4">
-              <div>
-                <p className="font-mono text-2xl font-semibold tabular-nums text-gym-text">
-                  {formatDOTS(dotsScore)}
-                </p>
-                <p className="text-[10px] text-gym-muted uppercase tracking-wider mt-0.5">
-                  DOTS
-                </p>
-              </div>
-              {glPoints != null && (
-                <div>
-                  <p className="font-mono text-2xl font-semibold tabular-nums text-gym-text">
-                    {formatGL(glPoints)}
-                  </p>
-                  <p className="text-[10px] text-gym-muted uppercase tracking-wider mt-0.5">
-                    IPF GL
-                  </p>
-                </div>
-              )}
+          <div className="text-right space-y-3">
+            <div>
+              <p className="text-[10px] text-gym-muted uppercase tracking-wider mb-1">
+                This workout
+              </p>
+              <DotsGlPair dotsScore={dotsScore} glPoints={glPoints} />
             </div>
+            {hasOverall && (
+              <div className="border-t border-gym-border/30 pt-3">
+                <p className="text-[10px] text-gym-accent uppercase tracking-wider mb-1">
+                  Your best · all-time
+                  {overallLiftsLogged != null && overallLiftsLogged < 3 && (
+                    <span className="text-gym-muted normal-case tracking-normal">
+                      {" "}
+                      ({overallLiftsLogged}/3 lifts logged)
+                    </span>
+                  )}
+                </p>
+                <DotsGlPair
+                  dotsScore={overallDotsScore as number}
+                  glPoints={overallGlPoints}
+                />
+              </div>
+            )}
           </div>
         )}
 
@@ -126,7 +165,9 @@ export function GymStrengthPanel({
         <ScoringExplainerNote href="/how-scoring-works#dots-gl" className="text-gym-muted">
           DOTS and IPF GL are bodyweight-adjusted formulas — they let you compare your total fairly
           against lifters of any size. Different scales, so track each on its own over time rather
-          than comparing DOTS to GL directly.
+          than comparing DOTS to GL directly. &quot;This workout&quot; uses only the squat/bench/deadlift
+          logged in that session; &quot;Your best · all-time&quot; combines your single best-ever lift of
+          each, even if they came from different sessions.
         </ScoringExplainerNote>
       ) : (
         <p className="mt-4 text-xs text-gym-muted leading-relaxed">

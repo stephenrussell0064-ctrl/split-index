@@ -119,6 +119,20 @@ export interface ScoreStrengthResult {
   oneRMBandKg: [number, number] | null;
   trend: StrengthTrend | null;
   suggestion: string | null;
+  /**
+   * This exercise's position in the logged session's exercise list, set by
+   * the caller (activity-scorer.ts) after scoring — a stable identifier for
+   * matching a result back to its exercise on the activity detail page.
+   * liftKey is NOT reliable for this: it's the RESOLVED anchor key (e.g. an
+   * aliased exercise name resolves to a different canonical string than
+   * what was actually logged — user feedback: "sometimes the lab won't
+   * show the score of the exercise... will only show the volume and 1RM
+   * prediction", because the UI's name-based lookup silently failed to
+   * find this result). Optional so older, already-persisted results
+   * (scored before this field existed) still fall back to the previous
+   * name/position matching.
+   */
+  exerciseIndex?: number;
 }
 
 /** What a free-tier caller may see. Premium adds oneRMBandKg, trend, suggestion. */
@@ -132,6 +146,7 @@ export interface FreeStrengthResult {
   source: StrengthSource;
   flags: string[];
   premiumLocked: Array<"oneRMBandKg" | "trend" | "suggestion" | "oneRMConfidence" | "appliedFactors">;
+  exerciseIndex?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -1048,6 +1063,7 @@ export function serializeStrengthResult(
     source: result.source,
     flags: result.flags,
     premiumLocked,
+    exerciseIndex: result.exerciseIndex,
   };
 }
 

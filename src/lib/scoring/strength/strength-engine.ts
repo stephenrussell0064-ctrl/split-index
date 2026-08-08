@@ -202,6 +202,17 @@ function normalizeName(name: string): string {
   return name.toLowerCase().trim();
 }
 
+/**
+ * Which of squat/bench/deadlift an exercise name counts toward, or null if
+ * it's not an SBD variant. Exported so callers building an "overall/profile"
+ * DOTS/GL (best-ever SBD total across all logged sessions, not just the most
+ * recently logged one) can group historical gym_exercises rows the same way
+ * this engine does for a single session.
+ */
+export function sbdLiftForExercise(name: string): SBDLift | null {
+  return SBD_MAP[normalizeName(name)] ?? null;
+}
+
 function collectBest1RMs(
   exercises: StrengthEngineInput["exercises"]
 ): {

@@ -173,7 +173,9 @@ function scoreGymSession(
   const results: ScoreStrengthResult[] = [];
   const strengthScoreRows: NonNullable<ActivityScoreOutput["strengthScoreRows"]> = [];
 
-  for (const ex of input.exercises ?? []) {
+  const allExercises = input.exercises ?? [];
+  for (let exerciseIndex = 0; exerciseIndex < allExercises.length; exerciseIndex++) {
+    const ex = allExercises[exerciseIndex];
     const top = bestSet(ex.sets);
     if (!top) continue;
     const volume = totalVolumeKg(ex.sets);
@@ -199,6 +201,12 @@ function scoreGymSession(
       weightEntryMode: resolved.mode,
       exerciseName: ex.exercise_name,
     });
+    // Stable identity for matching this result back to its exercise in the
+    // UI — liftKey can differ from ex.exercise_name after alias resolution,
+    // and results[] can be shorter than allExercises[] (exercises with no
+    // valid best set are skipped above), so positional index alone isn't
+    // safe without this explicit tag.
+    result.exerciseIndex = exerciseIndex;
     results.push(result);
 
     strengthScoreRows.push({
