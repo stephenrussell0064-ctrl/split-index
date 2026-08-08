@@ -672,6 +672,7 @@ export async function PATCH(
         set_details: ex.sets,
         estimated_1rm_kg: top ? computeExercise1RM(top.weight_kg, top.reps) : 0,
         order_index: i,
+        attachment: ex.attachment ?? null,
       };
     });
     await supabase.from("gym_exercises").insert(exerciseRows);

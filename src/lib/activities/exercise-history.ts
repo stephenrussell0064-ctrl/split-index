@@ -11,6 +11,13 @@ type Supabase = Awaited<ReturnType<typeof createClient>>;
  * model needs the whole history, not just the current session's sets.
  * `excludeActivityId` lets an edit exclude the activity being edited so its
  * own (about-to-be-overwritten) sets aren't double-counted.
+ *
+ * Known limitation: doesn't carry each historical set's attachment (see
+ * strength/attachments.ts), so the adaptive 1RM blend treats e.g. a rope
+ * pushdown and a straight-bar pushdown from different sessions as directly
+ * comparable weight. Only the CURRENT session's own set is scored with its
+ * attachment adjustment applied — real, but narrower than full history-
+ * aware attachment tracking would be.
  */
 export async function fetchExerciseHistory(
   supabase: Supabase,

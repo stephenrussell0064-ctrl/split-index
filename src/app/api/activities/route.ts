@@ -261,6 +261,7 @@ export async function POST(request: Request) {
         set_details: ex.sets,
         estimated_1rm_kg: top ? computeExercise1RM(top.weight_kg, top.reps) : 0,
         order_index: i,
+        attachment: ex.attachment ?? null,
       };
     });
 

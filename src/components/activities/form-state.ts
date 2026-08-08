@@ -25,6 +25,8 @@ export interface ExerciseRowState {
   notes: string;
   /** How the athlete entered load for this exercise. */
   weightEntryMode: WeightEntryMode;
+  /** Attachment id (e.g. "rope", "straight-bar") for exercises with attachment options — see strength/attachments.ts. Null when this exercise has none, or none is selected yet. */
+  attachment: string | null;
 }
 
 export interface WorkoutFormState {
@@ -140,6 +142,7 @@ export function createExerciseRow(previous?: ExerciseRowState): ExerciseRowState
     sets: [createSetRow(previous?.sets[previous.sets.length - 1])],
     notes: "",
     weightEntryMode: previous?.weightEntryMode ?? "total",
+    attachment: null,
   };
 }
 
@@ -240,6 +243,7 @@ export function restoreDraftState(
     muscleGroup?: unknown;
     notes?: unknown;
     weightEntryMode?: unknown;
+    attachment?: unknown;
     weight?: unknown;
     reps?: unknown;
     rpe?: unknown;
@@ -285,6 +289,7 @@ export function restoreDraftState(
                 : name.trim()
                   ? defaultWeightEntryMode(name)
                   : "total",
+            attachment: typeof row.attachment === "string" ? row.attachment : null,
           };
         })
     : base.exercises;
@@ -780,6 +785,7 @@ export function validateAndBuildPayload(
         sets: parsedSets,
         order_index: index,
         weight_entry_mode: row.weightEntryMode,
+        attachment: row.attachment,
       });
       if (row.notes.trim()) {
         notesMap[String(index)] = row.notes.trim();

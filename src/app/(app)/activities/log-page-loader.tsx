@@ -77,6 +77,7 @@ export async function loadLogPage({
           name: ex.name,
           muscleGroup: ex.muscle,
           weightEntryMode: defaultWeightEntryMode(ex.name),
+          attachment: null,
           sets: Array.from({ length: ex.sets }, () => ({
             id: nextSetId(),
             weight: "",
@@ -136,6 +137,7 @@ export async function loadLogPage({
             name,
             muscleGroup: group.muscleGroup,
             weightEntryMode: defaultWeightEntryMode(name),
+            attachment: null,
             sets: Array.from({ length: 3 }, () => ({
               id: nextSetId(),
               weight: "",

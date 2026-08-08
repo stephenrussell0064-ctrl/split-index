@@ -54,6 +54,7 @@ import {
   resolveScoringWeight,
   type WeightEntryMode,
 } from "@/lib/scoring/weight-entry";
+import { resolveAttachmentMultiplierByKey } from "@/lib/scoring/strength/attachments";
 
 export type Sex = "male" | "female";
 
@@ -97,6 +98,14 @@ export interface ScoreStrengthInput {
   weightEntryMode?: WeightEntryMode;
   /** Exercise name for convention-aware history weight resolution. */
   exerciseName?: string;
+  /**
+   * Attachment id (e.g. "rope", "straight-bar") for exercises with
+   * attachment options in EXERCISE_ATTACHMENTS (strength/attachments.ts) —
+   * user feedback: "equipment/attachment picker for exercises... and
+   * predictions differing per attachment". Ignored (no adjustment) for
+   * exercises with no defined attachment options.
+   */
+  attachment?: string | null;
 }
 
 export interface NextTierTarget {
@@ -652,6 +661,17 @@ export function genericAnchorForCategory(category: string, kind: "compound" | "a
 }
 
 /**
+ * The resolved anchor key for a free-text exercise name (e.g. "Tricep
+ * Pushdown" -> "tricepPushdown") — exported so callers outside the engine
+ * (the attachment picker's option lookup, UI code that needs to know which
+ * canonical lift an athlete is looking at) resolve names identically to
+ * scoreStrength() itself, rather than re-implementing the alias chain.
+ */
+export function resolveAnchorKey(exerciseName: string): string {
+  return resolveLiftAnchor(exerciseName).resolvedKey;
+}
+
+/**
  * Bodyweight-adjusted ratio, normalized so it exactly equals the plain
  * 1RM/bodyweight ratio at REFERENCE_BODYWEIGHT_KG (where every anchor is
  * calibrated) — the allometric exponent only changes how scores extrapolate
@@ -966,6 +986,14 @@ export function scoreStrength(input: ScoreStrengthInput): ScoreStrengthResult {
   }
 
   let effectiveAnchor = anchor.anchorRatio;
+
+  const attachmentMultiplier = resolveAttachmentMultiplierByKey(resolvedKey, input.attachment);
+  if (attachmentMultiplier !== 1.0) {
+    effectiveAnchor *= attachmentMultiplier;
+    appliedFactors.push(`attachment:${input.attachment} ×${attachmentMultiplier}`);
+    flags.push("attachment-adjusted");
+  }
+
   // Sex/age adjustment expressed the other way round for anchor-table
   // lookups (weightAnchorTable below): rather than making the anchor easier
   // to reach, we improve the athlete's own effective ratio before the table

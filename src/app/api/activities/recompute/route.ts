@@ -225,6 +225,7 @@ export async function POST() {
         order_index: i,
         weight_entry_mode:
           weightModes[ex.exercise_name] ?? defaultWeightEntryMode(ex.exercise_name),
+        attachment: ex.attachment ?? null,
       }));
 
     let benchmarkSport: BenchmarkSport | null = null;

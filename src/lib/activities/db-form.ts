@@ -141,6 +141,7 @@ export function activityToFormState(
               weightEntryMode:
                 exerciseWeightModes[ex.exercise_name] ??
                 defaultWeightEntryMode(ex.exercise_name),
+              attachment: ex.attachment ?? null,
             }))
         : sport === "gym"
           ? [createExerciseRow()]

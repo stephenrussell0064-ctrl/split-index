@@ -172,6 +172,8 @@ export interface GymExercise {
   set_details: GymExerciseSet[] | null;
   estimated_1rm_kg: number | null;
   order_index: number;
+  /** Attachment id (e.g. "rope", "straight-bar") for exercises with attachment options — see strength/attachments.ts. Null for exercises with no attachment variants, or rows logged before this existed. */
+  attachment: string | null;
 }
 
 /** Payload shape for creating/updating a gym exercise — the client sends the real per-set data, not a pre-computed summary. */
@@ -182,6 +184,8 @@ export interface GymExerciseInput {
   order_index: number;
   /** How weight was entered: total bar/load, per dumbbell hand, or added on bodyweight. */
   weight_entry_mode?: import("@/lib/scoring/weight-entry").WeightEntryMode;
+  /** Attachment id for exercises with attachment options (e.g. "rope" for Tricep Pushdown) — see strength/attachments.ts. */
+  attachment?: string | null;
 }
 
 export interface WorkoutScore {

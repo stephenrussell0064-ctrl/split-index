@@ -200,6 +200,7 @@ function scoreGymSession(
       isBodyweightRelative: resolved.isBodyweightRelative,
       weightEntryMode: resolved.mode,
       exerciseName: ex.exercise_name,
+      attachment: ex.attachment ?? null,
     });
     // Stable identity for matching this result back to its exercise in the
     // UI — liftKey can differ from ex.exercise_name after alias resolution,

@@ -17,7 +17,9 @@ import {
 } from "@/lib/constants/sports";
 import { formatRelativeStrength } from "@/lib/utils/scoring-display";
 import { cn } from "@/lib/utils/cn";
-import { scoreStrength } from "@/lib/scoring/split-strength-engine";
+import { resolveAnchorKey, scoreStrength } from "@/lib/scoring/split-strength-engine";
+import { getAttachmentOptionsByKey } from "@/lib/scoring/strength/attachments";
+import { AttachmentPicker } from "@/components/gym/attachment-picker";
 import {
   conventionLabel,
   conventionToMode,
@@ -201,6 +203,9 @@ function ExerciseRow({
   onFilterChange: (c: MuscleGroupCategory) => void;
 }) {
   const loadConfig = row.name.trim() ? getExerciseLoadConfig(row.name) : null;
+  const attachmentOptions = row.name.trim()
+    ? getAttachmentOptionsByKey(resolveAnchorKey(row.name))
+    : null;
   // Pull Up / Dip / Push Up / Muscle Up — the plain bodyweight variant shows
   // no weight field at all (user feedback: these "should not require you to
   // have to add weight," and should stay a separate exercise/entry from
@@ -242,6 +247,7 @@ function ExerciseRow({
           isBodyweightRelative: resolved.isBodyweightRelative,
           weightEntryMode: resolved.mode,
           exerciseName: row.name,
+          attachment: row.attachment,
         }).score
       : null;
   const oneRm = topSet ? epley1RM(parseNum(topSet.weight), parseNum(topSet.reps)) : null;
@@ -311,6 +317,10 @@ function ExerciseRow({
                   weightEntryMode: name.trim()
                     ? defaultWeightEntryMode(name)
                     : row.weightEntryMode,
+                  // A previously-picked attachment (e.g. "rope") almost
+                  // certainly doesn't apply once the exercise itself
+                  // changes — reset rather than silently carry it over.
+                  attachment: null,
                 })
               }
               onPick={(name, muscle) =>
@@ -318,6 +328,7 @@ function ExerciseRow({
                   name,
                   muscleGroup: muscle,
                   weightEntryMode: defaultWeightEntryMode(name),
+                  attachment: null,
                 })
               }
             />
@@ -365,6 +376,14 @@ function ExerciseRow({
             Bodyweight only — scored off reps. Log a &quot;Weighted {row.name}&quot; entry instead if you added load.
           </p>
         ) : null}
+
+        {attachmentOptions && (
+          <AttachmentPicker
+            options={attachmentOptions}
+            value={row.attachment}
+            onChange={(id) => onUpdate({ attachment: id })}
+          />
+        )}
 
         <div className="space-y-2">
           <div
