@@ -27,19 +27,19 @@ function scoreAtOneRM(liftKey: string, targetOneRMKg: number, overrides: Partial
   });
 }
 
-describe("scoreStrength — bench/deadlift corrected anchors (Part G)", () => {
-  it("bench: 140kg @ 83kg BW still scores ~752 (Advanced), not 850 (Elite) — untouched by the re-anchor below", () => {
+describe("scoreStrength — bench/deadlift corrected anchors (Part G, re-anchored a 3rd time)", () => {
+  it("bench: 140kg @ 83kg BW now scores ~872 (Elite), not 752 (Advanced) — user feedback: a 120x3/~132kg 1RM set scoring 724 was 'way too low... comparing to the average person in gym not elite athletes'", () => {
     const result = scoreAtOneRM("bench", 140);
-    expect(result.score).toBeCloseTo(752, -1); // within ~10 points
-    expect(result.tier).toBe("Advanced");
+    expect(result.score).toBeCloseTo(872, -1); // within ~10 points
+    expect(result.tier).toBe("Elite");
   });
 
-  it("bench matches the re-anchored table exactly (user feedback: Strength Level's own 50th percentile undersold a genuinely good lift)", () => {
+  it("bench matches the re-anchored table exactly (top two anchors raised; bottom three untouched from the prior pass)", () => {
     expect(scoreAtOneRM("bench", 47).score).toBeCloseTo(150, 0);
     expect(scoreAtOneRM("bench", 70).score).toBeCloseTo(400, 0);
     expect(scoreAtOneRM("bench", 98).score).toBeCloseTo(650, 0);
-    expect(scoreAtOneRM("bench", 132).score).toBeCloseTo(725, 0); // unchanged — Part G's Advanced boundary
-    expect(scoreAtOneRM("bench", 169).score).toBeCloseTo(850, 0); // unchanged — Part G's Elite boundary
+    expect(scoreAtOneRM("bench", 132).score).toBeCloseTo(850, 0); // raised from 725 — now the Elite boundary
+    expect(scoreAtOneRM("bench", 169).score).toBeCloseTo(950, 0); // raised from 850 — deep into World Class
   });
 
   it("bench: 100kg @ 83kg BW (a genuinely good lift) now scores well above 'merely average' 500, not ~501", () => {
@@ -47,18 +47,18 @@ describe("scoreStrength — bench/deadlift corrected anchors (Part G)", () => {
     expect(result.score).toBeGreaterThan(600);
   });
 
-  it("deadlift: 200kg @ 83kg BW still scores 725 (Advanced), not 770 — untouched by the re-anchor below", () => {
+  it("deadlift: 200kg @ 83kg BW now scores 850 (Elite), not 725/746 (Advanced) — user feedback: 'a 200kg deadlift scored 746 which is very low for something so impressive'", () => {
     const result = scoreAtOneRM("deadlift", 200);
-    expect(result.score).toBeCloseTo(725, 0);
-    expect(result.tier).toBe("Advanced");
+    expect(result.score).toBeCloseTo(850, 0);
+    expect(result.tier).toBe("Elite");
   });
 
   it("deadlift matches the re-anchored table exactly", () => {
     expect(scoreAtOneRM("deadlift", 78).score).toBeCloseTo(150, 0);
     expect(scoreAtOneRM("deadlift", 112).score).toBeCloseTo(400, 0);
     expect(scoreAtOneRM("deadlift", 152).score).toBeCloseTo(650, 0);
-    expect(scoreAtOneRM("deadlift", 200).score).toBeCloseTo(725, 0); // unchanged
-    expect(scoreAtOneRM("deadlift", 250).score).toBeCloseTo(850, 0); // unchanged
+    expect(scoreAtOneRM("deadlift", 200).score).toBeCloseTo(850, 0); // raised from 725
+    expect(scoreAtOneRM("deadlift", 250).score).toBeCloseTo(950, 0); // raised from 850
   });
 
   it("is monotonic — a heavier lift never scores lower than a lighter one", () => {

@@ -258,26 +258,45 @@ type WeightAnchor = [ratio: number, score: number];
  * call a genuinely good bench. Fix: what used to read as Strength Level's
  * 50th percentile now scores what used to be roughly its 70-75th (650, deep
  * into Semi-Pro) — the bottom two anchors (5th/20th) move up with it so the
- * curve stays smooth — while the TOP two anchors (80th/95th, 132kg/169kg)
- * are deliberately left untouched: those were the ones a previous pass
- * (Part G) already corrected against real advanced/elite lifter data (a
- * 140kg PB landing at ~752 "Advanced" rather than an over-generous 850
- * "Elite"), and re-shifting those too would undo that fix, not extend it.
+ * curve stays smooth. The TOP two anchors (80th/95th, 132kg/169kg bench;
+ * 200kg/250kg deadlift) were left at 725/850 in that pass specifically to
+ * avoid undoing an earlier fix (a 140kg PB no longer over-reading as an
+ * inflated 850 "Elite").
+ *
+ * Re-anchored a THIRD time (user feedback, with exact reference numbers): a
+ * 120x3 set (est. 1RM ~132kg) scored 724 — "should be much higher... we are
+ * comparing to the average person in gym not the elite athletes" — and a real
+ * 200kg deadlift scored 746, "very low for something so impressive." Same
+ * root cause as the second pass, just further up the curve: 132kg/200kg are
+ * Strength Level's own 80th-percentile point *within a population that
+ * already only contains people logging serious lifts online* — i.e. roughly
+ * the top 1% of the general population, nowhere near "just above average
+ * gym-goer." Cross-checked against Mark Rippetoe's published recreational-
+ * lifter standards (Starting Strength categories, an independent source
+ * explicitly targeting natural/non-competitive lifters rather than
+ * OpenPowerlifting/Strength-Level's online-tracked population): at ~82kg
+ * bodyweight, Rippetoe's own "Advanced" bench (125kg) and "Elite" bench
+ * (143kg) both sit BELOW Strength Level's raw 80th/95th percentile points
+ * (132kg/169kg) — confirming those two anchors undersold what they
+ * represent. Bottom three anchors (47/70/98kg bench, 78/112/152kg deadlift)
+ * are untouched — already corrected in the prior pass. Top two now score
+ * 850 ("Elite" tier boundary) and 950 ("World Class" territory) instead of
+ * 725/850, so a genuinely rare lift among actual gym-goers reads as one.
  */
 const WEIGHT_RATIO_ANCHOR_TABLES: Partial<Record<string, WeightAnchor[]>> = {
   bench: [
     [47 / REFERENCE_BODYWEIGHT_KG, 150],
     [70 / REFERENCE_BODYWEIGHT_KG, 400],
     [98 / REFERENCE_BODYWEIGHT_KG, 650],
-    [132 / REFERENCE_BODYWEIGHT_KG, 725],
-    [169 / REFERENCE_BODYWEIGHT_KG, 850],
+    [132 / REFERENCE_BODYWEIGHT_KG, 850],
+    [169 / REFERENCE_BODYWEIGHT_KG, 950],
   ],
   deadlift: [
     [78 / REFERENCE_BODYWEIGHT_KG, 150],
     [112 / REFERENCE_BODYWEIGHT_KG, 400],
     [152 / REFERENCE_BODYWEIGHT_KG, 650],
-    [200 / REFERENCE_BODYWEIGHT_KG, 725],
-    [250 / REFERENCE_BODYWEIGHT_KG, 850],
+    [200 / REFERENCE_BODYWEIGHT_KG, 850],
+    [250 / REFERENCE_BODYWEIGHT_KG, 950],
   ],
 };
 
