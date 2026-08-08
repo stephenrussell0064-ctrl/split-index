@@ -12,7 +12,7 @@ import {
   Cell,
   LabelList,
 } from "recharts";
-import { Dumbbell, HeartPulse } from "lucide-react";
+import { Dumbbell, HeartPulse, ClipboardList, GitCompare, Lightbulb } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { chartGridStroke, chartTickFill, chartTooltipStyle } from "@/components/analytics/charts";
 import { ShareImageButton } from "@/components/analytics/share-image-button";
@@ -119,16 +119,44 @@ export function InterferenceDetail({ report }: { report: InterferenceReport }) {
     <div className="space-y-6">
       {/* Plain-language primer — what these two cards actually answer,
           before any chart or percentage. User feedback: the page dropped
-          straight into dense charts with no explanation of the point. */}
+          straight into dense charts with no explanation of the point; a
+          later round of feedback ("I still don't understand interference...
+          how can it just be more easily conceptualised") asked for more —
+          so the paragraph below is now paired with a concrete 3-step strip
+          showing the mechanism itself (log → compare → reveal), not just a
+          description of it. Concept, not data, so it stays legible even
+          before a single session has been logged. */}
       <Card padding="md" className="border border-accent/15 bg-accent/[0.03]">
         <p className="text-sm leading-relaxed text-foreground/90">
-          Split Index is the only place tracking both your lifting and your cardio on one
-          timeline, so it can answer something no single-sport app can: does a hard gym session
-          make your next run feel harder than it should — and does a heavy training week in the
-          gym vs. a big cardio week actually change your strength? The two cards below answer
-          each direction using only <span className="font-medium text-foreground">your own</span>{" "}
-          logged history, never a generic population tip.
+          Your body doesn&apos;t fully separate lifting from cardio — a hard leg day can make
+          tomorrow&apos;s run feel harder than it should, and a big running week can quietly
+          blunt next week&apos;s lifts. This page checks whether that&apos;s actually happening
+          to <span className="font-medium text-foreground">you</span>, using only your own
+          logged sessions — never a generic population claim.
         </p>
+        <div className="mt-4 grid grid-cols-1 gap-3 border-t border-white/5 pt-4 sm:grid-cols-3">
+          <div className="flex items-start gap-2.5">
+            <ClipboardList className="mt-0.5 h-4 w-4 shrink-0 text-muted" />
+            <p className="text-xs leading-snug text-muted">
+              <span className="font-medium text-foreground/90">1. You log</span> both gym and
+              cardio sessions, same as always.
+            </p>
+          </div>
+          <div className="flex items-start gap-2.5">
+            <GitCompare className="mt-0.5 h-4 w-4 shrink-0 text-muted" />
+            <p className="text-xs leading-snug text-muted">
+              <span className="font-medium text-foreground/90">2. We compare</span> how you
+              perform right after training vs. fully rested.
+            </p>
+          </div>
+          <div className="flex items-start gap-2.5">
+            <Lightbulb className="mt-0.5 h-4 w-4 shrink-0 text-muted" />
+            <p className="text-xs leading-snug text-muted">
+              <span className="font-medium text-foreground/90">3. You see</span> the real cost
+              (or non-cost) in plain terms below.
+            </p>
+          </div>
+        </div>
       </Card>
 
       {hasRealFinding && (
