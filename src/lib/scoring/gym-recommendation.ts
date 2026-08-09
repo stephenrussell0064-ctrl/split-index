@@ -146,14 +146,18 @@ export function recommendNextGymSplit(
   }));
 
   const groupList = recommendedGroups.map((g) => g.muscleGroup).join(" and ");
+  // A trailing parenthetical aside ("(skipping X — trained too recently...)")
+  // read like an internal debug note rather than written copy (user
+  // feedback: "don't include the brackets... this looks unprofessional").
+  // A second plain sentence says the same thing without looking like one.
   const restNote =
     restingCategories.length > 0
-      ? ` (skipping ${restingCategories.join(", ")} — trained too recently to recommend again yet)`
+      ? ` ${restingCategories.join(", ")} ${restingCategories.length === 1 ? "was" : "were"} trained too recently to recommend again yet.`
       : "";
 
   return {
     recommendedGroups,
     restingCategories,
-    summary: `${groupList} could use the most attention based on your last ${GYM_RECOMMENDATION_CONFIG.LOOKBACK_DAYS} days${restNote}.`,
+    summary: `${groupList} could use the most attention based on your last ${GYM_RECOMMENDATION_CONFIG.LOOKBACK_DAYS} days.${restNote}`,
   };
 }
