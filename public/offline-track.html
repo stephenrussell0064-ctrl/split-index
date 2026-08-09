@@ -46,21 +46,54 @@
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     }
     body {
-      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      display: flex; flex-direction: column; align-items: center;
       padding: 24px;
       padding-top: max(24px, env(safe-area-inset-top));
       padding-bottom: max(24px, env(safe-area-inset-bottom));
+      overflow-y: auto;
     }
-    .card { max-width: 380px; width: 100%; text-align: center; }
+    .card { max-width: 420px; width: 100%; text-align: center; }
     h1 { font-size: 20px; font-weight: 700; margin: 0 0 10px; letter-spacing: -0.01em; }
     p { font-size: 14px; line-height: 1.55; color: #a1a1aa; margin: 0 0 8px; }
-    .stats {
+    /*
+      Live route — no basemap tiles (those need network, same as a real map
+      app truly offline: Strava's own recording screen can't show tiles
+      with zero signal either, it just draws the route line). This is
+      real, not decorative: an actual projected polyline of this session's
+      own GPS fixes, auto-scaled to fit as new points arrive.
+    */
+    #routeWrap {
       margin-top: 20px;
+      border-radius: 16px;
+      background: #10141c;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      aspect-ratio: 4 / 3;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    #routeWrap.empty { color: #52525b; font-size: 13px; }
+    #routeSvg { width: 100%; height: 100%; }
+    .stat-grid {
+      margin-top: 16px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .stat-tile {
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 12px 10px;
+    }
+    .stat-label {
+      font-size: 10px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.08em; color: #71717a; margin-bottom: 4px;
+    }
+    .stat-value {
       font-variant-numeric: tabular-nums;
-      font-size: 28px;
-      font-weight: 700;
-      letter-spacing: -0.01em;
-      min-height: 40px;
+      font-size: 22px; font-weight: 700; letter-spacing: -0.01em;
     }
     .note {
       margin-top: 20px;
@@ -88,11 +121,35 @@
   <div class="card">
     <h1>Offline run tracking</h1>
     <p>Records real GPS points straight to this device — no connection needed. Review and save it in Split Index normally once you're back online.</p>
-    <div class="stats" id="stats">—</div>
+
+    <div id="routeWrap" class="empty">
+      <svg id="routeSvg" viewBox="0 0 100 75" preserveAspectRatio="xMidYMid meet"></svg>
+      <span id="routePlaceholder">Waiting for GPS fix…</span>
+    </div>
+
+    <div class="stat-grid">
+      <div class="stat-tile">
+        <div class="stat-label">Duration</div>
+        <div class="stat-value" id="statDuration">0:00</div>
+      </div>
+      <div class="stat-tile">
+        <div class="stat-label">Distance</div>
+        <div class="stat-value" id="statDistance">0.00 km</div>
+      </div>
+      <div class="stat-tile">
+        <div class="stat-label">Pace</div>
+        <div class="stat-value" id="statPace">—</div>
+      </div>
+      <div class="stat-tile">
+        <div class="stat-label">GPS points</div>
+        <div class="stat-value" id="statPoints">0</div>
+      </div>
+    </div>
+
     <button id="startBtn" type="button">Start tracking</button>
     <button id="stopBtn" type="button">Stop</button>
     <p id="status"></p>
-    <div class="note">This won't score or save your run by itself — it just records the route. Reopen the real Split Index app once you have signal again and it'll pick this session up automatically to review and save.</div>
+    <div class="note">This won't score or save your run by itself — it just records the route. Reopen the real Split Index app once you have signal again and it'll pick this session up automatically to review and save, map included.</div>
     <a class="back" href="offline.html">← Back</a>
   </div>
   <!--
@@ -118,10 +175,16 @@
       var DISTANCE_FILTER_METERS = 10;
       var EARTH_RADIUS_METERS = 6371000;
 
-      var statsEl = document.getElementById("stats");
       var statusEl = document.getElementById("status");
       var startBtn = document.getElementById("startBtn");
       var stopBtn = document.getElementById("stopBtn");
+      var routeWrap = document.getElementById("routeWrap");
+      var routeSvg = document.getElementById("routeSvg");
+      var routePlaceholder = document.getElementById("routePlaceholder");
+      var statDuration = document.getElementById("statDuration");
+      var statDistance = document.getElementById("statDistance");
+      var statPace = document.getElementById("statPace");
+      var statPoints = document.getElementById("statPoints");
 
       var debugLog = [];
       function getPlugin(name) {
@@ -176,16 +239,82 @@
       }
 
       function formatDuration(totalSeconds) {
-        var m = Math.floor(totalSeconds / 60);
+        var h = Math.floor(totalSeconds / 3600);
+        var m = Math.floor((totalSeconds % 3600) / 60);
         var s = Math.floor(totalSeconds % 60);
-        return m + ":" + (s < 10 ? "0" : "") + s;
+        var mm = h > 0 ? (m < 10 ? "0" : "") + m : String(m);
+        var ss = (s < 10 ? "0" : "") + s;
+        return h > 0 ? h + ":" + mm + ":" + ss : mm + ":" + ss;
+      }
+
+      function formatPace(secondsPerKm) {
+        if (!secondsPerKm || !isFinite(secondsPerKm)) return "—";
+        var m = Math.floor(secondsPerKm / 60);
+        var s = Math.round(secondsPerKm % 60);
+        return m + ":" + (s < 10 ? "0" : "") + s + " /km";
+      }
+
+      /**
+       * Live route, no basemap — see the CSS comment above #routeWrap for
+       * why (tiles need network; a real map app truly offline can't show
+       * them either). Longitude is scaled by cos(avg latitude) before
+       * projecting so the drawn shape isn't stretched/squashed — degrees of
+       * longitude cover less real distance than degrees of latitude the
+       * further from the equator you are.
+       */
+      function redrawRoute() {
+        if (points.length < 2) {
+          routeWrap.className = "empty";
+          routeSvg.innerHTML = "";
+          routePlaceholder.style.display = "";
+          return;
+        }
+        routeWrap.className = "";
+        routePlaceholder.style.display = "none";
+
+        var avgLat = 0;
+        for (var i = 0; i < points.length; i++) avgLat += points[i].latitude;
+        avgLat /= points.length;
+        var lonScale = Math.cos(toRadians(avgLat));
+
+        var xs = points.map(function (p) { return p.longitude * lonScale; });
+        var ys = points.map(function (p) { return -p.latitude; }); // flip: latitude increases north, SVG y increases down
+        var minX = Math.min.apply(null, xs), maxX = Math.max.apply(null, xs);
+        var minY = Math.min.apply(null, ys), maxY = Math.max.apply(null, ys);
+        var spanX = Math.max(maxX - minX, 0.00001);
+        var spanY = Math.max(maxY - minY, 0.00001);
+
+        // Fit into a 100x75 viewBox with padding, preserving aspect ratio
+        // (uniform scale on both axes — otherwise the route's real shape
+        // would distort as its bounding box changes proportion run to run).
+        var padded = 0.85;
+        var scale = Math.min((100 * padded) / spanX, (75 * padded) / spanY);
+        var offsetX = 50 - ((minX + maxX) / 2) * scale;
+        var offsetY = 37.5 - ((minY + maxY) / 2) * scale;
+
+        var pts = xs
+          .map(function (x, i) {
+            return (x * scale + offsetX).toFixed(2) + "," + (ys[i] * scale + offsetY).toFixed(2);
+          })
+          .join(" ");
+        var last = pts.split(" ").pop().split(",");
+
+        routeSvg.innerHTML =
+          '<polyline points="' + pts + '" fill="none" stroke="#3ba6ff" stroke-width="2.2" ' +
+          'stroke-linecap="round" stroke-linejoin="round" />' +
+          '<circle cx="' + last[0] + '" cy="' + last[1] + '" r="2.6" fill="#3ba6ff" stroke="#fff" stroke-width="0.8" />';
       }
 
       function updateStats() {
         if (!startedAt) return;
         var elapsedSeconds = (Date.now() - startedAt) / 1000;
-        var km = totalDistanceMeters() / 1000;
-        statsEl.textContent = formatDuration(elapsedSeconds) + "   " + km.toFixed(2) + " km";
+        var meters = totalDistanceMeters();
+        var km = meters / 1000;
+        statDuration.textContent = formatDuration(elapsedSeconds);
+        statDistance.textContent = km.toFixed(2) + " km";
+        statPace.textContent = meters > 0 ? formatPace(elapsedSeconds / km) : "—";
+        statPoints.textContent = String(points.length);
+        redrawRoute();
       }
 
       async function persistSession() {

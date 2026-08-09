@@ -14,7 +14,12 @@ import { SPORT_INDEX_LABELS } from "@/lib/constants/sports";
 import { isNativePlatform } from "@/lib/native/platform";
 import { createClient } from "@/lib/supabase/client";
 import { livePredictionLadder, type LivePredictionEntry } from "@/lib/scoring/cardio-activity";
-import { startGpsSession, stopGpsSession, recoverOrphanedSession } from "@/lib/native/gps-tracking";
+import {
+  startGpsSession,
+  stopGpsSession,
+  recoverOrphanedSession,
+  type RecoveredGpsSession,
+} from "@/lib/native/gps-tracking";
 import { connectHeartRateMonitor, disconnectHeartRateMonitor } from "@/lib/native/heart-rate";
 import {
   isAirPodsHeartRateSupported,
@@ -119,7 +124,7 @@ export default function GpsRunPage() {
   const [phase, setPhase] = useState<Phase>("idle");
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [summary, setSummary] = useState<GpsTrackSummary | null>(null);
-  const [orphaned, setOrphaned] = useState<GpsTrackSummary | null>(null);
+  const [orphaned, setOrphaned] = useState<RecoveredGpsSession | null>(null);
   const [livePoints, setLivePoints] = useState<GpsPoint[]>([]);
   const [sport, setSport] = useState<GpsSport>("running");
   const [sessionType, setSessionType] = useState<SessionType>("easy");
@@ -743,6 +748,13 @@ export default function GpsRunPage() {
         subtitle="Lock your phone. Tracking keeps going."
       />
 
+      {/* User feedback (Slice 14): "make sure the runs are saved after so
+          that when you log back in it comes up right away to show the
+          map" — a recovered session (including one recorded entirely
+          offline via offline-track.html, which writes to this exact same
+          storage) used to surface as a text-only banner with a distance
+          number and nothing else. recoverOrphanedSession() now returns the
+          raw points too, so the actual route renders immediately. */}
       {orphaned && (
         <Card padding="sm" className="border border-warning/30 bg-warning/5">
           <div className="flex items-start gap-2 text-sm text-warning">
@@ -750,16 +762,32 @@ export default function GpsRunPage() {
             <div className="flex-1">
               <p className="font-medium">
                 We found a run that didn&apos;t stop normally last time
-                {orphaned.distanceMeters > 0 ? ` (~${(orphaned.distanceMeters / 1000).toFixed(2)}km)` : ""}.
+                {orphaned.summary.distanceMeters > 0
+                  ? ` (~${(orphaned.summary.distanceMeters / 1000).toFixed(2)}km)`
+                  : ""}
+                .
               </p>
               <p className="mt-1 text-xs text-warning/80">
                 It&apos;ll be saved as a partial/incomplete session, not a full clean effort.
               </p>
-              <div className="mt-3 flex gap-2">
+
+              {orphaned.points.length > 0 && (
+                <GpsMap
+                  points={orphaned.points}
+                  className="my-3 h-40 w-full overflow-hidden rounded-xl"
+                />
+              )}
+
+              <div className="mt-1 flex gap-2">
                 <Button
                   size="sm"
                   variant="secondary"
-                  onClick={() => submitSummary(orphaned, new Date(Date.now() - orphaned.durationSeconds * 1000).toISOString())}
+                  onClick={() =>
+                    submitSummary(
+                      orphaned.summary,
+                      new Date(Date.now() - orphaned.summary.durationSeconds * 1000).toISOString()
+                    )
+                  }
                 >
                   Save as partial
                 </Button>

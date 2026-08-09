@@ -128,15 +128,26 @@ export async function stopGpsSession(): Promise<GpsTrackSummary> {
   });
 }
 
+export interface RecoveredGpsSession {
+  summary: GpsTrackSummary;
+  /** Raw fixes, not just the aggregate summary — user feedback: a recovered
+   * session (including one left by the offline-track.html fallback page,
+   * which writes to this exact same Preferences shape) used to show only a
+   * tiny "we found a run" text banner with no way to see the actual route,
+   * even though the real points were sitting right there in storage. */
+  points: GpsPoint[];
+}
+
 /**
  * Call once on app launch (before offering to start a new run). If a
  * session was left running — the app got killed mid-run rather than the
- * user pressing stop — this returns its summary flagged as partial and
- * clears the stored session, so the interrupted run surfaces to the user
- * instead of silently disappearing or silently resuming as if nothing
- * happened.
+ * user pressing stop, or it was recorded entirely offline via
+ * offline-track.html — this returns its summary (flagged as partial) AND
+ * its raw points, and clears the stored session, so the interrupted/offline
+ * run surfaces to the user with its actual map, right away, instead of
+ * silently disappearing or showing only a number.
  */
-export async function recoverOrphanedSession(): Promise<GpsTrackSummary | null> {
+export async function recoverOrphanedSession(): Promise<RecoveredGpsSession | null> {
   if (!isNativePlatform()) return null;
 
   const session = await readSession();
@@ -146,8 +157,11 @@ export async function recoverOrphanedSession(): Promise<GpsTrackSummary | null> 
 
   if (session.points.length === 0) return null;
 
-  return summarizeGpsTrack(session.points, {
-    endedCleanly: false,
-    permissionRevoked: session.permissionRevoked,
-  });
+  return {
+    summary: summarizeGpsTrack(session.points, {
+      endedCleanly: false,
+      permissionRevoked: session.permissionRevoked,
+    }),
+    points: session.points,
+  };
 }
