@@ -37,10 +37,19 @@ export function ProfileHeader({
   const reducedMotion = useReducedMotion();
   const isPremium = profile.subscription_tier === "premium";
 
-  const stats = [
+  // User feedback: "Why is my PRs in profile 2.9 this doesn't make sense."
+  // Root cause: every stat tile ran its value through formatIndex(), which
+  // divides by 10 to rescale an internal 0-1000 index score to the
+  // user-facing 0-100 display scale — correct for Split Index/Endurance/
+  // Strength, but Workouts and PRs are plain counts, not scores on that
+  // scale, so a real count of 29 PRs rendered as "2.9". Counts now render
+  // as-is; only genuine index scores go through formatIndex.
+  const indexStats = [
     { label: "Split Index", value: splitIndex, accent: "text-foreground" },
     { label: "Endurance", value: enduranceIndex, accent: "text-endurance" },
     { label: "Strength", value: strengthIndex, accent: "text-strength" },
+  ];
+  const countStats = [
     { label: "Workouts", value: activityCount, accent: "text-foreground" },
     { label: "PRs", value: prCount, accent: "text-foreground" },
   ];
@@ -97,7 +106,7 @@ export function ProfileHeader({
         )}
 
         <div className="mt-6 grid grid-cols-3 sm:grid-cols-5 gap-3">
-          {stats.map((stat, i) => (
+          {indexStats.map((stat, i) => (
             <motion.div
               key={stat.label}
               initial={{ opacity: 0, y: 8 }}
@@ -105,10 +114,24 @@ export function ProfileHeader({
               transition={{ delay: 0.15 + i * 0.05 }}
               className="glass rounded-xl border border-white/[0.06] p-3 text-center transition-colors hover:border-white/10"
             >
-              <p
-                className={`index-display text-xl font-bold ${stat.accent}`}
-              >
+              <p className={`index-display text-xl font-bold ${stat.accent}`}>
                 {stat.value !== null ? formatIndex(stat.value) : "—"}
+              </p>
+              <p className="mt-1 text-[11px] text-muted uppercase tracking-wider">
+                {stat.label}
+              </p>
+            </motion.div>
+          ))}
+          {countStats.map((stat, i) => (
+            <motion.div
+              key={stat.label}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.15 + (indexStats.length + i) * 0.05 }}
+              className="glass rounded-xl border border-white/[0.06] p-3 text-center transition-colors hover:border-white/10"
+            >
+              <p className={`index-display text-xl font-bold ${stat.accent}`}>
+                {stat.value.toLocaleString()}
               </p>
               <p className="mt-1 text-[11px] text-muted uppercase tracking-wider">
                 {stat.label}
