@@ -7,7 +7,20 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { ShareImageButton } from "@/components/analytics/share-image-button";
 import { cn } from "@/lib/utils/cn";
 import { hasShareableFinding } from "@/lib/scoring/interference";
+import { HeadlineStat, SessionsProgress } from "@/components/analytics/interference-detail";
 import type { InterferenceReport } from "@/lib/scoring/interference";
+
+/** Same day-1 (or day-0 fallback) bucket pick as InterferenceDetail's own pickHeadlineBucket — kept in sync here so the dashboard's headline number always agrees with the full page's. */
+function pickHeadlineDelta(report: InterferenceReport): number | null {
+  const dayOne = report.strengthToCardio.decayByDay.find(
+    (d) => d.daysSinceStrength === 1 && d.sampleCount > 0
+  );
+  if (dayOne) return dayOne.efDeltaPct;
+  const dayZero = report.strengthToCardio.decayByDay.find(
+    (d) => d.daysSinceStrength === 0 && d.sampleCount > 0
+  );
+  return dayZero?.efDeltaPct ?? null;
+}
 
 /**
  * Interference & Synergy Engine (interference-engine brief, Part 1) — the
@@ -16,6 +29,19 @@ import type { InterferenceReport } from "@/lib/scoring/interference";
  * the actual answer to "is my running hurting my squat, is my squat
  * hurting my running" — genuinely personal, mined from the athlete's own
  * paired history, never a population-average tip dressed up as one.
+ *
+ * User feedback: "Interference radar on dashboard still showing as no
+ * data, please fix this so it shows the same as the interference tab."
+ * Root cause: this card used to gate on `totalQualifyingSessions === 0 &&
+ * sampleCount === 0` and, whenever that was false, show a PLAIN TEXT
+ * sentence with no visual weight — for every other state (still gathering
+ * data, a weekly-fallback estimate, or a real finding), while the full
+ * /interference page showed a big colored headline number and/or a
+ * progress bar for those exact same states. The card now branches on the
+ * same `calibrating`/`weeklyFallback` fields the detail page uses, and
+ * reuses its exact HeadlineStat/SessionsProgress components — genuinely
+ * the same rendering, not just similar-looking independent code, so the
+ * two surfaces can't drift apart again.
  */
 export function InterferenceRadarCard({
   report,
@@ -28,6 +54,7 @@ export function InterferenceRadarCard({
   const { strengthToCardio, cardioToStrength } = report;
 
   const hasFinding = hasShareableFinding(report);
+  const noDataAtAll = strengthToCardio.totalQualifyingSessions === 0 && cardioToStrength.sampleCount === 0;
 
   return (
     <Card glow="accent" className={cn("relative overflow-hidden", className)}>
@@ -55,7 +82,7 @@ export function InterferenceRadarCard({
           transition={{ duration: 0.5 }}
           className="space-y-3"
         >
-          {strengthToCardio.totalQualifyingSessions === 0 && cardioToStrength.sampleCount === 0 ? (
+          {noDataAtAll ? (
             <p className="text-sm text-muted">
               Gathering data — log both a strength and a cardio session across a few weeks and
               we&apos;ll show you something no other app can: how your lifting and running
@@ -65,13 +92,36 @@ export function InterferenceRadarCard({
             <>
               <div>
                 <p className="micro-label mb-1 text-muted/70">Does lifting slow your cardio?</p>
-                <p className="text-sm">
-                  {strengthToCardio.weeklyFallback?.summary ?? strengthToCardio.summary}
-                </p>
+                {strengthToCardio.calibrating ? (
+                  strengthToCardio.weeklyFallback ? (
+                    <HeadlineStat
+                      deltaPct={strengthToCardio.weeklyFallback.deltaPct}
+                      sentence={strengthToCardio.weeklyFallback.summary}
+                    />
+                  ) : (
+                    <SessionsProgress
+                      current={strengthToCardio.sampleCount}
+                      target={strengthToCardio.minSamples}
+                      message={strengthToCardio.summary}
+                      compact
+                    />
+                  )
+                ) : (
+                  <HeadlineStat deltaPct={pickHeadlineDelta(report)} sentence={strengthToCardio.summary} />
+                )}
               </div>
               <div className="border-t border-white/5 pt-3">
                 <p className="micro-label mb-1 text-muted/70">Does cardio weaken your lifting?</p>
-                <p className="text-sm">{cardioToStrength.summary}</p>
+                {cardioToStrength.calibrating ? (
+                  <SessionsProgress
+                    current={cardioToStrength.sampleCount}
+                    target={cardioToStrength.minSamples}
+                    message={cardioToStrength.summary}
+                    compact
+                  />
+                ) : (
+                  <HeadlineStat deltaPct={cardioToStrength.deltaPct} sentence={cardioToStrength.summary} />
+                )}
               </div>
             </>
           )}

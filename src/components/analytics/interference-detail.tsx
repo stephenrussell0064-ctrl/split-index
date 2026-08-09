@@ -49,7 +49,8 @@ function dayLabel(d: number): string {
  * making the reader parse a bar chart's axis to find it themselves (user
  * feedback: "very difficult to read and visualise").
  */
-function HeadlineStat({ deltaPct, sentence }: { deltaPct: number | null; sentence: string }) {
+/** Exported so InterferenceRadarCard (the dashboard's compact version of this page) can render the exact same headline-stat treatment for the exact same data — user feedback: "Interference radar on dashboard still showing as no data, please fix this so it shows the same as the interference tab." The card was using a plain text sentence with no visual weight for every state; this is the shared piece that fixes that. */
+export function HeadlineStat({ deltaPct, sentence }: { deltaPct: number | null; sentence: string }) {
   const isCost = deltaPct !== null && deltaPct < -3;
   const color = deltaPct === null ? "text-muted" : isCost ? "text-danger" : "text-strength-accent";
 
@@ -72,18 +73,26 @@ function HeadlineStat({ deltaPct, sentence }: { deltaPct: number | null; sentenc
  * toward something concrete no matter how little is logged yet, not like a
  * dead end until an arbitrary session count is hit.
  */
-function SessionsProgress({
+/** Exported for InterferenceRadarCard — see HeadlineStat's own doc comment for why. `compact` drops the tall min-height/padding meant for a full page down to something that fits a dashboard card holding two of these at once. */
+export function SessionsProgress({
   current,
   target,
   message,
+  compact = false,
 }: {
   current: number;
   target: number;
   message: string;
+  compact?: boolean;
 }) {
   const pct = target > 0 ? Math.min(100, Math.round((current / target) * 100)) : 0;
   return (
-    <div className="flex min-h-[200px] flex-col items-center justify-center gap-4 rounded-xl px-6 py-8 text-center">
+    <div
+      className={cn(
+        "flex flex-col items-center justify-center gap-3 rounded-xl text-center",
+        compact ? "px-2 py-3" : "min-h-[200px] px-6 py-8 gap-4"
+      )}
+    >
       <div className="w-full max-w-xs">
         <div className="mb-2 flex items-center justify-between text-xs text-muted">
           <span>Progress toward your first finding</span>
