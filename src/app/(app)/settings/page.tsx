@@ -22,6 +22,7 @@ import { startStripeCheckout } from "@/lib/stripe/start-checkout";
 import { FREE_TIER_FEATURES } from "@/lib/retention/tiers";
 import { getTrialDaysRemaining, isPremiumUser } from "@/lib/retention/trial";
 import { SplitIndexSettings } from "@/components/settings/split-index-settings";
+import { ActivityPrivacySettings } from "@/components/settings/activity-privacy-settings";
 import { PremiumBadge } from "@/components/retention/premium-badge";
 import { createClient } from "@/lib/supabase/client";
 import type { SubscriptionStatus, SubscriptionTier } from "@/types";
@@ -40,6 +41,7 @@ export default function SettingsPage() {
     createdAt: string;
     userId: string;
     splitEnduranceWeight: number;
+    shareActivitiesWithFriends: boolean;
   } | null>(null);
 
   useEffect(() => {
@@ -48,7 +50,9 @@ export default function SettingsPage() {
       if (!user) return;
       supabase
         .from("profiles")
-        .select("subscription_tier, subscription_status, created_at, split_endurance_weight, user_id")
+        .select(
+          "subscription_tier, subscription_status, created_at, split_endurance_weight, share_activities_with_friends, user_id"
+        )
         .eq("user_id", user.id)
         .single()
         .then(({ data }) => {
@@ -62,6 +66,7 @@ export default function SettingsPage() {
                 typeof data.split_endurance_weight === "number"
                   ? data.split_endurance_weight
                   : 0.5,
+              shareActivitiesWithFriends: !!data.share_activities_with_friends,
             });
           }
         });
@@ -175,6 +180,13 @@ export default function SettingsPage() {
       {profile && (
         <SplitIndexSettings
           initialEnduranceWeight={profile.splitEnduranceWeight}
+          userId={profile.userId}
+        />
+      )}
+
+      {profile && (
+        <ActivityPrivacySettings
+          initialShareActivities={profile.shareActivitiesWithFriends}
           userId={profile.userId}
         />
       )}

@@ -107,6 +107,8 @@ export interface Profile {
   stripe_customer_id: string | null;
   /** IANA timezone for local-day workout grouping (e.g. Europe/London). */
   timezone?: string | null;
+  /** Off by default — when true, accepted friends can see this user's non-draft activities in the Feed and react/comment on them (migration 031). */
+  share_activities_with_friends?: boolean;
   created_at: string;
   updated_at: string;
 }

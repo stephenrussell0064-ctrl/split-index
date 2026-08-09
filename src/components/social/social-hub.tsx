@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
-import { Target, Trophy, Users, Medal, Swords, Users2 } from "lucide-react";
+import { Target, Trophy, Users, Medal, Swords, Users2, Rss } from "lucide-react";
 import { LeaderboardPanel } from "@/components/social/leaderboard-panel";
+import { FeedPanel } from "@/components/social/feed-panel";
 import { FriendsPanel } from "@/components/social/friends-panel";
 import { ChallengesPanel } from "@/components/social/challenges-panel";
 import { DuelsPanel } from "@/components/social/duels-panel";
@@ -22,12 +23,16 @@ import type {
 } from "@/lib/social/types";
 import { cn } from "@/lib/utils/cn";
 
-type SocialTab = "squads" | "duels" | "friends" | "challenges" | "leaderboards" | "achievements";
+type SocialTab = "feed" | "squads" | "duels" | "friends" | "challenges" | "leaderboards" | "achievements";
 
-// Squads and Duels lead — real training partners you know, not anonymous
-// bracket peers. Leaderboards are demoted (kept, not removed) per the
-// interference-brief Part 4 social layer rework.
+// Feed leads (Slice 1: "integrate this into the social part of the app") —
+// friends' shared activities are the most Strava-like, immediately-relevant
+// surface here, ahead of even Squads/Duels. Squads and Duels come next —
+// real training partners you know, not anonymous bracket peers.
+// Leaderboards are demoted (kept, not removed) per the interference-brief
+// Part 4 social layer rework.
 const TABS: { id: SocialTab; label: string; icon: typeof Trophy }[] = [
+  { id: "feed", label: "Feed", icon: Rss },
   { id: "squads", label: "Squads", icon: Users2 },
   { id: "duels", label: "Duels", icon: Swords },
   { id: "friends", label: "Friends", icon: Users },
@@ -67,7 +72,7 @@ export function SocialHub({
   squads,
   streak,
 }: SocialHubProps) {
-  const [tab, setTab] = useState<SocialTab>("squads");
+  const [tab, setTab] = useState<SocialTab>("feed");
   const [compareOpen, setCompareOpen] = useState(false);
   const [compareTarget, setCompareTarget] = useState<{
     username?: string;
@@ -123,6 +128,8 @@ export function SocialHub({
         animate={{ opacity: 1, y: 0 }}
         transition={spring}
       >
+        {tab === "feed" && <FeedPanel />}
+
         {tab === "squads" && <SquadsPanel initialSquads={squads} currentUserId={currentUserId} />}
 
         {tab === "leaderboards" && (
