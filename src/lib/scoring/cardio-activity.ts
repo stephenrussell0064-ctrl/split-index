@@ -33,7 +33,13 @@
  * `confidence`/flags (this athlete has proven this fitness across sessions,
  * not just today), but it must never replace this session's own equivalent —
  * doing so previously let a session's score depend on history rather than
- * its own pace.
+ * its own pace. The one narrow, deliberate exception is the ceiling-aware
+ * fitness bonus for easy/recovery/long sessions (Slice 2, see
+ * CEILING_FITNESS_BONUS_MAX below): it derives a fixed per-athlete SCALE
+ * factor from `storedPredictionSeconds` alone, never from this session's own
+ * pace, so it can't reintroduce the monotonicity bug — a constant positive
+ * multiplier can't change the ordering between two sessions of the same
+ * athlete, only shift the baseline between two different athletes.
  *
  * FREE tier reads `score` and `vo2max`.
  * PREMIUM tier additionally surfaces `executionScore`, `trimp`,
@@ -48,6 +54,7 @@
  */
 
 import type { SessionType } from "@/types";
+import { INDEX_ANCHOR } from "@/lib/scoring/constants";
 import {
   timeToScore,
   enduranceAgeGradeFactor,
@@ -176,6 +183,41 @@ const MAX_NORMALIZATION_RATIO = 1.6;
 // more credit than a population-wide number could safely assume for
 // everyone.
 const RELATIVE_EFFORT_MAX_ADJUSTMENT = 0.20;
+
+/**
+ * Ceiling-aware fitness bonus for easy/recovery/long sessions (user
+ * feedback, Slice 2): two athletes at similar pace/HR on an easy run but
+ * very different demonstrated ceilings (5K PR) shouldn't score identically.
+ * A prior attempt at this exact idea floored `sessionEquivalentSeconds`
+ * directly at the athlete's own best pace — reverted per user feedback ("i
+ * dont want a ceiling in place, i want the natural credit reduced slightly
+ * on every run") because a hard floor made different sessions converge on
+ * the identical number whenever they hit it, destroying the natural
+ * variation between them.
+ *
+ * This is deliberately NOT a function of THIS session's own pace/HR at
+ * all — it's a single scale factor derived only from the athlete's
+ * cross-session ceiling (`storedPredictionSeconds`), same category as
+ * `enduranceAgeGradeFactor` above (a fixed per-athlete multiplier, not a
+ * session-dependent one). Because it's constant across all of one
+ * athlete's sessions, it cannot change the ordering between two sessions
+ * from the SAME athlete — only shift the baseline between two DIFFERENT
+ * athletes. This is also why it must never be built from
+ * `sessionEquivalentSeconds`/`populationEquivalentSeconds` (this session's
+ * own pace-derived value): a bonus that grows with how much worse THIS
+ * session's own pace reads is a bonus that shrinks as pace improves,
+ * which is exactly the monotonicity violation the file header's
+ * "IMPORTANT — monotonicity guarantee" section exists to prevent.
+ *
+ * Bonus-only (floors at 0 for a ceiling at or below population median) and
+ * capped modestly — this is one athlete-wide input feeding the SAME overall
+ * stacking cap (MAX_TOTAL_RELATIVE_EFFORT_DISCOUNT) as every other
+ * relative-effort credit below, so it can't push a session's total credit
+ * past what's already tuned there.
+ */
+const CEILING_FITNESS_BONUS_MAX = 0.08;
+/** Anchor-table score (0-1000) at which the bonus saturates — the 99th-percentile run anchor (17:00 5K, cardio-benchmarks.ts), i.e. only a near-elite demonstrated ceiling earns the full bonus. */
+const CEILING_FITNESS_BONUS_SATURATION_SCORE = 925;
 
 // Easy-session score floor (user feedback: a well-executed easy/recovery/
 // long run "should not deviate that far from my normal scores" despite a
@@ -778,6 +820,37 @@ export function scoreCardioActivity(input: CardioInput): CardioResult {
       flags.push('hr-zone-assumed-target');
     } else {
       sessionEquivalentSeconds = populationEquivalentSeconds;
+    }
+
+    // Ceiling-aware fitness bonus — see CEILING_FITNESS_BONUS_MAX's doc
+    // comment. Regardless of which branch above scored this session (same
+    // "applies uniformly" philosophy as the long-run distance credit right
+    // below), a single athlete-constant scale factor from this athlete's own
+    // demonstrated ceiling — never from this session's own pace/HR.
+    if (
+      isRelativeEffortSession &&
+      !looksMistagged &&
+      sessionEquivalentSeconds !== null &&
+      input.storedPredictionSeconds != null
+    ) {
+      const ceilingScore = timeToScore(input.benchmarkSport, input.storedPredictionSeconds, input.sex);
+      // How far this athlete's ceiling sits between population median (0)
+      // and the saturation anchor (1) — clamped to [0, 1] BEFORE scaling by
+      // the bonus cap, not after. Clamping the bonus directly against the
+      // raw (ceilingScore - median) gap without this intermediate [0,1]
+      // normalization made the cap bind almost immediately (any athlete
+      // faster than roughly a 29:00 5K saturated it), collapsing exactly
+      // the differentiation this mechanism exists to provide.
+      const ceilingFraction = clamp(
+        (ceilingScore - INDEX_ANCHOR) / (CEILING_FITNESS_BONUS_SATURATION_SCORE - INDEX_ANCHOR),
+        0,
+        1
+      );
+      const ceilingBonus = ceilingFraction * CEILING_FITNESS_BONUS_MAX;
+      if (ceilingBonus > 0) {
+        sessionEquivalentSeconds *= 1 - ceilingBonus;
+        flags.push('ceiling-fitness-bonus');
+      }
     }
 
     // Long-run distance credit — see LONG_RUN_DISTANCE_CREDIT_MAX's doc
