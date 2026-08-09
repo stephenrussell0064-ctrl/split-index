@@ -382,6 +382,25 @@ const LIFT_ALIASES: Record<string, string> = {
   "incline dumbbell press": "inclineDbPress", "decline dumbbell press": "inclineDbPress",
   "dumbbell bench press": "flatDbPress",
   "machine chest press": "machineChestPress", "smith machine squat": "machineChestPress",
+  // Iso-Lateral (Hammer Strength) machines — user feedback: "please fix to
+  // make all the iso lateral machine exercises comparable." Without these,
+  // every one of them fell through to DEFAULT_GENERIC_ANCHOR (0.35) — lower
+  // than any of their real machine equivalents' anchors below, which
+  // inflates the score (see scoreFromRatio: a lower anchor means a higher
+  // ratio/anchor for the same lift, i.e. a higher score for identical
+  // performance). Mapped to the same anchor as their closest calibrated
+  // machine sibling.
+  "iso-lateral chest press": "machineChestPress",
+  "iso-lateral incline press": "machineChestPress",
+  "iso-lateral decline press": "machineChestPress",
+  "iso-lateral shoulder press": "dbShoulderPress",
+  "iso-lateral row": "dbRow",
+  "iso-lateral high row": "dbRow",
+  "iso-lateral low row": "dbRow",
+  "iso-lateral wide pulldown": "latPulldown",
+  "iso-lateral front pulldown": "latPulldown",
+  "iso-lateral leg extension": "legExtension",
+  "iso-lateral leg curl": "legCurl",
   "cable fly": "cableFly", "low-to-high cable fly": "cableFly", "high-to-low cable fly": "cableFly",
   "dumbbell fly": "cableFly", "incline dumbbell fly": "cableFly",
   "pec deck": "pecDeck",

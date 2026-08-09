@@ -16,6 +16,7 @@ import {
   type MuscleGroupCategory,
 } from "@/lib/constants/sports";
 import { formatRelativeStrength } from "@/lib/utils/scoring-display";
+import { formatIndex } from "@/lib/utils/format";
 import { cn } from "@/lib/utils/cn";
 import { resolveAnchorKey, scoreStrength } from "@/lib/scoring/split-strength-engine";
 import { getAttachmentOptionsByKey } from "@/lib/scoring/strength/attachments";
@@ -478,13 +479,20 @@ function ExerciseRow({
               tone="strength"
             />
             <DerivedChip label="Volume" value={volume > 0 ? `${Math.round(volume)} kg` : null} tone="strength" />
+            {/* User feedback: "why is the scoring system in the lab when
+                logging exercises still out of 999 not 99.9" — engineScore
+                is the same internal 0-999 scale as every other score in the
+                app; every other surface (dashboard, success screen, etc.)
+                runs it through formatIndex() before display, this one
+                didn't, so it showed the raw internal number instead of the
+                app-wide 0-99.9 display scale. */}
             <span
               className={cn(
                 "inline-flex items-center rounded-md px-2 py-0.5 text-sm font-bold tabular-nums",
                 engineScore ? "text-gym-accent bg-gym-accent/10" : "text-gym-muted/50"
               )}
             >
-              {engineScore ?? "—"}
+              {engineScore !== null ? formatIndex(engineScore) : "—"}
             </span>
           </div>
           <div className="flex gap-1">

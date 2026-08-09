@@ -61,6 +61,28 @@ const EXERCISE_COEFFICIENT_OVERRIDES: Record<string, number> = {
   "machine row": 0.85,
   "machine lateral raise": 3.2,
   "machine preacher curl": 2.8,
+  // Iso-Lateral (Hammer Strength) machines — user feedback: "i can do 75 for
+  // 8 on each arm for iso lateral high row yet this would score 99.9...
+  // please fix to make all the iso lateral machine exercises comparable."
+  // Root cause: these were added to COMMON_EXERCISES with kind:"compound",
+  // which (with no override here) defaulted to the SAME 1.0 coefficient as
+  // a free-weight barbell/bodyweight compound lift — treating a machine
+  // that lets you move real weight with far less true strength demand as
+  // if it were exactly as hard as a Bench Press or Deadlift. Deflated to
+  // match their closest already-calibrated machine sibling: Machine Row
+  // for the row/pulldown family, Machine Chest Press for the press family,
+  // Machine Shoulder Press for the shoulder press, Leg Press for the leg
+  // press (same movement pattern, iso-lateral rails).
+  "iso-lateral row": 0.85,
+  "iso-lateral high row": 0.85,
+  "iso-lateral low row": 0.85,
+  "iso-lateral wide pulldown": 0.85,
+  "iso-lateral front pulldown": 0.85,
+  "iso-lateral chest press": 0.85,
+  "iso-lateral incline press": 0.85,
+  "iso-lateral decline press": 0.85,
+  "iso-lateral shoulder press": 0.85,
+  "iso-lateral leg press": 0.55,
 };
 
 const DEFAULT_EXERCISE_COEFFICIENT = 2.0; // unrecognized/custom exercise fallback
