@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { format } from "date-fns";
 import { PlusCircle } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { TrainZoneSwipe } from "@/components/layout/train-zone-swipe";
@@ -9,7 +8,7 @@ import { GymStrengthPanel } from "@/components/dashboard/gym-strength-panel";
 import { GymQuickStart } from "@/components/gym/gym-quick-start";
 import { WorkoutPlansDisclosure } from "@/components/gym/workout-plans-disclosure";
 import { RecommendedSplitCard } from "@/components/gym/recommended-split-card";
-import { formatIndex, formatDuration } from "@/lib/utils/format";
+import { ActivityListSection } from "@/components/activities/activity-list-section";
 import { canAccessProfile } from "@/lib/premium/features";
 import {
   recommendNextGymSplit,
@@ -54,15 +53,19 @@ export default async function GymPage() {
         .eq("user_id", user.id)
         .eq("sport", "gym")
         .order("created_at", { ascending: false })
-        .limit(10),
+        // Matches the activities query below (20) so the logbook's score
+        // column stays populated for every row, not just the first ten.
+        .limit(20),
       supabase
         .from("activities")
-        .select("id, title, started_at, duration_seconds")
+        .select("id, sport, title, started_at, duration_seconds, distance_meters")
         .eq("user_id", user.id)
         .eq("sport", "gym")
         .eq("is_draft", false)
         .order("started_at", { ascending: false })
-        .limit(8),
+        // User feedback (Slice 10): same "not nice to view activities"
+        // complaint applied to the Lab's own logbook — was capped at 8.
+        .limit(20),
       supabase
         .from("workout_scores")
         .select("score_breakdown, sport_index")
@@ -203,43 +206,27 @@ export default async function GymPage() {
               <WorkoutPlansDisclosure />
 
               {hasHistory && (
-                <div className="glass-gym rounded-2xl p-6">
-                  <p className="micro-label text-gym-muted mb-4">Session history</p>
-                  <ul className="space-y-1">
-                    {(gymActivities ?? []).map((a) => {
-                      const score = gymScores?.find((s) => s.activity_id === a.id);
-                      return (
-                        <li
-                          key={a.id as string}
-                          className="flex items-center justify-between gap-2 py-3 text-sm border-b border-gym-border/30 last:border-0"
-                        >
-                          <Link
-                            href={`/activities/${a.id}`}
-                            className="min-w-0 flex-1 hover:opacity-80 transition-opacity"
-                          >
-                            <p className="font-medium text-gym-text truncate">
-                              {(a.title as string) ?? "Gym session"}
-                            </p>
-                            <p className="text-xs text-gym-muted">
-                              {format(new Date(a.started_at as string), "MMM d")} ·{" "}
-                              {formatDuration(a.duration_seconds as number)}
-                            </p>
-                          </Link>
-                          {score && (
-                            <span className="font-mono font-semibold tabular-nums text-gym-accent">
-                              {formatIndex(score.sport_index as number)}
-                            </span>
-                          )}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                  <Link
-                    href="/activities"
-                    className="mt-4 inline-block text-xs text-gym-accent hover:text-gym-accent/80"
-                  >
-                    Full logbook →
-                  </Link>
+                <div className="bg-gym-zone rounded-2xl border border-gym-border/40 overflow-hidden">
+                  <div className="px-5 py-4 border-b border-gym-border/30 flex items-center justify-between">
+                    <p className="micro-label text-gym-muted">Session history</p>
+                    <Link href="/activities" className="text-xs text-gym-accent hover:text-gym-accent/80">
+                      Full logbook →
+                    </Link>
+                  </div>
+                  <ActivityListSection
+                    items={(gymActivities ?? []).map((a) => ({
+                      id: a.id as string,
+                      sport: a.sport as string,
+                      title: a.title as string | null,
+                      started_at: a.started_at as string,
+                      duration_seconds: a.duration_seconds as number | null,
+                      distance_meters: a.distance_meters as number | null,
+                    }))}
+                    zone="gym"
+                    scoreMap={Object.fromEntries(
+                      (gymScores ?? []).map((s) => [s.activity_id as string, s.sport_index as number])
+                    )}
+                  />
                 </div>
               )}
             </div>

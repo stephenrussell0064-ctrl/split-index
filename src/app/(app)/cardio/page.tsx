@@ -1,11 +1,12 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { format } from "date-fns";
 import { Activity, PlusCircle, MapPin } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { TrainZoneSwipe } from "@/components/layout/train-zone-swipe";
 import { Button } from "@/components/ui/button";
-import { formatIndex, formatDuration, formatDistance } from "@/lib/utils/format";
+import { ActivityListSection } from "@/components/activities/activity-list-section";
+import { SportComparisonBars } from "@/components/activities/sport-comparison-bars";
+import { formatIndex } from "@/lib/utils/format";
 import { SPORT_INDEX_LABELS, ENDURANCE_SPORTS } from "@/lib/constants/sports";
 import type { SportType } from "@/types";
 
@@ -48,7 +49,11 @@ export default async function CardioPage() {
         .neq("sport", "gym")
         .eq("is_draft", false)
         .order("started_at", { ascending: false })
-        .limit(10),
+        // User feedback (Slice 10): "the engine screen isn't nice to view
+        // activities" — the old 6-item mini-list forced anyone with a real
+        // training history off to /activities just to see last week. 20
+        // keeps this a real logbook, not just a preview of one.
+        .limit(20),
     ]);
 
   const enduranceIndex = latestIndex?.endurance_index ?? null;
@@ -69,6 +74,18 @@ export default async function CardioPage() {
     count: agg.count,
     label: SPORT_INDEX_LABELS[sport as SportType] ?? sport,
   })).sort((a, b) => b.avg - a.avg);
+
+  const cardioScoreMap = Object.fromEntries(
+    (scores ?? []).map((s) => [s.activity_id as string, s.sport_index as number])
+  );
+  const cardioActivityRows = (activities ?? []).map((a) => ({
+    id: a.id as string,
+    sport: a.sport as string,
+    title: a.title as string | null,
+    started_at: a.started_at as string,
+    duration_seconds: a.duration_seconds as number | null,
+    distance_meters: a.distance_meters as number | null,
+  }));
 
   return (
     <TrainZoneSwipe mode="cardio">
@@ -125,65 +142,31 @@ export default async function CardioPage() {
           </div>
 
           {sportLeaderboard.length > 0 && (
-            <div className="grid gap-5 lg:grid-cols-2 mb-8">
-              <div className="glass-cardio rounded-2xl p-6">
-                <p className="micro-label text-cardio-muted mb-4">By sport</p>
-                <ul className="space-y-3">
-                  {sportLeaderboard.map((s) => (
-                    <li key={s.sport} className="flex items-center justify-between">
-                      <div>
-                        <p className="font-medium text-cardio-text capitalize">
-                          {s.sport.replace("_", " ")}
-                        </p>
-                        <p className="text-xs text-cardio-muted">{s.count} sessions</p>
-                      </div>
-                      <span className="font-mono text-lg font-semibold tabular-nums text-cardio-accent">
-                        {formatIndex(s.avg)}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
+            <div className="grid gap-5 lg:grid-cols-[1fr_340px] mb-8">
+              <div className="bg-cardio-zone rounded-2xl border border-cardio-border/40 overflow-hidden">
+                <div className="px-5 py-4 border-b border-cardio-border/30 flex items-center justify-between">
+                  <p className="micro-label text-cardio-muted">Logbook</p>
+                  <Link
+                    href="/activities"
+                    className="text-xs text-cardio-accent hover:text-cardio-accent/80"
+                  >
+                    Full logbook →
+                  </Link>
+                </div>
+                <ActivityListSection items={cardioActivityRows} zone="cardio" scoreMap={cardioScoreMap} />
               </div>
 
               <div className="glass-cardio rounded-2xl p-6">
-                <p className="micro-label text-cardio-muted mb-4">Latest sessions</p>
-                <ul className="space-y-1">
-                  {(activities ?? []).slice(0, 6).map((a) => {
-                    const score = scores?.find((s) => s.activity_id === a.id);
-                    return (
-                      <li key={a.id as string}>
-                        <Link
-                          href={`/activities/${a.id}`}
-                          className="flex items-center justify-between py-3 text-sm border-b border-cardio-border/30 last:border-0 hover:bg-black/[0.02] -mx-2 px-2 rounded-lg transition-colors duration-200"
-                        >
-                          <div>
-                            <p className="font-medium text-cardio-text capitalize">
-                              {(a.title as string) ?? (a.sport as string).replace("_", " ")}
-                            </p>
-                            <p className="text-xs text-cardio-muted">
-                              {format(new Date(a.started_at as string), "MMM d")} ·{" "}
-                              {formatDuration(a.duration_seconds as number)}
-                              {a.distance_meters
-                                ? ` · ${formatDistance(a.distance_meters as number)}`
-                                : ""}
-                            </p>
-                          </div>
-                          {score && (
-                            <span className="font-mono font-semibold tabular-nums text-cardio-accent">
-                              {formatIndex(score.sport_index as number)}
-                            </span>
-                          )}
-                        </Link>
-                      </li>
-                    );
-                  })}
-                </ul>
-                <Link
-                  href="/activities"
-                  className="mt-4 inline-block text-xs text-cardio-accent hover:text-cardio-accent/80"
-                >
-                  View all activities →
-                </Link>
+                <p className="micro-label text-cardio-muted mb-4">By sport</p>
+                <SportComparisonBars
+                  zone="cardio"
+                  items={sportLeaderboard.map((s) => ({
+                    label: s.sport.replace("_", " "),
+                    value: s.avg,
+                    displayValue: formatIndex(s.avg),
+                    sublabel: `${s.count} session${s.count === 1 ? "" : "s"}`,
+                  }))}
+                />
               </div>
             </div>
           )}

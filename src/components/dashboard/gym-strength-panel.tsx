@@ -1,14 +1,10 @@
 "use client";
 
 import { cn } from "@/lib/utils/cn";
-import {
-  formatDOTS,
-  formatGL,
-  formatExRxTier,
-  formatLiftBreakdownLine,
-} from "@/lib/utils/scoring-display";
+import { formatDOTS, formatGL, formatExRxTier } from "@/lib/utils/scoring-display";
 import { PremiumTease } from "@/components/premium/premium-tease";
 import { ScoringExplainerNote } from "@/components/scoring/scoring-explainer-note";
+import { SportComparisonBars } from "@/components/activities/sport-comparison-bars";
 import { formatIndex } from "@/lib/utils/format";
 import type { ExRxTier } from "@/lib/scoring/strength/ratio-tiers";
 
@@ -140,24 +136,25 @@ export function GymStrengthPanel({
       {lifts.length > 0 && showDotsGl && (
         <div className="border-t border-gym-border/30 pt-4 mt-4">
           <p className="micro-label text-gym-muted mb-3">Per-lift breakdown</p>
-          <ul className="space-y-2">
-            {lifts.map((lift) => (
-              <li
-                key={lift.name}
-                className="flex flex-wrap items-center justify-between gap-2 text-sm"
-              >
-                <span className="text-gym-text/90">
-                  {formatLiftBreakdownLine(
-                    lift.name,
-                    lift.estimated1RM,
-                    lift.relativeStrength,
-                    lift.tierLabel ??
-                      (lift.tier ? formatExRxTier(lift.tier) : undefined)
-                  )}
-                </span>
-              </li>
-            ))}
-          </ul>
+          {/* Bar width uses relativeStrength (× bodyweight), not raw kg —
+              the only unit that's actually comparable across different
+              lifts (user feedback, Slice 10: "the comparison between the
+              different scoring of their sports"). A 60kg bench and a
+              140kg deadlift can both be a strong lift for the same
+              athlete; a raw-kg bar would make deadlift dominate every
+              chart regardless of relative strength. */}
+          <SportComparisonBars
+            zone="gym"
+            items={lifts.map((lift) => {
+              const tierLabel = lift.tierLabel ?? (lift.tier ? formatExRxTier(lift.tier) : null);
+              return {
+                label: lift.name,
+                value: lift.relativeStrength,
+                displayValue: `${lift.estimated1RM.toFixed(1)} kg`,
+                sublabel: `${lift.relativeStrength.toFixed(2)}× BW${tierLabel ? ` · ${tierLabel}` : ""}`,
+              };
+            })}
+          />
         </div>
       )}
 

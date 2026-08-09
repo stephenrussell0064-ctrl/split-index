@@ -12,28 +12,6 @@ interface ActivityRow {
   distance_meters: number | null;
 }
 
-function sparklineFromId(id: string, color: string) {
-  let hash = 0;
-  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
-  const pts: string[] = [];
-  for (let i = 0; i < 7; i++) {
-    const x = i * 12;
-    const y = 8 + ((hash >> (i * 3)) & 7) * 2;
-    pts.push(`${x},${y}`);
-  }
-  return (
-    <svg width="72" height="28" viewBox="0 0 72 28" aria-hidden className="mt-1 opacity-70">
-      <polyline
-        fill="none"
-        stroke={color}
-        strokeWidth="2"
-        strokeLinejoin="round"
-        points={pts.join(" ")}
-      />
-    </svg>
-  );
-}
-
 export function ActivityListSection({
   items,
   zone,
@@ -44,7 +22,6 @@ export function ActivityListSection({
   scoreMap: Record<string, number>;
 }) {
   const isGym = zone === "gym";
-  const accent = isGym ? "#3DFF6E" : "#3BA6FF";
 
   if (!items.length) {
     return (
@@ -85,7 +62,6 @@ export function ActivityListSection({
                   {formatDuration(a.duration_seconds ?? 0)}
                   {a.distance_meters ? ` · ${formatDistance(a.distance_meters)}` : ""}
                 </p>
-                {sparklineFromId(a.id, accent)}
               </div>
               {score !== undefined && (
                 <span
