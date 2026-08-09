@@ -378,20 +378,15 @@ export default async function DashboardPage() {
       ? computeIndexes(buildActivityScores(indexActivityRows), athleteProfile, weightLab)
       : null;
 
-  const headlineLabel: IndexResult["headlineLabel"] =
-    liveIndexes?.headlineLabel ??
-    (athleteProfile === "gym"
-      ? "Lab Index"
-      : athleteProfile === "cardio"
-        ? "Engine Index"
-        : "Split Index");
-  const headlineValue =
-    liveIndexes?.headline ??
-    (athleteProfile === "gym"
-      ? current.strength_index
-      : athleteProfile === "cardio"
-        ? current.endurance_index
-        : current.split_index);
+  // Headline is always the combined Split Index (user feedback: "Why is the
+  // main score at the top of the dashboard not the combined score between
+  // the lab and cardio, it should be this") — no more branching on
+  // onboarding profile to a single-side Lab/Engine Index. `current.split_index`
+  // already stores the combined value computed at log time (index-engine.ts),
+  // so this fallback (used when nothing was freshly scored this request)
+  // just reads it straight.
+  const headlineLabel: IndexResult["headlineLabel"] = liveIndexes?.headlineLabel ?? "Split Index";
+  const headlineValue = liveIndexes?.headline ?? current.split_index;
   const displayEnduranceIndex = liveIndexes?.engineIndex ?? current.endurance_index;
   const displayStrengthIndex = liveIndexes?.labIndex ?? current.strength_index;
   const indexGap = current.endurance_index - current.strength_index;

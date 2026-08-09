@@ -1,12 +1,18 @@
 /**
  * Split Index — Index aggregation
  * -------------------------------
- * Rolls per-activity scores up into the three headline numbers and applies the
- * onboarding profile that decides which one is primary.
+ * Rolls per-activity scores up into the three headline numbers.
  *
- *   Cardio profile  -> Engine Index is the headline
- *   Gym profile     -> Lab Index is the headline
- *   Hybrid profile  -> Split Index (weighted blend) is the headline
+ * The headline is always the combined Split Index (user feedback: "Why is
+ * the main score at the top of the dashboard not the combined score between
+ * the lab and cardio, it should be this"). It used to switch to a
+ * single-side Lab/Engine Index based on the athlete's onboarding profile —
+ * which meant a "cardio"-profile athlete who also logged gym sessions never
+ * saw their strength side reflected in the one number the app leads with.
+ * Profile still isn't discarded entirely: `split` already falls back to
+ * whichever single side has data (see below), so a gym-only or cardio-only
+ * athlete's headline still equals their one populated side automatically —
+ * no special-casing needed.
  *
  * The blend is intentionally NOT a naive average. A hybrid athlete who trains
  * both sides evenly should not be dragged down by having fewer sessions on one
@@ -88,11 +94,13 @@ export function computeIndexes(
   if (lab !== null && engine !== null) split = Math.round(lab * wLab + engine * wEng);
   else split = lab ?? engine; // only one side logged so far
 
-  let headline: number;
-  let headlineLabel: IndexResult['headlineLabel'];
-  if (profile === 'gym') { headline = lab ?? split ?? 0; headlineLabel = 'Lab Index'; }
-  else if (profile === 'cardio') { headline = engine ?? split ?? 0; headlineLabel = 'Engine Index'; }
-  else { headline = split ?? 0; headlineLabel = 'Split Index'; }
+  // Headline is always the combined Split Index, regardless of onboarding
+  // profile (user feedback — see file header). `split` already collapses to
+  // whichever single side has data when the other is null, so a gym-only or
+  // cardio-only athlete's headline still equals their one populated side
+  // without needing to branch on `profile` here.
+  const headline: number = split ?? 0;
+  const headlineLabel: IndexResult['headlineLabel'] = 'Split Index';
 
   return {
     labIndex: lab,
