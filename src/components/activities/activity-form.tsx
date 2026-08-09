@@ -36,6 +36,8 @@ import { LogQuickActions } from "./log-quick-actions";
 import { submitActivityRequest } from "@/lib/activities/submit-activity";
 import type { CardioEnrichment } from "@/lib/scoring/cardio";
 import { useSetModeOverride } from "@/components/layout/mode-override-context";
+import { endLiveActivity } from "@/lib/native/live-activity";
+import { clearPersistedGymTimerState } from "./gym-workout-timer";
 
 type View = "picker" | "form" | "success";
 
@@ -150,6 +152,29 @@ export function ActivityForm({
     currentState,
     view === "form" && !isEdit
   );
+
+  // User feedback: "if you click off the lab onto another tab within split
+  // index when u are logging an exercise it stops the timer and resets all
+  // your logged details." The autosave above is debounced (900ms) — any
+  // edit made less than 900ms before navigating away used to be lost,
+  // since the pending timer is simply cancelled (not fired) on unmount.
+  // Flushing on unmount (a same-tab route change to another part of the
+  // app unmounts this component) and on visibilitychange/pagehide (the
+  // app being backgrounded or the tab switched, which doesn't unmount
+  // anything) closes that window — the very last keystroke is saved
+  // before the page can go away, not just whatever was already debounced.
+  useEffect(() => {
+    function onHide() {
+      if (document.visibilityState === "hidden") flush();
+    }
+    document.addEventListener("visibilitychange", onHide);
+    window.addEventListener("pagehide", flush);
+    return () => {
+      document.removeEventListener("visibilitychange", onHide);
+      window.removeEventListener("pagehide", flush);
+      flush();
+    };
+  }, [flush]);
 
   const selectSport = useCallback(
     (next: SportType) => {
@@ -363,6 +388,17 @@ export function ActivityForm({
         delete next[sport];
         return next;
       });
+      // User feedback: "the widget timer for the lab does not stop when
+      // the timer is stopped in app, i want the widget to be removed once
+      // it's finished being used in app" — a gym workout just got
+      // successfully saved, so any lingering Live Activity is done with,
+      // regardless of whether the timer component itself is still mounted
+      // or thinks one is running. Safe no-op for every other sport/when
+      // none is active (see live-activity.ts).
+      if (sport === "gym") {
+        void endLiveActivity();
+        clearPersistedGymTimerState();
+      }
       setView("success");
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "Failed to save workout");

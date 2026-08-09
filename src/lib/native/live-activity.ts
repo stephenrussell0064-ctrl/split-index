@@ -66,9 +66,23 @@ interface LiveActivityPlugin {
  */
 const LiveActivity = registerPlugin<LiveActivityPlugin>("LiveActivity");
 
-let active = false;
-
-/** True only on iOS — no Android implementation yet. Doesn't guarantee the OS itself supports/allows Live Activities; call startLiveActivity and let it no-op silently if not. */
+// User feedback: "the widget timer for the lab does not stop when the
+// timer is stopped in app... The buttons like pause and skip rest don't
+// work [after reopening the app]." Root cause: `active` used to be a
+// module-level `let`, reset to `false` on every fresh JS context (app
+// relaunch, the WebView being evicted from memory and recreated — not just
+// a genuine "nothing is running" state). update()/end()/getState() all
+// early-returned whenever `active` was false, WITHOUT EVER ASKING THE
+// NATIVE SIDE — so a Live Activity that was still genuinely running on the
+// lock screen from a previous JS session became permanently unreachable:
+// the app couldn't detect it (getState() always reported "not found"),
+// couldn't sync the on-screen timer to whatever Pause/Skip Rest had done
+// on the lock screen, and couldn't end it, ever, no matter what the user
+// did in a fresh session. The native plugin already handles "nothing is
+// running" gracefully on its own (see GymTimerIntents.swift's
+// `guard let activity = ... else { return }`), so it's always safe to just
+// ask — there's no longer a JS-side gate blocking calls that should reach
+// the native layer.
 export function isLiveActivitySupported(): boolean {
   return isNativePlatform() && getNativePlatform() === "ios";
 }
@@ -82,28 +96,25 @@ export async function startLiveActivity(
     const { available } = await LiveActivity.isAvailable();
     if (!available) return;
     await LiveActivity.start({ mode, title, ...initial });
-    active = true;
   } catch {
     // Best-effort — no lock-screen card is a cosmetic miss, not a failure.
   }
 }
 
 export async function updateLiveActivity(state: LiveActivityState): Promise<void> {
-  if (!active) return;
   try {
     await LiveActivity.update(state);
   } catch {
-    // Best-effort.
+    // Best-effort — including "nothing is running to update," which the
+    // native side treats as a routine no-op, not a thrown error.
   }
 }
 
 export async function endLiveActivity(): Promise<void> {
-  if (!active) return;
-  active = false;
   try {
     await LiveActivity.end();
   } catch {
-    // Best-effort.
+    // Best-effort — including "nothing is running to end."
   }
 }
 
@@ -119,7 +130,6 @@ export async function endLiveActivity(): Promise<void> {
  * a routine, expected case, not an error.
  */
 export async function getLiveActivityState(): Promise<LiveActivitySnapshot> {
-  if (!active) return { found: false };
   try {
     return await LiveActivity.getState();
   } catch {

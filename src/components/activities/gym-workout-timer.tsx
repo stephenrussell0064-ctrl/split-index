@@ -12,6 +12,48 @@ import {
 } from "@/lib/native/live-activity";
 
 const REST_PRESETS_SECONDS = [60, 90, 120, 180];
+const MIN_CUSTOM_REST_SECONDS = 5;
+const MAX_CUSTOM_REST_SECONDS = 3600;
+
+/**
+ * Survives an in-app tab switch (user feedback: "if you click off the lab
+ * onto another tab within split index... it stops the timer and resets all
+ * your logged details"). sessionStorage, not the server — this is
+ * ephemeral in-progress state, not permanent training data, and needs to
+ * survive a component unmount/remount within the same browser tab, not a
+ * full app relaunch (workout_drafts already covers the actual logged sets
+ * across a real relaunch — see use-autosave.ts).
+ */
+const STORAGE_KEY = "split-index-gym-timer";
+
+interface PersistedTimerState {
+  running: boolean;
+  pausedElapsedMs: number;
+  effectiveStartMs: number | null;
+  restEndMs: number | null;
+  hasLiveActivity: boolean;
+}
+
+function loadPersistedState(): PersistedTimerState | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.sessionStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as PersistedTimerState;
+  } catch {
+    return null;
+  }
+}
+
+/** Exported so activity-form.tsx can clear a just-finished workout's timer state on successful save — otherwise the next fresh workout would restore stale elapsed time from the one that just got submitted. */
+export function clearPersistedGymTimerState() {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // Best-effort — a lost persisted state just means the next mount starts fresh.
+  }
+}
 
 /**
  * Web Audio + Vibration API alert — no new native dependency (unlike the
@@ -88,14 +130,20 @@ export function GymWorkoutTimer({
 }: {
   onUseDuration: (totalSeconds: number) => void;
 }) {
-  const [running, setRunning] = useState(false);
+  // Lazy useState initializers run exactly once (on first mount), so
+  // calling loadPersistedState() separately in each is fine — no need to
+  // cache it in a ref first.
+  const [running, setRunning] = useState(() => loadPersistedState()?.running ?? false);
   /** Frozen total (ms) accumulated across all PAST running segments — the source of truth while paused. */
-  const [pausedElapsedMs, setPausedElapsedMs] = useState(0);
+  const [pausedElapsedMs, setPausedElapsedMs] = useState(() => loadPersistedState()?.pausedElapsedMs ?? 0);
   /** Adjusted epoch ms for the CURRENT running segment (`now - pausedElapsedMs` at the moment of start/resume) — meaningless while paused. Plain state, not a ref: its value is read during render (to derive the displayed clock), and React refs aren't meant to be read outside effects/handlers. */
-  const [effectiveStartMs, setEffectiveStartMs] = useState<number | null>(null);
+  const [effectiveStartMs, setEffectiveStartMs] = useState<number | null>(
+    () => loadPersistedState()?.effectiveStartMs ?? null
+  );
   /** Absolute epoch ms the rest countdown ends at; null when no rest is active. */
-  const [restEndMs, setRestEndMs] = useState<number | null>(null);
-  const liveActivityStartedRef = useRef(false);
+  const [restEndMs, setRestEndMs] = useState<number | null>(() => loadPersistedState()?.restEndMs ?? null);
+  const [customRestInput, setCustomRestInput] = useState("");
+  const liveActivityStartedRef = useRef(loadPersistedState()?.hasLiveActivity ?? false);
   const alertFiredRef = useRef(false);
   /** Bumped once a second purely to force a re-render while something is ticking — the actual numbers are always recomputed fresh from Date.now(), never accumulated from this. */
   const [, setTick] = useState(0);
@@ -106,14 +154,35 @@ export function GymWorkoutTimer({
   const restRemaining = restEndMs !== null ? Math.ceil((restEndMs - now) / 1000) : null;
   const restActive = restEndMs !== null;
   const restDone = restActive && restRemaining !== null && restRemaining <= 0;
+  const hasProgress = elapsed > 0 || restActive;
 
-  // Ends a lingering Live Activity if the user navigates away mid-workout
-  // without tapping Reset — otherwise the lock-screen card would never clear.
-  useEffect(() => {
-    return () => {
-      if (liveActivityStartedRef.current) endLiveActivity();
+  function persistState(overrides: Partial<PersistedTimerState> = {}) {
+    if (typeof window === "undefined") return;
+    const state: PersistedTimerState = {
+      running,
+      pausedElapsedMs,
+      effectiveStartMs,
+      restEndMs,
+      hasLiveActivity: liveActivityStartedRef.current,
+      ...overrides,
     };
-  }, []);
+    try {
+      window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch {
+      // Best-effort — losing persistence just means the next mount starts fresh.
+    }
+  }
+
+  // Note: this component deliberately does NOT end the Live Activity on
+  // unmount — doing so on every unmount (including a plain tab switch
+  // within the app, which unmounts this component) was ending the Live
+  // Activity before the user was actually finished with their workout.
+  // Ending now happens explicitly: on Reset (resetStopwatch below) and on
+  // a successful save (activity-form.tsx calls endLiveActivity() itself
+  // once the workout is actually submitted) — see that file's submit
+  // handler. This is also why the resync effect below always re-adopts
+  // whatever's running on the native side instead of trusting only this
+  // instance's own start history.
 
   // Forces a re-render every second while either clock is live — neither
   // clock's actual value comes from this tick (both are recomputed from
@@ -149,18 +218,26 @@ export function GymWorkoutTimer({
   }, [restDone]);
 
   // Reconciles local state with whatever the lock screen last did —
-  // Pause/Resume and Add Rest are interactive Live Activity buttons (see
-  // GymTimerIntents.swift) that mutate the Activity directly from the
-  // widget extension's process, with no way to call back into this
-  // already-running page. Runs whenever the app becomes visible again,
-  // which is also exactly when a backgrounded setInterval's drift needs
-  // correcting anyway.
+  // Pause/Resume and Add Rest/Skip Rest are interactive Live Activity
+  // buttons (see GymTimerIntents.swift) that mutate the Activity directly
+  // from the widget extension's process, with no way to call back into
+  // this already-running app. Runs on mount AND whenever the app becomes
+  // visible again — user feedback: "the buttons like pause and skip rest
+  // don't work" turned out to be this resync never running at all after a
+  // fresh remount, because it used to be gated behind "did THIS component
+  // instance start the Live Activity," which is always false on a fresh
+  // mount even when a real one is still running from before. It now always
+  // asks the native side (see live-activity.ts's own fix) and ADOPTS
+  // whatever it finds, rather than only trusting its own start history.
   useEffect(() => {
     if (!isLiveActivitySupported()) return;
     async function resync() {
-      if (!liveActivityStartedRef.current) return;
       const snapshot = await getLiveActivityState();
-      if (!snapshot.found) return;
+      if (!snapshot.found) {
+        liveActivityStartedRef.current = false;
+        return;
+      }
+      liveActivityStartedRef.current = true;
       if (snapshot.isPaused) {
         setPausedElapsedMs(snapshot.pausedElapsedSeconds * 1000);
         setEffectiveStartMs(null);
@@ -171,8 +248,9 @@ export function GymWorkoutTimer({
       }
       setRestEndMs(snapshot.restEndDateEpochMs ?? null);
     }
+    void resync();
     function onVisible() {
-      if (document.visibilityState === "visible") resync();
+      if (document.visibilityState === "visible") void resync();
     }
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("focus", resync);
@@ -181,6 +259,13 @@ export function GymWorkoutTimer({
       window.removeEventListener("focus", resync);
     };
   }, []);
+
+  // Persists on every real state change (not the once-a-second tick) so a
+  // tab switch mid-run/mid-rest restores exactly where it was left.
+  useEffect(() => {
+    persistState();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- persistState closes over the latest values itself; only these four should trigger a write
+  }, [running, pausedElapsedMs, effectiveStartMs, restEndMs]);
 
   function toggleRunning() {
     const t = Date.now();
@@ -221,15 +306,20 @@ export function GymWorkoutTimer({
     }
   }
 
+  // User feedback: "make it harder to reset timer, requires it to ask
+  // confirmation to cancel." Only prompts when there's actually something
+  // to lose — resetting an untouched 0:00 timer needs no confirmation.
   function resetStopwatch() {
+    if (hasProgress && !window.confirm("Reset your workout timer? This clears your elapsed time and any active rest countdown.")) {
+      return;
+    }
     setRunning(false);
     setPausedElapsedMs(0);
     setEffectiveStartMs(null);
     setRestEndMs(null);
-    if (liveActivityStartedRef.current) {
-      liveActivityStartedRef.current = false;
-      endLiveActivity();
-    }
+    liveActivityStartedRef.current = false;
+    clearPersistedGymTimerState();
+    endLiveActivity();
   }
 
   function startRest(seconds: number) {
@@ -246,6 +336,15 @@ export function GymWorkoutTimer({
         restDone: false,
       });
     }
+  }
+
+  function startCustomRest() {
+    const seconds = Math.round(Number(customRestInput));
+    if (!Number.isFinite(seconds) || seconds < MIN_CUSTOM_REST_SECONDS || seconds > MAX_CUSTOM_REST_SECONDS) {
+      return;
+    }
+    startRest(seconds);
+    setCustomRestInput("");
   }
 
   function dismissRest() {
@@ -346,6 +445,28 @@ export function GymWorkoutTimer({
                 {s}s
               </button>
             ))}
+            {/* User feedback: "allow for custom time of rest on timer in the lab" */}
+            <div className="flex items-center gap-1.5">
+              <input
+                type="number"
+                inputMode="numeric"
+                min={MIN_CUSTOM_REST_SECONDS}
+                max={MAX_CUSTOM_REST_SECONDS}
+                placeholder="Custom (s)"
+                value={customRestInput}
+                onChange={(e) => setCustomRestInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && startCustomRest()}
+                className="h-8 w-24 rounded-full border border-gym-border/50 bg-white/[0.02] px-3 text-xs text-gym-text placeholder:text-gym-muted/60 focus:border-gym-accent/40 focus:outline-none"
+              />
+              <button
+                type="button"
+                onClick={startCustomRest}
+                disabled={!customRestInput}
+                className="rounded-full border border-gym-accent/30 px-3 py-1.5 text-xs font-semibold text-gym-accent transition-colors hover:bg-gym-accent/10 disabled:opacity-40"
+              >
+                Go
+              </button>
+            </div>
           </div>
         )}
       </div>
