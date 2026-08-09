@@ -273,6 +273,14 @@ export function InterferenceDetail({ report }: { report: InterferenceReport }) {
                   distinct day to actually compare. */}
               {populatedBuckets.length > 1 ? (
                 <div role="img" aria-label="Efficiency delta by days since last strength session">
+                  {/* User feedback, with a screenshot: the ReferenceLine's
+                      own in-chart label ("0% = your normal rested pace")
+                      floated at a fixed position inside the plot area —
+                      with few bars/a tall negative one, it landed directly
+                      on top of a bar and became unreadable. Moved to a
+                      plain caption outside the SVG entirely, so it can
+                      never overlap chart content regardless of the data. */}
+                  <p className="mb-1.5 text-[10px] text-muted">0% = your normal rested pace</p>
                   <ResponsiveContainer width="100%" height={220}>
                     <BarChart data={populatedBuckets} margin={{ top: 20, right: 4, left: -8, bottom: 0 }}>
                       <CartesianGrid vertical={false} strokeDasharray="3 6" stroke={chartGridStroke} />
@@ -290,16 +298,7 @@ export function InterferenceDetail({ report }: { report: InterferenceReport }) {
                         width={40}
                         tickFormatter={(v) => `${v}%`}
                       />
-                      <ReferenceLine
-                        y={0}
-                        stroke={chartGridStroke}
-                        label={{
-                          value: "0% = your normal rested pace",
-                          position: "insideTopLeft",
-                          fill: chartTickFill,
-                          fontSize: 10,
-                        }}
-                      />
+                      <ReferenceLine y={0} stroke={chartGridStroke} />
                       <Tooltip
                         contentStyle={chartTooltipStyle}
                         formatter={(value) => [`${value}%`, "vs. your normal rested pace"]}
