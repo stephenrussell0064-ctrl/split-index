@@ -222,9 +222,14 @@ export function AuthForm({
       >
         {phase === "otp" ? (
           <>
-            <p className="text-sm text-muted mb-6">
+            <p className="text-sm text-muted mb-2">
               We sent a 6-digit code to <span className="text-foreground">{email}</span>. Enter
-              it below to confirm your account.
+              it below to confirm your account — or click the confirm link in that same email if
+              you&apos;d rather use that.
+            </p>
+            <p className="text-xs text-muted/70 mb-6">
+              Don&apos;t see it? Check your junk/spam folder — confirmation emails end up there
+              more often than they should.
             </p>
 
             <form onSubmit={handleVerifyOtp} className="space-y-4">
