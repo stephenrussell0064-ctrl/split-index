@@ -4,6 +4,8 @@ import type {
   SplitIndexSnapshot,
   SportType,
 } from "@/types";
+import type { RaceRecord } from "@/lib/scoring/race-records";
+import type { OverallDotsGlResult } from "@/lib/scoring/strength/overall-dots-gl";
 
 export type SportFilter = "all" | SportType;
 
@@ -76,6 +78,11 @@ export interface AnalyticsPayload {
   /** Optional HRV (rMSSD, ms) — most recent reading and rolling baseline average of the preceding readings. Null when the user hasn't logged any. */
   hrvToday: number | null;
   hrvBaseline: number | null;
+  /** Best-ever time per standard race distance, mined from the athlete's own logged activities (race-records.ts) — not gated by premium, same as the rest of Personal Records. */
+  raceRecords: RaceRecord[];
+  /** Profile-wide best-ever SBD DOTS/GL (overall-dots-gl.ts) — null until bodyweight is set. Gated by `showDotsGl`, same premium feature as the Lab page's own DOTS/GL card. */
+  overallDotsGl: OverallDotsGlResult | null;
+  showDotsGl: boolean;
 }
 
 export interface PeriodMetrics {

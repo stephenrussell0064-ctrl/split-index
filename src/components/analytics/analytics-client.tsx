@@ -25,6 +25,8 @@ import { computeAcwrTrend } from "@/lib/scoring/injury-risk";
 import { StoredPredictionsPanel } from "./stored-predictions-panel";
 import { FitnessEstimatesPanel } from "./fitness-estimates-panel";
 import { UpcomingRacesPanel } from "./upcoming-races-panel";
+import { RaceRecordsPanel } from "./race-records-panel";
+import { DotsGlPanel } from "./dots-gl-panel";
 import { PremiumGate } from "./premium-gate";
 import { PremiumTease } from "@/components/premium/premium-tease";
 import {
@@ -316,6 +318,17 @@ export function AnalyticsClient({ data }: { data: AnalyticsPayload }) {
         lactateThreshold={fitnessEstimates.lactateThreshold}
         vo2max={fitnessEstimates.vo2max}
       />
+
+      {/* User feedback: "why is IPF GL and DOTS scores not there as well as
+          current race records" — real logged bests (not projections), so
+          they sit right after the two prediction panels above rather than
+          being folded into either. Not premium-gated on the records side
+          (matches Personal Records below); DOTS/GL keeps the same premium
+          gate as the Lab page's own card. */}
+      <div className="grid gap-5 lg:grid-cols-2">
+        <RaceRecordsPanel records={data.raceRecords} />
+        <DotsGlPanel result={data.overallDotsGl} hasAccess={data.showDotsGl} />
+      </div>
 
       {/* User feedback: "would it be possible to have a section where
           people can enter the run event they are doing... and Split Index
