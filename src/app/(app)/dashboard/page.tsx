@@ -479,13 +479,6 @@ export default async function DashboardPage() {
         />
       )}
 
-      {/* User feedback: "i want this feature on the dashboard, and easy to
-          find" — not gated behind hasActivities, since adding an upcoming
-          race is useful even before a user has logged their first session
-          (they still get a base prediction once they have one, and can add
-          the race itself right away). */}
-      <UpcomingRacesPanel />
-
       {hasActivities && (
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
           <ReadinessCard readiness={readiness} className="lg:col-span-2" />
@@ -581,6 +574,18 @@ export default async function DashboardPage() {
           hasHistory={hasActivities && cardioSportScores.length > 0}
         />
       </div>
+
+      {/* User feedback: "Move upcoming races further down on dashboard as
+          it is not a key feature unless you can pull the race terrain and
+          conditions for each event without the requirement of manual
+          intervention to enter elevation gain and gpx" — that automatic
+          terrain/conditions lookup isn't built (elevation still needs a
+          manual entry or GPX upload), so this moved down from right after
+          the hero, below the higher-priority readiness/interference/trend
+          content, rather than being removed outright. Not gated behind
+          hasActivities — adding an upcoming race is useful even before a
+          user has logged their first session. */}
+      <UpcomingRacesPanel />
 
       <div className="flex items-end justify-between">
         <p className="micro-label text-muted">Your data</p>
