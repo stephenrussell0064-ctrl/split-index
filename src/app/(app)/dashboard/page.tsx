@@ -36,9 +36,12 @@ import {
   buildActivityScores,
   deriveAthleteProfile,
   labWeightFromProfile,
+  requireScoringSex,
 } from "@/lib/scoring/adapters";
 import { computeIndexes } from "@/lib/scoring/index-engine";
 import type { IndexResult } from "@/lib/scoring/index-engine";
+import { calculateOverallDotsGl } from "@/lib/scoring/strength/overall-dots-gl";
+import { tier2IsCalibrating } from "@/lib/scoring/cardio/race-prediction";
 import { computeStreakMetrics } from "@/lib/retention/streak-utils";
 import { getGlobalRankPercentile, getNextRankTarget, seedRetentionNotifications } from "@/lib/retention/rank";
 import { isPremiumUser, hasSoftTrialAccess } from "@/lib/retention/trial";
@@ -213,13 +216,47 @@ export default async function DashboardPage() {
       .maybeSingle(),
   ]);
 
-  const [crossDomainSessions, predictedRunBenchmark] = await Promise.all([
+  // Best-ever SBD total for the hero wall's "SBD Prediction" tile (Slice 7)
+  // — same all-time-best-lift source as the Lab page's own DOTS/GL card
+  // (gym/page.tsx) and Analytics' new DOTS/GL panel, so all three agree.
+  const allTimeGymExercisesPromise = (async () => {
+    const { data: gymActivityRows } = await supabase
+      .from("activities")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("sport", "gym")
+      .eq("is_draft", false);
+    const gymActivityIds = (gymActivityRows ?? []).map((a) => a.id as string);
+    if (gymActivityIds.length === 0) {
+      return [] as { exercise_name: string; estimated_1rm_kg: number | null }[];
+    }
+    const { data } = await supabase
+      .from("gym_exercises")
+      .select("exercise_name, estimated_1rm_kg")
+      .in("activity_id", gymActivityIds);
+    return data ?? [];
+  })();
+
+  const [crossDomainSessions, predictedRunBenchmark, allTimeGymExercises] = await Promise.all([
     crossDomainSessionsPromise,
     predictedRunBenchmarkPromise,
+    allTimeGymExercisesPromise,
   ]);
   const interferenceReport = computeInterferenceReport(crossDomainSessions);
   const readiness = computeReadiness(crossDomainSessions);
   const todayPlan = buildTodayPlan(readiness, interferenceReport, predictedRunBenchmark);
+
+  // User feedback (Slice 7): "include things such as 5km race prediction
+  // and SBD prediction, that is likely to be most useful to a user just
+  // logging onto the app" — the hero wall's two leading tiles.
+  const predicted5kSeconds =
+    predictedRunBenchmark && !tier2IsCalibrating(predictedRunBenchmark.sampleCount)
+      ? predictedRunBenchmark.benchmarkSeconds
+      : null;
+  const overallDotsGl =
+    profile.weight_kg && profile.weight_kg > 0
+      ? calculateOverallDotsGl(allTimeGymExercises, profile.weight_kg, requireScoringSex(profile.gender))
+      : null;
 
   const hasActivities = (recentActivities?.length ?? 0) > 0;
   const hasIndexHistory = !!latestIndex;
@@ -393,8 +430,6 @@ export default async function DashboardPage() {
   const weakerSide: "endurance" | "strength" | "balanced" =
     indexGap < -15 ? "endurance" : indexGap > 15 ? "strength" : "balanced";
 
-  const recovery = current.recovery_score ?? 85;
-  const fatigue = current.fatigue_score ?? 15;
   const displayName =
     profile.username?.trim() ||
     profile.display_name?.split(" ")[0]?.trim() ||
@@ -419,7 +454,7 @@ export default async function DashboardPage() {
 
       {/*
         Redesign brief: the boldest, most "hook"-y content (headline index,
-        streak, recovery, rank) leads the page now — the first thing a
+        predictions, streak, rank) leads the page now — the first thing a
         returning user sees, not something they scroll to find. Readiness /
         today's plan / interference stay immediately after, still above the
         fold, per the earlier dashboard IA overhaul (interference brief
@@ -431,8 +466,9 @@ export default async function DashboardPage() {
           headlineValue={hasIndexHistory ? headlineValue : null}
           weeklyTrend={weeklyTrend}
           hasHistory={hasIndexHistory}
-          recovery={recovery}
-          fatigue={fatigue}
+          predicted5kSeconds={predicted5kSeconds}
+          sbdTotalKg={overallDotsGl && overallDotsGl.sbdTotalKg > 0 ? overallDotsGl.sbdTotalKg : null}
+          sbdLiftsLogged={overallDotsGl?.liftsLogged ?? 0}
           streak={streakMetrics.streak}
           streakAtRisk={streakMetrics.atRisk}
           trainedToday={streakMetrics.trainedToday}

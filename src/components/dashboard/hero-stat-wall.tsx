@@ -3,13 +3,14 @@
 import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
 import { motion, useReducedMotion } from "framer-motion";
-import { Flame, HeartPulse, Zap, Trophy, Medal, type LucideIcon } from "lucide-react";
+import { Flame, Timer, Dumbbell, Trophy, Medal, type LucideIcon } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { MetricValue } from "@/components/ui/metric-label";
 import { ProgressRing } from "@/components/ui/progress-ring";
 import { CountUp } from "@/components/dashboard/count-up";
 import { cn } from "@/lib/utils/cn";
-import { formatIndex, formatTrend, formatPercent } from "@/lib/utils/format";
+import { formatIndex, formatTrend } from "@/lib/utils/format";
+import { formatRiegelPrediction } from "@/lib/scoring/presentation";
 import { formatRecordValue, sportLabel } from "@/components/analytics/personal-records-table";
 import type { RankPercentileResult } from "@/lib/retention/rank";
 import type { PersonalRecord } from "@/types";
@@ -74,8 +75,11 @@ export interface HeroStatWallProps {
   headlineValue: number | null;
   weeklyTrend: number;
   hasHistory: boolean;
-  recovery: number;
-  fatigue: number;
+  /** Predicted 5K time in seconds — null while still calibrating (fewer than TIER2_MIN_SAMPLES_TO_DISPLAY runs logged) or never logged. */
+  predicted5kSeconds: number | null;
+  /** Best-ever SBD total in kg (squat+bench+deadlift) — null until at least one of the three has been logged. */
+  sbdTotalKg: number | null;
+  sbdLiftsLogged: number;
   streak: number;
   streakAtRisk: boolean;
   trainedToday: boolean;
@@ -93,14 +97,25 @@ export interface HeroStatWallProps {
  * trend charts, recommendations) lives below the fold). One striking
  * headline number plus a dense, at-a-glance stat grid so the very first
  * screen already carries real signal, no scroll required.
+ *
+ * Recovery/Fatigue used to occupy the first two tiles here — replaced with
+ * 5K and SBD predictions (user feedback: "streak and recent pr aren't the
+ * most important data points, include things such as 5km race prediction
+ * and SBD prediction, that is likely to be most useful to a user just
+ * logging onto the app"). Recovery/fatigue weren't dropped, just moved: the
+ * cross-domain Today's Readiness card immediately below this one already
+ * covers the same ground with a richer, two-domain-aware number (strength
+ * *and* cardio load together, not either alone) — keeping a second,
+ * shallower load-only version up here was redundant, not "worth keeping".
  */
 export function HeroStatWall({
   headlineLabel,
   headlineValue,
   weeklyTrend,
   hasHistory,
-  recovery,
-  fatigue,
+  predicted5kSeconds,
+  sbdTotalKg,
+  sbdLiftsLogged,
   streak,
   streakAtRisk,
   trainedToday,
@@ -163,18 +178,44 @@ export function HeroStatWall({
         </div>
 
         <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-          <StatTile
-            icon={HeartPulse}
-            label="Recovery"
-            value={formatPercent(recovery)}
-            accent={recovery >= 70 ? "success" : recovery >= 40 ? "warning" : "danger"}
-          />
-          <StatTile
-            icon={Zap}
-            label="Fatigue"
-            value={formatPercent(fatigue)}
-            accent={fatigue <= 30 ? "success" : fatigue <= 60 ? "warning" : "danger"}
-          />
+          {predicted5kSeconds !== null ? (
+            <StatTile
+              icon={Timer}
+              label="5K Prediction"
+              value={formatRiegelPrediction(predicted5kSeconds)}
+              detail="from your training"
+              accent="accent"
+              href="/analytics"
+            />
+          ) : (
+            <StatTile
+              icon={Timer}
+              label="5K Prediction"
+              value="—"
+              detail="Log a few runs to unlock"
+              accent="muted"
+              href="/cardio/log"
+            />
+          )}
+          {sbdTotalKg !== null && sbdTotalKg > 0 ? (
+            <StatTile
+              icon={Dumbbell}
+              label="SBD Prediction"
+              value={`${Math.round(sbdTotalKg)} kg`}
+              detail={`${sbdLiftsLogged}/3 lifts logged`}
+              accent="accent"
+              href="/analytics"
+            />
+          ) : (
+            <StatTile
+              icon={Dumbbell}
+              label="SBD Prediction"
+              value="—"
+              detail="Log squat, bench, or deadlift"
+              accent="muted"
+              href="/gym/log"
+            />
+          )}
           <StatTile
             icon={Flame}
             label="Streak"
