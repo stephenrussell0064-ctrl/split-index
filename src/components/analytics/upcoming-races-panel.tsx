@@ -1,14 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { format, formatDistanceToNow } from "date-fns";
-import { Plus, Trash2, MapPin, CloudSun, Mountain, ChevronDown } from "lucide-react";
+import { Plus, Trash2, MapPin, CloudSun, Mountain, ChevronDown, Upload, Users } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScoringExplainerNote } from "@/components/scoring/scoring-explainer-note";
 import { formatRiegelPrediction } from "@/lib/scoring/presentation";
 import { formatDistance } from "@/lib/utils/format";
+import { computeGpxElevation } from "@/lib/scoring/gpx-elevation";
+import { cn } from "@/lib/utils/cn";
 
 interface PlannedRace {
   id: string;
@@ -17,6 +19,7 @@ interface PlannedRace {
   race_date: string;
   distance_meters: number;
   elevation_gain_meters: number | null;
+  elevation_source: "manual" | "gpx" | null;
   daysOut: number;
   basePredictionSeconds: number | null;
   forecast: { tempMaxCelsius: number; windMaxKph: number } | null;
@@ -27,6 +30,7 @@ interface PlannedRace {
     windPenaltySeconds: number;
     notes: string[];
   } | null;
+  crowdDifficulty: { averageDeltaPct: number; sampleCount: number } | null;
 }
 
 const COMMON_DISTANCES = [
@@ -99,6 +103,7 @@ function RaceRow({ race, onDelete }: { race: PlannedRace; onDelete: (id: string)
           {race.elevation_gain_meters != null && (
             <span className="flex items-center gap-1">
               <Mountain className="h-3 w-3" /> {race.elevation_gain_meters}m gain
+              {race.elevation_source === "gpx" ? " (from GPX)" : ""}
             </span>
           )}
           {race.forecast && (
@@ -107,6 +112,19 @@ function RaceRow({ race, onDelete }: { race: PlannedRace; onDelete: (id: string)
               {Math.round(race.forecast.windMaxKph)}km/h wind
             </span>
           )}
+        </div>
+      )}
+
+      {race.crowdDifficulty && (
+        <div className="mt-2 flex items-center gap-1.5 rounded-lg bg-white/[0.03] px-2.5 py-1.5 text-[11px] text-muted">
+          <Users className="h-3 w-3 shrink-0 text-accent" />
+          Split Index athletes who&apos;ve run this course averaged{" "}
+          <span className="font-medium text-foreground">
+            {race.crowdDifficulty.averageDeltaPct > 0 ? "+" : ""}
+            {race.crowdDifficulty.averageDeltaPct}%
+          </span>{" "}
+          {race.crowdDifficulty.averageDeltaPct > 0 ? "slower" : "faster"} than their own flat prediction
+          ({race.crowdDifficulty.sampleCount} runner{race.crowdDifficulty.sampleCount === 1 ? "" : "s"})
         </div>
       )}
     </li>
@@ -125,6 +143,32 @@ export function UpcomingRacesPanel() {
   const [raceDate, setRaceDate] = useState("");
   const [distanceMeters, setDistanceMeters] = useState<number>(10000);
   const [elevationGainMeters, setElevationGainMeters] = useState("");
+  const [elevationSource, setElevationSource] = useState<"manual" | "gpx" | null>(null);
+  const [gpxStatus, setGpxStatus] = useState<string | null>(null);
+  const [gpxParsing, setGpxParsing] = useState(false);
+  const gpxInputRef = useRef<HTMLInputElement>(null);
+
+  async function handleGpxFile(file: File) {
+    setGpxParsing(true);
+    setGpxStatus(null);
+    try {
+      const text = await file.text();
+      const result = computeGpxElevation(text);
+      if (!result) {
+        setGpxStatus("Couldn't find elevation data in that file — enter it manually below instead.");
+        return;
+      }
+      setElevationGainMeters(String(result.elevationGainMeters));
+      setElevationSource("gpx");
+      setGpxStatus(
+        `Detected ${result.elevationGainMeters}m of climbing over ${(result.distanceMeters / 1000).toFixed(1)}km from ${result.pointCount} GPS points.`
+      );
+    } catch {
+      setGpxStatus("Couldn't read that file — enter elevation manually below instead.");
+    } finally {
+      setGpxParsing(false);
+    }
+  }
 
   async function loadRaces() {
     try {
@@ -183,6 +227,7 @@ export function UpcomingRacesPanel() {
           raceDate,
           distanceMeters,
           elevationGainMeters: elevationGainMeters || null,
+          elevationSource,
         }),
       });
       const data = await res.json();
@@ -191,6 +236,8 @@ export function UpcomingRacesPanel() {
       setLocationName("");
       setRaceDate("");
       setElevationGainMeters("");
+      setElevationSource(null);
+      setGpxStatus(null);
       setFormOpen(false);
       await loadRaces();
     } catch (err) {
@@ -259,14 +306,54 @@ export function UpcomingRacesPanel() {
                 </div>
               </div>
             </div>
-            <Input
-              label="Elevation gain (m) — optional"
-              placeholder="From the race's published course profile"
-              type="number"
-              min={0}
-              value={elevationGainMeters}
-              onChange={(e) => setElevationGainMeters(e.target.value)}
-            />
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] font-medium uppercase tracking-[0.1em] text-muted">
+                Elevation gain (m) — optional
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="number"
+                  min={0}
+                  placeholder="From the race's published course profile"
+                  value={elevationGainMeters}
+                  onChange={(e) => {
+                    setElevationGainMeters(e.target.value);
+                    setElevationSource("manual");
+                    setGpxStatus(null);
+                  }}
+                  className="h-11 w-full rounded-xl glass border border-white/10 px-4 text-base text-foreground placeholder:text-muted/40 focus:border-accent/50 focus:outline-none"
+                />
+                <button
+                  type="button"
+                  disabled={gpxParsing}
+                  onClick={() => gpxInputRef.current?.click()}
+                  className="flex h-11 shrink-0 items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.03] px-3 text-xs font-medium text-foreground hover:border-accent/40 disabled:opacity-50"
+                >
+                  <Upload className="h-3.5 w-3.5" />
+                  {gpxParsing ? "Reading…" : "Upload GPX"}
+                </button>
+                <input
+                  ref={gpxInputRef}
+                  type="file"
+                  accept=".gpx,application/gpx+xml"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) void handleGpxFile(file);
+                    e.target.value = "";
+                  }}
+                />
+              </div>
+              {gpxStatus && (
+                <p className={cn("text-xs", elevationSource === "gpx" ? "text-success" : "text-warning")}>
+                  {gpxStatus}
+                </p>
+              )}
+              <p className="text-[11px] text-muted/70">
+                Upload the race&apos;s official course GPX for a real, computed number — most organizers
+                publish one. Falls back to whatever you type in if you don&apos;t have one.
+              </p>
+            </div>
             {submitError && <p className="text-xs text-danger">{submitError}</p>}
             <Button type="submit" loading={submitting} className="w-full">
               Save race
