@@ -54,6 +54,12 @@ function ReadoutContent({
   const target = optimalWeeklyLoadTarget(chronicWeekly);
   const overTarget = acuteLoad > target;
   const hasHrv = hrvToday != null && hrvBaseline != null;
+  // A single isolated reading has nothing to compare against yet — the
+  // adjustment only starts once there's at least one prior day's reading to
+  // form a baseline from. Without this distinction, logging your very first
+  // HRV value looked identical to never having logged one at all (user
+  // feedback: "what difference does adding in hrv value... make").
+  const buildingBaseline = hrvToday != null && hrvBaseline == null;
 
   return (
     <div className="grid gap-4 sm:grid-cols-3">
@@ -85,7 +91,11 @@ function ReadoutContent({
         toward 1.5+ is linked to higher injury risk in sports-science research.
       </ScoringExplainerNote>
       <p className="sm:col-span-3 text-[10px] uppercase tracking-wider text-muted">
-        {hasHrv ? "Load + HRV (high precision)" : "Load-based (add HRV for precision)"}
+        {hasHrv
+          ? "Load + HRV (high precision)"
+          : buildingBaseline
+            ? `Today's HRV (${hrvToday} ms) saved — building your baseline, one more day to go`
+            : "Load-based (add HRV for precision)"}
       </p>
     </div>
   );
@@ -135,6 +145,7 @@ function HrvInput({ hrvToday }: { hrvToday?: number | null }) {
         {status === "saving" ? "Saving…" : "Log"}
       </button>
       {status === "error" && <span className="text-[10px] text-danger">Couldn&apos;t save</span>}
+      {status === "saved" && <span className="text-[10px] text-success">Saved</span>}
     </div>
   );
 }

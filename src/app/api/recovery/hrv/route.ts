@@ -7,6 +7,22 @@ import { calculateACWR, calculateFatigueScore, calculateRecoveryScore } from "@/
  * Manual HRV entry (MASTER-BRIEF.md §8) — optional, never required. Upserts
  * today's rMSSD reading (ms) into recovery_snapshots so the Injury Risk
  * panel can layer it onto the load-based index via hrvAdjustedRisk().
+ *
+ * User feedback (Slice 3): "What difference does adding in hrv value in
+ * analytics make... make sure this has an instant impact on whatever scores
+ * it impacts or remove." Diagnosis: `recovery_score`/`fatigue_score` are
+ * written here purely to satisfy the columns' NOT NULL constraint
+ * (migration 001 — no default, can't be omitted from the insert); nothing
+ * in the app ever reads them back (only `hrv_ms` is ever selected from this
+ * table — see analytics/page.tsx). They're computed, not hardcoded
+ * placeholders, but they have no reader and are not the fix this feedback
+ * is about — the real fix is in injury-risk-panel.tsx, which used to show
+ * the exact same "add HRV for precision" prompt whether you'd logged
+ * nothing at all or had just logged your first-ever reading. A single
+ * isolated reading has no baseline to compute a ratio against yet (that's
+ * inherent to any baseline-relative metric, not a bug to compute around),
+ * so it now says the reading was saved and is building a baseline instead
+ * of looking like the submission did nothing.
  */
 export async function POST(request: Request) {
   const supabase = await createClient();
