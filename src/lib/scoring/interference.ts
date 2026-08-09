@@ -318,7 +318,14 @@ function buildStrengthToCardioSummary(
     : "";
 
   if (!headline || headline.efDeltaPct === null || Math.abs(headline.efDeltaPct) < 3) {
-    return `No measurable interference yet — your ${sportLabel} sessions hold up well after strength training.${caveat}`;
+    // Deliberately no "yet" — this only ever runs once there's real
+    // paired data to compare (the calibrating branch returns before this
+    // function is even called), so a small delta is a genuine, computed
+    // answer ("we checked, and there's no real cost"), not a placeholder
+    // for missing data. "Yet" made a confident finding read like an
+    // empty state (user feedback: the dashboard widget "is just showing
+    // as no measurable interference yet" as if broken).
+    return `No measurable interference — your ${sportLabel} sessions hold up well after strength training.${caveat}`;
   }
 
   const direction = headline.efDeltaPct < 0 ? "cost you" : "actually help";
@@ -419,7 +426,9 @@ function computeCardioToStrength(sessions: TimelineSession[]): CardioToStrengthF
     : "";
   const summary =
     Math.abs(deltaPct) < 3
-      ? `No measurable interference yet — your lifting holds up well regardless of your recent cardio volume.${caveat}`
+      ? // Same reasoning as buildStrengthToCardioSummary above — no "yet",
+        // this is a real computed finding, not a placeholder.
+        `No measurable interference — your lifting holds up well regardless of your recent cardio volume.${caveat}`
       : `Heavy cardio weeks ${deltaPct < 0 ? "cost you" : "coincide with"} roughly ${Math.abs(
           deltaPct
         )}% strength performance compared to lighter cardio weeks.${caveat}`;
