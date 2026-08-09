@@ -350,16 +350,11 @@ export function OnboardingFlow() {
 
   const hasGym = form.preferred_sports.includes("gym");
   const hasCardio = form.preferred_sports.some((s) => s !== "gym");
-  const cardioSport = form.preferred_sports.find((s) => s !== "gym") ?? null;
 
   if (showReveal) {
     return (
       <div className="mx-auto max-w-lg">
-        <ScoreRevealSequence
-          hasGym={hasGym}
-          cardioSport={cardioSport}
-          onDone={() => router.push("/dashboard")}
-        />
+        <ScoreRevealSequence onDone={() => router.push("/dashboard")} />
       </div>
     );
   }

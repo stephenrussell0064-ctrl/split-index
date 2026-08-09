@@ -30,7 +30,8 @@ export interface PersonalRecordCandidate {
   metric: string;
   value: number;
   unit: string;
-  activityId: string;
+  /** Null for a record set without a real logged activity — e.g. the onboarding calibration stats (Slice 13), which are deliberately never written to `activities`. */
+  activityId: string | null;
   achievedAt: string;
   direction: ComparisonDirection;
 }
@@ -80,7 +81,8 @@ export async function upsertPersonalRecordsIfBetter(
 /** Endurance-sport candidates for a single session — benchmark_time, longest_distance, longest_duration. */
 export function enduranceRecordCandidates(input: {
   sport: SportType;
-  activityId: string;
+  /** Null for a record set without a real logged activity — e.g. the onboarding calibration stats (Slice 13), which are deliberately never written to `activities`. */
+  activityId: string | null;
   achievedAt: string;
   distanceMeters?: number | null;
   durationSeconds?: number | null;
@@ -125,7 +127,8 @@ export function enduranceRecordCandidates(input: {
 
 /** Gym candidates for a session's logged exercises — one metric per exercise, best estimated 1RM. */
 export function gymRecordCandidates(input: {
-  activityId: string;
+  /** Null for a record set without a real logged activity — e.g. the onboarding calibration stats (Slice 13), which are deliberately never written to `activities`. */
+  activityId: string | null;
   achievedAt: string;
   exercises: Array<{ exercise_name: string; estimated_1rm_kg: number }>;
 }): PersonalRecordCandidate[] {
