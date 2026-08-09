@@ -9,9 +9,11 @@ import { cn } from "@/lib/utils/cn";
 /**
  * User feedback (Slice 1): "this is an option you can select in your
  * profile to turn on or off as some users may want to keep their
- * activities private." Off by default (migration 031) — private-by-default
- * is the safer choice absent an explicit preference; this is where a user
- * who wants the feed opts in.
+ * activities private." On by default (migration 031, flipped from an
+ * initial off-by-default per follow-up user feedback: "i also want to make
+ * this public on default for friends and people can turn it private if
+ * they wish") — this is where a user who wants to keep their activities
+ * private opts out.
  */
 export function ActivityPrivacySettings({
   initialShareActivities,

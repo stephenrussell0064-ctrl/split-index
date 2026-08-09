@@ -8,11 +8,13 @@
 -- cardio activities."
 
 -- ─── Privacy toggle ─────────────────────────────────────────────────────────
--- Off by default — private-by-default is the safer default absent an
--- explicit user choice; the settings UI invites users who want this on to
--- turn it on, rather than opting everyone in silently.
+-- On by default (updated per explicit user feedback after the first pass
+-- of this migration: "i also want to make this public on default for
+-- friends and people can turn it private if they wish") — see migration
+-- 032 for the follow-up that flips this for anyone who already ran this
+-- migration with the original `false` default.
 ALTER TABLE profiles
-  ADD COLUMN IF NOT EXISTS share_activities_with_friends BOOLEAN NOT NULL DEFAULT false;
+  ADD COLUMN IF NOT EXISTS share_activities_with_friends BOOLEAN NOT NULL DEFAULT true;
 
 -- ─── Reactions (1-10 score, Strava-kudos-equivalent but numeric) ──────────────
 CREATE TABLE IF NOT EXISTS activity_reactions (
