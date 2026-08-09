@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/ui/page-header";
 import { InterferenceDetail } from "@/components/analytics/interference-detail";
+import { TrainingPlanCard } from "@/components/analytics/training-plan-card";
 import { fetchInterferenceReport } from "@/lib/scoring/interference-data";
 
 export default async function InterferencePage() {
@@ -30,6 +31,13 @@ export default async function InterferencePage() {
         subtitle="Is your lifting hurting your running? Is your running hurting your squat? Mined from your own paired history — not a population average dressed up as personal advice."
       />
       <InterferenceDetail report={report} />
+      {/* User feedback: "I now want alongside the interference page of, is
+          my cardio affecting my strength and vice versa, i want a
+          recommendation of what to train... generated plans for users to
+          build the most effective route to their goal." Natural neighbor
+          to the interference findings above: one explains how training
+          interacts, this says what to actually do about it. */}
+      <TrainingPlanCard />
     </div>
   );
 }
