@@ -13,6 +13,9 @@
  * estimated 1RM for gym — see /api/training-plan/route.ts).
  */
 
+import { sessionContentForInstance, type SessionContent } from "./training-session-content";
+import type { SessionType } from "@/types";
+
 export type TrainingGoalType = "cardio" | "gym";
 
 export interface TrainingGoalInput {
@@ -171,6 +174,10 @@ export interface ScheduledSession {
   goalLabel: string;
   goalType: TrainingGoalType;
   durationHours: number;
+  /** Curated session content — real accessory work / DUP-varied prescriptions for gym, real easy/quality/long structure for cardio. See training-session-content.ts. */
+  title: string;
+  description: string;
+  sessionType?: SessionType;
 }
 
 export interface DaySchedule {
@@ -213,15 +220,24 @@ export function buildWeeklySchedule(
 
   const queues = rankedGoals
     .filter((g) => !g.achieved && g.weeklySessions > 0)
-    .map((g) => ({ goal: g, remaining: g.weeklySessions }));
+    .map((g) => ({ goal: g, remaining: g.weeklySessions, totalInstances: g.weeklySessions, seen: 0 }));
 
-  const instances: { goal: RankedGoal; duration: number }[] = [];
+  // Every other active gym goal's own exercise name — accessory picks below
+  // must never just re-list a lift that's already someone's own dedicated
+  // goal elsewhere in the plan.
+  const activeGymGoalNames = new Set(
+    rankedGoals.filter((g) => g.goalType === "gym" && !g.achieved).map((g) => g.targetKey)
+  );
+
+  const instances: { goal: RankedGoal; duration: number; content: SessionContent }[] = [];
   let anyLeft = queues.length > 0;
   while (anyLeft) {
     anyLeft = false;
     for (const q of queues) {
       if (q.remaining > 0) {
-        instances.push({ goal: q.goal, duration: sessionHours[q.goal.goalType] });
+        const content = sessionContentForInstance(q.goal, q.seen, q.totalInstances, activeGymGoalNames);
+        instances.push({ goal: q.goal, duration: sessionHours[q.goal.goalType], content });
+        q.seen += 1;
         q.remaining -= 1;
         anyLeft = true;
       }
@@ -245,6 +261,9 @@ export function buildWeeklySchedule(
         goalLabel: inst.goal.label,
         goalType: inst.goal.goalType,
         durationHours: inst.duration,
+        title: inst.content.title,
+        description: inst.content.description,
+        sessionType: inst.content.sessionType,
       });
       remaining[pick.i] -= inst.duration;
     }
@@ -256,6 +275,9 @@ export function buildWeeklySchedule(
         goalLabel: inst.goal.label,
         goalType: inst.goal.goalType,
         durationHours: inst.duration,
+        title: inst.content.title,
+        description: inst.content.description,
+        sessionType: inst.content.sessionType,
       });
     });
   }

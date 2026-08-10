@@ -932,18 +932,30 @@ function ScheduleDayCard({ day }: { day: DaySchedule }) {
           Rest day
         </p>
       ) : (
-        <ul className="space-y-1.5">
+        <ul className="space-y-2">
           {day.sessions.map((s, i) => (
             <li
               key={`${s.goalId}-${i}`}
               className={cn(
-                "flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium",
-                s.goalType === "gym" ? "bg-gym-accent/12 text-gym-accent" : "bg-cardio-accent/12 text-cardio-accent"
+                "rounded-lg px-2.5 py-2",
+                s.goalType === "gym" ? "bg-gym-accent/10" : "bg-cardio-accent/10"
               )}
             >
-              {s.goalType === "gym" ? <Dumbbell className="h-3 w-3 shrink-0" /> : <Activity className="h-3 w-3 shrink-0" />}
-              <span className="min-w-0 truncate">{s.goalLabel}</span>
-              <span className="ml-auto shrink-0 tabular-nums opacity-70">{s.durationHours}h</span>
+              <div
+                className={cn(
+                  "flex items-center gap-1.5 text-xs font-semibold",
+                  s.goalType === "gym" ? "text-gym-accent" : "text-cardio-accent"
+                )}
+              >
+                {s.goalType === "gym" ? (
+                  <Dumbbell className="h-3 w-3 shrink-0" />
+                ) : (
+                  <Activity className="h-3 w-3 shrink-0" />
+                )}
+                <span className="min-w-0 truncate">{s.title}</span>
+                <span className="ml-auto shrink-0 tabular-nums font-normal opacity-70">{s.durationHours}h</span>
+              </div>
+              <p className="mt-1 text-[11px] leading-snug text-muted">{s.description}</p>
             </li>
           ))}
         </ul>
@@ -1002,7 +1014,7 @@ function PlanView({
                 Edit weekly hours
               </button>
             </div>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <div className="space-y-2">
               {schedule.map((day) => (
                 <ScheduleDayCard key={day.day} day={day} />
               ))}
