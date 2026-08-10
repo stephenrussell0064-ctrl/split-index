@@ -89,10 +89,6 @@ function formatPaceOrSpeed(sport: GpsSport, secondsPerKm: number | null): string
   return sport === "outdoor_cycling" ? formatSpeed(secondsPerKm) : formatPace(secondsPerKm);
 }
 
-function paceOrSpeedLabel(sport: GpsSport): string {
-  return sport === "outdoor_cycling" ? "Speed" : "Pace";
-}
-
 function formatRaceTime(seconds: number): string {
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
@@ -627,34 +623,29 @@ export default function GpsRunPage() {
               </button>
             )}
 
-            {/* Hero row — Distance + Avg Split, the two numbers a runner glances at most, given real visual weight over the rest of the grid. */}
-            <div className="mt-6 grid w-full max-w-sm grid-cols-2 gap-3">
-              <div className="rounded-2xl border border-cardio-accent/30 bg-gradient-to-br from-cardio-accent/20 to-cardio-accent/5 py-4 text-center shadow-lg shadow-cardio-accent/10">
-                <div className="mb-1 flex items-center justify-center gap-1.5">
-                  <MapPin className="h-3.5 w-3.5 text-cardio-accent" />
-                  <p className="micro-label text-cardio-accent-soft">Distance</p>
+            {/* Stat grid — Distance and Avg Split are just tiles here like
+                everything else (user feedback: Avg Split had a large box in
+                a different font/color, wanted it styled the same as every
+                other individual stat instead of singled out). */}
+            <div className="mt-6 grid w-full max-w-sm grid-cols-2 gap-2.5 text-center">
+              <div className="rounded-xl border border-white/10 bg-white/[0.06] py-2.5">
+                <div className="mb-1 flex items-center justify-center gap-1.5 text-white/50">
+                  <MapPin className="h-3.5 w-3.5" />
+                  <p className="micro-label">Distance</p>
                 </div>
-                <p className="index-display text-3xl font-extrabold tabular-nums text-white">
-                  {(liveDistanceMeters / 1000).toFixed(2)}
-                  <span className="ml-1 text-base font-semibold text-white/50">km</span>
+                <p className="text-lg font-bold tabular-nums text-white">
+                  {(liveDistanceMeters / 1000).toFixed(2)} km
                 </p>
               </div>
-              <div className="rounded-2xl border border-strength-accent/30 bg-gradient-to-br from-strength-accent/20 to-strength-accent/5 py-4 text-center shadow-lg shadow-strength-accent/10">
-                <div className="mb-1 flex items-center justify-center gap-1.5">
-                  <Gauge className="h-3.5 w-3.5 text-strength-accent" />
-                  <p className="micro-label text-strength-accent">Avg Split</p>
+              <div className="rounded-xl border border-white/10 bg-white/[0.06] py-2.5">
+                <div className="mb-1 flex items-center justify-center gap-1.5 text-white/50">
+                  <Gauge className="h-3.5 w-3.5" />
+                  <p className="micro-label">Avg split</p>
                 </div>
-                <p className="index-display text-3xl font-extrabold tabular-nums text-white">
+                <p className="text-lg font-bold tabular-nums text-white">
                   {formatPaceOrSpeed(sport, livePaceSecondsPerKm)}
                 </p>
-                <p className="mt-0.5 text-[10px] text-white/50">
-                  average {paceOrSpeedLabel(sport).toLowerCase()} for this run
-                </p>
               </div>
-            </div>
-
-            {/* Secondary tiles — smaller, everything else at a glance. */}
-            <div className="mt-3 grid w-full max-w-sm grid-cols-2 gap-2.5 text-center">
               <div className="rounded-xl border border-white/10 bg-white/[0.06] py-2.5">
                 <p className="micro-label text-white/50">Current pace</p>
                 <p className="text-lg font-bold tabular-nums text-white">
@@ -911,33 +902,29 @@ export default function GpsRunPage() {
             </div>
           )}
 
-          {/* Hero row — Distance + Avg Split, same explicit labeling and color treatment as the live tracking HUD (user feedback: make it unambiguous this pace number is the whole run's average, not an instantaneous reading). */}
-          <div className="mb-3 grid grid-cols-2 gap-3">
-            <div className="rounded-2xl border border-cardio-accent/30 bg-gradient-to-br from-cardio-accent/20 to-cardio-accent/5 py-4 text-center shadow-lg shadow-cardio-accent/10">
-              <div className="mb-1 flex items-center justify-center gap-1.5">
-                <MapPin className="h-3.5 w-3.5 text-cardio-accent" />
-                <p className="micro-label text-cardio-accent-soft">Distance</p>
+          {/* Stat grid — Distance and Avg Split are just tiles here like
+              everything else (user feedback: Avg Split had a large box in a
+              different font/color, wanted it styled the same as every other
+              individual stat instead of singled out). */}
+          <div className="mb-6 grid grid-cols-2 gap-2.5">
+            <div className="flex flex-col items-center rounded-xl border border-white/15 bg-white/[0.06] py-3 text-center">
+              <div className="mb-1 flex items-center gap-1.5 text-white/60">
+                <MapPin className="h-4 w-4" />
+                <p className="micro-label">Distance</p>
               </div>
-              <p className="index-display text-3xl font-extrabold tabular-nums text-white">
-                {(summary.distanceMeters / 1000).toFixed(2)}
-                <span className="ml-1 text-base font-semibold text-white/50">km</span>
+              <p className="text-lg font-bold tabular-nums text-white">
+                {(summary.distanceMeters / 1000).toFixed(2)} km
               </p>
             </div>
-            <div className="rounded-2xl border border-strength-accent/30 bg-gradient-to-br from-strength-accent/20 to-strength-accent/5 py-4 text-center shadow-lg shadow-strength-accent/10">
-              <div className="mb-1 flex items-center justify-center gap-1.5">
-                <Gauge className="h-3.5 w-3.5 text-strength-accent" />
-                <p className="micro-label text-strength-accent">Avg Split</p>
+            <div className="flex flex-col items-center rounded-xl border border-white/15 bg-white/[0.06] py-3 text-center">
+              <div className="mb-1 flex items-center gap-1.5 text-white/60">
+                <Gauge className="h-4 w-4" />
+                <p className="micro-label">Avg split</p>
               </div>
-              <p className="index-display text-3xl font-extrabold tabular-nums text-white">
+              <p className="text-lg font-bold tabular-nums text-white">
                 {formatPaceOrSpeed(sport, summary.avgPaceSecondsPerKm)}
               </p>
-              <p className="mt-0.5 text-[10px] text-white/50">
-                average {paceOrSpeedLabel(sport).toLowerCase()} for this run
-              </p>
             </div>
-          </div>
-
-          <div className="mb-6 grid grid-cols-2 gap-2.5">
             {summary.elevationGainMeters !== null && (
               <div className="flex flex-col items-center rounded-xl border border-warning/25 bg-warning/10 py-3 text-center">
                 <div className="mb-1 flex items-center gap-1.5 text-warning/80">

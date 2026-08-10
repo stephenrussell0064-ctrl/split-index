@@ -367,7 +367,13 @@
           await Preferences.set({ key: WATCHER_ID_KEY, value: watcherId });
           statusEl.textContent = "Tracking — keep the app open or leave it in the background.";
           startBtn.style.display = "none";
-          stopBtn.style.display = "";
+          // NOT stopBtn.style.display = "" — clearing an inline style just
+          // falls back to the stylesheet, and #stopBtn's own CSS rule sets
+          // display:none by default (that's what keeps it hidden before
+          // Start is pressed). An empty string doesn't out-rank that rule,
+          // so the button silently never became visible. "block" is an
+          // actual value, which — being an inline style — always wins.
+          stopBtn.style.display = "block";
           updateStats();
           timerInterval = setInterval(updateStats, 1000);
         } catch (e) {
