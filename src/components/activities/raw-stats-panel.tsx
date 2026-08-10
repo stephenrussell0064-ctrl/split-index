@@ -60,7 +60,16 @@ export function RawStatsPanel({
   // Split (row/ski-erg) takes priority when both happen to be present —
   // pace-per-km is never actually populated for those sports (see
   // SPLIT_SPORTS's doc comment), but stay defensive rather than assume.
-  const hero = split ? { label: "Avg split", value: split } : pace ? { label: `Avg ${pace.label.toLowerCase()}`, value: pace.value } : null;
+  // Everything pace-based (running, walking, swimming, bike/ski erg) is
+  // labeled "Avg split" too, not "Avg pace" — user feedback asked for
+  // "average split" as the headline metric for activities in general, and
+  // runners commonly call their per-km time a "split" regardless of sport.
+  // Only true speed-based sports (outdoor cycling) keep "Avg speed".
+  const hero = split
+    ? { label: "Avg split", value: split }
+    : pace
+      ? { label: pace.label === "Speed" ? "Avg speed" : "Avg split", value: pace.value }
+      : null;
   /** Cadence only means anything on foot — cycling cadence is pedal RPM, a different sensor entirely. */
   const showCadence = avgCadence !== null && sport !== "outdoor_cycling";
 
