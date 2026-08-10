@@ -14,6 +14,7 @@ import {
   PlusCircle,
   MoreHorizontal,
   Radar,
+  Target,
   X,
 } from "lucide-react";
 import { BrandMark } from "@/components/brand/brand-mark";
@@ -37,6 +38,10 @@ const secondaryNav = [
   // brief Part 5) — deliberately not a sub-tab under Analytics, since it's
   // the app's USP and needs to read as one everywhere in the product.
   { href: "/interference", label: "Interference", icon: Radar },
+  // First-class nav item too (user feedback: "Training plan in interference
+  // tab. I want its own tab for training plan as this is a huge thing") —
+  // same treatment Interference itself got above, not nested under it.
+  { href: "/training-plan", label: "Training Plan", icon: Target },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/social", label: "Social", icon: Users },
   { href: "/settings", label: "Settings", icon: Settings },

@@ -19,7 +19,8 @@ export type PremiumFeature =
   | "oauth_sync"
   | "global_rank"
   | "csv_import"
-  | "manual_logging";
+  | "manual_logging"
+  | "training_plan_multi_goal";
 
 type TierAccess = { free: boolean; premium: boolean };
 
@@ -43,7 +44,22 @@ export const PREMIUM_FEATURES: Record<PremiumFeature, TierAccess> = {
   data_export: { free: false, premium: true },
   oauth_sync: { free: false, premium: true },
   global_rank: { free: false, premium: true },
+  training_plan_multi_goal: { free: false, premium: true },
 };
+
+/**
+ * Training Plan (user feedback: "Make this part of the premium feature and
+ * they can get a small training plan trial but they won't benefit properly
+ * unless they have premium.") Free users can still run the whole goal-
+ * setup wizard and see it work — just capped to one goal and a narrower
+ * weekly-session range, so the plan can never actually balance across
+ * multiple competing goals (the entire point of the feature) without
+ * Premium. Centralized here rather than duplicated between the API route
+ * and the wizard UI.
+ */
+export const MAX_FREE_TRAINING_GOALS = 1;
+export const MAX_FREE_WEEKLY_CAPACITY = 4;
+export const MAX_PREMIUM_WEEKLY_CAPACITY = 14;
 
 export const FREE_TIER_FEATURES = [
   "Full workout logging (all paths)",
@@ -52,6 +68,7 @@ export const FREE_TIER_FEATURES = [
   "Rules-based training snippet",
   "Manual entry + CSV import",
   "Country leaderboard preview",
+  "Training plan (1 goal)",
 ] as const;
 
 export const PREMIUM_TIER_FEATURES = [
@@ -64,6 +81,7 @@ export const PREMIUM_TIER_FEATURES = [
   "8-week Split Index projections",
   "Global leaderboards & rank percentile",
   "Data export (CSV / JSON)",
+  "Multi-goal hybrid training plan across every sport",
 ] as const;
 
 export interface PremiumProfile {

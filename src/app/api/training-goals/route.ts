@@ -2,6 +2,12 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { buildTrainingPlan, type TrainingGoalInput } from "@/lib/scoring/training-plan";
 import { BENCHMARK_DISTANCE_METERS, type BenchmarkSport } from "@/lib/scoring/cardio-benchmarks";
+import { isPremiumUser } from "@/lib/retention/trial";
+import {
+  MAX_FREE_TRAINING_GOALS,
+  MAX_FREE_WEEKLY_CAPACITY,
+  MAX_PREMIUM_WEEKLY_CAPACITY,
+} from "@/lib/premium/features";
 
 const BENCHMARK_SPORTS = Object.keys(BENCHMARK_DISTANCE_METERS) as BenchmarkSport[];
 
@@ -30,7 +36,24 @@ const MAX_TARGET_KG = 500;
  * calculateOverallDotsGl and the Lab page's own DOTS/GL card use) — so a
  * goal's progress can never disagree with what the rest of the app already
  * says this athlete's current fitness is.
+ *
+ * Premium gating (user feedback: "Make this part of the premium feature
+ * and they can get a small training plan trial but they won't benefit
+ * properly unless they have premium"): free accounts can run the whole
+ * wizard and see it genuinely work, capped to MAX_FREE_TRAINING_GOALS goal
+ * and MAX_FREE_WEEKLY_CAPACITY sessions/week — enough to prove the concept,
+ * not enough to get the actual point of the feature (balancing several
+ * competing goals against each other).
  */
+async function loadPremiumStatus(supabase: Awaited<ReturnType<typeof createClient>>, userId: string) {
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("subscription_tier, subscription_status")
+    .eq("user_id", userId)
+    .single();
+  return isPremiumUser(profile?.subscription_tier ?? "free", profile?.subscription_status ?? null);
+}
+
 export async function GET(request: Request) {
   const supabase = await createClient();
   const {
@@ -41,10 +64,13 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const premium = await loadPremiumStatus(supabase, user.id);
+  const maxWeeklyCapacity = premium ? MAX_PREMIUM_WEEKLY_CAPACITY : MAX_FREE_WEEKLY_CAPACITY;
+
   const { searchParams } = new URL(request.url);
   const weeklyCapacity = Math.max(
     1,
-    Math.min(21, Number(searchParams.get("capacity")) || DEFAULT_WEEKLY_CAPACITY)
+    Math.min(maxWeeklyCapacity, Number(searchParams.get("capacity")) || DEFAULT_WEEKLY_CAPACITY)
   );
 
   const [{ data: goalRows }, { data: benchmarks }, { data: gymActivities }] = await Promise.all([
@@ -90,7 +116,17 @@ export async function GET(request: Request) {
   // after a goal was met, and a stale flag would keep showing a goal as
   // done when it no longer is. achieved_at exists for future use
   // (notifications/history), not read here.
-  const inputs: TrainingGoalInput[] = (goalRows ?? []).map((row) => {
+  const allGoalRows = goalRows ?? [];
+  // Free accounts keep every goal they already saved (never silently drop
+  // data if someone's subscription lapses) but the PLAN itself — the
+  // prioritized weekly breakdown — only ever balances across the first
+  // MAX_FREE_TRAINING_GOALS of them; the rest still show in the list as
+  // locked, not just vanish, so it's obvious what upgrading unlocks rather
+  // than looking like data loss.
+  const rankedRows = premium ? allGoalRows : allGoalRows.slice(0, MAX_FREE_TRAINING_GOALS);
+  const lockedRows = premium ? [] : allGoalRows.slice(MAX_FREE_TRAINING_GOALS);
+
+  function toInput(row: (typeof allGoalRows)[number]): TrainingGoalInput {
     const goalType = row.goal_type as "cardio" | "gym";
     const targetKey = row.target_key as string;
     const currentValue =
@@ -103,11 +139,26 @@ export async function GET(request: Request) {
       currentValue,
       label: goalType === "cardio" ? (BENCHMARK_LABELS[targetKey as BenchmarkSport] ?? targetKey) : targetKey,
     };
+  }
+
+  const plan = buildTrainingPlan(rankedRows.map(toInput), weeklyCapacity);
+  const locked = lockedRows.map((row) => ({ ...toInput(row), gapFraction: 0, achieved: false, weight: 0, weeklySessions: 0 }));
+
+  return NextResponse.json({
+    goals: plan,
+    lockedGoals: locked,
+    weeklyCapacity,
+    maxWeeklyCapacity,
+    premium,
+    maxFreeGoals: MAX_FREE_TRAINING_GOALS,
+    totalGoalCount: allGoalRows.length,
+    benchmarkOptions: BENCHMARK_SPORTS.map((s) => ({
+      value: s,
+      label: BENCHMARK_LABELS[s],
+      distanceMeters: BENCHMARK_DISTANCE_METERS[s],
+      currentSeconds: benchmarkBySport.get(s) ?? null,
+    })),
   });
-
-  const plan = buildTrainingPlan(inputs, weeklyCapacity);
-
-  return NextResponse.json({ goals: plan, weeklyCapacity, benchmarkOptions: BENCHMARK_SPORTS.map((s) => ({ value: s, label: BENCHMARK_LABELS[s] })) });
 }
 
 export async function POST(request: Request) {
@@ -143,6 +194,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Target weight must be a realistic value in kg" }, { status: 400 });
   }
 
+  // No premium check here on purpose — free accounts can set up as many
+  // goals as they want (never a hard block mid-wizard, never data loss if a
+  // subscription lapses). The cap lives entirely in GET: only the first
+  // MAX_FREE_TRAINING_GOALS (by creation order) actually feed the balanced
+  // weekly plan for a free account; the rest come back as `lockedGoals` for
+  // the UI to show behind a Premium upsell instead of just vanishing.
   const { data: goal, error } = await supabase
     .from("training_goals")
     .upsert(
