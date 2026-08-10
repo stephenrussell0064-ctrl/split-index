@@ -127,3 +127,138 @@ export function buildTrainingPlan(goals: TrainingGoalInput[], weeklyCapacity: nu
     .map((g, i) => ({ ...g, weeklySessions: sessions[i] }))
     .sort((a, b) => b.gapFraction - a.gapFraction);
 }
+
+/**
+ * Weekly schedule builder (user feedback: "you forgot to actually making
+ * the training plan, this should be a weekly plan where you ask how many
+ * hours they can do each week, or per day, and then you create a weekly
+ * plan which allows the user to work towards these goals"). buildTrainingPlan
+ * above already answers "how many sessions per goal" — this layer answers
+ * the question that was still missing: which DAY does each of those
+ * sessions actually happen on, laid out Monday through Sunday.
+ */
+
+/** Rough session length by goal type, used only to convert an hours budget into a session count — not shown to the user as a promise, just an estimate. */
+export interface SessionDurationHours {
+  cardio: number;
+  gym: number;
+}
+
+export const DEFAULT_SESSION_HOURS: SessionDurationHours = { cardio: 0.75, gym: 1 };
+
+export const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
+
+/**
+ * Converts a hard "I have N hours this week" budget into an integer
+ * session count for buildTrainingPlan, using the blended average session
+ * length across whatever goals are actually in play (a week that's all
+ * gym lifts needs fewer, longer sessions than one split across several
+ * quick cardio efforts).
+ */
+export function estimateSessionCount(
+  goals: Pick<TrainingGoalInput, "goalType">[],
+  totalWeeklyHours: number,
+  sessionHours: SessionDurationHours = DEFAULT_SESSION_HOURS
+): number {
+  if (goals.length === 0 || totalWeeklyHours <= 0) return 0;
+  const avgHours = goals.reduce((sum, g) => sum + sessionHours[g.goalType], 0) / goals.length;
+  if (avgHours <= 0) return 0;
+  return Math.max(0, Math.round(totalWeeklyHours / avgHours));
+}
+
+export interface ScheduledSession {
+  goalId: string;
+  goalLabel: string;
+  goalType: TrainingGoalType;
+  durationHours: number;
+}
+
+export interface DaySchedule {
+  /** 0 = Monday .. 6 = Sunday. */
+  day: number;
+  dayLabel: string;
+  /** null when the athlete gave one flat weekly number rather than a per-day breakdown — there's no real per-day figure to show. */
+  capacityHours: number | null;
+  sessions: ScheduledSession[];
+}
+
+/**
+ * Lays each goal's weekly session count onto specific days.
+ *
+ * - `perDayHours` given (Mon-first, length 7): greedy bin-packing — each
+ *   session goes on whichever day still has the most room for it,
+ *   preferring a day that doesn't already carry the same goal today if an
+ *   alternative with room exists (spreads repeat sessions of one goal
+ *   across the week instead of stacking them).
+ * - `perDayHours` omitted (one flat weekly number was given instead): even
+ *   index-spacing across all 7 days — we don't know real day-by-day
+ *   availability, just that "these N sessions should land roughly evenly
+ *   through the week" (3 sessions → Mon/Wed/Fri, not Mon/Tue/Wed).
+ *
+ * Sessions are interleaved round-robin across goals in ranked (furthest-
+ * behind-first) order before placement, not grouped goal-by-goal — so the
+ * priority goal doesn't just claim the first half of the week outright.
+ */
+export function buildWeeklySchedule(
+  rankedGoals: RankedGoal[],
+  perDayHours?: number[],
+  sessionHours: SessionDurationHours = DEFAULT_SESSION_HOURS
+): DaySchedule[] {
+  const days: DaySchedule[] = WEEKDAY_LABELS.map((label, i) => ({
+    day: i,
+    dayLabel: label,
+    capacityHours: perDayHours ? (perDayHours[i] ?? 0) : null,
+    sessions: [],
+  }));
+
+  const queues = rankedGoals
+    .filter((g) => !g.achieved && g.weeklySessions > 0)
+    .map((g) => ({ goal: g, remaining: g.weeklySessions }));
+
+  const instances: { goal: RankedGoal; duration: number }[] = [];
+  let anyLeft = queues.length > 0;
+  while (anyLeft) {
+    anyLeft = false;
+    for (const q of queues) {
+      if (q.remaining > 0) {
+        instances.push({ goal: q.goal, duration: sessionHours[q.goal.goalType] });
+        q.remaining -= 1;
+        anyLeft = true;
+      }
+    }
+  }
+
+  if (instances.length === 0) return days;
+
+  if (perDayHours) {
+    const remaining = [...perDayHours];
+    for (const inst of instances) {
+      const candidates = days
+        .map((d, i) => ({ i, remaining: remaining[i] ?? 0 }))
+        .filter((c) => c.remaining >= inst.duration)
+        .sort((a, b) => b.remaining - a.remaining);
+      if (candidates.length === 0) continue; // no day has room left — dropped rather than overbooked
+      const fresh = candidates.find((c) => !days[c.i].sessions.some((s) => s.goalId === inst.goal.id));
+      const pick = fresh ?? candidates[0];
+      days[pick.i].sessions.push({
+        goalId: inst.goal.id,
+        goalLabel: inst.goal.label,
+        goalType: inst.goal.goalType,
+        durationHours: inst.duration,
+      });
+      remaining[pick.i] -= inst.duration;
+    }
+  } else {
+    instances.forEach((inst, i) => {
+      const dayIndex = Math.min(6, Math.floor((i * 7) / instances.length));
+      days[dayIndex].sessions.push({
+        goalId: inst.goal.id,
+        goalLabel: inst.goal.label,
+        goalType: inst.goal.goalType,
+        durationHours: inst.duration,
+      });
+    });
+  }
+
+  return days;
+}

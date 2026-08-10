@@ -15,12 +15,20 @@ import {
   ChevronLeft,
   CheckCircle2,
   Lock,
+  Moon,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { COMMON_EXERCISES } from "@/lib/constants/sports";
 import { MAX_PREMIUM_WEEKLY_CAPACITY } from "@/lib/premium/features";
+import {
+  buildWeeklySchedule,
+  estimateSessionCount,
+  DEFAULT_SESSION_HOURS,
+  WEEKDAY_LABELS,
+  type DaySchedule,
+} from "@/lib/scoring/training-plan";
 import { cn } from "@/lib/utils/cn";
 
 interface BenchmarkOption {
@@ -66,11 +74,18 @@ function itemLabel(item: PickItem): string {
   return item.kind === "cardio" ? item.label : item.exerciseName;
 }
 
+function formatDistanceLabel(meters: number): string {
+  if (meters >= 1000) {
+    const km = meters / 1000;
+    return `${Number.isInteger(km) ? km : km.toFixed(1)}K`;
+  }
+  return `${meters}m`;
+}
+
 const POPULAR_GYM_LIFTS = ["Squat", "Bench Press", "Deadlift", "Overhead Press"];
-// Surfaced first, unfiltered — the "most standard metrics for measuring
-// strength and speed" per user feedback, so there's always something
-// obvious to tap before anyone has typed a single search character.
-const POPULAR_CARDIO_SPORTS = ["run", "cycle", "swim", "row"];
+// "Any other activities" examples per user feedback — surfaced first,
+// unfiltered, so there's always something obvious to tap.
+const OTHER_CARDIO_SPORTS = ["swim", "cycle", "row", "ski", "walk"];
 
 function formatDuration(totalSeconds: number): string {
   const s = Math.max(0, Math.round(totalSeconds));
@@ -87,42 +102,51 @@ function formatValue(goalType: "cardio" | "gym", value: number | null): string {
   return goalType === "cardio" ? formatDuration(value) : `${value.toFixed(1)} kg`;
 }
 
+type Phase = "running" | "gym" | "more" | "targets" | "capacity" | null;
+
 /**
- * Goal-driven hybrid training plan — entirely reworked (user feedback: "I
- * want you to be able to select any activity and any goal... prompt the
- * user to select more than one goal... entirely rework the UI so that each
- * question is asked full screen with options which are interactive to the
- * user, similar to the onboarding UI screens"). Mirrors
- * onboarding-flow.tsx's own visual language on purpose — segmented
- * progress strip, one Card per step, spring-crossfade transitions — rather
- * than inventing a second wizard style for the app to maintain.
+ * Goal-driven hybrid training plan wizard. Walks major activities one at a
+ * time — Running gets its own full screen, Gym gets its own full screen,
+ * each with an explicit Skip (user feedback: "go through each major
+ * activity and ask for a goal instead of the current approach... have a
+ * button which says skip because the user doesn't want a goal in this
+ * activity") — then a single "anything else?" screen covering every other
+ * sport plus additional gym lifts, with examples (swim, cycling, walking,
+ * rowing, skiing, more gym exercises) per feedback, also skippable.
  *
- * Now its own page (/training-plan, added to the primary nav) instead of
- * embedded in Interference — "Training plan in interference tab. I want
- * its own tab for training plan as this is a huge thing."
- *
- * Premium: see the doc comment on MAX_FREE_TRAINING_GOALS in
- * lib/premium/features.ts and on the API route itself.
+ * Finishes by asking real weekly training capacity in HOURS — either one
+ * flat number or a per-day breakdown (user feedback: "ask how many hours
+ * they can do each week, or per day") — and lays the resulting sessions
+ * out onto an actual Monday-Sunday schedule (buildWeeklySchedule), not
+ * just a bare "Nx this week" count per goal.
  */
 export function TrainingPlanWizard() {
   const reducedMotion = useReducedMotion();
   const [plan, setPlan] = useState<PlanResponse | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  // "picker" | "frequency" | "targets" | null (null = show the plan view,
-  // once goals exist and no wizard flow is in progress).
-  const [phase, setPhase] = useState<"picker" | "frequency" | "targets" | null>(null);
+  const [phase, setPhase] = useState<Phase>(null);
   const [addOnly, setAddOnly] = useState(false);
+  const [targetsReturnPhase, setTargetsReturnPhase] = useState<Phase>(null);
 
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<PickItem[]>([]);
-  const [frequency, setFrequency] = useState(5);
   const [targetIndex, setTargetIndex] = useState(0);
   const [targetMinutes, setTargetMinutes] = useState("");
   const [targetSeconds, setTargetSeconds] = useState("");
   const [targetKg, setTargetKg] = useState("");
   const [saving, setSaving] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+
+  // Running screen's own inline target inputs (single goal, no queue needed).
+  const [runMinutes, setRunMinutes] = useState("");
+  const [runSeconds, setRunSeconds] = useState("");
+
+  // Weekly capacity, in hours.
+  const [capacityMode, setCapacityMode] = useState<"total" | "perDay">("total");
+  const [totalHoursInput, setTotalHoursInput] = useState("5");
+  const [perDayInputs, setPerDayInputs] = useState<string[]>(["1", "1", "1", "0", "1", "1", "0"]);
+  const [perDayHours, setPerDayHours] = useState<number[] | null>(null);
 
   async function load(capacity?: number) {
     try {
@@ -131,7 +155,6 @@ export function TrainingPlanWizard() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Could not load your training plan");
       setPlan(data as PlanResponse);
-      setFrequency(data.weeklyCapacity);
       setLoadError(null);
       return data as PlanResponse;
     } catch (e) {
@@ -144,11 +167,10 @@ export function TrainingPlanWizard() {
     void (async () => {
       const data = await load();
       // Fresh accounts land straight in the wizard; returning ones land on
-      // their plan (user feedback pattern already established elsewhere in
-      // this app: don't re-ask what's already answered).
+      // their plan (established pattern elsewhere in this app: don't
+      // re-ask what's already answered).
       if (data && data.totalGoalCount === 0) {
-        setPhase("picker");
-        setAddOnly(false);
+        setPhase("running");
       }
     })();
   }, []);
@@ -170,28 +192,45 @@ export function TrainingPlanWizard() {
     [plan]
   );
 
+  const runOption = cardioOptions.find((c) => c.sport === "run") ?? null;
+
   const searchResults = useMemo(() => {
     const q = query.trim().toLowerCase();
+    if (q === "") return [];
     const cardioMatches = cardioOptions.filter(
-      (c) => (q === "" ? false : c.label.toLowerCase().includes(q)) && !existingKeys.has(itemKey(c))
+      (c) => c.sport !== "run" && c.label.toLowerCase().includes(q) && !existingKeys.has(itemKey(c))
     );
-    const gymMatches =
-      q === ""
-        ? []
-        : COMMON_EXERCISES.filter((e) => e.name.toLowerCase().includes(q))
-            .slice(0, 30)
-            .map((e): PickItem => ({ kind: "gym", exerciseName: e.name }))
-            .filter((item) => !existingKeys.has(itemKey(item)));
+    const gymMatches = COMMON_EXERCISES.filter((e) => e.name.toLowerCase().includes(q))
+      .slice(0, 30)
+      .map((e): PickItem => ({ kind: "gym", exerciseName: e.name }))
+      .filter((item) => !existingKeys.has(itemKey(item)));
     return [...cardioMatches, ...gymMatches];
   }, [query, cardioOptions, existingKeys]);
 
-  const popularItems: PickItem[] = useMemo(() => {
-    const cardio = POPULAR_CARDIO_SPORTS.map((sport) => cardioOptions.find((c) => c.sport === sport)).filter(
+  const popularOtherItems: PickItem[] = useMemo(() => {
+    const cardio = OTHER_CARDIO_SPORTS.map((sport) => cardioOptions.find((c) => c.sport === sport)).filter(
       (c): c is Extract<PickItem, { kind: "cardio" }> => !!c
     );
     const gym: PickItem[] = POPULAR_GYM_LIFTS.map((name) => ({ kind: "gym", exerciseName: name }));
     return [...cardio, ...gym].filter((item) => !existingKeys.has(itemKey(item)));
   }, [cardioOptions, existingKeys]);
+
+  const popularGymItems: PickItem[] = useMemo(
+    () =>
+      POPULAR_GYM_LIFTS.map((name): PickItem => ({ kind: "gym", exerciseName: name })).filter(
+        (item) => !existingKeys.has(itemKey(item))
+      ),
+    [existingKeys]
+  );
+
+  const gymSearchResults = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (q === "") return [];
+    return COMMON_EXERCISES.filter((e) => e.name.toLowerCase().includes(q))
+      .slice(0, 30)
+      .map((e): PickItem => ({ kind: "gym", exerciseName: e.name }))
+      .filter((item) => !existingKeys.has(itemKey(item)));
+  }, [query, existingKeys]);
 
   function toggleItem(item: PickItem) {
     setSelected((prev) => {
@@ -205,14 +244,77 @@ export function TrainingPlanWizard() {
     setSelected([]);
     setQuery("");
     setAddOnly(true);
-    setPhase("picker");
+    setPhase("more");
   }
 
-  function handlePickerContinue() {
+  function startEditCapacity() {
+    setPhase("capacity");
+  }
+
+  // ---------- Running screen ----------
+  async function handleRunningContinue() {
+    const seconds = Number(runMinutes || 0) * 60 + Number(runSeconds || 0);
+    if (seconds <= 0) {
+      setActionError("Enter a target time");
+      return;
+    }
+    setActionError(null);
+    setSaving(true);
+    try {
+      const res = await fetch("/api/training-goals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ goalType: "cardio", targetKey: "run", targetValue: seconds }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Could not save this goal");
+      await load();
+      setPhase("gym");
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : "Could not save this goal");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function handleRunningSkip() {
+    setActionError(null);
+    setPhase("gym");
+  }
+
+  // ---------- Gym screen ----------
+  function handleGymContinue() {
     if (selected.length === 0) return;
-    setPhase(addOnly ? "targets" : "frequency");
+    setTargetsReturnPhase("more");
     setTargetIndex(0);
     primeTargetInputs(selected[0]);
+    setPhase("targets");
+  }
+
+  function handleGymSkip() {
+    setSelected([]);
+    setQuery("");
+    setPhase("more");
+  }
+
+  // ---------- "Anything else?" screen ----------
+  function handleMoreContinue() {
+    if (selected.length === 0) return;
+    setTargetsReturnPhase(addOnly ? null : "capacity");
+    setTargetIndex(0);
+    primeTargetInputs(selected[0]);
+    setPhase("targets");
+  }
+
+  function handleMoreSkip() {
+    setSelected([]);
+    setQuery("");
+    if (addOnly) {
+      setAddOnly(false);
+      setPhase(null);
+    } else {
+      setPhase("capacity");
+    }
   }
 
   function primeTargetInputs(item: PickItem) {
@@ -223,12 +325,6 @@ export function TrainingPlanWizard() {
     } else {
       setTargetKg("");
     }
-  }
-
-  async function handleFrequencyContinue() {
-    setPhase("targets");
-    setTargetIndex(0);
-    primeTargetInputs(selected[0]);
   }
 
   async function saveCurrentTarget() {
@@ -246,9 +342,7 @@ export function TrainingPlanWizard() {
         : { goalType: "gym", targetKey: item.exerciseName, targetValue: Number(targetKg) };
 
     if (payload.targetValue <= 0) {
-      setActionError(
-        item.kind === "cardio" ? "Enter a target time" : "Enter a target weight"
-      );
+      setActionError(item.kind === "cardio" ? "Enter a target time" : "Enter a target weight");
       return;
     }
 
@@ -267,13 +361,11 @@ export function TrainingPlanWizard() {
         setTargetIndex(targetIndex + 1);
         primeTargetInputs(nextItem);
       } else {
-        // Last goal saved — refresh the plan, set the desired weekly
-        // capacity if this was the first-time setup, then land on the plan
-        // view (phase = null).
-        const data2 = await load(addOnly ? undefined : frequency);
-        if (data2 && !addOnly && frequency !== data2.weeklyCapacity) await load(frequency);
-        setPhase(null);
+        await load();
         setSelected([]);
+        setQuery("");
+        setPhase(targetsReturnPhase);
+        if (targetsReturnPhase === null) setAddOnly(false);
       }
     } catch (e) {
       setActionError(e instanceof Error ? e.message : "Could not save this goal");
@@ -282,11 +374,38 @@ export function TrainingPlanWizard() {
     }
   }
 
-  async function handleCapacityChange(next: number) {
+  // ---------- Capacity screen ----------
+  async function handleCapacityContinue() {
     if (!plan) return;
-    const clamped = Math.max(1, Math.min(plan.maxWeeklyCapacity, next));
-    setFrequency(clamped);
-    await load(clamped);
+    setActionError(null);
+
+    let totalHours: number;
+    let nextPerDayHours: number[] | null = null;
+
+    if (capacityMode === "total") {
+      totalHours = Number(totalHoursInput);
+    } else {
+      const values = perDayInputs.map((v) => Math.max(0, Number(v) || 0));
+      totalHours = values.reduce((sum, v) => sum + v, 0);
+      nextPerDayHours = values;
+    }
+
+    if (!Number.isFinite(totalHours) || totalHours <= 0) {
+      setActionError("Enter how many hours you can train");
+      return;
+    }
+
+    const estimated = estimateSessionCount(plan.goals, totalHours);
+    const clamped = Math.max(1, Math.min(plan.maxWeeklyCapacity, estimated || 1));
+
+    setSaving(true);
+    try {
+      await load(clamped);
+      setPerDayHours(nextPerDayHours);
+      setPhase(null);
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function removeGoal(id: string) {
@@ -300,7 +419,7 @@ export function TrainingPlanWizard() {
         : prev
     );
     await fetch(`/api/training-goals?id=${encodeURIComponent(id)}`, { method: "DELETE" });
-    void load(frequency);
+    void load(plan?.weeklyCapacity);
   }
 
   const currentTargetItem = phase === "targets" ? selected[targetIndex] : null;
@@ -320,39 +439,151 @@ export function TrainingPlanWizard() {
 
   if (!plan) return null;
 
-  const stepMeta =
-    phase === "picker"
-      ? { title: addOnly ? "Add a goal" : "What do you want to get better at?", index: 0, total: addOnly ? 1 : 3 }
-      : phase === "frequency"
-        ? { title: "How many sessions per week?", index: 1, total: 3 }
-        : phase === "targets"
-          ? { title: currentTargetItem ? itemLabel(currentTargetItem) : "Set your target", index: 2, total: 3 }
-          : null;
+  const showProgressStrip = phase !== null && !addOnly;
+  const stepIndex = phase === "running" ? 0 : phase === "gym" ? 1 : phase === "more" ? 2 : phase === "targets" ? 2 : 3;
+  const stepTitle =
+    phase === "running"
+      ? "Running"
+      : phase === "gym"
+        ? "Gym"
+        : phase === "more"
+          ? "Any other goals?"
+          : phase === "targets"
+            ? currentTargetItem
+              ? itemLabel(currentTargetItem)
+              : "Set your target"
+            : phase === "capacity"
+              ? "How much time do you have?"
+              : "";
 
   return (
     <div className="mx-auto max-w-lg">
-      {phase !== null && !addOnly && stepMeta && (
+      {showProgressStrip && (
         <div className="mb-8">
           <div className="mb-4 flex gap-2">
-            {Array.from({ length: stepMeta.total }).map((_, i) => (
+            {Array.from({ length: 4 }).map((_, i) => (
               <div
                 key={i}
                 className={cn(
                   "h-1 flex-1 rounded-full transition-colors duration-300",
-                  i <= stepMeta.index ? "bg-accent shadow-[0_0_8px_var(--accent-glow)]" : "bg-white/[0.08]"
+                  i <= stepIndex ? "bg-accent shadow-[0_0_8px_var(--accent-glow)]" : "bg-white/[0.08]"
                 )}
               />
             ))}
           </div>
           <p className="mb-1.5 micro-label text-muted">Training Plan</p>
-          <h1 className="headline-tight text-2xl font-semibold md:text-3xl">{stepMeta.title}</h1>
+          <h1 className="headline-tight text-2xl font-semibold md:text-3xl">{stepTitle}</h1>
         </div>
       )}
 
       <AnimatePresence mode="wait">
-        {phase === "picker" && (
+        {phase === "running" && (
           <motion.div
-            key="picker"
+            key="running"
+            initial={reducedMotion ? false : { opacity: 0, x: 24, filter: "blur(4px)" }}
+            animate={{ opacity: 1, x: 0, filter: "blur(0px)" }}
+            exit={{ opacity: 0, x: -24, filter: "blur(4px)" }}
+            transition={{ type: "spring", stiffness: 400, damping: 30 }}
+          >
+            <Card className="space-y-4">
+              <div className="flex items-center gap-2">
+                <Activity className="h-5 w-5 text-cardio-accent" />
+                <p className="text-sm text-muted">
+                  Distance: <span className="font-semibold text-foreground">5K</span> — what time do
+                  you want to hit?
+                  {runOption?.currentSeconds && (
+                    <> Your current predicted time is {formatDuration(runOption.currentSeconds)}.</>
+                  )}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <Input
+                  label="Target minutes"
+                  type="number"
+                  min={0}
+                  value={runMinutes}
+                  onChange={(e) => setRunMinutes(e.target.value)}
+                />
+                <Input
+                  label="Seconds"
+                  type="number"
+                  min={0}
+                  max={59}
+                  value={runSeconds}
+                  onChange={(e) => setRunSeconds(e.target.value)}
+                />
+              </div>
+              {actionError && <p className="text-sm text-danger">{actionError}</p>}
+            </Card>
+            <div className="mt-6 flex gap-3">
+              <Button variant="secondary" onClick={handleRunningSkip} disabled={saving}>
+                Skip
+              </Button>
+              <Button className="flex-1" loading={saving} onClick={handleRunningContinue}>
+                Continue
+              </Button>
+            </div>
+          </motion.div>
+        )}
+
+        {phase === "gym" && (
+          <motion.div
+            key="gym"
+            initial={reducedMotion ? false : { opacity: 0, x: 24, filter: "blur(4px)" }}
+            animate={{ opacity: 1, x: 0, filter: "blur(0px)" }}
+            exit={{ opacity: 0, x: -24, filter: "blur(4px)" }}
+            transition={{ type: "spring", stiffness: 400, damping: 30 }}
+          >
+            <Card className="space-y-4">
+              <p className="text-sm text-muted">
+                Pick any lift you want to hit a number on — tap as many as you like.
+              </p>
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search any lift…"
+                  className="w-full rounded-xl border border-white/10 bg-white/[0.03] py-3 pl-10 pr-3 text-sm text-foreground placeholder:text-muted/60 focus:border-accent/50 focus:outline-none"
+                />
+              </div>
+              {selected.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {selected.map((item) => (
+                    <button
+                      key={itemKey(item)}
+                      type="button"
+                      onClick={() => toggleItem(item)}
+                      className="flex items-center gap-1.5 rounded-full bg-gym-accent/15 px-3 py-1.5 text-xs font-medium text-gym-accent"
+                    >
+                      {itemLabel(item)}
+                      <span className="opacity-60">×</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              <ItemGrid
+                items={query.trim() === "" ? popularGymItems : gymSearchResults}
+                heading={query.trim() === "" ? "Popular lifts" : undefined}
+                emptyLabel="No matches — try a different search."
+                selected={selected}
+                onToggle={toggleItem}
+              />
+            </Card>
+            <div className="mt-6 flex gap-3">
+              <Button variant="secondary" onClick={handleGymSkip} disabled={saving}>
+                Skip
+              </Button>
+              <Button className="flex-1" disabled={selected.length === 0} onClick={handleGymContinue}>
+                Continue{selected.length > 0 ? ` (${selected.length})` : ""}
+              </Button>
+            </div>
+          </motion.div>
+        )}
+
+        {phase === "more" && (
+          <motion.div
+            key="more"
             initial={reducedMotion ? false : { opacity: 0, x: 24, filter: "blur(4px)" }}
             animate={{ opacity: 1, x: 0, filter: "blur(0px)" }}
             exit={{ opacity: 0, x: -24, filter: "blur(4px)" }}
@@ -362,7 +593,10 @@ export function TrainingPlanWizard() {
               <div className="mb-6 flex items-center gap-3">
                 <button
                   type="button"
-                  onClick={() => setPhase(null)}
+                  onClick={() => {
+                    setAddOnly(false);
+                    setPhase(null);
+                  }}
                   aria-label="Back to your plan"
                   className="flex h-9 w-9 items-center justify-center rounded-full glass hover:bg-white/5"
                 >
@@ -371,13 +605,11 @@ export function TrainingPlanWizard() {
                 <h1 className="headline-tight text-xl font-semibold">Add a goal</h1>
               </div>
             )}
-
             <Card className="space-y-4">
               <p className="text-sm text-muted">
-                Any cardio sport or gym lift — search for it, or tap a popular one below. Pick as
-                many as you want; the plan prioritizes whichever you&apos;re furthest from.
+                Any other sport or lift you want to work toward — swimming, cycling, walking,
+                rowing, skiing, another gym exercise, anything.
               </p>
-
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
                 <input
@@ -387,7 +619,6 @@ export function TrainingPlanWizard() {
                   className="w-full rounded-xl border border-white/10 bg-white/[0.03] py-3 pl-10 pr-3 text-sm text-foreground placeholder:text-muted/60 focus:border-accent/50 focus:outline-none"
                 />
               </div>
-
               {selected.length > 0 && (
                 <div className="flex flex-wrap gap-2">
                   {selected.map((item) => (
@@ -398,135 +629,27 @@ export function TrainingPlanWizard() {
                       className="flex items-center gap-1.5 rounded-full bg-accent/15 px-3 py-1.5 text-xs font-medium text-accent"
                     >
                       {itemLabel(item)}
-                      <span className="text-accent/60">×</span>
+                      <span className="opacity-60">×</span>
                     </button>
                   ))}
                 </div>
               )}
-
-              {query.trim() === "" ? (
-                <div>
-                  <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted/70">
-                    Popular goals
-                  </p>
-                  <div className="grid grid-cols-2 gap-2">
-                    {popularItems.map((item) => {
-                      const isSelected = selected.some((s) => itemKey(s) === itemKey(item));
-                      return (
-                        <button
-                          key={itemKey(item)}
-                          type="button"
-                          onClick={() => toggleItem(item)}
-                          className={cn(
-                            "flex items-center gap-2 rounded-xl border p-3 text-left text-sm transition-colors",
-                            isSelected
-                              ? item.kind === "gym"
-                                ? "border-gym-accent/50 bg-gym-accent/15 text-foreground"
-                                : "border-cardio-accent/50 bg-cardio-accent/15 text-foreground"
-                              : "border-white/10 text-muted hover:bg-white/5"
-                          )}
-                        >
-                          {item.kind === "gym" ? (
-                            <Dumbbell className="h-4 w-4 shrink-0" />
-                          ) : (
-                            <Activity className="h-4 w-4 shrink-0" />
-                          )}
-                          <span className="min-w-0 truncate">{itemLabel(item)}</span>
-                          {isSelected && <Check className="ml-auto h-3.5 w-3.5 shrink-0" />}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              ) : (
-                <div className="max-h-80 space-y-1.5 overflow-y-auto">
-                  {searchResults.length === 0 ? (
-                    <p className="py-6 text-center text-sm text-muted">No matches — try a different search.</p>
-                  ) : (
-                    searchResults.map((item) => {
-                      const isSelected = selected.some((s) => itemKey(s) === itemKey(item));
-                      return (
-                        <button
-                          key={itemKey(item)}
-                          type="button"
-                          onClick={() => toggleItem(item)}
-                          className={cn(
-                            "flex w-full items-center gap-2 rounded-xl border p-3 text-left text-sm transition-colors",
-                            isSelected
-                              ? item.kind === "gym"
-                                ? "border-gym-accent/50 bg-gym-accent/15 text-foreground"
-                                : "border-cardio-accent/50 bg-cardio-accent/15 text-foreground"
-                              : "border-white/10 text-muted hover:bg-white/5"
-                          )}
-                        >
-                          {item.kind === "gym" ? (
-                            <Dumbbell className="h-4 w-4 shrink-0" />
-                          ) : (
-                            <Activity className="h-4 w-4 shrink-0" />
-                          )}
-                          <span className="min-w-0 truncate">{itemLabel(item)}</span>
-                          {isSelected && <Check className="ml-auto h-3.5 w-3.5 shrink-0" />}
-                        </button>
-                      );
-                    })
-                  )}
-                </div>
-              )}
+              <ItemGrid
+                items={query.trim() === "" ? popularOtherItems : searchResults}
+                heading={query.trim() === "" ? "Examples" : undefined}
+                emptyLabel="No matches — try a different search."
+                selected={selected}
+                onToggle={toggleItem}
+              />
             </Card>
-
-            <Button className="mt-6 w-full" disabled={selected.length === 0} onClick={handlePickerContinue}>
-              Continue{selected.length > 0 ? ` (${selected.length})` : ""}
-            </Button>
-          </motion.div>
-        )}
-
-        {phase === "frequency" && (
-          <motion.div
-            key="frequency"
-            initial={reducedMotion ? false : { opacity: 0, x: 24, filter: "blur(4px)" }}
-            animate={{ opacity: 1, x: 0, filter: "blur(0px)" }}
-            exit={{ opacity: 0, x: -24, filter: "blur(4px)" }}
-            transition={{ type: "spring", stiffness: 400, damping: 30 }}
-          >
-            <Card className="flex flex-col items-center py-10 text-center">
-              <p className="mb-6 max-w-xs text-sm text-muted">
-                How many training sessions can you realistically fit in a week? The plan spreads
-                your goals across this many.
-              </p>
-              <div className="flex items-center gap-6">
-                <button
-                  type="button"
-                  onClick={() => setFrequency((f) => Math.max(1, f - 1))}
-                  className="flex h-12 w-12 items-center justify-center rounded-full bg-white/5 text-xl hover:bg-white/10"
-                  aria-label="Fewer sessions"
-                >
-                  −
-                </button>
-                <span className="index-display w-20 text-5xl font-bold tabular-nums">{frequency}</span>
-                <button
-                  type="button"
-                  onClick={() => setFrequency((f) => Math.min(plan.maxWeeklyCapacity, f + 1))}
-                  className="flex h-12 w-12 items-center justify-center rounded-full bg-white/5 text-xl hover:bg-white/10"
-                  aria-label="More sessions"
-                >
-                  +
-                </button>
-              </div>
-              <p className="mt-3 text-xs text-muted">sessions / week</p>
-              {!plan.premium && (
-                <p className="mt-4 flex items-center gap-1.5 text-xs text-warning">
-                  <Lock className="h-3 w-3" />
-                  Free accounts are capped at {plan.maxWeeklyCapacity}/week —{" "}
-                  <Link href="/settings/billing" className="underline">
-                    Premium
-                  </Link>{" "}
-                  goes up to {MAX_PREMIUM_WEEKLY_CAPACITY}.
-                </p>
-              )}
-            </Card>
-            <Button className="mt-6 w-full" onClick={handleFrequencyContinue}>
-              Continue
-            </Button>
+            <div className="mt-6 flex gap-3">
+              <Button variant="secondary" onClick={handleMoreSkip} disabled={saving}>
+                {addOnly ? "Cancel" : "Skip"}
+              </Button>
+              <Button className="flex-1" disabled={selected.length === 0} onClick={handleMoreContinue}>
+                Continue{selected.length > 0 ? ` (${selected.length})` : ""}
+              </Button>
+            </div>
           </motion.div>
         )}
 
@@ -541,8 +664,14 @@ export function TrainingPlanWizard() {
             <Card className="space-y-4">
               <p className="text-sm text-muted">
                 Goal {targetIndex + 1} of {selected.length}
-                {currentTargetItem.kind === "cardio" && currentTargetItem.currentSeconds !== null && (
-                  <> — your current predicted time is {formatDuration(currentTargetItem.currentSeconds)}</>
+                {currentTargetItem.kind === "cardio" && (
+                  <>
+                    {" "}
+                    — distance {formatDistanceLabel(currentTargetItem.distanceMeters)}
+                    {currentTargetItem.currentSeconds !== null && (
+                      <>, current predicted time {formatDuration(currentTargetItem.currentSeconds)}</>
+                    )}
+                  </>
                 )}
               </p>
               {currentTargetItem.kind === "cardio" ? (
@@ -576,7 +705,89 @@ export function TrainingPlanWizard() {
               {actionError && <p className="text-sm text-danger">{actionError}</p>}
             </Card>
             <Button className="mt-6 w-full" loading={saving} onClick={saveCurrentTarget}>
-              {targetIndex + 1 < selected.length ? "Next goal" : "Build my plan"}
+              {targetIndex + 1 < selected.length ? "Next goal" : "Continue"}
+            </Button>
+          </motion.div>
+        )}
+
+        {phase === "capacity" && (
+          <motion.div
+            key="capacity"
+            initial={reducedMotion ? false : { opacity: 0, x: 24, filter: "blur(4px)" }}
+            animate={{ opacity: 1, x: 0, filter: "blur(0px)" }}
+            exit={{ opacity: 0, x: -24, filter: "blur(4px)" }}
+            transition={{ type: "spring", stiffness: 400, damping: 30 }}
+          >
+            <Card className="space-y-4">
+              <p className="text-sm text-muted">
+                How much time can you actually train each week? We&apos;ll build a real Monday-
+                Sunday schedule around it.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCapacityMode("total")}
+                  className={cn(
+                    "flex-1 rounded-lg border px-3 py-2 text-xs font-semibold",
+                    capacityMode === "total" ? "border-accent/50 bg-accent/15 text-accent" : "border-white/10 text-muted"
+                  )}
+                >
+                  Same every week
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCapacityMode("perDay")}
+                  className={cn(
+                    "flex-1 rounded-lg border px-3 py-2 text-xs font-semibold",
+                    capacityMode === "perDay" ? "border-accent/50 bg-accent/15 text-accent" : "border-white/10 text-muted"
+                  )}
+                >
+                  Set each day
+                </button>
+              </div>
+
+              {capacityMode === "total" ? (
+                <Input
+                  label="Hours per week"
+                  type="number"
+                  min={0}
+                  step={0.5}
+                  value={totalHoursInput}
+                  onChange={(e) => setTotalHoursInput(e.target.value)}
+                />
+              ) : (
+                <div className="grid grid-cols-2 gap-2">
+                  {WEEKDAY_LABELS.map((label, i) => (
+                    <Input
+                      key={label}
+                      label={label}
+                      type="number"
+                      min={0}
+                      step={0.5}
+                      value={perDayInputs[i]}
+                      onChange={(e) =>
+                        setPerDayInputs((prev) => prev.map((v, idx) => (idx === i ? e.target.value : v)))
+                      }
+                    />
+                  ))}
+                </div>
+              )}
+
+              {!plan.premium && (
+                <p className="flex items-center gap-1.5 text-xs text-warning">
+                  <Lock className="h-3 w-3" />
+                  Free accounts are capped around {(plan.maxWeeklyCapacity * DEFAULT_SESSION_HOURS.cardio).toFixed(1)}
+                  h/week —{" "}
+                  <Link href="/settings/billing" className="underline">
+                    Premium
+                  </Link>{" "}
+                  goes up to ~{(MAX_PREMIUM_WEEKLY_CAPACITY * DEFAULT_SESSION_HOURS.cardio).toFixed(0)}h.
+                </p>
+              )}
+              {actionError && <p className="text-sm text-danger">{actionError}</p>}
+            </Card>
+            <Button className="mt-6 w-full" loading={saving} onClick={handleCapacityContinue}>
+              Build my plan
             </Button>
           </motion.div>
         )}
@@ -590,14 +801,66 @@ export function TrainingPlanWizard() {
           >
             <PlanView
               plan={plan}
+              perDayHours={perDayHours}
               onAddGoal={startAddGoal}
               onRemoveGoal={removeGoal}
-              onCapacityChange={handleCapacityChange}
-              frequency={frequency}
+              onEditCapacity={startEditCapacity}
             />
           </motion.div>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+function ItemGrid({
+  items,
+  heading,
+  emptyLabel,
+  selected,
+  onToggle,
+}: {
+  items: PickItem[];
+  heading?: string;
+  emptyLabel: string;
+  selected: PickItem[];
+  onToggle: (item: PickItem) => void;
+}) {
+  return (
+    <div>
+      {heading && <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted/70">{heading}</p>}
+      {items.length === 0 ? (
+        <p className="py-6 text-center text-sm text-muted">{emptyLabel}</p>
+      ) : (
+        <div className="max-h-80 space-y-1.5 overflow-y-auto">
+          {items.map((item) => {
+            const isSelected = selected.some((s) => itemKey(s) === itemKey(item));
+            return (
+              <button
+                key={itemKey(item)}
+                type="button"
+                onClick={() => onToggle(item)}
+                className={cn(
+                  "flex w-full items-center gap-2 rounded-xl border p-3 text-left text-sm transition-colors",
+                  isSelected
+                    ? item.kind === "gym"
+                      ? "border-gym-accent/50 bg-gym-accent/15 text-foreground"
+                      : "border-cardio-accent/50 bg-cardio-accent/15 text-foreground"
+                    : "border-white/10 text-muted hover:bg-white/5"
+                )}
+              >
+                {item.kind === "gym" ? (
+                  <Dumbbell className="h-4 w-4 shrink-0" />
+                ) : (
+                  <Activity className="h-4 w-4 shrink-0" />
+                )}
+                <span className="min-w-0 truncate">{itemLabel(item)}</span>
+                {isSelected && <Check className="ml-auto h-3.5 w-3.5 shrink-0" />}
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -651,19 +914,62 @@ function GoalRow({ goal, onRemove }: { goal: RankedGoal; onRemove?: (id: string)
   );
 }
 
+function ScheduleDayCard({ day }: { day: DaySchedule }) {
+  const totalHours = day.sessions.reduce((sum, s) => sum + s.durationHours, 0);
+  return (
+    <div className="rounded-xl border border-white/8 bg-white/[0.02] p-3">
+      <div className="mb-2 flex items-center justify-between">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted">{day.dayLabel}</p>
+        {day.capacityHours !== null && (
+          <p className="text-[11px] tabular-nums text-muted/70">
+            {totalHours.toFixed(totalHours % 1 === 0 ? 0 : 1)}h / {day.capacityHours}h
+          </p>
+        )}
+      </div>
+      {day.sessions.length === 0 ? (
+        <p className="flex items-center gap-1.5 text-xs text-muted/60">
+          <Moon className="h-3 w-3" />
+          Rest day
+        </p>
+      ) : (
+        <ul className="space-y-1.5">
+          {day.sessions.map((s, i) => (
+            <li
+              key={`${s.goalId}-${i}`}
+              className={cn(
+                "flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium",
+                s.goalType === "gym" ? "bg-gym-accent/12 text-gym-accent" : "bg-cardio-accent/12 text-cardio-accent"
+              )}
+            >
+              {s.goalType === "gym" ? <Dumbbell className="h-3 w-3 shrink-0" /> : <Activity className="h-3 w-3 shrink-0" />}
+              <span className="min-w-0 truncate">{s.goalLabel}</span>
+              <span className="ml-auto shrink-0 tabular-nums opacity-70">{s.durationHours}h</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function PlanView({
   plan,
+  perDayHours,
   onAddGoal,
   onRemoveGoal,
-  onCapacityChange,
-  frequency,
+  onEditCapacity,
 }: {
   plan: PlanResponse;
+  perDayHours: number[] | null;
   onAddGoal: () => void;
   onRemoveGoal: (id: string) => void;
-  onCapacityChange: (next: number) => void;
-  frequency: number;
+  onEditCapacity: () => void;
 }) {
+  const schedule = useMemo(
+    () => buildWeeklySchedule(plan.goals, perDayHours ?? undefined),
+    [plan.goals, perDayHours]
+  );
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2">
@@ -681,40 +987,38 @@ function PlanView({
         </button>
       </div>
 
-      <Card className="space-y-4">
-        <div className="flex items-center justify-between text-xs text-muted">
-          <span>Sessions per week</span>
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => onCapacityChange(frequency - 1)}
-              className="flex h-6 w-6 items-center justify-center rounded-full bg-white/5 hover:bg-white/10"
-            >
-              −
-            </button>
-            <span className="w-5 text-center tabular-nums text-foreground">{frequency}</span>
-            <button
-              type="button"
-              onClick={() => onCapacityChange(frequency + 1)}
-              className="flex h-6 w-6 items-center justify-center rounded-full bg-white/5 hover:bg-white/10"
-            >
-              +
-            </button>
-          </div>
-        </div>
-
-        {plan.goals.length === 0 && plan.lockedGoals.length === 0 ? (
+      {plan.goals.length === 0 && plan.lockedGoals.length === 0 ? (
+        <Card>
           <p className="py-4 text-center text-sm text-muted">
             No goals yet — add a cardio time or a lift target to get your first plan.
           </p>
-        ) : (
-          <ul className="space-y-2">
-            {plan.goals.map((goal) => (
-              <GoalRow key={goal.id} goal={goal} onRemove={onRemoveGoal} />
-            ))}
-          </ul>
-        )}
-      </Card>
+        </Card>
+      ) : (
+        <>
+          <Card className="space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="micro-label text-muted/70">This week</p>
+              <button type="button" onClick={onEditCapacity} className="text-xs font-medium text-accent hover:underline">
+                Edit weekly hours
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {schedule.map((day) => (
+                <ScheduleDayCard key={day.day} day={day} />
+              ))}
+            </div>
+          </Card>
+
+          <Card className="space-y-3">
+            <p className="micro-label text-muted/70">Goals</p>
+            <ul className="space-y-2">
+              {plan.goals.map((goal) => (
+                <GoalRow key={goal.id} goal={goal} onRemove={onRemoveGoal} />
+              ))}
+            </ul>
+          </Card>
+        </>
+      )}
 
       {plan.lockedGoals.length > 0 && (
         <div className="relative">
@@ -734,7 +1038,7 @@ function PlanView({
             </p>
             <p className="mt-1 max-w-[260px] text-xs text-muted">
               Free accounts balance {plan.maxFreeGoals} goal at a time. Upgrade to Premium to
-              prioritize across all of them together, with more weekly sessions to work with.
+              prioritize across all of them together, with more weekly hours to work with.
             </p>
             <Link
               href="/settings/billing"

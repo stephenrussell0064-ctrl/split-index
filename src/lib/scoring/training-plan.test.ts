@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { computeGapFraction, buildTrainingPlan, type TrainingGoalInput } from "./training-plan";
+import {
+  computeGapFraction,
+  buildTrainingPlan,
+  estimateSessionCount,
+  buildWeeklySchedule,
+  type TrainingGoalInput,
+  type RankedGoal,
+} from "./training-plan";
 
 describe("computeGapFraction", () => {
   it("returns 0 for a cardio goal already met or beaten", () => {
@@ -101,5 +108,84 @@ describe("buildTrainingPlan", () => {
     const plan = buildTrainingPlan(goals, 6);
     expect(plan.every((g) => g.weeklySessions === 0)).toBe(true);
     expect(plan.every((g) => g.achieved)).toBe(true);
+  });
+});
+
+describe("estimateSessionCount", () => {
+  it("converts an hours budget into a session count using the blended average session length", () => {
+    // Two cardio goals (0.75h each, avg 0.75h) — 6 hours / 0.75h = 8 sessions.
+    const goals: Pick<TrainingGoalInput, "goalType">[] = [{ goalType: "cardio" }, { goalType: "cardio" }];
+    expect(estimateSessionCount(goals, 6)).toBe(8);
+  });
+
+  it("uses a longer average when gym goals are mixed in", () => {
+    // One cardio (0.75h) + one gym (1h) => avg 0.875h. 7h / 0.875h = 8.
+    const goals: Pick<TrainingGoalInput, "goalType">[] = [{ goalType: "cardio" }, { goalType: "gym" }];
+    expect(estimateSessionCount(goals, 7)).toBe(8);
+  });
+
+  it("returns 0 for no goals or no hours", () => {
+    expect(estimateSessionCount([], 10)).toBe(0);
+    expect(estimateSessionCount([{ goalType: "cardio" }], 0)).toBe(0);
+  });
+});
+
+describe("buildWeeklySchedule", () => {
+  const ranked = (overrides: Partial<RankedGoal>): RankedGoal => ({
+    id: "id",
+    goalType: "cardio",
+    targetKey: "run",
+    targetValue: 1000,
+    currentValue: 1000,
+    label: "Goal",
+    gapFraction: 0.2,
+    achieved: false,
+    weight: 1,
+    weeklySessions: 0,
+    ...overrides,
+  });
+
+  it("places every session somewhere across the week when hours are given per day", () => {
+    const goals = [ranked({ id: "run", weeklySessions: 3 }), ranked({ id: "squat", goalType: "gym", weeklySessions: 2 })];
+    const perDay = [2, 2, 2, 2, 2, 2, 2]; // plenty of room every day
+    const days = buildWeeklySchedule(goals, perDay);
+    const totalPlaced = days.reduce((sum, d) => sum + d.sessions.length, 0);
+    expect(totalPlaced).toBe(5);
+  });
+
+  it("never schedules a day beyond its stated capacity", () => {
+    const goals = [ranked({ id: "run", weeklySessions: 4 })]; // 4 * 0.75h = 3h needed
+    const perDay = [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]; // not enough room anywhere for a 0.75h session
+    const days = buildWeeklySchedule(goals, perDay);
+    for (const d of days) {
+      const used = d.sessions.reduce((sum, s) => sum + s.durationHours, 0);
+      expect(used).toBeLessThanOrEqual(d.capacityHours!);
+    }
+  });
+
+  it("spreads a single goal's repeat sessions across different days when no per-day hours are given", () => {
+    const goals = [ranked({ id: "run", weeklySessions: 3 })];
+    const days = buildWeeklySchedule(goals);
+    const daysWithSessions = days.filter((d) => d.sessions.length > 0);
+    expect(daysWithSessions).toHaveLength(3);
+    expect(daysWithSessions.every((d) => d.sessions.length === 1)).toBe(true);
+  });
+
+  it("interleaves two goals round-robin rather than stacking one goal's sessions first", () => {
+    const goals = [
+      ranked({ id: "run", weeklySessions: 2, gapFraction: 0.5 }),
+      ranked({ id: "squat", goalType: "gym", weeklySessions: 2, gapFraction: 0.1 }),
+    ];
+    const days = buildWeeklySchedule(goals);
+    const order = days.flatMap((d) => d.sessions.map((s) => s.goalId));
+    // Round-robin over [run, squat] with 2 each should alternate, not group.
+    expect(order).toEqual(["run", "squat", "run", "squat"]);
+  });
+
+  it("returns an empty but fully-populated 7-day skeleton when nothing is scheduled", () => {
+    const days = buildWeeklySchedule([]);
+    expect(days).toHaveLength(7);
+    expect(days.every((d) => d.sessions.length === 0)).toBe(true);
+    expect(days.map((d) => d.dayLabel)).toEqual(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]);
   });
 });
