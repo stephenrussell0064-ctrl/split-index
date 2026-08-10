@@ -97,6 +97,7 @@ export function InterferenceRadarCard({
                     <HeadlineStat
                       deltaPct={strengthToCardio.weeklyFallback.deltaPct}
                       sentence={strengthToCardio.weeklyFallback.summary}
+                      metricLabel="cardio efficiency"
                     />
                   ) : (
                     <SessionsProgress
@@ -107,7 +108,11 @@ export function InterferenceRadarCard({
                     />
                   )
                 ) : (
-                  <HeadlineStat deltaPct={pickHeadlineDelta(report)} sentence={strengthToCardio.summary} />
+                  <HeadlineStat
+                    deltaPct={pickHeadlineDelta(report)}
+                    sentence={strengthToCardio.summary}
+                    metricLabel="cardio efficiency"
+                  />
                 )}
               </div>
               <div className="border-t border-white/5 pt-3">
@@ -120,7 +125,11 @@ export function InterferenceRadarCard({
                     compact
                   />
                 ) : (
-                  <HeadlineStat deltaPct={cardioToStrength.deltaPct} sentence={cardioToStrength.summary} />
+                  <HeadlineStat
+                    deltaPct={cardioToStrength.deltaPct}
+                    sentence={cardioToStrength.summary}
+                    metricLabel="strength score"
+                  />
                 )}
               </div>
             </>

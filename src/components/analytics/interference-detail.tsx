@@ -50,17 +50,39 @@ function dayLabel(d: number): string {
  * feedback: "very difficult to read and visualise").
  */
 /** Exported so InterferenceRadarCard (the dashboard's compact version of this page) can render the exact same headline-stat treatment for the exact same data — user feedback: "Interference radar on dashboard still showing as no data, please fix this so it shows the same as the interference tab." The card was using a plain text sentence with no visual weight for every state; this is the shared piece that fixes that. */
-export function HeadlineStat({ deltaPct, sentence }: { deltaPct: number | null; sentence: string }) {
+/**
+ * `metricLabel` names what the percentage IS a change in (e.g. "cardio
+ * efficiency", "strength score") — always rendered directly under the
+ * number, not left to the prose sentence next to it. User feedback: "What
+ * does the +0.5% on the interference tab mean, this needs a unit or
+ * explanation." The number was already a percent (the % sign is right
+ * there), but percent-of-what only showed up in the generated sentence for
+ * the "found a real effect" branch — the much more common "no measurable
+ * interference" branch never named the underlying metric at all, so a small
+ * delta like +0.5% read as a bare, unexplained number.
+ */
+export function HeadlineStat({
+  deltaPct,
+  sentence,
+  metricLabel,
+}: {
+  deltaPct: number | null;
+  sentence: string;
+  metricLabel: string;
+}) {
   const isCost = deltaPct !== null && deltaPct < -3;
   const color = deltaPct === null ? "text-muted" : isCost ? "text-danger" : "text-strength-accent";
 
   return (
     <div className="mb-5 flex items-center gap-4">
       {deltaPct !== null && (
-        <p className={cn("index-display shrink-0 text-4xl font-bold tabular-nums", color)}>
-          {deltaPct > 0 ? "+" : ""}
-          {deltaPct}%
-        </p>
+        <div className="shrink-0 text-center">
+          <p className={cn("index-display text-4xl font-bold tabular-nums", color)}>
+            {deltaPct > 0 ? "+" : ""}
+            {deltaPct}%
+          </p>
+          <p className="micro-label mt-0.5 text-muted/70">{metricLabel}</p>
+        </div>
       )}
       <p className="text-sm leading-snug text-foreground/90">{sentence}</p>
     </div>
@@ -200,6 +222,7 @@ export function InterferenceDetail({ report }: { report: InterferenceReport }) {
                 <HeadlineStat
                   deltaPct={strengthToCardio.weeklyFallback.deltaPct}
                   sentence={strengthToCardio.weeklyFallback.summary}
+                  metricLabel="cardio efficiency"
                 />
                 <p className="mb-4 text-xs text-muted">
                   Still gathering day-by-day pairs ({strengthToCardio.sampleCount}/
@@ -260,6 +283,7 @@ export function InterferenceDetail({ report }: { report: InterferenceReport }) {
               <HeadlineStat
                 deltaPct={headlineBucket?.efDeltaPct ?? null}
                 sentence={strengthToCardio.summary}
+                metricLabel="cardio efficiency"
               />
               {/* A bar chart with only one populated day-bucket renders as a
                   single bar filling nearly the whole width, on an axis
@@ -363,7 +387,11 @@ export function InterferenceDetail({ report }: { report: InterferenceReport }) {
             />
           ) : (
             <>
-              <HeadlineStat deltaPct={cardioToStrength.deltaPct} sentence={cardioToStrength.summary} />
+              <HeadlineStat
+                deltaPct={cardioToStrength.deltaPct}
+                sentence={cardioToStrength.summary}
+                metricLabel="strength score"
+              />
               <div role="img" aria-label="Strength score in high vs low cardio-volume weeks">
                 <ResponsiveContainer width="100%" height={140}>
                   <BarChart
