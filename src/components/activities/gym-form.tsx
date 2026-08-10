@@ -231,6 +231,12 @@ function ExerciseRow({
       : null;
   const scoringSex =
     profileGender === "female" || profileGender === "male" ? profileGender : null;
+  // This IS the same function activity-scorer.ts's scoreGymSession() calls
+  // per-exercise to compute the real, saved score (split-strength-engine's
+  // scoreStrength) — see that file's own comment: calculateStrengthIndexV2
+  // is a "legacy" call kept only for DOTS/GL/loadScore, explicitly "no
+  // longer used for per-exercise scoring". Live and saved already agree by
+  // construction here; don't change this to call a different function.
   const engineScore =
     resolved && reps && bodyweight && scoringSex
       ? scoreStrength({
