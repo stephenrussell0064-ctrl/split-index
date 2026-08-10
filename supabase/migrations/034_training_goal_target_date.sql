@@ -1,0 +1,11 @@
+-- Stage 2 of the Training Plan rework (user feedback: "this training plan
+-- should be fully curated from scratch as a plan which is reputable and
+-- realistic to achieve the goals... move on and scope for this" — target-
+-- date-aware tapering was flagged as the natural next stage after Stage 1's
+-- curated session content).
+--
+-- An optional deadline per goal. Nullable — goals without one keep the
+-- Stage 1 behavior (gap-driven phase only, no taper). With one, the plan
+-- can shift toward a peaking/taper phase as the date approaches and flag
+-- when the remaining time looks unrealistic for the current gap.
+ALTER TABLE training_goals ADD COLUMN IF NOT EXISTS target_date DATE;

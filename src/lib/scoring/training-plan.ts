@@ -13,7 +13,7 @@
  * estimated 1RM for gym — see /api/training-plan/route.ts).
  */
 
-import { sessionContentForInstance, type SessionContent } from "./training-session-content";
+import { sessionContentForInstance, estimateFeasibility, type SessionContent, type FeasibilityResult } from "./training-session-content";
 import type { SessionType } from "@/types";
 
 export type TrainingGoalType = "cardio" | "gym";
@@ -29,6 +29,8 @@ export interface TrainingGoalInput {
   currentValue: number | null;
   /** Display label, e.g. "5K run" or "Squat". */
   label: string;
+  /** Days from "today" to an optional deadline the athlete set for this goal — null when no deadline was given. Stage 2: drives tapering (see training-session-content.ts) and the feasibility check below. */
+  daysUntilTarget?: number | null;
 }
 
 export interface RankedGoal extends TrainingGoalInput {
@@ -39,6 +41,8 @@ export interface RankedGoal extends TrainingGoalInput {
   weight: number;
   /** Integer session count out of the weekly capacity, summing exactly to weeklyCapacity across all goals (0 once achieved). */
   weeklySessions: number;
+  /** Stage 2: a plain-language heads-up when the deadline looks unrealistic for the current gap at this session frequency — see estimateFeasibility's own doc comment for why this is a caveat, not a hard rule. */
+  feasibility: FeasibilityResult;
 }
 
 /**
@@ -107,7 +111,7 @@ export function buildTrainingPlan(goals: TrainingGoalInput[], weeklyCapacity: nu
   const activeCount = withGap.filter((g) => !g.achieved).length;
   if (activeCount === 0) {
     return withGap
-      .map((g) => ({ ...g, weight: 0, weeklySessions: 0 }))
+      .map((g) => ({ ...g, weight: 0, weeklySessions: 0, feasibility: { feasible: true, message: null } }))
       .sort((a, b) => b.gapFraction - a.gapFraction);
   }
 
@@ -127,7 +131,11 @@ export function buildTrainingPlan(goals: TrainingGoalInput[], weeklyCapacity: nu
   );
 
   return weighted
-    .map((g, i) => ({ ...g, weeklySessions: sessions[i] }))
+    .map((g, i) => ({
+      ...g,
+      weeklySessions: sessions[i],
+      feasibility: estimateFeasibility(g.gapFraction, sessions[i], g.daysUntilTarget ?? null),
+    }))
     .sort((a, b) => b.gapFraction - a.gapFraction);
 }
 
@@ -178,6 +186,7 @@ export interface ScheduledSession {
   title: string;
   description: string;
   sessionType?: SessionType;
+  movementPattern?: "push" | "pull" | "legs" | "core";
 }
 
 export interface DaySchedule {
@@ -235,7 +244,13 @@ export function buildWeeklySchedule(
     anyLeft = false;
     for (const q of queues) {
       if (q.remaining > 0) {
-        const content = sessionContentForInstance(q.goal, q.seen, q.totalInstances, activeGymGoalNames);
+        const content = sessionContentForInstance(
+          q.goal,
+          q.seen,
+          q.totalInstances,
+          activeGymGoalNames,
+          q.goal.daysUntilTarget ?? null
+        );
         instances.push({ goal: q.goal, duration: sessionHours[q.goal.goalType], content });
         q.seen += 1;
         q.remaining -= 1;
@@ -252,10 +267,25 @@ export function buildWeeklySchedule(
       const candidates = days
         .map((d, i) => ({ i, remaining: remaining[i] ?? 0 }))
         .filter((c) => c.remaining >= inst.duration)
-        .sort((a, b) => b.remaining - a.remaining);
+        .map((c) => ({
+          ...c,
+          fresh: !days[c.i].sessions.some((s) => s.goalId === inst.goal.id),
+          // Interference-aware placement: a heavy leg session and a hard
+          // cardio session (tempo/threshold/interval/long) on adjacent
+          // days is exactly the pairing lib/scoring/interference.ts's own
+          // decay window models as a real cost (leg-day fatigue measurably
+          // compromises the next day or two of running). Soft preference
+          // only — never drops a session for it, just prefers a cleaner
+          // day when one's available.
+          interferencePenalty: adjacentInterferencePenalty(days, c.i, inst.content),
+        }))
+        .sort((a, b) => {
+          if (a.interferencePenalty !== b.interferencePenalty) return a.interferencePenalty - b.interferencePenalty;
+          if (a.fresh !== b.fresh) return a.fresh ? -1 : 1;
+          return b.remaining - a.remaining;
+        });
       if (candidates.length === 0) continue; // no day has room left — dropped rather than overbooked
-      const fresh = candidates.find((c) => !days[c.i].sessions.some((s) => s.goalId === inst.goal.id));
-      const pick = fresh ?? candidates[0];
+      const pick = candidates[0];
       days[pick.i].sessions.push({
         goalId: inst.goal.id,
         goalLabel: inst.goal.label,
@@ -264,6 +294,7 @@ export function buildWeeklySchedule(
         title: inst.content.title,
         description: inst.content.description,
         sessionType: inst.content.sessionType,
+        movementPattern: inst.content.movementPattern,
       });
       remaining[pick.i] -= inst.duration;
     }
@@ -278,9 +309,40 @@ export function buildWeeklySchedule(
         title: inst.content.title,
         description: inst.content.description,
         sessionType: inst.content.sessionType,
+        movementPattern: inst.content.movementPattern,
       });
     });
   }
 
   return days;
+}
+
+const HIGH_DEMAND_CARDIO = new Set<SessionType>(["tempo", "threshold", "interval", "long", "race"]);
+
+/**
+ * Counts how many sessions on `dayIndex` itself or the days immediately
+ * before/after it would conflict with placing `content` there — currently
+ * just the one pairing with real evidence behind it in this app (leg-day
+ * vs hard cardio; see interference.ts's
+ * LOOKBACK_DAYS_STRENGTH_EFFECT_ON_CARDIO). Same-day is checked too, not
+ * just adjacency — a heavy squat session and a hard interval run stacked
+ * on the identical day is at least as bad as back-to-back days. Only
+ * applies when real per-day capacity is known — the flat/even-spacing
+ * mode has no genuine day-choice to prefer between, so it's left alone
+ * rather than bolting a false sense of precision onto a guess.
+ */
+function adjacentInterferencePenalty(days: DaySchedule[], dayIndex: number, content: SessionContent): number {
+  const isLegSession = content.movementPattern === "legs";
+  const isHardCardio = content.sessionType !== undefined && HIGH_DEMAND_CARDIO.has(content.sessionType);
+  if (!isLegSession && !isHardCardio) return 0;
+
+  const nearbyDays = [dayIndex - 1, dayIndex, dayIndex + 1].filter((i) => i >= 0 && i <= 6);
+  let penalty = 0;
+  for (const n of nearbyDays) {
+    for (const s of days[n].sessions) {
+      if (isLegSession && s.goalType === "cardio" && s.sessionType && HIGH_DEMAND_CARDIO.has(s.sessionType)) penalty += 1;
+      if (isHardCardio && s.goalType === "gym" && s.movementPattern === "legs") penalty += 1;
+    }
+  }
+  return penalty;
 }

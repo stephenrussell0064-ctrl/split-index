@@ -28,6 +28,7 @@ import {
   DEFAULT_SESSION_HOURS,
   WEEKDAY_LABELS,
   type DaySchedule,
+  type RankedGoal as CoreRankedGoal,
 } from "@/lib/scoring/training-plan";
 import { cn } from "@/lib/utils/cn";
 
@@ -38,18 +39,8 @@ interface BenchmarkOption {
   currentSeconds: number | null;
 }
 
-interface RankedGoal {
-  id: string;
-  goalType: "cardio" | "gym";
-  targetKey: string;
-  targetValue: number;
-  currentValue: number | null;
-  label: string;
-  gapFraction: number;
-  achieved: boolean;
-  weight: number;
-  weeklySessions: number;
-}
+/** The API also serializes targetDate/daysUntilTarget/feasibility (Stage 2) alongside the core RankedGoal shape — see /api/training-goals's toInput(). */
+type RankedGoal = CoreRankedGoal & { targetDate: string | null };
 
 interface PlanResponse {
   goals: RankedGoal[];
@@ -135,12 +126,16 @@ export function TrainingPlanWizard() {
   const [targetMinutes, setTargetMinutes] = useState("");
   const [targetSeconds, setTargetSeconds] = useState("");
   const [targetKg, setTargetKg] = useState("");
+  // Optional deadline (Stage 2) — same field reused across the running
+  // screen and the shared target-value queue below.
+  const [targetDate, setTargetDate] = useState("");
   const [saving, setSaving] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
   // Running screen's own inline target inputs (single goal, no queue needed).
   const [runMinutes, setRunMinutes] = useState("");
   const [runSeconds, setRunSeconds] = useState("");
+  const [runTargetDate, setRunTargetDate] = useState("");
 
   // Weekly capacity, in hours.
   const [capacityMode, setCapacityMode] = useState<"total" | "perDay">("total");
@@ -264,7 +259,12 @@ export function TrainingPlanWizard() {
       const res = await fetch("/api/training-goals", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ goalType: "cardio", targetKey: "run", targetValue: seconds }),
+        body: JSON.stringify({
+          goalType: "cardio",
+          targetKey: "run",
+          targetValue: seconds,
+          targetDate: runTargetDate || undefined,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Could not save this goal");
@@ -318,6 +318,7 @@ export function TrainingPlanWizard() {
   }
 
   function primeTargetInputs(item: PickItem) {
+    setTargetDate("");
     if (item.kind === "cardio") {
       const seconds = item.currentSeconds;
       setTargetMinutes(seconds ? String(Math.floor(seconds / 60)) : "");
@@ -338,8 +339,9 @@ export function TrainingPlanWizard() {
             goalType: "cardio",
             targetKey: item.sport,
             targetValue: Number(targetMinutes || 0) * 60 + Number(targetSeconds || 0),
+            targetDate: targetDate || undefined,
           }
-        : { goalType: "gym", targetKey: item.exerciseName, targetValue: Number(targetKg) };
+        : { goalType: "gym", targetKey: item.exerciseName, targetValue: Number(targetKg), targetDate: targetDate || undefined };
 
     if (payload.targetValue <= 0) {
       setActionError(item.kind === "cardio" ? "Enter a target time" : "Enter a target weight");
@@ -513,6 +515,14 @@ export function TrainingPlanWizard() {
                   onChange={(e) => setRunSeconds(e.target.value)}
                 />
               </div>
+              <Input
+                label="By when? (optional)"
+                type="date"
+                value={runTargetDate}
+                onChange={(e) => setRunTargetDate(e.target.value)}
+                hint="Gives you a real taper into your target date instead of a flat weekly plan."
+                min={new Date().toISOString().slice(0, 10)}
+              />
               {actionError && <p className="text-sm text-danger">{actionError}</p>}
             </Card>
             <div className="mt-6 flex gap-3">
@@ -702,6 +712,14 @@ export function TrainingPlanWizard() {
                   hint={`Your best 1-rep-max estimate for ${currentTargetItem.exerciseName}`}
                 />
               )}
+              <Input
+                label="By when? (optional)"
+                type="date"
+                value={targetDate}
+                onChange={(e) => setTargetDate(e.target.value)}
+                hint="Gives you a real taper into your target date instead of a flat weekly plan."
+                min={new Date().toISOString().slice(0, 10)}
+              />
               {actionError && <p className="text-sm text-danger">{actionError}</p>}
             </Card>
             <Button className="mt-6 w-full" loading={saving} onClick={saveCurrentTarget}>
@@ -882,7 +900,13 @@ function GoalRow({ goal, onRemove }: { goal: RankedGoal; onRemove?: (id: string)
           <p className="mt-0.5 text-xs text-muted">
             {formatValue(goal.goalType, goal.currentValue)} → {formatValue(goal.goalType, goal.targetValue)}
             {!goal.achieved && ` · ${Math.round(goal.gapFraction * 100)}% to go`}
+            {goal.daysUntilTarget != null && goal.daysUntilTarget >= 0 && (
+              <> · by {new Date(goal.targetDate ?? "").toLocaleDateString(undefined, { month: "short", day: "numeric" })}</>
+            )}
           </p>
+          {!goal.feasibility.feasible && goal.feasibility.message && (
+            <p className="mt-1 text-[11px] text-warning">{goal.feasibility.message}</p>
+          )}
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {!goal.achieved && goal.weeklySessions > 0 && (

@@ -25,6 +25,8 @@ const MIN_TARGET_SECONDS = 30;
 const MAX_TARGET_SECONDS = 6 * 60 * 60;
 const MIN_TARGET_KG = 1;
 const MAX_TARGET_KG = 500;
+const MAX_TARGET_DATE_DAYS_OUT = 3 * 365;
+const DAY_MS = 86_400_000;
 
 /**
  * Goal-driven hybrid training plan (user feedback, see training-plan.ts's
@@ -44,6 +46,13 @@ const MAX_TARGET_KG = 500;
  * and MAX_FREE_WEEKLY_CAPACITY sessions/week — enough to prove the concept,
  * not enough to get the actual point of the feature (balancing several
  * competing goals against each other).
+ *
+ * Stage 2 (user feedback: "move on and scope for this" after the Stage 1
+ * curated-session-content rework): an optional target_date per goal drives
+ * tapering in the generated session content (training-session-content.ts)
+ * and a feasibility heads-up in buildTrainingPlan — both computed from
+ * daysUntilTarget, derived here from "today" server-side so it's never off
+ * by a client clock.
  */
 async function loadPremiumStatus(supabase: Awaited<ReturnType<typeof createClient>>, userId: string) {
   const { data: profile } = await supabase
@@ -52,6 +61,15 @@ async function loadPremiumStatus(supabase: Awaited<ReturnType<typeof createClien
     .eq("user_id", userId)
     .single();
   return isPremiumUser(profile?.subscription_tier ?? "free", profile?.subscription_status ?? null);
+}
+
+function daysUntil(dateStr: string | null): number | null {
+  if (!dateStr) return null;
+  const target = new Date(`${dateStr}T00:00:00Z`).getTime();
+  if (Number.isNaN(target)) return null;
+  const today = new Date();
+  const todayUtc = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
+  return Math.round((target - todayUtc) / DAY_MS);
 }
 
 export async function GET(request: Request) {
@@ -76,7 +94,7 @@ export async function GET(request: Request) {
   const [{ data: goalRows }, { data: benchmarks }, { data: gymActivities }] = await Promise.all([
     supabase
       .from("training_goals")
-      .select("id, goal_type, target_key, target_value, achieved_at")
+      .select("id, goal_type, target_key, target_value, target_date, achieved_at")
       .eq("user_id", user.id)
       .order("created_at", { ascending: true }),
     supabase
@@ -126,9 +144,10 @@ export async function GET(request: Request) {
   const rankedRows = premium ? allGoalRows : allGoalRows.slice(0, MAX_FREE_TRAINING_GOALS);
   const lockedRows = premium ? [] : allGoalRows.slice(MAX_FREE_TRAINING_GOALS);
 
-  function toInput(row: (typeof allGoalRows)[number]): TrainingGoalInput {
+  function toInput(row: (typeof allGoalRows)[number]): TrainingGoalInput & { targetDate: string | null } {
     const goalType = row.goal_type as "cardio" | "gym";
     const targetKey = row.target_key as string;
+    const targetDate = (row.target_date as string | null) ?? null;
     const currentValue =
       goalType === "cardio" ? (benchmarkBySport.get(targetKey) ?? null) : (bestByExercise.get(targetKey) ?? null);
     return {
@@ -138,11 +157,16 @@ export async function GET(request: Request) {
       targetValue: row.target_value as number,
       currentValue,
       label: goalType === "cardio" ? (BENCHMARK_LABELS[targetKey as BenchmarkSport] ?? targetKey) : targetKey,
+      daysUntilTarget: daysUntil(targetDate),
+      targetDate,
     };
   }
 
   const plan = buildTrainingPlan(rankedRows.map(toInput), weeklyCapacity);
-  const locked = lockedRows.map((row) => ({ ...toInput(row), gapFraction: 0, achieved: false, weight: 0, weeklySessions: 0 }));
+  const locked = lockedRows.map((row) => {
+    const input = toInput(row);
+    return { ...input, gapFraction: 0, achieved: false, weight: 0, weeklySessions: 0, feasibility: { feasible: true, message: null } };
+  });
 
   return NextResponse.json({
     goals: plan,
@@ -194,6 +218,23 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Target weight must be a realistic value in kg" }, { status: 400 });
   }
 
+  // Optional deadline (Stage 2). Empty string / not provided => no
+  // deadline, clears any previously-set one on a resave.
+  let targetDate: string | null = null;
+  if (body.targetDate) {
+    const days = daysUntil(String(body.targetDate));
+    if (days === null) {
+      return NextResponse.json({ error: "Target date is invalid" }, { status: 400 });
+    }
+    if (days < 0) {
+      return NextResponse.json({ error: "Target date must be in the future" }, { status: 400 });
+    }
+    if (days > MAX_TARGET_DATE_DAYS_OUT) {
+      return NextResponse.json({ error: "Target date is too far out" }, { status: 400 });
+    }
+    targetDate = String(body.targetDate);
+  }
+
   // No premium check here on purpose — free accounts can set up as many
   // goals as they want (never a hard block mid-wizard, never data loss if a
   // subscription lapses). The cap lives entirely in GET: only the first
@@ -203,7 +244,14 @@ export async function POST(request: Request) {
   const { data: goal, error } = await supabase
     .from("training_goals")
     .upsert(
-      { user_id: user.id, goal_type: goalType, target_key: targetKey, target_value: targetValue, achieved_at: null },
+      {
+        user_id: user.id,
+        goal_type: goalType,
+        target_key: targetKey,
+        target_value: targetValue,
+        target_date: targetDate,
+        achieved_at: null,
+      },
       { onConflict: "user_id,goal_type,target_key" }
     )
     .select()

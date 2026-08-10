@@ -84,6 +84,29 @@ function shiftedPhase(phase: StrengthPhase, delta: number): StrengthPhase {
   return PHASE_ORDER[Math.max(0, Math.min(PHASE_ORDER.length - 1, idx + delta))];
 }
 
+/**
+ * Stage 2 (user feedback: "move on and scope for this" after Stage 1's
+ * gap-only phase selection). A target date bends the gap-driven phase
+ * toward peaking as the deadline nears, regardless of how far off the
+ * numbers still say — the whole point of a taper is arriving at a goal
+ * date fresh and sharp even if the gap hasn't fully closed, not grinding
+ * base volume right up to the deadline.
+ */
+export const TAPER_WINDOW_DAYS = 10;
+export const PEAK_WINDOW_DAYS = 28;
+
+export function isTaperWindow(daysUntilTarget: number | null): boolean {
+  return daysUntilTarget !== null && daysUntilTarget >= 0 && daysUntilTarget <= TAPER_WINDOW_DAYS;
+}
+
+export function strengthPhaseFromGapAndUrgency(gapFraction: number, daysUntilTarget: number | null): StrengthPhase {
+  const gapPhase = strengthPhaseFromGap(gapFraction);
+  if (daysUntilTarget === null || daysUntilTarget < 0) return gapPhase;
+  if (daysUntilTarget <= TAPER_WINDOW_DAYS) return "peak";
+  if (daysUntilTarget <= PEAK_WINDOW_DAYS) return shiftedPhase(gapPhase, 1);
+  return gapPhase;
+}
+
 export interface StrengthPrescription {
   sets: number;
   reps: string;
@@ -170,6 +193,12 @@ export function cardioEmphasisFromGap(gapFraction: number): CardioEmphasis {
   return gapFraction > 0.15 ? "aerobic-base" : "specificity";
 }
 
+/** Same taper logic as the strength side — inside the taper window, sharpen regardless of how far the gap-based logic alone would say to keep building. */
+export function cardioEmphasisFromGapAndUrgency(gapFraction: number, daysUntilTarget: number | null): CardioEmphasis {
+  if (isTaperWindow(daysUntilTarget)) return "specificity";
+  return cardioEmphasisFromGap(gapFraction);
+}
+
 /**
  * Real distributed structure for N weekly sessions of one cardio goal —
  * easy/aerobic + quality (tempo/threshold/interval) + a long session, not
@@ -210,34 +239,45 @@ export interface SessionContent {
   title: string;
   description: string;
   sessionType?: SessionType;
+  /** Gym sessions only — exposed so the scheduler can apply a soft interference-avoidance preference (see buildWeeklySchedule) without re-deriving the pattern itself. */
+  movementPattern?: MovementPattern;
 }
 
 function gymSessionContent(
   goal: RankedGoal,
   instanceIndex: number,
   totalInstances: number,
-  excludeNames: Set<string>
+  excludeNames: Set<string>,
+  daysUntilTarget: number | null
 ): SessionContent {
-  const phase = strengthPhaseFromGap(goal.gapFraction);
+  const phase = strengthPhaseFromGapAndUrgency(goal.gapFraction, daysUntilTarget);
+  const tapering = isTaperWindow(daysUntilTarget);
   const main = mainLiftPrescription(phase, instanceIndex, totalInstances);
   const variantLabel = dupVariantLabel(instanceIndex, totalInstances);
   const pattern = movementPatternForExercise(goal.targetKey);
-  const accessories = pickAccessories(goal.targetKey, phase, excludeNames);
+  // Taper: cut accessory volume too, not just note the phase — a real
+  // taper reduces total work, it isn't just "the same session but heavier."
+  const accessories = pickAccessories(goal.targetKey, phase, excludeNames, tapering ? 1 : 3);
 
   const dayLabel = pattern ? `${PATTERN_DAY_LABEL[pattern]} — ${goal.label} Focus` : `${goal.label} Focus`;
-  const title = variantLabel ? `${dayLabel} (${variantLabel})` : dayLabel;
+  const suffix = tapering ? "Taper" : variantLabel;
+  const title = suffix ? `${dayLabel} (${suffix})` : dayLabel;
 
   const mainLine = `${goal.targetKey} ${main.sets}x${main.reps} @ ${main.intensity}`;
   const accessoryLines = accessories.map((a) => `${a.name} ${a.prescription.sets}x${a.prescription.reps}`);
-  const description = [mainLine, ...accessoryLines].join(" · ");
+  const taperNote = tapering ? "Tapering into your target date — reduced volume, stay sharp, prioritize recovery." : null;
+  const description = [mainLine, ...accessoryLines, ...(taperNote ? [taperNote] : [])].join(" · ");
 
-  return { title, description };
+  return { title, description, movementPattern: pattern ?? undefined };
 }
 
-function cardioSessionContent(sessionType: SessionType, sportLabel: string): SessionContent {
+function cardioSessionContent(sessionType: SessionType, sportLabel: string, tapering: boolean): SessionContent {
+  const guidance = tapering
+    ? `${SESSION_TYPE_GUIDANCE[sessionType]} Tapering into your target date — shorter than usual, stay sharp rather than chasing more volume.`
+    : SESSION_TYPE_GUIDANCE[sessionType];
   return {
-    title: `${sportLabel} — ${SESSION_TYPE_LABEL[sessionType]}`,
-    description: SESSION_TYPE_GUIDANCE[sessionType],
+    title: tapering ? `${sportLabel} — ${SESSION_TYPE_LABEL[sessionType]} (Taper)` : `${sportLabel} — ${SESSION_TYPE_LABEL[sessionType]}`,
+    description: guidance,
     sessionType,
   };
 }
@@ -247,18 +287,56 @@ function cardioSessionContent(sessionType: SessionType, sportLabel: string): Ses
  * — the single entry point buildWeeklySchedule calls per session slot.
  * `excludeGymNames` should be every OTHER active gym goal's exercise name
  * in the plan, so accessory picks never duplicate a dedicated goal.
+ * `daysUntilTarget` (null when the goal has no deadline) drives the Stage
+ * 2 taper behavior above.
  */
 export function sessionContentForInstance(
   goal: RankedGoal,
   instanceIndex: number,
   totalInstances: number,
-  excludeGymNames: Set<string>
+  excludeGymNames: Set<string>,
+  daysUntilTarget: number | null = null
 ): SessionContent {
   if (goal.goalType === "gym") {
-    return gymSessionContent(goal, instanceIndex, totalInstances, excludeGymNames);
+    return gymSessionContent(goal, instanceIndex, totalInstances, excludeGymNames, daysUntilTarget);
   }
-  const emphasis = cardioEmphasisFromGap(goal.gapFraction);
+  const emphasis = cardioEmphasisFromGapAndUrgency(goal.gapFraction, daysUntilTarget);
   const types = cardioSessionTypes(totalInstances, emphasis);
   const sessionType = types[instanceIndex] ?? "easy";
-  return cardioSessionContent(sessionType, goal.label);
+  return cardioSessionContent(sessionType, goal.label, isTaperWindow(daysUntilTarget));
+}
+
+// ---------- Feasibility (Stage 2) ----------
+
+/**
+ * A deliberately conservative, clearly-labeled ESTIMATE of achievable
+ * weekly improvement — never used to block or silently change the plan,
+ * only to flag "this deadline looks tight" the same way a reputable coach
+ * would say so upfront rather than let an athlete find out at the finish
+ * line. Real rates vary hugely by individual, training age, and recovery;
+ * this is a sanity check, not a guarantee.
+ */
+const ASSUMED_WEEKLY_IMPROVEMENT_RATE_PER_SESSION = 0.01;
+
+export interface FeasibilityResult {
+  feasible: boolean;
+  message: string | null;
+}
+
+export function estimateFeasibility(
+  gapFraction: number,
+  weeklySessions: number,
+  daysUntilTarget: number | null
+): FeasibilityResult {
+  if (daysUntilTarget === null || daysUntilTarget < 0 || gapFraction <= 0 || weeklySessions <= 0) {
+    return { feasible: true, message: null };
+  }
+  const weeksRemaining = daysUntilTarget / 7;
+  const achievableFraction = ASSUMED_WEEKLY_IMPROVEMENT_RATE_PER_SESSION * weeklySessions * weeksRemaining;
+  if (achievableFraction >= gapFraction) return { feasible: true, message: null };
+  const weeksLabel = Math.max(1, Math.round(weeksRemaining));
+  return {
+    feasible: false,
+    message: `Ambitious for the time left — closing a ${Math.round(gapFraction * 100)}% gap in ${weeksLabel} week${weeksLabel === 1 ? "" : "s"} at ${weeklySessions}x/week is a stretch. Treat it as a stretch goal, or add more weekly sessions toward it.`,
+  };
 }

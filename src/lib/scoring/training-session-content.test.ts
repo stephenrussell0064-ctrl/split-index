@@ -2,12 +2,17 @@ import { describe, expect, it } from "vitest";
 import {
   movementPatternForExercise,
   strengthPhaseFromGap,
+  strengthPhaseFromGapAndUrgency,
   mainLiftPrescription,
   dupVariantLabel,
   pickAccessories,
   cardioEmphasisFromGap,
+  cardioEmphasisFromGapAndUrgency,
   cardioSessionTypes,
   sessionContentForInstance,
+  isTaperWindow,
+  estimateFeasibility,
+  TAPER_WINDOW_DAYS,
 } from "./training-session-content";
 import type { RankedGoal } from "./training-plan";
 
@@ -129,6 +134,7 @@ describe("sessionContentForInstance", () => {
     achieved: false,
     weight: 1,
     weeklySessions: 2,
+    feasibility: { feasible: true, message: null },
   };
 
   const cardioGoal: RankedGoal = {
@@ -142,6 +148,7 @@ describe("sessionContentForInstance", () => {
     achieved: false,
     weight: 1,
     weeklySessions: 3,
+    feasibility: { feasible: true, message: null },
   };
 
   it("produces genuinely different content for a lift's two weekly sessions, not the same prescription twice", () => {
@@ -161,5 +168,83 @@ describe("sessionContentForInstance", () => {
     const sessions = [0, 1, 2].map((i) => sessionContentForInstance(cardioGoal, i, 3, new Set()));
     const sessionTypes = sessions.map((s) => s.sessionType);
     expect(new Set(sessionTypes).size).toBe(3);
+  });
+
+  it("switches a gym session to a taper (reduced accessories, taper note) inside the taper window", () => {
+    const normal = sessionContentForInstance(gymGoal, 0, 1, new Set(), TAPER_WINDOW_DAYS + 20);
+    const tapering = sessionContentForInstance(gymGoal, 0, 1, new Set(), TAPER_WINDOW_DAYS - 2);
+    expect(tapering.title).toContain("Taper");
+    expect(tapering.description).toContain("Tapering");
+    expect(tapering.description.split("·").length).toBeLessThan(normal.description.split("·").length);
+  });
+
+  it("switches a cardio session to specificity/taper inside the taper window regardless of a large gap", () => {
+    const farFromTarget: RankedGoal = { ...cardioGoal, gapFraction: 0.4 };
+    const content = sessionContentForInstance(farFromTarget, 0, 1, new Set(), 5);
+    expect(content.title).toContain("Taper");
+    expect(content.sessionType).not.toBe("easy"); // aerobic-base at this gap would normally pick "easy"
+  });
+});
+
+describe("strengthPhaseFromGapAndUrgency (Stage 2 taper)", () => {
+  it("ignores the deadline when none is given", () => {
+    expect(strengthPhaseFromGapAndUrgency(0.3, null)).toBe(strengthPhaseFromGap(0.3));
+  });
+
+  it("forces peak phase inside the taper window regardless of a large gap", () => {
+    expect(strengthPhaseFromGapAndUrgency(0.3, 5)).toBe("peak");
+  });
+
+  it("nudges toward peak (but not all the way) in the wider pre-taper peak window", () => {
+    const gapOnly = strengthPhaseFromGap(0.3); // "build"
+    const withDeadline = strengthPhaseFromGapAndUrgency(0.3, 20);
+    expect(withDeadline).not.toBe(gapOnly);
+    expect(withDeadline).toBe("strength");
+  });
+
+  it("leaves the gap-only phase alone well outside the peak window", () => {
+    expect(strengthPhaseFromGapAndUrgency(0.3, 90)).toBe(strengthPhaseFromGap(0.3));
+  });
+});
+
+describe("cardioEmphasisFromGapAndUrgency (Stage 2 taper)", () => {
+  it("forces specificity inside the taper window even with a large gap", () => {
+    expect(cardioEmphasisFromGapAndUrgency(0.4, 3)).toBe("specificity");
+  });
+
+  it("falls back to gap-only emphasis outside the taper window", () => {
+    expect(cardioEmphasisFromGapAndUrgency(0.4, 60)).toBe(cardioEmphasisFromGap(0.4));
+  });
+});
+
+describe("isTaperWindow", () => {
+  it("is true only for a non-negative deadline within the taper window", () => {
+    expect(isTaperWindow(null)).toBe(false);
+    expect(isTaperWindow(-1)).toBe(false);
+    expect(isTaperWindow(0)).toBe(true);
+    expect(isTaperWindow(TAPER_WINDOW_DAYS)).toBe(true);
+    expect(isTaperWindow(TAPER_WINDOW_DAYS + 1)).toBe(false);
+  });
+});
+
+describe("estimateFeasibility", () => {
+  it("is always feasible with no deadline", () => {
+    expect(estimateFeasibility(0.5, 3, null).feasible).toBe(true);
+  });
+
+  it("is always feasible for an already-achieved goal", () => {
+    expect(estimateFeasibility(0, 3, 7).feasible).toBe(true);
+  });
+
+  it("flags a large gap with very little time and low frequency as unrealistic", () => {
+    const result = estimateFeasibility(0.5, 1, 14); // 50% gap, 2 weeks, 1x/week
+    expect(result.feasible).toBe(false);
+    expect(result.message).toMatch(/ambitious/i);
+  });
+
+  it("treats a small gap with plenty of time and frequency as feasible", () => {
+    const result = estimateFeasibility(0.05, 4, 180); // 5% gap, ~26 weeks, 4x/week
+    expect(result.feasible).toBe(true);
+    expect(result.message).toBeNull();
   });
 });

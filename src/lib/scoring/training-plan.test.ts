@@ -142,6 +142,7 @@ describe("buildWeeklySchedule", () => {
     achieved: false,
     weight: 1,
     weeklySessions: 0,
+    feasibility: { feasible: true, message: null },
     ...overrides,
   });
 
@@ -187,5 +188,21 @@ describe("buildWeeklySchedule", () => {
     expect(days).toHaveLength(7);
     expect(days.every((d) => d.sessions.length === 0)).toBe(true);
     expect(days.map((d) => d.dayLabel)).toEqual(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]);
+  });
+
+  it("avoids stacking a leg session next to (or on) a hard cardio session when a real per-day schedule gives it room to", () => {
+    const goals = [
+      ranked({ id: "squat", goalType: "gym", targetKey: "Squat", label: "Squat", weeklySessions: 1 }),
+      // gapFraction 0.1 -> "specificity" emphasis -> a single weekly
+      // session is "tempo", which is in the high-demand set.
+      ranked({ id: "run", goalType: "cardio", targetKey: "run", label: "5K run", gapFraction: 0.1, weeklySessions: 1 }),
+    ];
+    const perDay = [3, 3, 3, 3, 3, 3, 3]; // plenty of room everywhere, so the only thing steering placement is interference avoidance
+    const days = buildWeeklySchedule(goals, perDay);
+    const squatDay = days.findIndex((d) => d.sessions.some((s) => s.goalId === "squat"));
+    const runDay = days.findIndex((d) => d.sessions.some((s) => s.goalId === "run"));
+    expect(squatDay).toBeGreaterThanOrEqual(0);
+    expect(runDay).toBeGreaterThanOrEqual(0);
+    expect(Math.abs(squatDay - runDay)).toBeGreaterThan(1); // not the same day, not adjacent
   });
 });
