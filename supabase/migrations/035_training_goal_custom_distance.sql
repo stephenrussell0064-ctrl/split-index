@@ -1,0 +1,11 @@
+-- Stage 3 of the Training Plan rework (user feedback: "scope both and...
+-- make this training plan as sophisticated as possible" — the second
+-- flagged item: "letting cardio goals target distances other than the
+-- fixed benchmark").
+--
+-- Nullable — a NULL/omitted value means "the sport's canonical benchmark
+-- distance" (existing behavior, unchanged). When set, target_key encodes
+-- the distance too (e.g. "run_10000" vs plain "run") so multiple distance
+-- goals for the same sport can coexist under the same UNIQUE constraint —
+-- see cardio-custom-distance.ts's buildCardioTargetKey/parseCardioTargetKey.
+ALTER TABLE training_goals ADD COLUMN IF NOT EXISTS target_distance_meters NUMERIC(10, 1);

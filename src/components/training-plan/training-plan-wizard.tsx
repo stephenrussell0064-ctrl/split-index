@@ -18,31 +18,49 @@ import {
   Moon,
   Pencil,
   AlertTriangle,
+  CalendarClock,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Input, Select } from "@/components/ui/input";
 import { COMMON_EXERCISES } from "@/lib/constants/sports";
 import { MAX_PREMIUM_WEEKLY_CAPACITY } from "@/lib/premium/features";
 import {
   buildWeeklySchedule,
+  buildMacrocyclePreview,
   estimateSessionCount,
   DEFAULT_SESSION_HOURS,
   WEEKDAY_LABELS,
   type DaySchedule,
+  type MacrocycleWeek,
   type RankedGoal as CoreRankedGoal,
 } from "@/lib/scoring/training-plan";
 import { cn } from "@/lib/utils/cn";
+
+interface DistanceOption {
+  meters: number;
+  label: string;
+  currentSeconds: number | null;
+}
 
 interface BenchmarkOption {
   value: string;
   label: string;
   distanceMeters: number;
   currentSeconds: number | null;
+  /** Stage 3: every distance this sport has a curated ladder for (always includes the canonical one) — [] for sports with no projection model (cycle). */
+  distanceOptions: DistanceOption[];
 }
 
-/** The API also serializes targetDate/daysUntilTarget/feasibility (Stage 2) alongside the core RankedGoal shape — see /api/training-goals's toInput(). */
-type RankedGoal = CoreRankedGoal & { targetDate: string | null };
+/**
+ * The API also serializes targetDate/daysUntilTarget/feasibility (Stage 2)
+ * alongside the core RankedGoal shape — see /api/training-goals's
+ * toInput(). Stage 3 adds distanceMeters and the plain underlying sport
+ * (targetKey itself may be an encoded custom-distance key like
+ * "run_10000" — `sport` is always the plain "run", needed to re-edit a
+ * custom-distance goal correctly).
+ */
+type RankedGoal = CoreRankedGoal & { targetDate: string | null; distanceMeters: number | null; sport: string | null };
 
 interface PlanResponse {
   goals: RankedGoal[];
@@ -132,6 +150,9 @@ export function TrainingPlanWizard() {
   // Optional deadline (Stage 2) — same field reused across the running
   // screen and the shared target-value queue below.
   const [targetDate, setTargetDate] = useState("");
+  // Distance (Stage 3, opt-in — defaults to the sport's canonical distance
+  // so anyone who doesn't touch this gets the exact old behavior).
+  const [targetDistanceMeters, setTargetDistanceMeters] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -139,12 +160,18 @@ export function TrainingPlanWizard() {
   const [runMinutes, setRunMinutes] = useState("");
   const [runSeconds, setRunSeconds] = useState("");
   const [runTargetDate, setRunTargetDate] = useState("");
+  const [runDistanceMeters, setRunDistanceMeters] = useState<number | null>(null);
 
   // Weekly capacity, in hours.
   const [capacityMode, setCapacityMode] = useState<"total" | "perDay">("total");
   const [totalHoursInput, setTotalHoursInput] = useState("5");
   const [perDayInputs, setPerDayInputs] = useState<string[]>(["1", "1", "1", "0", "1", "1", "0"]);
   const [perDayHours, setPerDayHours] = useState<number[] | null>(null);
+
+  // Multi-week macrocycle preview (Stage 3, opt-in per user feedback: "make
+  // additional options for the user to pick if they want to include") —
+  // off by default so the plan view stays simple unless asked for.
+  const [showMacrocycle, setShowMacrocycle] = useState(false);
 
   async function load(capacity?: number) {
     try {
@@ -257,14 +284,17 @@ export function TrainingPlanWizard() {
    * "Continue" here genuinely means "update," not "start over."
    */
   function startEditGoal(goal: RankedGoal) {
+    // `goal.sport` (always the plain sport, e.g. "run") not
+    // `goal.targetKey` (may be an encoded custom-distance key like
+    // "run_10000") — re-submitting must send the plain sport back.
     const item: PickItem =
-      goal.goalType === "cardio"
+      goal.goalType === "cardio" && goal.sport
         ? {
             kind: "cardio",
-            sport: goal.targetKey,
-            label: goal.label,
-            distanceMeters: cardioOptions.find((c) => c.sport === goal.targetKey)?.distanceMeters ?? 0,
-            currentSeconds: cardioOptions.find((c) => c.sport === goal.targetKey)?.currentSeconds ?? null,
+            sport: goal.sport,
+            label: cardioOptions.find((c) => c.sport === goal.sport)?.label ?? goal.sport,
+            distanceMeters: cardioOptions.find((c) => c.sport === goal.sport)?.distanceMeters ?? 0,
+            currentSeconds: cardioOptions.find((c) => c.sport === goal.sport)?.currentSeconds ?? null,
           }
         : { kind: "gym", exerciseName: goal.targetKey };
 
@@ -277,6 +307,7 @@ export function TrainingPlanWizard() {
     if (goal.goalType === "cardio") {
       setTargetMinutes(String(Math.floor(goal.targetValue / 60)));
       setTargetSeconds(String(Math.round(goal.targetValue % 60)));
+      setTargetDistanceMeters(goal.distanceMeters);
     } else {
       setTargetKg(String(goal.targetValue));
     }
@@ -289,6 +320,14 @@ export function TrainingPlanWizard() {
   }
 
   // ---------- Running screen ----------
+  function handleRunDistanceChange(meters: number) {
+    setRunDistanceMeters(meters);
+    const option = distanceOptionsFor("run").find((d) => d.meters === meters);
+    const seconds = meters === runOption?.distanceMeters ? runOption?.currentSeconds : (option?.currentSeconds ?? null);
+    setRunMinutes(seconds ? String(Math.floor(seconds / 60)) : "");
+    setRunSeconds(seconds ? String(Math.round(seconds % 60)) : "");
+  }
+
   async function handleRunningContinue() {
     const seconds = Number(runMinutes || 0) * 60 + Number(runSeconds || 0);
     if (seconds <= 0) {
@@ -306,6 +345,7 @@ export function TrainingPlanWizard() {
           targetKey: "run",
           targetValue: seconds,
           targetDate: runTargetDate || undefined,
+          distanceMeters: runDistanceMeters ?? undefined,
         }),
       });
       const data = await res.json();
@@ -360,15 +400,31 @@ export function TrainingPlanWizard() {
     }
   }
 
+  /** Every distance this sport has a curated ladder for (includes the canonical one) — [] when the sport has no projection model (cycle), meaning distance is fixed and no picker should show. */
+  function distanceOptionsFor(sport: string): DistanceOption[] {
+    return plan?.benchmarkOptions.find((b) => b.value === sport)?.distanceOptions ?? [];
+  }
+
   function primeTargetInputs(item: PickItem) {
     setTargetDate("");
     if (item.kind === "cardio") {
+      setTargetDistanceMeters(item.distanceMeters);
       const seconds = item.currentSeconds;
       setTargetMinutes(seconds ? String(Math.floor(seconds / 60)) : "");
       setTargetSeconds(seconds ? String(Math.round(seconds % 60)) : "");
     } else {
+      setTargetDistanceMeters(null);
       setTargetKg("");
     }
+  }
+
+  /** Switching distance re-primes the time fields to that distance's own current-predicted time — same convenience as switching items, so the field isn't left showing a stale time for the old distance. */
+  function handleTargetDistanceChange(item: Extract<PickItem, { kind: "cardio" }>, meters: number) {
+    setTargetDistanceMeters(meters);
+    const option = distanceOptionsFor(item.sport).find((d) => d.meters === meters);
+    const seconds = meters === item.distanceMeters ? item.currentSeconds : (option?.currentSeconds ?? null);
+    setTargetMinutes(seconds ? String(Math.floor(seconds / 60)) : "");
+    setTargetSeconds(seconds ? String(Math.round(seconds % 60)) : "");
   }
 
   async function saveCurrentTarget() {
@@ -383,6 +439,7 @@ export function TrainingPlanWizard() {
             targetKey: item.sport,
             targetValue: Number(targetMinutes || 0) * 60 + Number(targetSeconds || 0),
             targetDate: targetDate || undefined,
+            distanceMeters: targetDistanceMeters ?? undefined,
           }
         : { goalType: "gym", targetKey: item.exerciseName, targetValue: Number(targetKg), targetDate: targetDate || undefined };
 
@@ -535,15 +592,29 @@ export function TrainingPlanWizard() {
           >
             <Card className="space-y-4">
               <div className="flex items-center gap-2">
-                <Activity className="h-5 w-5 text-cardio-accent" />
-                <p className="text-sm text-muted">
-                  Distance: <span className="font-semibold text-foreground">5K</span> — what time do
-                  you want to hit?
-                  {runOption?.currentSeconds && (
-                    <> Your current predicted time is {formatDuration(runOption.currentSeconds)}.</>
-                  )}
-                </p>
+                <Activity className="h-5 w-5 shrink-0 text-cardio-accent" />
+                <p className="text-sm text-muted">What time do you want to hit?</p>
               </div>
+              {distanceOptionsFor("run").length > 0 && (
+                <Select
+                  label="Distance"
+                  options={distanceOptionsFor("run").map((d) => ({ value: String(d.meters), label: d.label }))}
+                  value={String(runDistanceMeters ?? runOption?.distanceMeters ?? 5000)}
+                  onChange={(e) => handleRunDistanceChange(Number(e.target.value))}
+                />
+              )}
+              {(() => {
+                const selectedMeters = runDistanceMeters ?? runOption?.distanceMeters ?? 5000;
+                const hintSeconds =
+                  selectedMeters === runOption?.distanceMeters
+                    ? runOption?.currentSeconds
+                    : (distanceOptionsFor("run").find((d) => d.meters === selectedMeters)?.currentSeconds ?? null);
+                return (
+                  hintSeconds != null && (
+                    <p className="text-xs text-muted">Your current predicted time is {formatDuration(hintSeconds)}.</p>
+                  )
+                );
+              })()}
               <div className="flex gap-2">
                 <Input
                   label="Target minutes"
@@ -739,35 +810,55 @@ export function TrainingPlanWizard() {
               {!editMode && (
                 <p className="text-sm text-muted">
                   Goal {targetIndex + 1} of {selected.length}
-                  {currentTargetItem.kind === "cardio" && (
-                    <>
-                      {" "}
-                      — distance {formatDistanceLabel(currentTargetItem.distanceMeters)}
-                      {currentTargetItem.currentSeconds !== null && (
-                        <>, current predicted time {formatDuration(currentTargetItem.currentSeconds)}</>
-                      )}
-                    </>
-                  )}
                 </p>
               )}
               {currentTargetItem.kind === "cardio" ? (
-                <div className="flex gap-2">
-                  <Input
-                    label="Target minutes"
-                    type="number"
-                    min={0}
-                    value={targetMinutes}
-                    onChange={(e) => setTargetMinutes(e.target.value)}
-                  />
-                  <Input
-                    label="Seconds"
-                    type="number"
-                    min={0}
-                    max={59}
-                    value={targetSeconds}
-                    onChange={(e) => setTargetSeconds(e.target.value)}
-                  />
-                </div>
+                <>
+                  {distanceOptionsFor(currentTargetItem.sport).length > 0 ? (
+                    <Select
+                      label="Distance"
+                      options={distanceOptionsFor(currentTargetItem.sport).map((d) => ({
+                        value: String(d.meters),
+                        label: d.label,
+                      }))}
+                      value={String(targetDistanceMeters ?? currentTargetItem.distanceMeters)}
+                      onChange={(e) => handleTargetDistanceChange(currentTargetItem, Number(e.target.value))}
+                    />
+                  ) : (
+                    <p className="text-sm text-muted">
+                      Distance: <span className="font-semibold text-foreground">{formatDistanceLabel(currentTargetItem.distanceMeters)}</span>
+                    </p>
+                  )}
+                  {(() => {
+                    const selectedMeters = targetDistanceMeters ?? currentTargetItem.distanceMeters;
+                    const hintSeconds =
+                      selectedMeters === currentTargetItem.distanceMeters
+                        ? currentTargetItem.currentSeconds
+                        : (distanceOptionsFor(currentTargetItem.sport).find((d) => d.meters === selectedMeters)?.currentSeconds ?? null);
+                    return (
+                      hintSeconds !== null && (
+                        <p className="text-xs text-muted">Your current predicted time is {formatDuration(hintSeconds)}.</p>
+                      )
+                    );
+                  })()}
+                  <div className="flex gap-2">
+                    <Input
+                      label="Target minutes"
+                      type="number"
+                      min={0}
+                      value={targetMinutes}
+                      onChange={(e) => setTargetMinutes(e.target.value)}
+                    />
+                    <Input
+                      label="Seconds"
+                      type="number"
+                      min={0}
+                      max={59}
+                      value={targetSeconds}
+                      onChange={(e) => setTargetSeconds(e.target.value)}
+                    />
+                  </div>
+                </>
               ) : (
                 <Input
                   label="Target weight (kg)"
@@ -906,6 +997,8 @@ export function TrainingPlanWizard() {
               onRemoveGoal={removeGoal}
               onEditGoal={startEditGoal}
               onEditCapacity={startEditCapacity}
+              showMacrocycle={showMacrocycle}
+              onToggleMacrocycle={() => setShowMacrocycle((v) => !v)}
             />
           </motion.div>
         )}
@@ -1108,6 +1201,8 @@ function PlanView({
   onRemoveGoal,
   onEditGoal,
   onEditCapacity,
+  showMacrocycle,
+  onToggleMacrocycle,
 }: {
   plan: PlanResponse;
   perDayHours: number[] | null;
@@ -1115,10 +1210,16 @@ function PlanView({
   onRemoveGoal: (id: string) => void;
   onEditGoal: (goal: RankedGoal) => void;
   onEditCapacity: () => void;
+  showMacrocycle: boolean;
+  onToggleMacrocycle: () => void;
 }) {
   const schedule = useMemo(
     () => buildWeeklySchedule(plan.goals, perDayHours ?? undefined),
     [plan.goals, perDayHours]
+  );
+  const macrocycle = useMemo(
+    () => buildMacrocyclePreview(plan.goals, plan.weeklyCapacity, 6),
+    [plan.goals, plan.weeklyCapacity]
   );
 
   return (
@@ -1168,6 +1269,20 @@ function PlanView({
               ))}
             </ul>
           </Card>
+
+          {/* Opt-in (user feedback: "make additional options for the user
+              to pick if they want to include... as sophisticated as
+              possible") — off by default so the plan stays simple unless
+              asked for. */}
+          <button
+            type="button"
+            onClick={onToggleMacrocycle}
+            className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-white/8 bg-white/[0.02] py-2.5 text-xs font-medium text-muted hover:bg-white/5"
+          >
+            <CalendarClock className="h-3.5 w-3.5" />
+            {showMacrocycle ? "Hide multi-week plan" : "Show multi-week plan"}
+          </button>
+          {showMacrocycle && <MacrocyclePreview weeks={macrocycle} />}
         </>
       )}
 
@@ -1201,5 +1316,58 @@ function PlanView({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Stage 3 opt-in multi-week view — how each goal's training phase and
+ * weekly session count would shift over the coming weeks purely from
+ * deadlines getting closer, not a prediction of actual progress (today's
+ * numbers are held fixed in every week shown; see buildMacrocyclePreview's
+ * own doc comment).
+ */
+function MacrocyclePreview({ weeks }: { weeks: MacrocycleWeek[] }) {
+  const anyGoals = weeks.some((w) => w.goals.length > 0);
+  return (
+    <Card className="space-y-3">
+      <div className="flex items-center gap-2">
+        <CalendarClock className="h-4 w-4 text-accent" />
+        <p className="micro-label text-muted/70">Next 6 weeks</p>
+      </div>
+      <p className="text-xs text-muted">
+        A preview of how your plan shifts as deadlines get closer — assumes today&apos;s numbers
+        stay put, so treat it as a shape, not a forecast. Goals without a deadline stay steady.
+      </p>
+      {!anyGoals ? (
+        <p className="py-2 text-center text-sm text-muted">Nothing scheduled yet.</p>
+      ) : (
+        <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+          {weeks.map((week) => (
+            <div
+              key={week.weekOffset}
+              className="w-40 shrink-0 rounded-xl border border-white/8 bg-white/[0.02] p-3"
+            >
+              <p className="mb-2 text-xs font-semibold text-foreground">{week.weekLabel}</p>
+              {week.goals.length === 0 ? (
+                <p className="text-[11px] text-muted/60">—</p>
+              ) : (
+                <ul className="space-y-1.5">
+                  {week.goals.map((g) => (
+                    <li key={g.goalId} className="text-[11px]">
+                      <p className={cn("truncate font-medium", g.isTaper ? "text-warning" : "text-foreground/90")}>
+                        {g.label}
+                      </p>
+                      <p className="text-muted/70">
+                        {g.phaseLabel} · {g.weeklySessions}x
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
   );
 }

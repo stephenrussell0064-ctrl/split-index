@@ -4,6 +4,7 @@ import {
   buildTrainingPlan,
   estimateSessionCount,
   buildWeeklySchedule,
+  buildMacrocyclePreview,
   type TrainingGoalInput,
   type RankedGoal,
 } from "./training-plan";
@@ -204,5 +205,93 @@ describe("buildWeeklySchedule", () => {
     expect(squatDay).toBeGreaterThanOrEqual(0);
     expect(runDay).toBeGreaterThanOrEqual(0);
     expect(Math.abs(squatDay - runDay)).toBeGreaterThan(1); // not the same day, not adjacent
+  });
+});
+
+describe("buildTrainingPlan urgency weighting (Stage 3)", () => {
+  const goal = (overrides: Partial<TrainingGoalInput>): TrainingGoalInput => ({
+    id: "id",
+    goalType: "cardio",
+    targetKey: "run",
+    targetValue: 1000,
+    currentValue: 1000,
+    label: "Goal",
+    ...overrides,
+  });
+
+  it("gives a goal with a near deadline more weekly sessions than an identical gap with no deadline", () => {
+    const goals = [
+      goal({ id: "urgent", targetValue: 1000, currentValue: 1300, daysUntilTarget: 14 }),
+      goal({ id: "chill", targetValue: 1000, currentValue: 1300, daysUntilTarget: null }),
+    ];
+    const plan = buildTrainingPlan(goals, 6);
+    const urgent = plan.find((g) => g.id === "urgent")!;
+    const chill = plan.find((g) => g.id === "chill")!;
+    expect(urgent.weeklySessions).toBeGreaterThan(chill.weeklySessions);
+    // The raw gap percentage shown to the user is untouched by urgency.
+    expect(urgent.gapFraction).toBeCloseTo(chill.gapFraction, 5);
+  });
+
+  it("leaves a far-out deadline (outside the peak window) with unchanged weighting", () => {
+    const goals = [
+      goal({ id: "far-deadline", targetValue: 1000, currentValue: 1300, daysUntilTarget: 120 }),
+      goal({ id: "no-deadline", targetValue: 1000, currentValue: 1300, daysUntilTarget: null }),
+    ];
+    const plan = buildTrainingPlan(goals, 6);
+    expect(plan.find((g) => g.id === "far-deadline")!.weeklySessions).toBe(
+      plan.find((g) => g.id === "no-deadline")!.weeklySessions
+    );
+  });
+
+  it("still sums exactly to the weekly capacity with mixed deadlines", () => {
+    const goals = [
+      goal({ id: "a", targetValue: 1000, currentValue: 1300, daysUntilTarget: 5 }),
+      goal({ id: "b", targetValue: 100, currentValue: 60, goalType: "gym", daysUntilTarget: null }),
+      goal({ id: "c", targetValue: 500, currentValue: 520, daysUntilTarget: 20 }),
+    ];
+    for (const capacity of [1, 3, 5, 7, 10]) {
+      const plan = buildTrainingPlan(goals, capacity);
+      const total = plan.reduce((sum, g) => sum + g.weeklySessions, 0);
+      expect(total).toBe(capacity);
+    }
+  });
+});
+
+describe("buildMacrocyclePreview", () => {
+  const goal = (overrides: Partial<TrainingGoalInput>): TrainingGoalInput => ({
+    id: "id",
+    goalType: "gym",
+    targetKey: "Squat",
+    targetValue: 140,
+    currentValue: 100,
+    label: "Squat",
+    ...overrides,
+  });
+
+  it("returns the requested number of weeks, starting with 'This week'", () => {
+    const weeks = buildMacrocyclePreview([goal({ daysUntilTarget: 60 })], 4, 5);
+    expect(weeks).toHaveLength(5);
+    expect(weeks[0].weekLabel).toBe("This week");
+    expect(weeks[1].weekLabel).toBe("Week 2");
+  });
+
+  it("shifts a goal into its taper phase in the weeks approaching its deadline", () => {
+    const weeks = buildMacrocyclePreview([goal({ daysUntilTarget: 20 })], 4, 4);
+    // 20 days out now (not tapering yet), but by week 2 (14 days later) it's inside the 10-day taper window.
+    const findGoal = (w: number) => weeks[w].goals.find((g) => g.goalId === "id");
+    expect(findGoal(0)?.isTaper).toBe(false);
+    expect(findGoal(2)?.isTaper).toBe(true);
+    expect(findGoal(2)?.phaseLabel).toContain("Taper");
+  });
+
+  it("holds a goal's phase steady across every week when it has no deadline", () => {
+    const weeks = buildMacrocyclePreview([goal({ daysUntilTarget: null })], 4, 6);
+    const phases = weeks.map((w) => w.goals.find((g) => g.goalId === "id")?.phaseLabel);
+    expect(new Set(phases).size).toBe(1);
+  });
+
+  it("drops a goal from later weeks once it would already be achieved today (no false optimism about future progress)", () => {
+    const weeks = buildMacrocyclePreview([goal({ currentValue: 140, daysUntilTarget: 30 })], 4, 3);
+    expect(weeks.every((w) => w.goals.length === 0)).toBe(true);
   });
 });

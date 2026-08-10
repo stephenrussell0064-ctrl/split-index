@@ -13,7 +13,16 @@
  * estimated 1RM for gym — see /api/training-plan/route.ts).
  */
 
-import { sessionContentForInstance, estimateFeasibility, type SessionContent, type FeasibilityResult } from "./training-session-content";
+import {
+  sessionContentForInstance,
+  estimateFeasibility,
+  strengthPhaseFromGapAndUrgency,
+  cardioEmphasisFromGapAndUrgency,
+  isTaperWindow,
+  PEAK_WINDOW_DAYS,
+  type SessionContent,
+  type FeasibilityResult,
+} from "./training-session-content";
 import type { SessionType } from "@/types";
 
 export type TrainingGoalType = "cardio" | "gym";
@@ -97,10 +106,29 @@ function allocateSessions(weights: number[], total: number): number[] {
 }
 
 /**
+ * How much extra weekly-focus weight a goal earns purely from time
+ * pressure (Stage 3, user feedback: "make this training plan as
+ * sophisticated as possible") — a goal with a nearing deadline and a real
+ * gap left should pull more weekly sessions toward it than the identical
+ * gap with months to spare, the same way a real coach would reallocate
+ * volume as a competition date approaches. 1x outside PEAK_WINDOW_DAYS
+ * (unchanged behavior for a goal with no deadline, or a distant one) —
+ * ramps up to 2.5x right at the deadline.
+ */
+function urgencyMultiplier(daysUntilTarget: number | null | undefined): number {
+  if (daysUntilTarget == null || daysUntilTarget < 0 || daysUntilTarget >= PEAK_WINDOW_DAYS) return 1;
+  const ramp = 1 - daysUntilTarget / PEAK_WINDOW_DAYS;
+  return 1 + ramp * 1.5;
+}
+
+/**
  * Ranks goals furthest-behind-first and allocates a weekly session count
  * per goal that biases toward the biggest gaps while guaranteeing every
  * active goal keeps a real share (MIN_WEIGHT_FLOOR) — never a plan that's
- * 100% one goal at the total expense of the others.
+ * 100% one goal at the total expense of the others. Goals with a nearing
+ * deadline (see urgencyMultiplier) pull extra weight on top of their raw
+ * gap — displayed gapFraction itself is never altered, only how much of
+ * the week's focus it earns.
  */
 export function buildTrainingPlan(goals: TrainingGoalInput[], weeklyCapacity: number): RankedGoal[] {
   const withGap = goals.map((g) => {
@@ -116,12 +144,13 @@ export function buildTrainingPlan(goals: TrainingGoalInput[], weeklyCapacity: nu
   }
 
   const floor = Math.min(MIN_WEIGHT_FLOOR, 1 / activeCount);
-  const totalGap = withGap.reduce((sum, g) => sum + (g.achieved ? 0 : g.gapFraction), 0);
+  const effectiveGap = (g: (typeof withGap)[number]) => g.gapFraction * urgencyMultiplier(g.daysUntilTarget);
+  const totalGap = withGap.reduce((sum, g) => sum + (g.achieved ? 0 : effectiveGap(g)), 0);
   const remainingBudget = 1 - floor * activeCount;
 
   const weighted = withGap.map((g) => {
     if (g.achieved) return { ...g, weight: 0 };
-    const proportional = totalGap > 0 ? (g.gapFraction / totalGap) * remainingBudget : remainingBudget / activeCount;
+    const proportional = totalGap > 0 ? (effectiveGap(g) / totalGap) * remainingBudget : remainingBudget / activeCount;
     return { ...g, weight: floor + proportional };
   });
 
@@ -137,6 +166,73 @@ export function buildTrainingPlan(goals: TrainingGoalInput[], weeklyCapacity: nu
       feasibility: estimateFeasibility(g.gapFraction, sessions[i], g.daysUntilTarget ?? null),
     }))
     .sort((a, b) => b.gapFraction - a.gapFraction);
+}
+
+export interface MacrocycleWeekGoal {
+  goalId: string;
+  label: string;
+  goalType: TrainingGoalType;
+  /** Human phase label, e.g. "Build", "Strength", "Peak (Taper)", "Base", "Sharpen (Taper)". */
+  phaseLabel: string;
+  weeklySessions: number;
+  isTaper: boolean;
+}
+
+export interface MacrocycleWeek {
+  /** 0 = this week. */
+  weekOffset: number;
+  weekLabel: string;
+  goals: MacrocycleWeekGoal[];
+}
+
+const STRENGTH_PHASE_LABEL: Record<string, string> = { build: "Build", strength: "Strength", peak: "Peak" };
+const CARDIO_EMPHASIS_LABEL: Record<string, string> = { "aerobic-base": "Base", specificity: "Sharpen" };
+
+/**
+ * Opt-in multi-week preview (Stage 3, user feedback: "make additional
+ * options for the user to pick if they want to include... as sophisticated
+ * as possible"): shows how each goal's training PHASE and weekly session
+ * count would evolve over the next `weeksToShow` weeks, purely from time
+ * passing and deadlines getting closer — this is NOT a prediction of
+ * actual progress (today's gapFraction is held fixed in every week; only
+ * urgency/phase shifts with the calendar). Read-only and fully derived —
+ * nothing is persisted per future week, each one is just buildTrainingPlan
+ * recomputed with daysUntilTarget shifted back by that many weeks, the
+ * same way the real week-of view already works.
+ */
+export function buildMacrocyclePreview(
+  goals: TrainingGoalInput[],
+  weeklyCapacity: number,
+  weeksToShow = 6
+): MacrocycleWeek[] {
+  const weeks: MacrocycleWeek[] = [];
+  for (let w = 0; w < weeksToShow; w++) {
+    const shifted = goals.map((g) => ({
+      ...g,
+      daysUntilTarget: g.daysUntilTarget != null ? g.daysUntilTarget - w * 7 : g.daysUntilTarget,
+    }));
+    const ranked = buildTrainingPlan(shifted, weeklyCapacity);
+    const weekGoals: MacrocycleWeekGoal[] = ranked
+      .filter((g) => !g.achieved && g.weeklySessions > 0)
+      .map((g) => {
+        const daysUntil = g.daysUntilTarget ?? null;
+        const taper = isTaperWindow(daysUntil);
+        const phaseLabel =
+          g.goalType === "gym"
+            ? STRENGTH_PHASE_LABEL[strengthPhaseFromGapAndUrgency(g.gapFraction, daysUntil)]
+            : CARDIO_EMPHASIS_LABEL[cardioEmphasisFromGapAndUrgency(g.gapFraction, daysUntil)];
+        return {
+          goalId: g.id,
+          label: g.label,
+          goalType: g.goalType,
+          phaseLabel: taper ? `${phaseLabel} (Taper)` : phaseLabel,
+          weeklySessions: g.weeklySessions,
+          isTaper: taper,
+        };
+      });
+    weeks.push({ weekOffset: w, weekLabel: w === 0 ? "This week" : `Week ${w + 1}`, goals: weekGoals });
+  }
+  return weeks;
 }
 
 /**
