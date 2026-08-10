@@ -16,6 +16,8 @@ import {
   CheckCircle2,
   Lock,
   Moon,
+  Pencil,
+  AlertTriangle,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -118,6 +120,7 @@ export function TrainingPlanWizard() {
 
   const [phase, setPhase] = useState<Phase>(null);
   const [addOnly, setAddOnly] = useState(false);
+  const [editMode, setEditMode] = useState(false);
   const [targetsReturnPhase, setTargetsReturnPhase] = useState<Phase>(null);
 
   const [query, setQuery] = useState("");
@@ -239,7 +242,46 @@ export function TrainingPlanWizard() {
     setSelected([]);
     setQuery("");
     setAddOnly(true);
+    setEditMode(false);
     setPhase("more");
+  }
+
+  /**
+   * Editing an already-saved goal — the picker screens deliberately
+   * exclude goals that already exist (no point re-offering something
+   * you've already added), which meant there was previously no way to
+   * correct a target value or deadline short of deleting and re-adding
+   * the whole goal. Jumps straight to the same target-entry screen used
+   * everywhere else, pre-filled with the goal's own current saved value
+   * (not the "current predicted" hint that screen normally shows) so
+   * "Continue" here genuinely means "update," not "start over."
+   */
+  function startEditGoal(goal: RankedGoal) {
+    const item: PickItem =
+      goal.goalType === "cardio"
+        ? {
+            kind: "cardio",
+            sport: goal.targetKey,
+            label: goal.label,
+            distanceMeters: cardioOptions.find((c) => c.sport === goal.targetKey)?.distanceMeters ?? 0,
+            currentSeconds: cardioOptions.find((c) => c.sport === goal.targetKey)?.currentSeconds ?? null,
+          }
+        : { kind: "gym", exerciseName: goal.targetKey };
+
+    setSelected([item]);
+    setTargetIndex(0);
+    setTargetsReturnPhase(null);
+    setAddOnly(true);
+    setEditMode(true);
+    setActionError(null);
+    if (goal.goalType === "cardio") {
+      setTargetMinutes(String(Math.floor(goal.targetValue / 60)));
+      setTargetSeconds(String(Math.round(goal.targetValue % 60)));
+    } else {
+      setTargetKg(String(goal.targetValue));
+    }
+    setTargetDate(goal.targetDate ?? "");
+    setPhase("targets");
   }
 
   function startEditCapacity() {
@@ -311,6 +353,7 @@ export function TrainingPlanWizard() {
     setQuery("");
     if (addOnly) {
       setAddOnly(false);
+      setEditMode(false);
       setPhase(null);
     } else {
       setPhase("capacity");
@@ -367,7 +410,10 @@ export function TrainingPlanWizard() {
         setSelected([]);
         setQuery("");
         setPhase(targetsReturnPhase);
-        if (targetsReturnPhase === null) setAddOnly(false);
+        if (targetsReturnPhase === null) {
+          setAddOnly(false);
+          setEditMode(false);
+        }
       }
     } catch (e) {
       setActionError(e instanceof Error ? e.message : "Could not save this goal");
@@ -671,19 +717,39 @@ export function TrainingPlanWizard() {
             exit={{ opacity: 0, x: -24, filter: "blur(4px)" }}
             transition={{ type: "spring", stiffness: 400, damping: 30 }}
           >
+            {editMode && (
+              <div className="mb-6 flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAddOnly(false);
+                    setEditMode(false);
+                    setSelected([]);
+                    setPhase(null);
+                  }}
+                  aria-label="Cancel edit"
+                  className="flex h-9 w-9 items-center justify-center rounded-full glass hover:bg-white/5"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                <h1 className="headline-tight text-xl font-semibold">Edit {itemLabel(currentTargetItem)}</h1>
+              </div>
+            )}
             <Card className="space-y-4">
-              <p className="text-sm text-muted">
-                Goal {targetIndex + 1} of {selected.length}
-                {currentTargetItem.kind === "cardio" && (
-                  <>
-                    {" "}
-                    — distance {formatDistanceLabel(currentTargetItem.distanceMeters)}
-                    {currentTargetItem.currentSeconds !== null && (
-                      <>, current predicted time {formatDuration(currentTargetItem.currentSeconds)}</>
-                    )}
-                  </>
-                )}
-              </p>
+              {!editMode && (
+                <p className="text-sm text-muted">
+                  Goal {targetIndex + 1} of {selected.length}
+                  {currentTargetItem.kind === "cardio" && (
+                    <>
+                      {" "}
+                      — distance {formatDistanceLabel(currentTargetItem.distanceMeters)}
+                      {currentTargetItem.currentSeconds !== null && (
+                        <>, current predicted time {formatDuration(currentTargetItem.currentSeconds)}</>
+                      )}
+                    </>
+                  )}
+                </p>
+              )}
               {currentTargetItem.kind === "cardio" ? (
                 <div className="flex gap-2">
                   <Input
@@ -722,9 +788,25 @@ export function TrainingPlanWizard() {
               />
               {actionError && <p className="text-sm text-danger">{actionError}</p>}
             </Card>
-            <Button className="mt-6 w-full" loading={saving} onClick={saveCurrentTarget}>
-              {targetIndex + 1 < selected.length ? "Next goal" : "Continue"}
-            </Button>
+            <div className="mt-6 flex gap-3">
+              {editMode && (
+                <Button
+                  variant="secondary"
+                  disabled={saving}
+                  onClick={() => {
+                    setAddOnly(false);
+                    setEditMode(false);
+                    setSelected([]);
+                    setPhase(null);
+                  }}
+                >
+                  Cancel
+                </Button>
+              )}
+              <Button className="flex-1" loading={saving} onClick={saveCurrentTarget}>
+                {editMode ? "Save changes" : targetIndex + 1 < selected.length ? "Next goal" : "Continue"}
+              </Button>
+            </div>
           </motion.div>
         )}
 
@@ -822,6 +904,7 @@ export function TrainingPlanWizard() {
               perDayHours={perDayHours}
               onAddGoal={startAddGoal}
               onRemoveGoal={removeGoal}
+              onEditGoal={startEditGoal}
               onEditCapacity={startEditCapacity}
             />
           </motion.div>
@@ -883,7 +966,21 @@ function ItemGrid({
   );
 }
 
-function GoalRow({ goal, onRemove }: { goal: RankedGoal; onRemove?: (id: string) => void }) {
+function GoalRow({
+  goal,
+  onRemove,
+  onEdit,
+}: {
+  goal: RankedGoal;
+  onRemove?: (id: string) => void;
+  onEdit?: (goal: RankedGoal) => void;
+}) {
+  // A deadline that's come and gone: rather than silently hide the date
+  // (the old daysUntilTarget >= 0 check did this) or keep tapering forever,
+  // surface it plainly so it's obvious the goal needs a fresh date or a
+  // fresh target, not a mystery why the plan quietly changed.
+  const deadlinePassed = goal.daysUntilTarget != null && goal.daysUntilTarget < 0;
+
   return (
     <li
       className={cn(
@@ -904,7 +1001,13 @@ function GoalRow({ goal, onRemove }: { goal: RankedGoal; onRemove?: (id: string)
               <> · by {new Date(goal.targetDate ?? "").toLocaleDateString(undefined, { month: "short", day: "numeric" })}</>
             )}
           </p>
-          {!goal.feasibility.feasible && goal.feasibility.message && (
+          {deadlinePassed && (
+            <p className="mt-1 flex items-center gap-1 text-[11px] text-warning">
+              <AlertTriangle className="h-3 w-3 shrink-0" />
+              Target date passed — edit to set a new one.
+            </p>
+          )}
+          {!deadlinePassed && !goal.feasibility.feasible && goal.feasibility.message && (
             <p className="mt-1 text-[11px] text-warning">{goal.feasibility.message}</p>
           )}
         </div>
@@ -913,6 +1016,16 @@ function GoalRow({ goal, onRemove }: { goal: RankedGoal; onRemove?: (id: string)
             <span className="rounded-full bg-accent/15 px-2.5 py-1 text-[11px] font-semibold text-accent">
               {goal.weeklySessions}x this week
             </span>
+          )}
+          {onEdit && (
+            <button
+              type="button"
+              aria-label={`Edit ${goal.label} goal`}
+              onClick={() => onEdit(goal)}
+              className="text-muted/60 hover:text-accent"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </button>
           )}
           {onRemove && (
             <button
@@ -993,12 +1106,14 @@ function PlanView({
   perDayHours,
   onAddGoal,
   onRemoveGoal,
+  onEditGoal,
   onEditCapacity,
 }: {
   plan: PlanResponse;
   perDayHours: number[] | null;
   onAddGoal: () => void;
   onRemoveGoal: (id: string) => void;
+  onEditGoal: (goal: RankedGoal) => void;
   onEditCapacity: () => void;
 }) {
   const schedule = useMemo(
@@ -1049,7 +1164,7 @@ function PlanView({
             <p className="micro-label text-muted/70">Goals</p>
             <ul className="space-y-2">
               {plan.goals.map((goal) => (
-                <GoalRow key={goal.id} goal={goal} onRemove={onRemoveGoal} />
+                <GoalRow key={goal.id} goal={goal} onRemove={onRemoveGoal} onEdit={onEditGoal} />
               ))}
             </ul>
           </Card>
