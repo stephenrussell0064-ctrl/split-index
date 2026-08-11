@@ -205,7 +205,10 @@ const PRIMARY_ANCHORS: Record<string, LiftAnchor> = {
   ohp: { anchorRatio: 0.4213, category: "shoulders", bodyPart: "upperBody" },
   barbellRow: { anchorRatio: 0.687, category: "back", bodyPart: "pull" },
   frontSquat: { anchorRatio: 0.8103, category: "legs", bodyPart: "lowerBody" },
-  inclineBench: { anchorRatio: 0.64, category: "chest", bodyPart: "upperBody" },
+  // 0.64 -> 0.61 (user feedback: scoring "slightly" too low) — a ~4.7%
+  // easier anchor, roughly +2 points on the 0-99.9 display scale for the
+  // same lift.
+  inclineBench: { anchorRatio: 0.61, category: "chest", bodyPart: "upperBody" },
   // Bodyweight-only and added-weight variants of the same movement are
   // deliberately SEPARATE keys (user feedback: "Pull Up" etc. should score
   // off reps alone with no weight input, while "Weighted Pull Up" etc. stay
@@ -312,7 +315,13 @@ const WEIGHT_RATIO_ANCHOR_TABLES: Partial<Record<string, WeightAnchor[]>> = {
 const ACCESSORY_MAP: Record<string, LiftAnchor> = {
   inclineDbPress: { anchorRatio: 0.6776, category: "chest", bodyPart: "upperBody" },
   flatDbPress: { anchorRatio: 0.365, category: "chest", bodyPart: "upperBody" },
-  machineChestPress: { anchorRatio: 0.7846, category: "chest", bodyPart: "upperBody" },
+  // 0.7846 -> 0.72 (user feedback: "Chest press machine is a bit too low
+  // scoring" — also fixed a missing alias so "Chest Press Machine" the
+  // catalog entry, distinct from "Machine Chest Press", now actually
+  // resolves here too instead of silently falling to the generic
+  // DEFAULT_GENERIC_ANCHOR) — a ~8.2% easier anchor, roughly +3 points on
+  // the 0-99.9 display scale for the same lift.
+  machineChestPress: { anchorRatio: 0.72, category: "chest", bodyPart: "upperBody" },
   cableFly: { anchorRatio: 0.3823, category: "chest", bodyPart: "upperBody" },
   pecDeck: { anchorRatio: 0.8583, category: "chest", bodyPart: "upperBody" },
   // Calibrated (user feedback: 95kg x8 should score ~700, 125kg x8 should
@@ -338,7 +347,11 @@ const ACCESSORY_MAP: Record<string, LiftAnchor> = {
   cableCurl: { anchorRatio: 0.28, category: "arms", bodyPart: "upperBody" },
   singleArmPushdown: { anchorRatio: 0.189, category: "arms", bodyPart: "upperBody" },
   dbShoulderPress: { anchorRatio: 0.216, category: "shoulders", bodyPart: "upperBody" },
-  lateralRaise: { anchorRatio: 0.1525, category: "shoulders", bodyPart: "upperBody" },
+  // 0.1525 -> 0.145 (user feedback: "cable lat raise" scoring "slightly"
+  // too low) — a ~4.9% easier anchor, roughly +2 points on the 0-99.9
+  // display scale for the same lift. Shared by every lateral-raise variant
+  // (cable/machine/front raise/rear delt work — see the alias list below).
+  lateralRaise: { anchorRatio: 0.145, category: "shoulders", bodyPart: "upperBody" },
   dbRow: { anchorRatio: 0.4524, category: "back", bodyPart: "pull" },
   barbellCurl: { anchorRatio: 0.3435, category: "arms", bodyPart: "upperBody" },
   preacherCurl: { anchorRatio: 0.3968, category: "arms", bodyPart: "upperBody" },
@@ -381,7 +394,7 @@ const LIFT_ALIASES: Record<string, string> = {
   // accessories
   "incline dumbbell press": "inclineDbPress", "decline dumbbell press": "inclineDbPress",
   "dumbbell bench press": "flatDbPress",
-  "machine chest press": "machineChestPress", "smith machine squat": "machineChestPress",
+  "machine chest press": "machineChestPress", "chest press machine": "machineChestPress", "smith machine squat": "machineChestPress",
   // Iso-Lateral (Hammer Strength) machines — user feedback: "please fix to
   // make all the iso lateral machine exercises comparable." Without these,
   // every one of them fell through to DEFAULT_GENERIC_ANCHOR (0.35) — lower
