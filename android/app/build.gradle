@@ -7,7 +7,10 @@ android {
         applicationId "co.uk.splitindex.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
+        // Bump this on every new upload to Play Console — a duplicate
+        // versionCode is silently rejected on re-upload, which was left
+        // sitting at 1 since the original Capacitor wrap and never moved.
+        versionCode 2
         versionName "1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
