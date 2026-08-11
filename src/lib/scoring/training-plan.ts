@@ -19,9 +19,11 @@ import {
   strengthPhaseFromGapAndUrgency,
   cardioEmphasisFromGapAndUrgency,
   isTaperWindow,
+  movementPatternForExercise,
   PEAK_WINDOW_DAYS,
   type SessionContent,
   type FeasibilityResult,
+  type MovementPattern,
 } from "./training-session-content";
 import type { SessionType } from "@/types";
 
@@ -40,6 +42,10 @@ export interface TrainingGoalInput {
   label: string;
   /** Days from "today" to an optional deadline the athlete set for this goal — null when no deadline was given. Stage 2: drives tapering (see training-session-content.ts) and the feasibility check below. */
   daysUntilTarget?: number | null;
+  /** Cardio only — the goal's target distance in meters. Lets the session-content engine turn a session's duration into an actual "run 5.2km at 5:11/km" prescription instead of a vague effort description (see training-session-content.ts's cardioPaceAndDistance). Null/omitted for gym goals, or a cardio goal with no known distance. */
+  distanceMeters?: number | null;
+  /** Cardio only — the plain benchmark sport ("run"/"cycle"/"swim"/etc), used purely to decide whether a session's guidance should be phrased as a pace (min/km) or a speed (km/h). Not the same as targetKey, which for a custom distance is an encoded key ("run_10000"). */
+  sport?: string | null;
 }
 
 export interface RankedGoal extends TrainingGoalInput {
@@ -159,13 +165,84 @@ export function buildTrainingPlan(goals: TrainingGoalInput[], weeklyCapacity: nu
     Math.max(0, Math.round(weeklyCapacity))
   );
 
-  return weighted
-    .map((g, i) => ({
-      ...g,
-      weeklySessions: sessions[i],
-      feasibility: estimateFeasibility(g.gapFraction, sessions[i], g.daysUntilTarget ?? null),
-    }))
+  const preliminary = weighted.map((g, i) => ({ ...g, weeklySessions: sessions[i] }));
+  const adjustedCounts = consolidateOverlappingGymGoals(preliminary);
+
+  return preliminary
+    .map((g) => {
+      const weeklySessions = adjustedCounts.get(g.id) ?? g.weeklySessions;
+      return {
+        ...g,
+        weeklySessions,
+        feasibility: estimateFeasibility(g.gapFraction, weeklySessions, g.daysUntilTarget ?? null),
+      };
+    })
     .sort((a, b) => b.gapFraction - a.gapFraction);
+}
+
+/**
+ * Movement-pattern overlap consolidation (user feedback: "if two of my
+ * goals involve bench press and dumbbell bench press for example, there is
+ * no point training two lots of each as training bench press will also
+ * train dumbbell press and vice versa, so factor this in that you don't
+ * need to do double sessions for these"). Two active gym goals that share
+ * a push/pull/legs/core movement pattern don't need their own session
+ * counts to simply add up — a session built around one already trains the
+ * synergist muscles the other needs too. This caps a same-pattern group's
+ * combined session count at whichever single goal in it needed the most on
+ * its own (never less than that — the neediest goal still gets its full
+ * due), splits that reduced total between the group's goals in the same
+ * proportion they'd have gotten independently, and hands the sessions that
+ * frees up to every OTHER active goal instead, proportional to its own
+ * weight — no training time is lost, it just stops being spent on
+ * redundant volume. Returns only the goal ids whose count actually
+ * changed, so callers can leave everything else untouched.
+ */
+function consolidateOverlappingGymGoals(
+  entries: {
+    id: string;
+    goalType: TrainingGoalType;
+    targetKey: string;
+    achieved: boolean;
+    weight: number;
+    weeklySessions: number;
+  }[]
+): Map<string, number> {
+  const active = entries.filter((g) => g.goalType === "gym" && !g.achieved);
+  const groups = new Map<MovementPattern, typeof active>();
+  for (const g of active) {
+    const pattern = movementPatternForExercise(g.targetKey);
+    if (!pattern) continue;
+    const bucket = groups.get(pattern) ?? [];
+    bucket.push(g);
+    groups.set(pattern, bucket);
+  }
+
+  const adjusted = new Map<string, number>();
+  let freedTotal = 0;
+
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    const groupTotal = group.reduce((sum, g) => sum + g.weeklySessions, 0);
+    const groupCap = Math.max(...group.map((g) => g.weeklySessions));
+    if (groupTotal <= groupCap) continue; // nothing redundant to consolidate
+    freedTotal += groupTotal - groupCap;
+    const shares = group.map((g) => (groupTotal > 0 ? g.weeklySessions / groupTotal : 1 / group.length));
+    const newCounts = allocateSessions(shares, groupCap);
+    group.forEach((g, i) => adjusted.set(g.id, newCounts[i]));
+  }
+
+  if (freedTotal > 0) {
+    const untouched = entries.filter((g) => !g.achieved && !adjusted.has(g.id));
+    if (untouched.length > 0) {
+      const totalWeight = untouched.reduce((sum, g) => sum + g.weight, 0);
+      const shares = untouched.map((g) => (totalWeight > 0 ? g.weight / totalWeight : 1 / untouched.length));
+      const bonus = allocateSessions(shares, freedTotal);
+      untouched.forEach((g, i) => adjusted.set(g.id, g.weeklySessions + bonus[i]));
+    }
+  }
+
+  return adjusted;
 }
 
 export interface MacrocycleWeekGoal {
@@ -340,14 +417,16 @@ export function buildWeeklySchedule(
     anyLeft = false;
     for (const q of queues) {
       if (q.remaining > 0) {
+        const duration = sessionHours[q.goal.goalType];
         const content = sessionContentForInstance(
           q.goal,
           q.seen,
           q.totalInstances,
           activeGymGoalNames,
-          q.goal.daysUntilTarget ?? null
+          q.goal.daysUntilTarget ?? null,
+          duration
         );
-        instances.push({ goal: q.goal, duration: sessionHours[q.goal.goalType], content });
+        instances.push({ goal: q.goal, duration, content });
         q.seen += 1;
         q.remaining -= 1;
         anyLeft = true;
@@ -408,6 +487,48 @@ export function buildWeeklySchedule(
         movementPattern: inst.content.movementPattern,
       });
     });
+  }
+
+  return enforceMaxOneGymSessionPerDay(days);
+}
+
+/**
+ * Post-placement fixup (user feedback: "it is unreasonable to have two gym
+ * sessions a day"). The placement above optimizes for per-day capacity and
+ * leg/cardio interference, not this — two DIFFERENT gym goals' instances
+ * (or, in even-spacing mode, two instances the index formula happened to
+ * line up) can still land on the same day. This pass keeps the first gym
+ * session on any day that has more than one and relocates every session
+ * after it to whichever OTHER day has room and doesn't already carry a gym
+ * session of its own, preferring the least-loaded such day. A session with
+ * genuinely nowhere better to go is left doubled up rather than dropped —
+ * the same "never lose a session, just place it less ideally" philosophy
+ * as the interference-avoidance placement above.
+ */
+function enforceMaxOneGymSessionPerDay(days: DaySchedule[]): DaySchedule[] {
+  const capacityKnown = days.some((d) => d.capacityHours != null);
+  const hoursUsed = (d: DaySchedule) => d.sessions.reduce((sum, s) => sum + s.durationHours, 0);
+
+  for (let dayIndex = 0; dayIndex < days.length; dayIndex++) {
+    const gymSessions = days[dayIndex].sessions.filter((s) => s.goalType === "gym");
+    if (gymSessions.length <= 1) continue;
+
+    for (const extra of gymSessions.slice(1)) {
+      const targets = days
+        .map((d, i) => i)
+        .filter((i) => i !== dayIndex)
+        .filter((i) => !days[i].sessions.some((s) => s.goalType === "gym"))
+        .filter((i) => {
+          if (!capacityKnown) return true;
+          const cap = days[i].capacityHours ?? 0;
+          return cap - hoursUsed(days[i]) >= extra.durationHours;
+        })
+        .sort((a, b) => hoursUsed(days[a]) - hoursUsed(days[b]));
+
+      if (targets.length === 0) continue; // nowhere better — leave it doubled up rather than dropping it
+      days[dayIndex].sessions = days[dayIndex].sessions.filter((s) => s !== extra);
+      days[targets[0]].sessions.push(extra);
+    }
   }
 
   return days;

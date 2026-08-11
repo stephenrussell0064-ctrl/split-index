@@ -23,6 +23,7 @@
  */
 
 import { COMMON_EXERCISES, SESSION_TYPES } from "@/lib/constants/sports";
+import { formatPace, formatSpeed } from "@/lib/utils/format";
 import type { RankedGoal } from "./training-plan";
 import type { SessionType } from "@/types";
 
@@ -271,10 +272,73 @@ function gymSessionContent(
   return { title, description, movementPattern: pattern ?? undefined };
 }
 
-function cardioSessionContent(sessionType: SessionType, sportLabel: string, tapering: boolean): SessionContent {
-  const guidance = tapering
-    ? `${SESSION_TYPE_GUIDANCE[sessionType]} Tapering into your target date — shorter than usual, stay sharp rather than chasing more volume.`
+/**
+ * Nominal cardio session length used only as a fallback for turning a
+ * prescribed pace into a distance below — mirrors training-plan.ts's
+ * DEFAULT_SESSION_HOURS.cardio. buildWeeklySchedule always passes the real
+ * per-goal-type duration it's actually using for capacity accounting; this
+ * only matters for direct callers (tests, anything bypassing the
+ * scheduler) that don't pass one.
+ */
+const DEFAULT_CARDIO_DURATION_HOURS = 0.75;
+
+/**
+ * How much slower (>1) or faster (<1) than the athlete's current pace at
+ * this goal's distance a session of this type should be run — the same
+ * %-of-race-pace zones real endurance coaching uses (easy/long noticeably
+ * slower than race effort, threshold close to it, intervals faster).
+ * Applied to seconds-per-km so it holds regardless of whether the sport
+ * displays as a pace or (cycling) a speed.
+ */
+const SESSION_PACE_MULTIPLIER: Record<SessionType, number> = {
+  recovery: 1.35,
+  easy: 1.2,
+  fartlek: 1.12,
+  long: 1.15,
+  tempo: 1.06,
+  threshold: 1.02,
+  interval: 0.92,
+  race: 1.0,
+  other: 1.15,
+};
+
+/**
+ * User feedback: "for the runs and swims and cycles be specific on the
+ * distance and pace of each activity that you should perform." Derives a
+ * concrete "5.2km at 5:11/km" from the goal's own CURRENT pace — not the
+ * aspirational target, since prescribing today's easy run off a
+ * not-yet-earned goal pace could ask for something not yet sustainable
+ * even easy — the session type's pace zone above, and how much distance
+ * that pace covers in the time this session actually gets. Returns null
+ * whenever there isn't enough data to ground a real number (no distance on
+ * the goal, or no current/target time yet), in which case the plain
+ * effort-only guidance shows instead, same as before this feature existed.
+ */
+function cardioPaceAndDistance(goal: RankedGoal, sessionType: SessionType, durationHours: number): string | null {
+  const distanceMeters = goal.distanceMeters;
+  if (!distanceMeters || distanceMeters <= 0) return null;
+  const referenceSeconds = goal.currentValue ?? goal.targetValue;
+  if (!referenceSeconds || referenceSeconds <= 0 || durationHours <= 0) return null;
+
+  const basePaceSecPerKm = referenceSeconds / (distanceMeters / 1000);
+  if (!Number.isFinite(basePaceSecPerKm) || basePaceSecPerKm <= 0) return null;
+  const paceSecPerKm = basePaceSecPerKm * (SESSION_PACE_MULTIPLIER[sessionType] ?? 1.15);
+  const sessionDistanceKm = (durationHours * 3600) / paceSecPerKm;
+  if (!Number.isFinite(sessionDistanceKm) || sessionDistanceKm <= 0) return null;
+
+  const paceLabel = goal.sport === "cycle" ? formatSpeed(paceSecPerKm) : formatPace(paceSecPerKm);
+  return `${sessionDistanceKm.toFixed(1)}km at ${paceLabel}`;
+}
+
+function cardioSessionContent(sessionType: SessionType, goal: RankedGoal, tapering: boolean, durationHours: number): SessionContent {
+  const sportLabel = goal.label;
+  const specifics = cardioPaceAndDistance(goal, sessionType, durationHours);
+  const guidanceBase = specifics
+    ? `${specifics} — ${SESSION_TYPE_GUIDANCE[sessionType]}`
     : SESSION_TYPE_GUIDANCE[sessionType];
+  const guidance = tapering
+    ? `${guidanceBase} Tapering into your target date — shorter than usual, stay sharp rather than chasing more volume.`
+    : guidanceBase;
   return {
     title: tapering ? `${sportLabel} — ${SESSION_TYPE_LABEL[sessionType]} (Taper)` : `${sportLabel} — ${SESSION_TYPE_LABEL[sessionType]}`,
     description: guidance,
@@ -295,7 +359,8 @@ export function sessionContentForInstance(
   instanceIndex: number,
   totalInstances: number,
   excludeGymNames: Set<string>,
-  daysUntilTarget: number | null = null
+  daysUntilTarget: number | null = null,
+  durationHours: number = DEFAULT_CARDIO_DURATION_HOURS
 ): SessionContent {
   if (goal.goalType === "gym") {
     return gymSessionContent(goal, instanceIndex, totalInstances, excludeGymNames, daysUntilTarget);
@@ -303,7 +368,7 @@ export function sessionContentForInstance(
   const emphasis = cardioEmphasisFromGapAndUrgency(goal.gapFraction, daysUntilTarget);
   const types = cardioSessionTypes(totalInstances, emphasis);
   const sessionType = types[instanceIndex] ?? "easy";
-  return cardioSessionContent(sessionType, goal.label, isTaperWindow(daysUntilTarget));
+  return cardioSessionContent(sessionType, goal, isTaperWindow(daysUntilTarget), durationHours);
 }
 
 // ---------- Feasibility (Stage 2) ----------

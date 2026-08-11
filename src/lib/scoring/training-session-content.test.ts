@@ -184,6 +184,55 @@ describe("sessionContentForInstance", () => {
     expect(content.title).toContain("Taper");
     expect(content.sessionType).not.toBe("easy"); // aerobic-base at this gap would normally pick "easy"
   });
+
+  // User feedback: "for the runs and swims and cycles be specific on the
+  // distance and pace of each activity that you should perform."
+  describe("cardio pace/distance specificity", () => {
+    const runGoalWithDistance: RankedGoal = { ...cardioGoal, distanceMeters: 5000, sport: "run" };
+
+    it("has no concrete distance/pace when the goal carries no distance (unchanged pre-existing behavior)", () => {
+      const content = sessionContentForInstance(cardioGoal, 0, 1, new Set());
+      expect(content.description).not.toMatch(/km at/);
+    });
+
+    it("states a concrete distance and pace once the goal has a known race distance", () => {
+      const content = sessionContentForInstance(runGoalWithDistance, 0, 1, new Set());
+      expect(content.description).toMatch(/^\d+(\.\d+)?km at \d+:\d{2}\/km/);
+    });
+
+    it("prescribes an easy session slower than the athlete's current race pace, and a tempo session closer to it", () => {
+      const easyOnly = { ...runGoalWithDistance, gapFraction: 0.3 }; // aerobic-base emphasis, single session -> "easy"
+      const easy = sessionContentForInstance(easyOnly, 0, 1, new Set());
+      expect(easy.sessionType).toBe("easy");
+      const easyPaceMatch = easy.description.match(/(\d+):(\d{2})\/km/)!;
+      const easySec = Number(easyPaceMatch[1]) * 60 + Number(easyPaceMatch[2]);
+
+      // currentValue 1500s / 5km = 300s/km current race pace.
+      const currentPaceSecPerKm = runGoalWithDistance.currentValue! / (runGoalWithDistance.distanceMeters! / 1000);
+      expect(easySec).toBeGreaterThan(currentPaceSecPerKm); // slower (bigger sec/km) than race pace
+
+      const quality = { ...runGoalWithDistance, gapFraction: 0.02 }; // specificity emphasis, single session -> "tempo"
+      const tempo = sessionContentForInstance(quality, 0, 1, new Set());
+      const tempoPaceMatch = tempo.description.match(/(\d+):(\d{2})\/km/)!;
+      const tempoSec = Number(tempoPaceMatch[1]) * 60 + Number(tempoPaceMatch[2]);
+      expect(tempoSec).toBeLessThan(easySec); // tempo is closer to race pace than easy
+    });
+
+    it("shows a speed (km/h) instead of a pace for a cycling goal", () => {
+      const cycleGoal: RankedGoal = { ...cardioGoal, sport: "cycle", distanceMeters: 20000, targetValue: 2400, currentValue: 2400 };
+      const content = sessionContentForInstance(cycleGoal, 0, 1, new Set());
+      expect(content.description).toMatch(/km\/h/);
+      expect(content.description).not.toMatch(/\/km\b/);
+    });
+
+    it("derives the session distance from the actual session duration passed in, not a hardcoded one", () => {
+      const short = sessionContentForInstance(runGoalWithDistance, 0, 1, new Set(), null, 0.5);
+      const long = sessionContentForInstance(runGoalWithDistance, 0, 1, new Set(), null, 1.5);
+      const shortKm = Number(short.description.match(/^([\d.]+)km/)![1]);
+      const longKm = Number(long.description.match(/^([\d.]+)km/)![1]);
+      expect(longKm).toBeGreaterThan(shortKm);
+    });
+  });
 });
 
 describe("strengthPhaseFromGapAndUrgency (Stage 2 taper)", () => {

@@ -110,6 +110,56 @@ describe("buildTrainingPlan", () => {
     expect(plan.every((g) => g.weeklySessions === 0)).toBe(true);
     expect(plan.every((g) => g.achieved)).toBe(true);
   });
+
+  // User feedback: "if two of my goals involve bench press and dumbbell
+  // bench press for example, there is no point training two lots of each
+  // as training bench press will also train dumbbell press and vice
+  // versa... you don't need to do double sessions for these."
+  describe("overlapping movement-pattern consolidation", () => {
+    const gymGoal = (overrides: Partial<TrainingGoalInput>): TrainingGoalInput => ({
+      id: "id",
+      goalType: "gym",
+      targetKey: "Bench Press",
+      targetValue: 100,
+      currentValue: 50,
+      label: "Goal",
+      ...overrides,
+    });
+
+    it("caps two same-movement-pattern gym goals' combined sessions at the group's own neediest goal, handing the rest to a non-overlapping goal", () => {
+      const goals = [
+        gymGoal({ id: "bench", targetKey: "Bench Press" }), // push
+        gymGoal({ id: "db-bench", targetKey: "Dumbbell Bench Press" }), // push — same pattern as bench
+        gymGoal({ id: "squat", targetKey: "Squat" }), // legs — no overlap
+      ];
+      // All three share an identical gap, so absent consolidation each
+      // would get an equal 9/3 = 3 sessions.
+      const plan = buildTrainingPlan(goals, 9);
+      const bench = plan.find((g) => g.id === "bench")!;
+      const dbBench = plan.find((g) => g.id === "db-bench")!;
+      const squat = plan.find((g) => g.id === "squat")!;
+
+      expect(bench.weeklySessions + dbBench.weeklySessions).toBe(3); // capped, not 3+3=6
+      expect(squat.weeklySessions).toBe(6); // absorbs everything the overlap freed up
+      expect(bench.weeklySessions + dbBench.weeklySessions + squat.weeklySessions).toBe(9); // nothing lost
+    });
+
+    it("leaves goals with different movement patterns alone (no false-positive consolidation)", () => {
+      const goals = [gymGoal({ id: "bench", targetKey: "Bench Press" }), gymGoal({ id: "squat", targetKey: "Squat" })];
+      const plan = buildTrainingPlan(goals, 6);
+      expect(plan.find((g) => g.id === "bench")!.weeklySessions).toBe(3);
+      expect(plan.find((g) => g.id === "squat")!.weeklySessions).toBe(3);
+    });
+
+    it("never crashes and still allocates the full capacity when an exercise name isn't recognized", () => {
+      const goals = [
+        gymGoal({ id: "custom", targetKey: "My Custom Home-Gym Lift" }),
+        gymGoal({ id: "bench", targetKey: "Bench Press" }),
+      ];
+      const plan = buildTrainingPlan(goals, 6);
+      expect(plan.reduce((sum, g) => sum + g.weeklySessions, 0)).toBe(6);
+    });
+  });
 });
 
 describe("estimateSessionCount", () => {
@@ -205,6 +255,51 @@ describe("buildWeeklySchedule", () => {
     expect(squatDay).toBeGreaterThanOrEqual(0);
     expect(runDay).toBeGreaterThanOrEqual(0);
     expect(Math.abs(squatDay - runDay)).toBeGreaterThan(1); // not the same day, not adjacent
+  });
+
+  it("never stacks two gym sessions on the same day when the even-spacing formula would otherwise double them up (user feedback: 'it is unreasonable to have two gym sessions a day')", () => {
+    const goals = [
+      ranked({ id: "bench", goalType: "gym", targetKey: "Bench Press", label: "Bench Press", weeklySessions: 3 }),
+      ranked({ id: "squat", goalType: "gym", targetKey: "Squat", label: "Squat", weeklySessions: 3 }),
+      ranked({ id: "run", goalType: "cardio", targetKey: "run", label: "5K run", weeklySessions: 2 }),
+    ];
+    const days = buildWeeklySchedule(goals);
+    for (const d of days) {
+      expect(d.sessions.filter((s) => s.goalType === "gym").length).toBeLessThanOrEqual(1);
+    }
+    const totalPlaced = days.reduce((sum, d) => sum + d.sessions.length, 0);
+    expect(totalPlaced).toBe(8); // nothing dropped in the process of relocating
+  });
+
+  it("doubles up gym sessions on a day rather than dropping one when there's genuinely nowhere else to put it", () => {
+    // 8 gym-only instances across 7 days makes a perfect 1-per-day
+    // placement mathematically impossible — the fixup must still place
+    // every session somewhere instead of discarding the unplaceable one.
+    const goals = [
+      ranked({ id: "bench", goalType: "gym", targetKey: "Bench Press", label: "Bench Press", weeklySessions: 4 }),
+      ranked({ id: "squat", goalType: "gym", targetKey: "Squat", label: "Squat", weeklySessions: 4 }),
+    ];
+    const days = buildWeeklySchedule(goals);
+    const totalPlaced = days.reduce((sum, d) => sum + d.sessions.length, 0);
+    expect(totalPlaced).toBe(8);
+  });
+
+  it("leaves a doubled-up gym day alone rather than relocating into a day that can't actually fit the session, and never exceeds capacity anywhere", () => {
+    const goals = [
+      ranked({ id: "bench", goalType: "gym", targetKey: "Bench Press", label: "Bench Press", weeklySessions: 1 }),
+      ranked({ id: "squat", goalType: "gym", targetKey: "Squat", label: "Squat", weeklySessions: 1 }),
+    ];
+    // Only Monday has room for even one 1h gym session, let alone a second
+    // elsewhere — every other day is deliberately too small.
+    const perDay = [3, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5];
+    const days = buildWeeklySchedule(goals, perDay);
+    for (const d of days) {
+      const used = d.sessions.reduce((sum, s) => sum + s.durationHours, 0);
+      expect(used).toBeLessThanOrEqual(d.capacityHours!);
+    }
+    // Both sessions had to land on Monday — nowhere else could fit either.
+    expect(days[0].sessions.filter((s) => s.goalType === "gym")).toHaveLength(2);
+    expect(days.slice(1).every((d) => d.sessions.length === 0)).toBe(true);
   });
 });
 
