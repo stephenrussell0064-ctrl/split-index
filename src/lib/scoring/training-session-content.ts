@@ -231,27 +231,47 @@ export function cardioEmphasisFromGapAndUrgency(gapFraction: number, daysUntilTa
 }
 
 /**
- * Real distributed structure for N weekly sessions of one cardio goal —
- * easy/aerobic (Zone 2) + quality (tempo/threshold/interval) + a long
- * session, not N repeats of the same effort. Mirrors standard
- * polarized-training structure — real 80/20-style programs, even in a
- * sharpening/specificity phase close to a goal, still hold a genuine easy
- * aerobic session every week; they don't drop it in favor of an
- * all-quality week (user feedback: "zone 2 runs are the most effective way
- * of managing this yet there are no zone 2 runs on my training plan").
- * At 2x/week that meant this used to hand back tempo+interval with zero
- * easy — fixed below to always keep at least one easy session once there
- * are 2+ in the week, in every emphasis.
+ * User feedback: "zone 2 shouldn't just be 1 session a week, according to
+ * most training guides zone 2 should be done more than intense training to
+ * build up an aerobic base" — agreed, this is the standard 80/20
+ * polarized-training principle (Seiler et al.; the same idea behind
+ * "80/20 Running" and Jack Daniels' training zones). "At least one easy
+ * session" (the previous fix, for a real bug where a 2x/week specificity
+ * plan handed back zero easy sessions at all) still isn't the same claim
+ * as "easy is the majority" — at 4x/week specificity this was still only
+ * 25% easy. QUALITY_FRACTION below is the genuine minority share of the
+ * week that's hard (tempo/threshold/interval) — everything else,
+ * including the long session, is easy/Zone 2 effort. Even in specificity
+ * (close to target, sharpening) real programs still hold the majority of
+ * volume easy; they get more precise with the smaller hard share, they
+ * don't abandon the base.
  */
+const QUALITY_FRACTION: Record<CardioEmphasis, number> = {
+  "aerobic-base": 0.2,
+  specificity: 0.3,
+};
+
+/** Rotation of quality session types once there's room for more than one — keeps variety instead of repeating the identical hard session every quality slot. */
+const QUALITY_ROTATION: Record<CardioEmphasis, SessionType[]> = {
+  "aerobic-base": ["tempo", "threshold"],
+  specificity: ["interval", "threshold", "tempo"],
+};
+
 export function cardioSessionTypes(count: number, emphasis: CardioEmphasis): SessionType[] {
   if (count <= 0) return [];
   if (count === 1) return [emphasis === "aerobic-base" ? "easy" : "tempo"];
-  if (count === 2) return emphasis === "aerobic-base" ? ["easy", "tempo"] : ["easy", "interval"];
-  if (count === 3) return emphasis === "aerobic-base" ? ["easy", "tempo", "long"] : ["easy", "interval", "long"];
-  const base: SessionType[] =
-    emphasis === "aerobic-base" ? ["easy", "easy", "tempo", "long"] : ["easy", "interval", "threshold", "long"];
-  while (base.length < count) base.push("easy");
-  return base.slice(0, count);
+
+  const qualityCount = Math.min(count - 1, Math.max(1, Math.round(count * QUALITY_FRACTION[emphasis])));
+  const rotation = QUALITY_ROTATION[emphasis];
+  const quality: SessionType[] = Array.from({ length: qualityCount }, (_, i) => rotation[i % rotation.length]);
+
+  const easyCount = count - qualityCount;
+  const easy: SessionType[] = Array.from({ length: easyCount }, () => "easy" as SessionType);
+  // One easy slot becomes the week's long session once there's room for it
+  // (3+ total sessions) — same threshold as before this rewrite.
+  if (count >= 3) easy[easy.length - 1] = "long";
+
+  return [...easy, ...quality];
 }
 
 const SESSION_TYPE_LABEL: Record<SessionType, string> = Object.fromEntries(

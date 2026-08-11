@@ -138,6 +138,33 @@ describe("cardioSessionTypes", () => {
       }
     }
   });
+
+  const HARD_TYPES = new Set(["tempo", "threshold", "interval"]);
+
+  // User follow-up: "zone 2 shouldn't just be 1 session a week, according
+  // to most training guides zone 2 should be done more than intense
+  // training to build up an aerobic base" — correct (standard 80/20
+  // polarized-training principle). "At least one easy session" alone still
+  // let a 4x/week specificity plan come back only 25% easy. Easy/Zone 2
+  // (including the long session, which is easy-effort by design) must be
+  // the clear majority at every realistic weekly count, in both emphases.
+  it("keeps easy/Zone 2 effort as the clear majority of the week, not just present, once there's room to (3+ sessions — at 2x/week the honest floor is a 50/50 split, not a majority)", () => {
+    for (const count of [3, 4, 5, 6, 7, 10, 14]) {
+      for (const emphasis of ["aerobic-base", "specificity"] as const) {
+        const types = cardioSessionTypes(count, emphasis);
+        const hardCount = types.filter((t) => HARD_TYPES.has(t)).length;
+        const easyishCount = count - hardCount; // easy + long, both easy-effort
+        expect(easyishCount).toBeGreaterThan(hardCount);
+      }
+    }
+  });
+
+  it("gives specificity genuinely more quality work than aerobic-base once the week is big enough to tell them apart", () => {
+    const count = 10;
+    const hardIn = (emphasis: "aerobic-base" | "specificity") =>
+      cardioSessionTypes(count, emphasis).filter((t) => HARD_TYPES.has(t)).length;
+    expect(hardIn("specificity")).toBeGreaterThan(hardIn("aerobic-base"));
+  });
 });
 
 describe("sessionContentForInstance", () => {
