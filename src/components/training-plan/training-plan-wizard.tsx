@@ -70,6 +70,10 @@ type RankedGoal = CoreRankedGoal & {
   rawTargetValue: number;
   targetReps: number;
   currentAtGoalReps: number | null;
+  /** User feedback: "each activity the user logs, say in the training plan tab what percentage of the day or session they have met." Absent on locked (premium-gated) goals, which never get a real plan computed for them. */
+  weekProgress?: { sessionsLogged: number; sessionsTarget: number; percentComplete: number };
+  /** User feedback: "how on track they are to meeting their goal and provide a timeline estimate." null once achieved or before there's enough history to trust a rate — see computeProgressTrend's own doc comment. */
+  progressTrend?: { onTrack: boolean; message: string; projectedDate: string | null } | null;
 };
 
 interface PlanResponse {
@@ -1161,11 +1165,27 @@ function GoalRow({
           {!deadlinePassed && !goal.feasibility.feasible && goal.feasibility.message && (
             <p className="mt-1 text-[11px] text-warning">{goal.feasibility.message}</p>
           )}
+          {!goal.achieved && goal.progressTrend && (
+            <p className={cn("mt-1 text-[11px]", goal.progressTrend.onTrack ? "text-success" : "text-warning")}>
+              {goal.progressTrend.message}
+              {goal.progressTrend.projectedDate &&
+                ` (~${new Date(goal.progressTrend.projectedDate).toLocaleDateString(undefined, { month: "short", day: "numeric" })})`}
+            </p>
+          )}
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {!goal.achieved && goal.weeklySessions > 0 && (
-            <span className="rounded-full bg-accent/15 px-2.5 py-1 text-[11px] font-semibold text-accent">
-              {goal.weeklySessions}x this week
+            <span
+              className={cn(
+                "rounded-full px-2.5 py-1 text-[11px] font-semibold",
+                goal.weekProgress && goal.weekProgress.sessionsLogged >= goal.weekProgress.sessionsTarget
+                  ? "bg-success/15 text-success"
+                  : "bg-accent/15 text-accent"
+              )}
+            >
+              {goal.weekProgress
+                ? `${goal.weekProgress.sessionsLogged}/${goal.weekProgress.sessionsTarget} this week`
+                : `${goal.weeklySessions}x this week`}
             </span>
           )}
           {onEdit && (

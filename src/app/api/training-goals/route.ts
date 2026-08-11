@@ -18,6 +18,13 @@ import {
 import { daysUntilDate } from "@/lib/utils/date";
 import { bestEstimate1RM, estimateWeightForReps, type ExerciseClass } from "@/lib/scoring/strength/one-rm";
 import { COMMON_EXERCISES } from "@/lib/constants/sports";
+import {
+  startOfWeek,
+  computeWeekProgress,
+  computeProgressTrend,
+  type LoggedSessionMatch,
+  type ProgressSnapshot,
+} from "@/lib/scoring/training-progress";
 
 const BENCHMARK_SPORTS = Object.keys(BENCHMARK_DISTANCE_METERS) as BenchmarkSport[];
 
@@ -47,6 +54,8 @@ const MAX_TARGET_KG = 500;
 const MAX_TARGET_DATE_DAYS_OUT = 3 * 365;
 const MIN_TARGET_REPS = 1;
 const MAX_TARGET_REPS = 20;
+/** How far back to pull gapFraction snapshots for the progress-trend timeline estimate — long enough to smooth out a noisy week or two, short enough that a stale trend from months ago doesn't linger. */
+const PROGRESS_HISTORY_WINDOW_DAYS = 90;
 
 /** Same compound/accessory split COMMON_EXERCISES already carries — used to pick the right Epley k when converting a rep-based goal to a 1RM-equivalent (bestEstimate1RM/estimateWeightForReps in one-rm.ts), consistent with how every other estimated-1RM in this app is computed. */
 function exerciseClassFor(exerciseName: string): ExerciseClass {
@@ -122,23 +131,71 @@ export async function GET(request: Request) {
     Math.min(maxWeeklyCapacity, Number(searchParams.get("capacity")) || DEFAULT_WEEKLY_CAPACITY)
   );
 
-  const [{ data: goalRows }, { data: benchmarks }, { data: gymActivities }] = await Promise.all([
-    supabase
-      .from("training_goals")
-      .select("id, goal_type, target_key, target_value, target_date, target_distance_meters, target_reps, achieved_at")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: true }),
-    supabase
-      .from("predicted_benchmarks")
-      .select("sport, benchmark_seconds, riegel_k")
-      .eq("user_id", user.id),
-    supabase
-      .from("activities")
-      .select("id")
-      .eq("user_id", user.id)
-      .eq("sport", "gym")
-      .eq("is_draft", false),
-  ]);
+  const weekStartISO = startOfWeek(new Date()).toISOString();
+  const progressCutoff = new Date(Date.now() - PROGRESS_HISTORY_WINDOW_DAYS * 86400000).toISOString().slice(0, 10);
+
+  const [{ data: goalRows }, { data: benchmarks }, { data: gymActivities }, { data: weekActivities }, { data: progressRows }] =
+    await Promise.all([
+      supabase
+        .from("training_goals")
+        .select("id, goal_type, target_key, target_value, target_date, target_distance_meters, target_reps, achieved_at")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: true }),
+      supabase
+        .from("predicted_benchmarks")
+        .select("sport, benchmark_seconds, riegel_k")
+        .eq("user_id", user.id),
+      supabase
+        .from("activities")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("sport", "gym")
+        .eq("is_draft", false),
+      // Scoped to this week only (user feedback: "each activity the user
+      // logs, say in the training plan tab what percentage of the day or
+      // session they have met") — separate from gymActivities above,
+      // which stays all-time because it feeds the athlete's all-time-best
+      // 1RM ("current value"), a genuinely different question.
+      supabase
+        .from("activities")
+        .select("id, sport, started_at")
+        .eq("user_id", user.id)
+        .eq("is_draft", false)
+        .gte("started_at", weekStartISO),
+      // Recent gapFraction history (user feedback: "how on track they are
+      // to meeting their goal and provide a timeline estimate") — see
+      // computeProgressTrend in training-progress.ts.
+      supabase
+        .from("training_goal_progress")
+        .select("goal_id, recorded_date, gap_fraction")
+        .eq("user_id", user.id)
+        .gte("recorded_date", progressCutoff),
+    ]);
+
+  const weekGymActivityIds = (weekActivities ?? []).filter((a) => a.sport === "gym").map((a) => a.id as string);
+  const { data: weekGymExercises } =
+    weekGymActivityIds.length > 0
+      ? await supabase.from("gym_exercises").select("activity_id, exercise_name").in("activity_id", weekGymActivityIds)
+      : { data: [] as { activity_id: string; exercise_name: string }[] };
+
+  const weekStartedAtByActivity = new Map((weekActivities ?? []).map((a) => [a.id as string, a.started_at as string]));
+  const loggedThisWeek: LoggedSessionMatch[] = [];
+  for (const a of weekActivities ?? []) {
+    if (a.sport !== "gym") {
+      loggedThisWeek.push({ goalType: "cardio", key: a.sport as string, loggedAt: a.started_at as string });
+    }
+  }
+  for (const ex of weekGymExercises ?? []) {
+    const loggedAt = weekStartedAtByActivity.get(ex.activity_id as string);
+    if (loggedAt) loggedThisWeek.push({ goalType: "gym", key: ex.exercise_name as string, loggedAt });
+  }
+
+  const snapshotsByGoal = new Map<string, ProgressSnapshot[]>();
+  for (const row of progressRows ?? []) {
+    const list = snapshotsByGoal.get(row.goal_id as string) ?? [];
+    list.push({ date: row.recorded_date as string, gapFraction: Number(row.gap_fraction) });
+    snapshotsByGoal.set(row.goal_id as string, list);
+  }
 
   const benchmarkBySport = new Map(
     (benchmarks ?? []).map((b) => [b.sport as string, b.benchmark_seconds as number])
@@ -278,8 +335,34 @@ export async function GET(request: Request) {
     return { ...input, gapFraction: 0, achieved: false, weight: 0, weeklySessions: 0, feasibility: { feasible: true, message: null } };
   });
 
+  // Best-effort daily snapshot for the trend estimate above — never lets a
+  // snapshot failure break the actual plan response. ON CONFLICT DO NOTHING
+  // (ignoreDuplicates) means at most one row per goal per day regardless of
+  // how many times this route gets hit today.
+  const activeGoals = plan.filter((g) => !g.achieved);
+  if (activeGoals.length > 0) {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const { error: snapshotError } = await supabase.from("training_goal_progress").upsert(
+      activeGoals.map((g) => ({
+        user_id: user.id,
+        goal_id: g.id,
+        recorded_date: todayStr,
+        gap_fraction: g.gapFraction,
+        current_value: g.currentValue,
+      })),
+      { onConflict: "goal_id,recorded_date", ignoreDuplicates: true }
+    );
+    if (snapshotError) console.error("training_goal_progress snapshot upsert failed:", snapshotError.message);
+  }
+
+  const goalsWithProgress = plan.map((g) => ({
+    ...g,
+    weekProgress: computeWeekProgress(g, loggedThisWeek),
+    progressTrend: computeProgressTrend(snapshotsByGoal.get(g.id) ?? [], g.gapFraction),
+  }));
+
   return NextResponse.json({
-    goals: plan,
+    goals: goalsWithProgress,
     lockedGoals: locked,
     weeklyCapacity,
     maxWeeklyCapacity,
