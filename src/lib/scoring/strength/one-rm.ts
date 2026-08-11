@@ -138,6 +138,25 @@ export function bestSet1RM(
   return best;
 }
 
+/**
+ * Inverse of epley1RM — the weight this athlete could likely lift for
+ * `reps` today, given a known/estimated 1RM. Used by the Training Plan
+ * (user feedback: "Allow target in training plan to be a weight for reps
+ * as well not just a 1rm") to show a rep-based goal's "current" figure in
+ * the SAME units as the goal itself (e.g. "current: ~82kg x5" next to
+ * "goal: 100kg x5"), rather than forcing a comparison between a 1RM number
+ * and a rep-based target that aren't directly comparable at a glance.
+ */
+export function estimateWeightForReps(
+  oneRM: number,
+  reps: number,
+  exerciseClass: ExerciseClass = "compound"
+): number {
+  if (oneRM <= 0 || reps <= 0) return 0;
+  if (reps === 1) return oneRM;
+  return oneRM / epleyMultiplier(reps, exerciseClass);
+}
+
 /** Data-quality guard: flag when stated 1RM diverges from set-derived estimate (Part B4). */
 export function oneRMVarianceFlag(
   setWeightKg: number,

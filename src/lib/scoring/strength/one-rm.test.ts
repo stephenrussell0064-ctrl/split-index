@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { weightedCalisthenic1RM, epley1RM, brzycki1RM } from "./one-rm";
+import { weightedCalisthenic1RM, epley1RM, brzycki1RM, estimateWeightForReps } from "./one-rm";
 
 /** Mirrors the private blendedRepFormula() in one-rm.ts (max of Epley/Brzycki) so tests can independently derive the expected value without reaching into module internals. */
 function expectedBlendedRepFormula(weightKg: number, reps: number): number {
@@ -63,5 +63,38 @@ describe("weightedCalisthenic1RM — added weight (addedKg > 0) is unchanged by 
     const light = weightedCalisthenic1RM(10, 5, BODYWEIGHT_KG, "compound");
     const heavy = weightedCalisthenic1RM(20, 5, BODYWEIGHT_KG, "compound");
     expect(heavy).toBeGreaterThan(light);
+  });
+});
+
+describe("estimateWeightForReps — inverse of epley1RM, for rep-based Training Plan goals", () => {
+  it("round-trips exactly back through epley1RM for the same reps/class", () => {
+    const oneRM = epley1RM(100, 5, "compound");
+    expect(estimateWeightForReps(oneRM, 5, "compound")).toBeCloseTo(100, 5);
+  });
+
+  it("returns the 1RM itself unchanged at reps=1", () => {
+    expect(estimateWeightForReps(120, 1, "compound")).toBe(120);
+  });
+
+  it("returns a lighter weight for more reps (monotonically decreasing)", () => {
+    const oneRM = 120;
+    const at3 = estimateWeightForReps(oneRM, 3, "compound");
+    const at8 = estimateWeightForReps(oneRM, 8, "compound");
+    expect(at3).toBeGreaterThan(at8);
+    expect(at8).toBeLessThan(oneRM);
+  });
+
+  it("is defensive against non-positive inputs", () => {
+    expect(estimateWeightForReps(0, 5, "compound")).toBe(0);
+    expect(estimateWeightForReps(100, 0, "compound")).toBe(0);
+  });
+
+  it("differs by exercise class the same way the forward formula does", () => {
+    const oneRM = 100;
+    const compound = estimateWeightForReps(oneRM, 8, "compound");
+    const isolation = estimateWeightForReps(oneRM, 8, "isolation");
+    // Isolation's k is smaller (steeper implied dropoff per rep), so the
+    // estimated weight at the same rep count should be lower.
+    expect(isolation).toBeLessThan(compound);
   });
 });

@@ -1,0 +1,12 @@
+-- User feedback: "Allow target in training plan to be a weight for reps
+-- as well not just a 1rm" — a gym goal like "bench 100kg x5" rather than
+-- only "bench a 100kg 1RM".
+--
+-- Nullable — NULL/1 means the existing behavior (target_value IS the 1RM
+-- target directly, unchanged). When target_reps > 1, target_value is the
+-- RAW weight at that rep count, and the API converts it to a 1RM-
+-- equivalent internally (via the same Epley/Brzycki formulas already used
+-- everywhere else in this app) for the prioritization engine, while
+-- keeping the raw weight/reps for display — see cardio-custom-distance.ts's
+-- sibling pattern for target_distance_meters, same idea applied to gym.
+ALTER TABLE training_goals ADD COLUMN IF NOT EXISTS target_reps INTEGER;

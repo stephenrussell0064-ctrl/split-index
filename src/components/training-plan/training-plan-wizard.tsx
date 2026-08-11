@@ -58,9 +58,19 @@ interface BenchmarkOption {
  * toInput(). Stage 3 adds distanceMeters and the plain underlying sport
  * (targetKey itself may be an encoded custom-distance key like
  * "run_10000" — `sport` is always the plain "run", needed to re-edit a
- * custom-distance goal correctly).
+ * custom-distance goal correctly). rawTargetValue/targetReps/
+ * currentAtGoalReps (gym only) let a "100kg x5" goal display in the same
+ * units it was set in — `targetValue`/`currentValue` on the core shape
+ * stay 1RM-equivalent internally for the priority engine.
  */
-type RankedGoal = CoreRankedGoal & { targetDate: string | null; distanceMeters: number | null; sport: string | null };
+type RankedGoal = CoreRankedGoal & {
+  targetDate: string | null;
+  distanceMeters: number | null;
+  sport: string | null;
+  rawTargetValue: number;
+  targetReps: number;
+  currentAtGoalReps: number | null;
+};
 
 interface PlanResponse {
   goals: RankedGoal[];
@@ -113,6 +123,26 @@ function formatValue(goalType: "cardio" | "gym", value: number | null): string {
   return goalType === "cardio" ? formatDuration(value) : `${value.toFixed(1)} kg`;
 }
 
+/**
+ * A gym goal's progress line, reps-aware (user feedback: "Allow target in
+ * training plan to be a weight for reps as well not just a 1rm"). At reps
+ * <= 1 this is identical to the old plain-1RM display. At reps > 1, shows
+ * both sides in the SAME weight-for-reps terms the goal was actually set
+ * in (e.g. "82kg x5 -> 100kg x5") rather than the internal 1RM-equivalent
+ * numbers the priority engine uses — those are real, but not what the
+ * athlete typed in, so showing them here would just be confusing.
+ */
+function formatGoalProgress(goal: RankedGoal): { current: string; target: string } {
+  if (goal.goalType === "cardio") {
+    return { current: formatValue("cardio", goal.currentValue), target: formatValue("cardio", goal.targetValue) };
+  }
+  if (goal.targetReps > 1) {
+    const currentStr = goal.currentAtGoalReps !== null ? `~${goal.currentAtGoalReps.toFixed(1)} kg x${goal.targetReps}` : "—";
+    return { current: currentStr, target: `${goal.rawTargetValue.toFixed(1)} kg x${goal.targetReps}` };
+  }
+  return { current: formatValue("gym", goal.currentValue), target: formatValue("gym", goal.targetValue) };
+}
+
 type Phase = "running" | "gym" | "more" | "targets" | "capacity" | null;
 
 /**
@@ -147,6 +177,9 @@ export function TrainingPlanWizard() {
   const [targetMinutes, setTargetMinutes] = useState("");
   const [targetSeconds, setTargetSeconds] = useState("");
   const [targetKg, setTargetKg] = useState("");
+  // Reps for a gym goal, e.g. "100kg x5" instead of a straight 1RM — "1"
+  // (the default) keeps the original 1RM-target behavior exactly.
+  const [targetReps, setTargetReps] = useState("1");
   // Optional deadline (Stage 2) — same field reused across the running
   // screen and the shared target-value queue below.
   const [targetDate, setTargetDate] = useState("");
@@ -309,7 +342,11 @@ export function TrainingPlanWizard() {
       setTargetSeconds(String(Math.round(goal.targetValue % 60)));
       setTargetDistanceMeters(goal.distanceMeters);
     } else {
-      setTargetKg(String(goal.targetValue));
+      // rawTargetValue/targetReps, not targetValue — targetValue is the
+      // internal 1RM-equivalent the priority engine uses, not what was
+      // actually typed in when the goal is reps-based.
+      setTargetKg(String(goal.rawTargetValue));
+      setTargetReps(String(goal.targetReps));
     }
     setTargetDate(goal.targetDate ?? "");
     setPhase("targets");
@@ -415,6 +452,7 @@ export function TrainingPlanWizard() {
     } else {
       setTargetDistanceMeters(null);
       setTargetKg("");
+      setTargetReps("1");
     }
   }
 
@@ -441,7 +479,13 @@ export function TrainingPlanWizard() {
             targetDate: targetDate || undefined,
             distanceMeters: targetDistanceMeters ?? undefined,
           }
-        : { goalType: "gym", targetKey: item.exerciseName, targetValue: Number(targetKg), targetDate: targetDate || undefined };
+        : {
+            goalType: "gym",
+            targetKey: item.exerciseName,
+            targetValue: Number(targetKg),
+            targetDate: targetDate || undefined,
+            targetReps: Number(targetReps || 1),
+          };
 
     if (payload.targetValue <= 0) {
       setActionError(item.kind === "cardio" ? "Enter a target time" : "Enter a target weight");
@@ -860,14 +904,28 @@ export function TrainingPlanWizard() {
                   </div>
                 </>
               ) : (
-                <Input
-                  label="Target weight (kg)"
-                  type="number"
-                  min={0}
-                  value={targetKg}
-                  onChange={(e) => setTargetKg(e.target.value)}
-                  hint={`Your best 1-rep-max estimate for ${currentTargetItem.exerciseName}`}
-                />
+                <div className="flex gap-2">
+                  <Input
+                    label="Target weight (kg)"
+                    type="number"
+                    min={0}
+                    value={targetKg}
+                    onChange={(e) => setTargetKg(e.target.value)}
+                    hint={
+                      Number(targetReps) > 1
+                        ? `For ${targetReps} reps — not a 1RM`
+                        : `Your best 1-rep-max estimate for ${currentTargetItem.exerciseName}`
+                    }
+                  />
+                  <Input
+                    label="Reps"
+                    type="number"
+                    min={1}
+                    max={20}
+                    value={targetReps}
+                    onChange={(e) => setTargetReps(e.target.value)}
+                  />
+                </div>
               )}
               <Input
                 label="By when? (optional)"
@@ -1088,7 +1146,7 @@ function GoalRow({
             {goal.label}
           </p>
           <p className="mt-0.5 text-xs text-muted">
-            {formatValue(goal.goalType, goal.currentValue)} → {formatValue(goal.goalType, goal.targetValue)}
+            {formatGoalProgress(goal).current} → {formatGoalProgress(goal).target}
             {!goal.achieved && ` · ${Math.round(goal.gapFraction * 100)}% to go`}
             {goal.daysUntilTarget != null && goal.daysUntilTarget >= 0 && (
               <> · by {new Date(goal.targetDate ?? "").toLocaleDateString(undefined, { month: "short", day: "numeric" })}</>

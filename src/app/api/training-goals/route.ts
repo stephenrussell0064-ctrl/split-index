@@ -16,6 +16,8 @@ import {
   splitGoalsByPremiumLimit,
 } from "@/lib/premium/features";
 import { daysUntilDate } from "@/lib/utils/date";
+import { bestEstimate1RM, estimateWeightForReps, type ExerciseClass } from "@/lib/scoring/strength/one-rm";
+import { COMMON_EXERCISES } from "@/lib/constants/sports";
 
 const BENCHMARK_SPORTS = Object.keys(BENCHMARK_DISTANCE_METERS) as BenchmarkSport[];
 
@@ -43,6 +45,14 @@ const MAX_TARGET_SECONDS = 6 * 60 * 60;
 const MIN_TARGET_KG = 1;
 const MAX_TARGET_KG = 500;
 const MAX_TARGET_DATE_DAYS_OUT = 3 * 365;
+const MIN_TARGET_REPS = 1;
+const MAX_TARGET_REPS = 20;
+
+/** Same compound/accessory split COMMON_EXERCISES already carries — used to pick the right Epley k when converting a rep-based goal to a 1RM-equivalent (bestEstimate1RM/estimateWeightForReps in one-rm.ts), consistent with how every other estimated-1RM in this app is computed. */
+function exerciseClassFor(exerciseName: string): ExerciseClass {
+  const def = COMMON_EXERCISES.find((e) => e.name.toLowerCase() === exerciseName.toLowerCase());
+  return def?.kind === "accessory" ? "accessory" : "compound";
+}
 
 /**
  * Goal-driven hybrid training plan (user feedback, see training-plan.ts's
@@ -115,7 +125,7 @@ export async function GET(request: Request) {
   const [{ data: goalRows }, { data: benchmarks }, { data: gymActivities }] = await Promise.all([
     supabase
       .from("training_goals")
-      .select("id, goal_type, target_key, target_value, target_date, target_distance_meters, achieved_at")
+      .select("id, goal_type, target_key, target_value, target_date, target_distance_meters, target_reps, achieved_at")
       .eq("user_id", user.id)
       .order("created_at", { ascending: true }),
     supabase
@@ -182,23 +192,51 @@ export async function GET(request: Request) {
 
   function toInput(
     row: (typeof allGoalRows)[number]
-  ): TrainingGoalInput & { targetDate: string | null; distanceMeters: number | null; sport: BenchmarkSport | null } {
+  ): TrainingGoalInput & {
+    targetDate: string | null;
+    distanceMeters: number | null;
+    sport: BenchmarkSport | null;
+    rawTargetValue: number;
+    targetReps: number;
+    currentAtGoalReps: number | null;
+  } {
     const goalType = row.goal_type as "cardio" | "gym";
     const targetKey = row.target_key as string;
     const targetDate = (row.target_date as string | null) ?? null;
 
     if (goalType === "gym") {
+      // Rep-based goal (user feedback: "Allow target in training plan to
+      // be a weight for reps as well not just a 1rm") — target_value is
+      // the raw weight at target_reps, converted here to a 1RM-equivalent
+      // (same Epley/Brzycki formulas the rest of the app already uses) so
+      // the priority engine keeps comparing apples-to-apples in 1RM terms
+      // without needing to know reps exist at all. target_reps null/1 is
+      // the original behavior — target_value IS already the 1RM.
+      const rawTargetValue = row.target_value as number;
+      const targetReps = (row.target_reps as number | null) ?? 1;
+      const exerciseClass = exerciseClassFor(targetKey);
+      const targetValue1RM =
+        targetReps > 1 ? bestEstimate1RM(rawTargetValue, targetReps, exerciseClass) : rawTargetValue;
+      const currentValue1RM = bestByExercise.get(targetKey) ?? null;
+      const currentAtGoalReps =
+        currentValue1RM != null && targetReps > 1
+          ? estimateWeightForReps(currentValue1RM, targetReps, exerciseClass)
+          : currentValue1RM;
+
       return {
         id: row.id as string,
         goalType,
         targetKey,
-        targetValue: row.target_value as number,
-        currentValue: bestByExercise.get(targetKey) ?? null,
+        targetValue: targetValue1RM,
+        currentValue: currentValue1RM,
         label: targetKey,
         daysUntilTarget: daysUntilDate(targetDate),
         targetDate,
         distanceMeters: null,
         sport: null,
+        rawTargetValue,
+        targetReps,
+        currentAtGoalReps,
       };
     }
 
@@ -228,6 +266,9 @@ export async function GET(request: Request) {
       targetDate,
       distanceMeters,
       sport,
+      rawTargetValue: row.target_value as number,
+      targetReps: 1,
+      currentAtGoalReps: null,
     };
   }
 
@@ -311,6 +352,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Target weight must be a realistic value in kg" }, { status: 400 });
   }
 
+  // Rep-based gym goal (user feedback: "Allow target in training plan to
+  // be a weight for reps as well not just a 1rm") — null/1 keeps the
+  // original "target_value IS the 1RM" behavior.
+  let targetReps: number | null = null;
+  if (goalType === "gym" && body.targetReps != null) {
+    const reps = Number(body.targetReps);
+    if (!Number.isFinite(reps) || !Number.isInteger(reps) || reps < MIN_TARGET_REPS || reps > MAX_TARGET_REPS) {
+      return NextResponse.json({ error: `Reps must be a whole number between ${MIN_TARGET_REPS} and ${MAX_TARGET_REPS}` }, { status: 400 });
+    }
+    targetReps = reps;
+  }
+
   // Optional deadline (Stage 2). Empty string / not provided => no
   // deadline, clears any previously-set one on a resave.
   let targetDate: string | null = null;
@@ -344,6 +397,7 @@ export async function POST(request: Request) {
         target_value: targetValue,
         target_date: targetDate,
         target_distance_meters: targetDistanceMeters,
+        target_reps: targetReps,
         achieved_at: null,
       },
       { onConflict: "user_id,goal_type,target_key" }
