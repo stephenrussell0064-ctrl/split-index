@@ -15,6 +15,7 @@ import {
   MAX_PREMIUM_WEEKLY_CAPACITY,
   splitGoalsByPremiumLimit,
 } from "@/lib/premium/features";
+import { daysUntilDate } from "@/lib/utils/date";
 
 const BENCHMARK_SPORTS = Object.keys(BENCHMARK_DISTANCE_METERS) as BenchmarkSport[];
 
@@ -42,7 +43,6 @@ const MAX_TARGET_SECONDS = 6 * 60 * 60;
 const MIN_TARGET_KG = 1;
 const MAX_TARGET_KG = 500;
 const MAX_TARGET_DATE_DAYS_OUT = 3 * 365;
-const DAY_MS = 86_400_000;
 
 /**
  * Goal-driven hybrid training plan (user feedback, see training-plan.ts's
@@ -86,14 +86,6 @@ async function loadPremiumStatus(supabase: Awaited<ReturnType<typeof createClien
   return isPremiumUser(profile?.subscription_tier ?? "free", profile?.subscription_status ?? null);
 }
 
-function daysUntil(dateStr: string | null): number | null {
-  if (!dateStr) return null;
-  const target = new Date(`${dateStr}T00:00:00Z`).getTime();
-  if (Number.isNaN(target)) return null;
-  const today = new Date();
-  const todayUtc = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
-  return Math.round((target - todayUtc) / DAY_MS);
-}
 
 function distanceLabelFor(sport: BenchmarkSport, meters: number): string {
   const match = DISTANCE_LADDER[sport]?.find((d) => Math.round(d.meters) === Math.round(meters));
@@ -203,7 +195,7 @@ export async function GET(request: Request) {
         targetValue: row.target_value as number,
         currentValue: bestByExercise.get(targetKey) ?? null,
         label: targetKey,
-        daysUntilTarget: daysUntil(targetDate),
+        daysUntilTarget: daysUntilDate(targetDate),
         targetDate,
         distanceMeters: null,
         sport: null,
@@ -232,7 +224,7 @@ export async function GET(request: Request) {
         isCustomDistance && sport && distanceMeters != null
           ? `${distanceLabelFor(sport, distanceMeters)} ${SPORT_NOUN[sport]}`
           : (BENCHMARK_LABELS[sport as BenchmarkSport] ?? targetKey),
-      daysUntilTarget: daysUntil(targetDate),
+      daysUntilTarget: daysUntilDate(targetDate),
       targetDate,
       distanceMeters,
       sport,
@@ -323,7 +315,7 @@ export async function POST(request: Request) {
   // deadline, clears any previously-set one on a resave.
   let targetDate: string | null = null;
   if (body.targetDate) {
-    const days = daysUntil(String(body.targetDate));
+    const days = daysUntilDate(String(body.targetDate));
     if (days === null) {
       return NextResponse.json({ error: "Target date is invalid" }, { status: 400 });
     }
