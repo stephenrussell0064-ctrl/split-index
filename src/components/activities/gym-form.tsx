@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion, useMotionValue, useTransform, PanInfo } from "framer-motion";
 import {
   ChevronDown,
@@ -45,6 +45,63 @@ import {
   type WorkoutFormState,
 } from "./form-state";
 import type { UpdateField } from "./sport-form";
+
+interface ExerciseHistorySet {
+  weightKg: number;
+  reps: number;
+  sets: number;
+  startedAt: string;
+}
+interface ExerciseHistoryPR {
+  weightKg: number;
+  reps: number;
+  estimated1RMKg: number | null;
+  startedAt: string;
+}
+interface ExerciseHistory {
+  lastSet: ExerciseHistorySet | null;
+  personalRecord: ExerciseHistoryPR | null;
+}
+
+/**
+ * User feedback: "When logging exercises in the lab, it should inform you
+ * of your previous weight and reps on this exercise as well as your
+ * personal record on this exercise." Debounced, best-effort — a failed or
+ * slow history fetch should never block or interrupt actually logging the
+ * set, so failures are silently swallowed rather than surfaced as an
+ * error.
+ */
+function useExerciseHistory(exerciseName: string): ExerciseHistory | null {
+  const trimmed = exerciseName.trim();
+  const [history, setHistory] = useState<ExerciseHistory | null>(null);
+
+  useEffect(() => {
+    // Nothing to fetch when the name is cleared — no need to reset
+    // `history` here either: ExerciseHistoryHint already refuses to render
+    // unless exerciseName is non-empty, so a stale value sitting unused in
+    // state is harmless, and resetting it here would mean calling setState
+    // synchronously in the effect body (flagged by this project's own lint
+    // rule) for no real benefit.
+    if (!trimmed) return;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/gym-exercises/history?name=${encodeURIComponent(trimmed)}`);
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as ExerciseHistory;
+        if (!cancelled) setHistory(data);
+      } catch {
+        // Best-effort — see doc comment above.
+      }
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [trimmed]);
+
+  return history;
+}
 
 export function GymExercises({
   state,
@@ -207,6 +264,7 @@ function ExerciseRow({
   const attachmentOptions = row.name.trim()
     ? getAttachmentOptionsByKey(resolveAnchorKey(row.name))
     : null;
+  const history = useExerciseHistory(row.name);
   // Pull Up / Dip / Push Up / Muscle Up — the plain bodyweight variant shows
   // no weight field at all (user feedback: these "should not require you to
   // have to add weight," and should stay a separate exercise/entry from
@@ -392,6 +450,8 @@ function ExerciseRow({
           />
         )}
 
+        <ExerciseHistoryHint history={history} exerciseName={row.name} unit={weightUnit} />
+
         <div className="space-y-2">
           <div
             className={cn(
@@ -525,6 +585,60 @@ function ExerciseRow({
         </Field>
       </motion.div>
     </div>
+  );
+}
+
+function formatDaysAgo(iso: string): string {
+  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
+  if (days <= 0) return "today";
+  if (days === 1) return "yesterday";
+  if (days < 14) return `${days} days ago`;
+  if (days < 60) return `${Math.round(days / 7)} weeks ago`;
+  return `${Math.round(days / 30)} months ago`;
+}
+
+/** User feedback: "When logging exercises in the lab, it should inform you of your previous weight and reps on this exercise as well as your personal record on this exercise." */
+function ExerciseHistoryHint({
+  history,
+  exerciseName,
+  unit,
+}: {
+  history: ExerciseHistory | null;
+  exerciseName: string;
+  unit: string;
+}) {
+  if (!exerciseName.trim() || !history) return null;
+  const { lastSet, personalRecord } = history;
+  if (!lastSet && !personalRecord) return null;
+
+  // A PR that IS the last set (only ever logged once, or the most recent
+  // set happens to also be the best) isn't worth repeating twice.
+  const prDiffersFromLast =
+    personalRecord &&
+    (!lastSet || personalRecord.weightKg !== lastSet.weightKg || personalRecord.reps !== lastSet.reps);
+
+  return (
+    <p className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-white/[0.03] px-3 py-2 text-[11px] text-muted">
+      {lastSet && (
+        <span>
+          Last time:{" "}
+          <span className="font-medium text-foreground/90">
+            {lastSet.weightKg}
+            {unit} × {lastSet.reps}
+          </span>
+          {lastSet.sets > 1 ? ` (${lastSet.sets} sets)` : ""} · {formatDaysAgo(lastSet.startedAt)}
+        </span>
+      )}
+      {prDiffersFromLast && (
+        <span>
+          PR:{" "}
+          <span className="font-medium text-gym-accent">
+            {personalRecord!.weightKg}
+            {unit} × {personalRecord!.reps}
+          </span>
+        </span>
+      )}
+    </p>
   );
 }
 
