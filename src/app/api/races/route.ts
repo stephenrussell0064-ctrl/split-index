@@ -147,7 +147,9 @@ export async function POST(request: Request) {
       ? Number(body.elevationGainMeters)
       : null;
   const elevationSource =
-    body.elevationSource === "gpx" || body.elevationSource === "manual" ? body.elevationSource : null;
+    body.elevationSource === "gpx" || body.elevationSource === "manual" || body.elevationSource === "known"
+      ? body.elevationSource
+      : null;
   const notes = body.notes ? String(body.notes).trim() : null;
 
   if (!eventName) {

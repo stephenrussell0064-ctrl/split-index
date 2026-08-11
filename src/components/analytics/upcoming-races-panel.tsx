@@ -10,6 +10,7 @@ import { ScoringExplainerNote } from "@/components/scoring/scoring-explainer-not
 import { formatRiegelPrediction } from "@/lib/scoring/presentation";
 import { formatDistance } from "@/lib/utils/format";
 import { computeGpxElevation } from "@/lib/scoring/gpx-elevation";
+import { KNOWN_RACES } from "@/lib/constants/known-races";
 import { cn } from "@/lib/utils/cn";
 
 interface PlannedRace {
@@ -19,7 +20,7 @@ interface PlannedRace {
   race_date: string;
   distance_meters: number;
   elevation_gain_meters: number | null;
-  elevation_source: "manual" | "gpx" | null;
+  elevation_source: "manual" | "gpx" | "known" | null;
   daysOut: number;
   basePredictionSeconds: number | null;
   forecast: { tempMaxCelsius: number; windMaxKph: number } | null;
@@ -33,9 +34,16 @@ interface PlannedRace {
   crowdDifficulty: { averageDeltaPct: number; sampleCount: number } | null;
 }
 
-const COMMON_DISTANCES = [
+// Exported so known-races.test.ts can assert every curated race's distance
+// actually matches one of these options — this <select> is a controlled
+// component with a fixed list; a known race with an unlisted distance
+// would silently show as unselected even though the underlying value was
+// technically correct (a real bug caught this way while adding the
+// known-races picker below).
+export const COMMON_DISTANCES = [
   { label: "5K", meters: 5000 },
   { label: "10K", meters: 10000 },
+  { label: "10 miles", meters: 16093 },
   { label: "Half marathon", meters: 21097 },
   { label: "Marathon", meters: 42195 },
 ];
@@ -103,7 +111,8 @@ function RaceRow({ race, onDelete }: { race: PlannedRace; onDelete: (id: string)
           {race.elevation_gain_meters != null && (
             <span className="flex items-center gap-1">
               <Mountain className="h-3 w-3" /> {race.elevation_gain_meters}m gain
-              {race.elevation_source === "gpx" ? " (from GPX)" : ""}
+              {race.elevation_source === "gpx" && " (from GPX)"}
+              {race.elevation_source === "known" && " (from course data)"}
             </span>
           )}
           {race.forecast && (
@@ -143,10 +152,25 @@ export function UpcomingRacesPanel() {
   const [raceDate, setRaceDate] = useState("");
   const [distanceMeters, setDistanceMeters] = useState<number>(10000);
   const [elevationGainMeters, setElevationGainMeters] = useState("");
-  const [elevationSource, setElevationSource] = useState<"manual" | "gpx" | null>(null);
+  const [elevationSource, setElevationSource] = useState<"manual" | "gpx" | "known" | null>(null);
+  const [knownRaceName, setKnownRaceName] = useState("");
   const [gpxStatus, setGpxStatus] = useState<string | null>(null);
   const [gpxParsing, setGpxParsing] = useState(false);
   const gpxInputRef = useRef<HTMLInputElement>(null);
+
+  /** User feedback: "have a dropdown of races which you know the elevation and terrain and difficulty... I don't want the user to have to enter the elevation of gpx." Picking one fills in the name/location/distance/elevation from real, sourced course data — everything below stays fully editable afterward, and picking "— or enter manually —" just clears back to the normal blank form. */
+  function handlePickKnownRace(name: string) {
+    setKnownRaceName(name);
+    if (!name) return;
+    const race = KNOWN_RACES.find((r) => r.name === name);
+    if (!race) return;
+    setEventName(race.name);
+    setLocationName(race.location);
+    setDistanceMeters(race.distanceMeters);
+    setElevationGainMeters(String(race.elevationGainMeters));
+    setElevationSource("known");
+    setGpxStatus(null);
+  }
 
   async function handleGpxFile(file: File) {
     setGpxParsing(true);
@@ -237,6 +261,7 @@ export function UpcomingRacesPanel() {
       setRaceDate("");
       setElevationGainMeters("");
       setElevationSource(null);
+      setKnownRaceName("");
       setGpxStatus(null);
       setFormOpen(false);
       await loadRaces();
@@ -266,6 +291,31 @@ export function UpcomingRacesPanel() {
       <CardContent>
         {formOpen && (
           <form onSubmit={handleSubmit} className="mb-4 space-y-3 rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] font-medium uppercase tracking-[0.1em] text-muted">
+                Well-known race? Pick it for real elevation &amp; terrain — optional
+              </label>
+              <div className="relative">
+                <select
+                  value={knownRaceName}
+                  onChange={(e) => handlePickKnownRace(e.target.value)}
+                  className="h-11 w-full appearance-none rounded-xl glass border border-white/10 px-4 pr-9 text-base text-foreground focus:border-accent/50 focus:outline-none"
+                >
+                  <option value="">— or enter manually below —</option>
+                  {KNOWN_RACES.map((race) => (
+                    <option key={race.name} value={race.name}>
+                      {race.name} ({race.terrain})
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+              </div>
+              {elevationSource === "known" && knownRaceName && (
+                <p className="text-xs text-success">
+                  {KNOWN_RACES.find((r) => r.name === knownRaceName)?.note}
+                </p>
+              )}
+            </div>
             <Input
               label="Event name"
               placeholder="Dorney Lake 10K"
