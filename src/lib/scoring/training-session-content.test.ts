@@ -50,7 +50,13 @@ describe("strengthPhaseFromGap", () => {
 
 describe("mainLiftPrescription / dupVariantLabel", () => {
   it("returns the phase's own prescription for a single weekly session (no undulation needed)", () => {
-    expect(mainLiftPrescription("strength", 0, 1)).toEqual({ sets: 5, reps: "4-6", intensity: "~80-85% 1RM" });
+    expect(mainLiftPrescription("strength", 0, 1)).toEqual({
+      sets: 5,
+      reps: "4-6",
+      intensity: "~80-85% 1RM",
+      intensityLowPct: 0.8,
+      intensityHighPct: 0.85,
+    });
     expect(dupVariantLabel(0, 1)).toBeNull();
   });
 
@@ -120,6 +126,18 @@ describe("cardioSessionTypes", () => {
   it("returns an empty array for zero sessions", () => {
     expect(cardioSessionTypes(0, "aerobic-base")).toEqual([]);
   });
+
+  // User feedback: "when trying to build cardio, zone 2 runs are the most
+  // effective way of managing this yet there are no zone 2 runs on my
+  // training plan, why is this?" — a 2x/week plan close to target used to
+  // return ["tempo", "interval"] with no easy/Zone 2 session at all.
+  it("always keeps at least one easy (Zone 2) session once there are 2+ a week, in every emphasis", () => {
+    for (const count of [2, 3, 4, 5]) {
+      for (const emphasis of ["aerobic-base", "specificity"] as const) {
+        expect(cardioSessionTypes(count, emphasis)).toContain("easy");
+      }
+    }
+  });
 });
 
 describe("sessionContentForInstance", () => {
@@ -162,6 +180,39 @@ describe("sessionContentForInstance", () => {
     const content = sessionContentForInstance(gymGoal, 0, 1, new Set());
     expect(content.description).toContain("Bench Press");
     expect(content.description).toContain("·"); // at least one accessory joined on
+  });
+
+  // User feedback: "For strength goals, attempt to recommend a weight
+  // based off the user's current strength performance in their recent
+  // 1rms and activities logged."
+  describe("concrete weight from the athlete's current 1RM", () => {
+    it("shows an actual kg range for the main lift, not just a %1RM the athlete has to calculate themselves", () => {
+      // gymGoal.currentValue = 70 (kg 1RM). strength phase (gapFraction 0.3 -> build): 70-75% -> 49-52.5kg -> rounds to 50-52.5kg.
+      const content = sessionContentForInstance(gymGoal, 0, 1, new Set());
+      expect(content.description).toMatch(/Bench Press \dx\d+-\d+ @ \d+(\.\d+)?-?\d*(\.\d+)?kg \(~\d+-\d+% 1RM\)/);
+    });
+
+    it("scales the recommended weight to the athlete's own current 1RM, not a generic number", () => {
+      const lighter = sessionContentForInstance({ ...gymGoal, currentValue: 50 }, 0, 1, new Set());
+      const heavier = sessionContentForInstance({ ...gymGoal, currentValue: 150 }, 0, 1, new Set());
+      const lighterKg = Number(lighter.description.match(/@ ([\d.]+)/)![1]);
+      const heavierKg = Number(heavier.description.match(/@ ([\d.]+)/)![1]);
+      expect(heavierKg).toBeGreaterThan(lighterKg);
+    });
+
+    it("rounds the recommended weight to a real 2.5kg plate increment", () => {
+      const content = sessionContentForInstance({ ...gymGoal, currentValue: 83 }, 0, 1, new Set());
+      const kgValues = [...content.description.matchAll(/([\d.]+)kg/g)].map((m) => Number(m[1]));
+      for (const kg of kgValues) {
+        expect((kg * 10) % 25).toBe(0); // multiple of 2.5 (compared in tenths to dodge float noise)
+      }
+    });
+
+    it("falls back to the plain %1RM text when there's no current 1RM on record yet", () => {
+      const content = sessionContentForInstance({ ...gymGoal, currentValue: null }, 0, 1, new Set());
+      expect(content.description).toContain("Bench Press 4x8-10 @ ~70-75% 1RM");
+      expect(content.description).not.toMatch(/@ [\d.]+kg/);
+    });
   });
 
   it("produces a real easy/quality/long spread for a 3x/week cardio goal, not the same session three times", () => {
@@ -231,6 +282,58 @@ describe("sessionContentForInstance", () => {
       const shortKm = Number(short.description.match(/^([\d.]+)km/)![1]);
       const longKm = Number(long.description.match(/^([\d.]+)km/)![1]);
       expect(longKm).toBeGreaterThan(shortKm);
+    });
+
+    // User feedback, with real numbers: "my 5km time is 18:30, and my 10km
+    // pr time is 39:45, yet the training plan has recommended a tempo run
+    // of 11.5km at 3:56/km, this is completely inaccurate and not possible
+    // for me to do as a race let alone tempo run... also intervals of
+    // 13.2km at 3:24? this is unreasonable and a strange distance." Both
+    // numbers came from running the FULL 45-minute session continuously at
+    // a hard pace — fixed by capping tempo/threshold to a realistic
+    // sustained block and switching interval to reps-with-recovery.
+    describe("realistic tempo/threshold/interval structure (not the whole session at race pace)", () => {
+      const fastRunner: RankedGoal = {
+        ...cardioGoal,
+        distanceMeters: 5000,
+        sport: "run",
+        targetValue: 1110, // 18:30 5K
+        currentValue: 1110,
+      };
+
+      it("caps a tempo session's distance to a realistic sustained block, not the full session length", () => {
+        const quality = { ...fastRunner, gapFraction: 0.02 }; // specificity, single session -> "tempo"
+        const content = sessionContentForInstance(quality, 0, 1, new Set());
+        expect(content.sessionType).toBe("tempo");
+        const km = Number(content.description.match(/^([\d.]+)km/)![1]);
+        // Old behavior produced 11.5km (the full 45min session at tempo
+        // pace) for this exact scenario — a real tempo block is a fraction
+        // of that, comfortably under half.
+        expect(km).toBeLessThan(6);
+        expect(content.description).toContain("block");
+      });
+
+      it("prescribes interval work as reps with recovery, not one long continuous distance", () => {
+        const quality = { ...fastRunner, gapFraction: 0.02, weeklySessions: 2 };
+        const content = sessionContentForInstance(quality, 1, 2, new Set()); // specificity 2x -> ["easy","interval"], index 1 -> interval
+        expect(content.sessionType).toBe("interval");
+        expect(content.description).toMatch(/^\d+ x \d+m at \d+:\d{2}\/km \(jog recovery between reps\)/);
+        // Never a bare "13.2km"-style continuous distance for an interval session.
+        expect(content.description).not.toMatch(/^[\d.]+km/);
+      });
+
+      it("keeps the interval pace faster than current race pace, and every rep individually achievable", () => {
+        const quality = { ...fastRunner, gapFraction: 0.02, weeklySessions: 2 };
+        const content = sessionContentForInstance(quality, 1, 2, new Set());
+        const match = content.description.match(/^(\d+) x (\d+)m at (\d+):(\d{2})\/km/)!;
+        const reps = Number(match[1]);
+        const repMeters = Number(match[2]);
+        const paceSecPerKm = Number(match[3]) * 60 + Number(match[4]);
+        const currentPaceSecPerKm = fastRunner.currentValue! / (fastRunner.distanceMeters! / 1000);
+        expect(paceSecPerKm).toBeLessThan(currentPaceSecPerKm); // faster than current 5K race pace
+        expect(reps).toBeGreaterThanOrEqual(3);
+        expect(repMeters).toBe(800); // run -> 800m reps
+      });
     });
   });
 });

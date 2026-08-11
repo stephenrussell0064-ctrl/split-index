@@ -112,13 +112,43 @@ export interface StrengthPrescription {
   sets: number;
   reps: string;
   intensity: string;
+  /** Numeric %1RM bounds backing `intensity`'s display string — main-lift prescriptions only (see weightRangeFor below). Undefined for accessory prescriptions, which aren't tied to a tracked 1RM. */
+  intensityLowPct?: number;
+  intensityHighPct?: number;
 }
 
 const STRENGTH_PHASE_MAIN: Record<StrengthPhase, StrengthPrescription> = {
-  build: { sets: 4, reps: "8-10", intensity: "~70-75% 1RM" },
-  strength: { sets: 5, reps: "4-6", intensity: "~80-85% 1RM" },
-  peak: { sets: 4, reps: "2-4", intensity: "~88-93% 1RM" },
+  build: { sets: 4, reps: "8-10", intensity: "~70-75% 1RM", intensityLowPct: 0.7, intensityHighPct: 0.75 },
+  strength: { sets: 5, reps: "4-6", intensity: "~80-85% 1RM", intensityLowPct: 0.8, intensityHighPct: 0.85 },
+  peak: { sets: 4, reps: "2-4", intensity: "~88-93% 1RM", intensityLowPct: 0.88, intensityHighPct: 0.93 },
 };
+
+/** Finest realistic jump on a standard barbell/plate setup — a prescribed weight rounded to anything less than this isn't actually loadable. */
+const WEIGHT_ROUNDING_KG = 2.5;
+
+function roundToPlate(kg: number): number {
+  return Math.round(kg / WEIGHT_ROUNDING_KG) * WEIGHT_ROUNDING_KG;
+}
+
+/**
+ * User feedback: "For strength goals, attempt to recommend a weight based
+ * off the user's current strength performance in their recent 1rms and
+ * activities logged." Converts the phase's %1RM band into an actual kg
+ * number off the athlete's own current estimated 1RM (goal.currentValue —
+ * already the athlete's real best-ever estimate for this exact lift, see
+ * /api/training-goals's bestByExercise), rounded to a loadable plate
+ * increment — "67.5-70kg x 8-10" instead of making the athlete work out
+ * "75% of what?" themselves. Null when there's no current 1RM on record
+ * yet (never logged this lift) — the %1RM text alone is all that's honest
+ * to show in that case.
+ */
+function weightRangeFor(prescription: StrengthPrescription, currentOneRM: number | null): string | null {
+  if (currentOneRM == null || currentOneRM <= 0) return null;
+  if (prescription.intensityLowPct == null || prescription.intensityHighPct == null) return null;
+  const low = roundToPlate(currentOneRM * prescription.intensityLowPct);
+  const high = roundToPlate(currentOneRM * prescription.intensityHighPct);
+  return low === high ? `${low}kg` : `${low}-${high}kg`;
+}
 
 const STRENGTH_PHASE_ACCESSORY: Record<StrengthPhase, StrengthPrescription> = {
   build: { sets: 3, reps: "10-12", intensity: "moderate" },
@@ -202,15 +232,21 @@ export function cardioEmphasisFromGapAndUrgency(gapFraction: number, daysUntilTa
 
 /**
  * Real distributed structure for N weekly sessions of one cardio goal —
- * easy/aerobic + quality (tempo/threshold/interval) + a long session, not
- * N repeats of the same effort. Mirrors standard polarized-training
- * structure (most volume easy, some genuinely hard) rather than
- * everything at one middling pace.
+ * easy/aerobic (Zone 2) + quality (tempo/threshold/interval) + a long
+ * session, not N repeats of the same effort. Mirrors standard
+ * polarized-training structure — real 80/20-style programs, even in a
+ * sharpening/specificity phase close to a goal, still hold a genuine easy
+ * aerobic session every week; they don't drop it in favor of an
+ * all-quality week (user feedback: "zone 2 runs are the most effective way
+ * of managing this yet there are no zone 2 runs on my training plan").
+ * At 2x/week that meant this used to hand back tempo+interval with zero
+ * easy — fixed below to always keep at least one easy session once there
+ * are 2+ in the week, in every emphasis.
  */
 export function cardioSessionTypes(count: number, emphasis: CardioEmphasis): SessionType[] {
   if (count <= 0) return [];
   if (count === 1) return [emphasis === "aerobic-base" ? "easy" : "tempo"];
-  if (count === 2) return emphasis === "aerobic-base" ? ["easy", "tempo"] : ["tempo", "interval"];
+  if (count === 2) return emphasis === "aerobic-base" ? ["easy", "tempo"] : ["easy", "interval"];
   if (count === 3) return emphasis === "aerobic-base" ? ["easy", "tempo", "long"] : ["easy", "interval", "long"];
   const base: SessionType[] =
     emphasis === "aerobic-base" ? ["easy", "easy", "tempo", "long"] : ["easy", "interval", "threshold", "long"];
@@ -223,14 +259,14 @@ const SESSION_TYPE_LABEL: Record<SessionType, string> = Object.fromEntries(
 ) as Record<SessionType, string>;
 
 const SESSION_TYPE_GUIDANCE: Record<SessionType, string> = {
-  easy: "Easy aerobic effort, fully conversational pace — builds your base without adding fatigue.",
+  easy: "Zone 2 effort, fully conversational pace — builds your aerobic base without adding fatigue.",
   recovery: "Very light, active recovery only — the point is barely raising your heart rate.",
   tempo: "Comfortably hard, sustained effort — controlled discomfort, not all-out.",
   threshold: "Right at your lactate threshold — hard but sustainable for the whole interval.",
-  interval: "Short hard efforts with full recovery between reps — sharpens race-pace speed.",
+  interval: "Push each rep, actually rest on the recovery — sharpens race-pace speed.",
   fartlek: "Unstructured speed play — mix easy and hard by feel.",
   race: "Race or time-trial effort.",
-  long: "Your longest session of the week, at an easy-to-moderate pace — builds endurance capacity.",
+  long: "Your longest session of the week, at an easy-to-moderate (Zone 2) pace — builds endurance capacity.",
   other: "Cross-training or supplementary work.",
 };
 
@@ -264,7 +300,10 @@ function gymSessionContent(
   const suffix = tapering ? "Taper" : variantLabel;
   const title = suffix ? `${dayLabel} (${suffix})` : dayLabel;
 
-  const mainLine = `${goal.targetKey} ${main.sets}x${main.reps} @ ${main.intensity}`;
+  const weightRange = weightRangeFor(main, goal.currentValue);
+  const mainLine = weightRange
+    ? `${goal.targetKey} ${main.sets}x${main.reps} @ ${weightRange} (${main.intensity})`
+    : `${goal.targetKey} ${main.sets}x${main.reps} @ ${main.intensity}`;
   const accessoryLines = accessories.map((a) => `${a.name} ${a.prescription.sets}x${a.prescription.reps}`);
   const taperNote = tapering ? "Tapering into your target date — reduced volume, stay sharp, prioritize recovery." : null;
   const description = [mainLine, ...accessoryLines, ...(taperNote ? [taperNote] : [])].join(" · ");
@@ -303,16 +342,60 @@ const SESSION_PACE_MULTIPLIER: Record<SessionType, number> = {
 };
 
 /**
+ * User feedback (with their own real numbers — 18:30 5K, 39:45 10K PR):
+ * a fixed full session duration run continuously at the prescribed pace
+ * was producing things like "11.5km at 3:56/km" for a TEMPO run and
+ * "13.2km at 3:24/km" framed as a single continuous INTERVAL — neither is
+ * something a real training plan would ever ask for, let alone at that
+ * athlete's fitness. Real tempo/threshold work is a shorter sustained
+ * block inside a longer session (warm-up, the actual hard block, cooldown
+ * — not the whole session at that effort); this is the fraction of the
+ * session's time that block actually is. Easy/recovery/long/fartlek/race
+ * genuinely are continuous for the whole session, so they're left at 1
+ * (the full duration) via the `?? 1` fallback below.
+ */
+const QUALITY_BLOCK_FRACTION: Partial<Record<SessionType, number>> = {
+  tempo: 0.45,
+  threshold: 0.35,
+};
+
+/**
+ * Interval work is reps-with-recovery, not a continuous distance — showing
+ * "13.2km at 3:24/km" for an interval session was telling the athlete to
+ * run over 13km straight at a pace that's only sustainable in short
+ * bursts. A real rep distance per sport (short enough that the prescribed
+ * pace is actually achievable with real recovery between reps), plus how
+ * much of the session's total time is actually spent running (the rest is
+ * recovery jogs/rest), gives a genuine "N x distance" prescription instead.
+ */
+const INTERVAL_REP_METERS_BY_SPORT: Record<string, number> = {
+  run: 800,
+  walk: 800,
+  row: 500,
+  ski: 500,
+  swim: 100,
+  cycle: 1000,
+};
+const DEFAULT_INTERVAL_REP_METERS = 800;
+const INTERVAL_WORK_FRACTION = 0.35;
+const MIN_INTERVAL_REPS = 3;
+
+function intervalRepMeters(sport: string | null | undefined): number {
+  return (sport ? INTERVAL_REP_METERS_BY_SPORT[sport] : undefined) ?? DEFAULT_INTERVAL_REP_METERS;
+}
+
+/**
  * User feedback: "for the runs and swims and cycles be specific on the
- * distance and pace of each activity that you should perform." Derives a
- * concrete "5.2km at 5:11/km" from the goal's own CURRENT pace — not the
- * aspirational target, since prescribing today's easy run off a
- * not-yet-earned goal pace could ask for something not yet sustainable
- * even easy — the session type's pace zone above, and how much distance
- * that pace covers in the time this session actually gets. Returns null
- * whenever there isn't enough data to ground a real number (no distance on
- * the goal, or no current/target time yet), in which case the plain
- * effort-only guidance shows instead, same as before this feature existed.
+ * distance and pace of each activity that you should perform." Derives
+ * real, achievable numbers from the goal's own CURRENT pace — not the
+ * aspirational target, since prescribing today's session off a
+ * not-yet-earned goal pace could ask for something not yet sustainable —
+ * and the session type's own realistic structure (see the two constants
+ * above), not just "however far you'd go running the whole session at
+ * that pace". Returns null whenever there isn't enough data to ground a
+ * real number (no distance on the goal, or no current/target time yet),
+ * in which case the plain effort-only guidance shows instead, same as
+ * before this feature existed.
  */
 function cardioPaceAndDistance(goal: RankedGoal, sessionType: SessionType, durationHours: number): string | null {
   const distanceMeters = goal.distanceMeters;
@@ -323,11 +406,24 @@ function cardioPaceAndDistance(goal: RankedGoal, sessionType: SessionType, durat
   const basePaceSecPerKm = referenceSeconds / (distanceMeters / 1000);
   if (!Number.isFinite(basePaceSecPerKm) || basePaceSecPerKm <= 0) return null;
   const paceSecPerKm = basePaceSecPerKm * (SESSION_PACE_MULTIPLIER[sessionType] ?? 1.15);
-  const sessionDistanceKm = (durationHours * 3600) / paceSecPerKm;
+  if (!Number.isFinite(paceSecPerKm) || paceSecPerKm <= 0) return null;
+  const paceLabel = goal.sport === "cycle" ? formatSpeed(paceSecPerKm) : formatPace(paceSecPerKm);
+
+  if (sessionType === "interval") {
+    const repMeters = intervalRepMeters(goal.sport);
+    const repSeconds = (repMeters / 1000) * paceSecPerKm;
+    if (!Number.isFinite(repSeconds) || repSeconds <= 0) return null;
+    const workSeconds = durationHours * 3600 * INTERVAL_WORK_FRACTION;
+    const reps = Math.max(MIN_INTERVAL_REPS, Math.round(workSeconds / repSeconds));
+    return `${reps} x ${repMeters}m at ${paceLabel} (jog recovery between reps)`;
+  }
+
+  const blockFraction = QUALITY_BLOCK_FRACTION[sessionType] ?? 1;
+  const sessionDistanceKm = (durationHours * 3600 * blockFraction) / paceSecPerKm;
   if (!Number.isFinite(sessionDistanceKm) || sessionDistanceKm <= 0) return null;
 
-  const paceLabel = goal.sport === "cycle" ? formatSpeed(paceSecPerKm) : formatPace(paceSecPerKm);
-  return `${sessionDistanceKm.toFixed(1)}km at ${paceLabel}`;
+  const blockSuffix = blockFraction < 1 ? " block (plus an easy warm-up/cooldown)" : "";
+  return `${sessionDistanceKm.toFixed(1)}km${blockSuffix} at ${paceLabel}`;
 }
 
 function cardioSessionContent(sessionType: SessionType, goal: RankedGoal, tapering: boolean, durationHours: number): SessionContent {
