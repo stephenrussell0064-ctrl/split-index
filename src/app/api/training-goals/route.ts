@@ -13,6 +13,7 @@ import {
   MAX_FREE_TRAINING_GOALS,
   MAX_FREE_WEEKLY_CAPACITY,
   MAX_PREMIUM_WEEKLY_CAPACITY,
+  splitGoalsByPremiumLimit,
 } from "@/lib/premium/features";
 
 const BENCHMARK_SPORTS = Object.keys(BENCHMARK_DISTANCE_METERS) as BenchmarkSport[];
@@ -179,9 +180,13 @@ export async function GET(request: Request) {
   // prioritized weekly breakdown — only ever balances across the first
   // MAX_FREE_TRAINING_GOALS of them; the rest still show in the list as
   // locked, not just vanish, so it's obvious what upgrading unlocks rather
-  // than looking like data loss.
-  const rankedRows = premium ? allGoalRows : allGoalRows.slice(0, MAX_FREE_TRAINING_GOALS);
-  const lockedRows = premium ? [] : allGoalRows.slice(MAX_FREE_TRAINING_GOALS);
+  // than looking like data loss. See splitGoalsByPremiumLimit's own tests
+  // for the actual gating behavior verification.
+  const { included: rankedRows, locked: lockedRows } = splitGoalsByPremiumLimit(
+    allGoalRows,
+    premium,
+    MAX_FREE_TRAINING_GOALS
+  );
 
   function toInput(
     row: (typeof allGoalRows)[number]

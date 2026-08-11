@@ -113,3 +113,23 @@ export function canAccessLeaderboardScope(
   if (scope === "country" || scope === "bracket") return true;
   return canAccessProfile("global_leaderboards", profile);
 }
+
+/**
+ * Splits an athlete's goal rows (any order, already sorted oldest-first by
+ * the caller) into the ones that actually feed the balanced weekly plan
+ * vs. the ones locked behind Premium. Extracted out of the API route so
+ * this gating rule — the one piece of Training Plan behavior with real
+ * money attached to it — has its own test coverage instead of only being
+ * exercised implicitly through a full request. Premium: everything is
+ * included, nothing is locked. Free: first `maxFreeGoals` (by whatever
+ * order the caller already sorted, e.g. creation order) are included, the
+ * rest are locked — never dropped.
+ */
+export function splitGoalsByPremiumLimit<T>(
+  rows: T[],
+  premium: boolean,
+  maxFreeGoals: number
+): { included: T[]; locked: T[] } {
+  if (premium) return { included: rows, locked: [] };
+  return { included: rows.slice(0, maxFreeGoals), locked: rows.slice(maxFreeGoals) };
+}
