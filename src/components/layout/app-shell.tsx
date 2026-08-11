@@ -98,10 +98,34 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
   const logHref = logHrefForMode(mode);
   const [moreOpen, setMoreOpen] = useState(false);
   const [lastPathname, setLastPathname] = useState(pathname);
+  // User feedback: "when clicking off the lab onto the dashboard or engine
+  // whilst logging an activity, the logging page disappears and you have
+  // to back on and do it again... when you click back on the lab it takes
+  // you back to the page you left on." Tapping "Lab" always went to the
+  // bare /gym tab root, not back to /gym/log where an in-progress log
+  // actually lives — this remembers the last path visited under each
+  // primary-nav section (plain in-memory state, not persisted — this
+  // shell component stays mounted for the whole in-app session, the same
+  // way a native tab bar keeps each tab's own navigation stack without
+  // needing to write anything to disk) and routes the tab button there
+  // instead of the bare root. Updated here, during render when pathname
+  // actually changes — same "adjust state in response to a prop/pathname
+  // change" pattern lastPathname/setMoreOpen right below already use,
+  // deliberately not a useEffect (this project's own lint rule flags
+  // setState-in-effect, and there's no real external system to
+  // synchronize with here anyway).
+  const [lastTabPaths, setLastTabPaths] = useState<Record<string, string>>({});
   if (pathname !== lastPathname) {
     setLastPathname(pathname);
     setMoreOpen(false);
+    const match = primaryNav.find((item) => pathname === item.href || pathname.startsWith(`${item.href}/`));
+    if (match && lastTabPaths[match.href] !== pathname) {
+      setLastTabPaths({ ...lastTabPaths, [match.href]: pathname });
+    }
   }
+
+  /** Where tapping this primary-nav tab actually goes — the last path visited under it, if any, so an in-progress log (or anything else mid-flow) is exactly where it was left rather than resetting to the tab's bare root. */
+  const navHref = (item: (typeof primaryNav)[number]) => lastTabPaths[item.href] ?? item.href;
 
   const isActive = (href: string) =>
     pathname === href ||
@@ -162,7 +186,7 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
               return (
                 <Link
                   key={item.href}
-                  href={item.href}
+                  href={navHref(item)}
                   className={cn(
                     "relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
                     active ? "text-foreground" : "text-muted hover:text-foreground hover:bg-white/5"
@@ -298,7 +322,7 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
             return (
               <Link
                 key={item.href}
-                href={item.href}
+                href={navHref(item)}
                 className={cn(
                   "flex min-w-0 flex-col items-center gap-1 rounded-2xl px-3 py-2 text-[10px] font-medium transition-colors",
                   active ? cn("bg-white/8", accentClass) : "text-muted"
@@ -333,7 +357,7 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
             return (
               <Link
                 key={item.href}
-                href={item.href}
+                href={navHref(item)}
                 className={cn(
                   "flex min-w-0 flex-col items-center gap-1 rounded-2xl px-3 py-2 text-[10px] font-medium transition-colors",
                   active ? cn("bg-white/8", accentClass) : "text-muted"
