@@ -21,7 +21,7 @@ import { designTokens } from "@/lib/design/tokens";
 import {
   INTERFERENCE_CONFIG,
   hasShareableFinding,
-  type DayBucketStat,
+  pickHeadlineBucket,
 } from "@/lib/scoring/interference";
 import type { InterferenceReport } from "@/lib/scoring/interference";
 
@@ -132,13 +132,6 @@ export function SessionsProgress({
       <p className="max-w-xs text-sm text-muted">{message}</p>
     </div>
   );
-}
-
-/** The day-1 (or day-0 fallback) bucket — same pick the plain-language summary sentence is built from, so the big headline number and the sentence always agree. */
-function pickHeadlineBucket(decayByDay: DayBucketStat[]): DayBucketStat | null {
-  const dayOne = decayByDay.find((d) => d.daysSinceStrength === 1 && d.sampleCount > 0);
-  if (dayOne) return dayOne;
-  return decayByDay.find((d) => d.daysSinceStrength === 0 && d.sampleCount > 0) ?? null;
 }
 
 export function InterferenceDetail({ report }: { report: InterferenceReport }) {

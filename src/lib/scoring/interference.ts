@@ -52,6 +52,37 @@ export interface DayBucketStat {
 }
 
 /**
+ * Picks which day-bucket to headline as "the" strength-to-cardio finding —
+ * day-1 (the day after strength training) is the most intuitive framing,
+ * day-0 (same day) the next best. Bug fix: this used to stop there and
+ * return nothing at all if an athlete's only logged data happened to fall
+ * on day 2 or 3 instead — real, computed data that got silently thrown
+ * away, showing as "no measurable interference... not enough data" and no
+ * headline number even though a genuine finding existed (user report, with
+ * a screenshot: the day-1/day-0-only three separate copies of this exact
+ * logic — here, in the sentence builder below, and in both UI components —
+ * all needed the same fix, so it's now the one shared source of truth both
+ * the sentence and every UI headline number call through.
+ */
+export function pickHeadlineBucket(decayByDay: DayBucketStat[]): DayBucketStat | null {
+  const dayOne = decayByDay.find((d) => d.daysSinceStrength === 1 && d.sampleCount > 0);
+  if (dayOne) return dayOne;
+  const dayZero = decayByDay.find((d) => d.daysSinceStrength === 0 && d.sampleCount > 0);
+  if (dayZero) return dayZero;
+  // Whatever day DOES have real data, earliest first — better than
+  // discarding a genuine finding just because it didn't land on day 0/1.
+  const populated = decayByDay.filter((d) => d.sampleCount > 0).sort((a, b) => a.daysSinceStrength - b.daysSinceStrength);
+  return populated[0] ?? null;
+}
+
+/** "the same day" / "the next day" / "3 days later" — matches dayLabel()'s own phrasing conventions in the UI components, kept here so the generated sentence and the chart/day labels never disagree. */
+function whenPhrase(daysSinceStrength: number): string {
+  if (daysSinceStrength === 0) return "the same day";
+  if (daysSinceStrength === 1) return "the next day";
+  return `${daysSinceStrength} days later`;
+}
+
+/**
  * A coarser fallback comparison used only while the precise day-level
  * pairing above doesn't have enough proximate samples yet: splits the
  * athlete's own qualifying easy-effort sessions into weeks that contained a
@@ -308,10 +339,7 @@ function buildStrengthToCardioSummary(
   sampleCount = 0
 ): string {
   const sportLabel = sport.replace("_", " ");
-  // The day-after (d=1) is the most intuitive framing; fall back to same-day if that's all there is.
-  const dayOne = decayByDay.find((d) => d.daysSinceStrength === 1 && d.sampleCount > 0);
-  const dayZero = decayByDay.find((d) => d.daysSinceStrength === 0 && d.sampleCount > 0);
-  const headline = dayOne ?? dayZero;
+  const headline = pickHeadlineBucket(decayByDay);
 
   const caveat = lowConfidence
     ? ` Based on just ${sampleCount} session${sampleCount === 1 ? "" : "s"} so far — treat this as directional, not definitive, until you've logged more.`
@@ -330,7 +358,7 @@ function buildStrengthToCardioSummary(
 
   const direction = headline.efDeltaPct < 0 ? "cost you" : "actually help";
   const magnitude = Math.abs(headline.efDeltaPct);
-  const when = headline.daysSinceStrength === 0 ? "the same day" : "the next day";
+  const when = whenPhrase(headline.daysSinceStrength);
 
   const recoveryDay = decayByDay.find(
     (d) => d.daysSinceStrength > headline.daysSinceStrength && d.efDeltaPct !== null && Math.abs(d.efDeltaPct) < 3

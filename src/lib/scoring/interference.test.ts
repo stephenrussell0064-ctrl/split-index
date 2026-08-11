@@ -1,6 +1,41 @@
 import { describe, expect, it } from "vitest";
-import { computeInterferenceReport, hasShareableFinding, INTERFERENCE_CONFIG } from "./interference";
+import {
+  computeInterferenceReport,
+  hasShareableFinding,
+  pickHeadlineBucket,
+  INTERFERENCE_CONFIG,
+  type DayBucketStat,
+} from "./interference";
 import type { TimelineSession } from "./timeline";
+
+describe("pickHeadlineBucket", () => {
+  const bucket = (daysSinceStrength: number, sampleCount: number, efDeltaPct: number | null = -5): DayBucketStat => ({
+    daysSinceStrength,
+    sampleCount,
+    efDeltaPct,
+    hrDeltaBpm: null,
+  });
+
+  it("prefers day 1 when populated", () => {
+    const picked = pickHeadlineBucket([bucket(0, 2), bucket(1, 3), bucket(2, 1)]);
+    expect(picked?.daysSinceStrength).toBe(1);
+  });
+
+  it("falls back to day 0 when day 1 has no samples", () => {
+    const picked = pickHeadlineBucket([bucket(0, 2), bucket(1, 0), bucket(2, 1)]);
+    expect(picked?.daysSinceStrength).toBe(0);
+  });
+
+  it("falls back to the earliest populated day beyond 0/1 rather than returning null (the bug)", () => {
+    const picked = pickHeadlineBucket([bucket(0, 0), bucket(1, 0), bucket(2, 4), bucket(3, 1)]);
+    expect(picked?.daysSinceStrength).toBe(2);
+  });
+
+  it("returns null only when genuinely nothing is populated", () => {
+    expect(pickHeadlineBucket([bucket(0, 0), bucket(1, 0), bucket(2, 0), bucket(3, 0)])).toBeNull();
+    expect(pickHeadlineBucket([])).toBeNull();
+  });
+});
 
 let idCounter = 0;
 function nextId(): string {
@@ -184,6 +219,33 @@ describe("computeInterferenceReport — strength-to-cardio direction", () => {
     expect(finding.summary).toMatch(/cost you/i);
     expect(finding.summary).toMatch(/10%/);
     expect(finding.summary).toMatch(/recovering by day 3/i);
+  });
+
+  it("headlines a real finding even when the only data lands on day 2/3, not day 0/1 (regression: user screenshot showing 'no measurable interference' and no headline number despite a genuine -4% finding elsewhere in the same report)", () => {
+    const sessions: TimelineSession[] = [
+      strength(0),
+      cardio(2, { efficiencyFactor: 4.5, avgHeartRate: 148 }), // 2 days after strength — outside the old day-0/day-1-only pick
+      strength(6),
+      cardio(8, { efficiencyFactor: 4.5, avgHeartRate: 148 }),
+      // Rested baseline: far from any strength session.
+      cardio(14, { efficiencyFactor: 5.5, avgHeartRate: 138 }),
+      cardio(20, { efficiencyFactor: 5.5, avgHeartRate: 138 }),
+    ];
+
+    const report = computeInterferenceReport(sessions);
+    const finding = report.strengthToCardio;
+
+    expect(finding.calibrating).toBe(false);
+    expect(finding.decayByDay.find((d) => d.daysSinceStrength === 0)!.sampleCount).toBe(0);
+    expect(finding.decayByDay.find((d) => d.daysSinceStrength === 1)!.sampleCount).toBe(0);
+    const dayTwo = finding.decayByDay.find((d) => d.daysSinceStrength === 2)!;
+    expect(dayTwo.sampleCount).toBeGreaterThan(0);
+    expect(dayTwo.efDeltaPct).not.toBeNull();
+
+    // The old bug: with no day-0/1 data, the sentence fell back to
+    // "no measurable interference" regardless of what day 2 actually said.
+    expect(finding.summary).toMatch(/cost you/i);
+    expect(finding.summary).toMatch(/2 days later/i);
   });
 
   it("reports no measurable interference when EF barely moves", () => {

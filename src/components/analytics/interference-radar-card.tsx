@@ -6,20 +6,13 @@ import { Radar, ChevronRight } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { ShareImageButton } from "@/components/analytics/share-image-button";
 import { cn } from "@/lib/utils/cn";
-import { hasShareableFinding } from "@/lib/scoring/interference";
+import { hasShareableFinding, pickHeadlineBucket } from "@/lib/scoring/interference";
 import { HeadlineStat, SessionsProgress } from "@/components/analytics/interference-detail";
 import type { InterferenceReport } from "@/lib/scoring/interference";
 
-/** Same day-1 (or day-0 fallback) bucket pick as InterferenceDetail's own pickHeadlineBucket — kept in sync here so the dashboard's headline number always agrees with the full page's. */
+/** Same shared bucket pick as InterferenceDetail's own headline number (and the sentence itself) — pickHeadlineBucket lives in interference.ts as the one source of truth so the dashboard, the full page, and the generated sentence can never disagree with each other. */
 function pickHeadlineDelta(report: InterferenceReport): number | null {
-  const dayOne = report.strengthToCardio.decayByDay.find(
-    (d) => d.daysSinceStrength === 1 && d.sampleCount > 0
-  );
-  if (dayOne) return dayOne.efDeltaPct;
-  const dayZero = report.strengthToCardio.decayByDay.find(
-    (d) => d.daysSinceStrength === 0 && d.sampleCount > 0
-  );
-  return dayZero?.efDeltaPct ?? null;
+  return pickHeadlineBucket(report.strengthToCardio.decayByDay)?.efDeltaPct ?? null;
 }
 
 /**
