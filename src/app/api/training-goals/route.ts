@@ -419,6 +419,19 @@ export async function GET(request: Request) {
           findings: athleteProfile.findings,
           dataGaps: athleteProfile.dataGaps,
           assumptions: diagnostic?.assumptions ?? [],
+          // WP8 (Rev 2): what the four-weekly re-run decided, and what the
+          // athlete is told about it. `shouldRegenerate` false with a
+          // populated `drift` means the diagnosis moved but not enough to
+          // rebuild the block — worth showing, not worth acting on.
+          rerun: diagnostic?.rerun
+            ? {
+                due: diagnostic.rerun.due,
+                weeksSinceLastRun: diagnostic.rerun.weeksSinceLastRun,
+                shouldRegenerate: diagnostic.rerun.shouldRegenerate,
+                explanations: diagnostic.rerun.explanations,
+                deltas: diagnostic.rerun.drift?.deltas ?? null,
+              }
+            : null,
           weeklyVolumeKm: athleteProfile.weeklyVolumeKm,
           weeklyVolumeMin: athleteProfile.weeklyVolumeMin,
           longestRunKm: athleteProfile.longestRunKm,

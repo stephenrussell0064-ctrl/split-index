@@ -23,3 +23,4 @@ export * from "./scheduler";
 export * from "./event";
 export * from "./engine";
 export * from "./ingest";
+export * from "./persistence";

@@ -25,7 +25,13 @@ import {
   type ActivityRow,
   type GymExerciseRow,
 } from "./ingest";
-import type { AthleteProfile } from "./types";
+import {
+  evaluateRerun,
+  loadLatestStoredProfile,
+  saveProfile,
+  type RerunDecision,
+} from "./persistence";
+import type { AthleteProfile, FindingId } from "./types";
 
 /** How much history to pull. Twelve weeks is the tier-3 requirement; there is no value in reading further back for a diagnosis that only looks at 12. */
 const HISTORY_WEEKS = 12;
@@ -36,12 +42,27 @@ export interface LoadedProfile {
   loggedWeeklyRunMinutes: number | null;
   /** Surfaced so callers can tell the athlete which numbers were assumed rather than known. */
   assumptions: string[];
+  /** Row id of the persisted diagnostic run, when one was written. Needed to attach a plan to it. */
+  profileId: string | null;
+  /** Finding slug to row id, for the NOT NULL foreign key on hpe_sessions. */
+  findingIds: Map<FindingId, string>;
+  /** The four-weekly re-run verdict (WP8, Rev 2 addition). Null on a first run — nothing to compare against. */
+  rerun: RerunDecision | null;
 }
 
+/**
+ * Loads history, diagnoses, and — unless `persist` is false — stores the run
+ * so the four-weekly comparison has something to compare against next time.
+ *
+ * A new row is written only when the diagnosis has meaningfully moved or
+ * enough time has passed. Writing on every request would fill the table with
+ * duplicates and turn emphasis-drift analysis into a measure of how often the
+ * athlete opened the app.
+ */
 export async function loadAthleteProfile(
   supabase: SupabaseClient,
   userId: string,
-  options: { priority?: number } = {}
+  options: { priority?: number; persist?: boolean } = {}
 ): Promise<LoadedProfile | null> {
   const since = new Date(Date.now() - HISTORY_WEEKS * 7 * 86_400_000).toISOString();
 
@@ -142,10 +163,46 @@ export async function loadAthleteProfile(
     hrMaxSource,
   });
 
+  // ---- persistence and the four-weekly re-run ----------------------------
+  const previous = await loadLatestStoredProfile(supabase, userId);
+  const rerun = evaluateRerun(previous, profile);
+
+  let profileId: string | null = previous?.id ?? null;
+  let findingIds = new Map<FindingId, string>();
+
+  const shouldWrite =
+    options.persist !== false &&
+    profile.tier > 0 &&
+    (previous === null || rerun.due || rerun.drift?.shouldRegenerate === true ||
+      previous.constantsVersion !== profile.constantsVersion);
+
+  if (shouldWrite) {
+    const saved = await saveProfile(supabase, userId, profile);
+    if (saved) {
+      profileId = saved.profileId;
+      findingIds = saved.findingIds;
+    }
+  } else if (previous) {
+    // Reuse the stored run's findings rather than rewriting an identical
+    // diagnosis — the plan still needs the ids to attach its sessions to.
+    const { data: rows } = await supabase
+      .from("hpe_findings")
+      .select("id, finding_key")
+      .eq("profile_id", previous.id);
+    for (const row of rows ?? []) findingIds.set(row.finding_key as FindingId, row.id as string);
+  }
+
+  if (rerun.shouldRegenerate && rerun.explanations.length > 0) {
+    assumptions.push(...rerun.explanations);
+  }
+
   return {
     profile,
     loggedWeeklyRunMinutes: loggedWeeklyRunMinutes(activities),
     assumptions,
+    profileId,
+    findingIds,
+    rerun,
   };
 }
 
