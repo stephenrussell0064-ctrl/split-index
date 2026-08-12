@@ -27,6 +27,7 @@ import {
 } from "@/lib/scoring/training-progress";
 import { movementPatternForExercise } from "@/lib/scoring/training-session-content";
 import { computeHybridBalanceGaps, reserveHybridBalanceSessions } from "@/lib/scoring/training-hybrid-balance";
+import { loadAthleteProfile } from "@/lib/scoring/hpe/load-profile";
 
 const BENCHMARK_SPORTS = Object.keys(BENCHMARK_DISTANCE_METERS) as BenchmarkSport[];
 
@@ -346,6 +347,26 @@ export async function GET(request: Request) {
   const hybridBalanceGaps = computeHybridBalanceGaps(activeGoalInputs, movementPatternForExercise);
   const hybridBalanceReserved = reserveHybridBalanceSessions(hybridBalanceGaps, weeklyCapacity, activeGoalInputs.length);
 
+  // HPE WP0 — the athlete's own diagnostic, derived from logged history.
+  // Everything downstream that can be individualised is: the mix of
+  // easy/threshold/interval sessions comes from their emphasis vector rather
+  // than a fixed fraction, easy pace comes from the three-anchor band rather
+  // than a multiple of their goal time, and heart-rate bands come from their
+  // own HR-vs-pace regression with the source stated. Null when there is not
+  // enough logged history to diagnose anything, in which case every one of
+  // those falls back to the population-based behaviour — a diagnosis built on
+  // four runs would be a guess wearing a lab coat. See lib/scoring/hpe/.
+  const priority = goalInputs.length > 0
+    ? goalInputs.filter((g) => g.goalType === "gym").length / goalInputs.length
+    : undefined;
+  const diagnostic = await loadAthleteProfile(supabase, user.id, { priority }).catch((err) => {
+    // A diagnostic failure must never take the plan down with it — the plan
+    // without individualisation is still a plan.
+    console.error("HPE diagnostic failed:", err instanceof Error ? err.message : err);
+    return null;
+  });
+  const athleteProfile = diagnostic?.profile ?? null;
+
   const plan = buildTrainingPlan(goalInputs, weeklyCapacity - hybridBalanceReserved);
   const locked = lockedRows.map((row) => {
     const input = toInput(row);
@@ -384,6 +405,41 @@ export async function GET(request: Request) {
     weeklyCapacity,
     maxWeeklyCapacity,
     hybridBalance: { ...hybridBalanceGaps, reservedSessions: hybridBalanceReserved },
+    // The diagnostic report (brief WP9: "the strongest single artefact in the
+    // product"). Sent whole so the client can render the derived metrics, the
+    // emphasis vector and — most importantly — the findings, which are what
+    // make each prescribed session defensible to the athlete reading it.
+    diagnostic: athleteProfile
+      ? {
+          constantsVersion: athleteProfile.constantsVersion,
+          tier: athleteProfile.tier,
+          confidence: athleteProfile.confidence,
+          limiter: athleteProfile.limiter,
+          emphasis: athleteProfile.emphasis,
+          findings: athleteProfile.findings,
+          dataGaps: athleteProfile.dataGaps,
+          assumptions: diagnostic?.assumptions ?? [],
+          weeklyVolumeKm: athleteProfile.weeklyVolumeKm,
+          weeklyVolumeMin: athleteProfile.weeklyVolumeMin,
+          longestRunKm: athleteProfile.longestRunKm,
+          volumeAdequacy: athleteProfile.volumeAdequacy,
+          riegelK: athleteProfile.riegelK,
+          riegelVerdict: athleteProfile.riegelVerdict,
+          decoupling: athleteProfile.decoupling,
+          decouplingVerdict: athleteProfile.decouplingVerdict,
+          easyFraction: athleteProfile.easyFraction,
+          easyFractionSource: athleteProfile.easyFractionSource,
+          intensityVerdict: athleteProfile.intensityVerdict,
+          easyBand: athleteProfile.easyBand,
+          predicted5kS: athleteProfile.predicted5kS,
+          hrMax: athleteProfile.hrMax,
+          hrMaxSource: athleteProfile.hrMaxSource,
+          repProfileGap: athleteProfile.repProfileGap,
+          repProfileVerdict: athleteProfile.repProfileVerdict,
+          weakLift: athleteProfile.weakLift,
+          stalledLifts: athleteProfile.stalledLifts,
+        }
+      : null,
     premium,
     maxFreeGoals: MAX_FREE_TRAINING_GOALS,
     totalGoalCount: allGoalRows.length,

@@ -1,0 +1,217 @@
+/**
+ * Hybrid Plan Engine — WP0a, ingest.
+ *
+ * Maps Split Index's own rows onto the diagnostic's data model. This is the
+ * only module in `hpe/` that knows what a Supabase row looks like; everything
+ * else operates on plain `RunLog`/`LiftSet` values and stays testable without
+ * a database.
+ *
+ * Brief §0a: "Flag maximal efforts (races and time trials) either from user
+ * tagging or from a pace-outlier rule." Both are implemented — user tagging
+ * is trusted first, and the outlier rule catches the athlete who raced but
+ * logged it as an ordinary run, because a missed maximal effort is the
+ * difference between a personal Riegel exponent and a population one.
+ *
+ * The engine consumes the four existing Split Index engines through thin
+ * adapters and does not reimplement, refactor or revert any of them:
+ *   - adaptive 1RM (SRI)          → `oneRms` passed in by the caller
+ *   - two-tier race prediction    → seeds `predicted5kS` on AthleteState
+ *   - personalised Karvonen HR    → `restingHr` / `maxHr` from the profile
+ *   - ACWR Risk Index             → `chronicLoad` seeds the ACWR denominator
+ */
+
+import { estimatedMaxHr } from "./intake";
+import type { LiftSet, RunLog } from "./types";
+
+/** Only these sports carry a pace the aerobic diagnostic can reason about. */
+const DIAGNOSABLE_SPORTS = new Set(["run", "row", "cycle", "ski", "swim", "walk"]);
+
+/** Session types that ARE a maximal effort by definition. */
+const MAX_EFFORT_SESSION_TYPES = new Set(["race"]);
+
+/**
+ * A logged session that is this much faster than the athlete's own median
+ * training pace is a race or time trial whether or not they tagged it as one.
+ * [EST] — deliberately conservative: mislabelling a hard tempo as a maximal
+ * effort would bias the Riegel fit toward a flatter curve and understate the
+ * athlete's fatigue resistance.
+ */
+const MAX_EFFORT_PACE_OUTLIER_RATIO = 0.93;
+/** Below this many runs, the median is too noisy to call anything an outlier against. */
+const MAX_EFFORT_OUTLIER_MIN_RUNS = 6;
+
+export interface ActivityRow {
+  started_at: string;
+  sport: string;
+  duration_seconds: number;
+  distance_meters: number | null;
+  avg_heart_rate: number | null;
+  max_heart_rate: number | null;
+  avg_cadence: number | null;
+  session_type: string | null;
+  /** Per-km splits and per-km HR, where the source provided them. */
+  metadata?: { splits_s_per_km?: number[]; hr_by_km?: number[] } | null;
+  is_partial_track?: boolean | null;
+}
+
+export interface GymExerciseRow {
+  started_at: string;
+  exercise_name: string;
+  weight_kg: number;
+  sets: number;
+  reps: number;
+  rpe: number | null;
+  set_details?: { weight_kg: number; reps: number; rpe?: number | null }[] | null;
+}
+
+function dayIndex(iso: string, epochMs: number): number {
+  return Math.floor((new Date(iso).getTime() - epochMs) / 86_400_000);
+}
+
+/**
+ * Converts logged activities into RunLogs. Partial GPS tracks are excluded:
+ * a session where background tracking was interrupted has a distance that is
+ * wrong in an unknown direction, and feeding it to a pace-based diagnostic is
+ * exactly the "confidently wrong" failure this codebase has already fixed
+ * once.
+ */
+export function ingestRuns(rows: ActivityRow[]): RunLog[] {
+  const usable = rows.filter(
+    (r) =>
+      DIAGNOSABLE_SPORTS.has(r.sport) &&
+      !r.is_partial_track &&
+      r.duration_seconds > 0 &&
+      (r.distance_meters ?? 0) > 0
+  );
+  if (usable.length === 0) return [];
+
+  const epochMs = Math.min(...usable.map((r) => new Date(r.started_at).getTime()));
+
+  const runs: RunLog[] = usable.map((r) => ({
+    dateIdx: dayIndex(r.started_at, epochMs),
+    distanceKm: (r.distance_meters as number) / 1000,
+    durationS: r.duration_seconds,
+    avgHr: r.avg_heart_rate,
+    splitsSPerKm: r.metadata?.splits_s_per_km ?? [],
+    hrByKm: r.metadata?.hr_by_km ?? [],
+    cadenceSpm: r.avg_cadence != null ? Math.round(r.avg_cadence) : null,
+    isMaxEffort: r.session_type != null && MAX_EFFORT_SESSION_TYPES.has(r.session_type),
+  }));
+
+  return flagPaceOutliers(runs);
+}
+
+/**
+ * The pace-outlier half of the maximal-effort rule. Compares each run against
+ * the median pace of the athlete's UNTAGGED runs — using the median rather
+ * than the mean so that one genuinely fast session cannot drag the reference
+ * toward itself and hide the next one.
+ */
+export function flagPaceOutliers(runs: RunLog[]): RunLog[] {
+  const untagged = runs.filter((r) => !r.isMaxEffort);
+  if (untagged.length < MAX_EFFORT_OUTLIER_MIN_RUNS) return runs;
+  const paces = untagged.map((r) => r.durationS / r.distanceKm).sort((a, b) => a - b);
+  const median = paces[Math.floor(paces.length / 2)];
+  if (!Number.isFinite(median) || median <= 0) return runs;
+
+  return runs.map((r) => {
+    if (r.isMaxEffort) return r;
+    const pace = r.durationS / r.distanceKm;
+    return pace <= median * MAX_EFFORT_PACE_OUTLIER_RATIO ? { ...r, isMaxEffort: true } : r;
+  });
+}
+
+/** Maps Split Index exercise names onto the three competition lifts the strength diagnostic reasons about. */
+const COMPETITION_LIFT_ALIASES: Record<string, string> = {
+  "back squat": "squat",
+  squat: "squat",
+  "barbell squat": "squat",
+  "front squat": "squat",
+  "bench press": "bench",
+  bench: "bench",
+  "barbell bench press": "bench",
+  deadlift: "deadlift",
+  "conventional deadlift": "deadlift",
+  "barbell deadlift": "deadlift",
+  "sumo deadlift": "deadlift",
+};
+
+export function normaliseLiftName(exerciseName: string): string {
+  return COMPETITION_LIFT_ALIASES[exerciseName.trim().toLowerCase()] ?? exerciseName.trim().toLowerCase();
+}
+
+/**
+ * Expands logged exercises into individual sets. `set_details` takes
+ * precedence where present — the flat weight/sets/reps columns are a best-set
+ * summary, and treating a summary as N identical sets would inflate the
+ * rep-profile comparison at both ends.
+ */
+export function ingestLiftSets(rows: GymExerciseRow[]): LiftSet[] {
+  if (rows.length === 0) return [];
+  const epochMs = Math.min(...rows.map((r) => new Date(r.started_at).getTime()));
+  const out: LiftSet[] = [];
+
+  for (const row of rows) {
+    const lift = normaliseLiftName(row.exercise_name);
+    const dateIdx = dayIndex(row.started_at, epochMs);
+
+    if (row.set_details && row.set_details.length > 0) {
+      for (const set of row.set_details) {
+        if (set.weight_kg > 0 && set.reps > 0) {
+          out.push({ dateIdx, lift, loadKg: set.weight_kg, reps: set.reps, rir: set.rpe != null ? 10 - set.rpe : null });
+        }
+      }
+      continue;
+    }
+
+    if (row.weight_kg > 0 && row.reps > 0) {
+      for (let i = 0; i < Math.max(1, row.sets); i++) {
+        out.push({ dateIdx, lift, loadKg: row.weight_kg, reps: row.reps, rir: row.rpe != null ? 10 - row.rpe : null });
+      }
+    }
+  }
+
+  return out;
+}
+
+/**
+ * Resting and max HR, in the order the intake spec requires: measured first,
+ * then the highest HR the athlete has actually hit in a logged session, then
+ * Tanaka — and the source is returned, never assumed, because every
+ * downstream HR band states where it came from.
+ */
+export function resolveHeartRates(
+  profileRestingHr: number | null,
+  profileMaxHr: number | null,
+  activities: ActivityRow[],
+  age: number
+): { hrRest: number; hrMax: number; hrMaxSource: "measured" | "estimated"; restingAssumed: boolean } {
+  const observedMax = activities
+    .map((a) => a.max_heart_rate)
+    .filter((h): h is number => h != null && h > 100 && h < 230);
+  const measuredMax = profileMaxHr ?? (observedMax.length > 0 ? Math.max(...observedMax) : null);
+
+  return {
+    // The intake spec's documented default, flagged as assumed rather than
+    // silently applied.
+    hrRest: profileRestingHr ?? 60,
+    hrMax: measuredMax ?? estimatedMaxHr(age),
+    hrMaxSource: measuredMax != null ? "measured" : "estimated",
+    restingAssumed: profileRestingHr == null,
+  };
+}
+
+/**
+ * Weekly running minutes from the last 8 weeks of logs — the on-ramp anchor.
+ * The intake spec calls this "the most important field in this document"; see
+ * `reconcileCurrentVolume` for what happens when the athlete's own answer
+ * disagrees with this number.
+ */
+export function loggedWeeklyRunMinutes(rows: ActivityRow[], weeks = 8, now = Date.now()): number | null {
+  const cutoff = now - weeks * 7 * 86_400_000;
+  const recent = rows.filter(
+    (r) => DIAGNOSABLE_SPORTS.has(r.sport) && new Date(r.started_at).getTime() >= cutoff && r.duration_seconds > 0
+  );
+  if (recent.length === 0) return null;
+  return recent.reduce((s, r) => s + r.duration_seconds, 0) / 60 / weeks;
+}

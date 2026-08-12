@@ -28,6 +28,7 @@ import {
   type MovementPattern,
 } from "./training-session-content";
 import type { HybridBalanceSchedule } from "./training-hybrid-balance";
+import type { AthleteProfile } from "./hpe/types";
 import type { SessionType } from "@/types";
 
 export type TrainingGoalType = "cardio" | "gym";
@@ -401,7 +402,14 @@ export function buildWeeklySchedule(
   rankedGoals: RankedGoal[],
   perDayHours?: number[],
   sessionHours: SessionDurationHours = DEFAULT_SESSION_HOURS,
-  hybridBalance?: HybridBalanceSchedule
+  hybridBalance?: HybridBalanceSchedule,
+  /**
+   * HPE WP0. The athlete's own diagnostic, when they have enough logged
+   * history for one. Optional throughout: an athlete below tier 1 has nothing
+   * to diagnose from, and gets the population-based prescriptions this module
+   * produced before the diagnostic existed. See lib/scoring/hpe/.
+   */
+  profile?: AthleteProfile | null
 ): DaySchedule[] {
   const days: DaySchedule[] = WEEKDAY_LABELS.map((label, i) => ({
     day: i,
@@ -435,7 +443,8 @@ export function buildWeeklySchedule(
           q.totalInstances,
           activeGymGoalNames,
           q.goal.daysUntilTarget ?? null,
-          duration
+          duration,
+          profile
         );
         instances.push({ goal: q.goal, duration, content });
         q.seen += 1;

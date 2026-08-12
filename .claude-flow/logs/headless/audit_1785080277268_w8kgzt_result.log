@@ -1,0 +1,17 @@
+[2026-07-26T15:37:58.222Z] RESULT
+============================================================
+{
+  "success": false,
+  "output": "Not logged in · Please run /login\n",
+  "parsedOutput": {
+    "parseError": true,
+    "rawOutput": "Not logged in · Please run /login\n"
+  },
+  "durationMs": 954,
+  "model": "haiku",
+  "sandboxMode": "strict",
+  "workerType": "audit",
+  "timestamp": "2026-07-26T15:37:58.222Z",
+  "executionId": "audit_1785080277268_w8kgzt",
+  "error": "Process exited with code 1"
+}

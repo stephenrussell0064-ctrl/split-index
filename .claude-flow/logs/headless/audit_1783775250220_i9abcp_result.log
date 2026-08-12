@@ -1,0 +1,17 @@
+[2026-07-11T13:24:47.144Z] RESULT
+============================================================
+{
+  "success": false,
+  "output": "Not logged in · Please run /login\n",
+  "parsedOutput": {
+    "parseError": true,
+    "rawOutput": "Not logged in · Please run /login\n"
+  },
+  "durationMs": 1036924,
+  "model": "haiku",
+  "sandboxMode": "strict",
+  "workerType": "audit",
+  "timestamp": "2026-07-11T13:24:47.144Z",
+  "executionId": "audit_1783775250220_i9abcp",
+  "error": "Execution timed out after 300000ms"
+}

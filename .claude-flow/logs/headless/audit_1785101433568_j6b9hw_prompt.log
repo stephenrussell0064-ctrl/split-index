@@ -1,0 +1,2018 @@
+[2026-07-26T21:30:33.569Z] PROMPT
+============================================================
+Analyze this codebase for security vulnerabilities:
+- Check for hardcoded secrets (API keys, passwords)
+- Identify SQL injection risks
+- Find XSS vulnerabilities
+- Check for insecure dependencies
+- Identify authentication/authorization issues
+
+Provide a JSON report with:
+{
+  "vulnerabilities": [{ "severity": "high|medium|low", "file": "...", "line": N, "description": "..." }],
+  "riskScore": 0-100,
+  "recommendations": ["..."]
+}
+
+## Codebase Context
+
+--- next-env.d.ts ---
+/// <reference types="next" />
+/// <reference types="next/image-types/global" />
+import "./.next/types/routes.d.ts";
+
+// NOTE: This file should not be edited
+// see https://nextjs.org/docs/app/api-reference/config/typescript for more information.
+
+
+--- next.config.ts ---
+import type { NextConfig } from "next";
+
+const isDev = process.env.NODE_ENV === "development";
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+
+const cspHeader = `
+  default-src 'self';
+  script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""};
+  style-src 'self' 'unsafe-inline';
+  img-src 'self' data: https:;
+  font-src 'self' data:;
+  connect-src 'self' ${supabaseUrl};
+  object-src 'none';
+  base-uri 'self';
+  form-action 'self';
+  frame-ancestors 'none';
+  upgrade-insecure-requests;
+`
+  .replace(/\s{2,}/g, " ")
+  .trim();
+
+const nextConfig: NextConfig = {
+  images: {
+    // Only our own static brand assets (public/splitindex-*.svg) go through
+    // next/image as SVG — never user-uploaded content — so this is safe.
+    dangerouslyAllowSVG: true,
+    contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;",
+  },
+  async headers() {
+    return [
+      {
+        source: "/(.*)",
+        headers: [
+          { key: "Content-Security-Policy", value: cspHeader },
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          {
+            key: "Permissions-Policy",
+            value: "camera=(), microphone=(), geolocation=(), payment=()",
+          },
+        ],
+      },
+    ];
+  },
+};
+
+export default nextConfig;
+
+
+--- src/app/api/account/delete/route.ts ---
+import { NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+
+const USER_TABLES = [
+  "leaderboard_entries",
+  "strength_scores",
+  "workout_scores",
+  "split_index_history",
+  "ai_feedback",
+  "personal_records",
+  "goals",
+  "recovery_snapshots",
+  "body_metrics",
+  "workout_drafts",
+  "session_templates",
+  "notifications",
+  "user_achievements",
+  "challenge_participants",
+  "friends",
+  "import_jobs",
+  "integration_connections",
+  "activities",
+  "profiles",
+] as const;
+
+export async function DELETE() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const admin = createAdminClient();
+
+  for (const table of USER_TABLES) {
+    const { error } = await admin.from(table).delete().eq("user_id", user.id);
+    if (error && error.code !== "42P01") {
+      return NextResponse.json(
+        { error: `Failed to purge ${table}: ${error.message}` },
+        { status: 500 }
+      );
+    }
+  }
+
+  // Friends where this user is the friend_id (reverse direction).
+  await admin.from("friends").delete().eq("friend_id", user.id);
+
+  const { error: authError } = await admin.auth.admin.deleteUser(user.id);
+  if (authError) {
+    return NextResponse.json({ error: authError.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ success: true });
+}
+
+
+--- src/app/api/activities/[id]/route.ts (truncated) ---
+import { NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase/server";
+import {
+  scoreActivity,
+  computeRecentLoads,
+  computeExercise1RM,
+  buildStrengthScoreInserts,
+  ScoringInputError,
+} from "@/lib/scoring/service";
+import { assertScoringInput } from "@/lib/scoring/input-guards";
+import { computeSportComparison } from "@/lib/utils/sport-comparison";
+import { SPORT_INDEX_LABELS } from "@/lib/constants/sports";
+import { enrichCardioScore } from "@/lib/scoring/cardio";
+import {
+  cardioResultToEnrichment,
+  mapSportToBenchmarkSport,
+  computeBodyBenchmarkEquivalentSeconds,
+} from "@/lib/scoring/adapters";
+import type { CardioResult } from "@/lib/scoring/cardio-activity";
+import { BENCHMARK_DISTANCE_METERS } from "@/lib/scoring/cardio-benchmarks";
+import {
+  blendPredictedBenchmark,
+  effectiveStoredPrediction,
+  sessionCountsAsQuality,
+  personalEasyEffortBaselineEF,
+  personalEasyEffortBaselinePaceSeconds,
+  personalRecentHardEffortBenchmarkSeconds,
+  terrainAdjustedSessionEF,
+  isDirectBenchmarkDistance,
+} from "@/lib/scoring/cardio-predictions";
+import {
+  computeTier1Prediction,
+  computeWindowedTier2Seconds,
+  personalizeRiegelKFromWindow,
+  pickSwimTimeTrialEfforts,
+  type HistorySession,
+} from "@/lib/scoring/cardio/race-prediction";
+import { isEnduranceSport } from "@/lib/scoring/engine";
+import { isPremiumUser } from "@/lib/retention/trial";
+import { serializeScoreBreakdown } from "@/lib/scoring/presentation";
+import type { ActivityFormData, Profile } from "@/types";
+import type { WeightEntryMode } from "@/lib/scoring/weight-entry";
+import {
+  upsertPersonalRecordsIfBetter,
+  enduranceRecordCandidates,
+  gymRecordCandidates,
+  type PersonalRecordCandidate,
+} from "@/lib/activities/personal-records";
+import { defaultWeightEntryMode } from "@/lib/scoring/weight-entry";
+import {
+  buildScoringProfile,
+  resolveScoringBodyweightKg,
+  resolveEffectiveMaxHr,
+} from "@/lib/activities/bodyweight";
+import { bestSet, summarizeSets } from "@/lib/activities/gym-sets";
+import { fetchExerciseHistory } from "@/lib/activities/exercise-history";
+
+type ActivityBody = ActivityFormData & {
+  bodyweight_kg?: number;
+  exercise_notes?: Record<string, string>;
+};
+
+function buildActivityMetadata(
+  existing: Record<string, unknown> | null | undefined,
+  body: ActivityBody
+): Record<string, unknown> {
+  const metadata = { ...(existing ?? {}) };
+  if (body.bodyweight_kg) {
+    metadata.bodyweight_kg = body.bodyweight_kg;
+  }
+  if (body.exercise_notes && Object.keys(body.exercise_notes).length > 0) {
+    metadata.exercise_notes = body.exercise_notes;
+  }
+  if (body.exercises?.length) {
+    const modes: Record<string, WeightEntryMode> = {};
+    for (const ex of body.exercises) {
+      modes[ex.exercise_name] =
+        ex.weight_entry_mode ?? defaultWeightEntryMode(ex.exercise_name);
+    }
+    metadata.exercise_weight_modes = modes;
+  }
+  return metadata;
+}
+
+async function scoreAndPersist(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  profile: Profile,
+  body: ActivityBody,
+  activityId: string,
+  excludeActivityId?: string,
+  existingMetadata?: Record<string, unknown> | null,
+  anchoredBodyweightKg?: number | null
+) {
+  const bodyweightKg = resolveScoringBodyweightKg(body.sport, {
+    submittedBodyweight: body.bodyweight_kg,
+    activityMetadata: existingMetadata,
+    strengthScoreBodyweight: anchoredBodyweightKg,
+    profileWeightKg: profile.weight_kg,
+  });
+
+  const { data: observedMaxHrRow } = await supabase
+    .from("activities")
+    .select("max_heart_rate")
+    .eq("user_id", userId)
+    .not("max_heart_rate", "is", null)
+    .order("max_heart_rate", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const effectiveMaxHr = resolveEffectiveMaxHr(
+    profile.max_hr,
+    Math.max(observedMaxHrRow?.max_heart_rate ?? 0, body.max_heart_rate ?? 0) || null
+  );
+
+  const scoringProfile = buildScoringProfile(profile, bodyweightKg, effectiveMaxHr);
+
+  const { data: recentScoresRaw } = await supabase
+    .from("workout_scores")
+    .select("load_score, created_at, sport_index, endurance_component, strength_component, activity_id")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(50);
+  const recentScores = (recentScoresRaw ?? []).filter(
+    (s) => s.activity_id !== excludeActivityId
+  );
+
+  const { data: recentSameSportRaw } = await supabase
+    .from("workout_scores")
+    .select("sport_index, created_at, activity_id")
+    .eq("user_id", userId)
+    .eq("sport", body.sport)
+    .order("created_at", { ascending: false })
+    .limit(10);
+  const priorSportScores = (recentSameSportRaw ?? [])
+    .filter((s) => s.activity_id !== excludeActivityId)
+    .map((s) => s.sport_index as number);
+
+  const loads = computeRecentLoads(recentScores);
+
+  const enduranceIndices =
+    recentScores
+      ?.filter((s) => s.endurance_component)
+      .map((s) => s.endurance_component as number) ?? [];
+  const strengthIndices =
+    recentScores
+     
+
+--- src/app/api/activities/draft/route.ts ---
+import { NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase/server";
+
+export async function PUT(request: Request) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { sport, formData } = await request.json();
+
+  const { data, error } = await supabase
+    .from("workout_drafts")
+    .upsert(
+      {
+        user_id: user.id,
+        sport,
+        form_data: formData,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "user_id,sport" }
+    )
+    .select()
+    .single();
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ draft: data });
+}
+
+export async function GET(request: Request) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { searchParams } = new URL(request.url);
+  const sport = searchParams.get("sport");
+
+  let query = supabase.from("workout_drafts").select("*").eq("user_id", user.id);
+
+  if (sport) {
+    query = query.eq("sport", sport);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ drafts: data });
+}
+
+export async function DELETE(request: Request) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { searchParams } = new URL(request.url);
+  const sport = searchParams.get("sport");
+
+  if (!sport) {
+    return NextResponse.json({ error: "sport is required" }, { status: 400 });
+  }
+
+  const { error } = await supabase
+    .from("workout_drafts")
+    .delete()
+    .eq("user_id", user.id)
+    .eq("sport", sport);
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ ok: true });
+}
+
+
+--- src/app/api/activities/last/route.ts ---
+import { NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase/server";
+import { activityToFormState } from "@/lib/activities/db-form";
+import type { SportType } from "@/types";
+
+export async function GET(request: Request) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { searchParams } = new URL(request.url);
+  const sport = searchParams.get("sport") as SportType | null;
+
+  if (!sport) {
+    return NextResponse.json({ error: "sport query param required" }, { status: 400 });
+  }
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("weight_kg")
+    .eq("user_id", user.id)
+    .single();
+
+  const { data: activity } = await supabase
+    .from("activities")
+    .select("*")
+    .eq("user_id", user.id)
+    .eq("sport", sport)
+    .eq("is_draft", false)
+    .order("started_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!activity) {
+    return NextResponse.json({ found: false });
+  }
+
+  let exercises: Parameters<typeof activityToFormState>[1] = [];
+  if (sport === "gym") {
+    const { data: exRows } = await supabase
+      .from("gym_exercises")
+      .select("*")
+      .eq("activity_id", activity.id)
+      .order("order_index");
+    exercises = exRows ?? [];
+  }
+
+  const formState = activityToFormState(activity, exercises, profile?.weight_kg);
+
+  return NextResponse.json({
+    found: true,
+    activityId: activity.id,
+    sport,
+    formState,
+    title: activity.title,
+    startedAt: activity.started_at,
+  });
+}
+
+
+--- src/app/api/activities/recompute/route.ts (truncated) ---
+import { NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase/server";
+import {
+  scoreActivity,
+  computeRecentLoads,
+  buildStrengthScoreInserts,
+  ScoringInputError,
+} from "@/lib/scoring/service";
+import {
+  buildScoringProfile,
+  resolveScoringBodyweightKg,
+  resolveEffectiveMaxHr,
+} from "@/lib/activities/bodyweight";
+import { setsForExercise } from "@/lib/activities/gym-sets";
+import { normalizeName } from "@/lib/scoring/split-strength-engine";
+import { defaultWeightEntryMode } from "@/lib/scoring/weight-entry";
+import type { WeightEntryMode } from "@/lib/scoring/weight-entry";
+import { isPremiumUser } from "@/lib/retention/trial";
+import { mapSportToBenchmarkSport, computeBodyBenchmarkEquivalentSeconds } from "@/lib/scoring/adapters";
+import {
+  blendPredictedBenchmark,
+  effectiveStoredPrediction,
+  sessionCountsAsQuality,
+  personalEasyEffortBaselineEF,
+  personalEasyEffortBaselinePaceSeconds,
+  personalRecentHardEffortBenchmarkSeconds,
+  terrainAdjustedSessionEF,
+  isDirectBenchmarkDistance,
+} from "@/lib/scoring/cardio-predictions";
+import {
+  computeWindowedTier2Seconds,
+  personalizeRiegelKFromWindow,
+  type HistorySession,
+} from "@/lib/scoring/cardio/race-prediction";
+import { BENCHMARK_DISTANCE_METERS, type BenchmarkSport } from "@/lib/scoring/cardio-benchmarks";
+import { isEnduranceSport } from "@/lib/scoring/engine";
+import type { GymExercise } from "@/types";
+import type { LoggedSet } from "@/lib/scoring/split-strength-engine";
+import {
+  enduranceRecordCandidates,
+  gymRecordCandidates,
+  type PersonalRecordCandidate,
+} from "@/lib/activities/personal-records";
+
+/**
+ * Re-scores every one of the caller's own past activities with the current
+ * scoring engine and overwrites the stored workout_scores / split_index_history
+ * / strength_scores rows. Needed because scores are computed once at log time
+ * and persisted — a scoring-formula change (e.g. effort-normalized cardio
+ * scoring) never touches historical rows on its own.
+ *
+ * Runs oldest-first so each activity's index/trend context is rebuilt from
+ * the other newly-recomputed scores in this same pass, not stale DB values.
+ */
+export async function POST() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("*")
+    .eq("user_id", user.id)
+    .single();
+
+  if (!profile) {
+    return NextResponse.json({ error: "Profile not found" }, { status: 404 });
+  }
+
+  const { data: activities, error: activitiesError } = await supabase
+    .from("activities")
+    .select("*")
+    .eq("user_id", user.id)
+    .eq("is_draft", false)
+    .order("started_at", { ascending: true });
+
+  if (activitiesError) {
+    return NextResponse.json({ error: activitiesError.message }, { status: 500 });
+  }
+
+  const activityIds = (activities ?? []).map((a) => a.id as string);
+  const { data: allExercises } = activityIds.length
+    ? await supabase.from("gym_exercises").select("*").in("activity_id", activityIds)
+    : { data: [] as GymExercise[] };
+
+  const exercisesByActivity = new Map<string, GymExercise[]>();
+  for (const ex of allExercises ?? []) {
+    const list = exercisesByActivity.get(ex.activity_id as string) ?? [];
+    list.push(ex as GymExercise);
+    exercisesByActivity.set(ex.activity_id as string, list);
+  }
+
+  const recentActivityRows: Array<{
+    sport: string;
+    sport_index: number;
+    started_at: string;
+    score_breakdown: Record<string, unknown> | null;
+  }> = [];
+  const recentScoreLoads: Array<{ load_score: number; created_at: string }> = [];
+  const enduranceIndices: number[] = [];
+  const strengthIndices: number[] = [];
+  const splitIndices: number[] = [];
+
+  // Best-known max HR across every session — the Tanaka age formula
+  // underestimates max HR for a lot of trained athletes, and if any past
+  // session's own avg HR meets or exceeds it, every effort calculation
+  // downstream treats that (and easier) sessions as harder than they were.
+  const observedMaxHr = (activities ?? []).reduce(
+    (max, a) => Math.max(max, a.max_heart_rate ?? 0),
+    0
+  );
+  const effectiveMaxHr = resolveEffectiveMaxHr(profile.max_hr, observedMaxHr || null);
+  const isPremium = isPremiumUser(profile.subscription_tier, profile.subscription_status);
+
+  let recomputed = 0;
+  const failures: Array<{ id: string; error: string }> = [];
+
+  // Built incrementally, oldest-first, so scoring activity N only ever sees
+  // history from activities strictly before it — never a future session's
+  // sets influencing a past one's adaptive 1RM estimate.
+  const exerciseHistory: Record<string, LoggedSet[]> = {};
+
+  // Same oldest-first replay for memory-based cardio predictions
+  // (MASTER-BRIEF.md §5) — this backfills predicted_benchmarks for existing
+  // users the first time recompute runs after this feature ships.
+  
+
+--- src/app/api/activities/route.ts (truncated) ---
+import { NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase/server";
+import { scoreActivity, computeRecentLoads, computeExercise1RM, buildStrengthScoreInserts, ScoringInputError } from "@/lib/scoring/service";
+import { assertScoringInput } from "@/lib/scoring/input-guards";
+import { generateCoachFeedback, generateRulesBasedSnippet, type IndexHistoryEntry } from "@/lib/openai/coach";
+import { computeSportComparison } from "@/lib/utils/sport-comparison";
+import { SPORT_INDEX_LABELS } from "@/lib/constants/sports";
+import { enrichCardioScore } from "@/lib/scoring/cardio";
+import {
+  cardioResultToEnrichment,
+  mapSportToBenchmarkSport,
+  computeBodyBenchmarkEquivalentSeconds,
+} from "@/lib/scoring/adapters";
+import type { CardioResult } from "@/lib/scoring/cardio-activity";
+import { BENCHMARK_DISTANCE_METERS } from "@/lib/scoring/cardio-benchmarks";
+import {
+  blendPredictedBenchmark,
+  effectiveStoredPrediction,
+  sessionCountsAsQuality,
+  personalEasyEffortBaselineEF,
+  personalEasyEffortBaselinePaceSeconds,
+  personalRecentHardEffortBenchmarkSeconds,
+  terrainAdjustedSessionEF,
+  isDirectBenchmarkDistance,
+} from "@/lib/scoring/cardio-predictions";
+import {
+  computeTier1Prediction,
+  computeWindowedTier2Seconds,
+  personalizeRiegelKFromWindow,
+  pickSwimTimeTrialEfforts,
+  type HistorySession,
+} from "@/lib/scoring/cardio/race-prediction";
+import { isEnduranceSport } from "@/lib/scoring/engine";
+import { isPremiumUser } from "@/lib/retention/trial";
+import { serializeScoreBreakdown } from "@/lib/scoring/presentation";
+import { canAccessProfile } from "@/lib/premium/features";
+import type { ActivityFormData, GymExercise } from "@/types";
+import {
+  buildScoringProfile,
+  resolveScoringBodyweightKg,
+  resolveEffectiveMaxHr,
+} from "@/lib/activities/bodyweight";
+import { bestSet, summarizeSets } from "@/lib/activities/gym-sets";
+import {
+  upsertPersonalRecordsIfBetter,
+  enduranceRecordCandidates,
+  gymRecordCandidates,
+  type PersonalRecordCandidate,
+} from "@/lib/activities/personal-records";
+import { fetchExerciseHistory } from "@/lib/activities/exercise-history";
+import { defaultWeightEntryMode } from "@/lib/scoring/weight-entry";
+import type { WeightEntryMode } from "@/lib/scoring/weight-entry";
+
+export async function POST(request: Request) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // bodyweight_kg is an additive extension: the gym form submits the athlete's
+  // current bodyweight so relative-strength scoring uses today's weight.
+  const body: ActivityFormData & {
+    bodyweight_kg?: number;
+    exercise_notes?: Record<string, string>;
+  } = await request.json();
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("*")
+    .eq("user_id", user.id)
+    .single();
+
+  if (!profile) {
+    return NextResponse.json({ error: "Profile not found" }, { status: 404 });
+  }
+
+  const bodyweightKg = resolveScoringBodyweightKg(body.sport, {
+    submittedBodyweight: body.bodyweight_kg,
+    profileWeightKg: profile.weight_kg,
+  });
+
+  const { data: observedMaxHrRow } = await supabase
+    .from("activities")
+    .select("max_heart_rate")
+    .eq("user_id", user.id)
+    .not("max_heart_rate", "is", null)
+    .order("max_heart_rate", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const effectiveMaxHr = resolveEffectiveMaxHr(
+    profile.max_hr,
+    Math.max(observedMaxHrRow?.max_heart_rate ?? 0, body.max_heart_rate ?? 0) || null
+  );
+
+  const scoringProfile = buildScoringProfile(profile, bodyweightKg, effectiveMaxHr);
+
+  try {
+    assertScoringInput({
+      sport: body.sport,
+      durationSeconds: body.duration_seconds,
+      distanceMeters: body.distance_meters,
+      avgHeartRate: body.avg_heart_rate,
+      maxHeartRate: body.max_heart_rate,
+      avgPowerWatts: body.avg_power_watts,
+      avgPaceSecondsPerKm: body.avg_pace_seconds_per_km,
+      avgSplitSeconds: body.avg_split_seconds,
+      elevationMeters: body.elevation_meters,
+      rpe: body.rpe,
+      exercises: body.exercises,
+      profile: scoringProfile,
+    });
+  } catch (err) {
+    if (err instanceof ScoringInputError) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
+    throw err;
+  }
+
+  if (bodyweightKg && body.sport === "gym") {
+    await supabase.from("body_metrics").insert({
+      user_id: user.id,
+      weight_kg: bodyweightKg,
+      recorded_at: body.started_at,
+    });
+  }
+
+  const { data: recentScores } = await supabase
+    .from("workout_scores")
+    .select("load_score, created_at, sport_index, endurance_component, strength_component")
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false })
+    .limit(50);
+
+  const { data: recentSameSportScores } = await supabase
+    .from("workout_scores")
+    .select("sport_index, created_at")
+    .eq("user_id", user.id)
+    .eq("sport
+
+--- src/app/api/challenges/[id]/join/route.ts ---
+import { NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase/server";
+
+export async function POST(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { data: challenge } = await supabase
+    .from("challenges")
+    .select("id, end_date")
+    .eq("id", id)
+    .single();
+
+  if (!challenge) {
+    return NextResponse.json({ error: "Challenge not found" }, { status: 404 });
+  }
+
+  const { data: existing } = await supabase
+    .from("challenge_participants")
+    .select("id")
+    .eq("challenge_id", id)
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (existing) {
+    return NextResponse.json({ error: "Already joined" }, { status: 409 });
+  }
+
+  const { error } = await supabase.from("challenge_participants").insert({
+    challenge_id: id,
+    user_id: user.id,
+    progress: 0,
+    completed: false,
+  });
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ ok: true });
+}
+
+export async function DELETE(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  await supabase
+    .from("challenge_participants")
+    .delete()
+    .eq("challenge_id", id)
+    .eq("user_id", user.id);
+
+  return NextResponse.json({ ok: true });
+}
+
+
+--- src/app/api/cron/leaderboard/route.ts ---
+import { NextResponse } from "next/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { getPeriodStart } from "@/lib/social/constants";
+import type { LeaderboardPeriod } from "@/types";
+
+const PERIODS: LeaderboardPeriod[] = ["weekly", "monthly", "all_time"];
+
+interface ProfileRow {
+  user_id: string;
+  current_split_index: number | null;
+  current_endurance_index: number | null;
+  current_strength_index: number | null;
+  username: string | null;
+}
+
+function verifyCronSecret(request: Request): boolean {
+  const { searchParams } = new URL(request.url);
+  const secret =
+    searchParams.get("secret") ??
+    request.headers.get("authorization")?.replace("Bearer ", "");
+  return secret === process.env.CRON_SECRET && !!process.env.CRON_SECRET;
+}
+
+export async function GET(request: Request) {
+  if (!verifyCronSecret(request)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const admin = createAdminClient();
+
+  const { data: profiles, error } = await admin
+    .from("profiles")
+    .select(
+      "user_id, username, current_split_index, current_endurance_index, current_strength_index"
+    )
+    .not("current_split_index", "is", null)
+    .not("username", "is", null)
+    .order("current_split_index", { ascending: false });
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  const eligible = (profiles ?? []).filter(
+    (p) => p.current_split_index != null
+  ) as ProfileRow[];
+
+  const previousRanks = new Map<LeaderboardPeriod, Map<string, number>>();
+
+  for (const period of PERIODS) {
+    const periodStart = getPeriodStart(period);
+    const { data: existing } = await admin
+      .from("leaderboard_entries")
+      .select("user_id, rank")
+      .eq("period", period)
+      .eq("period_start", periodStart);
+
+    const map = new Map<string, number>();
+    for (const row of existing ?? []) {
+      map.set(row.user_id, row.rank);
+    }
+    previousRanks.set(period, map);
+  }
+
+  let upserted = 0;
+
+  for (const period of PERIODS) {
+    const periodStart = getPeriodStart(period);
+    const prevMap = previousRanks.get(period) ?? new Map();
+
+    const sorted = [...eligible].sort(
+      (a, b) => (b.current_split_index ?? 0) - (a.current_split_index ?? 0)
+    );
+
+    const rows = sorted.map((p, i) => ({
+      user_id: p.user_id,
+      period,
+      period_start: periodStart,
+      split_index: p.current_split_index!,
+      endurance_index: p.current_endurance_index,
+      strength_index: p.current_strength_index,
+      rank: i + 1,
+      previous_rank: prevMap.get(p.user_id) ?? null,
+      computed_at: new Date().toISOString(),
+    }));
+
+    if (rows.length === 0) continue;
+
+    const { error: upsertError } = await admin
+      .from("leaderboard_entries")
+      .upsert(rows, { onConflict: "period,period_start,user_id" });
+
+    if (upsertError) {
+      return NextResponse.json({ error: upsertError.message }, { status: 500 });
+    }
+
+    upserted += rows.length;
+  }
+
+  return NextResponse.json({
+    ok: true,
+    profiles: eligible.length,
+    entriesUpserted: upserted,
+    computedAt: new Date().toISOString(),
+  });
+}
+
+
+--- src/app/api/export/activities/route.ts ---
+import { NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase/server";
+import { canAccessProfile } from "@/lib/premium/features";
+import { isPremiumUser } from "@/lib/retention/trial";
+
+function toCsv(rows: Record<string, unknown>[]): string {
+  if (rows.length === 0) return "";
+  const headers = Object.keys(rows[0]);
+  const escape = (v: unknown) => {
+    const s = v == null ? "" : String(v);
+    return s.includes(",") || s.includes('"') || s.includes("\n")
+      ? `"${s.replace(/"/g, '""')}"`
+      : s;
+  };
+  const lines = [
+    headers.join(","),
+    ...rows.map((row) => headers.map((h) => escape(row[h])).join(",")),
+  ];
+  return lines.join("\n");
+}
+
+export async function GET(request: Request) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("subscription_tier, subscription_status")
+    .eq("user_id", user.id)
+    .single();
+
+  if (!profile) {
+    return NextResponse.json({ error: "Profile not found" }, { status: 404 });
+  }
+
+  if (!canAccessProfile("data_export", profile)) {
+    return NextResponse.json(
+      { error: "Data export requires Premium", premium_required: true },
+      { status: 403 }
+    );
+  }
+
+  const { searchParams } = new URL(request.url);
+  const format = searchParams.get("format") ?? "json";
+
+  const { data: activities, error } = await supabase
+    .from("activities")
+    .select(
+      "id, sport, title, started_at, duration_seconds, distance_meters, elevation_meters, avg_heart_rate, max_heart_rate, avg_power_watts, avg_pace_seconds_per_km, session_type, rpe, notes, source, created_at, workout_scores(sport_index, load_score, endurance_component, strength_component)"
+    )
+    .eq("user_id", user.id)
+    .eq("is_draft", false)
+    .order("started_at", { ascending: false });
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  const exportRows = (activities ?? []).map((a) => {
+    const ws = Array.isArray(a.workout_scores)
+      ? a.workout_scores[0]
+      : a.workout_scores;
+    return {
+      id: a.id,
+      sport: a.sport,
+      title: a.title,
+      started_at: a.started_at,
+      duration_seconds: a.duration_seconds,
+      distance_meters: a.distance_meters,
+      elevation_meters: a.elevation_meters,
+      avg_heart_rate: a.avg_heart_rate,
+      max_heart_rate: a.max_heart_rate,
+      avg_power_watts: a.avg_power_watts,
+      avg_pace_seconds_per_km: a.avg_pace_seconds_per_km,
+      session_type: a.session_type,
+      rpe: a.rpe,
+      notes: a.notes,
+      source: a.source,
+      sport_index: ws?.sport_index ?? null,
+      load_score: ws?.load_score ?? null,
+      endurance_component: ws?.endurance_component ?? null,
+      strength_component: ws?.strength_component ?? null,
+    };
+  });
+
+  if (format === "csv") {
+    const csv = toCsv(exportRows as Record<string, unknown>[]);
+    return new NextResponse(csv, {
+      headers: {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="split-index-activities.csv"`,
+      },
+    });
+  }
+
+  return NextResponse.json({
+    exported_at: new Date().toISOString(),
+    count: exportRows.length,
+    tier: isPremiumUser(
+      profile.subscription_tier,
+      profile.subscription_status
+    )
+      ? "premium"
+      : "free",
+    activities: exportRows,
+  });
+}
+
+
+--- src/app/api/friends/route.ts ---
+import { NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase/server";
+import { fetchFriendsData } from "@/lib/social/queries";
+
+export async function GET() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const data = await fetchFriendsData(supabase, user.id);
+  return NextResponse.json(data);
+}
+
+export async function POST(request: Request) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const body = await request.json();
+  const username = String(body.username ?? "")
+    .trim()
+    .replace(/^@/, "");
+
+  if (!username) {
+    return NextResponse.json({ error: "Username required" }, { status: 400 });
+  }
+
+  const { data: target } = await supabase
+    .from("profiles")
+    .select("user_id, username")
+    .eq("username", username)
+    .single();
+
+  if (!target) {
+    return NextResponse.json({ error: "User not found" }, { status: 404 });
+  }
+
+  if (target.user_id === user.id) {
+    return NextResponse.json({ error: "Cannot add yourself" }, { status: 400 });
+  }
+
+  const { data: existing } = await supabase
+    .from("friends")
+    .select("id, status")
+    .or(
+      `and(user_id.eq.${user.id},friend_id.eq.${target.user_id}),and(user_id.eq.${target.user_id},friend_id.eq.${user.id})`
+    )
+    .maybeSingle();
+
+  if (existing) {
+    if (existing.status === "accepted") {
+      return NextResponse.json({ error: "Already friends" }, { status: 409 });
+    }
+    if (existing.status === "pending") {
+      return NextResponse.json({ error: "Request already pending" }, { status: 409 });
+    }
+  }
+
+  const { data: requestRow, error } = await supabase
+    .from("friends")
+    .insert({
+      user_id: user.id,
+      friend_id: target.user_id,
+      status: "pending",
+    })
+    .select()
+    .single();
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ request: requestRow });
+}
+
+export async function PATCH(request: Request) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const body = await request.json();
+  const { id, action } = body as { id?: string; action?: "accept" | "decline" };
+
+  if (!id || !action) {
+    return NextResponse.json({ error: "id and action required" }, { status: 400 });
+  }
+
+  const { data: row } = await supabase
+    .from("friends")
+    .select("*")
+    .eq("id", id)
+    .single();
+
+  if (!row || row.friend_id !== user.id || row.status !== "pending") {
+    return NextResponse.json({ error: "Request not found" }, { status: 404 });
+  }
+
+  if (action === "decline") {
+    await supabase.from("friends").delete().eq("id", id);
+    return NextResponse.json({ ok: true });
+  }
+
+  const { error } = await supabase
+    .from("friends")
+    .update({ status: "accepted" })
+    .eq("id", id);
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ ok: true, status: "accepted" });
+}
+
+export async function DELETE(request: Request) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { searchParams } = new URL(request.url);
+  const id = searchParams.get("id");
+
+  if (!id) {
+    return NextResponse.json({ error: "id required" }, { status: 400 });
+  }
+
+  const { data: row } = await supabase
+    .from("friends")
+    .select("*")
+    .eq("id", id)
+    .single();
+
+  if (!row || (row.user_id !== user.id && row.friend_id !== user.id)) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  await supabase.from("friends").delete().eq("id", id);
+  return NextResponse.json({ ok: true });
+}
+
+
+--- src/app/api/integrations/callback/[provider]/route.ts ---
+import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
+import { createClient } from "@/lib/supabase/server";
+import { getProvider, getCallbackUrl } from "@/lib/integrations/providers";
+import { encodeToken, parseOAuthState } from "@/lib/integrations/tokens";
+
+const VALID_PROVIDERS = new Set([
+  "strava",
+  "garmin",
+  "apple_health",
+  "polar",
+  "coros",
+  "fitbit",
+]);
+
+export async function GET(
+  request: Request,
+  { params }: { params: Promise<{ provider: string }> }
+) {
+  const { provider: providerId } = await params;
+  const { searchParams } = new URL(request.url);
+  const code = searchParams.get("code");
+  const state = searchParams.get("state");
+  const error = searchParams.get("error");
+
+  if (!VALID_PROVIDERS.has(providerId)) {
+    return NextResponse.redirect(
+      `${process.env.NEXT_PUBLIC_APP_URL}/settings/integrations?error=unknown_provider`
+    );
+  }
+
+  if (error) {
+    return NextResponse.redirect(
+      `${process.env.NEXT_PUBLIC_APP_URL}/settings/integrations?error=${encodeURIComponent(error)}`
+    );
+  }
+
+  if (!code || !state) {
+    return NextResponse.redirect(
+      `${process.env.NEXT_PUBLIC_APP_URL}/settings/integrations?error=missing_code`
+    );
+  }
+
+  const cookieStore = await cookies();
+  const storedState = cookieStore.get("integration_oauth_state")?.value;
+  const parsedState = parseOAuthState(state);
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user || !parsedState || parsedState.userId !== user.id) {
+    return NextResponse.redirect(
+      `${process.env.NEXT_PUBLIC_APP_URL}/settings/integrations?error=invalid_state`
+    );
+  }
+
+  if (storedState && storedState !== state) {
+    return NextResponse.redirect(
+      `${process.env.NEXT_PUBLIC_APP_URL}/settings/integrations?error=state_mismatch`
+    );
+  }
+
+  const provider = getProvider(providerId)!;
+  const redirectUri = getCallbackUrl(providerId);
+
+  try {
+    const tokens = await provider.exchangeCode(code, redirectUri);
+
+    const { error: upsertError } = await supabase.from("integration_connections").upsert(
+      {
+        user_id: user.id,
+        provider: providerId,
+        access_token: encodeToken(tokens.accessToken),
+        refresh_token: tokens.refreshToken ? encodeToken(tokens.refreshToken) : null,
+        token_expires_at: tokens.expiresAt,
+        provider_user_id: tokens.providerUserId,
+        sync_status: "idle",
+        sync_error: null,
+        connected_at: new Date().toISOString(),
+        metadata: {
+          demo: code === "stub" || !provider.isConfigured(),
+          configured: provider.isConfigured(),
+        },
+      },
+      { onConflict: "user_id,provider" }
+    );
+
+    if (upsertError) {
+      return NextResponse.redirect(
+        `${process.env.NEXT_PUBLIC_APP_URL}/settings/integrations?error=${encodeURIComponent(upsertError.message)}`
+      );
+    }
+
+    const response = NextResponse.redirect(
+      `${process.env.NEXT_PUBLIC_APP_URL}/settings/integrations?connected=${providerId}`
+    );
+    response.cookies.delete("integration_oauth_state");
+    return response;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "oauth_failed";
+    return NextResponse.redirect(
+      `${process.env.NEXT_PUBLIC_APP_URL}/settings/integrations?error=${encodeURIComponent(message)}`
+    );
+  }
+}
+
+
+--- src/app/api/integrations/connect/[provider]/route.ts ---
+import { NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase/server";
+import { canAccessProfile } from "@/lib/premium/features";
+import { getProvider, getCallbackUrl } from "@/lib/integrations/providers";
+import { generateOAuthState } from "@/lib/integrations/tokens";
+
+const VALID_PROVIDERS = new Set([
+  "strava",
+  "garmin",
+  "apple_health",
+  "polar",
+  "coros",
+  "fitbit",
+]);
+
+export async function GET(
+  _request: Request,
+  { params }: { params: Promise<{ provider: string }> }
+) {
+  const { provider: providerId } = await params;
+
+  if (!VALID_PROVIDERS.has(providerId)) {
+    return NextResponse.json({ error: "Unknown provider" }, { status: 400 });
+  }
+
+  const provider = getProvider(providerId);
+  if (!provider) {
+    return NextResponse.json({ error: "Provider not found" }, { status: 404 });
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("subscription_tier, subscription_status")
+    .eq("user_id", user.id)
+    .single();
+
+  if (!profile || !canAccessProfile("oauth_sync", profile)) {
+    return NextResponse.redirect(
+      `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}/settings/integrations?error=premium_required`
+    );
+  }
+
+  const state = generateOAuthState(user.id);
+  const redirectUri = getCallbackUrl(providerId);
+  const authUrl = provider.getAuthUrl(state, redirectUri);
+
+  const response = authUrl
+    ? NextResponse.redirect(authUrl)
+    : NextResponse.redirect(
+        `${redirectUri}?code=stub&state=${encodeURIComponent(state)}&mode=demo`
+      );
+
+  response.cookies.set("integration_oauth_state", state, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: 600,
+    path: "/",
+  });
+
+  return response;
+}
+
+export async function POST(
+  request: Request,
+  ctx: { params: Promise<{ provider: string }> }
+) {
+  return GET(request, ctx);
+}
+
+
+--- src/app/api/integrations/import/csv/route.ts ---
+import { NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase/server";
+import { parseCsvContent, validateActivities } from "@/lib/integrations/csv-parser";
+import { runImportJob } from "@/lib/integrations/import-pipeline";
+
+export async function POST(request: Request) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const formData = await request.formData();
+  const file = formData.get("file");
+
+  if (!(file instanceof File)) {
+    return NextResponse.json({ error: "CSV file is required" }, { status: 400 });
+  }
+
+  if (!file.name.toLowerCase().endsWith(".csv") && file.type !== "text/csv") {
+    return NextResponse.json({ error: "File must be a .csv" }, { status: 400 });
+  }
+
+  const content = await file.text();
+  const maxSize = 5 * 1024 * 1024;
+  if (content.length > maxSize) {
+    return NextResponse.json({ error: "CSV file exceeds 5MB limit" }, { status: 400 });
+  }
+
+  const { data: job, error: jobError } = await supabase
+    .from("import_jobs")
+    .insert({
+      user_id: user.id,
+      source: "csv",
+      status: "parsing",
+      step: "parsing",
+      progress_pct: 0,
+    })
+    .select()
+    .single();
+
+  if (jobError || !job) {
+    return NextResponse.json(
+      { error: jobError?.message ?? "Failed to create import job" },
+      { status: 500 }
+    );
+  }
+
+  await supabase
+    .from("import_jobs")
+    .update({ step: "parsing", status: "parsing", progress_pct: 5 })
+    .eq("id", job.id);
+
+  const parsed = parseCsvContent(content, file.name);
+
+  if (parsed.activities.length === 0) {
+    await supabase
+      .from("import_jobs")
+      .update({
+        status: "failed",
+        step: "done",
+        errors: parsed.errors,
+        completed_at: new Date().toISOString(),
+      })
+      .eq("id", job.id);
+
+    return NextResponse.json(
+      {
+        jobId: job.id,
+        error: "No valid activities found",
+        parseErrors: parsed.errors,
+      },
+      { status: 400 }
+    );
+  }
+
+  const validationErrors = validateActivities(parsed.activities);
+  const allErrors = [...parsed.errors, ...validationErrors];
+
+  await supabase
+    .from("import_jobs")
+    .update({
+      step: "validating",
+      status: "validating",
+      progress_pct: 10,
+      total: parsed.activities.length,
+      errors: allErrors,
+    })
+    .eq("id", job.id);
+
+  try {
+    const result = await runImportJob(
+      supabase,
+      user.id,
+      job.id,
+      parsed.activities,
+      "csv"
+    );
+
+    return NextResponse.json({
+      jobId: job.id,
+      step: "done",
+      ...result,
+      parseErrors: parsed.errors,
+      message:
+        result.skipped > 0
+          ? `${result.imported} imported, ${result.skipped} skipped as duplicates`
+          : `${result.imported} activities imported`,
+    });
+  } catch (err) {
+    await supabase
+      .from("import_jobs")
+      .update({
+        status: "failed",
+        step: "done",
+        errors: [{ message: err instanceof Error ? err.message : "Import failed" }],
+        completed_at: new Date().toISOString(),
+      })
+      .eq("id", job.id);
+
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Import failed", jobId: job.id },
+      { status: 500 }
+    );
+  }
+}
+
+
+--- src/app/api/integrations/import/file/route.ts (truncated) ---
+import { NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase/server";
+import {
+  detectFileFormat,
+  parseGpxContent,
+  parseTcxContent,
+  parseFitContent,
+  isFitFile,
+} from "@/lib/integrations/parsers";
+import { validateActivities } from "@/lib/integrations/csv-parser";
+import { runImportJob } from "@/lib/integrations/import-pipeline";
+import type { ExternalActivity } from "@/lib/integrations/types";
+
+const MAX_FILE_BYTES = 10 * 1024 * 1024;
+
+export async function POST(request: Request) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const formData = await request.formData();
+  const file = formData.get("file");
+  const sportOverride = formData.get("sport")?.toString();
+
+  if (!(file instanceof File)) {
+    return NextResponse.json({ error: "File is required" }, { status: 400 });
+  }
+
+  if (file.size > MAX_FILE_BYTES) {
+    return NextResponse.json({ error: "File exceeds 10MB limit" }, { status: 400 });
+  }
+
+  const format = detectFileFormat(file.name, file.type);
+
+  if (format === "unknown" && !isFitFile(file.name, file.type)) {
+    return NextResponse.json(
+      { error: "Unsupported format. Use GPX, TCX, or FIT." },
+      { status: 400 }
+    );
+  }
+
+  const { data: job, error: jobError } = await supabase
+    .from("import_jobs")
+    .insert({
+      user_id: user.id,
+      source: "file",
+      status: "parsing",
+      step: "parsing",
+      progress_pct: 0,
+    })
+    .select()
+    .single();
+
+  if (jobError || !job) {
+    return NextResponse.json(
+      { error: jobError?.message ?? "Failed to create import job" },
+      { status: 500 }
+    );
+  }
+
+  let activities: ExternalActivity[] = [];
+  const parseErrors: { message: string; row?: number }[] = [];
+  let fitStubMessage: string | undefined;
+
+  try {
+    if (format === "gpx" || file.name.toLowerCase().endsWith(".gpx")) {
+      const content = await file.text();
+      const parsed = parseGpxContent(content, file.name);
+      activities = parsed.activities;
+      parseErrors.push(...parsed.errors);
+    } else if (format === "tcx" || file.name.toLowerCase().endsWith(".tcx")) {
+      const content = await file.text();
+      const parsed = parseTcxContent(content, file.name);
+      activities = parsed.activities;
+      parseErrors.push(...parsed.errors);
+    } else if (isFitFile(file.name, file.type)) {
+      const buffer = await file.arrayBuffer();
+      const fitResult = parseFitContent(buffer, file.name);
+      fitStubMessage = fitResult.message;
+      parseErrors.push({ message: fitResult.message });
+    }
+  } catch (err) {
+    await supabase
+      .from("import_jobs")
+      .update({
+        status: "failed",
+        step: "done",
+        errors: [{ message: err instanceof Error ? err.message : "Parse failed" }],
+        completed_at: new Date().toISOString(),
+      })
+      .eq("id", job.id);
+
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Parse failed", jobId: job.id },
+      { status: 400 }
+    );
+  }
+
+  if (fitStubMessage) {
+    await supabase
+      .from("import_jobs")
+      .update({
+        status: "failed",
+        step: "done",
+        errors: [{ message: fitStubMessage }],
+        completed_at: new Date().toISOString(),
+      })
+      .eq("id", job.id);
+
+    return NextResponse.json(
+      { error: fitStubMessage, jobId: job.id, format: "fit", stub: true },
+      { status: 422 }
+    );
+  }
+
+  if (sportOverride && activities.length > 0) {
+    activities = activities.map((a) => ({
+      ...a,
+      sport: sportOverride as ExternalActivity["sport"],
+    }));
+  }
+
+  if (activities.length === 0) {
+    await supabase
+      .from("import_jobs")
+      .update({
+        status: "failed",
+        step: "done",
+        errors: parseErrors,
+        completed_at: new Date().toISOString(),
+      })
+      .eq("id", job.id);
+
+    return NextResponse.json(
+      { jobId: job.id, error: "No valid activities found", parseErrors },
+      { status: 400 }
+    );
+  }
+
+  const validationErrors = validateActivities(activities);
+
+  await supabase
+    .from("import_jobs")
+    .update({
+      step: "validating",
+      status: "validating",
+      progress_pct: 10,
+      total: activities.length,
+      errors: [...parseErrors, ...validationErrors],
+    })
+    .eq("id", job.id);
+
+  try {
+    const result = await runImportJob(supabase, user.id, job.id, activities, "file");
+
+    return NextResponse.json({
+      jobId: job.id,
+      step: "done",
+      format,
+      ...result,
+      parseErrors,
+      message:
+        result.skipped > 0
+          ? `${result.imported} imported, ${result.skipped} skipped as duplicates`
+          : `${result.imported} activities imported from ${format.toUpperCase()}`,
+    });
+  } catch (err) {
+    await supabase
+      .from("import_jobs")
+      .update({
+        status: "failed",
+        step: "done",
+        errors: [{ 
+
+--- src/app/api/integrations/jobs/[id]/route.ts ---
+import { NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase/server";
+
+export async function GET(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { data: job, error } = await supabase
+    .from("import_jobs")
+    .select("*")
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .single();
+
+  if (error || !job) {
+    return NextResponse.json({ error: "Job not found" }, { status: 404 });
+  }
+
+  return NextResponse.json({ job });
+}
+
+
+--- src/app/api/integrations/status/route.ts ---
+import { NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase/server";
+
+export async function GET() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { data: connections } = await supabase
+    .from("integration_connections")
+    .select(
+      "id, provider, auto_sync, last_sync_at, sync_status, sync_error, connected_at, metadata"
+    )
+    .eq("user_id", user.id);
+
+  const { data: recentJobs } = await supabase
+    .from("import_jobs")
+    .select(
+      "id, source, provider, status, step, progress_pct, total, processed, imported, skipped, failed, errors, created_at, completed_at"
+    )
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false })
+    .limit(10);
+
+  return NextResponse.json({
+    connections: (connections ?? []).map((c) => ({
+      ...c,
+      connected: true,
+    })),
+    recentJobs: recentJobs ?? [],
+  });
+}
+
+export async function PATCH(request: Request) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const body = await request.json();
+  const { provider, auto_sync } = body as {
+    provider?: string;
+    auto_sync?: boolean;
+  };
+
+  if (!provider || typeof auto_sync !== "boolean") {
+    return NextResponse.json(
+      { error: "provider and auto_sync are required" },
+      { status: 400 }
+    );
+  }
+
+  const { data, error } = await supabase
+    .from("integration_connections")
+    .update({ auto_sync })
+    .eq("user_id", user.id)
+    .eq("provider", provider)
+    .select()
+    .single();
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ connection: data });
+}
+
+export async function DELETE(request: Request) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { searchParams } = new URL(request.url);
+  const provider = searchParams.get("provider");
+
+  if (!provider) {
+    return NextResponse.json({ error: "provider is required" }, { status: 400 });
+  }
+
+  const { error } = await supabase
+    .from("integration_connections")
+    .delete()
+    .eq("user_id", user.id)
+    .eq("provider", provider);
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ disconnected: true });
+}
+
+
+--- src/app/api/integrations/sync/route.ts ---
+import { NextResponse } from "next/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { getProvider } from "@/lib/integrations/providers";
+import { runImportJob } from "@/lib/integrations/import-pipeline";
+import { ensureFreshTokens } from "@/lib/integrations/sync-helpers";
+import type { IntegrationProviderId } from "@/lib/integrations/types";
+
+async function syncUserProvider(
+  supabase: SupabaseClient,
+  userId: string,
+  providerId: IntegrationProviderId
+) {
+  const provider = getProvider(providerId)!;
+
+  const { data: connection, error: connError } = await supabase
+    .from("integration_connections")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("provider", providerId)
+    .single();
+
+  if (connError || !connection) {
+    throw new Error("Connection not found");
+  }
+
+  await supabase
+    .from("integration_connections")
+    .update({ sync_status: "syncing", sync_error: null })
+    .eq("id", connection.id);
+
+  const since = connection.last_sync_at
+    ? new Date(connection.last_sync_at)
+    : new Date(Date.now() - 30 * 86400000);
+
+  const tokens = await ensureFreshTokens(
+    supabase,
+    connection.id,
+    connection,
+    providerId
+  );
+
+  const activities = await provider.fetchActivities(tokens, since);
+
+  const { data: job, error: jobError } = await supabase
+    .from("import_jobs")
+    .insert({
+      user_id: userId,
+      source: providerId,
+      provider: providerId,
+      status: "parsing",
+      step: "parsing",
+      progress_pct: 5,
+      total: activities.length,
+    })
+    .select()
+    .single();
+
+  if (jobError || !job) {
+    throw new Error(jobError?.message ?? "Failed to create import job");
+  }
+
+  const result = await runImportJob(supabase, userId, job.id, activities, providerId);
+
+  await supabase
+    .from("integration_connections")
+    .update({
+      sync_status: result.failed > 0 && result.imported === 0 ? "error" : "success",
+      sync_error: result.failed > 0 ? `${result.failed} activities failed` : null,
+      last_sync_at: new Date().toISOString(),
+    })
+    .eq("id", connection.id);
+
+  return { jobId: job.id, ...result };
+}
+
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const isCron = searchParams.get("cron") === "1";
+  const cronSecret = searchParams.get("secret") ?? request.headers.get("authorization")?.replace("Bearer ", "");
+
+  if (!isCron) {
+    return NextResponse.json({ error: "Use POST for manual sync" }, { status: 405 });
+  }
+
+  if (cronSecret !== process.env.CRON_SECRET) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const admin = createAdminClient();
+  const { data: connections } = await admin
+    .from("integration_connections")
+    .select("*")
+    .eq("auto_sync", true);
+
+  const results: Array<{ userId: string; provider: string; imported?: number; error?: string }> = [];
+
+  for (const conn of connections ?? []) {
+    try {
+      const result = await syncUserProvider(
+        admin,
+        conn.user_id,
+        conn.provider as IntegrationProviderId
+      );
+      results.push({
+        userId: conn.user_id,
+        provider: conn.provider,
+        imported: result.imported,
+      });
+    } catch (err) {
+      results.push({
+        userId: conn.user_id,
+        provider: conn.provider,
+        error: err instanceof Error ? err.message : "sync_failed",
+      });
+    }
+  }
+
+  return NextResponse.json({ processed: results.length, results });
+}
+
+export async function POST(request: Request) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const body = await request.json().catch(() => ({}));
+  const providerId = body.provider as IntegrationProviderId | undefined;
+
+  if (!providerId) {
+    return NextResponse.json({ error: "provider is required" }, { status: 400 });
+  }
+
+  if (!getProvider(providerId)) {
+    return NextResponse.json({ error: "Unknown provider" }, { status: 400 });
+  }
+
+  try {
+    const result = await syncUserProvider(supabase, user.id, providerId);
+    return NextResponse.json(result);
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Sync failed" },
+      { status: 500 }
+    );
+  }
+}
+
+
+--- src/app/api/profile/ensure/route.ts ---
+import { NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase/server";
+import { ensureProfileForUser } from "@/lib/supabase/ensure-profile";
+
+export async function POST() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { error } = await ensureProfileForUser(user);
+
+  if (error) {
+    return NextResponse.json({ error: error.message, code: error.code }, { status: 500 });
+  }
+
+  return NextResponse.json({ ok: true });
+}
+
+
+## Instructions
+
+Analyze the above codebase context and provide your response following the format specified in the task.

@@ -24,6 +24,9 @@
 
 import { COMMON_EXERCISES, SESSION_TYPES } from "@/lib/constants/sports";
 import { formatPace, formatSpeed } from "@/lib/utils/format";
+import { MAX_QUALITY_ENDURANCE_SESSIONS, REP_PROFILE_NEURAL_GAP } from "./hpe/constants";
+import { prescribeEndurance, type EnduranceKind } from "./hpe/prescription";
+import type { AthleteProfile } from "./hpe/types";
 import type { RankedGoal } from "./training-plan";
 import type { SessionType } from "@/types";
 
@@ -257,12 +260,29 @@ const QUALITY_ROTATION: Record<CardioEmphasis, SessionType[]> = {
   specificity: ["interval", "threshold", "tempo"],
 };
 
-export function cardioSessionTypes(count: number, emphasis: CardioEmphasis): SessionType[] {
+/**
+ * HPE WP6: when the athlete has enough logged history for the diagnostic to
+ * run, the mix of easy/tempo/threshold/interval sessions comes from their own
+ * EMPHASIS VECTOR rather than from a fixed per-phase fraction. Two athletes
+ * with the same 5k time and the same goal get different weeks because their
+ * diagnoses differ — an endurance-limited athlete gets easy volume plus one
+ * threshold session, where a speed-limited one gets intervals. See
+ * `hpe/session-set.ts` for the full-macrocycle version of the same rule.
+ *
+ * `profile` is optional throughout: without enough logged history there is no
+ * diagnosis to drive anything, and the population-based behaviour below is
+ * what an athlete gets until they have logged enough for better.
+ */
+export function cardioSessionTypes(
+  count: number,
+  emphasis: CardioEmphasis,
+  profile?: AthleteProfile | null
+): SessionType[] {
   if (count <= 0) return [];
   if (count === 1) return [emphasis === "aerobic-base" ? "easy" : "tempo"];
 
-  const qualityCount = Math.min(count - 1, Math.max(1, Math.round(count * QUALITY_FRACTION[emphasis])));
-  const rotation = QUALITY_ROTATION[emphasis];
+  const qualityCount = emphasisDrivenQualityCount(count, emphasis, profile);
+  const rotation = emphasisDrivenRotation(emphasis, profile);
   const quality: SessionType[] = Array.from({ length: qualityCount }, (_, i) => rotation[i % rotation.length]);
 
   const easyCount = count - qualityCount;
@@ -272,6 +292,48 @@ export function cardioSessionTypes(count: number, emphasis: CardioEmphasis): Ses
   if (count >= 3) easy[easy.length - 1] = "long";
 
   return [...easy, ...quality];
+}
+
+/**
+ * How much of the week is hard. Without a diagnosis this is the phase's fixed
+ * fraction. With one, it is the athlete's own combined threshold + vVO2max +
+ * neuromuscular weight — so an athlete whose diagnostic says volume is the
+ * lever gets less quality than one whose says the opposite, at the same
+ * distance from the same goal.
+ */
+function emphasisDrivenQualityCount(
+  count: number,
+  emphasis: CardioEmphasis,
+  profile?: AthleteProfile | null
+): number {
+  const fraction = profile
+    ? profile.emphasis.threshold + profile.emphasis.vo2max_speed + profile.emphasis.neuromuscular
+    : QUALITY_FRACTION[emphasis];
+  const capped = Math.min(count - 1, Math.max(1, Math.round(count * fraction)));
+  // The same hard cap the full engine applies — never more than three quality
+  // endurance sessions in a week, whatever the vector says.
+  return Math.min(capped, MAX_QUALITY_ENDURANCE_SESSIONS);
+}
+
+/**
+ * WHICH hard sessions. The phase decides how much quality; the athlete's own
+ * diagnosis decides what kind — an endurance-limited athlete's quality is
+ * threshold work, a speed-limited athlete's is intervals. That ordering is
+ * the brief's: "Emphasis shifts to easy volume and threshold, away from short
+ * intervals."
+ */
+function emphasisDrivenRotation(emphasis: CardioEmphasis, profile?: AthleteProfile | null): SessionType[] {
+  if (!profile) return QUALITY_ROTATION[emphasis];
+  const ranked = (
+    [
+      { type: "threshold", weight: profile.emphasis.threshold },
+      { type: "interval", weight: profile.emphasis.vo2max_speed },
+      { type: "fartlek", weight: profile.emphasis.neuromuscular },
+    ] satisfies { type: SessionType; weight: number }[]
+  ).sort((a, b) => b.weight - a.weight);
+  // Tempo sits between easy and threshold and is always a defensible third
+  // option, so it backs the rotation rather than being dropped entirely.
+  return [...ranked.map((r) => r.type), "tempo"];
 }
 
 const SESSION_TYPE_LABEL: Record<SessionType, string> = Object.fromEntries(
@@ -300,14 +362,31 @@ export interface SessionContent {
   movementPattern?: MovementPattern;
 }
 
+/**
+ * HPE WP0c. The rep-profile gap is the diagnostic's strength verdict, and
+ * this is where it changes what the athlete actually lifts. A positive gap
+ * means the high-rep sets imply a higher max than the low-rep ones: the
+ * muscle is there and the neural expression is not, so the athlete needs
+ * heavy low-rep work rather than more hypertrophy volume. A negative gap is
+ * the reverse. One step along the phase ladder either way — load and rep
+ * range move together or neither is a prescription.
+ */
+function phaseFromRepProfile(phase: StrengthPhase, profile: AthleteProfile | null | undefined): StrengthPhase {
+  if (!profile || profile.repProfileGap == null) return phase;
+  if (profile.repProfileGap > REP_PROFILE_NEURAL_GAP) return shiftedPhase(phase, 1);
+  if (profile.repProfileGap < -REP_PROFILE_NEURAL_GAP) return shiftedPhase(phase, -1);
+  return phase;
+}
+
 function gymSessionContent(
   goal: RankedGoal,
   instanceIndex: number,
   totalInstances: number,
   excludeNames: Set<string>,
-  daysUntilTarget: number | null
+  daysUntilTarget: number | null,
+  profile?: AthleteProfile | null
 ): SessionContent {
-  const phase = strengthPhaseFromGapAndUrgency(goal.gapFraction, daysUntilTarget);
+  const phase = phaseFromRepProfile(strengthPhaseFromGapAndUrgency(goal.gapFraction, daysUntilTarget), profile);
   const tapering = isTaperWindow(daysUntilTarget);
   const main = mainLiftPrescription(phase, instanceIndex, totalInstances);
   const variantLabel = dupVariantLabel(instanceIndex, totalInstances);
@@ -446,9 +525,64 @@ function cardioPaceAndDistance(goal: RankedGoal, sessionType: SessionType, durat
   return `${sessionDistanceKm.toFixed(1)}km${blockSuffix} at ${paceLabel}`;
 }
 
-function cardioSessionContent(sessionType: SessionType, goal: RankedGoal, tapering: boolean, durationHours: number): SessionContent {
+/**
+ * HPE WP7. Where a diagnosis exists AND the goal is a run, the session's
+ * pace and heart rate are resolved from the athlete's own data rather than
+ * from a multiple of their goal time:
+ *
+ *  - Easy pace comes from the diagnostic's three-anchor band, which is
+ *    deliberately NOT the naive 5k multiplier — for an athlete whose 5k is
+ *    not yet supported by aerobic volume, that multiplier runs 25-35s/km too
+ *    fast, which is precisely the grey-zone error the diagnostic exists to
+ *    catch.
+ *  - Heart rate comes from the athlete's own HR-vs-pace regression where the
+ *    pace falls inside its fitted range, and from HR reserve otherwise, with
+ *    the source stated so the athlete knows how much to trust it. It is
+ *    always clamped to their max.
+ *  - Easy runs lead with the UPPER heart-rate bound, because the single most
+ *    common finding is easy running done too hard.
+ *
+ * Returns null for anything it cannot ground in the athlete's own data —
+ * non-running sports, or no diagnosis — in which case the existing
+ * goal-relative prescription is used unchanged.
+ */
+function diagnosedCardioPrescription(
+  goal: RankedGoal,
+  sessionType: SessionType,
+  durationHours: number,
+  profile: AthleteProfile | null | undefined
+): string | null {
+  if (!profile || profile.tier < 1) return null;
+  if (goal.sport != null && goal.sport !== "run") return null;
+  const kind = HPE_KIND_BY_SESSION_TYPE[sessionType];
+  if (!kind) return null;
+  const minutes = durationHours * 60;
+  if (minutes <= 0) return null;
+  return prescribeEndurance(profile, kind, "hybrid-baseline", { minutes }).text;
+}
+
+/** Maps this module's session vocabulary onto the HPE's prescription kinds. Types with no equivalent fall through to the existing behaviour. */
+const HPE_KIND_BY_SESSION_TYPE: Partial<Record<SessionType, EnduranceKind>> = {
+  easy: "easy_run",
+  recovery: "recovery_run",
+  long: "long_run",
+  tempo: "threshold_run",
+  threshold: "threshold_run",
+  interval: "interval_run",
+  fartlek: "rep_run",
+};
+
+function cardioSessionContent(
+  sessionType: SessionType,
+  goal: RankedGoal,
+  tapering: boolean,
+  durationHours: number,
+  profile?: AthleteProfile | null
+): SessionContent {
   const sportLabel = goal.label;
-  const specifics = cardioPaceAndDistance(goal, sessionType, durationHours);
+  const specifics =
+    diagnosedCardioPrescription(goal, sessionType, durationHours, profile) ??
+    cardioPaceAndDistance(goal, sessionType, durationHours);
   const guidanceBase = specifics
     ? `${specifics} — ${SESSION_TYPE_GUIDANCE[sessionType]}`
     : SESSION_TYPE_GUIDANCE[sessionType];
@@ -476,15 +610,16 @@ export function sessionContentForInstance(
   totalInstances: number,
   excludeGymNames: Set<string>,
   daysUntilTarget: number | null = null,
-  durationHours: number = DEFAULT_CARDIO_DURATION_HOURS
+  durationHours: number = DEFAULT_CARDIO_DURATION_HOURS,
+  profile?: AthleteProfile | null
 ): SessionContent {
   if (goal.goalType === "gym") {
-    return gymSessionContent(goal, instanceIndex, totalInstances, excludeGymNames, daysUntilTarget);
+    return gymSessionContent(goal, instanceIndex, totalInstances, excludeGymNames, daysUntilTarget, profile);
   }
   const emphasis = cardioEmphasisFromGapAndUrgency(goal.gapFraction, daysUntilTarget);
-  const types = cardioSessionTypes(totalInstances, emphasis);
+  const types = cardioSessionTypes(totalInstances, emphasis, profile);
   const sessionType = types[instanceIndex] ?? "easy";
-  return cardioSessionContent(sessionType, goal, isTaperWindow(daysUntilTarget), durationHours);
+  return cardioSessionContent(sessionType, goal, isTaperWindow(daysUntilTarget), durationHours, profile);
 }
 
 // ---------- Hybrid-balance maintenance ----------

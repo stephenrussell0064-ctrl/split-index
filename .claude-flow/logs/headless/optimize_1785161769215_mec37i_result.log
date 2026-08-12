@@ -1,0 +1,17 @@
+[2026-07-27T14:16:10.168Z] RESULT
+============================================================
+{
+  "success": false,
+  "output": "Not logged in · Please run /login\n",
+  "parsedOutput": {
+    "sections": [],
+    "codeBlocks": []
+  },
+  "durationMs": 953,
+  "model": "sonnet",
+  "sandboxMode": "permissive",
+  "workerType": "optimize",
+  "timestamp": "2026-07-27T14:16:10.168Z",
+  "executionId": "optimize_1785161769215_mec37i",
+  "error": "Process exited with code 1"
+}

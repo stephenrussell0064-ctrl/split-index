@@ -1,0 +1,204 @@
+/**
+ * Hybrid Plan Engine — orchestration.
+ *
+ * The stage order is not arbitrary and is not configurable:
+ *
+ *   1. SAFETY SCREEN. Non-negotiable #3: runs first, can block, not
+ *      bypassable. A blocked screen returns `generated: false` and no plan.
+ *      There is no option, flag or argument that skips this step.
+ *   2. DATA SUFFICIENCY. Tier 0 returns no plan either — brief §0e — and
+ *      offers a two-week baseline block plus a time trial and a 3-5RM test.
+ *   3. Feasibility, develop/maintain, macrocycle, session set, schedule.
+ *   4. ACWR enforcement across the finished block (F6).
+ *
+ * Non-negotiable #2: generation is deterministic and stamped with the
+ * constants version. Same inputs produce the same plan, byte for byte, and
+ * `constantsVersion` on the result says which numbers produced it.
+ *
+ * Non-negotiable #5: no calorie, macro or rate-of-loss output under any
+ * configuration. The only nutrition string this engine emits is the taper's
+ * carbohydrate guidance, which is framed as normal eating, gated on the
+ * safety screen, and is not a calorie target.
+ */
+
+import { HPE_CONSTANTS_VERSION, type EmphasisKey } from "./constants";
+import { BASELINE_BLOCK_PROMPT, canGeneratePlan } from "./diagnostics";
+import { bodyweightFrontier, classifyDomains, feasibilityScreen, type DomainMode, type FeasibilityResult } from "./feasibility";
+import { eventDayPlan, jointTaper, resolveEventOrder, type EventDayStep, type EventOrderResult, type TaperDay } from "./event";
+import type { Constraints, Goal, AthleteState } from "./intake";
+import { buildMacrocycle, enforceAcwr, type AcwrEnforcement, type MacrocycleWeek } from "./macrocycle";
+import { autoregulate, type SessionFeedback } from "./progression";
+import { scheduleWeek, type Placement } from "./scheduler";
+import { buildSessionSet, type PlannedSession } from "./session-set";
+import { safetyScreen, type SafetyResult } from "./safety";
+import type { AthleteProfile, Finding } from "./types";
+
+export interface PlanWeek extends MacrocycleWeek {
+  sessions: PlannedSession[];
+  placements: Placement[];
+  allocation: Record<EmphasisKey, number>;
+  notes: string[];
+  penalty: number;
+  hardPenalty: number;
+  stress: number;
+  stressCapped: number;
+  acwr: number;
+  droppedSessions: PlannedSession[];
+}
+
+export interface GeneratedPlan {
+  constantsVersion: string;
+  generated: boolean;
+  safety: SafetyResult;
+  /** Populated only when generation was refused — the specific next step, never a bare refusal. */
+  refusal: { reason: string; nextSteps: string[] } | null;
+  profile: AthleteProfile;
+  feasibility: FeasibilityResult | null;
+  mode: Record<"strength" | "endurance", DomainMode> | null;
+  weeks: PlanWeek[];
+  acwr: AcwrEnforcement | null;
+  bodyweightFrontier: ReturnType<typeof bodyweightFrontier> | null;
+  eventOrder: EventOrderResult | null;
+  taper: TaperDay[];
+  eventDay: EventDayStep[] | null;
+  /** Every finding the plan's sessions cite, so the UI can render the trace. */
+  findings: Finding[];
+}
+
+export interface GeneratePlanInput {
+  state: AthleteState;
+  goal: Goal;
+  constraints: Constraints;
+  /** From WP0. The caller runs `diagnose` and passes the result — the engine never re-derives it. */
+  profile: AthleteProfile;
+  /** F16: last week's logged feedback, per week index. */
+  feedbackByWeek?: Record<number, SessionFeedback[]>;
+  /** F11: the athlete has explicitly overridden the safety-constrained event order. */
+  overrideEventOrder?: boolean;
+}
+
+export function generatePlan(input: GeneratePlanInput): GeneratedPlan {
+  const { state, goal, constraints, profile, feedbackByWeek = {} } = input;
+
+  // ---- 1. SAFETY, FIRST AND UNCONDITIONAL --------------------------------
+  const safety = safetyScreen(state, goal);
+  const empty = {
+    constantsVersion: HPE_CONSTANTS_VERSION,
+    safety,
+    profile,
+    feasibility: null,
+    mode: null,
+    weeks: [] as PlanWeek[],
+    acwr: null,
+    bodyweightFrontier: null,
+    eventOrder: null,
+    taper: [] as TaperDay[],
+    eventDay: null,
+    findings: profile.findings,
+  };
+
+  if (safety.blocked) {
+    return {
+      ...empty,
+      generated: false,
+      refusal: {
+        reason: safety.blocks.join(" "),
+        nextSteps: safety.referrals.length > 0 ? safety.referrals : ["Come back once this has been cleared."],
+      },
+    };
+  }
+
+  // ---- 2. DATA SUFFICIENCY ------------------------------------------------
+  if (!canGeneratePlan(profile)) {
+    return {
+      ...empty,
+      generated: false,
+      refusal: {
+        reason:
+          "There is not enough logged history to diagnose anything specific about you, and a plan built on that " +
+          "would be a template with your name on it.",
+        nextSteps: BASELINE_BLOCK_PROMPT,
+      },
+    };
+  }
+
+  // ---- 3. FEASIBILITY, MODE, MACROCYCLE -----------------------------------
+  const feasibility = feasibilityScreen(state, goal);
+  const mode = classifyDomains(state, goal);
+  const macro = buildMacrocycle(state, goal, safety.rampMultiplier);
+
+  const weeks: PlanWeek[] = [];
+  const rawStress: number[] = [];
+
+  for (const weekRecord of macro) {
+    const feedback = feedbackByWeek[weekRecord.week - 1] ?? [];
+    const autoreg = autoregulate(feedback);
+    const { sessions, allocation, notes } = buildSessionSet({
+      profile,
+      week: weekRecord,
+      mode,
+      goal,
+      constraints,
+      suppressHeartRate: safety.suppressHeartRatePrescription,
+      autoregMultiplier: autoreg.volumeMultiplier,
+    });
+    const schedule = scheduleWeek(sessions, constraints);
+    const stress = schedule.placements.reduce((s, p) => s + p.session.stress, 0);
+    rawStress.push(stress);
+    weeks.push({
+      ...weekRecord,
+      sessions,
+      placements: schedule.placements,
+      allocation,
+      notes: [...notes, ...autoreg.reasons],
+      penalty: schedule.penalty,
+      hardPenalty: schedule.hardPenalty,
+      stress,
+      stressCapped: stress,
+      acwr: 0,
+      droppedSessions: schedule.droppedSessions,
+    });
+  }
+
+  // ---- 4. ACWR ENFORCEMENT ------------------------------------------------
+  const acwr = enforceAcwr(macro, rawStress, state.chronicLoad);
+  weeks.forEach((w, i) => {
+    w.stressCapped = acwr.cappedStress[i];
+    w.acwr = acwr.ratios[i];
+    if (w.stressCapped < w.stress - 0.5) {
+      // The week's stress was capped; the volume the athlete actually does
+      // must follow, or the cap is cosmetic.
+      const scale = w.stressCapped / w.stress;
+      w.enduranceMin = Math.round(w.enduranceMin * scale);
+      w.notes.push("Volume trimmed this week to keep your acute:chronic load inside a safe ramp.");
+    }
+  });
+  for (const week of acwr.belowFloorWeeks) {
+    const w = weeks.find((x) => x.week === week);
+    w?.notes.push("This week is deliberately easy — it is your on-ramp, not an error.");
+  }
+
+  const eventOrder = goal.sameDay && !goal.eventOrderKnown ? resolveEventOrder(state, goal) : null;
+
+  return {
+    constantsVersion: HPE_CONSTANTS_VERSION,
+    generated: true,
+    safety,
+    refusal: null,
+    profile,
+    feasibility,
+    mode,
+    weeks,
+    acwr,
+    bodyweightFrontier: bodyweightFrontier(state, safety.showBodyweightGuidance),
+    eventOrder,
+    // Fuelling guidance is NOT bodyweight guidance. The intake spec is
+    // explicit that a single LEA flag suppresses bodyweight guidance and
+    // "proceeds with fuelling reminders only" — telling an at-risk athlete to
+    // eat is the correct direction, and withholding it would be the harmful
+    // one. Two or more flags block the plan entirely, upstream of here.
+    taper: jointTaper(state, true),
+    eventDay: eventOrder ? eventDayPlan(goal, eventOrder) : null,
+    findings: profile.findings,
+  };
+}

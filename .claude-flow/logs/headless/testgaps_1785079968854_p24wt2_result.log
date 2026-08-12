@@ -1,0 +1,17 @@
+[2026-07-26T15:32:49.809Z] RESULT
+============================================================
+{
+  "success": false,
+  "output": "Not logged in · Please run /login\n",
+  "parsedOutput": {
+    "sections": [],
+    "codeBlocks": []
+  },
+  "durationMs": 955,
+  "model": "sonnet",
+  "sandboxMode": "permissive",
+  "workerType": "testgaps",
+  "timestamp": "2026-07-26T15:32:49.809Z",
+  "executionId": "testgaps_1785079968854_p24wt2",
+  "error": "Process exited with code 1"
+}

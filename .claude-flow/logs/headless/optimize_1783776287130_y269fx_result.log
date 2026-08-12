@@ -1,0 +1,13 @@
+[2026-07-11T13:24:47.204Z] RESULT
+============================================================
+{
+  "success": false,
+  "output": "",
+  "durationMs": 74,
+  "model": "sonnet",
+  "sandboxMode": "permissive",
+  "workerType": "optimize",
+  "timestamp": "2026-07-11T13:24:47.204Z",
+  "executionId": "optimize_1783776287130_y269fx",
+  "error": "Process exited with code null"
+}
