@@ -98,17 +98,34 @@ describe("reserveHybridBalanceSessions", () => {
     expect(reserveHybridBalanceSessions(gaps, 2, 2)).toBe(0);
   });
 
-  it("never claims more than a quarter of the week even when there'd otherwise be room to spare", () => {
+  it("never claims more than a fifth of the week even when there'd otherwise be room to spare", () => {
     const gaps = { missingPatterns: ["pull" as MovementPattern], needsCardioMaintenance: true, needsGymMaintenance: false };
     // 3 capacity, 2 goals leaves 1 full session of "spare" headroom by the
     // leave-a-session-per-goal rule alone, but 1/3 capacity is still a
     // third of the week — too much for something secondary to real goals.
     expect(reserveHybridBalanceSessions(gaps, 3, 2)).toBe(0);
     // 6 capacity, 1 goal: leave-room alone would allow up to 5, but the
-    // 25% fraction cap kicks in first and holds it to 1.
+    // 20% fraction cap kicks in first and holds it to 1.
     expect(reserveHybridBalanceSessions(gaps, 6, 1)).toBe(1);
     // 10 capacity, 3 goals: plenty of room for the full 2-session cap.
     expect(reserveHybridBalanceSessions(gaps, 10, 3)).toBe(2);
+  });
+
+  // User feedback: "increase the goal percentage slightly higher as
+  // ultimately they want to work towards this" — goals should keep an
+  // even clearer majority than the original 75% floor.
+  it("guarantees real goals at least 80% of the week whenever any reservation happens", () => {
+    const gaps = { missingPatterns: ["pull" as MovementPattern], needsCardioMaintenance: true, needsGymMaintenance: false };
+    for (const [capacity, activeGoalCount] of [
+      [5, 2],
+      [6, 1],
+      [8, 2],
+      [10, 3],
+      [14, 4],
+    ] as const) {
+      const reserved = reserveHybridBalanceSessions(gaps, capacity, activeGoalCount);
+      expect(reserved / capacity).toBeLessThanOrEqual(0.2);
+    }
   });
 
   it("allows the full reservation when there are no active goals at all yet", () => {

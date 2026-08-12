@@ -56,14 +56,24 @@ export function computeHybridBalanceGaps(
 /** At most one combined gym-maintenance session and one cardio-maintenance session — never more, so maintenance can never outgrow the athlete's real goals into the majority of the week. */
 export const MAX_HYBRID_BALANCE_SESSIONS = 2;
 
-/** Maintenance never claims more than this share of the week — "leave at least one session per goal" alone still let it eat 40-50% of a small week (e.g. 2 of 5 sessions), which reads as competing with goals rather than staying secondary to them. Only applies once the athlete has real goals; with none yet, there's nothing to protect a share for. */
-const MAX_HYBRID_BALANCE_FRACTION = 0.25;
+/**
+ * Maintenance never claims more than this share of the week — "leave at
+ * least one session per goal" alone still let it eat 40-50% of a small
+ * week (e.g. 2 of 5 sessions), which reads as competing with goals rather
+ * than staying secondary to them. Only applies once the athlete has real
+ * goals; with none yet, there's nothing to protect a share for. User
+ * feedback: "increase the goal percentage slightly higher as ultimately
+ * they want to work towards this" — was 0.25 (goals guaranteed >= 75%),
+ * tightened to 0.2 (goals guaranteed >= 80%) so the athlete's own targets
+ * pull an even clearer majority of the week.
+ */
+const MAX_HYBRID_BALANCE_FRACTION = 0.2;
 
 /**
  * How many weekly sessions to set aside for hybrid-balance coverage,
  * taken out of weeklyCapacity before the real goals are ranked. Never
  * reserves so much that real goals would be crowded below one session
- * each, AND never more than a quarter of the week once there are real
+ * each, AND never more than a fifth of the week once there are real
  * goals to prioritize over it — an athlete with barely enough capacity
  * for their own goals gets no maintenance forced on top of them, full
  * stop, and a merely-tight week doesn't get half of it eaten either.
