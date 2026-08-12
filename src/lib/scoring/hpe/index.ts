@@ -24,3 +24,5 @@ export * from "./event";
 export * from "./engine";
 export * from "./ingest";
 export * from "./persistence";
+export * from "./rollout";
+export * from "./monitoring";

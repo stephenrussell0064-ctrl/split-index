@@ -7,7 +7,8 @@ import { selectAttempts, racePacing } from "@/lib/scoring/hpe/progression";
 import { reconcileCurrentVolume, DEFAULT_SAFETY_FLAGS, type AthleteState, type Constraints, type Goal } from "@/lib/scoring/hpe/intake";
 import { ageFromDateOfBirth } from "@/lib/utils/age";
 import { daysUntilDate } from "@/lib/utils/date";
-import type { TrainingAge } from "@/lib/scoring/hpe/constants";
+import { evaluateAccess, type FeatureFlag } from "@/lib/scoring/hpe/rollout";
+import { HPE_CONSTANTS_VERSION, type TrainingAge } from "@/lib/scoring/hpe/constants";
 
 /**
  * Hybrid Plan Engine — plan generation endpoint (WP9's data source).
@@ -33,6 +34,42 @@ const TRAINING_AGE_BY_EXPERIENCE: Record<string, TrainingAge> = {
   elite: "elite",
 };
 
+
+/**
+ * WP10 telemetry. Every generation attempt is recorded, including the
+ * refusals — a safety screen nobody can get past and a tier gate nobody can
+ * clear both look like "no plans generated" in a naive metric and need
+ * completely different responses. Never allowed to fail the request.
+ */
+async function recordEvent(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  fields: Record<string, unknown>
+): Promise<void> {
+  try {
+    await supabase.from("hpe_generation_events").insert({
+      user_id: userId,
+      constants_version: HPE_CONSTANTS_VERSION,
+      ...fields,
+    });
+  } catch {
+    // Telemetry must never take down the thing it is measuring.
+  }
+}
+
+/** Maps the first block message onto a stable slug so block rate can be grouped. */
+function safetyReasonCode(blocks: string[]): string {
+  const first = (blocks[0] ?? "").toLowerCase();
+  if (first.includes("under 18")) return "under_18";
+  if (first.includes("par-q")) return "parq_positive";
+  if (first.includes("postpartum")) return "pregnant_or_postpartum";
+  if (first.includes("injury")) return "current_injury";
+  if (first.includes("low-energy-availability")) return "lea_screen";
+  if (first.includes("peaking block")) return "training_age";
+  if (first.includes("weight cut")) return "weight_cut";
+  return "other";
+}
+
 export async function GET(request: Request) {
   const supabase = await createClient();
   const {
@@ -42,6 +79,47 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const overrideEventOrder = searchParams.get("overrideEventOrder") === "true";
+
+  // WP10 — the kill switch and the rollout dial, checked before any work is
+  // done. Generation stops; reading an existing plan does not, which is the
+  // asymmetry that makes pausing safe to do. A missing flag row is treated as
+  // OFF: a feature that switches itself on when its config cannot be read has
+  // no kill switch at all.
+  const { data: flagRow } = await supabase
+    .from("hpe_feature_flags")
+    .select("key, enabled, rollout_percentage, note, updated_at")
+    .eq("key", "hpe_generation")
+    .maybeSingle();
+
+  const flag: FeatureFlag | null = flagRow
+    ? {
+        key: flagRow.key as string,
+        enabled: flagRow.enabled as boolean,
+        rolloutPercentage: Number(flagRow.rollout_percentage),
+        note: (flagRow.note as string | null) ?? null,
+        updatedAt: (flagRow.updated_at as string | null) ?? null,
+      }
+    : null;
+
+  const access = evaluateAccess(flag, user.id);
+  if (!access.canGenerate) {
+    await recordEvent(supabase, user.id, {
+      outcome: "feature_disabled",
+      reason_code: access.reason,
+    });
+    return NextResponse.json({
+      generated: false,
+      featureDisabled: true,
+      refusal: {
+        reason: access.message,
+        nextSteps:
+          access.reason === "not_in_rollout"
+            ? ["Nothing to do — you will be let in automatically as the rollout widens."]
+            : ["Your existing plan is still available and unchanged."],
+      },
+      diagnostic: null,
+    });
+  }
 
   const [{ data: profileRow }, { data: goalRows }, { data: raceRows }] = await Promise.all([
     supabase
@@ -72,6 +150,7 @@ export async function GET(request: Request) {
 
   const diagnostic = await loadAthleteProfile(supabase, user.id, { priority });
   if (!diagnostic) {
+    await recordEvent(supabase, user.id, { outcome: "insufficient_data", reason_code: "no_logged_history" });
     return NextResponse.json({
       generated: false,
       refusal: {
@@ -98,6 +177,7 @@ export async function GET(request: Request) {
   const volume = reconcileCurrentVolume(null, diagnostic.loggedWeeklyRunMinutes);
   if (volume.issue) assumptions.push(volume.issue.message);
   if (volume.value == null) {
+    await recordEvent(supabase, user.id, { outcome: "missing_intake", reason_code: "no_onramp_anchor", tier: diagnostic.profile.tier });
     return NextResponse.json({
       generated: false,
       refusal: {
@@ -117,6 +197,7 @@ export async function GET(request: Request) {
   const heightCm = Number(profileRow?.height_cm ?? 0);
   const bodyweightKg = Number(profileRow?.weight_kg ?? 0);
   if (!heightCm || !bodyweightKg) {
+    await recordEvent(supabase, user.id, { outcome: "missing_intake", reason_code: "no_height_or_bodyweight", tier: diagnostic.profile.tier });
     return NextResponse.json({
       generated: false,
       refusal: {
@@ -132,6 +213,7 @@ export async function GET(request: Request) {
   const daysOut = daysUntilDate(eventDate);
   const weeksOut = daysOut != null ? Math.round(daysOut / 7) : 16;
   if (weeksOut < 4 || weeksOut > 52) {
+    await recordEvent(supabase, user.id, { outcome: "missing_intake", reason_code: daysOut == null ? "no_event_date" : "event_out_of_range", tier: diagnostic.profile.tier });
     return NextResponse.json({
       generated: false,
       refusal: {
@@ -203,6 +285,17 @@ export async function GET(request: Request) {
 
   const plan = generatePlan({ state, goal, constraints, profile: diagnostic.profile, overrideEventOrder });
 
+  if (!plan.generated) {
+    await recordEvent(supabase, user.id, {
+      outcome: plan.safety.blocked ? "safety_blocked" : "insufficient_data",
+      // The specific block, not just "blocked" — block rate is only
+      // actionable broken down by reason.
+      reason_code: plan.safety.blocked ? safetyReasonCode(plan.safety.blocks) : "tier_zero",
+      tier: diagnostic.profile.tier,
+      profile_id: diagnostic.profileId,
+    });
+  }
+
   // Persist when the plan is real and the diagnostic behind it was stored.
   let persisted: { planId: string; storedSessions: number; droppedSessions: number } | null = null;
   if (plan.generated && diagnostic.profileId) {
@@ -218,6 +311,19 @@ export async function GET(request: Request) {
       weeks: plan.weeks,
       eventDate,
     }).catch(() => null);
+  }
+
+  if (plan.generated) {
+    await recordEvent(supabase, user.id, {
+      outcome: "generated",
+      tier: diagnostic.profile.tier,
+      profile_id: diagnostic.profileId,
+      plan_id: persisted?.planId ?? null,
+      peak_acwr: plan.acwr?.peakAcwr ?? null,
+      weeks_out: goal.weeksOut,
+      session_count: plan.weeks.reduce((s, w) => s + w.placements.length, 0),
+      hard_violations: plan.weeks.reduce((s, w) => s + w.hardPenalty, 0),
+    });
   }
 
   return NextResponse.json({
