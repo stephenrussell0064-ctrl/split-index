@@ -487,6 +487,49 @@ export function sessionContentForInstance(
   return cardioSessionContent(sessionType, goal, isTaperWindow(daysUntilTarget), durationHours);
 }
 
+// ---------- Hybrid-balance maintenance ----------
+// User feedback: "As this is a hybrid platform the whole purpose is
+// finding a balance between all muscle groups and cardio, and so if the
+// training plan doesn't account for this and only focuses on the users
+// goals, then please amend as well, these goals should just be
+// prioritised." See training-hybrid-balance.ts for how much weekly
+// capacity gets reserved for this; these two functions only build the
+// CONTENT for whatever gets scheduled into that reserved room.
+
+/** Bodyweight/light-load defaults per pattern — deliberately not tied to any tracked 1RM, since this isn't chasing a specific target, just keeping every movement pattern trained. */
+const MAINTENANCE_EXERCISE_BY_PATTERN: Record<MovementPattern, string> = {
+  push: "Push Up",
+  pull: "Pull Up",
+  legs: "Goblet Squat",
+  core: "Plank",
+};
+
+/**
+ * One combined session covering whichever movement patterns the
+ * athlete's own gym goals don't touch at all — RPE-based, not
+ * periodized, since maintenance isn't progressing toward a specific
+ * target the way a real goal is.
+ */
+export function hybridBalanceGymContent(missingPatterns: MovementPattern[]): SessionContent {
+  const patterns = missingPatterns.length > 0 ? missingPatterns : (["push", "pull", "legs", "core"] as MovementPattern[]);
+  const lines = patterns.map((p) => `${MAINTENANCE_EXERCISE_BY_PATTERN[p]} 3x10-12 (moderate effort)`);
+  return {
+    title: "Hybrid Balance — Full-Body Maintenance",
+    description: `${lines.join(" · ")} — not tied to a specific goal, keeps every movement pattern trained while your priority lifts get the rest of the week.`,
+    movementPattern: patterns.includes("legs") ? "legs" : undefined,
+  };
+}
+
+/** A generic Zone 2 session for whenever there's no cardio goal at all — no specific sport/pace to prescribe, so it stays deliberately open. */
+export function hybridBalanceCardioContent(): SessionContent {
+  return {
+    title: "Hybrid Balance — Cardio Maintenance",
+    description:
+      "20-30min Zone 2 effort, any modality you enjoy (run/bike/row/swim) — keeps your aerobic engine and hybrid score from atrophying while your gym goals get the rest of the week.",
+    sessionType: "easy",
+  };
+}
+
 // ---------- Feasibility (Stage 2) ----------
 
 /**

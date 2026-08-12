@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { buildTrainingPlan, type TrainingGoalInput } from "@/lib/scoring/training-plan";
+import { buildTrainingPlan, computeGapFraction, type TrainingGoalInput } from "@/lib/scoring/training-plan";
 import { BENCHMARK_DISTANCE_METERS, type BenchmarkSport } from "@/lib/scoring/cardio-benchmarks";
 import {
   DISTANCE_LADDER,
@@ -25,6 +25,8 @@ import {
   type LoggedSessionMatch,
   type ProgressSnapshot,
 } from "@/lib/scoring/training-progress";
+import { movementPatternForExercise } from "@/lib/scoring/training-session-content";
+import { computeHybridBalanceGaps, reserveHybridBalanceSessions } from "@/lib/scoring/training-hybrid-balance";
 
 const BENCHMARK_SPORTS = Object.keys(BENCHMARK_DISTANCE_METERS) as BenchmarkSport[];
 
@@ -329,7 +331,22 @@ export async function GET(request: Request) {
     };
   }
 
-  const plan = buildTrainingPlan(rankedRows.map(toInput), weeklyCapacity);
+  // Hybrid-balance coverage (user feedback: "the whole purpose is finding
+  // a balance between all muscle groups and cardio, and so if the
+  // training plan doesn't account for this and only focuses on the users
+  // goals, then please amend... these goals should just be prioritised").
+  // Computed from the goals actually still ACTIVE (locked/premium-gated
+  // goals and already-achieved ones don't count as "covered" — neither is
+  // really being trained) and reserved OUT OF weeklyCapacity before real
+  // goals are ranked, so real goals still get the clear majority of the
+  // week. Uses computeGapFraction directly rather than a full
+  // buildTrainingPlan pass just to find out what's achieved.
+  const goalInputs = rankedRows.map(toInput);
+  const activeGoalInputs = goalInputs.filter((g) => computeGapFraction(g) > 0);
+  const hybridBalanceGaps = computeHybridBalanceGaps(activeGoalInputs, movementPatternForExercise);
+  const hybridBalanceReserved = reserveHybridBalanceSessions(hybridBalanceGaps, weeklyCapacity, activeGoalInputs.length);
+
+  const plan = buildTrainingPlan(goalInputs, weeklyCapacity - hybridBalanceReserved);
   const locked = lockedRows.map((row) => {
     const input = toInput(row);
     return { ...input, gapFraction: 0, achieved: false, weight: 0, weeklySessions: 0, feasibility: { feasible: true, message: null } };
@@ -366,6 +383,7 @@ export async function GET(request: Request) {
     lockedGoals: locked,
     weeklyCapacity,
     maxWeeklyCapacity,
+    hybridBalance: { ...hybridBalanceGaps, reservedSessions: hybridBalanceReserved },
     premium,
     maxFreeGoals: MAX_FREE_TRAINING_GOALS,
     totalGoalCount: allGoalRows.length,

@@ -35,6 +35,7 @@ import {
   type MacrocycleWeek,
   type RankedGoal as CoreRankedGoal,
 } from "@/lib/scoring/training-plan";
+import { resolveHybridBalanceSchedule, type HybridBalanceGaps } from "@/lib/scoring/training-hybrid-balance";
 import { cn } from "@/lib/utils/cn";
 
 interface DistanceOption {
@@ -81,6 +82,8 @@ interface PlanResponse {
   lockedGoals: RankedGoal[];
   weeklyCapacity: number;
   maxWeeklyCapacity: number;
+  /** User feedback: "the whole purpose is finding a balance between all muscle groups and cardio... these goals should just be prioritised." reservedSessions is how much of weeklyCapacity above already went to hybrid-balance coverage before goals were ranked. */
+  hybridBalance: HybridBalanceGaps & { reservedSessions: number };
   premium: boolean;
   maxFreeGoals: number;
   totalGoalCount: number;
@@ -1291,9 +1294,13 @@ function PlanView({
   showMacrocycle: boolean;
   onToggleMacrocycle: () => void;
 }) {
+  const hybridBalanceSchedule = useMemo(
+    () => resolveHybridBalanceSchedule(plan.hybridBalance, plan.hybridBalance.reservedSessions),
+    [plan.hybridBalance]
+  );
   const schedule = useMemo(
-    () => buildWeeklySchedule(plan.goals, perDayHours ?? undefined),
-    [plan.goals, perDayHours]
+    () => buildWeeklySchedule(plan.goals, perDayHours ?? undefined, DEFAULT_SESSION_HOURS, hybridBalanceSchedule),
+    [plan.goals, perDayHours, hybridBalanceSchedule]
   );
   const macrocycle = useMemo(
     () => buildMacrocyclePreview(plan.goals, plan.weeklyCapacity, 6),

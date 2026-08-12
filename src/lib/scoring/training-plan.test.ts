@@ -301,6 +301,70 @@ describe("buildWeeklySchedule", () => {
     expect(days[0].sessions.filter((s) => s.goalType === "gym")).toHaveLength(2);
     expect(days.slice(1).every((d) => d.sessions.length === 0)).toBe(true);
   });
+
+  // User feedback: "the whole purpose is finding a balance between all
+  // muscle groups and cardio, and so if the training plan doesn't account
+  // for this and only focuses on the users goals, then please amend...
+  // these goals should just be prioritised."
+  describe("hybrid-balance maintenance (4th argument)", () => {
+    it("schedules a gym-maintenance session when one is granted, without touching real goal sessions", () => {
+      const goals = [ranked({ id: "bench", goalType: "gym", targetKey: "Bench Press", weeklySessions: 3 })];
+      const perDay = [2, 2, 2, 2, 2, 2, 2];
+      const days = buildWeeklySchedule(goals, perDay, undefined, {
+        gymMaintenance: { missingPatterns: ["pull", "legs", "core"] },
+        cardioMaintenance: false,
+      });
+      const allSessions = days.flatMap((d) => d.sessions);
+      expect(allSessions.filter((s) => s.goalId === "bench")).toHaveLength(3); // real goal untouched
+      const maintenance = allSessions.filter((s) => s.goalId === "hybrid-balance-gym");
+      expect(maintenance).toHaveLength(1);
+      expect(maintenance[0].title).toContain("Hybrid Balance");
+    });
+
+    it("schedules a cardio-maintenance session when granted", () => {
+      const goals = [ranked({ id: "squat", goalType: "gym", targetKey: "Squat", weeklySessions: 2 })];
+      const perDay = [2, 2, 2, 2, 2, 2, 2];
+      const days = buildWeeklySchedule(goals, perDay, undefined, {
+        gymMaintenance: null,
+        cardioMaintenance: true,
+      });
+      const maintenance = days.flatMap((d) => d.sessions).filter((s) => s.goalId === "hybrid-balance-cardio");
+      expect(maintenance).toHaveLength(1);
+      expect(maintenance[0].goalType).toBe("cardio");
+    });
+
+    it("adds nothing when hybridBalance is omitted (fully backward compatible)", () => {
+      const goals = [ranked({ id: "bench", goalType: "gym", targetKey: "Bench Press", weeklySessions: 2 })];
+      const days = buildWeeklySchedule(goals, [2, 2, 2, 2, 2, 2, 2]);
+      const allSessions = days.flatMap((d) => d.sessions);
+      expect(allSessions).toHaveLength(2);
+      expect(allSessions.every((s) => s.goalId === "bench")).toBe(true);
+    });
+
+    it("still obeys the max-one-gym-session-per-day rule when a maintenance gym session is added", () => {
+      const goals = [ranked({ id: "bench", goalType: "gym", targetKey: "Bench Press", weeklySessions: 4 })];
+      const days = buildWeeklySchedule(goals, undefined, undefined, {
+        gymMaintenance: { missingPatterns: ["pull"] },
+        cardioMaintenance: false,
+      });
+      for (const d of days) {
+        expect(d.sessions.filter((s) => s.goalType === "gym").length).toBeLessThanOrEqual(1);
+      }
+    });
+
+    it("drops the maintenance session silently (never a real goal's session) when there's genuinely no room left", () => {
+      const goals = [ranked({ id: "bench", goalType: "gym", targetKey: "Bench Press", weeklySessions: 7 })];
+      // Exactly enough capacity for the 7 real sessions and not one hour more.
+      const perDay = [1, 1, 1, 1, 1, 1, 1];
+      const days = buildWeeklySchedule(goals, perDay, undefined, {
+        gymMaintenance: { missingPatterns: ["pull"] },
+        cardioMaintenance: true,
+      });
+      const allSessions = days.flatMap((d) => d.sessions);
+      expect(allSessions.filter((s) => s.goalId === "bench")).toHaveLength(7);
+      expect(allSessions.some((s) => s.goalId.startsWith("hybrid-balance"))).toBe(false);
+    });
+  });
 });
 
 describe("buildTrainingPlan urgency weighting (Stage 3)", () => {

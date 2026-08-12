@@ -20,11 +20,14 @@ import {
   cardioEmphasisFromGapAndUrgency,
   isTaperWindow,
   movementPatternForExercise,
+  hybridBalanceGymContent,
+  hybridBalanceCardioContent,
   PEAK_WINDOW_DAYS,
   type SessionContent,
   type FeasibilityResult,
   type MovementPattern,
 } from "./training-session-content";
+import type { HybridBalanceSchedule } from "./training-hybrid-balance";
 import type { SessionType } from "@/types";
 
 export type TrainingGoalType = "cardio" | "gym";
@@ -387,11 +390,18 @@ export interface DaySchedule {
  * Sessions are interleaved round-robin across goals in ranked (furthest-
  * behind-first) order before placement, not grouped goal-by-goal — so the
  * priority goal doesn't just claim the first half of the week outright.
+ *
+ * `hybridBalance` (optional — see training-hybrid-balance.ts) appends up
+ * to one gym-maintenance and one cardio-maintenance instance AFTER every
+ * real goal instance, so real goals always get first claim on days/hours
+ * and maintenance only ever fills room the caller has already reserved
+ * for it out of the athlete's own weekly capacity.
  */
 export function buildWeeklySchedule(
   rankedGoals: RankedGoal[],
   perDayHours?: number[],
-  sessionHours: SessionDurationHours = DEFAULT_SESSION_HOURS
+  sessionHours: SessionDurationHours = DEFAULT_SESSION_HOURS,
+  hybridBalance?: HybridBalanceSchedule
 ): DaySchedule[] {
   const days: DaySchedule[] = WEEKDAY_LABELS.map((label, i) => ({
     day: i,
@@ -411,7 +421,8 @@ export function buildWeeklySchedule(
     rankedGoals.filter((g) => g.goalType === "gym" && !g.achieved).map((g) => g.targetKey)
   );
 
-  const instances: { goal: RankedGoal; duration: number; content: SessionContent }[] = [];
+  type ScheduleInstanceGoal = Pick<RankedGoal, "id" | "label" | "goalType">;
+  const instances: { goal: ScheduleInstanceGoal; duration: number; content: SessionContent }[] = [];
   let anyLeft = queues.length > 0;
   while (anyLeft) {
     anyLeft = false;
@@ -432,6 +443,24 @@ export function buildWeeklySchedule(
         anyLeft = true;
       }
     }
+  }
+
+  // Hybrid-balance maintenance — appended last, after every real goal
+  // instance, so it never competes with a goal for a day; see this
+  // function's own doc comment above.
+  if (hybridBalance?.gymMaintenance) {
+    instances.push({
+      goal: { id: "hybrid-balance-gym", label: "Hybrid Balance", goalType: "gym" },
+      duration: sessionHours.gym,
+      content: hybridBalanceGymContent(hybridBalance.gymMaintenance.missingPatterns),
+    });
+  }
+  if (hybridBalance?.cardioMaintenance) {
+    instances.push({
+      goal: { id: "hybrid-balance-cardio", label: "Hybrid Balance", goalType: "cardio" },
+      duration: sessionHours.cardio,
+      content: hybridBalanceCardioContent(),
+    });
   }
 
   if (instances.length === 0) return days;
