@@ -15,6 +15,7 @@ import {
   MoreHorizontal,
   Radar,
   Target,
+  CalendarRange,
   X,
 } from "lucide-react";
 import { BrandMark } from "@/components/brand/brand-mark";
@@ -42,6 +43,10 @@ const secondaryNav = [
   // tab. I want its own tab for training plan as this is a huge thing") —
   // same treatment Interference itself got above, not nested under it.
   { href: "/training-plan", label: "Training Plan", icon: Target },
+  // Hybrid Plan Engine (WP9). Distinct from Training Plan above: that one
+  // balances this week across the athlete's goals, this one builds a whole
+  // block back from an event date off the WP0 diagnostic.
+  { href: "/hybrid-plan", label: "Hybrid Plan", icon: CalendarRange },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/social", label: "Social", icon: Users },
   { href: "/settings", label: "Settings", icon: Settings },
