@@ -2,7 +2,7 @@
 ## Stage 1 / Stage 2 gate | Independent S&C review of the evidence register, constants register and generated plans
 
 **Scope of engagement (2 days):** Day 1 — evidence register and constants register. Day 2 — blind review of generated plans against a prescribing rubric, plus safety and contraindication pathways.
-**Verdict:** **Conditional pass.** 18 findings. 6 graded Critical, 7 Major, 5 Minor. Rev A of the engine satisfied its own constraint model but was **not a coachable plan**. Rev B closes 14 of the 18. The remaining 4 are conditions of sign-off and must be closed before Stage 3 build begins.
+**Verdict:** **Conditional pass.** 25 findings. 7 graded Critical, 11 Major, 7 Minor. F19-F25 were raised during Rev C implementation review, not at the original gate — see section 8. Rev A of the engine satisfied its own constraint model but was **not a coachable plan**. Rev B closes 14 of the 18. The remaining 4 are conditions of sign-off and must be closed before Stage 3 build begins.
 
 > **A necessary caveat.** What follows is the substance of a coach's review — the findings a competent S&C coach with powerlifting and distance-running experience would raise, and they are real findings that changed the engine. What it is not is the *other* half of what £300–600 buys you: a named professional with a qualification, an insurer, and personal accountability for the sign-off. If a user is injured, "the algorithm was reviewed by an AI" is not a defence. Use this document to arrive at the coach's engagement with the obvious problems already fixed, so their two days are spent on judgement rather than on catching absences. It shortens their job; it does not replace it.
 
@@ -31,6 +31,13 @@
 | F16 | No autoregulation from actual session feedback | Major | **Open — condition of sign-off** |
 | F17 | No female-specific handling | Minor | **Open — condition of sign-off** |
 | F18 | Attempt selection and race pacing unspecified | Minor | **Open — condition of sign-off** |
+| F19 | Strength sessions truncated out of the week entirely for endurance-tilted athletes | **Critical** | Closed in Rev C |
+| F20 | Base weeks received more quality work than specific weeks | Major | Closed in Rev C |
+| F21 | Quality sessions prescribed at 17 minutes including warm-up | Major | Closed in Rev C |
+| F22 | Rep range taken from emphasis, load from phase — incoherent prescriptions | Major | Closed in Rev C |
+| F23 | The long run dropped entirely on deload weeks | Major | Closed in Rev C |
+| F24 | Weak-lift session prescribed for an athlete with no weak lift | Minor | Closed in Rev C |
+| F25 | The weight-cut refusal offered no next step | Minor | Closed in Rev C |
 
 ---
 
@@ -165,3 +172,57 @@ A plan scoring 1 or 2 on dimension 7 is an automatic fail regardless of other sc
 | Hard-rule violations | 0 | 0 |
 
 The last row is the one to be careful about. Both revisions score zero hard-rule violations, and Rev A was not safe to ship. **Constraint satisfaction is a necessary condition and a poor proxy for quality.** Whatever dashboard you build for this, do not let "0 violations" become the metric anyone watches.
+
+**All seven of F19–F25 passed constraint satisfaction before being caught.** Every one of them was found by reading generated plans, not by any check the engine runs on itself. A week with zero strength sessions, a 17-minute interval session and a prescription reading `4x1-3 @ 65-75% 1RM` scored exactly the same zero hard-rule violations as the corrected week that replaced it. This is the warning in the paragraph above stopping being a caution and becoming a measurement: the metric was green for a plan no coach would hand to an athlete. Treat plan review as the control and constraint satisfaction as the smoke test, not the other way round.
+
+---
+
+## 8. Rev C findings — raised during implementation review
+
+These seven were found by reading generated plans against the prescribing rubric in section 5, after the engine was already passing every automated check it had. They are recorded here in the same format as F1–F18 because they are the same class of finding: internally coherent output that a coach would not prescribe.
+
+### F19 — Strength work was being deleted from the week (Critical)
+
+Graded Critical because it breaches the minimum maintenance dose, which is an evidence-register rule rather than a preference. Spiering 2021 is the basis for `MMD_STRENGTH_SESSIONS_PER_WEEK = 1`, and the engine was producing weeks with zero.
+
+The cause was allocating the week's session slots as a single seven-way split across the whole emphasis vector. For an endurance-tilted athlete — the exact athlete this engine is built to serve — `maximal_strength`, `strength_endurance` and `weak_lift` each rounded to zero, and the per-week session cap then truncated away whatever survived, because strength sessions were constructed after endurance ones. A hybrid engine that silently drops one half of the hybrid is not a hybrid engine.
+
+**Correction applied:** the emphasis vector is now allocated *within* each domain rather than across both. Domain slot counts come from the phase and the develop/maintain mode first; the vector then decides the mix inside each. A domain in maintain mode has its minimum dose reserved before any allocation runs, and the reserved intensity is held at 80% 1RM rather than dropped, because dropping intensity as well is detraining, not maintenance. Regression test asserts every week of a plan generated at priority 0.1 contains both strength and endurance work.
+
+### F20 — Base weeks were harder than specific weeks (Major)
+
+The brief specifies that emphasis wins over the phase TID target in base and build, and the phase wins in specific, peak and taper. Implemented literally, that gave a base week three quality sessions — interval, rep and threshold — while the specific week that followed got one. The progression ran backwards.
+
+The underlying error was treating `neuromuscular` as a dimension that buys a standalone track session at any point in the block. It does not. Strides are how running economy is trained while the aerobic base is still being built; a separate rep session that early buys fatigue the athlete cannot yet absorb.
+
+**Correction applied:** `neuromuscular` is delivered as strides appended to easy runs during base and build, and only claims a session of its own in specific and peak. Its weight is not discarded when it cannot claim a session — it folds into `aerobic_base`, where the strides actually happen. The brief's own worked example describes the result correctly: "easy volume plus one threshold session and strides."
+
+### F21 — Seventeen-minute interval sessions (Major)
+
+A low-volume athlete's weekly minutes divided across five session slots produced quality sessions shorter than their own warm-up. The arithmetic was consistent and the output was not a session. `4 x 1000m ... inside a 17min session` also contained an internal contradiction: 4km at the prescribed pace is 14.5 minutes of work, which does not fit inside 17 minutes with recovery.
+
+**Correction applied:** minimum session durations are now constants (25 minutes endurance, 30 minutes quality) and the week's session *count* flexes down to respect them rather than the duration flexing down to preserve the count. Where that happens the athlete is told why: "Fewer, longer runs this week — 112 minutes split any further would be sessions too short to be worth doing."
+
+### F22 — Rep range from emphasis, load from phase (Major)
+
+The diagnostic's rep-profile verdict was setting the rep range while the macrocycle phase set the load, independently. In a base-phase week for an under-expressed athlete this produced `4x1-3 @ 65-75% 1RM` — neither a heavy single nor a volume set, and an RIR target that is unreachable at that load. A prescription in which the two halves contradict each other is worse than a generic one, because it looks specific.
+
+**Correction applied:** load and rep range move together or neither moves. The strength emphasis now shifts the athlete one rung along the phase ladder (base → build → specific → peak) rather than setting reps independently, so an under-expressed athlete in base gets build-phase loading *and* build-phase reps. The shift is bounded by the ladder, so a base week can never reach peak-phase singles. Regression test asserts no prescription pairs a 1-3 rep target with a load below 80% 1RM, or a 6+ rep target with a load above 85%.
+
+### F23 — The long run vanished on deload weeks (Major)
+
+Deload weeks reduce volume to 60%, which dropped the affordable session count below the threshold that gated the long run, so the one session the entire aerobic block is built around disappeared roughly every fourth week. A deload reduces load; it does not remove the week's primary aerobic stimulus.
+
+**Correction applied:** the long run is reserved whenever there is any running at all outside the taper. In weeks with few enough sessions that the long one is most of the week, it takes a proportional share of the minutes rather than a fixed 28%, so a two-session deload week no longer prescribes a "long run" shorter than its easy run.
+
+### F24 — A weak-lift session for an athlete with no weak lift (Minor)
+
+The `weak_lift` dimension carries a floor like every other dimension, so it could claim a session slot even when `find_weak_lift` had returned null. The session then fell back to the first lift in the rotation and was attributed to `hybrid-baseline` — a session with no finding behind it, which breaches non-negotiable #7. It also duplicated a lift the athlete was already training twice that week.
+
+**Correction applied:** the `weak_lift` dimension only participates in allocation when the diagnostic actually named a weak lift. Otherwise its weight folds into `maximal_strength` and no orphan session is created.
+
+### F25 — A refusal with no next step (Minor)
+
+The safety screen blocks a declared acute weight cut alongside a same-day endurance race, correctly. It did so with no referral and no alternative, which is the churn event section 2 warns about under F1: "A refusal with no next step is a churn event; a refusal with 'here is who to see, come back after' is a retained user."
+
+**Correction applied:** the block now names two concrete alternatives — lift in the class you already make on the day, or drop the same-day race and have the plan built around either goal alone — and offers a registered sports dietitian for reaching a class without cutting water in the event week. A test now asserts that *every* blocking path in the screen carries either a referral or a concrete alternative.
