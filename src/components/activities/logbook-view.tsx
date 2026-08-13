@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import type { RoutePoint } from "@/lib/scoring/gps-track";
 import { ActivityListSection } from "@/components/activities/activity-list-section";
 
 type Filter = "all" | "gym" | "cardio";
@@ -13,6 +14,8 @@ interface ActivityRow {
   started_at: string;
   duration_seconds: number | null;
   distance_meters: number | null;
+  /** Present only for runs recorded by Split Index's own GPS tracker. */
+  route?: RoutePoint[] | null;
 }
 
 export function LogbookView({

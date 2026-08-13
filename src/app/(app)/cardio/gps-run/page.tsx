@@ -33,6 +33,7 @@ import {
 } from "@/lib/native/step-cadence";
 import { isLiveActivitySupported, startLiveActivity, updateLiveActivity, endLiveActivity } from "@/lib/native/live-activity";
 import {
+  buildRoutePolyline,
   PARTIAL_REASON_LABEL,
   haversineDistanceMeters,
   elevationGainMeters,
@@ -516,6 +517,10 @@ export default function GpsRunPage() {
           // Never persisted as their own column, just consumed once.
           start_latitude: startPoint?.latitude,
           start_longitude: startPoint?.longitude,
+          // The run's shape, simplified for storage — this is what lets the
+          // logbook draw the route back. Raw fixes are deliberately not sent:
+          // a 10km run is ~1000 of them and the drawn difference is invisible.
+          route: buildRoutePolyline(livePoints) ?? undefined,
           ...segmentFields,
         }),
       });

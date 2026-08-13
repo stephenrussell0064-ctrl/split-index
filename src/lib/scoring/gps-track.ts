@@ -359,3 +359,122 @@ export const PARTIAL_REASON_LABEL: Record<NonNullable<PartialReason>, string> = 
   sampling_gap: "Tracking was interrupted for part of this run",
   ended_without_stopping: "This run wasn't stopped normally — it may be incomplete",
 };
+
+// ---------------------------------------------------------------------------
+// Route polyline — what gets persisted so a run can be drawn again later
+// ---------------------------------------------------------------------------
+
+/**
+ * A run's shape, stored on the activity so the logbook can draw it.
+ *
+ * Deliberately NOT the raw fix sequence. A 10km run is around a thousand
+ * fixes; at roughly 40 bytes each that is 40KB of JSONB per activity, read on
+ * every logbook page load, to draw a line a few hundred pixels wide where the
+ * difference is invisible. Simplified with Ramer-Douglas-Peucker and rounded
+ * to five decimal places (about 1.1m, finer than GPS itself resolves), which
+ * takes the same run to a few KB.
+ *
+ * Stored as [lat, lng] pairs rather than objects for the same reason: the key
+ * names would otherwise be most of the payload.
+ */
+export type RoutePoint = [number, number];
+
+export const ROUTE_CONFIG = {
+  /** Simplification tolerance in meters. Below the width of a road, so the drawn line still follows the streets taken. */
+  SIMPLIFY_TOLERANCE_METERS: 8,
+  /** Hard ceiling on stored points. A route that needs more than this to look right at logbook size does not exist. */
+  MAX_POINTS: 400,
+  /** Five decimals is ~1.1m at the equator — finer than consumer GPS resolves, so rounding here loses nothing real. */
+  COORDINATE_DECIMALS: 5,
+} as const;
+
+/** Perpendicular distance from `p` to the line `a`-`b`, in meters. Equirectangular projection: exact enough over the span of one run and far cheaper than a great-circle solution. */
+function perpendicularDistanceMeters(p: GpsPoint, a: GpsPoint, b: GpsPoint): number {
+  const latRad = toRadians((a.latitude + b.latitude) / 2);
+  const mPerDegLat = 111_132;
+  const mPerDegLon = 111_320 * Math.cos(latRad);
+
+  const px = (p.longitude - a.longitude) * mPerDegLon;
+  const py = (p.latitude - a.latitude) * mPerDegLat;
+  const bx = (b.longitude - a.longitude) * mPerDegLon;
+  const by = (b.latitude - a.latitude) * mPerDegLat;
+
+  const lengthSq = bx * bx + by * by;
+  if (lengthSq === 0) return Math.hypot(px, py);
+  // Projection parameter, clamped so a point beyond either end measures to
+  // that end rather than to an imaginary extension of the segment.
+  const t = Math.max(0, Math.min(1, (px * bx + py * by) / lengthSq));
+  return Math.hypot(px - t * bx, py - t * by);
+}
+
+/** Ramer-Douglas-Peucker. Iterative rather than recursive so a long run cannot blow the stack. */
+export function simplifyRoute(points: GpsPoint[], toleranceMeters: number = ROUTE_CONFIG.SIMPLIFY_TOLERANCE_METERS): GpsPoint[] {
+  if (points.length <= 2) return [...points];
+
+  const keep = new Array<boolean>(points.length).fill(false);
+  keep[0] = true;
+  keep[points.length - 1] = true;
+
+  const stack: [number, number][] = [[0, points.length - 1]];
+  while (stack.length > 0) {
+    const [start, end] = stack.pop() as [number, number];
+    let farthest = -1;
+    let farthestDistance = 0;
+    for (let i = start + 1; i < end; i++) {
+      const d = perpendicularDistanceMeters(points[i], points[start], points[end]);
+      if (d > farthestDistance) {
+        farthestDistance = d;
+        farthest = i;
+      }
+    }
+    if (farthest !== -1 && farthestDistance > toleranceMeters) {
+      keep[farthest] = true;
+      stack.push([start, farthest], [farthest, end]);
+    }
+  }
+
+  return points.filter((_, i) => keep[i]);
+}
+
+/**
+ * Turns a raw fix sequence into the compact form stored on the activity.
+ * Returns null when there is nothing worth drawing — one point is a dot, not a
+ * route, and storing it would put a map on the logbook with nothing in it.
+ */
+export function buildRoutePolyline(points: GpsPoint[]): RoutePoint[] | null {
+  const usable = points.filter(
+    (p) =>
+      Number.isFinite(p.latitude) &&
+      Number.isFinite(p.longitude) &&
+      (!Number.isFinite(p.accuracy) || p.accuracy <= GPS_TRACKING_CONFIG.MAX_ACCURACY_METERS)
+  );
+  if (usable.length < 2) return null;
+
+  let simplified = simplifyRoute(usable);
+  // Raise the tolerance until it fits rather than truncating: cutting the tail
+  // off would draw a route that stops halfway through the run.
+  let tolerance: number = ROUTE_CONFIG.SIMPLIFY_TOLERANCE_METERS;
+  while (simplified.length > ROUTE_CONFIG.MAX_POINTS && tolerance < 500) {
+    tolerance *= 2;
+    simplified = simplifyRoute(usable, tolerance);
+  }
+
+  const factor = 10 ** ROUTE_CONFIG.COORDINATE_DECIMALS;
+  const round = (v: number) => Math.round(v * factor) / factor;
+  return simplified.map((p): RoutePoint => [round(p.latitude), round(p.longitude)]);
+}
+
+/** Reads a stored route back, tolerating anything malformed rather than throwing inside a render. */
+export function parseRoutePolyline(value: unknown): RoutePoint[] | null {
+  if (!Array.isArray(value) || value.length < 2) return null;
+  const out: RoutePoint[] = [];
+  for (const entry of value) {
+    if (!Array.isArray(entry) || entry.length < 2) continue;
+    const lat = Number(entry[0]);
+    const lng = Number(entry[1]);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) continue;
+    out.push([lat, lng]);
+  }
+  return out.length >= 2 ? out : null;
+}

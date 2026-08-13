@@ -3,6 +3,7 @@ import Link from "next/link";
 import { PlusCircle } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { Button } from "@/components/ui/button";
+import { parseRoutePolyline } from "@/lib/scoring/gps-track";
 import { LogbookView } from "@/components/activities/logbook-view";
 
 export default async function ActivitiesPage() {
@@ -23,7 +24,7 @@ export default async function ActivitiesPage() {
 
   const { data: activities } = await supabase
     .from("activities")
-    .select("id, sport, title, started_at, duration_seconds, distance_meters")
+    .select("id, sport, title, started_at, duration_seconds, distance_meters, source, metadata")
     .eq("user_id", user.id)
     .eq("is_draft", false)
     .order("started_at", { ascending: false })
@@ -60,6 +61,11 @@ export default async function ActivitiesPage() {
     started_at: a.started_at as string,
     duration_seconds: a.duration_seconds as number | null,
     distance_meters: a.distance_meters as number | null,
+    // Only runs recorded by Split Index's own GPS tracker carry a route.
+    // Parsed here rather than in the client so a malformed value can never
+    // reach a render, and null-checked so imported or manual runs simply have
+    // no map rather than an empty box.
+    route: a.source === "gps" ? parseRoutePolyline((a.metadata as { route?: unknown } | null)?.route) : null,
   }));
 
   return (

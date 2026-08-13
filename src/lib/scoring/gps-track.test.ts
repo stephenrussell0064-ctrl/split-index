@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  ROUTE_CONFIG,
+  buildRoutePolyline,
+  parseRoutePolyline,
+  simplifyRoute,
   haversineDistanceMeters,
   summarizeGpsTrack,
   elevationGainMeters,
@@ -299,5 +303,87 @@ describe("summarizeFartlekSegments", () => {
     expect(result!.onSeconds).toBe(60 + 120);
     expect(result!.onAvgHr).toBe(Math.round((165 + 175) / 2));
     expect(result!.onDistanceMeters).toBeGreaterThan(0);
+  });
+});
+
+
+describe("route polyline (logbook map)", () => {
+  it("keeps the shape of a route while dropping redundant points", () => {
+    // A dead-straight 1km line sampled every 10m: 100 fixes describing
+    // something two points describe exactly as well.
+    const straight: GpsPoint[] = Array.from({ length: 100 }, (_, i) =>
+      point({ latitude: 51.5 + i * 0.00009, longitude: -0.12, accuracy: 5, time: i * 10_000 })
+    );
+    const simplified = simplifyRoute(straight);
+    expect(simplified.length).toBeLessThan(5);
+    // Start and finish are never dropped — a route that does not begin where
+    // the athlete began is not their route.
+    expect(simplified[0]).toEqual(straight[0]);
+    expect(simplified[simplified.length - 1]).toEqual(straight[straight.length - 1]);
+  });
+
+  it("preserves corners, which are the part that makes a route recognisable", () => {
+    const corner: GpsPoint[] = [
+      ...Array.from({ length: 30 }, (_, i) => point({ latitude: 51.5 + i * 0.0002, longitude: -0.12, time: i * 1000 })),
+      ...Array.from({ length: 30 }, (_, i) =>
+        point({ latitude: 51.506, longitude: -0.12 + i * 0.0003, time: 30_000 + i * 1000 })
+      ),
+    ];
+    const simplified = simplifyRoute(corner);
+    // The turn must survive.
+    expect(simplified.length).toBeGreaterThanOrEqual(3);
+    expect(simplified.some((p) => Math.abs(p.latitude - 51.506) < 1e-6)).toBe(true);
+  });
+
+  it("caps a long route by simplifying harder, never by truncating it", () => {
+    // Truncation would draw a route that stops halfway through the run.
+    const wiggly: GpsPoint[] = Array.from({ length: 5000 }, (_, i) =>
+      point({
+        latitude: 51.5 + i * 0.00002 + Math.sin(i / 3) * 0.0004,
+        longitude: -0.12 + Math.cos(i / 5) * 0.0006,
+        accuracy: 5,
+        time: i * 5_000,
+      })
+    );
+    const polyline = buildRoutePolyline(wiggly)!;
+    expect(polyline.length).toBeLessThanOrEqual(ROUTE_CONFIG.MAX_POINTS);
+    expect(polyline[0][0]).toBeCloseTo(wiggly[0].latitude, 4);
+    expect(polyline[polyline.length - 1][0]).toBeCloseTo(wiggly[wiggly.length - 1].latitude, 4);
+  });
+
+  it("returns null when there is nothing worth drawing", () => {
+    expect(buildRoutePolyline([])).toBeNull();
+    expect(buildRoutePolyline([point({ latitude: 51.5, longitude: -0.12 })])).toBeNull();
+  });
+
+  it("drops inaccurate fixes so a bad lock does not put a spike through the route", () => {
+    const withOutlier: GpsPoint[] = [
+      point({ latitude: 51.5, longitude: -0.12, accuracy: 5, time: 0 }),
+      point({ latitude: 52.9, longitude: 0.9, accuracy: 800, time: 10_000 }),
+      point({ latitude: 51.501, longitude: -0.12, accuracy: 5, time: 20_000 }),
+    ];
+    const polyline = buildRoutePolyline(withOutlier)!;
+    expect(polyline.every(([lat]) => lat < 52)).toBe(true);
+  });
+
+  it("round-trips through storage", () => {
+    const points: GpsPoint[] = Array.from({ length: 50 }, (_, i) =>
+      point({ latitude: 51.5 + i * 0.0001, longitude: -0.12 + i * 0.0001, accuracy: 5, time: i * 10_000 })
+    );
+    const stored = JSON.parse(JSON.stringify(buildRoutePolyline(points)));
+    const parsed = parseRoutePolyline(stored)!;
+    expect(parsed.length).toBeGreaterThanOrEqual(2);
+    expect(parsed[0][0]).toBeCloseTo(51.5, 4);
+  });
+
+  it("refuses malformed or out-of-range stored values rather than rendering them", () => {
+    // This value reaches a map component. Anything that is not a coordinate
+    // must not get that far.
+    expect(parseRoutePolyline(null)).toBeNull();
+    expect(parseRoutePolyline("not a route")).toBeNull();
+    expect(parseRoutePolyline([[1, 2]])).toBeNull();
+    expect(parseRoutePolyline([[999, 0], [0, 999]])).toBeNull();
+    expect(parseRoutePolyline([["a", "b"], ["c", "d"]])).toBeNull();
+    expect(parseRoutePolyline([[51.5, -0.12], [51.51, -0.12]])).toHaveLength(2);
   });
 });

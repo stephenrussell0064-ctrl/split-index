@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { ROUTE_CONFIG, parseRoutePolyline } from "@/lib/scoring/gps-track";
 import { createClient } from "@/lib/supabase/server";
 import { scoreActivity, computeRecentLoads, computeExercise1RM, buildStrengthScoreInserts, ScoringInputError } from "@/lib/scoring/service";
 import { assertScoringInput } from "@/lib/scoring/input-guards";
@@ -52,6 +53,20 @@ import { fetchExerciseHistory } from "@/lib/activities/exercise-history";
 import { defaultWeightEntryMode } from "@/lib/scoring/weight-entry";
 import type { WeightEntryMode } from "@/lib/scoring/weight-entry";
 import { fetchCurrentTemperatureCelsius } from "@/lib/weather/fetch-temperature";
+
+
+/**
+ * Route polylines arrive already simplified from the GPS tracker, but they are
+ * still user-supplied JSON heading for a column the logbook draws from, so
+ * they are re-validated and re-capped here. Anything malformed is dropped
+ * rather than rejected — a bad route should cost the athlete their map, not
+ * their run.
+ */
+function sanitizeRoute(value: unknown): [number, number][] | null {
+  const parsed = parseRoutePolyline(value);
+  if (!parsed) return null;
+  return parsed.slice(0, ROUTE_CONFIG.MAX_POINTS);
+}
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -189,6 +204,8 @@ export async function POST(request: Request) {
       (await fetchCurrentTemperatureCelsius(body.start_latitude, body.start_longitude)) ?? undefined;
   }
 
+  const routePolyline = sanitizeRoute((body as { route?: unknown }).route);
+
   const { data: activity, error: activityError } = await supabase
     .from("activities")
     .insert({
@@ -223,6 +240,10 @@ export async function POST(request: Request) {
       is_partial_track: body.is_partial_track ?? false,
       metadata: {
         ...(bodyweightKg ? { bodyweight_kg: bodyweightKg } : {}),
+        // The run's shape, already simplified client-side (see
+        // buildRoutePolyline). Validated here rather than trusted: this is
+        // user-supplied JSON going into a column the logbook renders from.
+        ...(routePolyline ? { route: routePolyline } : {}),
         ...(body.exercise_notes ? { exercise_notes: body.exercise_notes } : {}),
         ...(body.exercises?.length
           ? {
