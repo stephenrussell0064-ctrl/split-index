@@ -135,6 +135,93 @@ describe("elevationGainMeters", () => {
     expect(elevationGainMeters(points)).toBeNull();
   });
 
+  it("does not accumulate GPS altitude noise into phantom elevation gain", () => {
+    // The reported bug, reproduced: a run whose real profile climbs 67m was
+    // logged as 269m. The cause is that GPS altitude wanders continuously
+    // (±10-15m is normal) and the old rule counted every positive wobble.
+    // The error is one-directional — only positive deltas were summed — so
+    // noise could only ever inflate, and it scales with sample count.
+    //
+    // Deterministic pseudo-noise so a failure is reproducible.
+    let seed = 12345;
+    const noise = () => {
+      seed = (seed * 1664525 + 1013904223) >>> 0;
+      return (seed / 4294967296 - 0.5) * 12; // ±6m
+    };
+
+    const SAMPLES = 900;
+    const TRUE_GAIN = 67;
+    const points: GpsPoint[] = Array.from({ length: SAMPLES }, (_, i) => {
+      // A single steady climb of TRUE_GAIN over the first half, flat after —
+      // so the correct answer is unambiguous.
+      const progress = Math.min(1, i / (SAMPLES / 2));
+      const trueAltitude = 40 + TRUE_GAIN * progress;
+      return point({
+        latitude: 51.5 + i * 0.00009,
+        longitude: -0.12,
+        altitude: trueAltitude + noise(),
+        accuracy: 8,
+        time: i * 10_000,
+      });
+    });
+
+    const gain = elevationGainMeters(points)!;
+    // The naive sum on this data lands in the hundreds. Anything close to the
+    // real profile is the fix working.
+    expect(gain).toBeGreaterThan(TRUE_GAIN * 0.6);
+    expect(gain).toBeLessThan(TRUE_GAIN * 1.6);
+  });
+
+  it("reports a flat run as flat, however many noisy samples it has", () => {
+    let seed = 999;
+    const noise = () => {
+      seed = (seed * 1664525 + 1013904223) >>> 0;
+      return (seed / 4294967296 - 0.5) * 10;
+    };
+    const points: GpsPoint[] = Array.from({ length: 800 }, (_, i) =>
+      point({ altitude: 50 + noise(), accuracy: 8, time: i * 10_000 })
+    );
+    // Treadmill-flat ground with a thousand noisy fixes must not read as a
+    // hill. This is the same failure as the bug above, at its extreme.
+    expect(elevationGainMeters(points)!).toBeLessThan(15);
+  });
+
+  it("still counts genuine rolling terrain", () => {
+    // Six real, clean 20m hills — 120m of true climb, no noise anywhere.
+    const points: GpsPoint[] = [];
+    let t = 0;
+    for (let hill = 0; hill < 6; hill++) {
+      for (let i = 0; i < 30; i++) points.push(point({ altitude: 100 + (20 * i) / 30, accuracy: 5, time: (t += 10_000) }));
+      for (let i = 0; i < 30; i++) points.push(point({ altitude: 120 - (20 * i) / 30, accuracy: 5, time: (t += 10_000) }));
+    }
+    const gain = elevationGainMeters(points)!;
+    // Hysteresis under-reports slightly by design: the last few metres of each
+    // summit sit below the threshold and are never banked. That is the price
+    // of not counting noise, it is why every credible implementation reads
+    // lower than a naive sum, and it is the right side to err on — a plan
+    // built on inflated climb prescribes more than the athlete did.
+    expect(gain).toBeGreaterThan(120 * 0.7);
+    expect(gain).toBeLessThan(120 * 1.05);
+  });
+
+  it("drops fixes too inaccurate to carry a believable altitude", () => {
+    const points: GpsPoint[] = [
+      point({ altitude: 100, accuracy: 5, time: 0 }),
+      // A 200m "climb" reported alongside a 400m accuracy figure is not a
+      // climb, it is a bad fix.
+      point({ altitude: 300, accuracy: 400, time: 10_000 }),
+      point({ altitude: 102, accuracy: 5, time: 20_000 }),
+    ];
+    expect(elevationGainMeters(points)!).toBeLessThan(10);
+  });
+
+  it("returns null rather than zero when altitude was never recorded", () => {
+    // "Not measured" and "ran on the flat" are different claims and must not
+    // look the same downstream.
+    const points = buildCleanTrack(5, 10).map((p) => ({ ...p, altitude: null }));
+    expect(elevationGainMeters(points)).toBeNull();
+  });
+
   it("sums only ascending deltas, live-partial sequences included", () => {
     const points: GpsPoint[] = [
       point({ altitude: 100, time: 0 }),
