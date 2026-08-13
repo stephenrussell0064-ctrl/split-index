@@ -24,5 +24,6 @@ export * from "./event";
 export * from "./engine";
 export * from "./ingest";
 export * from "./persistence";
+export * from "./intake-record";
 export * from "./rollout";
 export * from "./monitoring";

@@ -33,12 +33,65 @@ cp .env.example .env.local
 ### 3. Set up Supabase
 
 1. Create a project at [supabase.com](https://supabase.com)
-2. Run the migrations in order (via `supabase db push` or the SQL editor):
-   - `supabase/migrations/001_initial_schema.sql` — core schema
-   - `supabase/migrations/002_scoring_reference_and_leaderboards.sql` — sports reference, strength scores, leaderboards
-   - `supabase/migrations/003_integrations.sql` — OAuth connections and import jobs
-   - `supabase/migrations/004_split_weighting.sql` — user-configurable Split Index endurance/strength weights
-   - `supabase/migrations/005_session_templates.sql` — session templates + `file` activity source for GPX/TCX import
+2. Run the migrations **in filename order** — `supabase db push` does this for you, or paste each into the SQL
+   editor in turn. Several later migrations `ALTER` tables that earlier ones create, so the order is load-bearing.
+
+   | # | File | What it adds |
+   |---|---|---|
+   | 001 | `001_initial_schema.sql` | Core schema: profiles, activities, gym exercises, workout scores, the `handle_new_user` signup trigger |
+   | 002 | `002_scoring_reference_and_leaderboards.sql` | Sports reference, strength scores, leaderboards |
+   | 002b | `002b_apply_missing.sql` | Backfill for databases created between 001 and 002 |
+   | 003 | `003_integrations.sql` | OAuth connections and import jobs |
+   | 004 | `004_split_weighting.sql` | User-configurable Split Index endurance/strength weights |
+   | 005 | `005_session_templates.sql` | Session templates + `file` activity source for GPX/TCX import |
+   | 006 | `006_fix_handle_new_user_trigger.sql` | Signup trigger fix |
+   | 007 | `007_signup_trigger_bulletproof.sql` | Signup trigger hardening — see the onboarding troubleshooting below |
+   | 008 | `008_timezone.sql` | Per-user timezone |
+   | 009 | `009_gym_set_details.sql` | Per-set weight/reps breakdown (`set_details`) |
+   | 010 | `010_avatars_storage.sql` | Avatar storage bucket and policies |
+   | 011 | `011_predicted_benchmarks.sql` | Memory-based cardio benchmark predictions |
+   | 012 | `012_public_read_strength_scores.sql` | Public read on strength reference scores |
+   | 013 | `013_predicted_benchmark_quality.sql` | Prediction confidence/quality |
+   | 014 | `014_personalized_hr.sql` | `resting_hr` for personalised Karvonen zones |
+   | 015 | `015_interval_fartlek_scoring.sql` | Interval and fartlek segment fields |
+   | 016 | `016_date_of_birth.sql` | Date of birth (age-graded scoring, HR max) |
+   | 017 | `017_pricing_skus_and_motivation.sql` | Pricing SKUs and motivation copy |
+   | 018 | `018_race_prediction_riegel_k.sql` | Per-user Riegel exponent on predictions |
+   | 019 | `019_latest_strength_scores_per_exercise.sql` | Latest strength score per exercise |
+   | 020 | `020_friend_duels.sql` | Friend duels |
+   | 021 | `021_outdoor_cycling.sql` | Outdoor cycling support |
+   | 022 | `022_outdoor_cycling_sports_row.sql` | Outdoor cycling sports reference row |
+   | 023 | `023_duel_speed_strength_metrics.sql` | Duel speed/strength metrics |
+   | 024 | `024_squads.sql` | Squads |
+   | 025 | `025_hybrid_athlete_reports.sql` | Hybrid athlete reports |
+   | 026 | `026_native_billing_source.sql` | Native (App Store / Play) billing source |
+   | 027 | `027_gps_tracking.sql` | Background GPS run tracking, `is_partial_track` |
+   | 028 | `028_exercise_attachment.sql` | Exercise attachment/implement |
+   | 029 | `029_planned_races.sql` | Planned races |
+   | 030 | `030_planned_race_elevation_source.sql` | Race elevation source |
+   | 031 | `031_social_activity_feed.sql` | Social activity feed |
+   | 032 | `032_share_activities_default_true.sql` | Default activity sharing to on |
+   | 033 | `033_training_goals.sql` | Training goals |
+   | 034 | `034_training_goal_target_date.sql` | Goal target dates (tapering, feasibility) |
+   | 035 | `035_training_goal_custom_distance.sql` | Custom goal distances |
+   | 036 | `036_training_goal_target_reps.sql` | Rep-based strength goals |
+   | 037 | `037_planned_race_known_elevation_source.sql` | Known race elevation profiles |
+   | 038 | `038_training_goal_progress.sql` | Daily goal-progress snapshots for trend estimates |
+   | 039 | `039_hpe_athlete_profile.sql` | Hybrid Plan Engine: diagnostic runs, findings, plans, sessions |
+   | 040 | `040_hpe_monitoring_and_rollout.sql` | HPE monitoring, feature flags (kill switch), adherence and injury reporting |
+   | 041 | `041_admin_roles_and_fleet_review.sql` | `admin_users`, the fleet-review gate and the rollout audit log |
+   | 042 | `042_hpe_intake.sql` | HPE athlete intake: safety screen answers, goal, availability and preferences |
+
+   **After 041:** the Hybrid Plan Engine ships disabled at 0% rollout and grants no admin roles. `admin_users` has no
+   INSERT policy by design, so the first operator has to be granted directly:
+
+   ```sql
+   insert into admin_users (user_id, role, note)
+   values ((select id from auth.users where email = 'you@example.com'), 'operator', 'Initial grant');
+   ```
+
+   That account can then open `/admin/hpe-fleet` and work the rollout from there. `SUPABASE_SERVICE_ROLE_KEY` must be
+   set in the deployed environment or the fleet view fails closed and 404s for everyone.
 3. Enable Email and Google OAuth in Authentication → Providers
 4. Add your site URL to redirect allowlist: `http://localhost:3000/auth/callback`
 

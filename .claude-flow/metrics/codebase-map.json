@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-08-10T15:55:21.720Z",
+  "timestamp": "2026-08-13T07:17:24.601Z",
   "projectRoot": "/Users/stephenrussell/Projects/split-index",
   "structure": {
     "hasPackageJson": true,
@@ -7,5 +7,5 @@
     "hasClaudeConfig": true,
     "hasClaudeFlow": true
   },
-  "scannedAt": 1786377321720
+  "scannedAt": 1786605444601
 }

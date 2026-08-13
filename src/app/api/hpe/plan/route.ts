@@ -4,11 +4,11 @@ import { generatePlan } from "@/lib/scoring/hpe/engine";
 import { loadAthleteProfile } from "@/lib/scoring/hpe/load-profile";
 import { savePlan, supersedePlans } from "@/lib/scoring/hpe/persistence";
 import { selectAttempts, racePacing } from "@/lib/scoring/hpe/progression";
-import { reconcileCurrentVolume, DEFAULT_SAFETY_FLAGS, type AthleteState, type Constraints, type Goal } from "@/lib/scoring/hpe/intake";
-import { ageFromDateOfBirth } from "@/lib/utils/age";
-import { daysUntilDate } from "@/lib/utils/date";
+import { validateIntake, type AthleteState, type Constraints, type Goal } from "@/lib/scoring/hpe/intake";
+import { parseIntakeRow, resolveIntakeInputs } from "@/lib/scoring/hpe/intake-record";
+import { loadPrefilledIntake } from "@/lib/scoring/hpe/load-intake";
 import { evaluateAccess, type FeatureFlag } from "@/lib/scoring/hpe/rollout";
-import { HPE_CONSTANTS_VERSION, type TrainingAge } from "@/lib/scoring/hpe/constants";
+import { HPE_CONSTANTS_VERSION } from "@/lib/scoring/hpe/constants";
 
 /**
  * Hybrid Plan Engine — plan generation endpoint (WP9's data source).
@@ -24,15 +24,6 @@ import { HPE_CONSTANTS_VERSION, type TrainingAge } from "@/lib/scoring/hpe/const
  * the engine never silently guesses, and reporting the guess is what keeps
  * that true while the flow is being built.
  */
-
-/** Maps Split Index's experience tiers onto the engine's gain-rate training ages. */
-const TRAINING_AGE_BY_EXPERIENCE: Record<string, TrainingAge> = {
-  beginner: "novice",
-  novice: "novice",
-  intermediate: "intermediate",
-  advanced: "advanced",
-  elite: "elite",
-};
 
 
 /**
@@ -121,28 +112,20 @@ export async function GET(request: Request) {
     });
   }
 
-  const [{ data: profileRow }, { data: goalRows }, { data: raceRows }] = await Promise.all([
-    supabase
-      .from("profiles")
-      .select("age, date_of_birth, height_cm, weight_kg, max_hr, resting_hr, gender, experience, training_history_years")
-      .eq("user_id", user.id)
-      .single(),
+  // Profile fields are read by loadPrefilledIntake rather than here — one
+  // reader, so the numbers confirmed on the intake form are exactly the ones
+  // the plan is built from.
+  const [{ data: goalRows }, { data: intakeRow }] = await Promise.all([
     supabase
       .from("training_goals")
       .select("goal_type, target_key, target_value, target_date")
       .eq("user_id", user.id)
       .order("created_at", { ascending: true }),
-    supabase
-      .from("planned_races")
-      .select("race_date, distance_meters")
-      .eq("user_id", user.id)
-      .order("race_date", { ascending: true })
-      .limit(1),
+    supabase.from("hpe_intake").select("*").eq("user_id", user.id).maybeSingle(),
   ]);
 
   const goals = goalRows ?? [];
   const gymGoals = goals.filter((g) => g.goal_type === "gym");
-  const cardioGoals = goals.filter((g) => g.goal_type === "cardio");
   // Priority pre-set from the goal mix, per the intake spec's open decision
   // D2: "a slider that is pre-set from the goal gap and can be moved — it
   // anchors the athlete on the honest answer while leaving them agency."
@@ -167,121 +150,49 @@ export async function GET(request: Request) {
     });
   }
 
-  const assumptions = [...diagnostic.assumptions];
-  const age =
-    ageFromDateOfBirth((profileRow?.date_of_birth as string | null) ?? null) ?? (profileRow?.age as number | null) ?? 30;
+  // ---- WP2: the intake now answers what this route used to assume --------
+  const intake = parseIntakeRow(intakeRow as Record<string, unknown> | null);
+  const prefilled = await loadPrefilledIntake(supabase, user.id);
+  const resolved = resolveIntakeInputs(intake, prefilled);
 
-  // The on-ramp anchor. There is no stated figure to reconcile against yet
-  // (that is a WP2 intake field), so the logs govern outright — which is the
-  // conservative direction the cross-check rule asks for anyway.
-  const volume = reconcileCurrentVolume(null, diagnostic.loggedWeeklyRunMinutes);
-  if (volume.issue) assumptions.push(volume.issue.message);
-  if (volume.value == null) {
-    await recordEvent(supabase, user.id, { outcome: "missing_intake", reason_code: "no_onramp_anchor", tier: diagnostic.profile.tier });
+  const assumptions = [...diagnostic.assumptions, ...resolved.assumed];
+
+  // The spec's Block rows, checked as a set rather than one at a time, so an
+  // athlete missing three things is told all three rather than sent round the
+  // loop three times.
+  const validation = validateIntake(resolved.state, resolved.goal, resolved.constraints);
+  if (!validation.ok) {
+    const blocking = validation.issues.filter((i) => i.severity === "block");
+    await recordEvent(supabase, user.id, {
+      outcome: "missing_intake",
+      reason_code: blocking[0]?.field ?? "incomplete_intake",
+      tier: diagnostic.profile.tier,
+    });
     return NextResponse.json({
       generated: false,
+      needsIntake: true,
+      missingSections: resolved.missingSections,
       refusal: {
         reason:
-          "Your current weekly running volume could not be derived from your logs. This is the number week 1 is " +
-          "built on, and assuming it is the single most common way generated plans cause injury.",
-        nextSteps: ["Log two weeks of normal running, then come back — the plan will start exactly where you are."],
+          "Some of what a plan has to be built on is still missing. The engine will not assume these — " +
+          "assuming them is how generated plans injure people.",
+        nextSteps: blocking.map((i) => i.message),
       },
       diagnostic: diagnostic.profile,
+      assumptions,
     });
   }
 
-  const experience = (profileRow?.experience as string | null) ?? "intermediate";
-  const trainingAge = TRAINING_AGE_BY_EXPERIENCE[experience] ?? "intermediate";
-  const trainingYears = Number(profileRow?.training_history_years ?? 0) || 2;
-
-  const heightCm = Number(profileRow?.height_cm ?? 0);
-  const bodyweightKg = Number(profileRow?.weight_kg ?? 0);
-  if (!heightCm || !bodyweightKg) {
-    await recordEvent(supabase, user.id, { outcome: "missing_intake", reason_code: "no_height_or_bodyweight", tier: diagnostic.profile.tier });
-    return NextResponse.json({
-      generated: false,
-      refusal: {
-        reason: "Height and bodyweight are required — they set the BMI floor for the energy-availability safeguard.",
-        nextSteps: ["Add your height and current bodyweight in Profile, then generate the plan."],
-      },
-      diagnostic: diagnostic.profile,
-    });
-  }
-
-  const nextRace = raceRows?.[0] ?? null;
-  const eventDate = (nextRace?.race_date as string | null) ?? cardioGoals[0]?.target_date ?? gymGoals[0]?.target_date ?? null;
-  const daysOut = daysUntilDate(eventDate);
-  const weeksOut = daysOut != null ? Math.round(daysOut / 7) : 16;
-  if (weeksOut < 4 || weeksOut > 52) {
-    await recordEvent(supabase, user.id, { outcome: "missing_intake", reason_code: daysOut == null ? "no_event_date" : "event_out_of_range", tier: diagnostic.profile.tier });
-    return NextResponse.json({
-      generated: false,
-      refusal: {
-        reason:
-          daysOut == null
-            ? "No event date is set. The macrocycle length, the taper and the peak are all measured back from it."
-            : `Your event is ${weeksOut} weeks out. This engine builds blocks between 4 and 52 weeks.`,
-        nextSteps: ["Set a target date on a goal, or add a planned race, between 4 and 52 weeks away."],
-      },
-      diagnostic: diagnostic.profile,
-    });
-  }
-
-  // The safety flags are WP2 intake fields with no UI yet. They default
-  // CONSERVATIVELY per the intake spec's Missing column — which means a
-  // recent injury and recent surgery are assumed until answered, and both
-  // halve the ramp rather than being waved through.
-  const state: AthleteState = {
-    bodyweightKg,
-    heightCm,
-    age,
-    sex: ((profileRow?.gender as string | null) === "female" ? "female" : (profileRow?.gender as string | null) === "male" ? "male" : "other"),
-    oneRms: diagnostic.profile.oneRms,
-    predicted5kS: diagnostic.profile.predicted5kS,
-    strengthTrainingAge: trainingAge,
-    enduranceTrainingAge: trainingAge,
-    strengthTrainingYears: trainingYears,
-    enduranceTrainingYears: trainingYears,
-    currentRunMinPerWeek: volume.value,
-    currentStrengthSessionsPerWeek: 3,
-    chronicLoad: Math.max(1, diagnostic.profile.weeklyVolumeMin * 4),
-    restingHr: diagnostic.profile.hrRest,
-    maxHr: diagnostic.profile.hrMax,
-    safety: { ...DEFAULT_SAFETY_FLAGS },
-    assumed: assumptions,
-  };
-  assumptions.push(
-    "The safety questionnaire has not been completed, so recent injury and recent surgery are assumed present " +
-      "and the volume ramp is halved. Completing it will unlock the full ramp if neither applies to you."
-  );
-
+  const state: AthleteState = { ...resolved.state, assumed: assumptions };
   const goal: Goal = {
-    weeksOut,
-    target5kS: cardioGoals[0]?.target_value != null ? Number(cardioGoals[0].target_value) : null,
-    targetTotalKg: gymGoals.length >= 3 ? gymGoals.reduce((s, g) => s + Number(g.target_value ?? 0), 0) : null,
-    priority,
-    sameDay: false,
-    interEventGapH: 4,
-    weightClassKg: null,
-    eventOrderKnown: false,
+    ...resolved.goal,
+    // The priority slider wins where the athlete has actually moved it;
+    // otherwise it stays derived from their goal mix, which is the spec's
+    // recommended resolution of open decision D2.
+    priority: intake.priorityUserSet ? resolved.goal.priority : priority,
   };
-
-  const constraints: Constraints = {
-    daysAvailable: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
-    twoADaysPossible: false,
-    amHour: 7,
-    pmHour: 18,
-    maxSessionsPerWeek: 6,
-    maxHoursPerWeek: 8,
-    maxSessionMin: 90,
-    minRestDays: 1,
-    gymAccessDays: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
-    equipment: ["barbell"],
-  };
-  assumptions.push(
-    "Availability is assumed to be seven days with up to six sessions a week and no double days. The schedule is " +
-      "built around that until you set your real days and times."
-  );
+  const constraints: Constraints = resolved.constraints;
+  const eventDate = intake.eventDate;
 
   const plan = generatePlan({ state, goal, constraints, profile: diagnostic.profile, overrideEventOrder });
 

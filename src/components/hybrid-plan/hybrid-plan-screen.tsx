@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
@@ -26,6 +27,9 @@ import type { AthleteProfile, AttemptSelection, EventDayStep, EventOrderResult, 
 interface PlanResponse {
   generated: boolean;
   refusal: { reason: string; nextSteps: string[] } | null;
+  /** WP2: the refusal is a missing intake answer rather than a safety block, so the fix is a form the athlete can go and fill in. */
+  needsIntake?: boolean;
+  missingSections?: string[];
   safety?: {
     blocked: boolean;
     blocks: string[];
@@ -189,6 +193,17 @@ export function HybridPlanScreen() {
             </>
           )}
 
+          {/* WP2: an intake gap is the one refusal with an immediate fix, so it
+              gets a route rather than a list of instructions. */}
+          {data.needsIntake && (
+            <Link
+              href="/hybrid-plan/intake"
+              className="mt-5 inline-flex min-h-11 items-center rounded-2xl bg-accent px-5 text-sm font-semibold text-accent-foreground transition-colors hover:bg-accent/90"
+            >
+              Complete your intake
+            </Link>
+          )}
+
           {data.safety?.offerGeneralPreparationInstead && (
             <p className="mt-5 rounded-2xl border border-accent/20 bg-accent/[0.06] p-4 text-sm leading-relaxed">
               A general preparation plan is appropriate for you instead. Consistent exposure is what builds a total at
@@ -313,6 +328,14 @@ export function HybridPlanScreen() {
           />
         </div>
       )}
+
+      <p className="px-1 text-xs text-muted/60">
+        Something above wrong?{" "}
+        <Link href="/hybrid-plan/intake" className="text-accent hover:underline">
+          Update what we know about you
+        </Link>{" "}
+        — the plan rebuilds from it.
+      </p>
 
       {data.constantsVersion && (
         <p className="px-1 text-xs text-muted/60">Plan generated under training constants v{data.constantsVersion}.</p>
