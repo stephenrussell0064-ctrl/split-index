@@ -643,3 +643,12 @@ body {
   color: var(--cardio-accent);
   background: rgba(59, 166, 255, 0.08);
 }
+
+/* "All" — the combined Lab + Engine feed. Neutral on purpose: borrowing
+   either zone's accent for the both-zones filter reads as that zone being
+   selected, which is precisely the state it isn't. */
+.logbook-filter-chip-active-all {
+  border-color: rgba(255, 255, 255, 0.45);
+  color: var(--foreground);
+  background: rgba(255, 255, 255, 0.09);
+}

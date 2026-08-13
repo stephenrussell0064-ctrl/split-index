@@ -829,3 +829,63 @@ export const POST_MEET_FIRST_KM_OFFSET_S: readonly [number, number] = [3, 5];
 export const DIAGNOSTIC_RERUN_WEEKS = 4;
 /** [ASSURED] An emphasis shift larger than this on any dimension regenerates the remaining macrocycle and shows the athlete what changed and why. */
 export const EMPHASIS_DRIFT_REGENERATE_THRESHOLD = 0.1;
+
+// ---------------------------------------------------------------------------
+// Planning horizon when there is no event date
+// ---------------------------------------------------------------------------
+// Product decision, overriding the intake spec's "Block" on event_date: an
+// athlete without a race still deserves a plan. A block is only defensible
+// when proceeding would be unsafe, and not having entered a date is not
+// unsafe — it just means the engine picks the horizon instead of the calendar.
+
+/** [ASSURED] Offered timeframes when the athlete has no event, in weeks. */
+export const PLANNING_HORIZONS: readonly { weeks: number; label: string; blurb: string }[] = [
+  { weeks: 12, label: "3 months", blurb: "One full training block. Long enough to move a 5k time or a lift, short enough to stay committed to." },
+  { weeks: 24, label: "6 months", blurb: "Two blocks with a genuine base phase. The best choice if your aerobic base is the limiter." },
+  { weeks: 52, label: "A year", blurb: "Long-range. The later phases will be rebuilt as your data accumulates, so treat the back half as a sketch." },
+];
+
+/** [ASSURED] Used when the athlete gives neither an event date nor a timeframe. Twelve weeks is the standard block length and the horizon every gain-rate constant in this file is expressed against. */
+export const DEFAULT_PLANNING_HORIZON_WEEKS = 12;
+
+/** [ASSURED] Bounds on any horizon, however it was arrived at. */
+export const MIN_HORIZON_WEEKS = 4;
+export const MAX_HORIZON_WEEKS = 52;
+
+// ---------------------------------------------------------------------------
+// Plan tailoring — how individual this plan actually is
+// ---------------------------------------------------------------------------
+// The engine no longer refuses to generate when data is thin. It generates and
+// says plainly how much of the plan is this athlete versus how much is the
+// population. Refusing taught the athlete nothing and lost them; a labelled
+// provisional plan gives them something to do today and a reason to log it.
+
+export type TailoringLevel = "provisional" | "developing" | "tailored" | "individualised";
+
+/** The four data-sufficiency tiers, as a key type. */
+export type DataTierKey = 0 | 1 | 2 | 3;
+
+/** [ASSURED] Which tailoring level each data-sufficiency tier produces. */
+export const TAILORING_BY_TIER: Readonly<Record<0 | 1 | 2 | 3, TailoringLevel>> = {
+  0: "provisional",
+  1: "developing",
+  2: "tailored",
+  3: "individualised",
+};
+
+/**
+ * [EST] How conservative the on-ramp is at each tailoring level. A provisional
+ * plan is built on population numbers, so it starts lower and ramps slower —
+ * the uncertainty is paid for in caution rather than in a refusal.
+ */
+export const TAILORING_RAMP_MULTIPLIER: Readonly<Record<TailoringLevel, number>> = {
+  provisional: 0.5,
+  developing: 0.75,
+  tailored: 1.0,
+  individualised: 1.0,
+};
+
+/** [EST] Starting weekly running minutes when there is no logged history at all to anchor on. Deliberately low: the on-ramp exists to be climbed. */
+export const PROVISIONAL_START_RUN_MIN_PER_WEEK = 60;
+/** [EST] Sessions per week assumed for a provisional plan before the athlete says otherwise. */
+export const PROVISIONAL_SESSIONS_PER_WEEK = 4;

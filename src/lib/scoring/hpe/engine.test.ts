@@ -60,7 +60,11 @@ function calibrationState(overrides: Partial<AthleteState> = {}): AthleteState {
 function calibrationGoal(overrides: Partial<Goal> = {}): Goal {
   return {
     weeksOut: 24,
+    horizonSource: "event_date",
     target5kS: 17 * 60 + 30,
+    targetSquatKg: 200,
+    targetBenchKg: 150,
+    targetDeadliftKg: 200,
     targetTotalKg: 550,
     priority: 0.5,
     sameDay: true,
@@ -75,6 +79,8 @@ function calibrationConstraints(overrides: Partial<Constraints> = {}): Constrain
   return {
     daysAvailable: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
     twoADaysPossible: true,
+    dayWindows: [],
+    availabilityVaries: false,
     amHour: 7,
     pmHour: 18,
     maxSessionsPerWeek: 9,
@@ -159,11 +165,6 @@ describe("WP3 — safety screen blocks and is not bypassable", () => {
       name: "current limiting injury",
       state: calibrationState({ safety: { ...DEFAULT_SAFETY_FLAGS, currentInjuryLimiting: true, injuryLast12Weeks: false, surgeryLast6Months: false } }),
       expectBlock: /injury/,
-    },
-    {
-      name: "two or more LEA flags",
-      state: calibrationState({ safety: { ...DEFAULT_SAFETY_FLAGS, leaRiskFlags: 2, injuryLast12Weeks: false, surgeryLast6Months: false } }),
-      expectBlock: /low-energy-availability/,
     },
     {
       name: "under 12 months of lifting with a total target",
@@ -715,19 +716,72 @@ describe("traceability", () => {
 // Data sufficiency — tier 0 returns no plan
 // ---------------------------------------------------------------------------
 
-describe("data sufficiency", () => {
-  it("tier 0 returns no plan and offers a baseline block instead", () => {
+describe("data sufficiency — labelled, never refused", () => {
+  it("still generates a plan at tier 0, and says plainly that it is provisional", () => {
+    // The behaviour change: refusing after eight sections of questions taught
+    // the athlete nothing and lost them. A labelled provisional plan gives
+    // them something to do today and a reason to log it.
     const profile = diagnose([], [], {}, { hrMax: 190, hrRest: 55 });
+    expect(profile.tier).toBe(0);
+
     const plan = generatePlan({
       state: calibrationState(),
       goal: calibrationGoal(),
       constraints: calibrationConstraints(),
       profile,
     });
+
+    expect(plan.generated).toBe(true);
+    expect(plan.weeks.length).toBeGreaterThan(0);
+    expect(plan.refusal).toBeNull();
+    expect(plan.tailoring!.level).toBe("provisional");
+    expect(plan.tailoring!.isProvisional).toBe(true);
+    expect(plan.tailoring!.headline).toMatch(/not yet a personal one/i);
+  });
+
+  it("pays for the uncertainty in caution rather than in a refusal", () => {
+    // A provisional plan must ramp more slowly than a diagnosed one from the
+    // same starting volume. Being wrong about a beginner should cost them a
+    // fortnight of easy running, not an injury.
+    const args = { state: calibrationState(), goal: calibrationGoal(), constraints: calibrationConstraints() };
+    const provisional = generatePlan({ ...args, profile: diagnose([], [], {}, { hrMax: 190, hrRest: 55 }) });
+    const diagnosed = generatePlan({ ...args, profile: calibrationProfile() });
+
+    const peak = (p: typeof provisional) => Math.max(...p.weeks.map((w) => w.enduranceMin));
+    expect(peak(provisional)).toBeLessThan(peak(diagnosed));
+    expect(provisional.tailoring!.rampMultiplier).toBeLessThan(diagnosed.tailoring!.rampMultiplier);
+  });
+
+  it("names what to do next, and what each thing specifically unlocks", () => {
+    const plan = generatePlan({
+      state: calibrationState(),
+      goal: calibrationGoal(),
+      constraints: calibrationConstraints(),
+      profile: diagnose([], [], {}, { hrMax: 190, hrRest: 55 }),
+    });
+    const unlocks = plan.tailoring!.unlocks;
+    expect(unlocks.length).toBeGreaterThan(0);
+    // "Log more runs" is a chore. "A second maximal effort unlocks your
+    // personal fatigue-resistance model" is a reason.
+    for (const u of unlocks) {
+      expect(u.action.length).toBeGreaterThan(10);
+      expect(u.unlocks.length).toBeGreaterThan(20);
+    }
+    expect(unlocks.map((u) => u.unlocks).join(" ")).toMatch(/fatigue-resistance/);
+  });
+
+  it("still refuses on safety, which is not a data gap", () => {
+    // The line that did NOT move. More logging fills a missing bodyweight; it
+    // does not fill exertional chest pain.
+    const plan = generatePlan({
+      state: calibrationState({ safety: { ...DEFAULT_SAFETY_FLAGS, chestPainOnExertion: true } }),
+      goal: calibrationGoal(),
+      constraints: calibrationConstraints(),
+      profile: calibrationProfile(),
+    });
     expect(plan.generated).toBe(false);
     expect(plan.weeks).toHaveLength(0);
-    expect(plan.refusal!.nextSteps.join(" ")).toMatch(/time trial/);
-    expect(plan.refusal!.nextSteps.join(" ")).toMatch(/3-5RM/);
+    expect(plan.refusal!.nextSteps.length).toBeGreaterThan(0);
   });
 });
 
@@ -993,5 +1047,50 @@ describe("safety properties across randomised athletes", () => {
       if (!plan.generated) continue;
       expect(plan.acwr!.peakAcwr, `seed ${seed}`).toBeLessThanOrEqual(ACWR_BLOCK + 1e-6);
     }
+  });
+});
+
+describe("WP3 — low energy availability warns and protects, without withholding training", () => {
+  const leaState = (flags: number) =>
+    calibrationState({ safety: { ...DEFAULT_SAFETY_FLAGS, leaRiskFlags: flags, injuryLast12Weeks: false, surgeryLast6Months: false } });
+
+  it("no longer blocks the plan at two or more flags", () => {
+    // Reversing the assurance review's Rev B position deliberately. The harm
+    // it identified was the engine NUDGING an at-risk athlete toward weight
+    // loss, and that is addressed by suppressing bodyweight guidance — which
+    // still happens. Withholding the training plan treats nothing.
+    const screen = safetyScreen(leaState(2), calibrationGoal());
+    expect(screen.blocked).toBe(false);
+    expect(screen.warnings.join(" ")).toMatch(/fuelling/i);
+  });
+
+  it("still suppresses every trace of bodyweight guidance, at any flag count", () => {
+    for (const flags of [1, 2, 3, 4, 5]) {
+      const state = leaState(flags);
+      const screen = safetyScreen(state, calibrationGoal());
+      expect(screen.showBodyweightGuidance, `${flags} flags`).toBe(false);
+      expect(bodyweightFrontier(state, screen.showBodyweightGuidance).points).toHaveLength(0);
+    }
+  });
+
+  it("still refers, because the referral is the actual intervention", () => {
+    const screen = safetyScreen(leaState(2), calibrationGoal());
+    expect(screen.referrals.join(" ")).toMatch(/dietitian/i);
+    expect(screen.referrals.join(" ")).toMatch(/Eating Disorders/i);
+  });
+
+  it("generates a plan containing no calorie, macro or weight-loss output", () => {
+    const plan = generatePlan({
+      state: leaState(3),
+      goal: calibrationGoal(),
+      constraints: calibrationConstraints(),
+      profile: calibrationProfile(),
+    });
+    expect(plan.generated).toBe(true);
+    const everything = JSON.stringify(plan).toLowerCase();
+    for (const phrase of ["calorie", "kcal", "energy deficit", "rate of loss", "lose weight"]) {
+      expect(everything, phrase).not.toContain(phrase);
+    }
+    expect(plan.bodyweightFrontier?.points ?? []).toHaveLength(0);
   });
 });

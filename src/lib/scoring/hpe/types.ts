@@ -118,8 +118,12 @@ export interface AthleteProfile {
   confidence: number;
 
   // --- aerobic ---
+  /** Total aerobic volume, running plus cross-training. */
   weeklyVolumeKm: number;
   weeklyVolumeMin: number;
+  /** The running-only share. Everything pace-derived is fitted on this alone. */
+  runningVolumeKm: number;
+  runningVolumeMin: number;
   longestRunKm: number;
   /** The athlete's OWN fitted Riegel exponent. Null when they have fewer than RIEGEL_MIN_EFFORTS maximal efforts — the population value is used downstream and labelled as such. */
   riegelK: number | null;
@@ -159,6 +163,14 @@ export interface AthleteProfile {
   weakLift: string | null;
   liftRatios: Record<string, number>;
   stalledLifts: string[];
+  /**
+   * Whether each strength verdict could be reached at all. Without these,
+   * "no weak lift" and "never looked for one" are indistinguishable, and the
+   * report was showing the second as the first.
+   */
+  liftRatiosAssessed: boolean;
+  weakLiftAssessed: boolean;
+  stallAssessed: boolean;
 
   // --- synthesis ---
   limiter: "endurance" | "strength";

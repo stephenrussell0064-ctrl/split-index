@@ -208,89 +208,39 @@ export function SportForm({
         </section>
       )}
 
-      {/* Effort — session type as primary intensity signal. Gym has no
-          equivalent here: its session_type taxonomy (Tempo/Threshold/
-          Interval/Race) is cardio-specific, and gym already tracks effort
-          per-set via RPE inside each exercise row. Rendering this for gym
-          previously showed an empty "Effort" header with no control inside
-          it, since both fields.sessionType and fields.rpe are unset for
-          gym (SPORT_FIELDS.gym === {}).
-
-          Collapsed by default, like HR/Advanced/Notes below — session type
-          already defaults to "easy" and every field here is optional, so a
-          first-time casual logger sees a genuine distance + duration form
-          (Slice D: "distance, time, done — with everything else optional"),
-          not a session-type classifier they feel obligated to fill in. */}
-      {!isGym && (
-        <ExpandableSection title="Effort & session type" hint="Defaults to Easy — optional" tone="cardio">
-          {fields.sessionType && (
-            <Field label="Session type">
-              <PillGroup
-                options={SESSION_TYPES}
-                value={state.sessionType}
-                onChange={(value) => onUpdate("sessionType", value as SessionType)}
-                layoutIdPrefix={`session-${sport}`}
-              />
-            </Field>
-          )}
-          {!fields.sessionType && fields.rpe && (
-            <Field label="RPE" error={errors.rpe} hint="1 = very easy · 10 = max effort">
-              <RpeScale value={state.rpe} onChange={(value) => onUpdate("rpe", value)} />
-            </Field>
-          )}
-          {fields.sessionType && state.sessionType === "interval" && (
-            <IntervalSubForm state={state} errors={errors} onUpdate={onUpdate} />
-          )}
-          {fields.sessionType && state.sessionType === "fartlek" && (
-            <FartlekSubForm state={state} errors={errors} onUpdate={onUpdate} />
-          )}
-        </ExpandableSection>
-      )}
-
-      {/* Progressive: HR & RPE */}
-      {!isGym && (fields.avgHr || fields.rpe) && (
-        <ExpandableSection
-          title="Heart rate & RPE"
-          hint="Adding heart rate unlocks aerobic efficiency scoring"
-          tone="cardio"
-        >
-          {fields.avgHr && (
-            <Field
-              label="Avg heart rate"
-              error={errors.avgHr}
-              hint="Optional — improves aerobic efficiency scoring"
-            >
-              <UnitInput
-                value={state.avgHr}
-                unit="bpm"
-                placeholder="152 — skip if not tracked"
-                invalid={!!errors.avgHr}
-                onChange={(e) => onUpdate("avgHr", e.target.value)}
-                className="h-12"
-              />
-            </Field>
-          )}
-          {fields.rpe && fields.sessionType && (
-            <Field label="RPE — how hard did it feel?" error={errors.rpe}>
-              <RpeScale value={state.rpe} onChange={(value) => onUpdate("rpe", value)} />
-            </Field>
-          )}
-        </ExpandableSection>
-      )}
-
-      {/* Progressive: advanced metrics — split lives in the main Metrics
-          section (mandatory there, not tucked away) when derivableDistance
-          is set, so it's excluded here to avoid duplicating the field. */}
-      {!isGym &&
-        (fields.elevation ||
-          (fields.split && !fields.derivableDistance) ||
-          fields.power ||
-          fields.stroke ||
-          fields.temperature) && (
-          <ExpandableSection title="Advanced metrics" hint="Splits, elevation, power" tone="cardio">
+      {/* Effort & conditions — heart rate, RPE, elevation gain and
+          temperature, plainly visible rather than behind a disclosure.
+          User-reported: these were spread across two collapsed sections
+          ("Heart rate & RPE" / "Advanced metrics"), so logging or editing a
+          run meant hunting through accordions for the four fields most
+          runners actually fill in every session. They stay optional — the
+          form is still "distance, time, done" — they're just no longer
+          hidden behind extra taps. Gym is excluded: SPORT_FIELDS.gym is
+          empty (its effort lives per-set inside each exercise row), so this
+          would render as an empty header. */}
+      {!isGym && (fields.avgHr || fields.rpe || fields.elevation || fields.temperature) && (
+        <section className="rounded-2xl border border-cardio-border/30 bg-cardio-bg-elevated/5 p-5 sm:p-6 space-y-5">
+          <SectionLabel>Effort &amp; conditions</SectionLabel>
+          {(fields.avgHr || fields.elevation || fields.temperature) && (
             <div className="grid gap-5 sm:grid-cols-2">
+              {fields.avgHr && (
+                <Field
+                  label="Avg heart rate"
+                  error={errors.avgHr}
+                  hint="Optional — improves aerobic efficiency scoring"
+                >
+                  <UnitInput
+                    value={state.avgHr}
+                    unit="bpm"
+                    placeholder="152 — skip if not tracked"
+                    invalid={!!errors.avgHr}
+                    onChange={(e) => onUpdate("avgHr", e.target.value)}
+                    className="h-12"
+                  />
+                </Field>
+              )}
               {fields.elevation && (
-                <Field label="Elevation gain" error={errors.elevation}>
+                <Field label="Elevation gain" error={errors.elevation} hint="Optional">
                   <UnitInput
                     value={state.elevation}
                     unit="m"
@@ -301,6 +251,72 @@ export function SportForm({
                   />
                 </Field>
               )}
+              {fields.temperature && (
+                <Field label="Temperature" error={errors.temperature} hint="Optional">
+                  <UnitInput
+                    value={state.temperature}
+                    unit="°C"
+                    placeholder="15"
+                    invalid={!!errors.temperature}
+                    onChange={(e) => onUpdate("temperature", e.target.value)}
+                    className="h-12"
+                  />
+                </Field>
+              )}
+            </div>
+          )}
+          {fields.rpe && (
+            <Field
+              label="RPE — how hard did it feel?"
+              error={errors.rpe}
+              hint="1 = very easy · 10 = max effort"
+            >
+              <RpeScale value={state.rpe} onChange={(value) => onUpdate("rpe", value)} />
+            </Field>
+          )}
+        </section>
+      )}
+
+      {/* Session type — the intensity classifier, plus its optional
+          interval/fartlek rep breakdown. Gym has no equivalent: its
+          session_type taxonomy (Tempo/Threshold/Interval/Race) is
+          cardio-specific, and gym already tracks effort per-set via RPE
+          inside each exercise row.
+
+          Still collapsed by default (and now only rendered for sports that
+          actually have a session type — walking et al. previously opened
+          this to find only the RPE scale, which is inline above now):
+          session type already defaults to "easy", so a first-time casual
+          logger isn't presented with a classifier they feel obligated to
+          fill in (Slice D: "distance, time, done"). */}
+      {!isGym && fields.sessionType && (
+        <ExpandableSection title="Session type" hint="Defaults to Easy — optional" tone="cardio">
+          <Field label="Session type">
+            <PillGroup
+              options={SESSION_TYPES}
+              value={state.sessionType}
+              onChange={(value) => onUpdate("sessionType", value as SessionType)}
+              layoutIdPrefix={`session-${sport}`}
+            />
+          </Field>
+          {state.sessionType === "interval" && (
+            <IntervalSubForm state={state} errors={errors} onUpdate={onUpdate} />
+          )}
+          {state.sessionType === "fartlek" && (
+            <FartlekSubForm state={state} errors={errors} onUpdate={onUpdate} />
+          )}
+        </ExpandableSection>
+      )}
+
+      {/* Progressive: advanced metrics — split lives in the main Metrics
+          section (mandatory there, not tucked away) when derivableDistance
+          is set, so it's excluded here to avoid duplicating the field.
+          Elevation and temperature used to live here too; they're inline in
+          "Effort & conditions" above now. */}
+      {!isGym &&
+        ((fields.split && !fields.derivableDistance) || fields.power || fields.stroke) && (
+          <ExpandableSection title="Advanced metrics" hint="Split, power, stroke" tone="cardio">
+            <div className="grid gap-5 sm:grid-cols-2">
               {fields.split && !fields.derivableDistance && (
                 <Field label="Avg split / 500m" error={errors.split}>
                   <SplitInput
@@ -329,18 +345,6 @@ export function SportForm({
                     options={STROKE_TYPES}
                     value={state.strokeType}
                     onChange={(e) => onUpdate("strokeType", e.target.value)}
-                  />
-                </Field>
-              )}
-              {fields.temperature && (
-                <Field label="Temperature" error={errors.temperature}>
-                  <UnitInput
-                    value={state.temperature}
-                    unit="°C"
-                    placeholder="15"
-                    invalid={!!errors.temperature}
-                    onChange={(e) => onUpdate("temperature", e.target.value)}
-                    className="h-12"
                   />
                 </Field>
               )}

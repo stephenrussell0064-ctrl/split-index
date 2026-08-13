@@ -23,8 +23,27 @@
 import { estimatedMaxHr } from "./intake";
 import type { LiftSet, RunLog } from "./types";
 
-/** Only these sports carry a pace the aerobic diagnostic can reason about. */
-const DIAGNOSABLE_SPORTS = new Set(["run", "row", "cycle", "ski", "swim", "walk"]);
+/**
+ * The sports whose pace the aerobic diagnostic can reason about, expressed in
+ * the vocabulary `activities.sport` actually stores — the app-facing
+ * `SportType` enum (`running`, `rowing`, `indoor_cycling`, …), NOT the
+ * internal six-way benchmark bucket (`run`, `row`, `cycle`, …) used by
+ * `cardio-benchmarks.ts`. Those two vocabularies share no member, so
+ * filtering rows against the benchmark buckets discarded every activity ever
+ * logged and left `diagnose` with nothing to predict from — the cause of the
+ * flat 25:00 predicted 5k (`predicted5kS`'s no-maximal-effort placeholder)
+ * reported by athletes whose every logged run was far faster than that.
+ *
+ * Foot-based running only, and deliberately so. `RunLog` carries no sport of
+ * its own, and everything built on it — the median-pace maximal-effort
+ * outlier rule, the personal Riegel fit, `predicted5kS`, the easy/quality
+ * pace cutoffs, volume adequacy — is denominated in running seconds per
+ * kilometre. A 20 km ride enters that pool as a 2:00/km "run" and a 400 m
+ * swim as a 15:00/km one; either silently wrecks both the median and the
+ * projection. Cross-training belongs to the load/ACWR side of the engine,
+ * which reads the activity rows directly.
+ */
+const DIAGNOSABLE_SPORTS = new Set<string>(["running"]);
 
 /** Session types that ARE a maximal effort by definition. */
 const MAX_EFFORT_SESSION_TYPES = new Set(["race"]);
@@ -214,4 +233,59 @@ export function loggedWeeklyRunMinutes(rows: ActivityRow[], weeks = 8, now = Dat
   );
   if (recent.length === 0) return null;
   return recent.reduce((s, r) => s + r.duration_seconds, 0) / 60 / weeks;
+}
+
+/**
+ * Non-running endurance modalities. These cannot inform running pace — the
+ * whole point of the `DIAGNOSABLE_SPORTS` note above — but they are
+ * unambiguously aerobic training, and an athlete who rows four times a week
+ * does not have an aerobic base of zero.
+ */
+const CROSS_TRAINING_SPORTS = new Set<string>([
+  "rowing",
+  "bike_erg",
+  "indoor_cycling",
+  "outdoor_cycling",
+  "ski_erg",
+  "swimming",
+  "walking",
+]);
+
+export interface CrossTrainingVolume {
+  minPerWeek: number;
+  kmPerWeek: number;
+  sessionCount: number;
+  /** Which modalities contributed, so the report can say where the volume came from. */
+  sports: string[];
+}
+
+/**
+ * Weekly cross-training volume over the same window the diagnostic uses.
+ *
+ * Split out from `ingestRuns` rather than merged into it because the two feed
+ * different things: this feeds VOLUME (and so volume adequacy, the on-ramp and
+ * the chronic-load seed), while running alone feeds PACE. Merging them would
+ * put a 2:00/km "run" into the pace pool; dropping them entirely reports a
+ * rower as having done no aerobic training at all. Both are wrong, in opposite
+ * directions.
+ */
+export function ingestCrossTraining(rows: ActivityRow[], weeks = 12): CrossTrainingVolume {
+  const usable = rows.filter(
+    (r) => CROSS_TRAINING_SPORTS.has(r.sport) && !r.is_partial_track && r.duration_seconds > 0
+  );
+  if (usable.length === 0) return { minPerWeek: 0, kmPerWeek: 0, sessionCount: 0, sports: [] };
+
+  // Span the sessions actually cover, capped at the window — a single session
+  // three days ago is not "one session per week for twelve weeks", and dividing
+  // by the full window would understate it just as badly as dividing by three
+  // days would overstate it.
+  const times = usable.map((r) => new Date(r.started_at).getTime());
+  const spanWeeks = Math.min(weeks, Math.max(1, (Math.max(...times) - Math.min(...times)) / (7 * 86_400_000)));
+
+  return {
+    minPerWeek: usable.reduce((s, r) => s + r.duration_seconds, 0) / 60 / spanWeeks,
+    kmPerWeek: usable.reduce((s, r) => s + (r.distance_meters ?? 0), 0) / 1000 / spanWeeks,
+    sessionCount: usable.length,
+    sports: [...new Set(usable.map((r) => r.sport))],
+  };
 }

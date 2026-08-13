@@ -141,7 +141,20 @@ export function DiagnosticReport({
         <div className="mt-3">
           <Metric
             label="Weekly volume"
-            value={`${profile.weeklyVolumeKm.toFixed(1)}km / ${Math.round(profile.weeklyVolumeMin)}min`}
+            value={
+              profile.weeklyVolumeMin > 0
+                ? `${profile.weeklyVolumeKm.toFixed(1)}km / ${Math.round(profile.weeklyVolumeMin)}min`
+                : null
+            }
+            // Rowing, cycling and the ski erg count toward this. They cannot
+            // inform pace, but they are unambiguously aerobic training, and
+            // reporting a rower's base as zero was simply wrong.
+            verdict={
+              profile.runningVolumeMin < profile.weeklyVolumeMin - 1
+                ? `${Math.round(profile.runningVolumeMin)}min of it running`
+                : undefined
+            }
+            unmeasured="no logged endurance sessions yet"
           />
           <Metric label="Longest run" value={`${profile.longestRunKm.toFixed(1)}km`} />
           <Metric
@@ -215,7 +228,14 @@ export function DiagnosticReport({
                 key={lift}
                 label={lift.charAt(0).toUpperCase() + lift.slice(1)}
                 value={`${Math.round(kg)}kg`}
-                verdict={profile.liftRatios[lift] ? `${profile.liftRatios[lift].toFixed(2)}× squat` : undefined}
+                // A ratio to squat is only meaningful when there IS a squat to
+                // be a ratio of. Shown otherwise, it was arithmetic on a
+                // number that did not exist.
+                verdict={
+                  profile.liftRatiosAssessed && profile.liftRatios[lift]
+                    ? `${profile.liftRatios[lift].toFixed(2)}× squat`
+                    : undefined
+                }
               />
             ))
           ) : (
@@ -227,8 +247,19 @@ export function DiagnosticReport({
             verdict={profile.repProfileGap != null ? profile.repProfileVerdict : undefined}
             unmeasured="needs both heavy and high-rep sets"
           />
-          <Metric label="Weak lift" value={profile.weakLift ?? "none flagged"} />
-          <Metric label="Stalled lifts" value={profile.stalledLifts.join(", ") || "none"} />
+          {/* "No weak lift" and "never looked for one" must not read the
+              same. Both were rendering as "none flagged", which told athletes
+              their lifts were balanced when the engine had never seen a lift. */}
+          <Metric
+            label="Weak lift"
+            value={profile.weakLiftAssessed ? (profile.weakLift ?? "none — your lifts are in proportion") : null}
+            unmeasured="needs a squat plus one other lift"
+          />
+          <Metric
+            label="Stalled lifts"
+            value={profile.stallAssessed ? (profile.stalledLifts.join(", ") || "none — everything is still moving") : null}
+            unmeasured="needs 6+ sets of a lift across 4+ weeks"
+          />
         </div>
       </Card>
 

@@ -22,7 +22,7 @@
  */
 
 import { HPE_CONSTANTS_VERSION, type EmphasisKey } from "./constants";
-import { BASELINE_BLOCK_PROMPT, canGeneratePlan } from "./diagnostics";
+import { assessTailoring, type PlanTailoring } from "./tailoring";
 import { bodyweightFrontier, classifyDomains, feasibilityScreen, type DomainMode, type FeasibilityResult } from "./feasibility";
 import { eventDayPlan, jointTaper, resolveEventOrder, type EventDayStep, type EventOrderResult, type TaperDay } from "./event";
 import type { Constraints, Goal, AthleteState } from "./intake";
@@ -63,6 +63,8 @@ export interface GeneratedPlan {
   eventDay: EventDayStep[] | null;
   /** Every finding the plan's sessions cite, so the UI can render the trace. */
   findings: Finding[];
+  /** How individual this plan actually is, and what would make it more so. Never null on a generated plan. */
+  tailoring: PlanTailoring | null;
 }
 
 export interface GeneratePlanInput {
@@ -95,6 +97,7 @@ export function generatePlan(input: GeneratePlanInput): GeneratedPlan {
     taper: [] as TaperDay[],
     eventDay: null,
     findings: profile.findings,
+    tailoring: null as PlanTailoring | null,
   };
 
   if (safety.blocked) {
@@ -108,24 +111,22 @@ export function generatePlan(input: GeneratePlanInput): GeneratedPlan {
     };
   }
 
-  // ---- 2. DATA SUFFICIENCY ------------------------------------------------
-  if (!canGeneratePlan(profile)) {
-    return {
-      ...empty,
-      generated: false,
-      refusal: {
-        reason:
-          "There is not enough logged history to diagnose anything specific about you, and a plan built on that " +
-          "would be a template with your name on it.",
-        nextSteps: BASELINE_BLOCK_PROMPT,
-      },
-    };
-  }
+  // ---- 2. DATA SUFFICIENCY: LABEL IT, DO NOT REFUSE ----------------------
+  // The brief said "no plan" below tier 1. That has been overridden
+  // deliberately — see the module note on `assessTailoring`. Thin data now
+  // produces a conservative plan that says how provisional it is, because a
+  // refusal after eight sections of questions teaches the athlete nothing and
+  // loses them. Uncertainty is paid for in caution: the ramp multiplier below
+  // halves the progression when the engine is guessing at the starting point.
+  const tailoring = assessTailoring(profile);
 
   // ---- 3. FEASIBILITY, MODE, MACROCYCLE -----------------------------------
   const feasibility = feasibilityScreen(state, goal);
   const mode = classifyDomains(state, goal);
-  const macro = buildMacrocycle(state, goal, safety.rampMultiplier);
+  // Both caution factors compound: a novice runner with no logged history gets
+  // the halved novice ramp AND the halved provisional ramp, which is the
+  // correct direction to stack them.
+  const macro = buildMacrocycle(state, goal, safety.rampMultiplier * tailoring.rampMultiplier);
 
   const weeks: PlanWeek[] = [];
   const rawStress: number[] = [];
@@ -200,5 +201,6 @@ export function generatePlan(input: GeneratePlanInput): GeneratedPlan {
     taper: jointTaper(state, true),
     eventDay: eventOrder ? eventDayPlan(goal, eventOrder) : null,
     findings: profile.findings,
+    tailoring,
   };
 }

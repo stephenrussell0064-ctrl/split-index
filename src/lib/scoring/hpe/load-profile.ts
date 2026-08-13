@@ -18,6 +18,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { ageFromDateOfBirth } from "@/lib/utils/age";
 import { diagnose } from "./diagnostics";
 import {
+  ingestCrossTraining,
   ingestLiftSets,
   ingestRuns,
   loggedWeeklyRunMinutes,
@@ -115,8 +116,14 @@ export async function loadAthleteProfile(
     .filter((r): r is GymExerciseRow => r !== null);
 
   const runs = ingestRuns(activities);
+  // Rowing, cycling, the ski erg. Aerobic volume that cannot inform running
+  // pace but is unambiguously training — see ingestCrossTraining.
+  const crossTraining = ingestCrossTraining(activities, HISTORY_WEEKS);
   const sets = ingestLiftSets(gymRows);
-  if (runs.length === 0 && sets.length === 0) return null;
+  // Cross-training alone is enough to diagnose from. Returning null here was
+  // reporting an athlete who rows four times a week as having no history at
+  // all.
+  if (runs.length === 0 && sets.length === 0 && crossTraining.sessionCount === 0) return null;
 
   // Best logged estimated 1RM per competition lift — the SRI engine's own
   // number, consumed through this adapter rather than recomputed here.
@@ -143,6 +150,19 @@ export async function loadAthleteProfile(
   );
 
   const assumptions: string[] = [];
+  if (crossTraining.sessionCount > 0 && runs.length === 0) {
+    assumptions.push(
+      `Your aerobic volume comes entirely from ${crossTraining.sports.join(", ")} — ${Math.round(crossTraining.minPerWeek)} ` +
+        `min/week. That counts as your base, but pace, easy-effort bands and your fatigue-resistance profile can only ` +
+        `be fitted on running, so those stay population estimates until you log some.`
+    );
+  } else if (crossTraining.sessionCount > 0) {
+    assumptions.push(
+      `${Math.round(crossTraining.minPerWeek)} min/week of ${crossTraining.sports.join(", ")} is counted toward your ` +
+        `aerobic volume. Pace-derived numbers are still fitted on your running alone, which is the only modality ` +
+        `they are meaningful in.`
+    );
+  }
   if (restingAssumed) {
     assumptions.push(
       "Resting heart rate was assumed rather than measured — the easy-effort band widens because of it. " +
@@ -161,6 +181,8 @@ export async function loadAthleteProfile(
     hrMax,
     hrRest,
     hrMaxSource,
+    crossTrainingMinPerWeek: crossTraining.minPerWeek,
+    crossTrainingKmPerWeek: crossTraining.kmPerWeek,
   });
 
   // ---- persistence and the four-weekly re-run ----------------------------

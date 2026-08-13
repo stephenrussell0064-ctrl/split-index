@@ -32,7 +32,10 @@
  * refusal, and it is implemented as one.
  */
 
-import { MIN_HEALTHY_BMI, type TrainingAge } from "./constants";
+import {
+  DEFAULT_PLANNING_HORIZON_WEEKS,
+  MAX_HORIZON_WEEKS,
+  MIN_HORIZON_WEEKS, MIN_HEALTHY_BMI, type TrainingAge } from "./constants";
 
 // ---------------------------------------------------------------------------
 // Section A — safety and eligibility
@@ -145,9 +148,30 @@ export function pace5kSPerKm(state: Pick<AthleteState, "predicted5kS">): number 
   return state.predicted5kS / 5.0;
 }
 
+export type HorizonSource = "event_date" | "chosen_timeframe" | "suggested";
+
 export interface Goal {
   weeksOut: number;
+  /**
+   * How `weeksOut` was arrived at. An event date is the strongest signal — it
+   * is a real deadline the taper must land on. A chosen timeframe is a
+   * training block with no deadline, so the taper becomes a test week instead.
+   * `suggested` means the athlete gave neither and the engine picked; the plan
+   * says so rather than implying they committed to a date.
+   */
+  horizonSource: HorizonSource;
   target5kS: number | null;
+  /**
+   * Per-lift targets, each independently skippable. Asking for a "total" is
+   * asking the athlete to do arithmetic on three numbers they may not all
+   * know — and it makes the whole answer unavailable if one of the three is
+   * missing. Any subset is useful: a bench target alone still tells the engine
+   * which lift the athlete cares about.
+   */
+  targetSquatKg: number | null;
+  targetBenchKg: number | null;
+  targetDeadliftKg: number | null;
+  /** Derived from whichever per-lift targets were given. Null when none were. */
   targetTotalKg: number | null;
   /** 0 = endurance matters more, 1 = strength matters more. Spec's open decision D2: pre-set from the goal gaps, movable by the athlete. */
   priority: number;
@@ -158,10 +182,39 @@ export interface Goal {
   eventOrderKnown: boolean;
 }
 
+/** One day's training window. Times are local clock hours. */
+export interface DayWindow {
+  day: string;
+  /** False = a rest day this athlete cannot train at all. */
+  available: boolean;
+  /** Earliest and latest they could start a session that day. */
+  startHour: number;
+  endHour: number;
+  /** Whether they could fit two sessions on this specific day. */
+  twoSessions: boolean;
+}
+
 export interface Constraints {
   daysAvailable: string[];
   twoADaysPossible: boolean;
-  /** Real clock times. The spec is emphatic: the 6h separation rule is computed from these, not assumed. An athlete training at 06:00 and 12:00 has a 6-hour gap; one training at 12:00 and 17:00 does not. */
+  /**
+   * Per-day training windows. The intake spec is emphatic that the six-hour
+   * separation rule must be computed from real clock times rather than
+   * assumed — and real clock times differ BY DAY. An athlete who trains at
+   * 06:00 on weekdays and 10:00 at weekends has a different separation
+   * profile on each, and collapsing that to one amHour/pmHour pair throws
+   * away the thing the rule depends on.
+   */
+  dayWindows: DayWindow[];
+  /**
+   * True when the athlete's week genuinely varies — shift work, childcare,
+   * an unpredictable job. The scheduler stops treating day placement as
+   * meaningful and produces a prioritised session list for the week instead,
+   * because a fixed Tuesday/Thursday plan that gets ignored every second week
+   * is worse than an ordered list the athlete can place themselves.
+   */
+  availabilityVaries: boolean;
+  /** Fallback clock hours, used only for days with no window of their own. */
   amHour: number;
   pmHour: number;
   maxSessionsPerWeek: number;
@@ -195,35 +248,130 @@ export function validateIntake(
   constraints: Partial<Constraints>
 ): ResolvedIntake {
   const issues: IntakeIssue[] = [];
-  const block = (field: string, message: string) => issues.push({ field, severity: "block", message });
+  // Data gaps no longer block. Every one of these degrades to a documented,
+  // surfaced assumption instead — see the module note on `assessTailoring`.
+  // The engine pays for uncertainty in caution (a halved ramp, a lower start,
+  // wider bands) rather than in a refusal that teaches the athlete nothing.
+  //
+  // The safety screen is untouched and still blocks. It runs in
+  // `safetyScreen`, not here, and the difference is the point: a missing
+  // bodyweight is a gap more logging fills, whereas exertional chest pain is
+  // not a gap at all.
+  const assume = (field: string, message: string) => issues.push({ field, severity: "assumed", message });
 
   if (state.age == null || state.age < 16 || state.age > 90) {
-    block("age", "Age is required and must be between 16 and 90.");
+    assume("age", "Age was not available, so 30 is assumed. It sets your estimated maximum heart rate, so every heart-rate band below inherits the guess.");
   }
   if (state.bodyweightKg == null || state.bodyweightKg < 35 || state.bodyweightKg > 200) {
-    block("bodyweightKg", "Current bodyweight is required (35-200kg).");
+    assume(
+      "bodyweightKg",
+      "Bodyweight is not on file. Nothing in the plan depends on it except the energy-availability safeguard, so " +
+        "no bodyweight guidance of any kind is shown until it is."
+    );
   }
   if (state.heightCm == null || state.heightCm < 130 || state.heightCm > 220) {
-    block("heightCm", "Height is required (130-220cm) — it sets the BMI floor for the energy-availability safeguard.");
+    assume(
+      "heightCm",
+      "Height is not on file, so the BMI floor cannot be checked and bodyweight guidance stays suppressed."
+    );
   }
-  if (!state.sex) block("sex", "Sex is required — the scoring curves are sex-specific.");
-  if (goal.weeksOut == null || goal.weeksOut < 4 || goal.weeksOut > 52) {
-    block("weeksOut", "An event date between 4 and 52 weeks out is required.");
+  if (!state.sex) {
+    assume("sex", "Sex is not set, so population-average scoring curves are used rather than sex-specific ones.");
   }
   if ((constraints.daysAvailable?.length ?? 0) < 3) {
-    block("daysAvailable", "At least three available training days are required.");
+    assume(
+      "daysAvailable",
+      "Fewer than three training days are set, so the plan is built around a default week. Setting your real days " +
+        "is what lets the scheduler space hard sessions properly."
+    );
   }
-  // The refusal the spec singles out by name.
+  // No longer a refusal. The on-ramp anchor still matters more than anything
+  // else here — starting 60% above where an athlete actually is remains the
+  // most common way generated plans injure people — so when it is unknown the
+  // plan starts LOW and ramps at half rate rather than not existing.
   if (state.currentRunMinPerWeek == null || !Number.isFinite(state.currentRunMinPerWeek)) {
-    block(
+    assume(
       "currentRunMinPerWeek",
-      "Current weekly running minutes could not be derived from your logs and were not provided. " +
-        "This is the on-ramp anchor: without it a plan would have to assume a starting point, which is " +
-        "the single most common way generated plans cause injury. Log two weeks of running, or enter it."
+      "Your current weekly running volume is not known from your logs and was not entered, so week 1 starts at a " +
+        "deliberately low default and the ramp runs at half rate. Log a normal week, or enter the number, and the " +
+        "plan will restart from where you actually are."
+    );
+  }
+  if (goal.weeksOut == null || goal.weeksOut < MIN_HORIZON_WEEKS || goal.weeksOut > MAX_HORIZON_WEEKS) {
+    assume(
+      "weeksOut",
+      `No event date or timeframe was set, so a ${DEFAULT_PLANNING_HORIZON_WEEKS}-week block is used. You can pick a ` +
+        `different timeframe, or add an event date, at any time.`
     );
   }
 
   return { ok: !issues.some((i) => i.severity === "block"), issues };
+}
+
+/**
+ * Resolves the planning horizon from whatever the athlete gave, in order of
+ * strength: a real event date, then a chosen timeframe, then the engine's own
+ * default.
+ *
+ * The distinction is not cosmetic. An event date is a deadline the taper has
+ * to land on; a chosen timeframe is a block with no deadline, so the last ten
+ * days become a test week rather than a peak. Recording WHICH is why the plan
+ * can say "your 12-week block" rather than implying a race the athlete never
+ * entered.
+ */
+export function resolveHorizon(
+  eventDate: string | null,
+  chosenTimeframeWeeks: number | null,
+  now: Date = new Date()
+): { weeksOut: number; horizonSource: HorizonSource; note: string | null } {
+  if (eventDate) {
+    const weeks = Math.round((new Date(eventDate).getTime() - now.getTime()) / (7 * 86_400_000));
+    if (Number.isFinite(weeks) && weeks >= MIN_HORIZON_WEEKS && weeks <= MAX_HORIZON_WEEKS) {
+      return { weeksOut: weeks, horizonSource: "event_date", note: null };
+    }
+    if (Number.isFinite(weeks) && weeks < MIN_HORIZON_WEEKS) {
+      return {
+        weeksOut: MIN_HORIZON_WEEKS,
+        horizonSource: "event_date",
+        note:
+          `Your event is under ${MIN_HORIZON_WEEKS} weeks away. There is not enough runway to build anything, so ` +
+          `this is a sharpening and taper block rather than a training block — the goal is arriving fresh, not fitter.`,
+      };
+    }
+    if (Number.isFinite(weeks) && weeks > MAX_HORIZON_WEEKS) {
+      return {
+        weeksOut: MAX_HORIZON_WEEKS,
+        horizonSource: "event_date",
+        note:
+          `Your event is more than a year out, so this plan covers the next ${MAX_HORIZON_WEEKS} weeks. It will be ` +
+          `rebuilt well before the event as your data accumulates.`,
+      };
+    }
+  }
+
+  if (chosenTimeframeWeeks != null && Number.isFinite(chosenTimeframeWeeks)) {
+    const weeks = Math.min(MAX_HORIZON_WEEKS, Math.max(MIN_HORIZON_WEEKS, Math.round(chosenTimeframeWeeks)));
+    return { weeksOut: weeks, horizonSource: "chosen_timeframe", note: null };
+  }
+
+  return {
+    weeksOut: DEFAULT_PLANNING_HORIZON_WEEKS,
+    horizonSource: "suggested",
+    note:
+      `You have not set an event date or picked a timeframe, so this is a ${DEFAULT_PLANNING_HORIZON_WEEKS}-week ` +
+      `block — the standard length, and the horizon every progression rate in this engine is expressed against. ` +
+      `Change it whenever you like.`,
+  };
+}
+
+/** Sums whichever per-lift targets were given. Null when none were — a partial answer is still an answer, but no answer is not a total of zero. */
+export function deriveTargetTotal(
+  squat: number | null,
+  bench: number | null,
+  deadlift: number | null
+): number | null {
+  const given = [squat, bench, deadlift].filter((v): v is number => v != null && Number.isFinite(v) && v > 0);
+  return given.length > 0 ? given.reduce((a, b) => a + b, 0) : null;
 }
 
 /**

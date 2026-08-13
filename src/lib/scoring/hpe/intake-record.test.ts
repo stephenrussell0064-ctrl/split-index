@@ -18,7 +18,8 @@ import {
   type IntakeRecord,
   type PrefilledFromSplitIndex,
 } from "./intake-record";
-import { validateIntake } from "./intake";
+import { deriveTargetTotal, resolveHorizon, validateIntake } from "./intake";
+import { DEFAULT_PLANNING_HORIZON_WEEKS, MAX_HORIZON_WEEKS, MIN_HORIZON_WEEKS } from "./constants";
 
 const NOW = new Date("2026-03-01T00:00:00Z");
 const EVENT = "2026-08-01"; // ~22 weeks out
@@ -186,54 +187,105 @@ describe("WP2 — the cross-check rule", () => {
   });
 });
 
-describe("WP2 — the blocking fields", () => {
-  it("refuses when the on-ramp anchor can be neither derived nor stated", () => {
-    const resolved = resolveIntakeInputs(
-      completeRecord({ currentRunMinPerWeek: null }),
-      prefilled({ loggedWeeklyRunMinutes: null }),
-      NOW
+describe("WP2 — missing fields degrade, they no longer block", () => {
+  // The behaviour change. Every one of these used to refuse outright. They now
+  // produce a documented, surfaced assumption and a more cautious plan — the
+  // engine pays for uncertainty in caution rather than in silence.
+  it("assumes rather than refuses when the on-ramp anchor is unknown", () => {
+    const result = validateIntake(
+      { age: 30, bodyweightKg: 80, heightCm: 180, sex: "male", currentRunMinPerWeek: undefined },
+      { weeksOut: 12 },
+      { daysAvailable: ["Mon", "Wed", "Fri"] }
     );
-    const validation = validateIntake(resolved.state, resolved.goal, resolved.constraints);
-    expect(validation.ok).toBe(false);
-    expect(validation.issues.find((i) => i.field === "currentRunMinPerWeek")?.message).toMatch(
-      /single most common way generated plans cause injury/i
-    );
+    expect(result.ok).toBe(true);
+    const issue = result.issues.find((i) => i.field === "currentRunMinPerWeek")!;
+    expect(issue.severity).toBe("assumed");
+    // It must still say what the cost is. This is the field that prevents the
+    // most common injury pathway in generated plans, so degrading it quietly
+    // would be worse than refusing.
+    expect(issue.message).toMatch(/half rate/);
   });
 
-  it("refuses on fewer than three available days", () => {
-    const resolved = resolveIntakeInputs(completeRecord({ daysAvailable: ["Mon", "Wed"] }), prefilled(), NOW);
-    const validation = validateIntake(resolved.state, resolved.goal, resolved.constraints);
-    expect(validation.ok).toBe(false);
-    expect(validation.issues.some((i) => i.field === "daysAvailable")).toBe(true);
-  });
-
-  it("refuses without an event date, and without height or bodyweight", () => {
-    const noDate = resolveIntakeInputs(completeRecord({ eventDate: null }), prefilled(), NOW);
-    expect(validateIntake(noDate.state, noDate.goal, noDate.constraints).ok).toBe(false);
-
-    const noBody = resolveIntakeInputs(completeRecord(), prefilled({ bodyweightKg: null, heightCm: null }), NOW);
-    const validation = validateIntake(noBody.state, noBody.goal, noBody.constraints);
-    expect(validation.ok).toBe(false);
-    expect(validation.issues.some((i) => i.field === "heightCm")).toBe(true);
-  });
-
-  it("reports every blocking field at once rather than one at a time", () => {
-    const resolved = resolveIntakeInputs(
-      completeRecord({ eventDate: null, daysAvailable: [], currentRunMinPerWeek: null }),
-      prefilled({ loggedWeeklyRunMinutes: null, bodyweightKg: null }),
-      NOW
+  it("assumes rather than refuses on fewer than three available days", () => {
+    const result = validateIntake(
+      { age: 30, bodyweightKg: 80, heightCm: 180, sex: "male", currentRunMinPerWeek: 100 },
+      { weeksOut: 12 },
+      { daysAvailable: ["Mon"] }
     );
-    const blocking = validateIntake(resolved.state, resolved.goal, resolved.constraints).issues.filter(
-      (i) => i.severity === "block"
-    );
-    expect(blocking.length).toBeGreaterThanOrEqual(4);
+    expect(result.ok).toBe(true);
+    expect(result.issues.find((i) => i.field === "daysAvailable")?.severity).toBe("assumed");
   });
 
-  it("passes a complete intake", () => {
-    const resolved = resolveIntakeInputs(completeRecord(), prefilled(), NOW);
-    expect(validateIntake(resolved.state, resolved.goal, resolved.constraints).ok).toBe(true);
-    expect(resolved.goal.weeksOut).toBeGreaterThanOrEqual(20);
-    expect(resolved.goal.weeksOut).toBeLessThanOrEqual(24);
+  it("assumes rather than refuses without an event date, height or bodyweight", () => {
+    const result = validateIntake({ age: 30, sex: "male", currentRunMinPerWeek: 100 }, {}, { daysAvailable: ["Mon", "Wed", "Fri"] });
+    expect(result.ok).toBe(true);
+    for (const field of ["bodyweightKg", "heightCm", "weeksOut"]) {
+      expect(result.issues.find((i) => i.field === field)?.severity, field).toBe("assumed");
+    }
+  });
+
+  it("suppresses bodyweight guidance entirely when bodyweight is unknown", () => {
+    // Degrading must not mean guessing. Nothing in the plan needs bodyweight
+    // except the energy-availability safeguard, so the correct degradation is
+    // to withhold that output rather than to invent a number for it.
+    const result = validateIntake({ age: 30, sex: "male", currentRunMinPerWeek: 100 }, { weeksOut: 12 }, { daysAvailable: ["Mon", "Wed", "Fri"] });
+    expect(result.issues.find((i) => i.field === "bodyweightKg")?.message).toMatch(/no bodyweight guidance/i);
+  });
+
+  it("reports every gap at once rather than one at a time", () => {
+    const result = validateIntake({}, {}, {});
+    expect(result.ok).toBe(true);
+    expect(result.issues.length).toBeGreaterThanOrEqual(4);
+    expect(result.issues.every((i) => i.severity === "assumed")).toBe(true);
+  });
+});
+
+describe("WP2 — planning horizon without an event date", () => {
+  const NOW = new Date("2026-01-01T00:00:00Z");
+
+  it("uses a real event date when there is one", () => {
+    const h = resolveHorizon("2026-04-02", null, NOW);
+    expect(h.horizonSource).toBe("event_date");
+    expect(h.weeksOut).toBe(13);
+    expect(h.note).toBeNull();
+  });
+
+  it("uses a chosen timeframe when there is no date", () => {
+    const h = resolveHorizon(null, 24, NOW);
+    expect(h.horizonSource).toBe("chosen_timeframe");
+    expect(h.weeksOut).toBe(24);
+  });
+
+  it("suggests a block when given neither, and says it is suggesting", () => {
+    const h = resolveHorizon(null, null, NOW);
+    expect(h.horizonSource).toBe("suggested");
+    expect(h.weeksOut).toBe(DEFAULT_PLANNING_HORIZON_WEEKS);
+    // It must not imply the athlete committed to a date they never entered.
+    expect(h.note).toMatch(/have not set an event date/i);
+  });
+
+  it("clamps an event that is too close, and reframes what the block is for", () => {
+    const h = resolveHorizon("2026-01-15", null, NOW);
+    expect(h.weeksOut).toBe(MIN_HORIZON_WEEKS);
+    expect(h.note).toMatch(/arriving fresh, not fitter/);
+  });
+
+  it("clamps an event more than a year out", () => {
+    const h = resolveHorizon("2028-01-01", null, NOW);
+    expect(h.weeksOut).toBe(MAX_HORIZON_WEEKS);
+  });
+});
+
+describe("WP2 — per-lift targets", () => {
+  it("accepts any subset, because a partial answer is still an answer", () => {
+    expect(deriveTargetTotal(200, null, null)).toBe(200);
+    expect(deriveTargetTotal(200, 140, null)).toBe(340);
+    expect(deriveTargetTotal(200, 140, 240)).toBe(580);
+  });
+
+  it("returns null when nothing was given, rather than a total of zero", () => {
+    // Zero is a claim about the athlete. Null is the absence of one.
+    expect(deriveTargetTotal(null, null, null)).toBeNull();
   });
 });
 

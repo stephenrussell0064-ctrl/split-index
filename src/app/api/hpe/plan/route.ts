@@ -2,6 +2,11 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { generatePlan } from "@/lib/scoring/hpe/engine";
 import { loadAthleteProfile } from "@/lib/scoring/hpe/load-profile";
+import { diagnose } from "@/lib/scoring/hpe/diagnostics";
+import { estimatedMaxHr } from "@/lib/scoring/hpe/intake";
+
+/** The intake spec's documented default, flagged as assumed rather than silently applied. */
+const ASSUMED_RESTING_HR = 60;
 import { savePlan, supersedePlans } from "@/lib/scoring/hpe/persistence";
 import { selectAttempts, racePacing } from "@/lib/scoring/hpe/progression";
 import { validateIntake, type AthleteState, type Constraints, type Goal } from "@/lib/scoring/hpe/intake";
@@ -131,87 +136,58 @@ export async function GET(request: Request) {
   // anchors the athlete on the honest answer while leaving them agency."
   const priority = goals.length > 0 ? gymGoals.length / goals.length : 0.5;
 
+  // No logged history no longer refuses. `loadAthleteProfile` returns null
+  // when there is nothing to diagnose from; the engine then runs on a
+  // tier-0 profile, produces a deliberately conservative plan, and says
+  // plainly that it is provisional. See the note on `assessTailoring`.
   const diagnostic = await loadAthleteProfile(supabase, user.id, { priority });
-  if (!diagnostic) {
-    await recordEvent(supabase, user.id, { outcome: "insufficient_data", reason_code: "no_logged_history" });
-    return NextResponse.json({
-      generated: false,
-      refusal: {
-        reason:
-          "There is no logged history to diagnose from yet, and a plan built on none would be a template with " +
-          "your name on it.",
-        nextSteps: [
-          "Log two weeks of running with heart rate.",
-          "Run one time trial — a 5k or 10k as a genuine maximal effort — and tag it as a race.",
-          "Log a 3-5RM test on squat, bench and deadlift.",
-        ],
-      },
-      diagnostic: null,
-    });
-  }
 
   // ---- WP2: the intake now answers what this route used to assume --------
   const intake = parseIntakeRow(intakeRow as Record<string, unknown> | null);
   const prefilled = await loadPrefilledIntake(supabase, user.id);
   const resolved = resolveIntakeInputs(intake, prefilled);
 
-  const assumptions = [...diagnostic.assumptions, ...resolved.assumed];
+  // A tier-0 profile when there is no logged history at all. Every derived
+  // metric on it is null, which is exactly right: the plan is then built from
+  // population defaults and labelled provisional, rather than refused.
+  const profile =
+    diagnostic?.profile ??
+    diagnose([], [], {}, {
+      hrMax: prefilled.maxHr ?? estimatedMaxHr(prefilled.age),
+      hrRest: prefilled.restingHr ?? ASSUMED_RESTING_HR,
+      hrMaxSource: prefilled.maxHr != null ? "measured" : "estimated",
+      priority,
+    });
 
-  // The spec's Block rows, checked as a set rather than one at a time, so an
-  // athlete missing three things is told all three rather than sent round the
-  // loop three times.
+  const assumptions = [...(diagnostic?.assumptions ?? []), ...resolved.assumed];
+
+  // Every issue is now an assumption rather than a block. The intake makes the
+  // plan better; it is not a gate in front of it — see the note on
+  // `assessTailoring`. The safety screen still blocks, inside generatePlan.
   const validation = validateIntake(resolved.state, resolved.goal, resolved.constraints);
-  if (!validation.ok) {
-    const blocking = validation.issues.filter((i) => i.severity === "block");
-    await recordEvent(supabase, user.id, {
-      outcome: "missing_intake",
-      reason_code: blocking[0]?.field ?? "incomplete_intake",
-      tier: diagnostic.profile.tier,
-    });
-    return NextResponse.json({
-      generated: false,
-      needsIntake: true,
-      missingSections: resolved.missingSections,
-      refusal: {
-        reason:
-          "Some of what a plan has to be built on is still missing. The engine will not assume these — " +
-          "assuming them is how generated plans injure people.",
-        nextSteps: blocking.map((i) => i.message),
-      },
-      diagnostic: diagnostic.profile,
-      assumptions,
-    });
-  }
+  assumptions.push(...validation.issues.map((i) => i.message));
 
-  const state: AthleteState = { ...resolved.state, assumed: assumptions };
-  const goal: Goal = {
-    ...resolved.goal,
-    // The priority slider wins where the athlete has actually moved it;
-    // otherwise it stays derived from their goal mix, which is the spec's
-    // recommended resolution of open decision D2.
-    priority: intake.priorityUserSet ? resolved.goal.priority : priority,
-  };
-  const constraints: Constraints = resolved.constraints;
+  const { state, goal, constraints } = resolved;
   const eventDate = intake.eventDate;
 
-  const plan = generatePlan({ state, goal, constraints, profile: diagnostic.profile, overrideEventOrder });
+  const plan = generatePlan({ state, goal, constraints, profile, overrideEventOrder });
 
   if (!plan.generated) {
     await recordEvent(supabase, user.id, {
-      outcome: plan.safety.blocked ? "safety_blocked" : "insufficient_data",
+      outcome: "safety_blocked",
       // The specific block, not just "blocked" — block rate is only
       // actionable broken down by reason.
-      reason_code: plan.safety.blocked ? safetyReasonCode(plan.safety.blocks) : "tier_zero",
-      tier: diagnostic.profile.tier,
-      profile_id: diagnostic.profileId,
+      reason_code: safetyReasonCode(plan.safety.blocks),
+      tier: profile.tier,
+      profile_id: diagnostic?.profileId ?? null,
     });
   }
 
   // Persist when the plan is real and the diagnostic behind it was stored.
   let persisted: { planId: string; storedSessions: number; droppedSessions: number } | null = null;
-  if (plan.generated && diagnostic.profileId) {
-    if (diagnostic.rerun?.shouldRegenerate) {
-      await supersedePlans(supabase, user.id, diagnostic.rerun.explanations.join(" ")).catch(() => {});
+  if (plan.generated && diagnostic?.profileId) {
+    if (diagnostic?.rerun?.shouldRegenerate) {
+      await supersedePlans(supabase, user.id, diagnostic.rerun!.explanations.join(" ")).catch(() => {});
     }
     persisted = await savePlan(supabase, user.id, {
       profileId: diagnostic.profileId,
@@ -227,8 +203,8 @@ export async function GET(request: Request) {
   if (plan.generated) {
     await recordEvent(supabase, user.id, {
       outcome: "generated",
-      tier: diagnostic.profile.tier,
-      profile_id: diagnostic.profileId,
+      tier: profile.tier,
+      profile_id: diagnostic?.profileId ?? null,
       plan_id: persisted?.planId ?? null,
       peak_acwr: plan.acwr?.peakAcwr ?? null,
       weeks_out: goal.weeksOut,
@@ -242,12 +218,10 @@ export async function GET(request: Request) {
     assumptions,
     eventDate,
     persisted,
-    rerun: diagnostic.rerun,
+    rerun: diagnostic?.rerun ?? null,
     // F18 — attempt selection and race pacing, the two core coach
     // deliverables the assurance review flagged as absent.
-    attempts: Object.keys(diagnostic.profile.oneRms).length > 0
-      ? selectAttempts(diagnostic.profile.oneRms, goal.sameDay)
-      : [],
+    attempts: Object.keys(profile.oneRms).length > 0 ? selectAttempts(profile.oneRms, goal.sameDay) : [],
     pacing: goal.target5kS != null ? racePacing(goal.target5kS, goal.sameDay) : null,
   });
 }

@@ -105,9 +105,30 @@ export function safetyScreen(state: AthleteState, goal: Goal): SafetyResult {
   }
 
   // F2 — low energy availability.
+  //
+  // This no longer blocks the plan, and the reasoning is worth stating because
+  // it reverses the assurance review's Rev B position.
+  //
+  // The review made this a block because Rev A's headline feature was a table
+  // showing that losing 8kg buys 108 seconds off a 5k — a paid app telling an
+  // at-risk athlete their goal becomes reachable at a lower bodyweight. THAT
+  // is the harm, and it is fully addressed by suppressing bodyweight guidance,
+  // which still happens here unconditionally and permanently.
+  //
+  // Withholding the TRAINING plan on top of that treats nothing. Under-fuelling
+  // is not treated by being denied a training programme; it is treated by a
+  // dietitian, and the referral is the intervention. Refusing also loses the
+  // athlete at exactly the moment the app has a reason to keep talking to them,
+  // and an athlete who leaves takes the referral with them.
+  //
+  // So: no bodyweight guidance ever, the referral shown prominently, fuelling
+  // reminders throughout, and a plan they can actually follow.
   if (s.leaRiskFlags >= 2) {
-    blocks.push(
-      "Two or more low-energy-availability screen flags: no plan is generated, and no bodyweight guidance is shown."
+    warnings.push(
+      "Your answers on fuelling suggest you may be training on less energy than you are using. No bodyweight " +
+        "guidance of any kind will be shown, and this plan is built on the assumption that you are eating enough " +
+        "to support it — if you are not, the plan will not work and the risk is bone stress rather than a missed " +
+        "session. Please speak to someone about it; there is nothing here that a dietitian's hour would not beat."
     );
     referrals.push("Registered sports dietitian");
     referrals.push("National Alliance for Eating Disorders helpline, if you would like support");

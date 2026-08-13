@@ -23,7 +23,7 @@
  * pathway in generated plans.
  */
 
-import type { TrainingAge } from "./constants";
+import { DAYS, type TrainingAge } from "./constants";
 import {
   DEFAULT_SAFETY_FLAGS,
   estimatedMaxHr,
@@ -32,6 +32,9 @@ import {
   type AthleteState,
   type Constraints,
   type Goal,
+  deriveTargetTotal,
+  resolveHorizon,
+  type DayWindow,
   type IntakeIssue,
   type SafetyFlags,
 } from "./intake";
@@ -56,11 +59,18 @@ export interface IntakeRecord {
   leaAmenorrhoea: boolean | null;
 
   eventDate: string | null;
+  /** Chosen block length in weeks when there is no event date. Null = let the engine suggest one. */
+  planTimeframeWeeks: number | null;
   events: string[];
   sameDay: boolean;
   interEventGapH: number;
   eventOrderKnown: boolean;
   target5kS: number | null;
+  /** Per-lift targets, each independently skippable. */
+  targetSquatKg: number | null;
+  targetBenchKg: number | null;
+  targetDeadliftKg: number | null;
+  /** Legacy combined target, kept so older rows still resolve. */
   targetTotalKg: number | null;
   priority: number;
   priorityUserSet: boolean;
@@ -83,7 +93,18 @@ export interface IntakeRecord {
   hrRunsHigh: boolean;
 
   daysAvailable: string[];
+  /**
+   * Whether the athlete can get to a gym at all. This is the question that
+   * matters — "do you have a barbell" is a detail inside the real answer, and
+   * asking it first got the order backwards. Someone training at home with
+   * dumbbells needs a different plan, not a barbell plan they cannot perform.
+   */
+  hasGymAccess: boolean;
   twoADaysPossible: boolean;
+  /** Per-day training windows — real clock times, which differ by day. */
+  dayWindows: DayWindow[];
+  /** True when the week genuinely varies and fixed day placement would be fiction. */
+  availabilityVaries: boolean;
   twoADayDays: string[];
   amHour: number;
   pmHour: number;
@@ -114,6 +135,30 @@ export const MANDATORY_SECTIONS: IntakeSection[] = ["safety", "goal", "availabil
 const ALL_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 /** Maps a raw Supabase row onto IntakeRecord, filling structural defaults only — never safety ones. */
+
+/** Reads stored per-day windows, dropping anything malformed rather than throwing inside a request. */
+function parseDayWindows(value: unknown): DayWindow[] {
+  if (!Array.isArray(value)) return [];
+  const out: DayWindow[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") continue;
+    const e = entry as Record<string, unknown>;
+    const day = String(e.day ?? "");
+    if (!DAYS.includes(day as (typeof DAYS)[number])) continue;
+    const startHour = Number(e.start_hour ?? e.startHour);
+    const endHour = Number(e.end_hour ?? e.endHour);
+    if (!Number.isFinite(startHour) || !Number.isFinite(endHour)) continue;
+    out.push({
+      day,
+      available: e.available !== false,
+      startHour: Math.min(23, Math.max(0, startHour)),
+      endHour: Math.min(23, Math.max(0, endHour)),
+      twoSessions: Boolean(e.two_sessions ?? e.twoSessions),
+    });
+  }
+  return out;
+}
+
 export function parseIntakeRow(row: Record<string, unknown> | null): IntakeRecord {
   const b = (key: string): boolean | null => (row?.[key] == null ? null : Boolean(row[key]));
   const n = (key: string): number | null => (row?.[key] == null ? null : Number(row[key]));
@@ -135,11 +180,15 @@ export function parseIntakeRow(row: Record<string, unknown> | null): IntakeRecor
     leaBoneStressInjury: b("lea_bone_stress_injury"),
     leaAmenorrhoea: b("lea_amenorrhoea"),
     eventDate: (row?.event_date as string | null) ?? null,
+    planTimeframeWeeks: n("plan_timeframe_weeks"),
     events: arr("events"),
     sameDay: Boolean(row?.same_day),
     interEventGapH: n("inter_event_gap_h") ?? 4,
     eventOrderKnown: Boolean(row?.event_order_known),
     target5kS: n("target_5k_s"),
+    targetSquatKg: n("target_squat_kg"),
+    targetBenchKg: n("target_bench_kg"),
+    targetDeadliftKg: n("target_deadlift_kg"),
     targetTotalKg: n("target_total_kg"),
     priority: n("priority") ?? 0.5,
     priorityUserSet: Boolean(row?.priority_user_set),
@@ -158,7 +207,10 @@ export function parseIntakeRow(row: Record<string, unknown> | null): IntakeRecor
     maxHrKnown: Boolean(row?.max_hr_known),
     hrRunsHigh: Boolean(row?.hr_runs_high),
     daysAvailable: arr("days_available"),
+    hasGymAccess: row?.has_gym_access == null ? true : Boolean(row.has_gym_access),
     twoADaysPossible: Boolean(row?.two_a_days_possible),
+    dayWindows: parseDayWindows(row?.day_windows),
+    availabilityVaries: Boolean(row?.availability_varies),
     twoADayDays: arr("two_a_day_days"),
     amHour: n("am_hour") ?? 7,
     pmHour: n("pm_hour") ?? 18,
@@ -346,13 +398,55 @@ export function resolveIntakeInputs(
     );
   }
 
-  const eventDate = record.eventDate ? new Date(record.eventDate) : null;
-  const weeksOut = eventDate ? Math.round((eventDate.getTime() - now.getTime()) / (7 * 86_400_000)) : 0;
+  // An event date is no longer required. Horizon resolves from a date, then a
+  // chosen timeframe, then the engine's own default — and records which, so
+  // the plan can say "your 12-week block" rather than implying a race the
+  // athlete never entered.
+  const horizon = resolveHorizon(record.eventDate, record.planTimeframeWeeks, now);
+  if (horizon.note) assumed.push(horizon.note);
 
   const daysAvailable = record.daysAvailable.length > 0 ? record.daysAvailable : [];
   const gymAccessDays = record.gymAccessDays.length > 0 ? record.gymAccessDays : daysAvailable;
   if (record.gymAccessDays.length === 0 && daysAvailable.length > 0) {
     assumed.push("Gym access is assumed on every day you train, since you have not narrowed it.");
+  }
+
+  // Per-day windows. Any day the athlete gave a window for uses it; the rest
+  // fall back to the flat AM/PM hours. Real clock times differ by day, and the
+  // six-hour separation rule between hard sessions is computed from them.
+  const dayWindows: DayWindow[] = DAYS.map((day) => {
+    const stated = record.dayWindows.find((w) => w.day === day);
+    if (stated) return stated;
+    return {
+      day,
+      available: daysAvailable.includes(day),
+      startHour: record.amHour,
+      endHour: record.pmHour,
+      twoSessions: record.twoADaysPossible,
+    };
+  });
+
+  if (!record.hasGymAccess) {
+    assumed.push(
+      "You said you cannot get to a gym, so no barbell work is prescribed. The strength side of this plan is " +
+        "currently written around barbell lifts, so what you get instead is thinner than it should be — full " +
+        "home and dumbbell programming is not built yet, and pretending otherwise would prescribe you sessions " +
+        "you cannot perform."
+    );
+  }
+
+  if (record.availabilityVaries) {
+    assumed.push(
+      "You said your week varies, so the plan gives you an ordered list of sessions rather than fixing them to " +
+        "days. The order is what matters — the spacing rules are applied as you place them, and the hardest " +
+        "sessions are the ones to protect."
+    );
+  } else if (record.dayWindows.length === 0 && record.sectionsCompleted.includes("availability")) {
+    assumed.push(
+      "You have not given per-day training times, so the same morning and evening hours are assumed every day. " +
+        "The six-hour rule between hard sessions is computed from those times, so per-day hours are worth setting " +
+        "if yours differ."
+    );
   }
 
   if (!record.sectionsCompleted.includes("availability")) {
@@ -402,9 +496,16 @@ export function resolveIntakeInputs(
   }
 
   const goal: Goal = {
-    weeksOut,
+    weeksOut: horizon.weeksOut,
+    horizonSource: horizon.horizonSource,
     target5kS: record.target5kS,
-    targetTotalKg: record.targetTotalKg,
+    targetSquatKg: record.targetSquatKg,
+    targetBenchKg: record.targetBenchKg,
+    targetDeadliftKg: record.targetDeadliftKg,
+    // Derived from whichever lifts they gave. A partial answer is still an
+    // answer; no answer is not a total of zero.
+    targetTotalKg:
+      deriveTargetTotal(record.targetSquatKg, record.targetBenchKg, record.targetDeadliftKg) ?? record.targetTotalKg,
     priority: record.priority,
     sameDay: record.sameDay,
     interEventGapH: record.interEventGapH,
@@ -415,6 +516,8 @@ export function resolveIntakeInputs(
   const constraints: Constraints = {
     daysAvailable,
     twoADaysPossible: record.twoADaysPossible,
+    dayWindows,
+    availabilityVaries: record.availabilityVaries,
     amHour: record.amHour,
     pmHour: record.pmHour,
     maxSessionsPerWeek: record.maxSessionsPerWeek,
@@ -422,7 +525,13 @@ export function resolveIntakeInputs(
     maxSessionMin: record.maxSessionMin,
     minRestDays: record.minRestDays,
     gymAccessDays,
-    equipment: record.equipmentUsed.length > 0 ? record.equipmentUsed : ["barbell"],
+    // Gym access governs; the equipment list refines it. Without a gym the
+    // barbell is not available whatever the equipment list says.
+    equipment: record.hasGymAccess
+      ? record.equipmentUsed.length > 0
+        ? record.equipmentUsed
+        : ["barbell"]
+      : record.equipmentUsed.filter((e) => e !== "barbell"),
   };
 
   const missingSections = INTAKE_SECTIONS.filter((s) => !record.sectionsCompleted.includes(s));

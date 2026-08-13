@@ -326,6 +326,16 @@ export function anaerobicSpeedReserveMs(
   return reserve > 0 ? reserve : null;
 }
 
+/**
+ * Placeholder 5k used ONLY when the athlete has logged no maximal effort at
+ * all. It is not a prediction and must never be presented as one — every
+ * consumer has to branch on `AthleteProfile.predicted5kFromEffort` first.
+ * Named rather than inlined because a bare `1500` reaching a screen is
+ * indistinguishable from a real 25:00 prediction, which is exactly how it
+ * shipped.
+ */
+export const NO_MAXIMAL_EFFORT_5K_S = 1500.0;
+
 /** Actual weekly minutes ÷ the minutes historically associated with supporting this 5k level. */
 export function volumeAdequacy(weeklyMin: number, predicted5kS: number): number {
   const table = [...VOLUME_ADEQUACY_MIN_PER_WEEK].sort((a, b) => a[0] - b[0]);
@@ -433,6 +443,37 @@ export function liftRatios(oneRms: Record<string, number>): Record<string, numbe
   const out: Record<string, number> = {};
   for (const [lift, value] of Object.entries(oneRms)) out[lift] = Math.round((value / squat) * 1000) / 1000;
   return out;
+}
+
+/**
+ * Whether the strength side could be assessed at all.
+ *
+ * `findWeakLift` returning null and `stalledLifts` returning [] each mean two
+ * completely different things — "assessed, nothing wrong" and "never
+ * assessed" — and the report was rendering both as "none flagged". That is
+ * the same falsy-zero mistake as the discarded genuine zero in D4, and it is
+ * worse here because it tells an athlete their lifts are balanced when the
+ * engine has never seen a lift.
+ */
+export function strengthAssessability(
+  oneRms: Record<string, number>,
+  sets: LiftSet[]
+): { ratiosAssessed: boolean; weakLiftAssessed: boolean; stallAssessed: boolean } {
+  const hasSquat = (oneRms.squat ?? 0) > 0;
+  const otherLifts = Object.keys(oneRms).filter((l) => l !== "squat" && (oneRms[l] ?? 0) > 0);
+  // Stalling needs enough sets of one lift, spanning enough weeks, to have a
+  // trend at all — the same bar `stalledLifts` itself applies.
+  const stallAssessed = Object.keys(LIFT_RATIO_NORM).some((lift) => {
+    const pts = sets.filter((x) => x.lift === lift);
+    if (pts.length < STALL_MIN_SETS) return false;
+    const dates = pts.map((x) => x.dateIdx);
+    return (Math.max(...dates) - Math.min(...dates)) / 7 >= STALL_MIN_SPAN_WEEKS;
+  });
+  return {
+    ratiosAssessed: hasSquat && otherLifts.length > 0,
+    weakLiftAssessed: hasSquat && otherLifts.length > 0,
+    stallAssessed,
+  };
 }
 
 export function findWeakLift(ratios: Record<string, number>): string | null {
@@ -844,6 +885,24 @@ export interface DiagnoseOptions {
   hrMax: number;
   hrRest: number;
   hrMaxSource?: "measured" | "estimated";
+  /**
+   * Weekly minutes of NON-running endurance work — rowing, cycling, the
+   * ski erg. Counted toward aerobic volume and nothing else.
+   *
+   * The split matters. Everything pace-derived in this module — the personal
+   * Riegel exponent, the predicted 5k, the easy band, the quality cutoff — is
+   * denominated in running seconds per kilometre, and a 20km ride entering
+   * that pool as a 2:00/km "run" wrecks every one of them. But an athlete who
+   * rows four times a week has an aerobic base, and reporting their weekly
+   * volume as zero because none of it was running is a plainly wrong answer
+   * to the question actually being asked.
+   *
+   * So cross-training informs VOLUME (and therefore volume adequacy and the
+   * on-ramp) while running alone informs PACE.
+   */
+  crossTrainingMinPerWeek?: number;
+  /** Weekly km of that cross-training, for the same reason. */
+  crossTrainingKmPerWeek?: number;
 }
 
 function verdict(
@@ -880,8 +939,11 @@ export function diagnose(
 
   const dates = runs.map((r) => r.dateIdx);
   const spanWk = Math.max(1, dates.length > 0 ? (Math.max(...dates) - Math.min(...dates)) / 7 : 0);
-  const weeklyVolumeKm = runs.reduce((s, r) => s + r.distanceKm, 0) / spanWk;
-  const weeklyVolumeMin = runs.reduce((s, r) => s + r.durationS, 0) / 60 / spanWk;
+  const runningVolumeKm = runs.reduce((s, r) => s + r.distanceKm, 0) / spanWk;
+  const runningVolumeMin = runs.reduce((s, r) => s + r.durationS, 0) / 60 / spanWk;
+  // Cross-training counts toward the aerobic total. See DiagnoseOptions.
+  const weeklyVolumeKm = runningVolumeKm + (options.crossTrainingKmPerWeek ?? 0);
+  const weeklyVolumeMin = runningVolumeMin + (options.crossTrainingMinPerWeek ?? 0);
   const longestRunKm = runs.length > 0 ? Math.max(...runs.map((r) => r.distanceKm)) : 0;
 
   const riegelK = fitRiegelK(runs);
@@ -902,7 +964,7 @@ export function diagnose(
     // extrapolation the athlete's data does not cover (non-negotiable #6),
     // so this is flagged rather than quietly treated as a real prediction —
     // tier assessment above independently caps such an athlete at tier 1.
-    predicted5kS = 1500.0;
+    predicted5kS = NO_MAXIMAL_EFFORT_5K_S;
     predicted5kFromEffort = false;
   }
 
@@ -944,6 +1006,7 @@ export function diagnose(
     .filter((g): g is number => g != null);
   const gap = perLiftGaps.length > 0 ? mean(perLiftGaps) : null;
   const stalls = stalledLifts(sets);
+  const assessability = strengthAssessability(oneRms, sets);
 
   // The unlock prompt the brief asks for by name. A data-collection prompt
   // that also happens to be a retention mechanic — and, unlike the reference's
@@ -981,6 +1044,8 @@ export function diagnose(
     confidence,
     weeklyVolumeKm,
     weeklyVolumeMin,
+    runningVolumeKm,
+    runningVolumeMin,
     longestRunKm,
     riegelK,
     riegelVerdict: verdict(
@@ -1038,6 +1103,9 @@ export function diagnose(
     weakLift,
     liftRatios: ratios,
     stalledLifts: stalls,
+    liftRatiosAssessed: assessability.ratiosAssessed,
+    weakLiftAssessed: assessability.weakLiftAssessed,
+    stallAssessed: assessability.stallAssessed,
     limiter: enduranceScore > 0.5 ? "endurance" : "strength",
     emphasis,
     findings,
