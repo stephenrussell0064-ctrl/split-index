@@ -11,11 +11,14 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  FLEET_REVIEW_MAX_AGE_HOURS,
   ROLLOUT_STAGES,
   evaluateAccess,
+  evaluateRolloutChange,
   nextRolloutStage,
   rolloutBucket,
   type FeatureFlag,
+  type FleetReviewState,
 } from "./rollout";
 import {
   buildMonitoringSnapshot,
@@ -285,5 +288,133 @@ describe("WP10 — monitoring metrics", () => {
       now: new Date("2026-01-15T00:00:00Z"),
     });
     expect(snapshot.alarms).toEqual([]);
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// The fleet-review gate
+// ---------------------------------------------------------------------------
+
+describe("WP10 — the fleet-review gate on rollout", () => {
+  const NOW = new Date("2026-03-01T12:00:00Z");
+  const cleanReview: FleetReviewState = {
+    reviewedAt: new Date("2026-03-01T10:00:00Z").toISOString(),
+    reviewedBy: "admin",
+    alarmCount: 0,
+  };
+  const noReview: FleetReviewState = { reviewedAt: null, reviewedBy: null, alarmCount: null };
+
+  it("refuses any raise above 0% when the fleet view has never been reviewed", () => {
+    const decision = evaluateRolloutChange(
+      { currentEnabled: false, currentPercentage: 0, nextEnabled: true, nextPercentage: 1 },
+      noReview,
+      NOW
+    );
+    expect(decision.allowed).toBe(false);
+    expect(decision.reason).toMatch(/never been reviewed/);
+  });
+
+  it("allows a raise after a recent, clean review", () => {
+    const decision = evaluateRolloutChange(
+      { currentEnabled: false, currentPercentage: 0, nextEnabled: true, nextPercentage: 5 },
+      cleanReview,
+      NOW
+    );
+    expect(decision.allowed).toBe(true);
+  });
+
+  it("refuses a raise when the review is stale", () => {
+    const stale: FleetReviewState = {
+      ...cleanReview,
+      reviewedAt: new Date(NOW.getTime() - (FLEET_REVIEW_MAX_AGE_HOURS + 2) * 3_600_000).toISOString(),
+    };
+    const decision = evaluateRolloutChange(
+      { currentEnabled: true, currentPercentage: 1, nextEnabled: true, nextPercentage: 5 },
+      stale,
+      NOW
+    );
+    expect(decision.allowed).toBe(false);
+    expect(decision.reason).toMatch(/reviews expire/);
+  });
+
+  it("refuses a raise when the last review was showing alarms", () => {
+    // The case the gate exists for. A clean-looking dashboard is not the
+    // requirement; a dashboard that WAS clean when somebody looked is.
+    const decision = evaluateRolloutChange(
+      { currentEnabled: true, currentPercentage: 5, nextEnabled: true, nextPercentage: 25 },
+      { ...cleanReview, alarmCount: 2 },
+      NOW
+    );
+    expect(decision.allowed).toBe(false);
+    expect(decision.reason).toMatch(/2 alarms/);
+  });
+
+  it("ALWAYS allows the kill switch, from any state, with no review at all", () => {
+    // Making it harder to turn something off than to turn it on is how a bad
+    // rollout stays live while somebody hunts for a dashboard.
+    for (const review of [noReview, { ...cleanReview, alarmCount: 99 }, { ...cleanReview, reviewedAt: "1999-01-01T00:00:00Z" }]) {
+      for (const pct of [1, 5, 25, 100]) {
+        const decision = evaluateRolloutChange(
+          { currentEnabled: true, currentPercentage: pct, nextEnabled: false, nextPercentage: pct },
+          review,
+          NOW
+        );
+        expect(decision.allowed, `kill switch refused at ${pct}%`).toBe(true);
+        expect(decision.isDeEscalation).toBe(true);
+      }
+    }
+  });
+
+  it("ALWAYS allows lowering the percentage, with no review", () => {
+    const decision = evaluateRolloutChange(
+      { currentEnabled: true, currentPercentage: 100, nextEnabled: true, nextPercentage: 5 },
+      noReview,
+      NOW
+    );
+    expect(decision.allowed).toBe(true);
+    expect(decision.isDeEscalation).toBe(true);
+  });
+
+  it("treats re-enabling at a lower exposure than the current one as a de-escalation", () => {
+    const decision = evaluateRolloutChange(
+      { currentEnabled: true, currentPercentage: 50, nextEnabled: true, nextPercentage: 50 },
+      noReview,
+      NOW
+    );
+    // Same exposure is not an increase, so it is not gated.
+    expect(decision.allowed).toBe(true);
+  });
+
+  it("gates re-enabling at the same percentage after a kill, because exposure rises from zero", () => {
+    // Disabled at 25% means exposure is 0. Turning it back on takes 0 -> 25,
+    // which is a raise however the numbers look side by side.
+    const decision = evaluateRolloutChange(
+      { currentEnabled: false, currentPercentage: 25, nextEnabled: true, nextPercentage: 25 },
+      noReview,
+      NOW
+    );
+    expect(decision.allowed).toBe(false);
+    expect(decision.reason).toMatch(/never been reviewed/);
+  });
+
+  it("does not gate a change that leaves exposure at zero", () => {
+    const decision = evaluateRolloutChange(
+      { currentEnabled: false, currentPercentage: 0, nextEnabled: true, nextPercentage: 0 },
+      noReview,
+      NOW
+    );
+    expect(decision.allowed).toBe(true);
+  });
+
+  it("makes rollout above 0% impossible without a review — the brief's prerequisite", () => {
+    for (const target of ROLLOUT_STAGES.filter((s) => s.percentage > 0)) {
+      const decision = evaluateRolloutChange(
+        { currentEnabled: false, currentPercentage: 0, nextEnabled: true, nextPercentage: target.percentage },
+        noReview,
+        NOW
+      );
+      expect(decision.allowed, `${target.label} was reachable without a fleet review`).toBe(false);
+    }
   });
 });
