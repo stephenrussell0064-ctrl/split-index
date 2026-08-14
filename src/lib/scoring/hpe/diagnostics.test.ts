@@ -219,7 +219,7 @@ describe("WP0 — reference athlete reproduction", () => {
     // 12-week history span (they have 11.7). The reference reports no gap at
     // all here, which leaves the athlete with no idea what to do next.
     expect(p.dataGaps.join(" ")).toContain("week");
-    expect(p.dataGaps.join(" ")).toContain("Tier 3");
+    expect(p.dataGaps.join(" ")).toContain("logged history");
   });
 
   it("prompts for a second maximal effort when that is what is missing", () => {

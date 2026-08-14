@@ -331,8 +331,32 @@ function ExerciseRow({
   const addSet = () => {
     onUpdate({ sets: [...row.sets, createSetRow(row.sets[row.sets.length - 1])] });
   };
+  /**
+   * User-reported: "the delete button for a set does not work — clicking it
+   * fails to remove the set."
+   *
+   * It was dead precisely when athletes reach for it most. The button carried
+   * `disabled={row.sets.length <= 1}` (mirrored by an early return here), and
+   * a freshly added exercise row has exactly ONE set — so on a new workout,
+   * or on any exercise you haven't added a second set to yet, tapping the bin
+   * did nothing at all. The only feedback was `disabled:opacity-30`, which
+   * reads as "greyed out" only if you already suspect it.
+   *
+   * An exercise still can't drop to zero sets — the set row IS the entry
+   * surface for weight/reps, so removing the last one would leave nothing to
+   * type into. Clearing it instead does what the athlete actually wanted
+   * (get rid of these numbers) and means the control is never inert. The set
+   * keeps its `id` so React doesn't remount the row and steal focus.
+   */
   const removeSet = (setId: string) => {
-    if (row.sets.length <= 1) return;
+    if (row.sets.length <= 1) {
+      onUpdate({
+        sets: row.sets.map((s) =>
+          s.id === setId ? { ...s, weight: "", reps: "", rpe: "", repsInReserve: "" } : s
+        ),
+      });
+      return;
+    }
     onUpdate({ sets: row.sets.filter((s) => s.id !== setId) });
   };
 
@@ -516,10 +540,17 @@ function ExerciseRow({
               />
               <button
                 type="button"
-                aria-label={`Remove set ${setIndex + 1}`}
+                /* Never disabled — see removeSet. On the last remaining set
+                   this clears the row rather than deleting it, so the label
+                   has to say which, for screen readers and for the tooltip. */
+                aria-label={
+                  row.sets.length <= 1
+                    ? `Clear set ${setIndex + 1}`
+                    : `Remove set ${setIndex + 1}`
+                }
+                title={row.sets.length <= 1 ? "Clear this set" : "Remove this set"}
                 onClick={() => removeSet(set.id)}
-                disabled={row.sets.length <= 1}
-                className="rounded-lg p-2 text-muted transition-colors duration-200 hover:bg-danger/10 hover:text-danger disabled:opacity-30 disabled:pointer-events-none min-h-[44px] min-w-[36px] flex items-center justify-center"
+                className="rounded-lg p-2 text-muted transition-colors duration-200 hover:bg-danger/10 hover:text-danger min-h-[44px] min-w-[36px] flex items-center justify-center"
               >
                 <Trash2 className="h-3.5 w-3.5" />
               </button>

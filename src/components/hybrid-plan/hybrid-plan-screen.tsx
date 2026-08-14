@@ -69,6 +69,15 @@ interface PlanResponse {
   pacing?: RacePacing | null;
   assumptions?: string[];
   rerun?: { shouldRegenerate: boolean; explanations: string[] } | null;
+  tailoring?: {
+    level: string;
+    confidence: number;
+    tier: number;
+    headline: string;
+    explanation: string;
+    unlocks: { action: string; unlocks: string }[];
+    isProvisional: boolean;
+  } | null;
   constantsVersion?: string;
 }
 
@@ -263,6 +272,49 @@ export function HybridPlanScreen() {
               </li>
             ))}
           </ul>
+        </Card>
+      )}
+
+      {/* How individual this plan actually is.
+          This is the whole justification for generating a plan from thin data
+          rather than refusing: the athlete gets something to do today AND an
+          honest account of how much of it is them. The ramp-halving shipped
+          without this, which left a provisional plan looking identical to a
+          fully-diagnosed one — the refusal removed and nothing put in its
+          place. */}
+      {data.tailoring && (
+        <Card glow={data.tailoring.isProvisional ? "none" : "accent"}>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-widest text-muted">How tailored this is</p>
+              <h2 className="mt-1 text-lg font-semibold tracking-tight">{data.tailoring.headline}</h2>
+            </div>
+            <span
+              className={cn(
+                "rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wider",
+                data.tailoring.isProvisional ? "bg-warning/15 text-warning" : "bg-endurance/15 text-endurance"
+              )}
+            >
+              {Math.round(data.tailoring.confidence * 100)}% confidence
+            </span>
+          </div>
+          <p className="mt-3 text-sm leading-relaxed text-foreground/85">{data.tailoring.explanation}</p>
+
+          {data.tailoring.unlocks.length > 0 && (
+            <div className="mt-4 rounded-2xl border border-accent/20 bg-accent/[0.06] p-4">
+              <p className="text-xs font-semibold uppercase tracking-widest text-accent">
+                What your next sessions unlock
+              </p>
+              <ul className="mt-2.5 space-y-3">
+                {data.tailoring.unlocks.slice(0, 3).map((u) => (
+                  <li key={u.action}>
+                    <p className="text-sm font-medium text-foreground/90">{u.action}</p>
+                    <p className="mt-0.5 text-sm leading-relaxed text-muted">{u.unlocks}</p>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </Card>
       )}
 

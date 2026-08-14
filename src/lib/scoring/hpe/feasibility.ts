@@ -205,9 +205,30 @@ export type DomainMode = "develop" | "maintain";
 export function classifyDomains(state: AthleteState, goal: Goal): Record<"strength" | "endurance", DomainMode> {
   const out: Record<"strength" | "endurance", DomainMode> = { strength: "maintain", endurance: "maintain" };
 
-  if (goal.targetTotalKg != null) {
+  // Per-lift targets count as a strength goal. Reading only `targetTotalKg`
+  // classified a powerlifter with explicit squat/bench/deadlift targets as
+  // "maintain" — and maintain mode prescribes two generic maintenance
+  // sessions, so the athlete whose entire goal is the barbell received no
+  // barbell work at all. Found by the five-persona simulation.
+  const perLift = [goal.targetSquatKg, goal.targetBenchKg, goal.targetDeadliftKg].filter(
+    (v): v is number => v != null && v > 0
+  );
+  const strengthTarget = goal.targetTotalKg ?? (perLift.length > 0 ? perLift.reduce((a, b) => a + b, 0) : null);
+
+  if (strengthTarget != null) {
     const current = Math.max(totalKg(state), 1);
-    const gap = (goal.targetTotalKg - current) / current;
+    // A partial target compares against the same lifts only, or a single
+    // bench goal would read as a collapse in the total.
+    const comparable =
+      goal.targetTotalKg != null
+        ? current
+        : Math.max(
+            1,
+            (goal.targetSquatKg != null ? (state.oneRms.squat ?? 0) : 0) +
+              (goal.targetBenchKg != null ? (state.oneRms.bench ?? 0) : 0) +
+              (goal.targetDeadliftKg != null ? (state.oneRms.deadlift ?? 0) : 0)
+          );
+    const gap = (strengthTarget - comparable) / comparable;
     const headroom = STRENGTH_GAIN_PER_BLOCK[state.strengthTrainingAge] * (goal.weeksOut / 12);
     out.strength = gap > DEVELOP_GAP_THRESHOLD * headroom ? "develop" : "maintain";
   }

@@ -124,24 +124,53 @@ export function nextSetId(): string {
   return `set-${Date.now()}-${setCounter}`;
 }
 
-export function createSetRow(previous?: SetRowState): SetRowState {
+/**
+ * A brand-new set row always starts blank.
+ *
+ * User feedback: "when starting a new workout the weight fields are
+ * pre-filled from the previously logged exercise, and clearing them by hand
+ * is slow — a new workout should start with all fields blank."
+ *
+ * This function used to carry `previous.weight` / `previous.reps` /
+ * `previous.repsInReserve` forward (present since the initial build,
+ * 4295d30 — a deliberate convenience, not an accident). Two callers made
+ * that leak across boundaries the athlete never asked for:
+ * `addSet` inherited the previous SET, and `createExerciseRow` fed it the
+ * previous EXERCISE's last set, so adding "Bench Press" after "Squat"
+ * silently proposed the squat's load. Inheriting a number you must notice
+ * and clear is worse than typing it: an unnoticed stale weight is logged as
+ * real training data and scored.
+ *
+ * The convenience it replaced is still available, and better: the Lab shows
+ * "Last time: 100kg × 8" and your PR for the exercise inline
+ * (ExerciseHistoryHint in gym-form.tsx), which is real history for THIS
+ * exercise rather than whatever happened to be typed a moment ago.
+ *
+ * `previous` is kept in the signature — callers pass it, and copying
+ * structural (non-value) fields from it is still legitimate — but no
+ * athlete-entered value is carried over.
+ */
+export function createSetRow(_previous?: SetRowState): SetRowState {
   return {
     id: nextSetId(),
-    weight: previous?.weight ?? "",
-    reps: previous?.reps ?? "",
+    weight: "",
+    reps: "",
     rpe: "",
-    repsInReserve: previous?.repsInReserve ?? "",
+    repsInReserve: "",
   };
 }
 
-export function createExerciseRow(previous?: ExerciseRowState): ExerciseRowState {
+export function createExerciseRow(_previous?: ExerciseRowState): ExerciseRowState {
   return {
     id: nextRowId(),
     name: "",
     muscleGroup: "",
-    sets: [createSetRow(previous?.sets[previous.sets.length - 1])],
+    // No `previous` handed down: a new exercise starts blank, see createSetRow.
+    sets: [createSetRow()],
     notes: "",
-    weightEntryMode: previous?.weightEntryMode ?? "total",
+    // Not inherited either — the load convention belongs to the exercise, and
+    // picking a name sets it from defaultWeightEntryMode() straight away.
+    weightEntryMode: "total",
     attachment: null,
   };
 }
@@ -747,9 +776,14 @@ export function validateAndBuildPayload(
 
       const parsedSets = meaningfulSets.map((s) => {
         const setKey = (field: string) => `ex.${row.id}.set.${s.id}.${field}`;
+        // 500, not 600: the server's own guard rejects anything over 500kg
+        // (lib/scoring/input-guards.ts). A 550kg leg press used to pass this
+        // form, reach the API and come back as a whole-session 400 with no
+        // indication of which lift caused it — failing here instead names the
+        // exercise and the field. Keep this in step with that server cap.
         const weight = requireNumber(setKey("weight"), s.weight, {
           min: 0,
-          max: 600,
+          max: 500,
           label: "Weight",
         });
         const reps = requireNumber(setKey("reps"), s.reps, {

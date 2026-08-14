@@ -45,6 +45,7 @@ import {
   NOVICE_RAMP_MULTIPLIER,
   ONRAMP_MAX_MULTIPLE,
   ONRAMP_START_MULTIPLIER,
+  PROVISIONAL_START_RUN_MIN_PER_WEEK,
   PHASE_SHARE,
   TAPER_DAYS,
   TAPER_ENDURANCE_VOLUME_REDUCTION,
@@ -103,8 +104,20 @@ export function buildMacrocycle(state: AthleteState, goal: Goal, rampMultiplier 
 
   const weeks: MacrocycleWeek[] = [];
   // F3: week 1 is exactly what the athlete is already doing.
-  let volume = state.currentRunMinPerWeek * ONRAMP_START_MULTIPLIER;
-  const ceiling = state.currentRunMinPerWeek * ONRAMP_MAX_MULTIPLE;
+  // An on-ramp is multiplicative, and no multiple of zero is anything but
+  // zero. An athlete currently doing no running — a powerlifter adding
+  // conditioning, a complete beginner — was therefore given a plan with no
+  // endurance minutes in any week, forever. Found by the five-persona
+  // simulation, where three of five athletes received a two-session week of
+  // nothing but generic maintenance.
+  //
+  // Starting from a low floor instead is the conservative reading of "week 1
+  // is what you already do": what they already do is nothing, so week 1 is
+  // deliberately small rather than absent.
+  const startingVolume =
+    state.currentRunMinPerWeek > 0 ? state.currentRunMinPerWeek : PROVISIONAL_START_RUN_MIN_PER_WEEK;
+  let volume = startingVolume * ONRAMP_START_MULTIPLIER;
+  const ceiling = startingVolume * ONRAMP_MAX_MULTIPLE;
   let peakVolume = volume;
   let week = 1;
 

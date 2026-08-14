@@ -70,6 +70,11 @@ export async function loadPrefilledIntake(
     loggedWeeklyRunMinutes: weeklyMinutes,
     // Seeds the ACWR denominator so week 1 is measured against reality rather
     // than zero — the F6 finding.
-    chronicLoad: Math.max(1, (diagnostic?.profile.weeklyVolumeMin ?? 0) * 4),
+    // RUNNING volume, not total. ACWR's protective value is modality-specific
+    // loading tolerance, and rowing confers essentially none of it for impact
+    // running. Seeding the denominator from total volume gave a heavy rower
+    // four-fold headroom to ramp running against — the opposite of what the
+    // control is for.
+    chronicLoad: Math.max(1, (diagnostic?.profile.runningVolumeMin ?? 0) * 4),
   };
 }

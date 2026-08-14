@@ -298,7 +298,12 @@ describe("WP4 — the frontier refuses to extrapolate", () => {
   });
 
   it("classifies a domain with no target as maintain, which still means a minimum dose", () => {
-    const mode = classifyDomains(state, calibrationGoal({ targetTotalKg: null }));
+    // All four must be cleared: per-lift targets now count as a strength goal
+    // in their own right, which is the point of asking for them separately.
+    const mode = classifyDomains(
+      state,
+      calibrationGoal({ targetTotalKg: null, targetSquatKg: null, targetBenchKg: null, targetDeadliftKg: null })
+    );
     expect(mode.strength).toBe("maintain");
     expect(mode.endurance).toBe("develop");
   });
@@ -1163,5 +1168,34 @@ describe("regressions found by review of the always-generate change", () => {
     );
     expect(answered.warnings.join(" ")).toMatch(/your answers/i);
     expect(answered.referrals.join(" ")).toMatch(/dietitian/i);
+  });
+});
+
+describe("per-lift targets count as a strength goal", () => {
+  it("a lifter with only per-lift targets is developed, not maintained", () => {
+    // The five-persona simulation caught this: a powerlifter whose entire goal
+    // was squat/bench/deadlift was classified "maintain" because only
+    // `targetTotalKg` was read, and maintain mode prescribes two generic
+    // maintenance sessions — so they received no barbell work at all.
+    const mode = classifyDomains(
+      calibrationState(),
+      calibrationGoal({ targetTotalKg: null, targetSquatKg: 200, targetBenchKg: null, targetDeadliftKg: null })
+    );
+    expect(mode.strength).toBe("develop");
+  });
+});
+
+describe("the on-ramp starts from a floor rather than from zero", () => {
+  it("gives endurance minutes to an athlete currently doing no running", () => {
+    // No multiple of zero is anything but zero, so a powerlifter adding
+    // conditioning got a plan with no endurance in any week, forever.
+    const macro = buildMacrocycle(calibrationState({ currentRunMinPerWeek: 0 }), calibrationGoal());
+    expect(macro[0].enduranceMin).toBeGreaterThan(0);
+    expect(Math.max(...macro.map((w) => w.enduranceMin))).toBeGreaterThan(macro[0].enduranceMin);
+  });
+
+  it("still starts an existing runner exactly where they are", () => {
+    const macro = buildMacrocycle(calibrationState({ currentRunMinPerWeek: 75 }), calibrationGoal());
+    expect(macro[0].enduranceMin).toBe(75);
   });
 });

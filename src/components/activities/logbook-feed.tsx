@@ -329,7 +329,9 @@ export function LogbookFeed({
           {page.hasMore && (
             <>
               <Button variant="ghost" size="sm" loading={paging} onClick={loadMore}>
-                Load {Math.min(pageSize, page.total - showing)} more
+                {/* Clamped: `total` is re-read on every page, so a session
+                    logged mid-scroll must not produce "Load -1 more". */}
+                Load {Math.max(1, Math.min(pageSize, page.total - showing))} more
               </Button>
               <p className={cn("mt-2 text-[11px] tabular-nums", theme.faint)}>
                 Showing {showing} of {page.total} sessions

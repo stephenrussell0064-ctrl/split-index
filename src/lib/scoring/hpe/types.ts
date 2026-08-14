@@ -115,6 +115,9 @@ export interface AthleteProfile {
   /** Stamped so a plan is never silently attributed to the wrong constants. Non-negotiable #2. */
   constantsVersion: string;
   tier: DataTier;
+  /** Per-domain sufficiency. An athlete strong on one side has not failed. */
+  aerobicTier: DataTier;
+  strengthTier: DataTier;
   confidence: number;
 
   // --- aerobic ---

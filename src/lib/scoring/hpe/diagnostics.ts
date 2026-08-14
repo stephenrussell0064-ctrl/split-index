@@ -843,40 +843,115 @@ export function deriveEmphasis(
 // Top-level diagnostic
 // ---------------------------------------------------------------------------
 
-export function assessTier(runs: RunLog[], sets: LiftSet[]): { tier: DataTier; gaps: string[] } {
-  if (runs.length === 0 && sets.length === 0) return { tier: 0, gaps: ["No logged history at all."] };
+/**
+ * Data sufficiency, assessed PER DOMAIN and then combined.
+ *
+ * The bug this replaces: the ladder required every threshold at once — runs,
+ * span, maximal efforts AND lift sets. A runner with forty logged runs and two
+ * races scored tier 0 because they do not lift, and a lifter with sixty logged
+ * sets scored tier 0 because they do not run. Both were then told "insufficient
+ * history for any diagnosis", which is not only wrong, it is wrong in the most
+ * discouraging possible way: it reads as "you have not trained" to someone who
+ * has trained a great deal.
+ *
+ * Aerobic sufficiency and strength sufficiency are different questions about
+ * different data, and an athlete who has answered one of them thoroughly has
+ * not failed. Each domain gets its own tier; the overall tier is the better of
+ * the two, because a confident diagnosis on one side is a real diagnosis. The
+ * gaps then name the side that is actually thin, rather than implying both are.
+ */
+export interface TierAssessment {
+  tier: DataTier;
+  /** Aerobic-only tier, from runs, history span and maximal efforts. */
+  aerobicTier: DataTier;
+  /** Strength-only tier, from logged working sets. */
+  strengthTier: DataTier;
+  gaps: string[];
+}
 
+function aerobicTierFor(runCount: number, spanWeeks: number, efforts: number): DataTier {
+  for (const tier of [3, 2, 1] as const) {
+    const req = TIER_REQUIREMENTS[tier];
+    if (runCount >= req.runs && spanWeeks >= req.weeks && efforts >= req.efforts) return tier;
+  }
+  return 0;
+}
+
+function strengthTierFor(setCount: number): DataTier {
+  for (const tier of [3, 2, 1] as const) {
+    if (setCount >= TIER_REQUIREMENTS[tier].liftSets) return tier;
+  }
+  return 0;
+}
+
+export function assessTier(
+  runs: RunLog[],
+  sets: LiftSet[],
+  crossTrainingSessions = 0
+): TierAssessment {
   const dates = runs.map((r) => r.dateIdx);
   const spanWeeks = dates.length > 0 ? (Math.max(...dates) - Math.min(...dates)) / 7 : 0;
   const efforts = runs.filter((r) => r.isMaxEffort).length;
 
-  for (const tier of [3, 2, 1] as const) {
-    const req = TIER_REQUIREMENTS[tier];
-    if (runs.length >= req.runs && spanWeeks >= req.weeks && efforts >= req.efforts && sets.length >= req.liftSets) {
-      const gaps: string[] = [];
-      if (tier < 3) {
-        const r3 = TIER_REQUIREMENTS[3];
-        if (runs.length < r3.runs) gaps.push(`${r3.runs - runs.length} more logged runs for Tier 3`);
-        // Deviation D6: the reference never reports the history-span gap, so
-        // an athlete held below Tier 3 purely by the 12-week requirement —
-        // the reference athlete's own situation — is told nothing about why.
-        // Brief §0e is explicit that "the engine must surface the specific
-        // gap", so it is surfaced.
-        if (spanWeeks < r3.weeks) {
-          const more = Math.ceil(r3.weeks - spanWeeks);
-          gaps.push(`${more} more week${more === 1 ? "" : "s"} of logged history for Tier 3`);
-        }
-        if (efforts < r3.efforts) {
-          gaps.push("a second maximal effort at a different distance unlocks the personal fatigue-resistance model");
-        }
-        if (sets.length < r3.liftSets) {
-          gaps.push(`${r3.liftSets - sets.length} more logged sets for a rep-profile diagnosis`);
-        }
-      }
-      return { tier, gaps };
+  const aerobicTier = aerobicTierFor(runs.length, spanWeeks, efforts);
+  const strengthTier = strengthTierFor(sets.length);
+
+  // The overall tier is the WEAKEST domain the athlete actually has data in.
+  //
+  // Not the strongest: thorough lift logging must not buy confidence in thin
+  // running data, because the aerobic prescriptions are drawn from the aerobic
+  // side and their band widths key off this number.
+  //
+  // Not a flat minimum either: a domain with NO data does not drag the other
+  // one down, it simply gets no confident prescription of its own. That
+  // distinction is the whole bug — a runner with forty runs and no gym was
+  // scoring 0 because an empty strength side was being counted as a failed
+  // one rather than an absent one.
+  const present: DataTier[] = [];
+  if (runs.length > 0) present.push(aerobicTier);
+  if (sets.length > 0) present.push(strengthTier);
+  const tier = (present.length > 0 ? Math.min(...present) : 0) as DataTier;
+
+  const gaps: string[] = [];
+
+  if (tier === 0) {
+    // Still nothing to diagnose from — but say what IS there rather than
+    // claiming there is nothing. "No logged history at all" shown to someone
+    // with twenty logged rowing sessions is the original complaint in a
+    // different field.
+    if (crossTrainingSessions > 0) {
+      gaps.push(
+        `${crossTrainingSessions} logged cross-training sessions count toward your volume, but pace, easy-effort ` +
+          `bands and fatigue resistance can only be fitted on running — log four runs to unlock them`
+      );
+    } else if (runs.length > 0 || sets.length > 0) {
+      gaps.push(
+        `${runs.length} logged runs and ${sets.length} logged sets — a little more of either unlocks a diagnosis ` +
+          `(four runs across three weeks, or six working sets)`
+      );
+    } else {
+      gaps.push("No logged history yet — anything you log from here starts building the diagnosis.");
+    }
+    return { tier, aerobicTier, strengthTier, gaps };
+  }
+
+  // Below tier 3, name the specific thing that would raise it, per domain.
+  const r3 = TIER_REQUIREMENTS[3];
+  if (aerobicTier < 3) {
+    if (runs.length < r3.runs) gaps.push(`${r3.runs - runs.length} more logged runs for a full aerobic diagnosis`);
+    if (spanWeeks < r3.weeks) {
+      const more = Math.ceil(r3.weeks - spanWeeks);
+      gaps.push(`${more} more week${more === 1 ? "" : "s"} of logged history`);
+    }
+    if (efforts < r3.efforts) {
+      gaps.push("a second maximal effort at a different distance unlocks your personal fatigue-resistance model");
     }
   }
-  return { tier: 0, gaps: ["Insufficient history for any diagnosis; prescribe by RPE and run a test week."] };
+  if (strengthTier < 3 && sets.length < r3.liftSets) {
+    gaps.push(`${r3.liftSets - sets.length} more logged sets for a rep-profile diagnosis`);
+  }
+
+  return { tier, aerobicTier, strengthTier, gaps };
 }
 
 export interface DiagnoseOptions {
@@ -903,6 +978,8 @@ export interface DiagnoseOptions {
   crossTrainingMinPerWeek?: number;
   /** Weekly km of that cross-training, for the same reason. */
   crossTrainingKmPerWeek?: number;
+  /** Session count, so a tier-0 athlete who cross-trains is not told they have "no logged history at all". */
+  crossTrainingSessions?: number;
 }
 
 function verdict(
@@ -934,7 +1011,11 @@ export function diagnose(
   options: DiagnoseOptions
 ): AthleteProfile {
   const { hrMax, hrRest, hrMaxSource = "estimated", priority = DEFAULT_GOAL_PRIORITY } = options;
-  const { tier, gaps } = assessTier(runs, sets);
+  const { tier, aerobicTier, strengthTier, gaps } = assessTier(
+    runs,
+    sets,
+    options.crossTrainingSessions ?? 0
+  );
   const confidence = TIER_CONFIDENCE[tier];
 
   const dates = runs.map((r) => r.dateIdx);
@@ -1051,6 +1132,8 @@ export function diagnose(
   return {
     constantsVersion: HPE_CONSTANTS_VERSION,
     tier,
+    aerobicTier,
+    strengthTier,
     confidence,
     weeklyVolumeKm,
     weeklyVolumeMin,

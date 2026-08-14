@@ -183,6 +183,7 @@ export async function loadAthleteProfile(
     hrMaxSource,
     crossTrainingMinPerWeek: crossTraining.minPerWeek,
     crossTrainingKmPerWeek: crossTraining.kmPerWeek,
+    crossTrainingSessions: crossTraining.sessionCount,
   });
 
   // ---- persistence and the four-weekly re-run ----------------------------
