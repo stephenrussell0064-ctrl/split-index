@@ -1091,6 +1091,77 @@ describe("WP3 — low energy availability warns and protects, without withholdin
     for (const phrase of ["calorie", "kcal", "energy deficit", "rate of loss", "lose weight"]) {
       expect(everything, phrase).not.toContain(phrase);
     }
+    // The phrase list above passed while the plan contained "6-7g/kg" and a
+    // 498-581g target. A per-kilogram gram quantity is a macro target whatever
+    // it is called, so match the SHAPE rather than a vocabulary list.
+    expect(everything).not.toMatch(/\d+\s*-\s*\d+\s*g\/kg/);
+    expect(everything).not.toMatch(/\d{3,}\s*-\s*\d{3,}g\b/);
     expect(plan.bodyweightFrontier?.points ?? []).toHaveLength(0);
+  });
+});
+
+describe("regressions found by review of the always-generate change", () => {
+  const rowerOnly = () =>
+    diagnose([], [], {}, { hrMax: 190, hrRest: 55, crossTrainingMinPerWeek: 427, crossTrainingKmPerWeek: 90 });
+
+  it("does not tell a non-runner they have ample RUNNING volume", () => {
+    // Cross-training counting toward total volume leaked into volumeAdequacy,
+    // whose denominator is a running requirement measured against a 5k. A
+    // rower was told they were on 356% of the volume they need and should now
+    // train intensity — the inverse of what a non-runner needs, and it moved
+    // the whole emphasis vector that way.
+    const profile = rowerOnly();
+    expect(profile.weeklyVolumeMin).toBeGreaterThan(400);
+    expect(profile.runningVolumeMin).toBe(0);
+    expect(profile.findings.map((f) => f.id)).not.toContain("ample-volume");
+  });
+
+  it("emits no per-kilogram fuelling target to an athlete with fuelling flags", () => {
+    // The taper's carbohydrate guidance was gated on a block this engine then
+    // removed, making a bodyweight-scaled gram target reachable by exactly the
+    // population the screen protects.
+    const plan = generatePlan({
+      state: calibrationState({ safety: { ...DEFAULT_SAFETY_FLAGS, leaRiskFlags: 3, leaScreenAnswered: true } }),
+      goal: calibrationGoal(),
+      constraints: calibrationConstraints(),
+      profile: calibrationProfile(),
+    });
+    expect(plan.generated).toBe(true);
+    const everything = JSON.stringify(plan);
+    expect(everything).not.toMatch(/g\/kg/);
+    expect(everything).not.toMatch(/\d{3,}\s*-\s*\d{3,}g\b/);
+  });
+
+  it("still gives fuelling guidance to an athlete with no flags", () => {
+    const plan = generatePlan({
+      state: calibrationState(),
+      goal: calibrationGoal(),
+      constraints: calibrationConstraints(),
+      profile: calibrationProfile(),
+    });
+    expect(plan.taper.find((d) => d.day === -1)!.note).toMatch(/carbohydrate/i);
+  });
+
+  it("does not assert fuelling answers that were never given", () => {
+    // Unanswered resolves to positive so suppression errs safe. Suppressing on
+    // a guess is defensible; ASSERTING on one is not — an athlete who skipped
+    // the section was being shown an eating-disorder helpline.
+    const unanswered = safetyScreen(
+      calibrationState({ safety: { ...DEFAULT_SAFETY_FLAGS, leaRiskFlags: 5, leaScreenAnswered: false } }),
+      calibrationGoal()
+    );
+    expect(unanswered.blocked).toBe(false);
+    expect(unanswered.showBodyweightGuidance).toBe(false);
+    expect(unanswered.warnings.join(" ")).not.toMatch(/your answers/i);
+    expect(unanswered.referrals).toHaveLength(0);
+    expect(unanswered.warnings.join(" ")).toMatch(/have not been answered/i);
+
+    // Answered, same count: the assertion and the referral are correct here.
+    const answered = safetyScreen(
+      calibrationState({ safety: { ...DEFAULT_SAFETY_FLAGS, leaRiskFlags: 5, leaScreenAnswered: true } }),
+      calibrationGoal()
+    );
+    expect(answered.warnings.join(" ")).toMatch(/your answers/i);
+    expect(answered.referrals.join(" ")).toMatch(/dietitian/i);
   });
 });

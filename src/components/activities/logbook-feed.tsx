@@ -2,12 +2,10 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils/cn";
-import { formatDistance, formatDuration } from "@/lib/utils/format";
 import { SPORTS } from "@/lib/constants/sports";
-import { LogbookRow } from "@/components/activities/logbook-row";
+import { LogbookGroups } from "@/components/activities/logbook-groups";
 import {
   surfaceTheme,
   zoneChipActiveClass,
@@ -17,7 +15,6 @@ import {
 import {
   LOGBOOK_PAGE_SIZE,
   zoneTotals,
-  type LogbookEntry,
   type LogbookPage,
   type LogbookSort,
   type LogbookSportCounts,
@@ -49,52 +46,12 @@ import {
 
 export type LogbookFeedMode = "full" | "zone";
 
-interface LogbookGroup {
-  key: string;
-  label: string;
-  entries: LogbookEntry[];
-  distanceMeters: number;
-  durationSeconds: number;
-}
-
-/** Reverse-chronological months (or forward, when sorted oldest-first — the grouping just follows the order the rows arrive in). */
-function groupByMonth(entries: LogbookEntry[]): LogbookGroup[] {
-  const groups: LogbookGroup[] = [];
-  let current: LogbookGroup | null = null;
-
-  for (const entry of entries) {
-    const date = new Date(entry.startedAt);
-    const key = format(date, "yyyy-MM");
-    if (!current || current.key !== key) {
-      current = {
-        key,
-        label: format(date, "MMMM yyyy"),
-        entries: [],
-        distanceMeters: 0,
-        durationSeconds: 0,
-      };
-      groups.push(current);
-    }
-    current.entries.push(entry);
-    current.distanceMeters += entry.distanceMeters ?? 0;
-    current.durationSeconds += entry.durationSeconds ?? 0;
-  }
-
-  return groups;
-}
-
-function groupSummary(group: LogbookGroup): string {
-  const parts = [`${group.entries.length} session${group.entries.length === 1 ? "" : "s"}`];
-  if (group.distanceMeters > 0) parts.push(formatDistance(group.distanceMeters));
-  if (group.durationSeconds > 0) parts.push(formatDuration(group.durationSeconds));
-  return parts.join(" · ");
-}
-
 export function LogbookFeed({
   initialPage,
   surface,
   mode = "full",
-  zone: lockedZone = "all",
+  zone: baseZone = "all",
+  initialZone,
   sportCounts = {},
   pageSize = LOGBOOK_PAGE_SIZE,
   title,
@@ -103,8 +60,10 @@ export function LogbookFeed({
   initialPage: LogbookPage;
   surface: LogbookSurface;
   mode?: LogbookFeedMode;
-  /** In "zone" mode this is fixed and the zone filter is hidden. */
+  /** In "zone" mode this is fixed and the zone filter is hidden; in "full" mode it's what "Clear filters" returns to. */
   zone?: LogbookZone;
+  /** Starting selection, for deep links like /activities?zone=gym. `initialPage` must have been fetched with it. */
+  initialZone?: LogbookZone;
   sportCounts?: LogbookSportCounts;
   pageSize?: number;
   title?: string;
@@ -114,7 +73,7 @@ export function LogbookFeed({
   const theme = surfaceTheme(surface);
   const totals = useMemo(() => zoneTotals(sportCounts), [sportCounts]);
 
-  const [zone, setZone] = useState<LogbookZone>(lockedZone);
+  const [zone, setZone] = useState<LogbookZone>(initialZone ?? baseZone);
   const [sport, setSport] = useState<string | null>(null);
   const [sort, setSort] = useState<LogbookSort>("recent");
   const [page, setPage] = useState<LogbookPage>(initialPage);
@@ -122,8 +81,7 @@ export function LogbookFeed({
   const [paging, setPaging] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const groups = useMemo(() => groupByMonth(page.entries), [page.entries]);
-  const filtered = zone !== lockedZone || sport !== null || sort !== "recent";
+  const filtered = zone !== baseZone || sport !== null || sort !== "recent";
 
   /** Sports this athlete has actually logged in the visible zone — an empty filter option is just a dead end. */
   const sportOptions = useMemo(
@@ -219,7 +177,10 @@ export function LogbookFeed({
   const showing = page.entries.length;
 
   return (
-    <div className={cn("rounded-2xl border", theme.border)}>
+    // overflow-clip, not overflow-hidden: it still clips rows to the rounded
+    // corners, but unlike `hidden` it does not make this a scroll container,
+    // so the sticky month headers inside keep sticking to the viewport.
+    <div className={cn("overflow-clip rounded-2xl border", theme.border)}>
       {(title || viewAllHref) && (
         <div
           className={cn(
@@ -337,7 +298,7 @@ export function LogbookFeed({
           {filtered ? (
             <button
               type="button"
-              onClick={() => applyFilters({ zone: lockedZone, sport: null, sort: "recent" })}
+              onClick={() => applyFilters({ zone: baseZone, sport: null, sort: "recent" })}
               className={cn("mt-3 text-xs font-medium underline underline-offset-4", theme.muted)}
             >
               Clear filters
@@ -353,34 +314,12 @@ export function LogbookFeed({
         </div>
       ) : (
         <div className={cn(loading && "opacity-50 transition-opacity")}>
-          {groups.map((group) => (
-            <section key={group.key}>
-              {/* Sticky only on the full logbook: an embedded zone list lives
-                  inside a rounded, clipped panel, where a sticky child has
-                  nothing to stick to anyway. */}
-              <div
-                className={cn(
-                  "flex items-baseline justify-between gap-3 px-4 py-2 sm:px-5",
-                  theme.fill,
-                  mode === "full" && "sticky top-[env(safe-area-inset-top)] z-10",
-                  mode === "full" && theme.sticky
-                )}
-              >
-                <h2 className={cn("micro-label", theme.text)}>{group.label}</h2>
-                <p className={cn("text-[11px] tabular-nums", theme.faint)}>{groupSummary(group)}</p>
-              </div>
-              <ul className={cn("divide-y", theme.divider)}>
-                {group.entries.map((entry) => (
-                  <LogbookRow
-                    key={entry.id}
-                    entry={entry}
-                    surface={surface}
-                    showZoneBadge={zone === "all"}
-                  />
-                ))}
-              </ul>
-            </section>
-          ))}
+          <LogbookGroups
+            entries={page.entries}
+            surface={surface}
+            showZoneBadge={zone === "all"}
+            sticky={mode === "full"}
+          />
         </div>
       )}
 

@@ -33,14 +33,26 @@ const Polyline = dynamic(() => import("react-leaflet").then((m) => m.Polyline), 
 const CircleMarker = dynamic(() => import("react-leaflet").then((m) => m.CircleMarker), { ssr: false });
 const FitRouteBounds = dynamic(() => import("./fit-route-bounds").then((m) => m.FitRouteBounds), { ssr: false });
 
+/**
+ * Basemap tiles have to follow the zone they're rendered into. The Engine is
+ * a white surface, and a dark-tiled thumbnail on it reads as a black hole
+ * punched through the row rather than as a map.
+ */
+const TILE_URLS = {
+  dark: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+  light: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+} as const;
+
 export function RouteMap({
   route,
   className,
   ariaLabel = "Route map for this run",
+  variant = "dark",
 }: {
   route: RoutePoint[];
   className?: string;
   ariaLabel?: string;
+  variant?: "dark" | "light";
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [visible, setVisible] = useState(false);
@@ -79,7 +91,13 @@ export function RouteMap({
   return (
     <div
       ref={containerRef}
-      className={cn("relative overflow-hidden rounded-2xl border border-white/[0.06] bg-white/[0.02]", className)}
+      className={cn(
+        "relative overflow-hidden rounded-2xl border",
+        variant === "light"
+          ? "border-cardio-border/50 bg-cardio-bg-elevated"
+          : "border-white/[0.06] bg-white/[0.02]",
+        className
+      )}
       role="img"
       aria-label={ariaLabel}
     >
@@ -104,7 +122,7 @@ export function RouteMap({
           fadeAnimation={false}
           style={{ height: "100%", width: "100%", background: "transparent" }}
         >
-          <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
+          <TileLayer url={TILE_URLS[variant]} />
           <FitRouteBounds route={route} />
           <Polyline positions={route} pathOptions={{ color: "#22d3ee", weight: 3, opacity: 0.9 }} />
           <CircleMarker center={[start[0], start[1]]} radius={4} pathOptions={{ color: "#22c55e", fillOpacity: 1 }} />

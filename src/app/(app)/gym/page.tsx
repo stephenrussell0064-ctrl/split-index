@@ -8,7 +8,8 @@ import { GymStrengthPanel } from "@/components/dashboard/gym-strength-panel";
 import { GymQuickStart } from "@/components/gym/gym-quick-start";
 import { WorkoutPlansDisclosure } from "@/components/gym/workout-plans-disclosure";
 import { RecommendedSplitCard } from "@/components/gym/recommended-split-card";
-import { ActivityListSection } from "@/components/activities/activity-list-section";
+import { LogbookFeed } from "@/components/activities/logbook-feed";
+import { fetchLogbookPage, LOGBOOK_ZONE_PAGE_SIZE } from "@/lib/activities/logbook-query";
 import { canAccessProfile } from "@/lib/premium/features";
 import {
   recommendNextGymSplit,
@@ -38,7 +39,7 @@ export default async function GymPage() {
 
   const showDotsGl = canAccessProfile("strength_dots_gl", profile);
 
-  const [{ data: latestIndex }, { data: gymScores }, { data: gymActivities }, { data: latestGymScore }] =
+  const [{ data: latestIndex }, { data: gymScores }, logbookPage, { data: latestGymScore }] =
     await Promise.all([
       supabase
         .from("split_index_history")
@@ -53,19 +54,16 @@ export default async function GymPage() {
         .eq("user_id", user.id)
         .eq("sport", "gym")
         .order("created_at", { ascending: false })
-        // Matches the activities query below (20) so the logbook's score
-        // column stays populated for every row, not just the first ten.
         .limit(20),
-      supabase
-        .from("activities")
-        .select("id, sport, title, started_at, duration_seconds, distance_meters")
-        .eq("user_id", user.id)
-        .eq("sport", "gym")
-        .eq("is_draft", false)
-        .order("started_at", { ascending: false })
-        // User feedback (Slice 10): same "not nice to view activities"
-        // complaint applied to the Lab's own logbook — was capped at 8.
-        .limit(20),
+      // The Lab's session history. User feedback (Slice 10): "not nice to
+      // view activities" — the list was capped at 8, then 20, with nothing
+      // to say more existed. It now opens on a page and keeps paging through
+      // /api/activities/logbook, with the running "showing N of M" count and
+      // a link into the full cross-zone logbook.
+      fetchLogbookPage(supabase, user.id, {
+        zone: "gym",
+        limit: LOGBOOK_ZONE_PAGE_SIZE,
+      }),
       supabase
         .from("workout_scores")
         .select("score_breakdown, sport_index")
@@ -205,29 +203,19 @@ export default async function GymPage() {
 
               <WorkoutPlansDisclosure />
 
-              {hasHistory && (
-                <div className="bg-gym-zone rounded-2xl border border-gym-border/40 overflow-hidden">
-                  <div className="px-5 py-4 border-b border-gym-border/30 flex items-center justify-between">
-                    <p className="micro-label text-gym-muted">Session history</p>
-                    <Link href="/activities" className="text-xs text-gym-accent hover:text-gym-accent/80">
-                      Full logbook →
-                    </Link>
-                  </div>
-                  <ActivityListSection
-                    items={(gymActivities ?? []).map((a) => ({
-                      id: a.id as string,
-                      sport: a.sport as string,
-                      title: a.title as string | null,
-                      started_at: a.started_at as string,
-                      duration_seconds: a.duration_seconds as number | null,
-                      distance_meters: a.distance_meters as number | null,
-                    }))}
-                    zone="gym"
-                    scoreMap={Object.fromEntries(
-                      (gymScores ?? []).map((s) => [s.activity_id as string, s.sport_index as number])
-                    )}
-                  />
-                </div>
+              {/* Keyed off logged sessions, not scored ones: an unscored
+                  session is still a session the athlete logged and expects
+                  to find here. */}
+              {logbookPage.total > 0 && (
+                <LogbookFeed
+                  initialPage={logbookPage}
+                  surface="gym"
+                  mode="zone"
+                  zone="gym"
+                  pageSize={LOGBOOK_ZONE_PAGE_SIZE}
+                  title="Session history"
+                  viewAllHref="/activities?zone=gym"
+                />
               )}
             </div>
 

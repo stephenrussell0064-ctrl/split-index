@@ -38,6 +38,12 @@ const SECTION_FIELDS: Record<IntakeSection, string[]> = {
   ],
   goal: [
     "event_date",
+    // An event date is optional now; a block length is the alternative.
+    "plan_timeframe_weeks",
+    // Per-lift rather than a combined total — any subset is a usable answer.
+    "target_squat_kg",
+    "target_bench_kg",
+    "target_deadlift_kg",
     "events",
     "same_day",
     "inter_event_gap_h",
@@ -50,7 +56,14 @@ const SECTION_FIELDS: Record<IntakeSection, string[]> = {
     "intends_weight_cut",
     "federation",
   ],
-  strength: ["strength_training_years", "current_strength_sessions_per_week", "lift_variants", "equipment_used"],
+  strength: [
+    // The primary question. Barbell availability is a detail inside this.
+    "has_gym_access",
+    "strength_training_years",
+    "current_strength_sessions_per_week",
+    "lift_variants",
+    "equipment_used",
+  ],
   endurance: [
     "current_run_min_per_week",
     "longest_recent_run_min",
@@ -61,6 +74,10 @@ const SECTION_FIELDS: Record<IntakeSection, string[]> = {
   ],
   heart_rate: ["max_hr_known", "hr_runs_high"],
   availability: [
+    // Real clock times differ by day, and the 6h separation rule is computed
+    // from them.
+    "day_windows",
+    "availability_varies",
     "days_available",
     "two_a_days_possible",
     "two_a_day_days",

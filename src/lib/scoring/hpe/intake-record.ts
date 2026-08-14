@@ -304,6 +304,16 @@ export function resolveSafetyFlags(
       pregnantOrPostpartum12wk: record.pregnantOrPostpartum12wk ?? false,
       under18: athlete.age < 18,
       leaRiskFlags: leaFlags,
+      // The information `resolveSafetyFlags` already had and was dropping: the
+      // count alone cannot tell "answered yes five times" from "skipped the
+      // section", and the engine started asserting things on the strength of
+      // that collapse.
+      leaScreenAnswered: [
+        record.leaRestrictedFood,
+        record.leaTrainsFasted,
+        record.leaUnintendedWeightLoss,
+        record.leaBoneStressInjury,
+      ].some((a) => a != null),
       intendsWeightCut: record.intendsWeightCut ?? false,
       medicationAffectingHr: record.medicationAffectingHr ?? false,
     },

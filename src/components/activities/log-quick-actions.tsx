@@ -39,6 +39,27 @@ export function LogQuickActions({
   const [loadingPastWorkouts, setLoadingPastWorkouts] = useState(false);
   const [pastWorkoutsOpen, setPastWorkoutsOpen] = useState(false);
 
+  // Every list cached below is per-sport, but this component stays mounted
+  // across a sport change: activity-form.tsx renders it above the sport
+  // switcher strip, so switching from (say) Running to Rowing re-renders it
+  // with a new `sport` prop rather than remounting it. Without this reset the
+  // previous sport's templates stayed on screen AND `templatesLoaded` blocked
+  // the new sport's from ever being fetched — so the athlete was offered
+  // running templates while logging a row (their actual rowing templates
+  // unreachable), and tapping one applied a running form state into the
+  // rowing form: distance "8" read as 8 km on screen but 8 metres by the
+  // rowing field config, with no split, leaving a session that can't be
+  // submitted. Adjusted during render on a prop change rather than in an
+  // effect — the pattern this project already prefers (see app-shell.tsx).
+  const [cachedSport, setCachedSport] = useState<SportType | null>(sport);
+  if (sport !== cachedSport) {
+    setCachedSport(sport);
+    setTemplates([]);
+    setTemplatesLoaded(false);
+    setPastWorkouts([]);
+    setPastWorkoutsOpen(false);
+  }
+
   const loadTemplates = async () => {
     if (!sport || templatesLoaded) return;
     const res = await fetch(`/api/session-templates?sport=${sport}`);

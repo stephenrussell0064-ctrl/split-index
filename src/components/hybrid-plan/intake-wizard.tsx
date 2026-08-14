@@ -7,7 +7,17 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils/cn";
-import { DurationField, Field, MultiSelect, NumberField, Prefilled, SelectField, YesNo } from "./intake-fields";
+import {
+  DayWindowsEditor,
+  DurationField,
+  Field,
+  MultiSelect,
+  NumberField,
+  Prefilled,
+  SelectField,
+  YesNo,
+  type DayWindowValue,
+} from "./intake-fields";
 import {
   INTAKE_DAYS,
   MANDATORY_SECTIONS,
@@ -15,6 +25,7 @@ import {
   type IntakeSection,
   type PrefilledFromSplitIndex,
 } from "@/lib/scoring/hpe/intake-record";
+import { PLANNING_HORIZONS } from "@/lib/scoring/hpe/constants";
 
 /**
  * WP2 — the athlete intake flow.
@@ -99,6 +110,28 @@ const DAY_OPTIONS = INTAKE_DAYS.map((d) => ({ value: d, label: d }));
 function fmtDuration(seconds: number): string {
   const s = Math.round(seconds);
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+/**
+ * `intake.dayWindows` comes back camelCased (parsed server-side by
+ * `parseDayWindows`); a draft in progress holds whatever this component last
+ * wrote, which is the snake_case wire shape. Both need to land on the same
+ * shape before `DayWindowsEditor` can read them.
+ */
+function normalizeDayWindows(raw: unknown): DayWindowValue[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((entry) => {
+      const e = entry as Record<string, unknown>;
+      return {
+        day: String(e.day ?? ""),
+        available: Boolean(e.available),
+        start_hour: Number(e.start_hour ?? e.startHour ?? 7),
+        end_hour: Number(e.end_hour ?? e.endHour ?? 18),
+        two_sessions: Boolean(e.two_sessions ?? e.twoSessions),
+      };
+    })
+    .filter((w) => w.day.length > 0);
 }
 
 export function IntakeWizard() {
@@ -331,7 +364,7 @@ export function IntakeWizard() {
 
           {section === "goal" && !hardBlock && (
             <>
-              <Field label="When is your event?" why="Between 4 and 52 weeks out. Everything — phase lengths, the taper, the peak — is measured back from this date." required>
+              <Field label="When is your event?" why="Optional. If you have one, phase lengths, the taper and the peak all measure back from this date. Without a date, pick a block length below instead — you still get a complete plan.">
                 <input
                   type="date"
                   value={(get("event_date", intake.eventDate) as string | null) ?? ""}
@@ -340,6 +373,48 @@ export function IntakeWizard() {
                   className="min-h-11 rounded-xl border border-white/10 bg-white/[0.03] px-3 text-sm text-foreground focus:border-accent focus:outline-none"
                 />
               </Field>
+              {/* No event date required. A block only makes sense once there is no date to measure back from, so this only shows then. */}
+              {!(get("event_date", intake.eventDate) as string | null) && (
+                <Field label="No event date? Choose a block length." why="Without a date there is no taper to land on, so you pick how long this block runs instead. Leave it on 'let the engine choose' and it defaults to a standard 12-week block.">
+                  <div className="flex flex-wrap gap-2" role="group" aria-label="Planning horizon">
+                    {PLANNING_HORIZONS.map((h) => (
+                      <button
+                        key={h.weeks}
+                        type="button"
+                        onClick={() => set("plan_timeframe_weeks", h.weeks)}
+                        aria-pressed={(get("plan_timeframe_weeks", intake.planTimeframeWeeks) as number | null) === h.weeks}
+                        className={cn(
+                          "min-h-11 rounded-xl border px-3.5 text-sm font-medium transition-colors",
+                          (get("plan_timeframe_weeks", intake.planTimeframeWeeks) as number | null) === h.weeks
+                            ? "border-accent/40 bg-accent/15 text-accent"
+                            : "border-white/10 text-muted hover:border-white/20 hover:text-foreground"
+                        )}
+                      >
+                        {h.label}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => set("plan_timeframe_weeks", null)}
+                      aria-pressed={(get("plan_timeframe_weeks", intake.planTimeframeWeeks) as number | null) == null}
+                      className={cn(
+                        "min-h-11 rounded-xl border px-3.5 text-sm font-medium transition-colors",
+                        (get("plan_timeframe_weeks", intake.planTimeframeWeeks) as number | null) == null
+                          ? "border-accent/40 bg-accent/15 text-accent"
+                          : "border-white/10 text-muted hover:border-white/20 hover:text-foreground"
+                      )}
+                    >
+                      Let the engine choose
+                    </button>
+                  </div>
+                  {(() => {
+                    const chosen = PLANNING_HORIZONS.find(
+                      (h) => h.weeks === (get("plan_timeframe_weeks", intake.planTimeframeWeeks) as number | null)
+                    );
+                    return chosen ? <p className="mt-2 text-xs leading-relaxed text-muted">{chosen.blurb}</p> : null;
+                  })()}
+                </Field>
+              )}
               <Field label="What are you competing in?" why="Decides which engines load. You can pick more than one." required>
                 <MultiSelect
                   options={[
@@ -383,13 +458,32 @@ export function IntakeWizard() {
                   ariaLabel="Target 5k time"
                 />
               </Field>
-              <Field label="Target total (squat + bench + deadlift)" why="Optional. Without it the strength side is set to maintain rather than develop.">
+              {/* Per-lift, not a total: asking for a total makes the athlete do arithmetic on three numbers they may not all know, and loses the whole answer if one is missing. Each is independently skippable. */}
+              <Field label="Target squat" why="Optional and independent of bench and deadlift below — any one of the three is still useful. Without at least one the strength side is set to maintain rather than develop.">
                 <NumberField
-                  value={get("target_total_kg", intake.targetTotalKg) as number | null}
-                  onChange={(v) => set("target_total_kg", v)}
+                  value={get("target_squat_kg", intake.targetSquatKg) as number | null}
+                  onChange={(v) => set("target_squat_kg", v)}
                   min={0}
                   suffix="kg"
-                  ariaLabel="Target total"
+                  ariaLabel="Target squat"
+                />
+              </Field>
+              <Field label="Target bench" why="Optional and independent of the other two.">
+                <NumberField
+                  value={get("target_bench_kg", intake.targetBenchKg) as number | null}
+                  onChange={(v) => set("target_bench_kg", v)}
+                  min={0}
+                  suffix="kg"
+                  ariaLabel="Target bench"
+                />
+              </Field>
+              <Field label="Target deadlift" why="Optional and independent of the other two.">
+                <NumberField
+                  value={get("target_deadlift_kg", intake.targetDeadliftKg) as number | null}
+                  onChange={(v) => set("target_deadlift_kg", v)}
+                  min={0}
+                  suffix="kg"
+                  ariaLabel="Target deadlift"
                 />
               </Field>
               <Field label="If you could only hit one, which matters more?" why="Pre-set from your goals. Move it if it is wrong — it decides how the week splits between running and lifting.">
@@ -491,6 +585,21 @@ export function IntakeWizard() {
                   ariaLabel="Gym access days"
                 />
               </Field>
+              <Field label="Does your week vary too much to fix to set days?" why="When on, the plan stops trying to fix sessions to specific days and gives you an ordered list instead — the order is what matters, and the spacing rules apply as you place the sessions yourself.">
+                <YesNo
+                  value={get("availability_varies", intake.availabilityVaries) as boolean}
+                  onChange={(v) => set("availability_varies", v)}
+                />
+              </Field>
+              {!(get("availability_varies", intake.availabilityVaries) as boolean) && (
+                <Field label="Exact training windows, per day" why="Optional and more precise than the morning/evening hours above. Real clock times differ by day, and the six-hour separation rule between a hard lift and a hard run is computed from these — a day left as a rest day here just falls back to the flat hours.">
+                  <DayWindowsEditor
+                    days={INTAKE_DAYS}
+                    value={normalizeDayWindows(get("day_windows", intake.dayWindows))}
+                    onChange={(v) => set("day_windows", v)}
+                  />
+                </Field>
+              )}
             </>
           )}
 

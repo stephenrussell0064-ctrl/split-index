@@ -3,10 +3,28 @@ import Link from "next/link";
 import { PlusCircle } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { Button } from "@/components/ui/button";
-import { parseRoutePolyline } from "@/lib/scoring/gps-track";
-import { LogbookView } from "@/components/activities/logbook-view";
+import { LogbookFeed } from "@/components/activities/logbook-feed";
+import {
+  fetchLogbookPage,
+  fetchLogbookSportCounts,
+  parseZone,
+  LOGBOOK_PAGE_SIZE,
+} from "@/lib/activities/logbook-query";
 
-export default async function ActivitiesPage() {
+/**
+ * The full logbook — one reverse-chronological feed across both zones.
+ *
+ * The first page is rendered on the server so the list is on screen with the
+ * rest of the page (no spinner-then-content flash on a cold mobile start);
+ * everything after it pages in through /api/activities/logbook. `?zone=` lets
+ * The Lab and The Engine deep-link into their own slice of the same feed
+ * instead of each maintaining a private, differently-shaped copy of it.
+ */
+export default async function ActivitiesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ zone?: string }>;
+}) {
   const supabase = await createClient();
   const {
     data: { user },
@@ -22,55 +40,18 @@ export default async function ActivitiesPage() {
 
   if (!profile?.onboarding_completed) redirect("/onboarding");
 
-  const { data: activities } = await supabase
-    .from("activities")
-    .select("id, sport, title, started_at, duration_seconds, distance_meters, source, metadata")
-    .eq("user_id", user.id)
-    .eq("is_draft", false)
-    .order("started_at", { ascending: false })
-    .limit(50);
+  const initialZone = parseZone((await searchParams).zone);
 
-  const ids = (activities ?? []).map((a) => a.id);
-  const { data: scores } = ids.length
-    ? await supabase
-        .from("workout_scores")
-        .select("activity_id, sport_index")
-        .in("activity_id", ids)
-    : { data: [] };
+  const [initialPage, sportCounts] = await Promise.all([
+    fetchLogbookPage(supabase, user.id, { zone: initialZone, limit: LOGBOOK_PAGE_SIZE }),
+    fetchLogbookSportCounts(supabase, user.id),
+  ]);
 
-  const scoreMap = Object.fromEntries(
-    (scores ?? []).map((s) => [s.activity_id, s.sport_index as number])
-  );
-
-  const gymActivities = (activities ?? []).filter((a) => a.sport === "gym");
-  const cardioActivities = (activities ?? []).filter((a) => a.sport !== "gym");
-
-  const gymRows = gymActivities.map((a) => ({
-    id: a.id as string,
-    sport: a.sport as string,
-    title: a.title as string | null,
-    started_at: a.started_at as string,
-    duration_seconds: a.duration_seconds as number | null,
-    distance_meters: a.distance_meters as number | null,
-  }));
-
-  const cardioRows = cardioActivities.map((a) => ({
-    id: a.id as string,
-    sport: a.sport as string,
-    title: a.title as string | null,
-    started_at: a.started_at as string,
-    duration_seconds: a.duration_seconds as number | null,
-    distance_meters: a.distance_meters as number | null,
-    // Only runs recorded by Split Index's own GPS tracker carry a route.
-    // Parsed here rather than in the client so a malformed value can never
-    // reach a render, and null-checked so imported or manual runs simply have
-    // no map rather than an empty box.
-    route: a.source === "gps" ? parseRoutePolyline((a.metadata as { route?: unknown } | null)?.route) : null,
-  }));
+  const hasAnyActivity = Object.keys(sportCounts).length > 0;
 
   return (
-    <div className="max-w-5xl mx-auto">
-      <div className="flex items-start justify-between gap-4 mb-8">
+    <div className="mx-auto max-w-4xl">
+      <div className="mb-6 flex items-start justify-between gap-4">
         <div>
           <p className="micro-label text-muted mb-2">Logbook</p>
           <h1 className="page-title">Activities</h1>
@@ -83,7 +64,7 @@ export default async function ActivitiesPage() {
         </Link>
       </div>
 
-      {(activities ?? []).length === 0 ? (
+      {!hasAnyActivity ? (
         <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] py-16 text-center">
           <p className="font-medium">No activities yet</p>
           <Link href="/activities/new" className="mt-4 inline-block text-sm text-accent">
@@ -91,7 +72,15 @@ export default async function ActivitiesPage() {
           </Link>
         </div>
       ) : (
-        <LogbookView gymRows={gymRows} cardioRows={cardioRows} scoreMap={scoreMap} />
+        <LogbookFeed
+          initialPage={initialPage}
+          surface="neutral"
+          mode="full"
+          zone="all"
+          initialZone={initialZone}
+          sportCounts={sportCounts}
+          pageSize={LOGBOOK_PAGE_SIZE}
+        />
       )}
     </div>
   );

@@ -123,7 +123,7 @@ export function safetyScreen(state: AthleteState, goal: Goal): SafetyResult {
   //
   // So: no bodyweight guidance ever, the referral shown prominently, fuelling
   // reminders throughout, and a plan they can actually follow.
-  if (s.leaRiskFlags >= 2) {
+  if (s.leaRiskFlags >= 2 && s.leaScreenAnswered) {
     warnings.push(
       "Your answers on fuelling suggest you may be training on less energy than you are using. No bodyweight " +
         "guidance of any kind will be shown, and this plan is built on the assumption that you are eating enough " +
@@ -132,7 +132,17 @@ export function safetyScreen(state: AthleteState, goal: Goal): SafetyResult {
     );
     referrals.push("Registered sports dietitian");
     referrals.push("National Alliance for Eating Disorders helpline, if you would like support");
-  } else if (s.leaRiskFlags === 1) {
+  } else if (s.leaRiskFlags >= 2 && !s.leaScreenAnswered) {
+    // The screen was never answered. Unanswered resolves to positive so that
+    // suppression errs safe — but suppressing on a guess and ASSERTING on a
+    // guess are different acts, and only the first is defensible. Telling
+    // someone their answers suggest under-fuelling, when they gave none, is a
+    // clinical claim about a person the engine has never asked.
+    warnings.push(
+      "The fuelling questions have not been answered, so bodyweight guidance stays switched off. Answering them " +
+        "takes a minute and is the only thing keeping it off."
+    );
+  } else if (s.leaRiskFlags === 1) {  } else if (s.leaRiskFlags === 1) {
     warnings.push(
       "One low-energy-availability screen flag: bodyweight guidance is suppressed and the plan proceeds with " +
         "fuelling reminders only."

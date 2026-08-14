@@ -997,7 +997,15 @@ export function diagnose(
   const qualitySessionCount = runs.filter((r) => !r.isMaxEffort && paceSPerKm(r) < qualityCut).length;
   const noQuality = qualitySessionCount === 0 && runs.length >= NO_QUALITY_MIN_RUNS;
 
-  const va = volumeAdequacy(weeklyVolumeMin, predicted5kS);
+  // RUNNING volume, not total. `volumeAdequacy` asks "is this enough to
+  // support this 5k level" — its denominator is a running requirement and its
+  // second argument is a running prediction, so it is a pace-derived verdict
+  // and cross-training must not enter it. Feeding total volume in told a
+  // rower who has never run that they were on 356% of the running volume they
+  // need and should now train intensity rather than build a base — the exact
+  // inverse of what a non-runner needs, and it then moved the whole emphasis
+  // vector that way.
+  const va = volumeAdequacy(runningVolumeMin, predicted5kS);
 
   const ratios = liftRatios(oneRms);
   const weakLift = findWeakLift(ratios);
@@ -1018,7 +1026,9 @@ export function diagnose(
   const { emphasis, findings } = deriveEmphasis(
     {
       riegelK,
-      volumeAdequacy: va,
+      // Suppressed when the 5k is a placeholder rather than a prediction: a
+      // ratio against a fabricated denominator is not a finding.
+      volumeAdequacy: predicted5kFromEffort ? va : null,
       decoupling,
       easyBand,
       runsInsideEasyBand,

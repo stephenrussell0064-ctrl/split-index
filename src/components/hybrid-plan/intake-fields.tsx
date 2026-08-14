@@ -220,6 +220,110 @@ export function Prefilled({
   );
 }
 
+/** Wire shape for one day's window — snake_case to match `day_windows` as stored (see `parseDayWindows` in `hpe/intake-record.ts`). */
+export interface DayWindowValue {
+  day: string;
+  available: boolean;
+  start_hour: number;
+  end_hour: number;
+  two_sessions: boolean;
+}
+
+/**
+ * Per-day training windows, Mon-Sun. Real clock times differ by day, and the
+ * six-hour separation rule between a hard lift and a hard run is computed
+ * from them — collapsing a week to one AM/PM pair throws away exactly what
+ * that rule depends on. A day left unavailable here still falls back to the
+ * flat hours elsewhere in Availability, so nothing here is required.
+ */
+export function DayWindowsEditor({
+  days,
+  value,
+  onChange,
+}: {
+  days: readonly string[];
+  value: DayWindowValue[];
+  onChange: (value: DayWindowValue[]) => void;
+}) {
+  const forDay = (day: string): DayWindowValue =>
+    value.find((w) => w.day === day) ?? { day, available: false, start_hour: 7, end_hour: 18, two_sessions: false };
+
+  const update = (day: string, patch: Partial<DayWindowValue>) => {
+    const next = { ...forDay(day), ...patch };
+    onChange([...value.filter((w) => w.day !== day), next]);
+  };
+
+  return (
+    <div className="space-y-2" role="group" aria-label="Per-day training windows">
+      {days.map((day) => {
+        const w = forDay(day);
+        return (
+          <div
+            key={day}
+            className="flex flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2"
+          >
+            <span className="w-10 shrink-0 text-sm font-medium">{day}</span>
+            <button
+              type="button"
+              onClick={() => update(day, { available: !w.available })}
+              aria-pressed={w.available}
+              className={cn(
+                "min-h-9 rounded-lg border px-3 text-xs font-medium transition-colors",
+                w.available
+                  ? "border-endurance/40 bg-endurance/15 text-endurance"
+                  : "border-white/10 text-muted hover:border-white/20 hover:text-foreground"
+              )}
+            >
+              {w.available ? "Available" : "Rest day"}
+            </button>
+            {/* Hours and the two-sessions toggle only mean something once the day is available — hiding them otherwise keeps a rest day reading as a rest day. */}
+            {w.available && (
+              <>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    value={w.start_hour}
+                    min={0}
+                    max={23}
+                    aria-label={`${day} earliest start hour`}
+                    onChange={(e) => update(day, { start_hour: Math.min(23, Math.max(0, Number(e.target.value))) })}
+                    className="min-h-9 w-14 rounded-lg border border-white/10 bg-white/[0.03] px-2 text-xs tabular-nums text-foreground focus:border-accent focus:outline-none"
+                  />
+                  <span className="text-xs text-muted">to</span>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    value={w.end_hour}
+                    min={0}
+                    max={23}
+                    aria-label={`${day} latest end hour`}
+                    onChange={(e) => update(day, { end_hour: Math.min(23, Math.max(0, Number(e.target.value))) })}
+                    className="min-h-9 w-14 rounded-lg border border-white/10 bg-white/[0.03] px-2 text-xs tabular-nums text-foreground focus:border-accent focus:outline-none"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => update(day, { two_sessions: !w.two_sessions })}
+                  aria-pressed={w.two_sessions}
+                  className={cn(
+                    "min-h-9 rounded-lg border px-3 text-xs font-medium transition-colors",
+                    w.two_sessions
+                      ? "border-accent/40 bg-accent/15 text-accent"
+                      : "border-white/10 text-muted hover:border-white/20 hover:text-foreground"
+                  )}
+                >
+                  Two sessions possible
+                </button>
+              </>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 /** Minutes:seconds input for a target time — athletes think in 17:30, not 1050. */
 export function DurationField({
   seconds,

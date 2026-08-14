@@ -53,6 +53,19 @@ export interface SafetyFlags {
   under18: boolean;
   /** Count of positive answers across the five-question low-energy-availability screen (0-5). */
   leaRiskFlags: number;
+  /**
+   * Whether that screen was actually answered.
+   *
+   * Unanswered questions resolve to `true` (the conservative direction), which
+   * was harmless while the count only SUPPRESSED things — suppressing on a
+   * guess errs safe in both readings. It stopped being harmless the moment the
+   * count started driving prose: an athlete who skipped the section was being
+   * told "your answers on fuelling suggest you may be under-eating" and shown
+   * an eating-disorder helpline, on the basis of answers they never gave.
+   *
+   * Suppression still keys off the count alone. Assertions key off this.
+   */
+  leaScreenAnswered: boolean;
   intendsWeightCut: boolean;
   /** Beta blockers and similar. Switches ALL prescription from heart rate to pace and RPE — prescribing zones to someone on beta blockers is a straightforward way to produce a useless plan. */
   medicationAffectingHr: boolean;
@@ -91,6 +104,7 @@ export const DEFAULT_SAFETY_FLAGS: SafetyFlags = {
   pregnantOrPostpartum12wk: false,
   under18: false,
   leaRiskFlags: 0,
+  leaScreenAnswered: true,
   intendsWeightCut: false,
   medicationAffectingHr: false,
 };

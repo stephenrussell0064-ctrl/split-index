@@ -164,6 +164,7 @@ export function LogbookRow({
             <RouteMap
               route={entry.route!}
               className="h-full w-full"
+              variant={surface === "cardio" ? "light" : "dark"}
               ariaLabel={`Route map for the ${meta?.name ?? entry.sport} on ${format(started, "MMMM d, yyyy")}`}
             />
           ) : (

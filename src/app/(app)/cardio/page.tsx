@@ -4,7 +4,8 @@ import { Activity, PlusCircle, MapPin } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { TrainZoneSwipe } from "@/components/layout/train-zone-swipe";
 import { Button } from "@/components/ui/button";
-import { ActivityListSection } from "@/components/activities/activity-list-section";
+import { LogbookFeed } from "@/components/activities/logbook-feed";
+import { fetchLogbookPage, LOGBOOK_ZONE_PAGE_SIZE } from "@/lib/activities/logbook-query";
 import { SportComparisonBars } from "@/components/activities/sport-comparison-bars";
 import { formatIndex } from "@/lib/utils/format";
 import { SPORT_INDEX_LABELS, ENDURANCE_SPORTS } from "@/lib/constants/sports";
@@ -26,7 +27,7 @@ export default async function CardioPage() {
 
   if (!profile?.onboarding_completed) redirect("/onboarding");
 
-  const [{ data: latestIndex }, { data: scores }, { data: activities }] =
+  const [{ data: latestIndex }, { data: scores }, logbookPage] =
     await Promise.all([
       supabase
         .from("split_index_history")
@@ -42,18 +43,15 @@ export default async function CardioPage() {
         .neq("sport", "gym")
         .order("created_at", { ascending: false })
         .limit(50),
-      supabase
-        .from("activities")
-        .select("id, sport, title, started_at, duration_seconds, distance_meters")
-        .eq("user_id", user.id)
-        .neq("sport", "gym")
-        .eq("is_draft", false)
-        .order("started_at", { ascending: false })
-        // User feedback (Slice 10): "the engine screen isn't nice to view
-        // activities" — the old 6-item mini-list forced anyone with a real
-        // training history off to /activities just to see last week. 20
-        // keeps this a real logbook, not just a preview of one.
-        .limit(20),
+      // The Engine's session history. User feedback (Slice 10): "the engine
+      // screen isn't nice to view activities" — successive fixes just raised
+      // the cap (6, then 20) without ever making the rest reachable. It now
+      // pages through /api/activities/logbook and says how much it is
+      // showing, so the cap stops being a silent wall.
+      fetchLogbookPage(supabase, user.id, {
+        zone: "cardio",
+        limit: LOGBOOK_ZONE_PAGE_SIZE,
+      }),
     ]);
 
   const enduranceIndex = latestIndex?.endurance_index ?? null;
@@ -74,18 +72,6 @@ export default async function CardioPage() {
     count: agg.count,
     label: SPORT_INDEX_LABELS[sport as SportType] ?? sport,
   })).sort((a, b) => b.avg - a.avg);
-
-  const cardioScoreMap = Object.fromEntries(
-    (scores ?? []).map((s) => [s.activity_id as string, s.sport_index as number])
-  );
-  const cardioActivityRows = (activities ?? []).map((a) => ({
-    id: a.id as string,
-    sport: a.sport as string,
-    title: a.title as string | null,
-    started_at: a.started_at as string,
-    duration_seconds: a.duration_seconds as number | null,
-    distance_meters: a.distance_meters as number | null,
-  }));
 
   return (
     <TrainZoneSwipe mode="cardio">
@@ -141,33 +127,36 @@ export default async function CardioPage() {
             )}
           </div>
 
-          {sportLeaderboard.length > 0 && (
+          {/* Driven by logged sessions rather than the sport leaderboard —
+              the logbook used to be nested inside the leaderboard's own
+              condition, so an athlete with sessions but no scores yet saw no
+              logbook at all. */}
+          {logbookPage.total > 0 && (
             <div className="grid gap-5 lg:grid-cols-[1fr_340px] mb-8">
-              <div className="bg-cardio-zone rounded-2xl border border-cardio-border/40 overflow-hidden">
-                <div className="px-5 py-4 border-b border-cardio-border/30 flex items-center justify-between">
-                  <p className="micro-label text-cardio-muted">Logbook</p>
-                  <Link
-                    href="/activities"
-                    className="text-xs text-cardio-accent hover:text-cardio-accent/80"
-                  >
-                    Full logbook →
-                  </Link>
-                </div>
-                <ActivityListSection items={cardioActivityRows} zone="cardio" scoreMap={cardioScoreMap} />
-              </div>
+              <LogbookFeed
+                initialPage={logbookPage}
+                surface="cardio"
+                mode="zone"
+                zone="cardio"
+                pageSize={LOGBOOK_ZONE_PAGE_SIZE}
+                title="Session history"
+                viewAllHref="/activities?zone=cardio"
+              />
 
-              <div className="glass-cardio rounded-2xl p-6">
-                <p className="micro-label text-cardio-muted mb-4">By sport</p>
-                <SportComparisonBars
-                  zone="cardio"
-                  items={sportLeaderboard.map((s) => ({
-                    label: s.sport.replace("_", " "),
-                    value: s.avg,
-                    displayValue: formatIndex(s.avg),
-                    sublabel: `${s.count} session${s.count === 1 ? "" : "s"}`,
-                  }))}
-                />
-              </div>
+              {sportLeaderboard.length > 0 && (
+                <div className="glass-cardio rounded-2xl p-6 lg:self-start">
+                  <p className="micro-label text-cardio-muted mb-4">By sport</p>
+                  <SportComparisonBars
+                    zone="cardio"
+                    items={sportLeaderboard.map((s) => ({
+                      label: s.sport.replace("_", " "),
+                      value: s.avg,
+                      displayValue: formatIndex(s.avg),
+                      sublabel: `${s.count} session${s.count === 1 ? "" : "s"}`,
+                    }))}
+                  />
+                </div>
+              )}
             </div>
           )}
 

@@ -193,12 +193,18 @@ export function generatePlan(input: GeneratePlanInput): GeneratedPlan {
     acwr,
     bodyweightFrontier: bodyweightFrontier(state, safety.showBodyweightGuidance),
     eventOrder,
-    // Fuelling guidance is NOT bodyweight guidance. The intake spec is
-    // explicit that a single LEA flag suppresses bodyweight guidance and
-    // "proceeds with fuelling reminders only" — telling an at-risk athlete to
-    // eat is the correct direction, and withholding it would be the harmful
-    // one. Two or more flags block the plan entirely, upstream of here.
-    taper: jointTaper(state, true),
+    // Fuelling guidance is gated on the SAME screen as bodyweight guidance.
+    //
+    // This previously passed `true` unconditionally, justified by a comment
+    // saying two or more LEA flags block the plan upstream. That justification
+    // was true when it was written and this engine then removed the block —
+    // so the one bodyweight-scaled quantity anywhere in the output ("around
+    // 498-581g, 6-7g/kg" for an 83kg athlete) became reachable by exactly the
+    // population the LEA screen exists to protect.
+    //
+    // Non-negotiable #5 forbids macro output under ANY configuration, and a
+    // per-kilogram gram target is a macro target whatever it is called.
+    taper: jointTaper(state, safety.showBodyweightGuidance),
     eventDay: eventOrder ? eventDayPlan(goal, eventOrder) : null,
     findings: profile.findings,
     tailoring,
