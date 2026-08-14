@@ -89,11 +89,65 @@ export const MUSCLE_GROUPS = [
 
 export type ExerciseKind = "compound" | "accessory";
 
+/**
+ * What an athlete actually counts for this movement.
+ *
+ * "reps" for almost everything. Planks are held for a TIME and carries/sled
+ * work are done over a DISTANCE — neither has reps to count, so a form that
+ * unconditionally demands them can't log the movement at all (it fails with
+ * "Reps is required", which blocks the whole session, not just that row).
+ *
+ * Same shape of problem as `noWeightInput` in lib/scoring/weight-entry.ts,
+ * which already handles movements with no WEIGHT to enter (pull-ups, dips):
+ * the entry surface has to follow the movement, not the other way round.
+ */
+export type ExerciseTracking = "reps" | "time" | "distance";
+
 export interface ExerciseDefinition {
   name: string;
   muscle: string;
   category: MuscleGroupCategory;
   kind: ExerciseKind;
+  /** Omitted means "reps" — the overwhelming default. */
+  tracking?: ExerciseTracking;
+}
+
+/**
+ * How this exercise is counted. Unknown/custom names fall back to "reps",
+ * which is both the common case and the pre-existing behaviour.
+ */
+export function getExerciseTracking(name: string): ExerciseTracking {
+  const match = COMMON_EXERCISES.find(
+    (ex) => ex.name.toLowerCase() === name.trim().toLowerCase()
+  );
+  return match?.tracking ?? "reps";
+}
+
+/**
+ * Inverse of muscleToCategory, for the categories where it's unambiguous.
+ *
+ * Used to pre-fill the Muscle field for a CUSTOM exercise from whatever
+ * filter the athlete is browsing under, so a typed-in name doesn't fail
+ * submit with "Pick a muscle group" for a field they never saw was required.
+ *
+ * Returns null wherever a category covers several muscle groups ("legs" is
+ * Quads/Hamstrings/Glutes/Calves, "arms" is Biceps/Triceps) or carries no
+ * information ("all"): guessing one of those would silently mislabel the
+ * exercise and skew its muscle-group volume, which is worse than asking.
+ */
+export function categoryToMuscleGroup(category: MuscleGroupCategory): string | null {
+  switch (category) {
+    case "chest":
+      return "Chest";
+    case "back":
+      return "Back";
+    case "shoulders":
+      return "Shoulders";
+    case "core":
+      return "Core";
+    default:
+      return null;
+  }
 }
 
 /** Maps detailed muscle group → filter category */
@@ -273,9 +327,9 @@ export const COMMON_EXERCISES: ExerciseDefinition[] = [
   { name: "Bench Dips", muscle: "Triceps", category: "arms", kind: "accessory" },
 
   // Core
-  { name: "Plank", muscle: "Core", category: "core", kind: "accessory" },
-  { name: "Weighted Plank", muscle: "Core", category: "core", kind: "accessory" },
-  { name: "Side Plank", muscle: "Core", category: "core", kind: "accessory" },
+  { name: "Plank", muscle: "Core", category: "core", kind: "accessory", tracking: "time" },
+  { name: "Weighted Plank", muscle: "Core", category: "core", kind: "accessory", tracking: "time" },
+  { name: "Side Plank", muscle: "Core", category: "core", kind: "accessory", tracking: "time" },
   { name: "Hanging Leg Raise", muscle: "Core", category: "core", kind: "accessory" },
   { name: "Hanging Knee Raise", muscle: "Core", category: "core", kind: "accessory" },
   { name: "Cable Crunch", muscle: "Core", category: "core", kind: "accessory" },
@@ -289,8 +343,8 @@ export const COMMON_EXERCISES: ExerciseDefinition[] = [
   { name: "Weighted Sit Up", muscle: "Core", category: "core", kind: "accessory" },
   { name: "V-Up", muscle: "Core", category: "core", kind: "accessory" },
   { name: "Mountain Climbers", muscle: "Core", category: "core", kind: "accessory" },
-  { name: "Farmer's Carry", muscle: "Core", category: "core", kind: "compound" },
-  { name: "Suitcase Carry", muscle: "Core", category: "core", kind: "accessory" },
+  { name: "Farmer's Carry", muscle: "Core", category: "core", kind: "compound", tracking: "distance" },
+  { name: "Suitcase Carry", muscle: "Core", category: "core", kind: "accessory", tracking: "distance" },
 
   // Olympic / full body (categorised under legs for filtering)
   { name: "Power Clean", muscle: "Quads", category: "legs", kind: "compound" },
@@ -300,8 +354,8 @@ export const COMMON_EXERCISES: ExerciseDefinition[] = [
   { name: "Kettlebell Swing", muscle: "Glutes", category: "legs", kind: "compound" },
   { name: "Thruster", muscle: "Quads", category: "legs", kind: "compound" },
   { name: "Wall Ball", muscle: "Quads", category: "legs", kind: "compound" },
-  { name: "Sled Push", muscle: "Quads", category: "legs", kind: "compound" },
-  { name: "Sled Pull", muscle: "Quads", category: "legs", kind: "compound" },
+  { name: "Sled Push", muscle: "Quads", category: "legs", kind: "compound", tracking: "distance" },
+  { name: "Sled Pull", muscle: "Quads", category: "legs", kind: "compound", tracking: "distance" },
   // Extra catalog
   { name: "Landmine Row", muscle: "Back", category: "back", kind: "compound" },
   { name: "Zercher Squat", muscle: "Quads", category: "legs", kind: "compound" },

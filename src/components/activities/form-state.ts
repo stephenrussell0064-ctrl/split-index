@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { ActivityFormData, SessionType, SportType } from "@/types";
 import type { WeightEntryMode } from "@/lib/scoring/weight-entry";
 import { defaultWeightEntryMode } from "@/lib/scoring/weight-entry";
+import { getExerciseTracking } from "@/lib/constants/sports";
 
 /**
  * Local form state is kept as strings so typing is never blocked;
@@ -14,6 +15,18 @@ export interface SetRowState {
   rpe: string;
   /** Reps in reserve — optional (Part B3). */
   repsInReserve: string;
+  /**
+   * Hold time, for exercises whose `tracking` is "time" (planks). Blank and
+   * unused for everything else — see getExerciseTracking in constants/sports.
+   *
+   * Optional rather than required so the set literals built outside this
+   * module (lib/activities/db-form.ts, and the plan/recommendation prefills
+   * in app/(app)/activities/log-page-loader.tsx) stay valid without change —
+   * they only ever produce rep-tracked exercises. Treat undefined as "".
+   */
+  durationSeconds?: string;
+  /** Distance covered, for `tracking: "distance"` exercises (carries, sled work). Optional for the same reason as durationSeconds. */
+  distanceMeters?: string;
 }
 
 export interface ExerciseRowState {
@@ -146,21 +159,24 @@ export function nextSetId(): string {
  * (ExerciseHistoryHint in gym-form.tsx), which is real history for THIS
  * exercise rather than whatever happened to be typed a moment ago.
  *
- * `previous` is kept in the signature — callers pass it, and copying
- * structural (non-value) fields from it is still legitimate — but no
- * athlete-entered value is carried over.
+ * Both functions therefore take no "previous row" argument at all any more:
+ * there is nothing left they could legitimately copy from it, and keeping an
+ * ignored parameter would invite a future caller to assume it still does
+ * something.
  */
-export function createSetRow(_previous?: SetRowState): SetRowState {
+export function createSetRow(): SetRowState {
   return {
     id: nextSetId(),
     weight: "",
     reps: "",
     rpe: "",
     repsInReserve: "",
+    durationSeconds: "",
+    distanceMeters: "",
   };
 }
 
-export function createExerciseRow(_previous?: ExerciseRowState): ExerciseRowState {
+export function createExerciseRow(): ExerciseRowState {
   return {
     id: nextRowId(),
     name: "",
@@ -292,6 +308,10 @@ export function restoreDraftState(
                   reps: str(s.reps, ""),
                   rpe: str(s.rpe, ""),
                   repsInReserve: str(s.repsInReserve, ""),
+                  // Absent from drafts saved before timed/carry exercises
+                  // existed — default blank rather than dropping the set.
+                  durationSeconds: str(s.durationSeconds, ""),
+                  distanceMeters: str(s.distanceMeters, ""),
                 }))
             : [
                 {
@@ -300,6 +320,8 @@ export function restoreDraftState(
                   reps: str(row.reps, ""),
                   rpe: str(row.rpe, ""),
                   repsInReserve: "",
+                  durationSeconds: "",
+                  distanceMeters: "",
                 },
               ];
 
@@ -380,7 +402,14 @@ export function isStateDirty(state: WorkoutFormState): boolean {
     (row) =>
       row.name !== "" ||
       row.notes !== "" ||
-      row.sets.some((s) => s.weight !== "" || s.reps !== "" || s.rpe !== "")
+      row.sets.some(
+        (s) =>
+          s.weight !== "" ||
+          s.reps !== "" ||
+          s.rpe !== "" ||
+          !!s.durationSeconds ||
+          !!s.distanceMeters
+      )
   );
   return touched || exercisesTouched;
 }
@@ -499,10 +528,28 @@ export function exerciseScore(
 
 export type FormErrors = Record<string, string>;
 
+/**
+ * Has the athlete put anything in this set worth submitting?
+ *
+ * Deliberately covers duration/distance as well as weight/reps: a plank has
+ * neither weight nor reps, so a "did you type anything" test built only on
+ * those two silently discarded every timed/carry set and then complained
+ * that the exercise had no sets.
+ */
+function setHasEntry(s: SetRowState): boolean {
+  return (
+    s.weight !== "" || s.reps !== "" || !!s.durationSeconds || !!s.distanceMeters
+  );
+}
+
 const gymSetSchema = z.object({
   weight_kg: z.number().min(0),
+  // Always >= 1, including for timed/carry sets — see the comment where this
+  // is built: gym_exercises.reps is NOT NULL CHECK (reps > 0).
   reps: z.number().int().positive(),
   rpe: z.number().min(1).max(10).optional(),
+  duration_seconds: z.number().int().positive().nullable().optional(),
+  distance_meters: z.number().int().positive().nullable().optional(),
 });
 
 const gymExerciseSchema = z.object({
@@ -753,7 +800,7 @@ export function validateAndBuildPayload(
     const meaningfulRows = state.exercises.filter(
       (row) =>
         row.name.trim() !== "" ||
-        row.sets.some((s) => s.weight !== "" || s.reps !== "")
+        row.sets.some((s) => setHasEntry(s))
     );
 
     if (meaningfulRows.length === 0) {
@@ -767,11 +814,22 @@ export function validateAndBuildPayload(
       if (row.name.trim() === "") errors[rowKey("name")] = "Name this exercise";
       if (row.muscleGroup === "") errors[rowKey("muscle")] = "Pick a muscle group";
 
-      const meaningfulSets = row.sets.filter(
-        (s) => s.weight !== "" || s.reps !== ""
-      );
+      // What this exercise is actually counted in — reps for almost
+      // everything, but a plank is a HOLD (seconds) and a carry/sled is a
+      // DISTANCE (metres). Both used to be unloggable: neither has reps, so
+      // the unconditional "Reps is required" below rejected them, and because
+      // a single row's error aborts the whole payload, one plank blocked the
+      // entire session from saving.
+      const tracking = getExerciseTracking(row.name);
+
+      const meaningfulSets = row.sets.filter((s) => setHasEntry(s));
       if (meaningfulSets.length === 0) {
-        errors[rowKey("sets")] = "Add at least one set";
+        errors[rowKey("sets")] =
+          tracking === "time"
+            ? "Add at least one hold"
+            : tracking === "distance"
+              ? "Add at least one carry"
+              : "Add at least one set";
       }
 
       const parsedSets = meaningfulSets.map((s) => {
@@ -786,12 +844,35 @@ export function validateAndBuildPayload(
           max: 500,
           label: "Weight",
         });
-        const reps = requireNumber(setKey("reps"), s.reps, {
-          required: true,
-          min: 1,
-          max: 200,
-          label: "Reps",
-        });
+        // Only ONE of reps / duration / distance is required, and which one
+        // depends on the movement.
+        const reps =
+          tracking === "reps"
+            ? requireNumber(setKey("reps"), s.reps, {
+                required: true,
+                min: 1,
+                max: 200,
+                label: "Reps",
+              })
+            : undefined;
+        const durationSeconds =
+          tracking === "time"
+            ? requireNumber(setKey("duration"), s.durationSeconds ?? "", {
+                required: true,
+                min: 1,
+                max: 3600,
+                label: "Hold time",
+              })
+            : undefined;
+        const setDistanceMeters =
+          tracking === "distance"
+            ? requireNumber(setKey("distance"), s.distanceMeters ?? "", {
+                required: true,
+                min: 1,
+                max: 1000,
+                label: "Distance",
+              })
+            : undefined;
         const setRpe = requireNumber(setKey("rpe"), s.rpe, {
           min: 1,
           max: 10,
@@ -807,9 +888,20 @@ export function validateAndBuildPayload(
           : undefined;
         return {
           weight_kg: s.weight.trim() === "" ? 0 : weight ?? 0,
-          reps: Math.round(reps ?? 0),
+          // `reps` is NOT NULL CHECK (reps > 0) on gym_exercises, and the API
+          // inserts the summarised row without checking for an error — so a
+          // reps-less plank sent as reps: 0 would fail the insert silently and
+          // save a workout with no exercises behind the success screen. A
+          // timed/carry set therefore counts as one performed effort (1); the
+          // real measurement rides along in duration_seconds/distance_meters,
+          // which the API passes through verbatim into the set_details JSONB.
+          reps: tracking === "reps" ? Math.round(reps ?? 0) : 1,
           rpe: setRpe ?? null,
           reps_in_reserve: rir ?? null,
+          duration_seconds:
+            durationSeconds !== undefined ? Math.round(durationSeconds) : null,
+          distance_meters:
+            setDistanceMeters !== undefined ? Math.round(setDistanceMeters) : null,
         };
       });
 

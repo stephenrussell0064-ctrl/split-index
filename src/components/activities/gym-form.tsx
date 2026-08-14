@@ -10,7 +10,9 @@ import {
   Trash2,
 } from "lucide-react";
 import {
+  categoryToMuscleGroup,
   COMMON_EXERCISES,
+  getExerciseTracking,
   MUSCLE_GROUP_CATEGORIES,
   MUSCLE_GROUPS,
   type MuscleGroupCategory,
@@ -118,7 +120,13 @@ export function GymExercises({
   profileGender?: Gender | null;
 }) {
   const rows = state.exercises;
-  const [muscleFilter, setMuscleFilter] = useState<MuscleGroupCategory>("all");
+  // The muscle-group filter deliberately does NOT live here. It used to be a
+  // single piece of state shared by every exercise row, so filtering row 1 to
+  // "Legs" to find Squat also emptied row 2's dropdown of everything that
+  // isn't a leg exercise — Bench Press simply wasn't in the list, with no
+  // error and nothing to suggest tapping "All" would bring it back. It's
+  // per-row local state inside ExerciseNameInput now, alongside the search
+  // box it works with (which was always per-row).
   const bodyweight = parseNum(state.bodyweight);
 
   const updateRow = (id: string, patch: Partial<ExerciseRowState>) => {
@@ -129,7 +137,7 @@ export function GymExercises({
   };
 
   const addRow = () => {
-    onUpdate("exercises", [...rows, createExerciseRow(rows[rows.length - 1])]);
+    onUpdate("exercises", [...rows, createExerciseRow()]);
   };
 
   const removeRow = (id: string) => {
@@ -198,13 +206,11 @@ export function GymExercises({
               row={row}
               index={index}
               bodyweight={bodyweight}
-              muscleFilter={muscleFilter}
               errors={errors}
               canRemove={rows.length > 1}
               profileGender={profileGender}
               onUpdate={(patch) => updateRow(row.id, patch)}
               onRemove={() => removeRow(row.id)}
-              onFilterChange={setMuscleFilter}
             />
           ))}
         </AnimatePresence>
@@ -241,24 +247,20 @@ function ExerciseRow({
   row,
   index,
   bodyweight,
-  muscleFilter,
   errors,
   canRemove,
   profileGender,
   onUpdate,
   onRemove,
-  onFilterChange,
 }: {
   row: ExerciseRowState;
   index: number;
   bodyweight: number | null;
-  muscleFilter: MuscleGroupCategory;
   errors: FormErrors;
   canRemove: boolean;
   profileGender?: Gender | null;
   onUpdate: (patch: Partial<ExerciseRowState>) => void;
   onRemove: () => void;
-  onFilterChange: (c: MuscleGroupCategory) => void;
 }) {
   const loadConfig = row.name.trim() ? getExerciseLoadConfig(row.name) : null;
   const attachmentOptions = row.name.trim()
@@ -270,6 +272,16 @@ function ExerciseRow({
   // have to add weight," and should stay a separate exercise/entry from
   // "Weighted X"). Scoring always treats these as 0kg added.
   const isBodyweightOnly = loadConfig?.noWeightInput === true;
+  /**
+   * Planks are held for seconds and carries/sled work cover metres — neither
+   * has reps. The middle column follows the movement instead of always saying
+   * "Reps", which is what made these exercises impossible to log: there was
+   * no field for what you actually did, and submitting failed on the reps you
+   * couldn't enter. Custom/unknown names stay on reps.
+   */
+  const tracking = getExerciseTracking(row.name);
+  const countLabel =
+    tracking === "time" ? "Secs" : tracking === "distance" ? "Metres" : "Reps";
   const showConventionPicker =
     loadConfig != null && loadConfig.allowedConventions.length > 1;
   const topSet = bestSetRow(row.sets);
@@ -329,7 +341,7 @@ function ExerciseRow({
     });
   };
   const addSet = () => {
-    onUpdate({ sets: [...row.sets, createSetRow(row.sets[row.sets.length - 1])] });
+    onUpdate({ sets: [...row.sets, createSetRow()] });
   };
   /**
    * User-reported: "the delete button for a set does not work — clicking it
@@ -352,7 +364,17 @@ function ExerciseRow({
     if (row.sets.length <= 1) {
       onUpdate({
         sets: row.sets.map((s) =>
-          s.id === setId ? { ...s, weight: "", reps: "", rpe: "", repsInReserve: "" } : s
+          s.id === setId
+            ? {
+                ...s,
+                weight: "",
+                reps: "",
+                rpe: "",
+                repsInReserve: "",
+                durationSeconds: "",
+                distanceMeters: "",
+              }
+            : s
         ),
       });
       return;
@@ -397,12 +419,18 @@ function ExerciseRow({
           <Field label={`Exercise ${index + 1}`} error={errors[`ex.${row.id}.name`]} className="mb-0">
             <ExerciseNameInput
               value={row.name}
-              muscleFilter={muscleFilter}
               invalid={!!errors[`ex.${row.id}.name`]}
-              onFilterChange={onFilterChange}
-              onChange={(name) =>
+              onChange={(name, suggestedMuscle) =>
                 onUpdate({
                   name,
+                  // Typing a CUSTOM exercise name never set a muscle group,
+                  // unlike picking one from the list (onPick below), so every
+                  // custom exercise failed submit on "Pick a muscle group" —
+                  // a field the athlete had no reason to think was required.
+                  // Seed it from the category they're browsing under, but
+                  // only where that's unambiguous (see categoryToMuscleGroup)
+                  // and only when they haven't already chosen one themselves.
+                  muscleGroup: row.muscleGroup || suggestedMuscle || "",
                   weightEntryMode: name.trim()
                     ? defaultWeightEntryMode(name)
                     : row.weightEntryMode,
@@ -487,7 +515,7 @@ function ExerciseRow({
           >
             <span>Set</span>
             {!isBodyweightOnly && <span>{weightUnit}</span>}
-            <span>Reps</span>
+            <span>{countLabel}</span>
             <span>RIR</span>
             <span>RPE</span>
             <span />
@@ -514,14 +542,34 @@ function ExerciseRow({
                   className="h-11 sm:h-10"
                 />
               )}
-              <UnitInput
-                aria-label={`Set ${setIndex + 1} reps`}
-                value={set.reps}
-                placeholder="8"
-                invalid={!!errors[`ex.${row.id}.set.${set.id}.reps`]}
-                onChange={(e) => updateSet(set.id, { reps: e.target.value })}
-                className="h-11 px-2 sm:h-10 sm:px-4"
-              />
+              {tracking === "time" ? (
+                <UnitInput
+                  aria-label={`Set ${setIndex + 1} hold time in seconds`}
+                  value={set.durationSeconds ?? ""}
+                  placeholder="60"
+                  invalid={!!errors[`ex.${row.id}.set.${set.id}.duration`]}
+                  onChange={(e) => updateSet(set.id, { durationSeconds: e.target.value })}
+                  className="h-11 px-2 sm:h-10 sm:px-4"
+                />
+              ) : tracking === "distance" ? (
+                <UnitInput
+                  aria-label={`Set ${setIndex + 1} distance in metres`}
+                  value={set.distanceMeters ?? ""}
+                  placeholder="20"
+                  invalid={!!errors[`ex.${row.id}.set.${set.id}.distance`]}
+                  onChange={(e) => updateSet(set.id, { distanceMeters: e.target.value })}
+                  className="h-11 px-2 sm:h-10 sm:px-4"
+                />
+              ) : (
+                <UnitInput
+                  aria-label={`Set ${setIndex + 1} reps`}
+                  value={set.reps}
+                  placeholder="8"
+                  invalid={!!errors[`ex.${row.id}.set.${set.id}.reps`]}
+                  onChange={(e) => updateSet(set.id, { reps: e.target.value })}
+                  className="h-11 px-2 sm:h-10 sm:px-4"
+                />
+              )}
               <UnitInput
                 aria-label={`Set ${setIndex + 1} reps in reserve`}
                 value={set.repsInReserve}
@@ -718,21 +766,23 @@ function MuscleSelect({
 
 function ExerciseNameInput({
   value,
-  muscleFilter,
   invalid,
   onChange,
   onPick,
-  onFilterChange,
 }: {
   value: string;
-  muscleFilter: MuscleGroupCategory;
   invalid?: boolean;
-  onChange: (value: string) => void;
+  /** `suggestedMuscle` is the active filter's muscle group when unambiguous — see the caller. */
+  onChange: (value: string, suggestedMuscle: string | null) => void;
   onPick: (name: string, muscle: string) => void;
-  onFilterChange: (c: MuscleGroupCategory) => void;
 }) {
   const [customMode, setCustomMode] = useState(false);
   const [search, setSearch] = useState("");
+  // Per-row, like `search` above. Previously hoisted into GymExercises and
+  // shared by every row, which hid exercises from every row but the one the
+  // athlete last filtered — see the note there.
+  const [muscleFilter, setMuscleFilter] = useState<MuscleGroupCategory>("all");
+  const suggestedMuscle = categoryToMuscleGroup(muscleFilter);
 
   const matches = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -761,7 +811,7 @@ function ExerciseNameInput({
           autoComplete="off"
           invalid={invalid}
           className="h-11 sm:h-10"
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(e) => onChange(e.target.value, suggestedMuscle)}
         />
         <button
           type="button"
@@ -774,7 +824,7 @@ function ExerciseNameInput({
             // no-op instead of returning to the picker.
             setCustomMode(false);
             setSearch("");
-            onChange("");
+            onChange("", null);
           }}
           className="text-xs text-gym-accent hover:text-gym-accent/80"
         >
@@ -796,7 +846,7 @@ function ExerciseNameInput({
             key={cat.id}
             type="button"
             aria-pressed={muscleFilter === cat.id}
-            onClick={() => onFilterChange(cat.id)}
+            onClick={() => setMuscleFilter(cat.id)}
             className={cn(
               "shrink-0 rounded-lg px-2.5 py-1.5 text-[10px] font-medium uppercase tracking-wider transition-colors duration-200 min-h-[32px]",
               muscleFilter === cat.id
@@ -829,7 +879,7 @@ function ExerciseNameInput({
             const selected = e.target.value;
             if (selected === "__custom__") {
               setCustomMode(true);
-              onChange("");
+              onChange("", null);
               return;
             }
             const ex = COMMON_EXERCISES.find((item) => item.name === selected);
