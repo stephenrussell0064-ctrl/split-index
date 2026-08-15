@@ -13,6 +13,7 @@
 import { describe, expect, it } from "vitest";
 import { diagnose } from "./diagnostics";
 import { generatePlan } from "./engine";
+import { ACWR_BLOCK } from "./constants";
 import { DEFAULT_SAFETY_FLAGS, type AthleteState, type Constraints, type Goal } from "./intake";
 import type { LiftSet, RunLog } from "./types";
 
@@ -289,5 +290,52 @@ describe("regressions: the placeholder 5k and gym access", () => {
     });
     const strength = plan.weeks.flatMap((w) => w.sessions).filter((s) => s.domain === "strength");
     expect(strength.some((s) => /no gym access/i.test(s.prescription.text))).toBe(false);
+  });
+});
+
+describe("regression: ACWR enforcement must actually converge", () => {
+  it("caps a plan below the block ceiling even from a near-zero chronic load", () => {
+    // Caught by the fleet dashboard in production: "1 plans peaked above the
+    // ACWR block ceiling. Enforcement is supposed to cap these before they
+    // ship." Two compounding causes — a chronic seed of ~1 for an athlete with
+    // no running history made every week read as a 54x spike, and enforcement
+    // capped one week per pass for only ten passes, so a 24-week block where
+    // every week breached never converged. It ran, emitted notes, and shipped
+    // a plan still over the ceiling: a control reported as present while not
+    // holding, which is the exact failure the assurance review named.
+    for (const currentRunMin of [0, 30, 150]) {
+      const plan = generatePlan({
+        state: state({ currentRunMinPerWeek: currentRunMin, chronicLoad: 1 }),
+        goal: goal({ weeksOut: 24 }),
+        constraints: constraints(),
+        profile: diagnose([], [], {}, { hrMax: 190, hrRest: 55 }),
+      });
+      expect(plan.generated).toBe(true);
+      expect(plan.acwr!.peakAcwr, `currentRunMin=${currentRunMin}`).toBeLessThanOrEqual(ACWR_BLOCK + 1e-6);
+    }
+  });
+
+  it("converges across every block length the engine offers", () => {
+    for (const weeksOut of [4, 12, 24, 52]) {
+      const plan = generatePlan({
+        state: state({ currentRunMinPerWeek: 0, chronicLoad: 1 }),
+        goal: goal({ weeksOut }),
+        constraints: constraints(),
+        profile: diagnose([], [], {}, { hrMax: 190, hrRest: 55 }),
+      });
+      expect(plan.acwr!.peakAcwr, `weeksOut=${weeksOut}`).toBeLessThanOrEqual(ACWR_BLOCK + 1e-6);
+    }
+  });
+
+  it("leaves a well-seeded athlete's ratios untouched", () => {
+    // The fix must not flatten a real athlete's progression.
+    const plan = generatePlan({
+      state: state({ currentRunMinPerWeek: 150, chronicLoad: 400 }),
+      goal: goal({ weeksOut: 24 }),
+      constraints: constraints(),
+      profile: diagnose([], [], {}, { hrMax: 190, hrRest: 55 }),
+    });
+    expect(plan.acwr!.peakAcwr).toBeLessThanOrEqual(ACWR_BLOCK + 1e-6);
+    expect(plan.acwr!.notes.length).toBe(0);
   });
 });

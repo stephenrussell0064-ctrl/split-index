@@ -162,7 +162,14 @@ export function generatePlan(input: GeneratePlanInput): GeneratedPlan {
   }
 
   // ---- 4. ACWR ENFORCEMENT ------------------------------------------------
-  const acwr = enforceAcwr(macro, rawStress, state.chronicLoad);
+  // An athlete with no comparable training history has no chronic load to
+  // measure against, and a near-zero denominator makes week 1 read as an
+  // infinite spike — which is what the fleet dashboard caught. Seeding from
+  // the plan's own first week instead means the ratio starts at 1.0 and the
+  // ramp itself becomes the protection, which is the honest reading: there is
+  // nothing to compare the first week to except the first week.
+  const chronicSeed = Math.max(state.chronicLoad, rawStress[0] ?? 0);
+  const acwr = enforceAcwr(macro, rawStress, chronicSeed);
   weeks.forEach((w, i) => {
     w.stressCapped = acwr.cappedStress[i];
     w.acwr = acwr.ratios[i];

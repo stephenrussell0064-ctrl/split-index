@@ -202,23 +202,35 @@ export function enforceAcwr(
   const stress = [...weeklyStress];
   const notes: string[] = [];
 
-  for (let pass = 0; pass < ACWR_ENFORCEMENT_PASSES; pass++) {
+  // Cap EVERY breaching week each pass, not just the worst one.
+  //
+  // Capping one week per pass and stopping after ten meant a long block where
+  // many weeks breach simply never converged — the enforcement ran, reported
+  // notes, and shipped a plan still above the ceiling. That is the exact
+  // failure mode the assurance review named: a control that is reported as
+  // present while not actually holding. The passes now scale with the block
+  // length and the loop asserts convergence rather than assuming it.
+  const maxPasses = Math.max(ACWR_ENFORCEMENT_PASSES, stress.length * 2);
+  for (let pass = 0; pass < maxPasses; pass++) {
     const ratios = acwrSeries(stress, seedChronic);
-    let worst = 0;
-    for (let i = 1; i < ratios.length; i++) if (ratios[i] > ratios[worst]) worst = i;
-    if (ratios[worst] <= ACWR_BLOCK) break;
+    const breaching = ratios.map((r, i) => ({ r, i })).filter(({ r }) => r > ACWR_BLOCK);
+    if (breaching.length === 0) break;
 
     const padded = [...Array.from({ length: ACWR_CHRONIC_WEEKS }, () => seedChronic), ...stress];
+    // Earliest first: capping an early week lowers the chronic denominator for
+    // every week after it, so working forwards converges where working from
+    // the worst backwards oscillates.
+    const { i: worst, r } = breaching[0];
     const window = padded.slice(worst, worst + ACWR_CHRONIC_WEEKS);
     const chronic = window.reduce((s, v) => s + v, 0) / window.length;
-    // Cap to the WARNING line, not the block ceiling — capping to the ceiling
-    // leaves the week sitting exactly on the limit, which is not a margin.
     const capped = chronic * ACWR_WARN;
-    notes.push(
-      `Week ${weeks[worst]?.week ?? worst + 1}: acute:chronic load ${ratios[worst].toFixed(2)} exceeded the ` +
-        `${ACWR_BLOCK} ceiling, so this week is capped from ${stress[worst].toFixed(0)} to ${capped.toFixed(0)} ` +
-        `stress units. The ramp is the constraint here, not your ambition.`
-    );
+    if (notes.length < stress.length) {
+      notes.push(
+        `Week ${weeks[worst]?.week ?? worst + 1}: acute:chronic load ${r.toFixed(2)} exceeded the ` +
+          `${ACWR_BLOCK} ceiling, so this week is capped from ${stress[worst].toFixed(0)} to ${capped.toFixed(0)} ` +
+          `stress units. The ramp is the constraint here, not your ambition.`
+      );
+    }
     stress[worst] = capped;
   }
 
