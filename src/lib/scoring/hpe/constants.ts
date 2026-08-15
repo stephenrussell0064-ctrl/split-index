@@ -30,7 +30,7 @@
  * plan (see `constantsVersion` on AthleteProfile) — the audit trail for "why
  * did this athlete's plan change when their data didn't".
  */
-export const HPE_CONSTANTS_VERSION = "2.0.0";
+export const HPE_CONSTANTS_VERSION = "2.1.0";
 
 // ---------------------------------------------------------------------------
 // Fatigue resistance (Riegel exponent)
@@ -94,7 +94,24 @@ export const EASY_ANCHOR_DISAGREEMENT_FLAG = 15.0;
  * badly-conditioned anchor propagates straight through to the prescription
  * precisely BECAUSE it is the slowest.
  */
-export const EASY_PACE_BOUNDS_VS_5K: readonly [number, number] = [1.15, 1.5];
+export const EASY_PACE_BOUNDS_VS_5K: readonly [number, number] = [1.22, 1.5];
+
+/**
+ * [EST] Where inside the easy band to actually prescribe, for an athlete whose
+ * own diagnostic says they run their easy days too hard.
+ *
+ * The band is a range and the athlete picks a point in it. Someone already in
+ * the grey zone picks the fast end — that is what put them there — so handing
+ * them the whole band hands them permission to carry on. When the diagnostic
+ * has found grey-zone running AND no logged run inside the easy heart-rate
+ * band, the prescription narrows to the slower portion.
+ *
+ * Not a change to the band itself: the anchors are unchanged, the reference
+ * athlete still reproduces, and an athlete who already runs easy properly
+ * still gets the full range. This only moves the point of prescription for
+ * athletes whose own data says the fast end is the problem.
+ */
+export const GREY_ZONE_EASY_BIAS = 0.45;
 
 // ---------------------------------------------------------------------------
 // Intensity discipline

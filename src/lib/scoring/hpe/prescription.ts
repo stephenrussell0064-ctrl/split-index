@@ -37,6 +37,7 @@ import {
   INTERVAL_REPS_MIN,
   INTERVAL_REP_METERS,
   INTERVAL_WORK_FRACTION,
+  GREY_ZONE_EASY_BIAS,
   LONG_RUN_VS_EASY_LOW,
   RECOVERY_VS_EASY,
   REP_RUN_METERS,
@@ -77,9 +78,28 @@ function roundToPlate(kg: number): number {
  * Quality sessions use the 5k multipliers, which is appropriate: those paces
  * genuinely are defined relative to race pace.
  */
+/**
+ * The athlete's own diagnostic says they run easy days too hard, and they have
+ * never logged a run inside their easy heart-rate band. Handing them the full
+ * band hands them the fast end, which is exactly the habit the finding is
+ * about — so the prescription narrows to the slower portion of their own band.
+ */
+function runsEasyTooHard(profile: AthleteProfile): boolean {
+  const ids = new Set(profile.findings.map((f) => f.id));
+  return ids.has("grey-zone") && profile.runsInsideEasyBand === 0;
+}
+
 export function paceBandFor(profile: AthleteProfile, kind: EnduranceKind): { lo: number; hi: number } {
   const easy = profile.easyBand;
   if (easy && (kind === "easy_run" || kind === "long_run" || kind === "recovery_run")) {
+    if (runsEasyTooHard(profile)) {
+      // Slower portion only. The band is unchanged; where inside it we
+      // prescribe is what moves.
+      const biasedLo = easy.lo + (easy.hi - easy.lo) * GREY_ZONE_EASY_BIAS;
+      if (kind === "recovery_run") return { lo: biasedLo * RECOVERY_VS_EASY[0], hi: easy.hi * RECOVERY_VS_EASY[1] };
+      if (kind === "long_run") return { lo: biasedLo * LONG_RUN_VS_EASY_LOW, hi: easy.hi };
+      return { lo: biasedLo, hi: easy.hi };
+    }
     if (kind === "recovery_run") return { lo: easy.lo * RECOVERY_VS_EASY[0], hi: easy.hi * RECOVERY_VS_EASY[1] };
     if (kind === "long_run") return { lo: easy.lo * LONG_RUN_VS_EASY_LOW, hi: easy.hi };
     return { lo: easy.lo, hi: easy.hi };

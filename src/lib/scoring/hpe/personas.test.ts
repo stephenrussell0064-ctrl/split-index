@@ -13,6 +13,7 @@
 import { describe, expect, it } from "vitest";
 import { diagnose } from "./diagnostics";
 import { generatePlan } from "./engine";
+import { paceBandFor } from "./prescription";
 import { ACWR_BLOCK, type TrainingSplit } from "./constants";
 import { DEFAULT_SAFETY_FLAGS, type AthleteState, type Constraints, type Goal } from "./intake";
 import type { LiftSet, RunLog } from "./types";
@@ -462,5 +463,53 @@ describe("gym training splits", () => {
         expect(s.prescription.text.split("·").length, `${split}/${s.kind}`).toBeGreaterThan(1);
       }
     }
+  });
+});
+
+describe("easy pace for an athlete who runs their easy days too hard", () => {
+  const greyZoneAthlete = () => {
+    const runs: RunLog[] = [
+      { dateIdx: 0, distanceKm: 5, durationS: 1105, avgHr: 184, isMaxEffort: true },
+      { dateIdx: 30, distanceKm: 10, durationS: 2320, avgHr: 180, isMaxEffort: true },
+      // Every run at 162bpm — above their own easy ceiling of 151.
+      ...Array.from({ length: 20 }, (_, i) => ({
+        dateIdx: i * 3, distanceKm: 8, durationS: 8 * 258, avgHr: 162,
+      })),
+    ];
+    return diagnose(runs, [], {}, { hrMax: 190, hrRest: 50 });
+  };
+
+  it("prescribes the slower part of the band, not the whole of it", () => {
+    // The band is a range and the athlete picks a point in it. Someone in the
+    // grey zone picks the fast end — that is what put them there.
+    const p = greyZoneAthlete();
+    expect(p.findings.map((f) => f.id)).toContain("grey-zone");
+    expect(p.runsInsideEasyBand).toBe(0);
+
+    const prescribed = paceBandFor(p, "easy_run");
+    const mmss = (x: number) => `${Math.floor(Math.round(x) / 60)}:${String(Math.round(x) % 60).padStart(2, "0")}`;
+    // Around 4:58-5:14 for this athlete — the slower half of their own band.
+    expect(prescribed.lo, `got ${mmss(prescribed.lo)}`).toBeGreaterThan(p.easyBand!.lo);
+    expect(prescribed.lo).toBeGreaterThanOrEqual(290);
+    expect(prescribed.hi).toBeCloseTo(p.easyBand!.hi, 0);
+  });
+
+  it("leaves an athlete who already runs easy properly with their full band", () => {
+    const runs: RunLog[] = [
+      { dateIdx: 0, distanceKm: 5, durationS: 1105, avgHr: 184, isMaxEffort: true },
+      { dateIdx: 30, distanceKm: 10, durationS: 2320, avgHr: 180, isMaxEffort: true },
+      ...Array.from({ length: 20 }, (_, i) => ({
+        dateIdx: i * 3, distanceKm: 10, durationS: 10 * (348 - (i % 5) * 12), avgHr: 132 + (i % 5) * 4,
+      })),
+    ];
+    const p = diagnose(runs, [], {}, { hrMax: 190, hrRest: 50 });
+    expect(p.runsInsideEasyBand).toBeGreaterThan(0);
+    expect(paceBandFor(p, "easy_run").lo).toBeCloseTo(p.easyBand!.lo, 6);
+  });
+
+  it("never calls anything faster than 1.22x 5k pace easy", () => {
+    const p = greyZoneAthlete();
+    const paceOf5k = p.predicted5kS / 5;
+    expect(p.easyBand!.lo).toBeGreaterThanOrEqual(paceOf5k * 1.22 - 1);
   });
 });
