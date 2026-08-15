@@ -158,6 +158,21 @@ export interface GymExerciseSet {
   rpe?: number | null;
   /** Reps in reserve — optional; blank means near failure (Part B3). */
   reps_in_reserve?: number | null;
+  /**
+   * Hold time for a `tracking: "time"` exercise (planks), and carry distance
+   * for a `tracking: "distance"` one (carries, sled work) — see
+   * ExerciseTracking in lib/constants/sports.ts.
+   *
+   * These are the REAL measurement for those movements. `gym_exercises` has
+   * `reps NOT NULL CHECK (reps > 0)` and `weight_kg NOT NULL`, so a timed
+   * hold is persisted with a placeholder `reps: 1, weight_kg: 0` and the
+   * measurement travels here, inside the `set_details` JSONB. The gym form
+   * has always written them; declaring them means the scoring layer can
+   * actually read them (lib/scoring/strength/isometric-carry.ts) instead of
+   * scoring a 60-second plank as a 0 kg single rep.
+   */
+  duration_seconds?: number | null;
+  distance_meters?: number | null;
 }
 
 export interface GymExercise {

@@ -136,6 +136,15 @@ export function activityToFormState(
                 rpe: s.rpe ? String(s.rpe) : "",
                 repsInReserve:
                   s.reps_in_reserve != null ? String(s.reps_in_reserve) : "",
+                // Time and distance must round-trip or a hold/carry cannot be
+                // edited at all: the form persists them as `reps: 1, weight: 0`
+                // with the real measurement here, so dropping them leaves the
+                // Secs/Metres field blank and re-saving fails validation with
+                // "Hold time is required" on a set the athlete never changed.
+                durationSeconds:
+                  s.duration_seconds != null ? String(s.duration_seconds) : "",
+                distanceMeters:
+                  s.distance_meters != null ? String(s.distance_meters) : "",
               })),
               notes: exerciseNotes[String(ex.order_index)] ?? "",
               weightEntryMode:

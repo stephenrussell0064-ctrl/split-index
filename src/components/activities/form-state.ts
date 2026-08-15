@@ -3,6 +3,7 @@ import type { ActivityFormData, SessionType, SportType } from "@/types";
 import type { WeightEntryMode } from "@/lib/scoring/weight-entry";
 import { defaultWeightEntryMode } from "@/lib/scoring/weight-entry";
 import { getExerciseTracking } from "@/lib/constants/sports";
+import { liftWeightLimits } from "@/lib/scoring/input-guards";
 
 /**
  * Local form state is kept as strings so typing is never blocked;
@@ -834,14 +835,16 @@ export function validateAndBuildPayload(
 
       const parsedSets = meaningfulSets.map((s) => {
         const setKey = (field: string) => `ex.${row.id}.set.${s.id}.${field}`;
-        // 500, not 600: the server's own guard rejects anything over 500kg
-        // (lib/scoring/input-guards.ts). A 550kg leg press used to pass this
-        // form, reach the API and come back as a whole-session 400 with no
-        // indication of which lift caused it — failing here instead names the
-        // exercise and the field. Keep this in step with that server cap.
+        // Read the ceiling from the server's own guard rather than repeating a
+        // number here. A 550kg leg press used to pass this form, reach the API
+        // and come back as a whole-session 400 with no indication of which lift
+        // caused it — failing here instead names the exercise and the field.
+        // The limit is per-exercise: machine-anchored leg movements carry a
+        // higher ceiling than free weights, so a hardcoded constant would now
+        // reject loads the server is happy to accept.
         const weight = requireNumber(setKey("weight"), s.weight, {
           min: 0,
-          max: 500,
+          max: liftWeightLimits(row.name).maxWeightKg,
           label: "Weight",
         });
         // Only ONE of reps / duration / distance is required, and which one

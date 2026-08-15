@@ -122,7 +122,7 @@ export function generatePlan(input: GeneratePlanInput): GeneratedPlan {
 
   // ---- 3. FEASIBILITY, MODE, MACROCYCLE -----------------------------------
   const feasibility = feasibilityScreen(state, goal);
-  const mode = classifyDomains(state, goal);
+  const mode = classifyDomains(state, goal, constraints.trainingSplit != null);
   // Both caution factors compound: a novice runner with no logged history gets
   // the halved novice ramp AND the halved provisional ramp, which is the
   // correct direction to stack them.

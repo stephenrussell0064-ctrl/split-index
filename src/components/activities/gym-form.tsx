@@ -21,6 +21,7 @@ import { formatRelativeStrength } from "@/lib/utils/scoring-display";
 import { formatIndex } from "@/lib/utils/format";
 import { cn } from "@/lib/utils/cn";
 import { resolveAnchorKey, scoreStrength } from "@/lib/scoring/split-strength-engine";
+import { scoreLoadedCarry, scoreTimedHold } from "@/lib/scoring/strength/isometric-carry";
 import { getAttachmentOptionsByKey } from "@/lib/scoring/strength/attachments";
 import { AttachmentPicker } from "@/components/gym/attachment-picker";
 import {
@@ -307,8 +308,47 @@ function ExerciseRow({
   // is a "legacy" call kept only for DOTS/GL/loadScore, explicitly "no
   // longer used for per-exercise scoring". Live and saved already agree by
   // construction here; don't change this to call a different function.
+  // Holds and carries never fill `reps` — the rep-based branch below would
+  // return null and show nothing, so live and saved would silently disagree,
+  // contrary to the promise made in the comment above. Route them to the same
+  // scorers scoreGymSession uses.
+  const holdSeconds = topSet ? parseNum(topSet.durationSeconds ?? "") : null;
+  const carryMeters = topSet ? parseNum(topSet.distanceMeters ?? "") : null;
+  const accessoryScore =
+    bodyweight && scoringSex && row.name.trim() && tracking !== "reps"
+      ? (tracking === "time"
+          ? holdSeconds
+            ? scoreTimedHold({
+                liftKey: row.name,
+                sets: [
+                  {
+                    weightKg: resolved?.scoringWeightKg ?? 0,
+                    durationSeconds: holdSeconds,
+                  },
+                ],
+                bodyweightKg: bodyweight,
+                sex: scoringSex,
+                age: 28,
+              }).score
+            : null
+          : carryMeters && resolved
+            ? scoreLoadedCarry({
+                liftKey: row.name,
+                sets: [
+                  {
+                    weightKg: resolved.scoringWeightKg,
+                    distanceMeters: carryMeters,
+                  },
+                ],
+                bodyweightKg: bodyweight,
+                sex: scoringSex,
+                age: 28,
+              }).score
+            : null) ?? null
+      : null;
   const engineScore =
-    resolved && reps && bodyweight && scoringSex
+    accessoryScore ??
+    (resolved && reps && bodyweight && scoringSex
       ? scoreStrength({
           liftKey: row.name,
           history: [],
@@ -326,7 +366,7 @@ function ExerciseRow({
           exerciseName: row.name,
           attachment: row.attachment,
         }).score
-      : null;
+      : null);
   const oneRm = topSet ? epley1RM(parseNum(topSet.weight), parseNum(topSet.reps)) : null;
   const relativeBw =
     oneRm && bodyweight && bodyweight > 0

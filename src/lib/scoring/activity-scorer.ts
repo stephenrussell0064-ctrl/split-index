@@ -33,7 +33,16 @@ import {
   isEnduranceSport,
 } from "@/lib/scoring/engine";
 import { calculateStrengthIndexV2 } from "@/lib/scoring/strength";
+import {
+  accessoryMetricIndex,
+  accessoryMetricVolumeEquivalentKg,
+  resolveTrackedMetric,
+  scoreAccessoryMetric,
+  isAccessoryMetricResult,
+  type AccessoryMetricSet,
+} from "@/lib/scoring/strength/isometric-carry";
 import { INDEX_ANCHOR } from "@/lib/scoring/constants";
+import { getExerciseTracking } from "@/lib/constants/sports";
 import { bestSet, totalVolumeKg } from "@/lib/activities/gym-sets";
 
 export interface ActivityScoreContext {
@@ -158,11 +167,31 @@ function scoreGymSession(
   | "activityConfidence"
   | "breakdown"
 > {
+  const allExercises = input.exercises ?? [];
+
+  /**
+   * What each exercise is actually counted in. Resolved up front because the
+   * legacy engine below must not see holds or carries at ALL: it scores every
+   * exercise off weight × reps, so it reads the placeholder `reps: 1` on a
+   * sled push as a one-rep max — a 100 kg sled push came out of it at 763
+   * even when the distance was missing entirely.
+   */
+  const metrics = allExercises.map((ex) =>
+    resolveTrackedMetric(
+      getExerciseTracking(ex.exercise_name),
+      ex.sets.map((s) => ({
+        durationSeconds: s.duration_seconds,
+        distanceMeters: s.distance_meters,
+      }))
+    )
+  );
+  const repExercises = allExercises.filter((_, i) => metrics[i] === "reps");
+
   // DOTS/GL and the SBD-total are a separate, still-useful powerlifting-total
   // metric (only meaningful when squat+bench+deadlift are all logged in one
   // session) — kept for that display, no longer used for per-exercise scoring.
   const legacy = calculateStrengthIndexV2({
-    exercises: input.exercises ?? [],
+    exercises: repExercises,
     bodyweightKg: bodyweight,
     gender: input.profile.gender ?? null,
     options: { useGL: input.useGL ?? false },
@@ -173,16 +202,73 @@ function scoreGymSession(
   const results: ScoreStrengthResult[] = [];
   const strengthScoreRows: NonNullable<ActivityScoreOutput["strengthScoreRows"]> = [];
 
-  const allExercises = input.exercises ?? [];
+  /**
+   * Time-under-tension/distance volume from holds and carries, in the same
+   * kg units as the legacy weight x reps volume — without it a session of
+   * bodyweight planks reports a training load of exactly zero and never
+   * touches ACWR, fatigue or recovery.
+   */
+  let accessoryVolumeKg = 0;
+
   for (let exerciseIndex = 0; exerciseIndex < allExercises.length; exerciseIndex++) {
     const ex = allExercises[exerciseIndex];
+    const weightMode =
+      ex.weight_entry_mode ??
+      input.exerciseWeightModes?.[normalizeExerciseName(ex.exercise_name)];
+
+    // Planks and carries have no reps to score off. Route them to the
+    // isometric/carry model BEFORE the rep-based path gets hold of them:
+    // that path reads a plank as a 0kg single rep (score 1, then dropped
+    // from labIndex entirely) and a 100kg sled push as a 100kg ONE-REP MAX
+    // (score 979, "World Class"). See strength/isometric-carry.ts.
+    const metric = metrics[exerciseIndex];
+
+    if (metric !== "reps") {
+      const metricSets: AccessoryMetricSet[] = ex.sets.map((s) => ({
+        weightKg: resolveScoringWeight(s.weight_kg, ex.exercise_name, weightMode)
+          .scoringWeightKg,
+        durationSeconds: s.duration_seconds ?? null,
+        distanceMeters: s.distance_meters ?? null,
+      }));
+
+      const metricResult = scoreAccessoryMetric(metric, {
+        liftKey: ex.exercise_name,
+        sets: metricSets,
+        bodyweightKg: bodyweight,
+        sex,
+        age: input.profile.age ?? null,
+      });
+      metricResult.exerciseIndex = exerciseIndex;
+      results.push(metricResult);
+
+      const metricVolume = accessoryMetricVolumeEquivalentKg(
+        metric,
+        metricSets,
+        bodyweight,
+        ex.exercise_name
+      );
+      accessoryVolumeKg += metricVolume;
+
+      strengthScoreRows.push({
+        exercise_name: ex.exercise_name,
+        muscle_group: ex.muscle_group,
+        // Deliberately 0: a hold or a carry has no 1RM, and a fabricated one
+        // would flow straight into personal records (which key off
+        // estimated_1rm_kg > 0).
+        estimated_1rm_kg: metricResult.oneRM,
+        bodyweight_kg: bodyweight,
+        relative_strength: metricResult.bodyweightRatio,
+        volume_load_kg: Math.round(metricVolume * 10) / 10,
+        strength_index: metricResult.score,
+        score_breakdown: { strength_result: metricResult },
+      });
+      continue;
+    }
+
     const top = bestSet(ex.sets);
     if (!top) continue;
     const volume = totalVolumeKg(ex.sets);
     const history = input.exerciseHistory?.[normalizeExerciseName(ex.exercise_name)] ?? [];
-    const weightMode =
-      ex.weight_entry_mode ??
-      input.exerciseWeightModes?.[normalizeExerciseName(ex.exercise_name)];
     const resolved = resolveScoringWeight(top.weight_kg, ex.exercise_name, weightMode);
 
     const result = scoreStrength({
@@ -222,16 +308,44 @@ function scoreGymSession(
     });
   }
 
-  const sportIndex = results.length > 0 ? labIndex(results) : legacy.index;
+  /**
+   * Holds and carries contribute to the session index only when the session
+   * has NOTHING rep-based in it, and never drag a barbell session down.
+   *
+   * Rationale, and this is a deliberate asymmetry rather than an oversight:
+   *  - A core/carry-only session must score honestly. Scoring it 1 (what
+   *    labIndex returns once its `oneRM > 0` filter has dropped every hold)
+   *    silently pulls the athlete's Lab Index toward the floor for logging
+   *    real work, which is worse than the old behaviour of refusing to log
+   *    it at all.
+   *  - A plank at the end of a heavy squat session must NOT dilute that
+   *    session. The hold/carry standards are reasoned estimates (see
+   *    strength/isometric-carry.ts); letting an estimate pull down a
+   *    population-calibrated squat would trade a known-good number for a
+   *    guess. Mixed sessions therefore score exactly as they did before this
+   *    existed — the accessory results are still recorded, displayed, and
+   *    persisted per exercise, they just do not move the aggregate.
+   */
+  const repResults = results.filter((r) => !isAccessoryMetricResult(r));
+  const metricResults = results.filter(isAccessoryMetricResult);
+  const metricIndex = metricResults.length > 0 ? accessoryMetricIndex(metricResults) : null;
+
+  const contributing = repResults.length > 0 ? repResults : metricResults;
+  const sportIndex =
+    repResults.length > 0
+      ? labIndex(repResults)
+      : metricIndex !== null && metricIndex > 1
+        ? metricIndex
+        : legacy.index;
   const activityConfidence =
-    results.length > 0
-      ? results.reduce((sum, r) => sum + r.oneRMConfidence, 0) / results.length
+    contributing.length > 0
+      ? contributing.reduce((sum, r) => sum + r.oneRMConfidence, 0) / contributing.length
       : 1;
 
   return {
     sportIndex,
     strengthComponent: sportIndex,
-    loadScore: legacy.loadScore,
+    loadScore: Math.round((legacy.loadScore + accessoryVolumeKg / 800) * 10) / 10,
     strengthActivities: results,
     dotsScore: legacy.dotsScore,
     glPoints: legacy.glPoints,

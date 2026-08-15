@@ -1030,3 +1030,37 @@ export const TRAINING_SPLITS: Readonly<Record<TrainingSplit, { label: string; bl
 
 /** [ASSURED] Chosen when the athlete has not picked one. Lift-specific only suits a peaking powerlifter, so it is not the default. */
 export const DEFAULT_TRAINING_SPLIT: TrainingSplit = "upper_lower";
+
+// ---------------------------------------------------------------------------
+// General strength, when there is no numeric target
+// ---------------------------------------------------------------------------
+
+/**
+ * [DATA] The rep scheme for an athlete developing strength and size without a
+ * competition total to peak for.
+ *
+ * The phase ladder in STRENGTH_PHASE_SPEC descends toward singles because it
+ * is built to peak three lifts on a date. Most people lifting are not doing
+ * that — they want to be bigger and stronger, and 2 reps at 80% delivers
+ * neither. Hypertrophy needs work close to failure in the 6-12 range and
+ * strength needs exposure to heavy loads, so a general block carries both
+ * rather than descending out of the growth range entirely.
+ *
+ * Indexed by position through the block: the balance shifts toward the heavy
+ * end over time, but never abandons the range that builds tissue.
+ */
+export const GENERAL_STRENGTH_SPEC: readonly {
+  pct: readonly [number, number];
+  reps: readonly [number, number];
+  rir: readonly [number, number];
+  sets: number;
+}[] = [
+  { pct: [0.65, 0.75], reps: [8, 12], rir: [2, 3], sets: 4 },
+  { pct: [0.7, 0.8], reps: [6, 10], rir: [1, 3], sets: 4 },
+  { pct: [0.75, 0.85], reps: [5, 8], rir: [1, 2], sets: 4 },
+  { pct: [0.78, 0.88], reps: [4, 6], rir: [1, 2], sets: 5 },
+];
+
+/** [DATA] Spiering's maintenance dose still holds intensity, but a maintenance session is not an excuse for a single lift and nothing else. */
+export const MAINTENANCE_REPS: readonly [number, number] = [3, 5];
+export const MAINTENANCE_SETS = 3;

@@ -40,10 +40,18 @@ export function serializeScoreBreakdown(
 
 export type { GatedCardioResult, GatedStrengthResult, GatedIndexResult };
 
+/**
+ * Predicted times are stored to hundredths of a second (predicted_benchmarks.
+ * benchmark_seconds is NUMERIC(10,2)), so the fractional part is rounded once
+ * up front rather than per-field: rounding the seconds field on its own turned
+ * 1499.6s into "24:60" instead of "25:00", because the minutes field was
+ * floored off the unrounded value.
+ */
 export function formatRiegelPrediction(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.round(seconds % 60);
+  const total = Math.round(seconds);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
   if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
   return `${m}:${String(s).padStart(2, "0")}`;
 }

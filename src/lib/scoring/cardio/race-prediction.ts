@@ -37,9 +37,12 @@ import {
   type BenchmarkSport,
 } from "@/lib/scoring/cardio-benchmarks";
 import {
+  blendPredictedBenchmark,
   computeSessionBenchmarkEquivalentSeconds,
   impliedRiegelK,
+  isDirectBenchmarkDistance,
   personalizedRiegelK,
+  terrainAdjustedSessionEF,
   RELATIVE_EFFORT_SESSION_TYPES,
   type HrPersonalization,
 } from "@/lib/scoring/cardio-predictions";
@@ -400,6 +403,69 @@ function criticalSpeedRefit(sport: BenchmarkSport, sessions: HistorySession[]): 
  * (not an average) so it stays for row/cycle/swim/ski, which have no
  * separate "relative-trend" mechanism of their own yet.
  */
+/**
+ * Rebuild a stored Tier 2 prediction from a set of sessions alone, oldest
+ * first — the same sequential asymmetric blend the create route applies one
+ * session at a time, folded over history, exactly as
+ * `POST /api/activities/recompute` replays it.
+ *
+ * This exists for one specific job: answering "what would the stored
+ * prediction be WITHOUT this one activity?" when an activity is edited and
+ * the stored row's own evidence already includes it. The edit route used to
+ * answer that question with `null`, which does not mean "no memory to
+ * exclude" to `blendPredictedBenchmark` — it means "seed from scratch", so
+ * the edited session's own equivalent REPLACED the athlete's entire
+ * prediction memory. Editing one easy 7.5k wiped out a logged 18:25 5k and
+ * left the dashboard reading 24:59.
+ *
+ * The easy-effort trend nudge is deliberately not applied during a replay
+ * (there is no per-session easy baseline to compare against here); it is a
+ * sub-2% layer on top of the primary blend, and leaving it out keeps this
+ * reconstruction a pure function of the sessions passed in.
+ *
+ * Returns null only when no session in the set can be projected at all —
+ * i.e. genuinely no prior memory, which is the one case where seeding from
+ * the session being edited is the correct answer.
+ */
+export function replayStoredPredictionFromSessions(
+  sport: BenchmarkSport,
+  sessions: HistorySession[],
+  riegelK?: number
+): number | null {
+  const ordered = sessions
+    .filter((s) => s.distanceMeters > 0 && s.durationSeconds > 0)
+    .slice()
+    .sort((a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime());
+
+  let stored: number | null = null;
+  for (const session of ordered) {
+    const equivalent = computeSessionBenchmarkEquivalentSeconds(
+      sport,
+      session.distanceMeters,
+      session.durationSeconds,
+      session.avgHR,
+      riegelK
+    );
+    if (equivalent === null) continue;
+    stored = blendPredictedBenchmark(stored, equivalent, {
+      sessionType: session.sessionType,
+      thisSessionEF: terrainAdjustedSessionEF(
+        session.distanceMeters,
+        session.durationSeconds,
+        session.avgHR,
+        session.elevationMeters,
+        session.temperatureCelsius
+      ),
+      baselineEF: null,
+      isDirectBenchmarkDistance: isDirectBenchmarkDistance(
+        session.distanceMeters,
+        BENCHMARK_DISTANCE_METERS[sport]
+      ),
+    });
+  }
+  return stored;
+}
+
 export function computeWindowedTier2Seconds(
   sport: BenchmarkSport,
   sequentialSeconds: number,

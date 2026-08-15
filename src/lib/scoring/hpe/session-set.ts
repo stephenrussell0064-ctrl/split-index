@@ -40,6 +40,9 @@ import {
   ENDURANCE_SESSIONS_BY_PHASE,
   HEAVY_LOWER_BODY_LOAD_THRESHOLD,
   LIFT_PRESCRIPTIONS,
+  GENERAL_STRENGTH_SPEC,
+  MAINTENANCE_REPS,
+  MAINTENANCE_SETS,
   LIFT_ROTATION,
   DEFAULT_TRAINING_SPLIT,
   TRAINING_SPLITS,
@@ -70,7 +73,7 @@ import type { DomainMode } from "./feasibility";
 import type { MacrocycleWeek } from "./macrocycle";
 import type { Constraints, Goal } from "./intake";
 import type { AthleteProfile, Finding, FindingId } from "./types";
-import { qualityProgressionFor } from "./progression";
+import { blockProgress, qualityProgressionFor } from "./progression";
 
 export type SessionKind = EnduranceKind | "squat_heavy" | "squat_volume" | "deadlift_heavy" | "deadlift_volume" | "bench_heavy" | "bench_volume" | "strength_maintenance" | "weak_lift_exposure";
 
@@ -522,10 +525,10 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
   // a fragment of a session rather than a session.
   const split = TRAINING_SPLITS[constraints.trainingSplit ?? DEFAULT_TRAINING_SPLIT];
   const splitDays = split.days;
-  const rotation =
-    mode.strength === "maintain"
-      ? ["squat", "bench"]
-      : splitDays.map((d) => d.primaryLift ?? "squat").slice(0, Math.max(2, rotationSlots));
+  // The split governs in BOTH modes. Maintenance previously hardcoded
+  // squat+bench and ignored the athlete's choice entirely, so someone who
+  // asked for push/pull/legs got a bench day and a squat day.
+  const rotation = splitDays.map((d) => d.primaryLift ?? "squat").slice(0, Math.max(2, rotationSlots));
 
   // Whether the athlete can actually perform what is about to be prescribed.
   // `constraints.equipment` was previously written and never read, so a
@@ -540,14 +543,21 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
 
     if (mode.strength === "maintain") {
       const findingId = attributeFinding("maximal_strength", profile.findings) ?? "hybrid-baseline";
+      const maintDay = splitDays[i % splitDays.length];
       const prescription = prescribeLift(profile, findingId, {
         lift,
         // No barbell: a substitution, named as one. See NO_GYM_SUBSTITUTIONS.
         substitution: hasBarbell ? undefined : NO_GYM_SUBSTITUTIONS[lift],
-        sets: 3,
-        reps: [2, 2],
-        intensity: [MMD_STRENGTH_MIN_INTENSITY, MMD_STRENGTH_MIN_INTENSITY],
-        rir: [2, 2],
+        sets: MAINTENANCE_SETS,
+        // Spiering's dose holds INTENSITY; it does not require doubles. Three
+        // to five keeps the load high enough to maintain without making a
+        // maintenance week read like a peaking week.
+        reps: MAINTENANCE_REPS,
+        intensity: [MMD_STRENGTH_MIN_INTENSITY, MMD_STRENGTH_MIN_INTENSITY + 0.05],
+        rir: [2, 3],
+        // A maintenance session is still a session. Prescribing one lift and
+        // nothing else is not a gym visit anybody would make.
+        accessories: accessoriesForDay(maintDay, lift),
       });
       sessions.push(
         makeSession("strength_maintenance", "strength", "maximal_strength", findingId, prescription, {
@@ -575,7 +585,20 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
     // "4x1-3 @ 65-75% 1RM", which is not a heavy single, it is a fast
     // sub-maximal rep with a rep target that makes no sense against the load.
     // Load and rep range have to move together or neither is a prescription.
-    const shifted = shiftPhaseSpec(phase, emphasisKey);
+    // Peaking a total and building general strength are different jobs. The
+    // phase ladder descends toward singles because it exists to peak three
+    // lifts on a date; an athlete with no numeric target wants size and
+    // strength, and 2 reps at 80% delivers neither.
+    const peakingATotal = goal.targetTotalKg != null || goal.targetSquatKg != null ||
+      goal.targetBenchKg != null || goal.targetDeadliftKg != null;
+    const shifted = peakingATotal
+      ? shiftPhaseSpec(phase, emphasisKey)
+      : GENERAL_STRENGTH_SPEC[
+          Math.min(
+            GENERAL_STRENGTH_SPEC.length - 1,
+            Math.floor(blockProgress(week) * GENERAL_STRENGTH_SPEC.length)
+          )
+        ];
     const sets = Math.max(2, shifted.sets - (deload ? 1 : 0));
     const reps = shifted.reps;
     const intensity = shifted.pct;

@@ -190,6 +190,39 @@ export const EXERCISE_LOAD_CONFIG: Record<string, ExerciseConfig> = {
     anchorConvention: "total",
     conventionNote: "Per hand = one dumbbell. Total = both combined.",
   },
+  /**
+   * Loaded carries. Without an entry here every carry fell through to the
+   * "total, no picker" default, so an athlete entering the 40 they had in
+   * EACH hand was scored as though they had carried 40kg in total — half the
+   * real load. Carries are the most per-hand-natural movement in the whole
+   * catalogue ("farmer's carry with the 40s"), so per hand is the default,
+   * with total available; the carry anchors in
+   * strength/isometric-carry.ts are defined on TOTAL carried load.
+   */
+  farmersCarry: {
+    defaultConvention: "perHand",
+    allowedConventions: ["perHand", "total"],
+    anchorConvention: "total",
+    conventionNote: "Per hand = one implement. Total = both combined.",
+  },
+  suitcaseCarry: {
+    defaultConvention: "total",
+    allowedConventions: ["total"],
+    anchorConvention: "total",
+    conventionNote: "One implement, one side — enter the weight of that single load.",
+  },
+  sledPush: {
+    defaultConvention: "total",
+    allowedConventions: ["total"],
+    anchorConvention: "total",
+    conventionNote: "Total load on the sled (plates; the sled's own frame weight isn't counted).",
+  },
+  sledPull: {
+    defaultConvention: "total",
+    allowedConventions: ["total"],
+    anchorConvention: "total",
+    conventionNote: "Total load on the sled (plates; the sled's own frame weight isn't counted).",
+  },
 };
 
 /** Exercise name → canonical config key (subset of strength-engine aliases). */
@@ -257,6 +290,17 @@ const NAME_TO_CONFIG_KEY: Record<string, string> = {
   "dumbbell shrug": "dbShrug",
   "barbell curl": "barbellCurl",
   "ez bar curl": "barbellCurl",
+  "farmer's carry": "farmersCarry",
+  "farmers carry": "farmersCarry",
+  "farmer carry": "farmersCarry",
+  "farmer's walk": "farmersCarry",
+  "farmers walk": "farmersCarry",
+  "suitcase carry": "suitcaseCarry",
+  "single arm carry": "suitcaseCarry",
+  "sled push": "sledPush",
+  "prowler push": "sledPush",
+  "sled pull": "sledPull",
+  "sled drag": "sledPull",
 };
 
 export function conventionToMode(convention: LoadConvention): WeightEntryMode {

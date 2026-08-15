@@ -202,7 +202,12 @@ export type DomainMode = "develop" | "maintain";
  * minimum maintenance dose (Spiering 2021 for strength) still applies and is
  * reserved before anything else is allocated.
  */
-export function classifyDomains(state: AthleteState, goal: Goal): Record<"strength" | "endurance", DomainMode> {
+export function classifyDomains(
+  state: AthleteState,
+  goal: Goal,
+  /** Set when the athlete chose a gym split — an intent signal in its own right. */
+  splitImpliesTraining = false
+): Record<"strength" | "endurance", DomainMode> {
   const out: Record<"strength" | "endurance", DomainMode> = { strength: "maintain", endurance: "maintain" };
 
   // Per-lift targets count as a strength goal. Reading only `targetTotalKg`
@@ -214,6 +219,19 @@ export function classifyDomains(state: AthleteState, goal: Goal): Record<"streng
     (v): v is number => v != null && v > 0
   );
   const strengthTarget = goal.targetTotalKg ?? (perLift.length > 0 ? perLift.reduce((a, b) => a + b, 0) : null);
+
+  // Choosing a gym split is itself a statement of intent to train.
+  //
+  // "No numeric 1RM target" was being read as "maintain", and maintain is the
+  // Spiering minimum dose — one session, 2 reps at 80%, no accessories, split
+  // ignored. That is the right prescription for holding strength through a
+  // marathon build and the wrong one for someone who just told us how they
+  // want their gym week organised. Most people lifting have no goal total;
+  // they want to get bigger and stronger, which is a develop goal without a
+  // number attached.
+  if (strengthTarget == null && splitImpliesTraining) {
+    out.strength = "develop";
+  }
 
   if (strengthTarget != null) {
     const current = Math.max(totalKg(state), 1);

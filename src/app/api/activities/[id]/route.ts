@@ -34,6 +34,7 @@ import {
   computeWindowedTier2Seconds,
   personalizeRiegelKFromWindow,
   pickSwimTimeTrialEfforts,
+  replayStoredPredictionFromSessions,
   type HistorySession,
 } from "@/lib/scoring/cardio/race-prediction";
 import { isEnduranceSport } from "@/lib/scoring/engine";
@@ -266,7 +267,23 @@ async function scoreAndPersist(
     );
     sessionBenchmarkEquivalentSeconds = sessionEquivalentSeconds;
     if (sessionEquivalentSeconds !== null) {
-      const rawBlendBase = priorIsThisActivity ? null : (priorPrediction?.benchmark_seconds ?? null);
+      // The stored row's own evidence already includes this activity (it was
+      // the session that last wrote it), so blending this re-score straight
+      // back into it would double-count the same session. What that must NOT
+      // mean is "no memory at all": passing null to blendPredictedBenchmark
+      // makes it SEED, replacing the athlete's whole prediction history with
+      // this one edited session's equivalent — that is how a real 18:25 5k
+      // athlete's dashboard ended up reading 24:59 off a re-saved easy 7.5k,
+      // with sample_count carried across so it still displayed as calibrated.
+      // Rebuild the base from their other sessions instead (windowSessions
+      // already excludes this activity), the same replay recompute performs.
+      const rawBlendBase = priorIsThisActivity
+        ? replayStoredPredictionFromSessions(
+            benchmarkSport,
+            windowSessions,
+            personalizedK ?? undefined
+          )
+        : (priorPrediction?.benchmark_seconds ?? null);
       const blendBase =
         rawBlendBase != null
           ? effectiveStoredPrediction(

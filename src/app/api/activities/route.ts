@@ -68,6 +68,70 @@ function sanitizeRoute(value: unknown): [number, number][] | null {
   return parsed.slice(0, ROUTE_CONFIG.MAX_POINTS);
 }
 
+type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>;
+
+/**
+ * Compensating delete for a logged session whose dependent writes failed.
+ *
+ * A logged activity only means anything alongside its score: the logbook, the
+ * Split Index history and every rollup read from workout_scores. An activity
+ * row that outlived a failed score insert is not a partial success, it is a
+ * ghost session — it shows up in the logbook, contributes nothing, and the
+ * athlete cannot tell why. Supabase's JS client has no transaction, so the
+ * activity is inserted first and unwound here if the rest does not land.
+ *
+ * gym_exercises and workout_scores are ON DELETE CASCADE from activities, so
+ * deleting the parent takes them with it. split_index_history is ON DELETE SET
+ * NULL — it would survive with a null activity_id and keep skewing the trend
+ * charts — so it is deleted explicitly first.
+ *
+ * Returns false if the unwind itself failed, which is the one case where an
+ * orphan can survive; the caller reports the failure either way, so the client
+ * never renders a success screen for a session that was not fully saved.
+ */
+async function rollbackActivity(
+  supabase: SupabaseServerClient,
+  activityId: string
+): Promise<boolean> {
+  const { error: historyError } = await supabase
+    .from("split_index_history")
+    .delete()
+    .eq("activity_id", activityId);
+  const { error: activityDeleteError } = await supabase
+    .from("activities")
+    .delete()
+    .eq("id", activityId);
+
+  if (historyError || activityDeleteError) {
+    console.error(
+      "[activities] rollback failed for activity",
+      activityId,
+      historyError?.message ?? activityDeleteError?.message
+    );
+    return false;
+  }
+  return true;
+}
+
+/** 500 for a write that failed after the activity row already existed. */
+async function failAndRollback(
+  supabase: SupabaseServerClient,
+  activityId: string,
+  what: string,
+  detail: string | undefined
+) {
+  console.error(`[activities] ${what} insert failed:`, detail);
+  const rolledBack = await rollbackActivity(supabase, activityId);
+  return NextResponse.json(
+    {
+      error: rolledBack
+        ? "We could not save this workout. Nothing was recorded — please try logging it again."
+        : "We could not save this workout completely. Check your logbook before logging it again.",
+    },
+    { status: 500 }
+  );
+}
+
 export async function POST(request: Request) {
   const supabase = await createClient();
   const {
@@ -286,7 +350,10 @@ export async function POST(request: Request) {
       };
     });
 
-    await supabase.from("gym_exercises").insert(exerciseRows);
+    const { error: exercisesError } = await supabase.from("gym_exercises").insert(exerciseRows);
+    if (exercisesError) {
+      return failAndRollback(supabase, activity.id, "gym_exercises", exercisesError.message);
+    }
   }
 
   const enduranceIndices =
@@ -550,7 +617,7 @@ export async function POST(request: Request) {
   const previousSplitIndex =
     indexHistory?.[indexHistory.length - 1]?.split_index ?? result.splitIndex;
 
-  const { data: workoutScore } = await supabase
+  const { data: workoutScore, error: workoutScoreError } = await supabase
     .from("workout_scores")
     .insert({
       activity_id: activity.id,
@@ -581,7 +648,15 @@ export async function POST(request: Request) {
     .select()
     .single();
 
-  await supabase.from("split_index_history").insert({
+  // The score IS the product. Without this row the session is unscored
+  // everywhere it is read from, so there is nothing worth keeping the
+  // activity for — unwind and say so rather than returning a success payload
+  // built from an in-memory score that was never persisted.
+  if (workoutScoreError || !workoutScore) {
+    return failAndRollback(supabase, activity.id, "workout_scores", workoutScoreError?.message);
+  }
+
+  const { error: indexHistoryError } = await supabase.from("split_index_history").insert({
     user_id: user.id,
     split_index: result.splitIndex,
     endurance_index: result.enduranceIndex,
@@ -598,9 +673,17 @@ export async function POST(request: Request) {
     recorded_at: body.started_at,
   });
 
+  // Every Split Index trend, projection and moving average reads this table.
+  // A session that scored but never entered the index history would show the
+  // athlete a new score on the success screen that their chart never moves to
+  // — so it is unwound on the same terms as the score itself.
+  if (indexHistoryError) {
+    return failAndRollback(supabase, activity.id, "split_index_history", indexHistoryError.message);
+  }
+
   if (body.sport === "gym" && result.strengthScoreRows?.length) {
     await supabase.from("strength_scores").delete().eq("activity_id", activity.id);
-    await supabase.from("strength_scores").insert(
+    const { error: strengthScoresError } = await supabase.from("strength_scores").insert(
       buildStrengthScoreInserts(
         user.id,
         activity.id,
@@ -608,10 +691,16 @@ export async function POST(request: Request) {
         result.strengthScoreRows
       )
     );
+    // Secondary: the session is already scored and in the index history. Losing
+    // the per-exercise strength rows costs this session's per-lift breakdown,
+    // not the workout — logged, not fatal, and deliberately not a rollback.
+    if (strengthScoresError) {
+      console.error("[activities] strength_scores insert failed:", strengthScoresError.message);
+    }
   }
 
   if (benchmarkSport && newPredictedBenchmarkSeconds !== null) {
-    await supabase.from("predicted_benchmarks").upsert(
+    const { error: predictedBenchmarkError } = await supabase.from("predicted_benchmarks").upsert(
       {
         user_id: user.id,
         sport: benchmarkSport,
@@ -624,6 +713,14 @@ export async function POST(request: Request) {
       },
       { onConflict: "user_id,sport" }
     );
+    // Secondary, same reasoning as strength_scores: the stored race prediction
+    // simply misses this session's evidence and picks it up on the next one.
+    if (predictedBenchmarkError) {
+      console.error(
+        "[activities] predicted_benchmarks upsert failed:",
+        predictedBenchmarkError.message
+      );
+    }
   }
 
   await supabase.from("workout_drafts").delete().eq("user_id", user.id).eq("sport", body.sport);
@@ -650,116 +747,114 @@ export async function POST(request: Request) {
 
   let aiFeedback = null;
   let premiumRequired = false;
-  if (workoutScore) {
-    const recentActivitiesSummary =
-      recentActivitiesWithScores
-        ?.filter((a) => a.id !== activity.id)
-        .map((a) => {
-          const ws = Array.isArray(a.workout_scores)
-            ? a.workout_scores[0]
-            : a.workout_scores;
-          return {
-            sport: a.sport,
-            started_at: a.started_at,
-            duration_seconds: a.duration_seconds,
-            sport_index: ws?.sport_index ?? 0,
-            load_score: ws?.load_score ?? 0,
-            session_type: a.session_type,
-          };
-        }) ?? [];
+  const recentActivitiesSummary =
+    recentActivitiesWithScores
+      ?.filter((a) => a.id !== activity.id)
+      .map((a) => {
+        const ws = Array.isArray(a.workout_scores)
+          ? a.workout_scores[0]
+          : a.workout_scores;
+        return {
+          sport: a.sport,
+          started_at: a.started_at,
+          duration_seconds: a.duration_seconds,
+          sport_index: ws?.sport_index ?? 0,
+          load_score: ws?.load_score ?? 0,
+          session_type: a.session_type,
+        };
+      }) ?? [];
 
-    let exercises: GymExercise[] | undefined;
+  let exercises: GymExercise[] | undefined;
 
-    if (body.sport === "gym") {
-      const { data: gymExercises } = await supabase
-        .from("gym_exercises")
-        .select("*")
-        .eq("activity_id", activity.id)
-        .order("order_index");
-      exercises = gymExercises ?? undefined;
-    }
+  if (body.sport === "gym") {
+    const { data: gymExercises } = await supabase
+      .from("gym_exercises")
+      .select("*")
+      .eq("activity_id", activity.id)
+      .order("order_index");
+    exercises = gymExercises ?? undefined;
+  }
 
-    const coachIndexHistory: IndexHistoryEntry[] = [
-      ...(indexHistory ?? []).map((h) => ({
-        split_index: h.split_index,
-        endurance_index: h.endurance_index,
-        strength_index: h.strength_index,
-        fatigue_score: h.fatigue_score,
-        recovery_score: h.recovery_score,
-        predicted_index_7d: h.predicted_index_7d,
-        recorded_at: h.recorded_at,
-      })),
-      {
-        split_index: result.splitIndex,
-        endurance_index: result.enduranceIndex,
-        strength_index: result.strengthIndex,
-        fatigue_score: result.fatigueScore,
-        recovery_score: result.recoveryScore,
-        predicted_index_7d: result.predictedIndex,
-        recorded_at: new Date().toISOString(),
-      },
-    ];
+  const coachIndexHistory: IndexHistoryEntry[] = [
+    ...(indexHistory ?? []).map((h) => ({
+      split_index: h.split_index,
+      endurance_index: h.endurance_index,
+      strength_index: h.strength_index,
+      fatigue_score: h.fatigue_score,
+      recovery_score: h.recovery_score,
+      predicted_index_7d: h.predicted_index_7d,
+      recorded_at: h.recorded_at,
+    })),
+    {
+      split_index: result.splitIndex,
+      endurance_index: result.enduranceIndex,
+      strength_index: result.strengthIndex,
+      fatigue_score: result.fatigueScore,
+      recovery_score: result.recoveryScore,
+      predicted_index_7d: result.predictedIndex,
+      recorded_at: new Date().toISOString(),
+    },
+  ];
 
-    const coachInput = {
-      activity,
-      score: workoutScore,
-      previousSplitIndex,
-      currentSplitIndex: result.splitIndex,
-      enduranceIndex: result.enduranceIndex,
-      strengthIndex: result.strengthIndex,
-      fatigueScore: result.fatigueScore,
-      recoveryScore: result.recoveryScore,
-      predictedIndex: result.predictedIndex,
-      recentLoads: loads,
-      indexHistory: coachIndexHistory,
-      recentActivities: recentActivitiesSummary,
-      exercises,
-      profile: {
-        age: profile.age,
-        experience: profile.experience,
-        goals: profile.goals ?? [],
-        preferred_sports: profile.preferred_sports ?? [],
-        weight_kg: scoringProfile.weight_kg,
-        max_hr: scoringProfile.max_hr,
-        training_history_years: profile.training_history_years,
-      },
+  const coachInput = {
+    activity,
+    score: workoutScore,
+    previousSplitIndex,
+    currentSplitIndex: result.splitIndex,
+    enduranceIndex: result.enduranceIndex,
+    strengthIndex: result.strengthIndex,
+    fatigueScore: result.fatigueScore,
+    recoveryScore: result.recoveryScore,
+    predictedIndex: result.predictedIndex,
+    recentLoads: loads,
+    indexHistory: coachIndexHistory,
+    recentActivities: recentActivitiesSummary,
+    exercises,
+    profile: {
+      age: profile.age,
+      experience: profile.experience,
+      goals: profile.goals ?? [],
+      preferred_sports: profile.preferred_sports ?? [],
+      weight_kg: scoringProfile.weight_kg,
+      max_hr: scoringProfile.max_hr,
+      training_history_years: profile.training_history_years,
+    },
+  };
+
+  const hasFullAiCoaching = canAccessProfile("ai_coaching_full", profile);
+
+  if (hasFullAiCoaching) {
+    const coachOutput = await generateCoachFeedback(coachInput, {
+      useOpenAI: true,
+    });
+
+    const { data: feedback } = await supabase
+      .from("ai_feedback")
+      .upsert(
+        {
+          activity_id: activity.id,
+          user_id: user.id,
+          ...coachOutput,
+        },
+        { onConflict: "activity_id" }
+      )
+      .select()
+      .single();
+
+    aiFeedback = feedback;
+  } else {
+    const snippet = generateRulesBasedSnippet(coachInput);
+    premiumRequired = true;
+    aiFeedback = {
+      activity_id: activity.id,
+      user_id: user.id,
+      performance_explanation: null,
+      recovery_advice: null,
+      next_workout_recommendation: snippet.next_workout_recommendation,
+      long_term_insight: null,
+      score_change_reason: null,
+      premium_required: true,
     };
-
-    const hasFullAiCoaching = canAccessProfile("ai_coaching_full", profile);
-
-    if (hasFullAiCoaching) {
-      const coachOutput = await generateCoachFeedback(coachInput, {
-        useOpenAI: true,
-      });
-
-      const { data: feedback } = await supabase
-        .from("ai_feedback")
-        .upsert(
-          {
-            activity_id: activity.id,
-            user_id: user.id,
-            ...coachOutput,
-          },
-          { onConflict: "activity_id" }
-        )
-        .select()
-        .single();
-
-      aiFeedback = feedback;
-    } else {
-      const snippet = generateRulesBasedSnippet(coachInput);
-      premiumRequired = true;
-      aiFeedback = {
-        activity_id: activity.id,
-        user_id: user.id,
-        performance_explanation: null,
-        recovery_advice: null,
-        next_workout_recommendation: snippet.next_workout_recommendation,
-        long_term_insight: null,
-        score_change_reason: null,
-        premium_required: true,
-      };
-    }
   }
 
   const sportComparison = computeSportComparison(result.sportIndex, priorSportScores);
@@ -784,7 +879,7 @@ export async function POST(request: Request) {
           profile: scoringProfile,
         });
 
-    if (cardioEnrichment && workoutScore) {
+    if (cardioEnrichment) {
       await supabase
         .from("workout_scores")
         .update({
