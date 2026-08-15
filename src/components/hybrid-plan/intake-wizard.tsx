@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils/cn";
+import { DEFAULT_TRAINING_SPLIT, TRAINING_SPLITS, type TrainingSplit } from "@/lib/scoring/hpe/constants";
 import {
   DayWindowsEditor,
   DurationField,
@@ -655,6 +656,61 @@ export function IntakeWizard() {
 
           {section === "strength" && !hardBlock && (
             <>
+              {/* First, because it decides whether anything below is even
+                  performable. "Do you have a barbell" was the old question and
+                  it had the order backwards — a barbell is a detail inside gym
+                  access, not a substitute for asking about it. */}
+              <Field
+                label="Can you get to a gym?"
+                why="If not, the barbell lifts are substituted for movements you can actually perform. Prescribing a back squat to someone training in a bedroom produces a plan that cannot be followed."
+              >
+                <YesNo
+                  value={get("has_gym_access", intake.hasGymAccess) as boolean}
+                  onChange={(v) => set("has_gym_access", v)}
+                />
+              </Field>
+
+              {!(get("has_gym_access", intake.hasGymAccess) as boolean) && (
+                <p className="rounded-2xl border border-warning/25 bg-warning/[0.06] p-4 text-sm leading-relaxed text-warning/90">
+                  Without a gym your strength work becomes goblet squats, push-up progressions and single-leg
+                  hinges. Those train the same patterns and they are not the same lifts — the load is lower and
+                  progress will be slower than a barbell block would give you. Full home and dumbbell programming
+                  is not built yet, so this is thinner than it should be.
+                </p>
+              )}
+
+              {(get("has_gym_access", intake.hasGymAccess) as boolean) && (
+                <Field
+                  label="How do you want your gym week split?"
+                  why="This decides how the week is carved up, not how hard it is — your diagnostic still sets the intensity and which lift leads each day."
+                >
+                  <SelectField
+                    value={(get("training_split", intake.trainingSplit) as string | null) ?? ""}
+                    onChange={(v) => set("training_split", v === "" ? null : v)}
+                    ariaLabel="Training split"
+                    options={[
+                      { value: "", label: "No preference — pick for me" },
+                      ...Object.entries(TRAINING_SPLITS).map(([value, spec]) => ({
+                        value,
+                        label: spec.label,
+                      })),
+                    ]}
+                  />
+                  {(() => {
+                    const chosen = get("training_split", intake.trainingSplit) as TrainingSplit | null;
+                    const spec = chosen ? TRAINING_SPLITS[chosen] : null;
+                    return (
+                      <p className="mt-2 text-sm leading-relaxed text-muted">
+                        {spec
+                          ? spec.blurb
+                          : `Left blank, you get ${TRAINING_SPLITS[DEFAULT_TRAINING_SPLIT].label.toLowerCase()} — ` +
+                            `the most time-efficient split and the easiest to fit around running.`}
+                      </p>
+                    );
+                  })()}
+                </Field>
+              )}
+
               {["squat", "bench", "deadlift"].map((lift) => (
                 <Prefilled
                   key={lift}
@@ -685,7 +741,8 @@ export function IntakeWizard() {
                   ariaLabel="Current lifting sessions per week"
                 />
               </Field>
-              <Field label="What do you lift with?" why="Affects load prescription and attempt selection.">
+              {(get("has_gym_access", intake.hasGymAccess) as boolean) && (
+              <Field label="What do you lift with?" why="Affects load prescription and attempt selection. A barbell is assumed — this is about the extras.">
                 <MultiSelect
                   options={[
                     { value: "raw", label: "Raw" },
@@ -698,6 +755,7 @@ export function IntakeWizard() {
                   ariaLabel="Equipment used"
                 />
               </Field>
+              )}
             </>
           )}
 
