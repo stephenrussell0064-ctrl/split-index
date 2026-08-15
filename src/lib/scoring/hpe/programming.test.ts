@@ -19,6 +19,7 @@ import { describe, expect, it } from "vitest";
 import { diagnose } from "./diagnostics";
 import { generatePlan } from "./engine";
 import { feasibilityScreen, inferredEnduranceTrainingAge } from "./feasibility";
+import { ENDURANCE_GAIN_PER_BLOCK, MAX_GAIN_MULTIPLE_OF_RATE } from "./constants";
 import { DEFAULT_SAFETY_FLAGS, type AthleteState, type Constraints, type Goal } from "./intake";
 import type { LiftSet, RunLog } from "./types";
 
@@ -147,9 +148,45 @@ describe("projected improvement stays inside what a human can do", () => {
   it("does not project an 18:25 runner to 16:22 in eleven weeks", () => {
     const s = state({ predicted5kS: 1105, enduranceTrainingAge: "novice" });
     const f = feasibilityScreen(s, goal({ weeksOut: 11, target5kS: 1080, priority: 0 }));
-    // 16:22 is 982s. The cap exists so the plan cannot promise it.
-    expect(f.projected5kS).toBeGreaterThan(1040);
-    expect(f.enduranceGainPct).toBeLessThanOrEqual(5.0 * (11 / 12) + 0.01);
+    // Was 16:22 (982s) — a projection no 18:25 runner has any business being
+    // shown. Now ~18:03, which is roughly 2% and is what the advanced rate
+    // actually supports over eleven weeks.
+    expect(f.projected5kS).toBeGreaterThan(1075);
+    expect(f.enduranceGainPct).toBeLessThan(2.5);
+  });
+
+  it("scales focus down, never up", () => {
+    // The defect was a `2 * share` term that DOUBLED the published rate for a
+    // single-sport athlete. Focusing entirely on running may not beat the rate
+    // for someone who trains running — that rate already assumes they do.
+    const s = state({ predicted5kS: 1105 });
+    const focused = feasibilityScreen(s, goal({ weeksOut: 12, priority: 0 }));
+    const rate = ENDURANCE_GAIN_PER_BLOCK[inferredEnduranceTrainingAge("intermediate", 1105)];
+    expect(focused.enduranceGainPct / 100).toBeLessThanOrEqual(rate * MAX_GAIN_MULTIPLE_OF_RATE + 1e-9);
+
+    // And a split athlete gets less than the focused one, not more.
+    const split = feasibilityScreen(s, goal({ weeksOut: 12, priority: 0.5 }));
+    expect(split.enduranceGainPct).toBeLessThan(focused.enduranceGainPct);
+  });
+
+  it("still lets a genuine beginner improve like a beginner", () => {
+    // The caps must not flatten everyone. A 30:00 runner really does move.
+    const s = state({ predicted5kS: 1800, enduranceTrainingAge: "novice" });
+    const f = feasibilityScreen(s, goal({ weeksOut: 11, priority: 0 }));
+    expect(f.enduranceGainPct).toBeGreaterThan(3.5);
+  });
+
+  it("quotes a range and says plainly that progress is not linear", () => {
+    const s = state({ predicted5kS: 1105, enduranceTrainingAge: "novice" });
+    const f = feasibilityScreen(s, goal({ weeksOut: 11, target5kS: 1080, priority: 0 }));
+
+    // The slow end of the band is today's fitness. Eleven weeks of good work
+    // can return the same time, and the athlete should not read that as having
+    // failed at something the plan promised them.
+    expect(f.projected5kRangeS[1]).toBe(1105);
+    expect(f.projected5kRangeS[0]).toBe(f.projected5kS);
+    expect(f.messages.join(" ")).toMatch(/not improve in a straight line/);
+    expect(f.messages.join(" ")).toMatch(/18:0\d-18:25/);
   });
 
   it("stops treating a fast runner as a novice whatever the intake said", () => {

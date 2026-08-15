@@ -26,6 +26,7 @@ import {
   ENDURANCE_GAIN_PER_BLOCK,
   ENDURANCE_TRAINING_AGE_FLOOR_BY_5K,
   MAX_ENDURANCE_GAIN_PER_BLOCK,
+  MAX_GAIN_MULTIPLE_OF_RATE,
   MAX_STRENGTH_GAIN_PER_BLOCK,
   FRONTIER_MAX_DELTA_FRACTION,
   MAX_SAFE_LOSS_RATE_PCT_PER_WEEK,
@@ -122,6 +123,9 @@ export interface FeasibilityResult {
   blocks: number;
   projectedTotalKg: number;
   projected5kS: number;
+  /** [today, modelled best] — progress is not linear, so the athlete is shown a band, never a point. */
+  projected5kRangeS: [number, number];
+  projectedTotalRangeKg: [number, number];
   strengthGainPct: number;
   enduranceGainPct: number;
   strengthReachable: boolean | null;
@@ -160,23 +164,50 @@ export function feasibilityScreen(state: AthleteState, goal: Goal): FeasibilityR
   const strengthShare = 0.5 + 0.5 * (goal.priority - 0.5) * 2 * PRIORITY_SHARE_SKEW;
   const enduranceShare = 1.0 - strengthShare;
 
-  const strengthGain = strengthRate * blocks * (2 * strengthShare) * (1 - CONCURRENT_ATTENUATION_STRENGTH);
-  let enduranceGain = enduranceRate * blocks * (2 * enduranceShare) * (1 - CONCURRENT_ATTENUATION_ENDURANCE);
+  // Focus SCALES the published rate down; it never scales it up.
+  //
+  // This was `2 * share`, which doubled the rate for a single-sport athlete.
+  // The published rates already describe someone training that discipline
+  // properly — an advanced runner's 1.5% per block is 1.5% for a runner who
+  // runs, not for a runner who also does nothing else. Doubling it for focus
+  // counted the same focus twice, and that factor of two is most of how an
+  // 18:25 became a 16:22.
+  const strengthGain = strengthRate * blocks * strengthShare * (1 - CONCURRENT_ATTENUATION_STRENGTH);
+  let enduranceGain = enduranceRate * blocks * enduranceShare * (1 - CONCURRENT_ATTENUATION_ENDURANCE);
   // Strength work improves running economy independently of aerobic gain —
   // the one place concurrent training pays rather than costs.
   enduranceGain += RUNNING_ECONOMY_BONUS_PER_BLOCK * blocks;
 
   const currentTotal = totalKg(state);
-  // Capped. The multiplier chain — training-age rate, block count, and a
-  // priority share that reaches 1.6x — compounds to 10.7% over eleven weeks
-  // for an athlete tagged novice with endurance-only goals. That projected an
-  // 18:25 5k to 16:26, which is not a forecast, and the athlete reads it as a
-  // promise the plan has made them.
-  const cappedStrengthGain = Math.min(strengthGain, MAX_STRENGTH_GAIN_PER_BLOCK * blocks);
-  const cappedEnduranceGain = Math.min(enduranceGain, MAX_ENDURANCE_GAIN_PER_BLOCK * blocks);
+  // Two caps, and the tighter one wins. The absolute cap is a backstop for the
+  // novice rates, which are legitimately large. The relative cap holds a
+  // trained athlete near their own rate, which is the case that went wrong.
+  const cappedStrengthGain = Math.min(
+    strengthGain,
+    MAX_STRENGTH_GAIN_PER_BLOCK * blocks,
+    strengthRate * blocks * MAX_GAIN_MULTIPLE_OF_RATE
+  );
+  const cappedEnduranceGain = Math.min(
+    enduranceGain,
+    MAX_ENDURANCE_GAIN_PER_BLOCK * blocks,
+    enduranceRate * blocks * MAX_GAIN_MULTIPLE_OF_RATE
+  );
 
   const projectedTotalKg = currentTotal * (1 + cappedStrengthGain);
   const projected5kS = state.predicted5kS * (1 - cappedEnduranceGain);
+
+  // The projection is a RANGE, and the slow end is where the athlete is today.
+  //
+  // Endurance progress is not linear and not guaranteed. Eleven weeks of good
+  // training can return a personal best, and it can equally return the same
+  // time in worse weather on a tireder day, and both are normal. A single
+  // number hides that: an athlete shown "17:45" reads a commitment, and when
+  // they run 18:20 off a block they executed well, the plan has told them they
+  // failed at something they did not fail at. Quoting the band from today's
+  // fitness to the modelled best keeps the good outcome visible without
+  // pretending the bad one is off the table.
+  const projected5kRangeS: [number, number] = [projected5kS, state.predicted5kS];
+  const projectedTotalRangeKg: [number, number] = [currentTotal, projectedTotalKg];
 
   const messages: string[] = [];
   let strengthReachable: boolean | null = null;
@@ -184,12 +215,14 @@ export function feasibilityScreen(state: AthleteState, goal: Goal): FeasibilityR
   if (goal.targetTotalKg != null) {
     strengthReachable = projectedTotalKg >= goal.targetTotalKg;
     strengthShortfallKg = goal.targetTotalKg - projectedTotalKg;
+    const band = `${projectedTotalRangeKg[0].toFixed(0)}-${projectedTotalRangeKg[1].toFixed(0)}kg`;
     messages.push(
       strengthReachable
-        ? `Total: ${goal.targetTotalKg}kg is reachable — ${goal.weeksOut} weeks projects to ${projectedTotalKg.toFixed(0)}kg from ${currentTotal.toFixed(0)}kg.`
-        : `Total: ${goal.targetTotalKg}kg is ambitious. ${goal.weeksOut} weeks at your training age projects ` +
-          `${projectedTotalKg.toFixed(0)}kg — about ${strengthShortfallKg.toFixed(0)}kg short. The plan still ` +
-          `chases it; treat the number as a stretch rather than a forecast.`
+        ? `Total: ${goal.targetTotalKg}kg is reachable — ${goal.weeksOut} weeks puts you in the ${band} range, ` +
+          `with the top end assuming the block goes well.`
+        : `Total: ${goal.targetTotalKg}kg is ambitious. ${goal.weeksOut} weeks at your training age puts you in ` +
+          `the ${band} range — about ${strengthShortfallKg.toFixed(0)}kg short at best. The plan still chases ` +
+          `it; treat the top of the range as a stretch rather than a forecast.`
     );
   }
 
@@ -199,11 +232,20 @@ export function feasibilityScreen(state: AthleteState, goal: Goal): FeasibilityR
     enduranceReachable = projected5kS <= goal.target5kS;
     enduranceShortfallS = projected5kS - goal.target5kS;
     const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
+    // Quoted as a band, and the band is stated as a band. Endurance form
+    // moves in steps and setbacks, not down a line, and an athlete who runs
+    // 18:20 off a well-executed block has not failed at anything — but a plan
+    // that promised them one number has told them they did.
+    const band = `${fmt(projected5kRangeS[0])}-${fmt(projected5kRangeS[1])}`;
     messages.push(
       enduranceReachable
-        ? `5k: ${fmt(goal.target5kS)} is reachable — ${goal.weeksOut} weeks projects to ${fmt(projected5kS)}.`
-        : `5k: ${fmt(goal.target5kS)} is ambitious. ${goal.weeksOut} weeks projects ${fmt(projected5kS)} — about ` +
-          `${Math.round(enduranceShortfallS)}s short. Worth knowing now rather than at the finish line.`
+        ? `5k: ${fmt(goal.target5kS)} is reachable — ${goal.weeksOut} weeks puts you in the ${band} range, ` +
+          `with the fast end assuming the block goes well. Running does not improve in a straight line, so ` +
+          `treat the whole range as the honest answer.`
+        : `5k: ${fmt(goal.target5kS)} is ambitious. ${goal.weeksOut} weeks puts you in the ${band} range — about ` +
+          `${Math.round(enduranceShortfallS)}s short at best. Running does not improve in a straight line and ` +
+          `plateaus are normal, so this is the range rather than a promise. Worth knowing now rather than at ` +
+          `the finish line.`
     );
   }
 
@@ -211,6 +253,8 @@ export function feasibilityScreen(state: AthleteState, goal: Goal): FeasibilityR
     blocks,
     projectedTotalKg,
     projected5kS,
+    projected5kRangeS,
+    projectedTotalRangeKg,
     strengthGainPct: cappedStrengthGain * 100,
     enduranceGainPct: cappedEnduranceGain * 100,
     strengthReachable,

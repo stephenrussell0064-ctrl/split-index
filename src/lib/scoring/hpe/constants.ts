@@ -1071,6 +1071,19 @@ export const MAINTENANCE_SETS = 3;
  * one, and both are applied.
  */
 export const MAX_ENDURANCE_GAIN_PER_BLOCK = 0.05;
+
+/**
+ * [EST] Hard ceiling on how far the modelled gain may exceed the athlete's own
+ * published per-block rate.
+ *
+ * The absolute caps above are a backstop for the novice rates, which are
+ * genuinely large — a beginner really does go 30:00 to 27:00 in a season. They
+ * do nothing for a trained athlete, whose rate is small and whose projection
+ * went wrong by being MULTIPLIED rather than by starting too high. This cap is
+ * relative, so it scales itself: an advanced runner is held near the advanced
+ * rate no matter what the priority slider does.
+ */
+export const MAX_GAIN_MULTIPLE_OF_RATE = 1.5;
 /** [EST] Same, for strength. Totals move faster than 5k times but not without limit. */
 export const MAX_STRENGTH_GAIN_PER_BLOCK = 0.08;
 
