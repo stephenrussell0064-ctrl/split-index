@@ -80,6 +80,22 @@ export const FIVE_K_TO_EASY: readonly [number, number] = [1.24, 1.34];
 /** [EST] Spread (s/km) between anchors that warrants an explicit finding naming which one governs and why. */
 export const EASY_ANCHOR_DISAGREEMENT_FLAG = 15.0;
 
+/**
+ * [EST] Plausibility bounds on easy pace, as a multiple of the athlete's own
+ * 5k pace.
+ *
+ * A backstop, not a derivation. The three anchors are the derivation; this
+ * catches the case where one of them returns something no coach would ever
+ * write down. Easy running for a trained runner sits roughly 25-45% slower
+ * than 5k pace — beyond about 1.5x it is not easy running, it is walking, and
+ * prescribing it to someone chasing a sub-18 5k wastes the session.
+ *
+ * Needed because "the slowest anchor governs" has no floor of its own: one
+ * badly-conditioned anchor propagates straight through to the prescription
+ * precisely BECAUSE it is the slowest.
+ */
+export const EASY_PACE_BOUNDS_VS_5K: readonly [number, number] = [1.15, 1.5];
+
 // ---------------------------------------------------------------------------
 // Intensity discipline
 // ---------------------------------------------------------------------------
@@ -911,3 +927,89 @@ export const NO_GYM_SUBSTITUTIONS: Readonly<Record<string, string>> = {
 
 /** [EST] Reps run higher without load to reach a comparable stimulus. */
 export const NO_GYM_REP_RANGE: readonly [number, number] = [8, 15];
+
+// ---------------------------------------------------------------------------
+// Gym training splits
+// ---------------------------------------------------------------------------
+// The engine allocated strength work per LIFT — "squat day", "bench day" —
+// which is correct for a powerlifter peaking three lifts and is not how most
+// people train. An athlete who runs a push/pull/legs split wants a push day,
+// not a bench day, and handing them a single lift reads as a fragment of a
+// session rather than a session.
+//
+// The split is the athlete's own choice and is asked, not inferred: two people
+// with identical diagnostics can reasonably prefer different structures, and
+// this is a preference rather than a physiological finding. The emphasis
+// vector still decides how HARD each day is and which lift leads it — the
+// split decides only how the week is carved up.
+
+export type TrainingSplit = "lift_specific" | "upper_lower" | "ppl" | "ppl_ul" | "full_body";
+
+export interface SplitDay {
+  /** Shown to the athlete: "Push", "Legs", "Upper". */
+  label: string;
+  /** Which competition lift leads the day, where one does. */
+  primaryLift: string | null;
+  /** Movement patterns this day covers, for accessory selection. */
+  patterns: readonly ("push" | "pull" | "legs" | "core")[];
+}
+
+/**
+ * [EST] The day rotations. Ordered so that consecutive days do not repeat a
+ * pattern — the scheduler's spacing rules then have something to work with
+ * rather than being handed four leg days in a row.
+ */
+export const TRAINING_SPLITS: Readonly<Record<TrainingSplit, { label: string; blurb: string; days: readonly SplitDay[] }>> = {
+  lift_specific: {
+    label: "Lift-specific",
+    blurb: "A day per competition lift — squat, bench, deadlift. Best if you are peaking a powerlifting total.",
+    days: [
+      { label: "Squat", primaryLift: "squat", patterns: ["legs"] },
+      { label: "Bench", primaryLift: "bench", patterns: ["push"] },
+      { label: "Deadlift", primaryLift: "deadlift", patterns: ["legs", "pull"] },
+      { label: "Bench", primaryLift: "bench", patterns: ["push"] },
+    ],
+  },
+  upper_lower: {
+    label: "Upper / Lower",
+    blurb: "Two days, alternating. The most time-efficient split, and the easiest to fit around running.",
+    days: [
+      { label: "Lower", primaryLift: "squat", patterns: ["legs", "core"] },
+      { label: "Upper", primaryLift: "bench", patterns: ["push", "pull"] },
+      { label: "Lower", primaryLift: "deadlift", patterns: ["legs", "pull"] },
+      { label: "Upper", primaryLift: "bench", patterns: ["push", "pull"] },
+    ],
+  },
+  ppl: {
+    label: "Push / Pull / Legs",
+    blurb: "Three days. More room per muscle group than upper/lower, and it needs three gym days to work.",
+    days: [
+      { label: "Push", primaryLift: "bench", patterns: ["push"] },
+      { label: "Pull", primaryLift: "deadlift", patterns: ["pull"] },
+      { label: "Legs", primaryLift: "squat", patterns: ["legs", "core"] },
+    ],
+  },
+  ppl_ul: {
+    label: "Push / Pull / Legs + Upper / Lower",
+    blurb: "Five days. High frequency and high total volume — hard to combine with serious running volume.",
+    days: [
+      { label: "Push", primaryLift: "bench", patterns: ["push"] },
+      { label: "Pull", primaryLift: "deadlift", patterns: ["pull"] },
+      { label: "Legs", primaryLift: "squat", patterns: ["legs", "core"] },
+      { label: "Upper", primaryLift: "bench", patterns: ["push", "pull"] },
+      { label: "Lower", primaryLift: "squat", patterns: ["legs", "core"] },
+    ],
+  },
+  full_body: {
+    label: "Full body",
+    blurb: "Every session covers everything. The best choice on two gym days a week, or when running is the priority.",
+    days: [
+      { label: "Full body", primaryLift: "squat", patterns: ["legs", "push", "pull", "core"] },
+      { label: "Full body", primaryLift: "bench", patterns: ["push", "pull", "legs"] },
+      { label: "Full body", primaryLift: "deadlift", patterns: ["pull", "legs", "core"] },
+    ],
+  },
+};
+
+/** [ASSURED] Chosen when the athlete has not picked one. Lift-specific only suits a peaking powerlifter, so it is not the default. */
+export const DEFAULT_TRAINING_SPLIT: TrainingSplit = "upper_lower";

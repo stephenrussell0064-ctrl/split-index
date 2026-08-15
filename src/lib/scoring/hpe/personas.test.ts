@@ -13,7 +13,7 @@
 import { describe, expect, it } from "vitest";
 import { diagnose } from "./diagnostics";
 import { generatePlan } from "./engine";
-import { ACWR_BLOCK } from "./constants";
+import { ACWR_BLOCK, type TrainingSplit } from "./constants";
 import { DEFAULT_SAFETY_FLAGS, type AthleteState, type Constraints, type Goal } from "./intake";
 import type { LiftSet, RunLog } from "./types";
 
@@ -42,6 +42,7 @@ function constraints(o: Partial<Constraints> = {}): Constraints {
     twoADaysPossible: false, dayWindows: [], availabilityVaries: false,
     amHour: 7, pmHour: 18, maxSessionsPerWeek: 6, maxHoursPerWeek: 8,
     maxSessionMin: 90, minRestDays: 1,
+    trainingSplit: null,
     gymAccessDays: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
     equipment: ["barbell"], ...o,
   };
@@ -337,5 +338,129 @@ describe("regression: ACWR enforcement must actually converge", () => {
     });
     expect(plan.acwr!.peakAcwr).toBeLessThanOrEqual(ACWR_BLOCK + 1e-6);
     expect(plan.acwr!.notes.length).toBe(0);
+  });
+});
+
+describe("regression: easy pace must stay plausible for a trained runner", () => {
+  it("refuses to invert the HR model outside the speeds it was fitted on", () => {
+    // Reported: 6:04-8:38/km prescribed to an athlete chasing a sub-18 5k.
+    // Their runs were all around 162bpm, so the HR-pace model was fitted only
+    // on moderate-effort running — and inverting it at 62% of HR reserve
+    // extrapolated far below every speed it had ever seen. Because the
+    // slowest anchor governs, that extrapolation then won. The engine was
+    // reading "you never run easy" and answering with a number derived from
+    // the absence of the very data it was complaining about.
+    const runs: RunLog[] = [
+      { dateIdx: 0, distanceKm: 5, durationS: 1105, avgHr: 184, isMaxEffort: true },
+      { dateIdx: 30, distanceKm: 10, durationS: 2320, avgHr: 180, isMaxEffort: true },
+      // Twenty runs, every one at moderate effort — never easy.
+      ...Array.from({ length: 20 }, (_, i) => ({
+        dateIdx: i * 3,
+        distanceKm: 8,
+        durationS: 8 * 258,
+        avgHr: 162,
+      })),
+    ];
+    const p = diagnose(runs, [], {}, { hrMax: 190, hrRest: 50 });
+    const band = p.easyBand!;
+    const paceOf5k = p.predicted5kS / 5;
+
+    // Easy running sits roughly 25-45% slower than 5k pace. Anything past 1.5x
+    // is walking, and prescribing it to this athlete wastes the session.
+    expect(band.lo).toBeLessThanOrEqual(paceOf5k * 1.5 + 1);
+    expect(band.hi).toBeLessThanOrEqual(paceOf5k * 1.5 + 1);
+    expect(band.lo).toBeGreaterThanOrEqual(paceOf5k * 1.15 - 1);
+    // And the band must be a band, not a 2.5-minute chasm.
+    expect(band.hi - band.lo).toBeLessThan(90);
+  });
+
+  it("still uses the HR inversion when the athlete DOES run easy", () => {
+    // The bound must not disable a legitimately fitted anchor.
+    const runs: RunLog[] = [
+      { dateIdx: 0, distanceKm: 5, durationS: 1105, avgHr: 184, isMaxEffort: true },
+      { dateIdx: 30, distanceKm: 10, durationS: 2320, avgHr: 180, isMaxEffort: true },
+      ...Array.from({ length: 20 }, (_, i) => ({
+        dateIdx: i * 3,
+        distanceKm: 10,
+        // Faster runs carry a higher heart rate — the relationship the model
+        // is meant to fit.
+        durationS: 10 * (348 - (i % 5) * 12),
+        avgHr: 132 + (i % 5) * 4,
+      })),
+    ];
+    const p = diagnose(runs, [], {}, { hrMax: 190, hrRest: 50 });
+    expect(p.easyBand!.candidates.hr_inverted).toBeDefined();
+  });
+});
+
+describe("regression: gym access implies a barbell", () => {
+  it("prescribes barbell work to an athlete with a gym who listed only dumbbells", () => {
+    // The equipment list is a refinement, not an exhaustive inventory. An
+    // athlete who said yes to a gym and ticked "dumbbells" was handed
+    // bodyweight substitutions.
+    const profile = diagnose([], sets(40, "squat", 100, 5), { squat: 120 }, { hrMax: 190, hrRest: 55, priority: 0.9 });
+    const plan = generatePlan({
+      state: state({ oneRms: { squat: 120 } }),
+      goal: goal({ targetSquatKg: 140 }),
+      constraints: constraints({ equipment: ["barbell", "dumbbells"] }),
+      profile,
+    });
+    const strength = plan.weeks.flatMap((w) => w.sessions).filter((s) => s.domain === "strength");
+    expect(strength.some((s) => /no gym access/i.test(s.prescription.text))).toBe(false);
+  });
+});
+
+describe("gym training splits", () => {
+  const liftHistory = () => sets(60, "squat", 140, 5);
+  const profile = () => diagnose([], liftHistory(), { squat: 160, bench: 110, deadlift: 190 }, { hrMax: 190, hrRest: 55, priority: 0.8 });
+
+  const weekFor = (trainingSplit: TrainingSplit) => {
+    const plan = generatePlan({
+      state: state({ oneRms: { squat: 160, bench: 110, deadlift: 190 } }),
+      goal: goal({ targetSquatKg: 180, targetBenchKg: 125, targetDeadliftKg: 215 }),
+      constraints: constraints({ trainingSplit, maxSessionsPerWeek: 8 }),
+      profile: profile(),
+    });
+    return plan.weeks[4].sessions.filter((s) => s.domain === "strength");
+  };
+
+  it("gives a push/pull/legs athlete push, pull and legs days", () => {
+    const strength = weekFor("ppl");
+    const text = strength.map((s) => s.prescription.text).join(" | ");
+    // A day, not a lone lift: the accessories follow the day's patterns.
+    expect(strength.length).toBeGreaterThan(1);
+    expect(text).toMatch(/row|pulldown|face pull/i);
+  });
+
+  it("gives an upper/lower athlete upper and lower days", () => {
+    const text = weekFor("upper_lower").map((s) => s.prescription.text).join(" | ");
+    expect(text).toMatch(/overhead press|row|pulldown/i);
+  });
+
+  it("gives a full-body athlete sessions spanning several patterns", () => {
+    const text = weekFor("full_body").map((s) => s.prescription.text).join(" | ");
+    expect(text).toMatch(/romanian|split squat|row|press/i);
+  });
+
+  it("still supports lift-specific days for a peaking powerlifter", () => {
+    const strength = weekFor("lift_specific");
+    expect(strength.some((s) => s.lift === "squat")).toBe(true);
+  });
+
+  it("produces materially different weeks for different splits", () => {
+    const sig = (split: TrainingSplit) =>
+      weekFor(split).map((s) => s.prescription.text).join("|");
+    const all = (["ppl", "upper_lower", "full_body", "lift_specific"] as TrainingSplit[]).map(sig);
+    expect(new Set(all).size).toBeGreaterThan(1);
+  });
+
+  it("never prescribes a lone lift with no supporting work on a split day", () => {
+    for (const split of ["ppl", "upper_lower", "full_body"] as const) {
+      for (const s of weekFor(split)) {
+        // The complaint that started this: single exercises rather than whole
+        // sessions. Every split day must carry accessory work.
+        expect(s.prescription.text.split("·").length, `${split}/${s.kind}`).toBeGreaterThan(1);
+      }
+    }
   });
 });

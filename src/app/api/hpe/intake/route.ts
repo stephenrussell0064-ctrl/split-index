@@ -59,6 +59,8 @@ const SECTION_FIELDS: Record<IntakeSection, string[]> = {
   strength: [
     // The primary question. Barbell availability is a detail inside this.
     "has_gym_access",
+    // How the gym week is carved up — push/pull/legs, upper/lower, and so on.
+    "training_split",
     "strength_training_years",
     "current_strength_sessions_per_week",
     "lift_variants",

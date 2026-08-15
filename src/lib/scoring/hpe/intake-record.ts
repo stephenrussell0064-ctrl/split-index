@@ -23,7 +23,7 @@
  * pathway in generated plans.
  */
 
-import { DAYS, type TrainingAge } from "./constants";
+import { DAYS, type TrainingAge, type TrainingSplit } from "./constants";
 import {
   DEFAULT_SAFETY_FLAGS,
   estimatedMaxHr,
@@ -100,6 +100,8 @@ export interface IntakeRecord {
    * dumbbells needs a different plan, not a barbell plan they cannot perform.
    */
   hasGymAccess: boolean;
+  /** The athlete's chosen gym split. Null = let the engine pick a sensible default. */
+  trainingSplit: TrainingSplit | null;
   twoADaysPossible: boolean;
   /** Per-day training windows — real clock times, which differ by day. */
   dayWindows: DayWindow[];
@@ -208,6 +210,7 @@ export function parseIntakeRow(row: Record<string, unknown> | null): IntakeRecor
     hrRunsHigh: Boolean(row?.hr_runs_high),
     daysAvailable: arr("days_available"),
     hasGymAccess: row?.has_gym_access == null ? true : Boolean(row.has_gym_access),
+    trainingSplit: (row?.training_split as TrainingSplit | null) ?? null,
     twoADaysPossible: Boolean(row?.two_a_days_possible),
     dayWindows: parseDayWindows(row?.day_windows),
     availabilityVaries: Boolean(row?.availability_varies),
@@ -534,13 +537,18 @@ export function resolveIntakeInputs(
     maxHoursPerWeek: record.maxHoursPerWeek,
     maxSessionMin: record.maxSessionMin,
     minRestDays: record.minRestDays,
+    trainingSplit: record.trainingSplit,
     gymAccessDays,
     // Gym access governs; the equipment list refines it. Without a gym the
     // barbell is not available whatever the equipment list says.
+    // Gym access IMPLIES a barbell. The equipment list is a refinement for
+    // things a gym may not have — a reverse hyper, a safety-squat bar — not a
+    // list the athlete has to remember to tick "barbell" on. Treating it as
+    // exhaustive meant an athlete who had said yes to a gym and then selected
+    // "dumbbells" was prescribed bodyweight substitutions, because "barbell"
+    // was absent from a list they never understood to be exhaustive.
     equipment: record.hasGymAccess
-      ? record.equipmentUsed.length > 0
-        ? record.equipmentUsed
-        : ["barbell"]
+      ? [...new Set(["barbell", ...record.equipmentUsed])]
       : record.equipmentUsed.filter((e) => e !== "barbell"),
   };
 

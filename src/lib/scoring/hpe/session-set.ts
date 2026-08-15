@@ -41,6 +41,9 @@ import {
   HEAVY_LOWER_BODY_LOAD_THRESHOLD,
   LIFT_PRESCRIPTIONS,
   LIFT_ROTATION,
+  DEFAULT_TRAINING_SPLIT,
+  TRAINING_SPLITS,
+  type TrainingSplit,
   NO_GYM_REP_RANGE,
   NO_GYM_SUBSTITUTIONS,
   LONG_RUN_MINUTE_SHARE,
@@ -238,6 +241,27 @@ export function shiftPhaseSpec(phase: Phase, emphasisKey: EmphasisKey) {
   const delta = emphasisKey === "maximal_strength" ? 1 : emphasisKey === "strength_endurance" ? -1 : 0;
   const target = STRENGTH_LADDER[Math.max(0, Math.min(STRENGTH_LADDER.length - 1, idx + delta))];
   return STRENGTH_PHASE_SPEC[target];
+}
+
+
+/** Accessory lines for a split day, chosen from its movement patterns. */
+function accessoriesForDay(day: (typeof TRAINING_SPLITS)[TrainingSplit]["days"][number], primaryLift: string): string[] {
+  const byPattern: Record<string, string[]> = {
+    push: ["Overhead press 3x8-10", "Dips or close-grip press 3x8-10", "Lateral raise 3x12-15"],
+    pull: ["Barbell row 3x8-10", "Pull-up or lat pulldown 3x8-10", "Face pull 3x12-15"],
+    legs: ["Romanian deadlift 3x8-10", "Split squat 3x10 each", "Calf raise 3x12-15"],
+    core: ["Hanging leg raise 3x10-12", "Weighted plank 3x45s"],
+  };
+  const out: string[] = [];
+  for (const pattern of day.patterns) {
+    // Two per pattern on a focused day, one each when the day spans several —
+    // a full-body session that lists twelve accessories is not a session.
+    const take = day.patterns.length <= 2 ? 2 : 1;
+    for (const line of (byPattern[pattern] ?? []).slice(0, take)) {
+      if (!line.toLowerCase().includes(primaryLift)) out.push(line);
+    }
+  }
+  return out;
 }
 
 export function buildSessionSet(input: SessionSetInput): SessionSet {
@@ -492,7 +516,16 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
   const weakLiftSlots = allocation.weak_lift;
   const rotationSlots = Math.max(0, strengthSlots - weakLiftSlots);
   const rotationSize = Math.min(4, Math.max(2, rotationSlots)) as 2 | 3 | 4;
-  const rotation = mode.strength === "maintain" ? ["squat", "bench"] : LIFT_ROTATION[rotationSize];
+  // The split the athlete chose decides how the week is carved up; the
+  // emphasis vector still decides how hard each day is and which lift leads
+  // it. Handing someone a "bench day" when they train push/pull/legs reads as
+  // a fragment of a session rather than a session.
+  const split = TRAINING_SPLITS[constraints.trainingSplit ?? DEFAULT_TRAINING_SPLIT];
+  const splitDays = split.days;
+  const rotation =
+    mode.strength === "maintain"
+      ? ["squat", "bench"]
+      : splitDays.map((d) => d.primaryLift ?? "squat").slice(0, Math.max(2, rotationSlots));
 
   // Whether the athlete can actually perform what is about to be prescribed.
   // `constraints.equipment` was previously written and never read, so a
@@ -548,7 +581,11 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
     const intensity = shifted.pct;
     const rir = shifted.rir;
 
-    const accessories = lift === "bench" ? ["2 upper accessories 3x8-10"] : undefined;
+    // Accessories follow the day's patterns rather than the single lift, so a
+    // "Push" day is a push session rather than a bench press with two
+    // afterthoughts attached.
+    const splitDay = splitDays[i % splitDays.length];
+    const accessories = accessoriesForDay(splitDay, lift);
     const prescription = prescribeLift(profile, findingId, {
       lift,
       // No barbell: substitute the pattern and say plainly it is a

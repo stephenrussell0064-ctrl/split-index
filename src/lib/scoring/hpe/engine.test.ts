@@ -87,6 +87,7 @@ function calibrationConstraints(overrides: Partial<Constraints> = {}): Constrain
     maxHoursPerWeek: 10,
     maxSessionMin: 90,
     minRestDays: 1,
+    trainingSplit: null,
     gymAccessDays: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
     equipment: ["barbell", "treadmill"],
     ...overrides,

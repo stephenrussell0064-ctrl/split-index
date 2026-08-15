@@ -35,7 +35,7 @@
 import {
   DEFAULT_PLANNING_HORIZON_WEEKS,
   MAX_HORIZON_WEEKS,
-  MIN_HORIZON_WEEKS, MIN_HEALTHY_BMI, type TrainingAge } from "./constants";
+  MIN_HORIZON_WEEKS, MIN_HEALTHY_BMI, type TrainingAge, type TrainingSplit } from "./constants";
 
 // ---------------------------------------------------------------------------
 // Section A — safety and eligibility
@@ -235,6 +235,12 @@ export interface Constraints {
   maxHoursPerWeek: number;
   maxSessionMin: number;
   minRestDays: number;
+  /**
+   * How the athlete wants their gym week carved up. A preference, not a
+   * finding — two people with identical diagnostics can reasonably want
+   * different structures, so it is asked rather than inferred.
+   */
+  trainingSplit: TrainingSplit | null;
   gymAccessDays: string[];
   equipment: string[];
 }

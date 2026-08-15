@@ -68,6 +68,7 @@ import {
   DECOUPLING_POOR,
   DEFAULT_GOAL_PRIORITY,
   EASY_ANCHOR_DISAGREEMENT_FLAG,
+  EASY_PACE_BOUNDS_VS_5K,
   EASY_FRACTION_TARGET,
   EASY_HR_FRACTION_HRR,
   EMPHASIS_FLOOR,
@@ -390,9 +391,42 @@ export function easyPaceBand(
   if (hrModel && hrModel.slope > 0) {
     const loKph = (hrLo - hrModel.intercept) / hrModel.slope;
     const hiKph = (hrHi - hrModel.intercept) / hrModel.slope;
-    if (loKph > 0 && hiKph > 0) {
+
+    // The inversion is bounded by the SAME fitted range as the forward
+    // prediction, and for the same reason (critical implementation note 3).
+    // `predictHrAtPace` refuses to extrapolate outside the speeds the model
+    // was fitted on; inverting it was not checking at all.
+    //
+    // This bites hardest on exactly the athlete the diagnostic most wants to
+    // help. Someone who never runs easy has a model fitted only on
+    // moderate-effort running, so asking it "what pace gives 62% of HR
+    // reserve" extrapolates far below every speed it has ever seen — and
+    // because the slowest anchor governs, that extrapolation then WINS. The
+    // engine was reading "you never run easy" and answering with a number
+    // derived from the absence of the very data it was complaining about.
+    const withinFit = (kph: number) =>
+      kph >= hrModel.loKph * HR_PACE_MODEL_RANGE_TOLERANCE_LOW &&
+      kph <= hrModel.hiKph * HR_PACE_MODEL_RANGE_TOLERANCE_HIGH;
+
+    if (loKph > 0 && hiKph > 0 && withinFit(loKph) && withinFit(hiKph)) {
       candidates.hr_inverted = { lo: 3600 / hiKph, hi: 3600 / loKph };
     }
+  }
+
+  // Plausibility backstop. "The slowest anchor governs" has no floor of its
+  // own, so a single badly-conditioned anchor propagates straight through
+  // precisely because it is the slowest. Clamped to a band around the
+  // athlete's own 5k pace — a derivation this crude would be a poor primary
+  // source and is a sound guard against nonsense.
+  const p5kPace = predicted5kS / 5.0;
+  const slowestPlausible = p5kPace * EASY_PACE_BOUNDS_VS_5K[1];
+  const fastestPlausible = p5kPace * EASY_PACE_BOUNDS_VS_5K[0];
+  for (const key of Object.keys(candidates) as EasyAnchorName[]) {
+    const c = candidates[key]!;
+    candidates[key] = {
+      lo: Math.min(slowestPlausible, Math.max(fastestPlausible, c.lo)),
+      hi: Math.min(slowestPlausible, Math.max(fastestPlausible, c.hi)),
+    };
   }
 
   const entries = Object.entries(candidates) as [EasyAnchorName, EasyAnchor][];
