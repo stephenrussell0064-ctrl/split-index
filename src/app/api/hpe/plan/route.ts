@@ -9,7 +9,7 @@ import { estimatedMaxHr } from "@/lib/scoring/hpe/intake";
 const ASSUMED_RESTING_HR = 60;
 import { savePlan, supersedePlans } from "@/lib/scoring/hpe/persistence";
 import { selectAttempts, racePacing } from "@/lib/scoring/hpe/progression";
-import { validateIntake, type AthleteState, type Constraints, type Goal } from "@/lib/scoring/hpe/intake";
+import { validateIntake } from "@/lib/scoring/hpe/intake";
 import { parseIntakeRow, resolveIntakeInputs } from "@/lib/scoring/hpe/intake-record";
 import { loadPrefilledIntake } from "@/lib/scoring/hpe/load-intake";
 import { evaluateAccess, type FeatureFlag } from "@/lib/scoring/hpe/rollout";

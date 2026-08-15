@@ -193,7 +193,38 @@ export function FleetDashboard() {
               >
                 Kill switch
               </Button>
-              {data.rollout.nextStage && (
+              {/* Resume. Without this the kill switch was a one-way door:
+                  `nextRolloutStage(100)` is null, so after pausing at full
+                  rollout no advance button rendered and there was no control
+                  anywhere to turn generation back on. The gate logic for
+                  re-enabling existed and was unit-tested; the button did not.
+
+                  Resuming is a RAISE in exposure (0 -> whatever percentage was
+                  stored), so it goes through the same fleet-review gate as any
+                  other increase — which is why it is disabled while an alarm
+                  is live. */}
+              {!data.rollout.enabled && data.rollout.percentage > 0 && (
+                <Button
+                  size="sm"
+                  disabled={busy || reason.trim().length < 8 || data.rollout.gate?.allowed === false}
+                  onClick={() => void changeRollout({ enabled: true, percentage: data.rollout.percentage })}
+                >
+                  Resume at {data.rollout.percentage}%
+                </Button>
+              )}
+              {/* Resuming smaller than you paused at is the safer recovery, so
+                  it is offered alongside rather than buried. */}
+              {!data.rollout.enabled && data.rollout.percentage > 5 && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={busy || reason.trim().length < 8 || data.rollout.gate?.allowed === false}
+                  onClick={() => void changeRollout({ enabled: true, percentage: 5 })}
+                >
+                  Resume at 5% instead
+                </Button>
+              )}
+              {data.rollout.nextStage && data.rollout.enabled && (
                 <Button
                   variant="secondary"
                   size="sm"

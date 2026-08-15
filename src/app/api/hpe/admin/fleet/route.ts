@@ -184,13 +184,19 @@ export async function GET(request: Request) {
   // What the gate would say right now if the operator tried to advance —
   // shown before they try, so the dashboard explains the refusal rather than
   // the button doing it after the fact.
-  const gatePreview = next
+  // What the gate would say for the change the operator is most likely to
+  // make next. When generation is paused that is RESUMING, not advancing —
+  // `nextRolloutStage` is null at 100%, so previewing only the advance left a
+  // paused-at-full rollout with no gate feedback at all.
+  const previewTarget = !currentEnabled && currentPercentage > 0 ? currentPercentage : next?.percentage;
+
+  const gatePreview = previewTarget != null
     ? evaluateRolloutChange(
         {
           currentEnabled,
           currentPercentage,
           nextEnabled: true,
-          nextPercentage: next.percentage,
+          nextPercentage: previewTarget,
         },
         {
           reviewedAt: recordReview ? new Date().toISOString() : ((flagRow?.last_fleet_review_at as string | null) ?? null),
