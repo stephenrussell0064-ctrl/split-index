@@ -53,3 +53,9 @@ ios/App/App.xcworkspace/xcuserdata
 ios/App/App.xcodeproj/xcuserdata
 ios/App/App.xcodeproj/project.xcworkspace/xcuserdata
 ios/DerivedData
+
+# claude-flow agent runtime state — daemon pid/logs, metrics, neural stats and
+# headless audit transcripts. Machine-local and regenerated on every run, so it
+# only ever produces conflicts and noise in diffs. The headless audit logs also
+# capture prompt and result text, which does not belong in a shared repo.
+.claude-flow/
