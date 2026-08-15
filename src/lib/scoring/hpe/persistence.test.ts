@@ -10,7 +10,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { evaluateRerun, type StoredProfileSummary } from "./persistence";
+import { evaluateRerun, loadLatestStoredPlan, type StoredProfileSummary } from "./persistence";
 import { DIAGNOSTIC_RERUN_WEEKS, EMPHASIS_KEYS, HPE_CONSTANTS_VERSION, type EmphasisKey } from "./constants";
 import type { AthleteProfile, EmphasisVector } from "./types";
 
@@ -121,5 +121,59 @@ describe("WP8 — the four-weekly diagnostic re-run", () => {
     const moved = nextProfile(vector({ aerobic_base: 0.5, vo2max_speed: 0.03 }));
     expect(evaluateRerun(storedProfile(), moved, justUnder).due).toBe(false);
     expect(evaluateRerun(storedProfile(), moved, justOver).due).toBe(true);
+  });
+});
+
+/**
+ * The kill switch is a pause on GENERATION, not a revocation of the plan the
+ * athlete is already following.
+ *
+ * When the switch was thrown mid-block, the screen said "Not yet — your
+ * existing plan is still available and unchanged" and then showed no plan at
+ * all, which made the reassurance a lie. The stored plan existed the whole
+ * time; nothing read it back.
+ */
+describe("loadLatestStoredPlan", () => {
+  function supabaseWith(plan: unknown, sessions: unknown[]) {
+    const chain = (result: unknown) => {
+      const thenable = {
+        select: () => thenable,
+        eq: () => thenable,
+        order: () => thenable,
+        limit: () => thenable,
+        maybeSingle: async () => ({ data: plan, error: null }),
+        then: (resolve: (v: unknown) => void) => resolve({ data: result, error: null }),
+      };
+      return thenable;
+    };
+    return {
+      from: (table: string) => (table === "hpe_plans" ? chain(plan) : chain(sessions)),
+    } as never;
+  }
+
+  it("reconstructs weeks and placements a paused athlete can still read", async () => {
+    const plan = { id: "plan-1", generated_at: "2026-08-01T00:00:00Z", constants_version: HPE_CONSTANTS_VERSION, weeks_out: 2 };
+    const sessions = [
+      { week: 1, phase: "base", is_deload: false, day_of_week: "Mon", slot: "pm", kind: "easy_run", domain: "endurance", emphasis_key: "aerobic_base", is_quality: false, minutes: 45, prescription: "Easy 8km", finding_id: "F1" },
+      { week: 1, phase: "base", is_deload: false, day_of_week: "Tue", slot: "pm", kind: "strength_lower", domain: "strength", emphasis_key: "max_strength", is_quality: true, minutes: 60, prescription: "Squat 4x6", finding_id: "F3" },
+      { week: 2, phase: "base", is_deload: true, day_of_week: "Mon", slot: "pm", kind: "long_run", domain: "endurance", emphasis_key: "aerobic_base", is_quality: true, minutes: 90, prescription: "Long 16km", finding_id: "F1" },
+    ];
+
+    const stored = await loadLatestStoredPlan(supabaseWith(plan, sessions), "user-1");
+
+    expect(stored).not.toBeNull();
+    expect(stored!.constantsVersion).toBe(HPE_CONSTANTS_VERSION);
+    expect(stored!.weeks).toHaveLength(2);
+
+    const [w1, w2] = stored!.weeks as Array<Record<string, unknown>>;
+    expect((w1.placements as unknown[]).length).toBe(2);
+    // Only the running session's minutes count toward endurance volume.
+    expect(w1.enduranceMin).toBe(45);
+    expect(w2.deload).toBe(true);
+    expect(w2.enduranceMin).toBe(90);
+  });
+
+  it("returns null rather than an empty shell when nothing was ever stored", async () => {
+    expect(await loadLatestStoredPlan(supabaseWith(null, []), "user-1")).toBeNull();
   });
 });

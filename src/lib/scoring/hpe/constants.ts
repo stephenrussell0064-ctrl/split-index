@@ -518,6 +518,7 @@ export const ACWR_ENFORCEMENT_PASSES = 10;
 
 export type TrainingAge = "novice" | "intermediate" | "advanced" | "elite";
 
+
 /** [EST] Fractional strength gain per 12-week block by training age. */
 export const STRENGTH_GAIN_PER_BLOCK: Readonly<Record<TrainingAge, number>> = {
   novice: 0.1,
@@ -657,17 +658,6 @@ export const ENDURANCE_SESSIONS_BY_PHASE: Readonly<Record<Phase, number>> = {
   specific: 5,
   peak: 4,
   taper: 3,
-};
-
-/**
- * [ASSURED] F8: lift-specific days, not "lower/upper". Deadlift frequency is
- * deliberately lowest — its systemic fatigue cost is highest and it competes
- * most directly with running.
- */
-export const LIFT_ROTATION: Readonly<Record<2 | 3 | 4, readonly string[]>> = {
-  2: ["squat", "bench"],
-  3: ["squat", "bench", "deadlift"],
-  4: ["squat", "bench", "deadlift", "bench"],
 };
 
 /** [ASSURED] Share of weekly endurance minutes allocated to each quality session, and to the long run. */
@@ -1064,3 +1054,37 @@ export const GENERAL_STRENGTH_SPEC: readonly {
 /** [DATA] Spiering's maintenance dose still holds intensity, but a maintenance session is not an excuse for a single lift and nothing else. */
 export const MAINTENANCE_REPS: readonly [number, number] = [3, 5];
 export const MAINTENANCE_SETS = 3;
+
+/**
+ * [EST] Ceiling on projected endurance improvement across a whole block,
+ * whatever the gain-rate arithmetic produces.
+ *
+ * The projection multiplies a training-age rate by block count by a priority
+ * share that can reach 1.6x. For an athlete tagged "novice" who has set only
+ * endurance goals that compounds to 10.7% in eleven weeks — an 18:25 5k
+ * projected to 16:26 — which is not a forecast, it is a fantasy, and the
+ * athlete reads it as a promise.
+ *
+ * The deeper problem is that training age is self-reported and defaults
+ * generously, so the engine treats a genuinely fast runner as a beginner. A
+ * cap is the blunt guard; `inferredEnduranceTrainingAge` below is the better
+ * one, and both are applied.
+ */
+export const MAX_ENDURANCE_GAIN_PER_BLOCK = 0.05;
+/** [EST] Same, for strength. Totals move faster than 5k times but not without limit. */
+export const MAX_STRENGTH_GAIN_PER_BLOCK = 0.08;
+
+/**
+ * [DATA] 5k times above which an athlete cannot reasonably be treated as a
+ * novice or intermediate, whatever they told the intake.
+ *
+ * Someone running 18:25 is not an endurance beginner, and novice gain rates
+ * applied to them produce projections no coach would sign. Performance is the
+ * more reliable signal here than self-report, which is why the intake spec's
+ * own cross-check rule says to take the more conservative of the two.
+ */
+export const ENDURANCE_TRAINING_AGE_FLOOR_BY_5K: ReadonlyArray<readonly [number, TrainingAge]> = [
+  [960, "elite"],
+  [1140, "advanced"],
+  [1380, "intermediate"],
+];

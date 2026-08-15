@@ -24,6 +24,9 @@ import {
   CONCURRENT_ATTENUATION_STRENGTH,
   DEVELOP_GAP_THRESHOLD,
   ENDURANCE_GAIN_PER_BLOCK,
+  ENDURANCE_TRAINING_AGE_FLOOR_BY_5K,
+  MAX_ENDURANCE_GAIN_PER_BLOCK,
+  MAX_STRENGTH_GAIN_PER_BLOCK,
   FRONTIER_MAX_DELTA_FRACTION,
   MAX_SAFE_LOSS_RATE_PCT_PER_WEEK,
   MIN_HEALTHY_BMI,
@@ -31,6 +34,7 @@ import {
   PRIORITY_SHARE_SKEW,
   RUNNING_ECONOMY_BONUS_PER_BLOCK,
   STRENGTH_GAIN_PER_BLOCK,
+  type TrainingAge,
 } from "./constants";
 import { totalKg, type AthleteState, type Goal } from "./intake";
 
@@ -128,10 +132,29 @@ export interface FeasibilityResult {
   messages: string[];
 }
 
+
+/**
+ * Training age inferred from performance, floored against what the athlete
+ * said. An 18:25 5k is not a beginner's time however long they say they have
+ * been running, and novice gain rates applied to it produce a projection the
+ * athlete will read as a promise.
+ */
+export function inferredEnduranceTrainingAge(stated: TrainingAge, predicted5kS: number): TrainingAge {
+  const order: TrainingAge[] = ["novice", "intermediate", "advanced", "elite"];
+  let floor: TrainingAge = "novice";
+  for (const [seconds, age] of ENDURANCE_TRAINING_AGE_FLOOR_BY_5K) {
+    if (predicted5kS <= seconds) {
+      floor = age;
+      break;
+    }
+  }
+  return order.indexOf(floor) > order.indexOf(stated) ? floor : stated;
+}
+
 export function feasibilityScreen(state: AthleteState, goal: Goal): FeasibilityResult {
   const blocks = goal.weeksOut / 12.0;
   const strengthRate = STRENGTH_GAIN_PER_BLOCK[state.strengthTrainingAge];
-  const enduranceRate = ENDURANCE_GAIN_PER_BLOCK[state.enduranceTrainingAge];
+  const enduranceRate = ENDURANCE_GAIN_PER_BLOCK[inferredEnduranceTrainingAge(state.enduranceTrainingAge, state.predicted5kS)];
 
   // The priority slider splits the available adaptation between domains.
   const strengthShare = 0.5 + 0.5 * (goal.priority - 0.5) * 2 * PRIORITY_SHARE_SKEW;
@@ -144,8 +167,16 @@ export function feasibilityScreen(state: AthleteState, goal: Goal): FeasibilityR
   enduranceGain += RUNNING_ECONOMY_BONUS_PER_BLOCK * blocks;
 
   const currentTotal = totalKg(state);
-  const projectedTotalKg = currentTotal * (1 + strengthGain);
-  const projected5kS = state.predicted5kS * (1 - enduranceGain);
+  // Capped. The multiplier chain — training-age rate, block count, and a
+  // priority share that reaches 1.6x — compounds to 10.7% over eleven weeks
+  // for an athlete tagged novice with endurance-only goals. That projected an
+  // 18:25 5k to 16:26, which is not a forecast, and the athlete reads it as a
+  // promise the plan has made them.
+  const cappedStrengthGain = Math.min(strengthGain, MAX_STRENGTH_GAIN_PER_BLOCK * blocks);
+  const cappedEnduranceGain = Math.min(enduranceGain, MAX_ENDURANCE_GAIN_PER_BLOCK * blocks);
+
+  const projectedTotalKg = currentTotal * (1 + cappedStrengthGain);
+  const projected5kS = state.predicted5kS * (1 - cappedEnduranceGain);
 
   const messages: string[] = [];
   let strengthReachable: boolean | null = null;
@@ -180,8 +211,8 @@ export function feasibilityScreen(state: AthleteState, goal: Goal): FeasibilityR
     blocks,
     projectedTotalKg,
     projected5kS,
-    strengthGainPct: strengthGain * 100,
-    enduranceGainPct: enduranceGain * 100,
+    strengthGainPct: cappedStrengthGain * 100,
+    enduranceGainPct: cappedEnduranceGain * 100,
     strengthReachable,
     strengthShortfallKg,
     enduranceReachable,
@@ -253,7 +284,7 @@ export function classifyDomains(
 
   if (goal.target5kS != null) {
     const gap = (state.predicted5kS - goal.target5kS) / Math.max(state.predicted5kS, 1);
-    const headroom = ENDURANCE_GAIN_PER_BLOCK[state.enduranceTrainingAge] * (goal.weeksOut / 12);
+    const headroom = ENDURANCE_GAIN_PER_BLOCK[inferredEnduranceTrainingAge(state.enduranceTrainingAge, state.predicted5kS)] * (goal.weeksOut / 12);
     out.endurance = gap > DEVELOP_GAP_THRESHOLD * headroom ? "develop" : "maintain";
   }
 

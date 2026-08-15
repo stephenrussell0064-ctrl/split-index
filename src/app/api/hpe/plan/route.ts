@@ -7,7 +7,7 @@ import { estimatedMaxHr } from "@/lib/scoring/hpe/intake";
 
 /** The intake spec's documented default, flagged as assumed rather than silently applied. */
 const ASSUMED_RESTING_HR = 60;
-import { savePlan, supersedePlans } from "@/lib/scoring/hpe/persistence";
+import { loadLatestStoredPlan, savePlan, supersedePlans } from "@/lib/scoring/hpe/persistence";
 import { selectAttempts, racePacing } from "@/lib/scoring/hpe/progression";
 import { validateIntake } from "@/lib/scoring/hpe/intake";
 import { parseIntakeRow, resolveIntakeInputs } from "@/lib/scoring/hpe/intake-record";
@@ -103,9 +103,19 @@ export async function GET(request: Request) {
       outcome: "feature_disabled",
       reason_code: access.reason,
     });
+    // Load the stored plan. "Your existing plan is still available and
+    // unchanged" was being asserted next to a screen that showed no plan —
+    // the kill switch's defining promise, half-implemented. Reading the
+    // persisted rows rather than regenerating is the point: generation is
+    // what is paused, and a plan that had to be regenerated to be read would
+    // not have survived the pause.
+    const stored = await loadLatestStoredPlan(supabase, user.id).catch(() => null);
     return NextResponse.json({
       generated: false,
       featureDisabled: true,
+      paused: true,
+      storedPlan: stored,
+      weeks: stored?.weeks ?? [],
       refusal: {
         reason: access.message,
         nextSteps:

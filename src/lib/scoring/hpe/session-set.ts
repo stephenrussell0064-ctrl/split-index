@@ -43,7 +43,6 @@ import {
   GENERAL_STRENGTH_SPEC,
   MAINTENANCE_REPS,
   MAINTENANCE_SETS,
-  LIFT_ROTATION,
   DEFAULT_TRAINING_SPLIT,
   TRAINING_SPLITS,
   type TrainingSplit,
@@ -267,6 +266,37 @@ function accessoriesForDay(day: (typeof TRAINING_SPLITS)[TrainingSplit]["days"][
   return out;
 }
 
+
+/**
+ * Which KIND of quality session a single slot should be.
+ *
+ * Emphasis alone always picked the same dimension, so an athlete with one
+ * quality slot a week got eleven consecutive weeks of threshold running and
+ * never a single interval session. No real 5k programme looks like that, and
+ * a 5k is heavily vVO2max-dependent — threshold alone will not move it.
+ *
+ * Two corrections. The phase's own intensity distribution says which kind
+ * belongs: base and build are z2-dominant (threshold), specific and peak are
+ * z3-dominant (intervals), which is the specificity the block is for. And
+ * within a phase the type rotates by week, because doing the identical
+ * session every week for a whole block is not a progression.
+ */
+function qualityKindForSlot(
+  phase: Phase,
+  week: number,
+  profile: AthleteProfile,
+  repSessionsAllowed: boolean
+): EmphasisKey {
+  const [, z2, z3] = TID_BY_PHASE[phase];
+  const pool: EmphasisKey[] = z3 > z2 ? ["vo2max_speed", "threshold"] : ["threshold", "vo2max_speed"];
+  if (repSessionsAllowed && profile.emphasis.neuromuscular > profile.emphasis.threshold) {
+    pool.push("neuromuscular");
+  }
+  // Alternate across weeks so a one-quality week is not the same session every
+  // time, while keeping the phase-appropriate kind in the majority.
+  return pool[week % pool.length];
+}
+
 export function buildSessionSet(input: SessionSetInput): SessionSet {
   const { profile, week, mode, goal, constraints, suppressHeartRate = false, autoregMultiplier = 1 } = input;
   const { phase, deload } = week;
@@ -423,6 +453,33 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
   // than the calendar what this athlete needs; close to the event, the
   // calendar knows better than the diagnostic what the event demands.
   const phaseGovernsTid = phase === "specific" || phase === "peak" || phase === "taper";
+
+  // A quality FLOOR in every phase, not just the ones where the phase governs.
+  //
+  // Emphasis winning in base and build was letting a dominant aerobic_base
+  // weight drive quality to zero for the whole first half of a block — an
+  // athlete chasing a sub-18 5k was getting nothing but easy and long runs
+  // for six weeks. No emphasis vector legitimately outputs "no quality at
+  // all" for someone with a race goal: even the base phase's own TID target
+  // is 80/15/5, which is 20% quality, not none. Emphasis still decides how
+  // much ABOVE the floor and which kind; it does not get to decide none.
+  if (
+    !phaseGovernsTid &&
+    mode.endurance === "develop" &&
+    !deload &&
+    qualityMinutes >= MIN_QUALITY_SESSION_MIN &&
+    qualityAllocated() < MMD_ENDURANCE_QUALITY_PER_WEEK &&
+    allocation.aerobic_base > (wantsLongRun ? 2 : 1)
+  ) {
+    const receiver = qualityKindForSlot(phase, week.week, profile, repSessionsAllowed);
+    allocation[receiver] += 1;
+    allocation.aerobic_base -= 1;
+    notes.push(
+      "One quality session is held in every week outside a deload — a block of nothing but easy running will not " +
+        "move a 5k, whatever your emphasis says."
+    );
+  }
+
   if (phaseGovernsTid && qualityMinutes >= MIN_QUALITY_SESSION_MIN) {
     const [, z2, z3] = TID_BY_PHASE[phase];
     const floor = deload || phase === "taper" ? 1 : MMD_ENDURANCE_QUALITY_PER_WEEK;
@@ -435,9 +492,7 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
     while (current < targetQuality && allocation.aerobic_base > (wantsLongRun ? 2 : 1)) {
       // The phase decides HOW MUCH quality; the emphasis vector still decides
       // WHICH quality.
-      const receiver = QUALITY_EMPHASIS.filter((k) => repSessionsAllowed || k !== "neuromuscular").sort(
-        (a, b) => profile.emphasis[b] - profile.emphasis[a]
-      )[0];
+      const receiver = qualityKindForSlot(phase, week.week + current, profile, repSessionsAllowed);
       allocation[receiver] += 1;
       allocation.aerobic_base -= 1;
       current++;
@@ -445,7 +500,15 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
   }
 
   // ---- build the endurance sessions ---------------------------------------
-  const qualitySlots = QUALITY_EMPHASIS.flatMap((k) => Array.from({ length: allocation[k] }, () => k));
+  // Emphasis decides HOW MANY quality sessions; the phase and the week decide
+  // WHICH KIND. Taking the kind straight from the allocation meant an athlete
+  // whose threshold weight edged out their vo2max weight got eleven
+  // consecutive weeks of threshold running and never one interval session —
+  // for a 5k goal, which is heavily vVO2max-dependent.
+  const qualityCount = QUALITY_EMPHASIS.reduce((sum, k) => sum + allocation[k], 0);
+  const qualitySlots: EmphasisKey[] = Array.from({ length: qualityCount }, (_, i) =>
+    qualityKindForSlot(phase, week.week + i, profile, repSessionsAllowed)
+  );
 
   for (const emphasisKey of qualitySlots) {
     const kind = ENDURANCE_EMPHASIS_TO_KIND[emphasisKey];
@@ -518,7 +581,6 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
   // directly with running.
   const weakLiftSlots = allocation.weak_lift;
   const rotationSlots = Math.max(0, strengthSlots - weakLiftSlots);
-  const rotationSize = Math.min(4, Math.max(2, rotationSlots)) as 2 | 3 | 4;
   // The split the athlete chose decides how the week is carved up; the
   // emphasis vector still decides how hard each day is and which lift leads
   // it. Handing someone a "bench day" when they train push/pull/legs reads as

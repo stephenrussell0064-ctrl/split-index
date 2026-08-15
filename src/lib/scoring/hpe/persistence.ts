@@ -323,3 +323,79 @@ export async function supersedePlans(
     .eq("user_id", userId)
     .is("superseded_at", null);
 }
+
+/**
+ * The most recent stored plan, reconstructed for display.
+ *
+ * The kill switch's defining promise is that pausing generation leaves
+ * existing plans readable — that is the difference between a pause and a
+ * recall, and it is the property the whole rollback rehearsal tests. It was
+ * only ever half-built: the flag check returned "your existing plan is still
+ * available and unchanged" and then nothing loaded it, so the athlete saw a
+ * refusal screen asserting the existence of a plan it declined to show them.
+ *
+ * Reads from the persisted rows rather than regenerating, which is the point:
+ * generation is what has been paused, and a plan that had to be regenerated to
+ * be read would not have survived the pause at all.
+ */
+export async function loadLatestStoredPlan(
+  supabase: SupabaseClient,
+  userId: string
+): Promise<{ generatedAt: string; constantsVersion: string; weeks: unknown[] } | null> {
+  const { data: plan } = await supabase
+    .from("hpe_plans")
+    .select("id, generated_at, constants_version, weeks_out")
+    .eq("user_id", userId)
+    .order("generated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!plan) return null;
+
+  const { data: sessionRows } = await supabase
+    .from("hpe_sessions")
+    .select(
+      "week, phase, is_deload, day_of_week, slot, kind, domain, emphasis_key, is_quality, minutes, distance_km, hr_lo, hr_hi, hr_source, prescription, finding_id"
+    )
+    .eq("plan_id", plan.id as string)
+    .order("week", { ascending: true });
+
+  // Regrouped into the same week shape the live path produces, so the plan
+  // view renders a stored plan and a fresh one through one code path.
+  const byWeek = new Map<number, Record<string, unknown>>();
+  for (const r of sessionRows ?? []) {
+    const week = Number(r.week);
+    if (!byWeek.has(week)) {
+      byWeek.set(week, {
+        week,
+        phase: r.phase,
+        deload: Boolean(r.is_deload),
+        enduranceMin: 0,
+        acwr: 0,
+        stressCapped: 0,
+        notes: [],
+        placements: [],
+      });
+    }
+    const w = byWeek.get(week)!;
+    (w.placements as unknown[]).push({
+      day: r.day_of_week,
+      slot: r.slot,
+      session: {
+        kind: r.kind,
+        domain: r.domain,
+        minutes: Number(r.minutes ?? 0),
+        isQuality: Boolean(r.is_quality),
+        findingId: r.finding_id,
+        emphasisKey: r.emphasis_key,
+        prescription: { text: r.prescription },
+      },
+    });
+    if (r.domain === "endurance") w.enduranceMin = Number(w.enduranceMin) + Number(r.minutes ?? 0);
+  }
+
+  return {
+    generatedAt: plan.generated_at as string,
+    constantsVersion: plan.constants_version as string,
+    weeks: [...byWeek.values()].sort((a, b) => Number(a.week) - Number(b.week)),
+  };
+}

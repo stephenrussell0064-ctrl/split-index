@@ -69,6 +69,9 @@ interface PlanResponse {
   pacing?: RacePacing | null;
   assumptions?: string[];
   rerun?: { shouldRegenerate: boolean; explanations: string[] } | null;
+  /** Generation is paused but a stored plan exists — the kill switch's defining asymmetry. */
+  paused?: boolean;
+  storedPlan?: { generatedAt: string; constantsVersion: string } | null;
   tailoring?: {
     level: string;
     confidence: number;
@@ -88,6 +91,30 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "diagnostic", label: "Diagnostic" },
   { id: "event", label: "Event day" },
 ];
+
+/** One mapping, used by both the live plan and a stored plan read back while generation is paused. */
+function toPlanWeeks(raw: NonNullable<PlanResponse["weeks"]>): PlanWeekView[] {
+  return raw.map((w) => ({
+    week: w.week,
+    phase: w.phase,
+    deload: w.deload,
+    enduranceMin: w.enduranceMin,
+    acwr: w.acwr,
+    stressCapped: w.stressCapped,
+    notes: w.notes,
+    sessions: w.placements.map((p) => ({
+      kind: p.session.kind,
+      domain: p.session.domain,
+      day: p.day,
+      slot: p.slot,
+      minutes: p.session.minutes,
+      isQuality: p.session.isQuality,
+      findingId: p.session.findingId as PlanWeekView["sessions"][number]["findingId"],
+      emphasisKey: p.session.emphasisKey,
+      prescription: p.session.prescription.text,
+    })),
+  }));
+}
 
 export function HybridPlanScreen() {
   const [data, setData] = useState<PlanResponse | null>(null);
@@ -150,6 +177,35 @@ export function HybridPlanScreen() {
   if (!data) return null;
 
   const profile = data.profile ?? data.diagnostic ?? null;
+
+  const storedWeeks = data.weeks ?? [];
+
+  // ---- paused, but the plan survives --------------------------------------
+  // The kill switch stops NEW generation and leaves existing plans readable.
+  // That asymmetry is the whole reason a pause is safe to perform, and it was
+  // being asserted in prose next to a screen that showed no plan.
+  if (!data.generated && data.paused && storedWeeks.length > 0 && profile) {
+    return (
+      <div className="space-y-5">
+        <PageHeader
+          eyebrow="Hybrid plan"
+          title="Your block"
+          subtitle="New plans are paused right now. This one is unchanged and still yours to train."
+        />
+        <Card>
+          <h2 className="text-base font-semibold tracking-tight">Generation is paused</h2>
+          <p className="mt-1 text-sm leading-relaxed text-muted">{data.refusal?.reason}</p>
+          {data.storedPlan && (
+            <p className="mt-2 text-xs text-muted/70">
+              Built {new Date(data.storedPlan.generatedAt).toLocaleDateString()} under constants v
+              {data.storedPlan.constantsVersion}. Nothing about it has changed.
+            </p>
+          )}
+        </Card>
+        <PlanView weeks={toPlanWeeks(storedWeeks)} profile={profile} />
+      </div>
+    );
+  }
 
   // ---- refusal path -------------------------------------------------------
   if (!data.generated) {
@@ -226,26 +282,7 @@ export function HybridPlanScreen() {
     );
   }
 
-  const weeks: PlanWeekView[] = (data.weeks ?? []).map((w) => ({
-    week: w.week,
-    phase: w.phase,
-    deload: w.deload,
-    enduranceMin: w.enduranceMin,
-    acwr: w.acwr,
-    stressCapped: w.stressCapped,
-    notes: w.notes,
-    sessions: w.placements.map((p) => ({
-      kind: p.session.kind,
-      domain: p.session.domain,
-      day: p.day,
-      slot: p.slot,
-      minutes: p.session.minutes,
-      isQuality: p.session.isQuality,
-      findingId: p.session.findingId as PlanWeekView["sessions"][number]["findingId"],
-      emphasisKey: p.session.emphasisKey,
-      prescription: p.session.prescription.text,
-    })),
-  }));
+  const weeks: PlanWeekView[] = toPlanWeeks(data.weeks ?? []);
 
   return (
     <div className="space-y-5">
