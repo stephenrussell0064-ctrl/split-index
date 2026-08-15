@@ -156,11 +156,20 @@ export function DiagnosticReport({
             }
             unmeasured="no logged endurance sessions yet"
           />
-          <Metric label="Longest run" value={`${profile.longestRunKm.toFixed(1)}km`} />
+          <Metric
+            label="Longest run"
+            value={profile.longestRunKm > 0 ? `${profile.longestRunKm.toFixed(1)}km` : null}
+            unmeasured="no logged runs yet"
+          />
           <Metric
             label="Volume adequacy"
-            value={`${Math.round(profile.volumeAdequacy * 100)}%`}
-            verdict="of typical for this 5k level"
+            value={
+              profile.predicted5kSource === "unknown"
+                ? null
+                : `${Math.round(profile.volumeAdequacy * 100)}%`
+            }
+            verdict="of the running volume typical for this 5k level"
+            unmeasured="needs a 5k to measure against"
           />
           <Metric
             label="Fatigue resistance (k)"
@@ -194,7 +203,24 @@ export function DiagnosticReport({
             value={profile.speedReserveMs != null ? `${profile.speedReserveMs.toFixed(1)} m/s` : null}
             unmeasured="log a flat-out 400m"
           />
-          <Metric label="Predicted 5k" value={`${mmss(profile.predicted5kS)}`} verdict="using your own k" />
+          {/* A placeholder must never be shown as a prediction, and "using your
+              own k" is false whenever riegelK is null. Both halves of the old
+              string could be untrue at once: an athlete who had never raced
+              saw a flat 25:00 described as their own. */}
+          <Metric
+            label="Predicted 5k"
+            value={profile.predicted5kSource === "unknown" ? null : mmss(profile.predicted5kS)}
+            verdict={
+              profile.predicted5kSource === "maximal_effort"
+                ? profile.riegelK != null
+                  ? "from your own maximal effort, using your own k"
+                  : "from your own maximal effort"
+                : profile.predicted5kSource === "prediction_engine"
+                  ? "from your logged sessions, not a race"
+                  : undefined
+            }
+            unmeasured="log a race or time trial"
+          />
           <Metric
             label="Max heart rate"
             value={`${profile.hrMax} bpm`}

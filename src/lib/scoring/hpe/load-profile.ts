@@ -67,7 +67,7 @@ export async function loadAthleteProfile(
 ): Promise<LoadedProfile | null> {
   const since = new Date(Date.now() - HISTORY_WEEKS * 7 * 86_400_000).toISOString();
 
-  const [{ data: profileRow }, { data: activityRows }] = await Promise.all([
+  const [{ data: profileRow }, { data: activityRows }, { data: benchmarkRow }] = await Promise.all([
     supabase
       .from("profiles")
       .select("age, date_of_birth, height_cm, weight_kg, max_hr, resting_hr, gender")
@@ -82,6 +82,16 @@ export async function loadAthleteProfile(
       .eq("is_draft", false)
       .gte("started_at", since)
       .order("started_at", { ascending: true }),
+    // The two-tier race-prediction engine's own answer. The brief says to
+    // consume it through a thin adapter rather than reimplement it; this is
+    // the adapter. It is built from every logged session, so it knows an
+    // athlete's 5k even when no maximal effort falls inside our window.
+    supabase
+      .from("predicted_benchmarks")
+      .select("benchmark_seconds")
+      .eq("user_id", userId)
+      .eq("sport", "run")
+      .maybeSingle(),
   ]);
 
   const activities = (activityRows ?? []) as unknown as (ActivityRow & { id: string })[];
@@ -184,6 +194,8 @@ export async function loadAthleteProfile(
     crossTrainingMinPerWeek: crossTraining.minPerWeek,
     crossTrainingKmPerWeek: crossTraining.kmPerWeek,
     crossTrainingSessions: crossTraining.sessionCount,
+    predicted5kFallbackS:
+      benchmarkRow?.benchmark_seconds != null ? Number(benchmarkRow.benchmark_seconds) : null,
   });
 
   // ---- persistence and the four-weekly re-run ----------------------------

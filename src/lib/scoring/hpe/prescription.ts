@@ -282,6 +282,8 @@ export function prescribeEndurance(
 
 export interface LiftPrescriptionOptions {
   lift: string;
+  /** Set when the athlete has no barbell. Named as a substitution rather than silently swapped, because it is not an equivalent. */
+  substitution?: string;
   sets: number;
   reps: readonly [number, number];
   intensity: readonly [number, number];
@@ -306,14 +308,22 @@ export function prescribeLift(
   const stalled = profile.stalledLifts.includes(lift);
   const variation = stalled ? STALL_VARIATIONS[lift] : null;
 
-  const loadText =
-    oneRm > 0
+  const loadText = options.substitution
+    ? "bodyweight or whatever load you have, taken to the RIR below"
+    : oneRm > 0
       ? `${roundToPlate(oneRm * intensity[0]).toFixed(0)}-${roundToPlate(oneRm * intensity[1]).toFixed(0)}kg ` +
         `(${Math.round(intensity[0] * 100)}-${Math.round(intensity[1] * 100)}% 1RM)`
       : `${Math.round(intensity[0] * 100)}-${Math.round(intensity[1] * 100)}% 1RM (no logged 1RM yet — work to the RIR)`;
 
-  const name = variation ?? lift.charAt(0).toUpperCase() + lift.slice(1);
+  const name = options.substitution ?? variation ?? lift.charAt(0).toUpperCase() + lift.slice(1);
   const lines = [`${name} ${sets}x${reps[0]}-${reps[1]} @ ${loadText}, RIR ${rir[0]}-${rir[1]}`];
+  if (options.substitution) {
+    lines.push(
+      `Substituted for the ${lift} because you have no gym access. This trains the same pattern and it is not the ` +
+        `same lift — the load is lower and the strength carry-over is smaller, so progress here will be slower ` +
+        `than a barbell block would give you.`
+    );
+  }
   if (variation) {
     lines.push(
       `${variation} replaces the competition ${lift} this block — your ${lift} has not moved in 12 weeks, and ` +

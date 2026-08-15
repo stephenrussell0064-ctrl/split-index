@@ -123,6 +123,7 @@ import {
   type EasyAnchorName,
   type EasyBand,
   type EmphasisVector,
+  type Predicted5kSource,
   type Finding,
   type HrPaceModel,
   type LiftSet,
@@ -980,6 +981,18 @@ export interface DiagnoseOptions {
   crossTrainingKmPerWeek?: number;
   /** Session count, so a tier-0 athlete who cross-trains is not told they have "no logged history at all". */
   crossTrainingSessions?: number;
+  /**
+   * The athlete's 5k as the rest of Split Index already knows it, from the
+   * two-tier race-prediction engine (`predicted_benchmarks`).
+   *
+   * The brief says to consume that engine through a thin adapter, and this is
+   * the adapter. Without it the diagnostic only ever knew a 5k when a maximal
+   * effort fell inside its own twelve-week window — so an athlete who had
+   * logged an 18:25 race was shown the 25:00 placeholder, while every other
+   * screen in the app showed 18:25. The engine was ignoring a number the
+   * product already had.
+   */
+  predicted5kFallbackS?: number | null;
 }
 
 function verdict(
@@ -1034,18 +1047,31 @@ export function diagnose(
   const efforts = runs.filter((r) => r.isMaxEffort && r.distanceKm > 0 && r.durationS > 0);
   let predicted5kS: number;
   let predicted5kFromEffort: boolean;
+  let predicted5kSource: Predicted5kSource;
   if (efforts.length > 0) {
     const best = efforts.reduce((a, b) =>
       b.durationS / Math.pow(b.distanceKm, kEff) < a.durationS / Math.pow(a.distanceKm, kEff) ? b : a
     );
     predicted5kS = best.durationS * Math.pow(5.0 / best.distanceKm, kEff);
     predicted5kFromEffort = true;
+    predicted5kSource = "maximal_effort";
   } else {
     // No maximal effort at all. Nothing may be prescribed off an
     // extrapolation the athlete's data does not cover (non-negotiable #6),
     // so this is flagged rather than quietly treated as a real prediction —
     // tier assessment above independently caps such an athlete at tier 1.
-    predicted5kS = NO_MAXIMAL_EFFORT_5K_S;
+    // No maximal effort in the window. Before falling back to a placeholder,
+    // ask the prediction engine the rest of the app already maintains — it is
+    // built from every logged session rather than from races alone, so it
+    // usually knows.
+    const fromEngine = options.predicted5kFallbackS;
+    if (fromEngine != null && Number.isFinite(fromEngine) && fromEngine > 0) {
+      predicted5kS = fromEngine;
+      predicted5kSource = "prediction_engine";
+    } else {
+      predicted5kS = NO_MAXIMAL_EFFORT_5K_S;
+      predicted5kSource = "unknown";
+    }
     predicted5kFromEffort = false;
   }
 
@@ -1176,6 +1202,7 @@ export function diagnose(
     hrPaceModel,
     predicted5kS,
     predicted5kFromEffort,
+    predicted5kSource,
     thresholdPaceSPerKm,
     vo2maxPaceSPerKm,
     hrMax,

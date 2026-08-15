@@ -889,3 +889,25 @@ export const TAILORING_RAMP_MULTIPLIER: Readonly<Record<TailoringLevel, number>>
 export const PROVISIONAL_START_RUN_MIN_PER_WEEK = 60;
 /** [EST] Sessions per week assumed for a provisional plan before the athlete says otherwise. */
 export const PROVISIONAL_SESSIONS_PER_WEEK = 4;
+
+// ---------------------------------------------------------------------------
+// Training without a gym
+// ---------------------------------------------------------------------------
+
+/**
+ * [EST] What each competition lift becomes when the athlete has no barbell.
+ *
+ * These are substitutions, not equivalents, and the plan says so. A goblet
+ * squat is not a back squat and no amount of programming makes it one — but
+ * prescribing a back squat to someone who has told us they train in a
+ * bedroom is worse than substituting, because it produces a plan they cannot
+ * perform and therefore will not follow.
+ */
+export const NO_GYM_SUBSTITUTIONS: Readonly<Record<string, string>> = {
+  squat: "Goblet or split squat",
+  bench: "Push-up progression or dumbbell press",
+  deadlift: "Single-leg Romanian deadlift or hip hinge",
+};
+
+/** [EST] Reps run higher without load to reach a comparable stimulus. */
+export const NO_GYM_REP_RANGE: readonly [number, number] = [8, 15];

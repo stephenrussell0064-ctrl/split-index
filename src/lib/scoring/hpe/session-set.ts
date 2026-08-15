@@ -41,6 +41,8 @@ import {
   HEAVY_LOWER_BODY_LOAD_THRESHOLD,
   LIFT_PRESCRIPTIONS,
   LIFT_ROTATION,
+  NO_GYM_REP_RANGE,
+  NO_GYM_SUBSTITUTIONS,
   LONG_RUN_MINUTE_SHARE,
   LONG_RUN_QUALITY_THRESHOLD_MIN,
   LONG_RUN_MIN_WEEKLY_CARDIO,
@@ -492,6 +494,13 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
   const rotationSize = Math.min(4, Math.max(2, rotationSlots)) as 2 | 3 | 4;
   const rotation = mode.strength === "maintain" ? ["squat", "bench"] : LIFT_ROTATION[rotationSize];
 
+  // Whether the athlete can actually perform what is about to be prescribed.
+  // `constraints.equipment` was previously written and never read, so a
+  // no-gym athlete was still handed a barbell rotation — the gym-access
+  // question was collected, stored, and then ignored by the only code that
+  // mattered.
+  const hasBarbell = constraints.equipment.includes("barbell");
+
   let heavyLowerUsed = false;
   for (let i = 0; i < Math.min(rotationSlots, rotation.length); i++) {
     const lift = rotation[i];
@@ -500,6 +509,8 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
       const findingId = attributeFinding("maximal_strength", profile.findings) ?? "hybrid-baseline";
       const prescription = prescribeLift(profile, findingId, {
         lift,
+        // No barbell: a substitution, named as one. See NO_GYM_SUBSTITUTIONS.
+        substitution: hasBarbell ? undefined : NO_GYM_SUBSTITUTIONS[lift],
         sets: 3,
         reps: [2, 2],
         intensity: [MMD_STRENGTH_MIN_INTENSITY, MMD_STRENGTH_MIN_INTENSITY],
@@ -538,7 +549,17 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
     const rir = shifted.rir;
 
     const accessories = lift === "bench" ? ["2 upper accessories 3x8-10"] : undefined;
-    const prescription = prescribeLift(profile, findingId, { lift, sets, reps, intensity, rir, accessories });
+    const prescription = prescribeLift(profile, findingId, {
+      lift,
+      // No barbell: substitute the pattern and say plainly it is a
+      // substitution rather than silently swapping the lift.
+      substitution: hasBarbell ? undefined : NO_GYM_SUBSTITUTIONS[lift],
+      sets,
+      reps: hasBarbell ? reps : NO_GYM_REP_RANGE,
+      intensity,
+      rir,
+      accessories,
+    });
 
     if (lift === "squat") {
       const isHeavy: boolean = heavyLoads && !heavyLowerUsed;
@@ -582,6 +603,8 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
     for (let i = 0; i < weakLiftSlots; i++) {
       const prescription = prescribeLift(profile, findingId, {
         lift,
+        // No barbell: a substitution, named as one. See NO_GYM_SUBSTITUTIONS.
+        substitution: hasBarbell ? undefined : NO_GYM_SUBSTITUTIONS[lift],
         sets: wl.sets,
         reps: [wl.repsLow, wl.repsHigh],
         intensity: [wl.intensityLow, wl.intensityHigh],

@@ -237,3 +237,57 @@ describe("five-persona functionality test", () => {
     }
   });
 });
+
+describe("regressions: the placeholder 5k and gym access", () => {
+  it("uses the app's own prediction rather than a placeholder", () => {
+    // The reported bug: an athlete who had logged an 18:25 5k still saw the
+    // 25:00 placeholder, because the diagnostic only ever looked at maximal
+    // efforts inside its own window and never consulted the prediction engine
+    // the rest of the app already maintains.
+    const p = diagnose([], [], {}, { hrMax: 190, hrRest: 55, predicted5kFallbackS: 1105 });
+    expect(p.predicted5kS).toBe(1105);
+    expect(p.predicted5kSource).toBe("prediction_engine");
+    expect(p.predicted5kFromEffort).toBe(false);
+  });
+
+  it("prefers a real maximal effort over the prediction engine", () => {
+    const race: RunLog[] = [{ dateIdx: 0, distanceKm: 5, durationS: 1105, isMaxEffort: true }];
+    const p = diagnose(race, [], {}, { hrMax: 190, hrRest: 55, predicted5kFallbackS: 1400 });
+    expect(p.predicted5kSource).toBe("maximal_effort");
+    expect(p.predicted5kS).toBeCloseTo(1105, 0);
+  });
+
+  it("marks the 5k unknown when there is genuinely nothing — not a fake number", () => {
+    const p = diagnose([], [], {}, { hrMax: 190, hrRest: 55 });
+    expect(p.predicted5kSource).toBe("unknown");
+  });
+
+  it("prescribes no barbell work to an athlete with no gym", () => {
+    // constraints.equipment was written and never read, so the gym-access
+    // answer was collected, stored and ignored by the only code that mattered.
+    const profile = diagnose([], sets(40, "squat", 100, 5), { squat: 120 }, { hrMax: 190, hrRest: 55, priority: 0.9 });
+    const plan = generatePlan({
+      state: state({ oneRms: { squat: 120 } }),
+      goal: goal({ targetSquatKg: 140 }),
+      constraints: constraints({ equipment: [] }),
+      profile,
+    });
+    const strength = plan.weeks.flatMap((w) => w.sessions).filter((s) => s.domain === "strength");
+    expect(strength.length).toBeGreaterThan(0);
+    for (const s of strength) {
+      expect(s.prescription.text).toMatch(/no gym access|Goblet|Push-up|Single-leg/i);
+    }
+  });
+
+  it("still prescribes the barbell when the athlete has one", () => {
+    const profile = diagnose([], sets(40, "squat", 100, 5), { squat: 120 }, { hrMax: 190, hrRest: 55, priority: 0.9 });
+    const plan = generatePlan({
+      state: state({ oneRms: { squat: 120 } }),
+      goal: goal({ targetSquatKg: 140 }),
+      constraints: constraints({ equipment: ["barbell"] }),
+      profile,
+    });
+    const strength = plan.weeks.flatMap((w) => w.sessions).filter((s) => s.domain === "strength");
+    expect(strength.some((s) => /no gym access/i.test(s.prescription.text))).toBe(false);
+  });
+});

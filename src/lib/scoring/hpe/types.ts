@@ -111,6 +111,8 @@ export type EmphasisVector = Record<EmphasisKey, number>;
 
 export type DataTier = 0 | 1 | 2 | 3;
 
+export type Predicted5kSource = "maximal_effort" | "prediction_engine" | "unknown";
+
 export interface AthleteProfile {
   /** Stamped so a plan is never silently attributed to the wrong constants. Non-negotiable #2. */
   constantsVersion: string;
@@ -150,6 +152,13 @@ export interface AthleteProfile {
   predicted5kS: number;
   /** True when predicted5kS came from a maximal effort rather than a default — nothing is prescribed off a placeholder without saying so. */
   predicted5kFromEffort: boolean;
+  /**
+   * Where the 5k actually came from. `unknown` means it is a placeholder and
+   * must never be displayed or described as a prediction — a distinction
+   * `predicted5kFromEffort` alone could not carry once the prediction engine
+   * became a second legitimate source.
+   */
+  predicted5kSource: Predicted5kSource;
   thresholdPaceSPerKm: number;
   vo2maxPaceSPerKm: number;
   hrMax: number;
