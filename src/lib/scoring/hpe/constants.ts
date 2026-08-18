@@ -1039,6 +1039,92 @@ export const TRAINING_SPLITS: Readonly<Record<TrainingSplit, { label: string; bl
   },
 };
 
+/**
+ * [ASSURED] Accessory pool per movement pattern, deep enough to rotate.
+ *
+ * The old pool held three lines per pattern and took the first two, so a Push
+ * day was bench plus the same two accessories for the entire block — three
+ * exercises, identical every week. Three is not a gym session, and repeating
+ * it for eleven weeks is not a programme. The pool is now deep enough that the
+ * week index can rotate through it, so the athlete meets the same patterns
+ * with different exercises as the block goes on.
+ *
+ * Everything here is achievable in a commercial gym, which is the whole
+ * premise of asking about gym access rather than about a barbell.
+ */
+export const STRENGTH_ACCESSORY_POOL: Readonly<Record<string, readonly string[]>> = {
+  push: [
+    "Incline dumbbell press 3x8-12",
+    "Overhead press 3x6-10",
+    "Dips or close-grip press 3x8-12",
+    "Cable fly or pec deck 3x12-15",
+    "Lateral raise 3x12-15",
+    "Triceps rope pushdown 3x12-15",
+    "Machine chest press 3x10-12",
+  ],
+  pull: [
+    "Barbell row 3x8-12",
+    "Pull-up or lat pulldown 3x8-12",
+    "Seated cable row 3x10-12",
+    "Single-arm dumbbell row 3x10-12 each",
+    "Face pull 3x12-15",
+    "Barbell or dumbbell curl 3x10-12",
+    "Rear-delt fly 3x12-15",
+  ],
+  legs: [
+    "Romanian deadlift 3x8-12",
+    "Bulgarian split squat 3x10 each",
+    "Leg press 3x10-15",
+    "Walking lunge 3x12 each",
+    "Leg curl 3x12-15",
+    "Leg extension 3x12-15",
+    "Calf raise 3x12-15",
+  ],
+  core: [
+    "Hanging leg raise 3x10-12",
+    "Weighted plank 3x45s",
+    "Cable woodchop 3x12 each",
+    "Ab wheel rollout 3x8-12",
+  ],
+};
+
+/**
+ * [ASSURED] How many exercises a strength session should contain.
+ *
+ * The engine prescribed three — a primary and two accessories — which an
+ * athlete correctly called a terrible session. Five to six is the range a
+ * commercial-gym session actually occupies, and it is what the hypertrophy
+ * volume literature assumes when it counts hard sets per muscle per week.
+ */
+/**
+ * [ASSURED] Most core lines a session may carry.
+ *
+ * Core is listed as a pattern so a legs day finishes with some trunk work.
+ * Round-robining it evenly against the legs pool produced a legs day that was
+ * half abs, which is not a legs day.
+ */
+export const CORE_ACCESSORY_CAP = 1;
+
+export const MIN_EXERCISES_PER_STRENGTH_SESSION = 5;
+export const TARGET_EXERCISES_PER_STRENGTH_SESSION = 6;
+
+/**
+ * [ASSURED] Variants that train the same pattern as the competition lift.
+ *
+ * Not everybody is peaking a total. An athlete training for size, or for
+ * general strength, does not need to barbell bench every push day for eleven
+ * weeks — an incline dumbbell press trains the same pattern with less joint
+ * cost and more variety, and the bench goes up anyway. So the primary rotates
+ * through these when there is no numeric target on that lift, and stays on the
+ * competition lift when there is one, because specificity is the whole point
+ * of a peaking block.
+ */
+export const PRIMARY_LIFT_VARIANTS: Readonly<Record<string, readonly string[]>> = {
+  squat: ["Back squat", "Front squat", "Back squat", "Hack squat or pendulum squat"],
+  bench: ["Bench press", "Incline dumbbell press", "Bench press", "Close-grip bench press"],
+  deadlift: ["Deadlift", "Romanian deadlift", "Deadlift", "Trap-bar deadlift"],
+};
+
 /** [ASSURED] Chosen when the athlete has not picked one. Lift-specific only suits a peaking powerlifter, so it is not the default. */
 export const DEFAULT_TRAINING_SPLIT: TrainingSplit = "upper_lower";
 

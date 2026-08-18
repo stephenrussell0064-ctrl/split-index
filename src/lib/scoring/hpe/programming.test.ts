@@ -227,3 +227,80 @@ describe("a long run is long and an easy run is easy", () => {
     }
   });
 });
+
+describe("strength sessions are sessions people would actually do", () => {
+  const exercisesIn = (text: string) => text.split("·").length;
+
+  it("prescribes five to six exercises, not three", () => {
+    const plan = hybrid({ trainingSplit: "ppl" });
+    const strength = plan.weeks.flatMap((w) => w.sessions).filter((s) => s.domain === "strength");
+    expect(strength.length).toBeGreaterThan(0);
+    for (const s of strength) {
+      expect(exercisesIn(s.prescription.text)).toBeGreaterThanOrEqual(5);
+    }
+  });
+
+  it("varies the exercises week to week rather than repeating one session", () => {
+    const plan = hybrid({ trainingSplit: "ppl" });
+    const pushDays = plan.weeks
+      .flatMap((w) => w.sessions)
+      .filter((s) => s.domain === "strength" && s.lift === "bench")
+      .map((s) => s.prescription.text);
+    expect(pushDays.length).toBeGreaterThan(2);
+    // Eleven identical sessions is not a programme.
+    expect(new Set(pushDays).size).toBeGreaterThan(1);
+  });
+
+  it("leads with a rotating variation when the athlete is not peaking a total", () => {
+    const plan = hybrid({ trainingSplit: "ppl" });
+    const leads = plan.weeks
+      .flatMap((w) => w.sessions)
+      .filter((s) => s.domain === "strength")
+      .map((s) => s.prescription.text.split("·")[0].trim());
+    // A push day led by an incline dumbbell press is still a push day, and the
+    // bench goes up anyway.
+    expect(leads.some((l) => /Incline dumbbell press|Front squat|Close-grip/.test(l))).toBe(true);
+  });
+
+  it("keeps the competition lift when the athlete IS peaking a total", () => {
+    // Specificity is the whole point of a peaking block, so the hypertrophy
+    // rotation must not fire. Stall variations (pause squat, deficit deadlift)
+    // are a different mechanism and remain correct here — they are prescribed
+    // BECAUSE the lift stalled, and they still carry a %1RM because they are
+    // loaded off the competition lift.
+    const plan = hybrid({ trainingSplit: "lift_specific" }, { targetTotalKg: 500 });
+    const leads = plan.weeks
+      .flatMap((w) => w.sessions)
+      .filter((s) => s.domain === "strength")
+      .map((s) => s.prescription.text.split("·")[0].trim());
+    expect(leads.length).toBeGreaterThan(0);
+    expect(leads.some((l) => /Incline dumbbell|Hack squat|Trap-bar/.test(l))).toBe(false);
+    // Every peaking lead is loaded, because a peaking block is about the bar.
+    for (const l of leads) expect(l).toMatch(/% 1RM/);
+  });
+
+  it("does not turn a legs day into an abs day", () => {
+    const plan = hybrid({ trainingSplit: "ppl" });
+    const legDays = plan.weeks
+      .flatMap((w) => w.sessions)
+      .filter((s) => s.domain === "strength" && s.lift === "squat");
+    for (const s of legDays) {
+      const core = s.prescription.text
+        .split("·")
+        .filter((l) => /plank|woodchop|ab wheel|leg raise/i.test(l));
+      expect(core.length).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it("never prices a variation off the competition lift's 1RM", () => {
+    // 70-80% of a bench 1RM printed beside an incline dumbbell press is a
+    // weight nobody can press.
+    const plan = hybrid({ trainingSplit: "ppl" });
+    for (const s of plan.weeks.flatMap((w) => w.sessions).filter((x) => x.domain === "strength")) {
+      const lead = s.prescription.text.split("·")[0];
+      if (/Incline dumbbell|Front squat|Hack squat|Trap-bar|Close-grip|Romanian/.test(lead)) {
+        expect(lead).not.toMatch(/\d+kg/);
+      }
+    }
+  });
+});

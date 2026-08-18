@@ -41,6 +41,11 @@ import {
   HEAVY_LOWER_BODY_LOAD_THRESHOLD,
   LIFT_PRESCRIPTIONS,
   GENERAL_STRENGTH_SPEC,
+  CORE_ACCESSORY_CAP,
+  MIN_EXERCISES_PER_STRENGTH_SESSION,
+  TARGET_EXERCISES_PER_STRENGTH_SESSION,
+  STRENGTH_ACCESSORY_POOL,
+  PRIMARY_LIFT_VARIANTS,
   MAINTENANCE_REPS,
   MAINTENANCE_SETS,
   DEFAULT_TRAINING_SPLIT,
@@ -247,24 +252,70 @@ export function shiftPhaseSpec(phase: Phase, emphasisKey: EmphasisKey) {
 }
 
 
-/** Accessory lines for a split day, chosen from its movement patterns. */
-function accessoriesForDay(day: (typeof TRAINING_SPLITS)[TrainingSplit]["days"][number], primaryLift: string): string[] {
-  const byPattern: Record<string, string[]> = {
-    push: ["Overhead press 3x8-10", "Dips or close-grip press 3x8-10", "Lateral raise 3x12-15"],
-    pull: ["Barbell row 3x8-10", "Pull-up or lat pulldown 3x8-10", "Face pull 3x12-15"],
-    legs: ["Romanian deadlift 3x8-10", "Split squat 3x10 each", "Calf raise 3x12-15"],
-    core: ["Hanging leg raise 3x10-12", "Weighted plank 3x45s"],
-  };
+/**
+ * Accessory lines for a split day, drawn from its movement patterns and
+ * rotated by week.
+ *
+ * This used to take the first two entries of a three-deep pool, so a Push day
+ * was the bench press and the same two accessories for the whole block —
+ * three exercises, identical every week, which an athlete correctly called a
+ * terrible session. It now fills the day to a real session size and walks the
+ * pool by week index, so the patterns stay constant while the exercises that
+ * train them change.
+ */
+function accessoriesForDay(
+  day: (typeof TRAINING_SPLITS)[TrainingSplit]["days"][number],
+  primaryLift: string,
+  week: number
+): string[] {
+  const patterns = day.patterns.length > 0 ? day.patterns : ["push"];
+  // The primary already covers one slot, so the accessories fill the rest.
+  const wanted = Math.max(MIN_EXERCISES_PER_STRENGTH_SESSION, TARGET_EXERCISES_PER_STRENGTH_SESSION) - 1;
   const out: string[] = [];
-  for (const pattern of day.patterns) {
-    // Two per pattern on a focused day, one each when the day spans several —
-    // a full-body session that lists twelve accessories is not a session.
-    const take = day.patterns.length <= 2 ? 2 : 1;
-    for (const line of (byPattern[pattern] ?? []).slice(0, take)) {
-      if (!line.toLowerCase().includes(primaryLift)) out.push(line);
+
+  // Round-robin across the day's patterns so a two-pattern day alternates
+  // rather than exhausting one pool before starting the other. Core is capped
+  // at one line: it is listed as a pattern so that a legs day finishes with
+  // some trunk work, and an even split turned that into a legs day that was
+  // half abs.
+  const takenPerPattern: Record<string, number> = {};
+  for (let depth = 0; out.length < wanted; depth += 1) {
+    let addedThisPass = false;
+    for (const pattern of patterns) {
+      const pool = STRENGTH_ACCESSORY_POOL[pattern] ?? [];
+      if (pool.length === 0) continue;
+      if (pattern === "core" && (takenPerPattern.core ?? 0) >= CORE_ACCESSORY_CAP) continue;
+      // Rotating the offset by week is what stops eleven identical sessions.
+      const line = pool[(depth + week) % pool.length];
+      if (out.length >= wanted) break;
+      // Never list the primary again as its own accessory.
+      if (line.toLowerCase().includes(primaryLift.toLowerCase())) continue;
+      if (out.includes(line)) continue;
+      out.push(line);
+      takenPerPattern[pattern] = (takenPerPattern[pattern] ?? 0) + 1;
+      addedThisPass = true;
     }
+    // Every pool exhausted — stop rather than spin.
+    if (!addedThisPass && depth > 8) break;
   }
   return out;
+}
+
+/**
+ * The exercise that leads the session.
+ *
+ * An athlete peaking a total must keep meeting the competition lift, because
+ * specificity is what a peaking block is for. An athlete training for size or
+ * general strength does not: a push day led by an incline dumbbell press is
+ * still a push day, and their bench goes up anyway. Rotating the lead by week
+ * gives them the variety the plan was missing without changing what the
+ * session trains.
+ */
+function primaryExerciseFor(lift: string, week: number, peakingATotal: boolean): string | undefined {
+  if (peakingATotal) return undefined;
+  const variants = PRIMARY_LIFT_VARIANTS[lift];
+  if (!variants || variants.length === 0) return undefined;
+  return variants[week % variants.length];
 }
 
 
@@ -644,7 +695,7 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
         rir: [2, 3],
         // A maintenance session is still a session. Prescribing one lift and
         // nothing else is not a gym visit anybody would make.
-        accessories: accessoriesForDay(maintDay, lift),
+        accessories: accessoriesForDay(maintDay, lift, week.week),
       });
       sessions.push(
         makeSession("strength_maintenance", "strength", "maximal_strength", findingId, prescription, {
@@ -695,12 +746,16 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
     // "Push" day is a push session rather than a bench press with two
     // afterthoughts attached.
     const splitDay = splitDays[i % splitDays.length];
-    const accessories = accessoriesForDay(splitDay, lift);
+    const accessories = accessoriesForDay(splitDay, lift, week.week);
     const prescription = prescribeLift(profile, findingId, {
       lift,
       // No barbell: substitute the pattern and say plainly it is a
       // substitution rather than silently swapping the lift.
       substitution: hasBarbell ? undefined : NO_GYM_SUBSTITUTIONS[lift],
+      // Peaking a total means meeting the competition lift every week. Anyone
+      // else gets the pattern led by a rotating variation instead, which is
+      // the same training with less monotony.
+      variant: hasBarbell ? primaryExerciseFor(lift, week.week, peakingATotal) : undefined,
       sets,
       reps: hasBarbell ? reps : NO_GYM_REP_RANGE,
       intensity,

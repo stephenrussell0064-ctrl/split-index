@@ -308,6 +308,14 @@ export interface LiftPrescriptionOptions {
   reps: readonly [number, number];
   intensity: readonly [number, number];
   rir: readonly [number, number];
+  /**
+   * A variation leading the session in place of the competition lift, for an
+   * athlete who is not peaking a total. Prescribed by effort rather than by
+   * percentage: the 1RM on file belongs to the competition lift, and printing
+   * 70-80% of a bench 1RM next to an incline dumbbell press would prescribe a
+   * weight nobody can press.
+   */
+  variant?: string;
   /** Accessory lines appended after the main lift. */
   accessories?: string[];
 }
@@ -330,12 +338,14 @@ export function prescribeLift(
 
   const loadText = options.substitution
     ? "bodyweight or whatever load you have, taken to the RIR below"
-    : oneRm > 0
+    : options.variant
+      ? "a load you can hold for the reps"
+      : oneRm > 0
       ? `${roundToPlate(oneRm * intensity[0]).toFixed(0)}-${roundToPlate(oneRm * intensity[1]).toFixed(0)}kg ` +
         `(${Math.round(intensity[0] * 100)}-${Math.round(intensity[1] * 100)}% 1RM)`
       : `${Math.round(intensity[0] * 100)}-${Math.round(intensity[1] * 100)}% 1RM (no logged 1RM yet — work to the RIR)`;
 
-  const name = options.substitution ?? variation ?? lift.charAt(0).toUpperCase() + lift.slice(1);
+  const name = options.substitution ?? options.variant ?? variation ?? lift.charAt(0).toUpperCase() + lift.slice(1);
   const lines = [`${name} ${sets}x${reps[0]}-${reps[1]} @ ${loadText}, RIR ${rir[0]}-${rir[1]}`];
   if (options.substitution) {
     lines.push(
