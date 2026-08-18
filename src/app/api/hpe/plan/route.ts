@@ -116,6 +116,11 @@ export async function GET(request: Request) {
       paused: true,
       storedPlan: stored,
       weeks: stored?.weeks ?? [],
+      // The paused view needs a profile to resolve each session's finding, and
+      // sending the weeks without one left the branch unreachable — the screen
+      // fell through to the refusal path and said "Not yet" over a plan that
+      // was sitting right there in the database.
+      profile: stored?.profile ?? null,
       refusal: {
         reason: access.message,
         nextSteps:

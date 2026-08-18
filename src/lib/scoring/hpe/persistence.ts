@@ -341,7 +341,23 @@ export async function supersedePlans(
 export async function loadLatestStoredPlan(
   supabase: SupabaseClient,
   userId: string
-): Promise<{ generatedAt: string; constantsVersion: string; weeks: unknown[] } | null> {
+): Promise<{
+  generatedAt: string;
+  constantsVersion: string;
+  weeks: unknown[];
+  /**
+   * Enough of an AthleteProfile for the plan view to render the trace.
+   *
+   * Returning the weeks alone was not enough and the screen still showed
+   * nothing: the paused branch requires a profile, the paused response set
+   * `diagnostic: null` and sent no profile, so the condition could never be
+   * true. The sessions cite findings by id and the view resolves those ids
+   * against `profile.findings` — without them every session loses the reason
+   * it exists, which is the one thing this engine promises about every session
+   * it prescribes.
+   */
+  profile: { constantsVersion: string; tier: number; emphasis: EmphasisVector; findings: Finding[] } | null;
+} | null> {
   const { data: plan } = await supabase
     .from("hpe_plans")
     .select("id, generated_at, constants_version, weeks_out")
@@ -393,9 +409,36 @@ export async function loadLatestStoredPlan(
     if (r.domain === "endurance") w.enduranceMin = Number(w.enduranceMin) + Number(r.minutes ?? 0);
   }
 
+  // The stored profile and its findings, so a paused plan still says why each
+  // session is there rather than rendering an unexplained calendar.
+  const storedProfile = await loadLatestStoredProfile(supabase, userId);
+  let profile: {
+    constantsVersion: string;
+    tier: number;
+    emphasis: EmphasisVector;
+    findings: Finding[];
+  } | null = null;
+  if (storedProfile) {
+    const { data: findingRows } = await supabase
+      .from("hpe_findings")
+      .select("finding_key, body, ordinal")
+      .eq("profile_id", storedProfile.id)
+      .order("ordinal", { ascending: true });
+    profile = {
+      constantsVersion: storedProfile.constantsVersion,
+      tier: storedProfile.tier,
+      emphasis: storedProfile.emphasis,
+      findings: (findingRows ?? []).map((r) => ({
+        id: r.finding_key as FindingId,
+        text: r.body as string,
+      })) as Finding[],
+    };
+  }
+
   return {
     generatedAt: plan.generated_at as string,
     constantsVersion: plan.constants_version as string,
     weeks: [...byWeek.values()].sort((a, b) => Number(a.week) - Number(b.week)),
+    profile,
   };
 }

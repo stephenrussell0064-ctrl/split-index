@@ -134,22 +134,46 @@ describe("WP8 — the four-weekly diagnostic re-run", () => {
  * time; nothing read it back.
  */
 describe("loadLatestStoredPlan", () => {
-  function supabaseWith(plan: unknown, sessions: unknown[]) {
-    const chain = (result: unknown) => {
+  /** Table-aware, because the loader now reads four of them. */
+  function supabaseWith(opts: {
+    plan?: unknown;
+    sessions?: unknown[];
+    profile?: unknown;
+    findings?: unknown[];
+  }) {
+    const chain = (single: unknown, list: unknown[]) => {
       const thenable = {
         select: () => thenable,
         eq: () => thenable,
         order: () => thenable,
         limit: () => thenable,
-        maybeSingle: async () => ({ data: plan, error: null }),
-        then: (resolve: (v: unknown) => void) => resolve({ data: result, error: null }),
+        maybeSingle: async () => ({ data: single ?? null, error: null }),
+        then: (resolve: (v: unknown) => void) => resolve({ data: list, error: null }),
       };
       return thenable;
     };
     return {
-      from: (table: string) => (table === "hpe_plans" ? chain(plan) : chain(sessions)),
+      from: (table: string) => {
+        if (table === "hpe_plans") return chain(opts.plan ?? null, []);
+        if (table === "hpe_sessions") return chain(null, opts.sessions ?? []);
+        if (table === "hpe_athlete_profile") return chain(opts.profile ?? null, []);
+        if (table === "hpe_findings") return chain(null, opts.findings ?? []);
+        return chain(null, []);
+      },
     } as never;
   }
+
+  const storedProfileRow = {
+    id: "profile-1",
+    generated_at: "2026-08-01T00:00:00Z",
+    constants_version: HPE_CONSTANTS_VERSION,
+    tier: 2,
+    emphasis: vector(),
+  };
+  const findingRows = [
+    { finding_key: "F1", body: "Your aerobic base carries your 5k.", ordinal: 0 },
+    { finding_key: "F3", body: "Your squat lags your deadlift.", ordinal: 1 },
+  ];
 
   it("reconstructs weeks and placements a paused athlete can still read", async () => {
     const plan = { id: "plan-1", generated_at: "2026-08-01T00:00:00Z", constants_version: HPE_CONSTANTS_VERSION, weeks_out: 2 };
@@ -159,7 +183,10 @@ describe("loadLatestStoredPlan", () => {
       { week: 2, phase: "base", is_deload: true, day_of_week: "Mon", slot: "pm", kind: "long_run", domain: "endurance", emphasis_key: "aerobic_base", is_quality: true, minutes: 90, prescription: "Long 16km", finding_id: "F1" },
     ];
 
-    const stored = await loadLatestStoredPlan(supabaseWith(plan, sessions), "user-1");
+    const stored = await loadLatestStoredPlan(
+      supabaseWith({ plan, sessions, profile: storedProfileRow, findings: findingRows }),
+      "user-1"
+    );
 
     expect(stored).not.toBeNull();
     expect(stored!.constantsVersion).toBe(HPE_CONSTANTS_VERSION);
@@ -174,6 +201,59 @@ describe("loadLatestStoredPlan", () => {
   });
 
   it("returns null rather than an empty shell when nothing was ever stored", async () => {
-    expect(await loadLatestStoredPlan(supabaseWith(null, []), "user-1")).toBeNull();
+    expect(await loadLatestStoredPlan(supabaseWith({}), "user-1")).toBeNull();
+  });
+
+  it("carries the profile and findings, without which the paused screen cannot render", async () => {
+    const plan = { id: "plan-1", generated_at: "2026-08-01T00:00:00Z", constants_version: HPE_CONSTANTS_VERSION, weeks_out: 1 };
+    const sessions = [
+      { week: 1, phase: "base", is_deload: false, day_of_week: "Mon", slot: "pm", kind: "easy_run", domain: "endurance", emphasis_key: "aerobic_base", is_quality: false, minutes: 45, prescription: "Easy 8km", finding_id: "F1" },
+    ];
+    const stored = await loadLatestStoredPlan(
+      supabaseWith({ plan, sessions, profile: storedProfileRow, findings: findingRows }),
+      "user-1"
+    );
+
+    // The plan view resolves each session's finding id against this list. An
+    // empty one turns a traceable block into an unexplained calendar.
+    expect(stored!.profile).not.toBeNull();
+    expect(stored!.profile!.findings.map((f) => f.id)).toEqual(["F1", "F3"]);
+    expect(stored!.profile!.findings[0].text).toMatch(/aerobic base/);
+    expect(stored!.profile!.tier).toBe(2);
+  });
+
+  it("satisfies the exact condition the paused screen branches on", async () => {
+    const plan = { id: "plan-1", generated_at: "2026-08-01T00:00:00Z", constants_version: HPE_CONSTANTS_VERSION, weeks_out: 1 };
+    const sessions = [
+      { week: 1, phase: "base", is_deload: false, day_of_week: "Mon", slot: "pm", kind: "easy_run", domain: "endurance", emphasis_key: "aerobic_base", is_quality: false, minutes: 45, prescription: "Easy 8km", finding_id: "F1" },
+    ];
+    const stored = await loadLatestStoredPlan(
+      supabaseWith({ plan, sessions, profile: storedProfileRow, findings: findingRows }),
+      "user-1"
+    );
+
+    // This mirrors the route's paused response and the screen's guard:
+    //   !generated && paused && weeks.length > 0 && profile
+    //
+    // The guard was unsatisfiable. The route sent weeks but set the profile to
+    // null, so the branch never ran and the screen fell through to the refusal
+    // path — printing "Not yet" over a plan sitting in the database. Both
+    // halves are asserted here because either one alone passes while the
+    // screen still shows nothing.
+    const response = {
+      generated: false,
+      paused: true,
+      weeks: stored?.weeks ?? [],
+      profile: stored?.profile ?? null,
+    };
+    const pausedViewRenders =
+      !response.generated && response.paused && response.weeks.length > 0 && response.profile != null;
+    expect(pausedViewRenders).toBe(true);
+  });
+
+  it("falls back to the refusal screen when there genuinely is no stored plan", async () => {
+    const stored = await loadLatestStoredPlan(supabaseWith({ profile: storedProfileRow }), "user-1");
+    const response = { generated: false, paused: true, weeks: stored?.weeks ?? [], profile: stored?.profile ?? null };
+    expect(!response.generated && response.paused && response.weeks.length > 0 && response.profile != null).toBe(false);
   });
 });
