@@ -52,35 +52,51 @@ export interface FeedActivity {
   commentCount: number;
 }
 
+/**
+ * Why a feed came back empty, so the UI can say something true instead of
+ * guessing. We deliberately can't distinguish "this friend is private" from
+ * "this friend hasn't logged anything" — the sharing flag lives behind RLS
+ * on someone else's profile row and is none of the viewer's business — so
+ * those collapse into one honest "nothing to show yet" case.
+ */
+export type FeedEmptyReason = "no_friends" | "no_visible_activities";
+
 export interface FeedPage {
   activities: FeedActivity[];
   hasMore: boolean;
+  /** Only set when `activities` is empty. */
+  emptyReason?: FeedEmptyReason;
 }
 
 const FEED_PAGE_SIZE = 15;
 
-/** Every user_id whose activities this viewer is allowed to see in the feed — accepted friends who've opted into sharing. Mirrors activity_is_visible_to()'s own join, kept in JS too so the feed query can filter by user_id up front instead of fetching everyone's activities and discarding most under RLS. */
-async function fetchSharingFriendIds(supabase: SupabaseClient, userId: string): Promise<string[]> {
+/**
+ * This viewer's accepted friends. Note what this deliberately does NOT do:
+ * it does not pre-filter on the friend's `share_activities_with_friends`
+ * flag. It used to, and that was a bug — reading another user's profile row
+ * requires the "Public profiles readable" policy (migration 001), which is
+ * `USING (username IS NOT NULL)`. Any friend without a username was
+ * therefore invisible to the pre-filter and silently dropped from the feed
+ * even though the activities RLS would happily have shown their workouts.
+ *
+ * The sharing check now happens in exactly one place — activity_is_visible_to()
+ * in the activities RLS policy (migration 031), which is the real enforcement
+ * boundary. This list only narrows the query to a bounded set of user_ids;
+ * RLS still has the final say on every row returned, so a mistake here can
+ * only ever under-fetch, never leak a private athlete's activity.
+ */
+async function fetchAcceptedFriendIds(supabase: SupabaseClient, userId: string): Promise<string[]> {
   const { data: friendRows } = await supabase
     .from("friends")
     .select("user_id, friend_id")
     .eq("status", "accepted")
     .or(`user_id.eq.${userId},friend_id.eq.${userId}`);
 
-  const friendIds = [
+  return [
     ...new Set(
       (friendRows ?? []).map((r) => (r.user_id === userId ? (r.friend_id as string) : (r.user_id as string)))
     ),
   ];
-  if (friendIds.length === 0) return [];
-
-  const { data: sharingProfiles } = await supabase
-    .from("profiles")
-    .select("user_id")
-    .in("user_id", friendIds)
-    .eq("share_activities_with_friends", true);
-
-  return (sharingProfiles ?? []).map((p) => p.user_id as string);
 }
 
 /** Pulls out only the fields worth surfacing on a feed post — never the raw score_breakdown blob (internal flags/explanation strings aren't meant for another user's eyes). */
@@ -107,15 +123,28 @@ export async function fetchFriendFeed(
   options: { offset?: number } = {}
 ): Promise<FeedPage> {
   const offset = options.offset ?? 0;
-  const sharingFriendIds = await fetchSharingFriendIds(supabase, userId);
-  if (sharingFriendIds.length === 0) return { activities: [], hasMore: false };
+  const friendIds = await fetchAcceptedFriendIds(supabase, userId);
+  if (friendIds.length === 0) {
+    return { activities: [], hasMore: false, emptyReason: "no_friends" };
+  }
 
+  // Never include the viewer's own user_id: their own activities are visible
+  // to them under the "Users manage own activities" policy, and this is a
+  // friend feed, not a logbook.
+  const authorScope = friendIds.filter((id) => id !== userId);
+  if (authorScope.length === 0) {
+    return { activities: [], hasMore: false, emptyReason: "no_friends" };
+  }
+
+  // The sharing/friendship check is enforced by RLS (activity_is_visible_to),
+  // not here — rows belonging to a friend who has gone private simply never
+  // come back from this query.
   const { data: activityRows } = await supabase
     .from("activities")
     .select(
       "id, user_id, sport, title, started_at, duration_seconds, distance_meters, elevation_meters, avg_heart_rate, max_heart_rate, avg_power_watts, avg_cadence, avg_pace_seconds_per_km, temperature_celsius, session_type, rpe, notes"
     )
-    .in("user_id", sharingFriendIds)
+    .in("user_id", authorScope)
     .eq("is_draft", false)
     .order("started_at", { ascending: false })
     .range(offset, offset + FEED_PAGE_SIZE); // fetch one extra to detect hasMore
@@ -123,7 +152,9 @@ export async function fetchFriendFeed(
   const rows = activityRows ?? [];
   const hasMore = rows.length > FEED_PAGE_SIZE;
   const pageRows = hasMore ? rows.slice(0, FEED_PAGE_SIZE) : rows;
-  if (pageRows.length === 0) return { activities: [], hasMore: false };
+  if (pageRows.length === 0) {
+    return { activities: [], hasMore: false, emptyReason: "no_visible_activities" };
+  }
 
   const activityIds = pageRows.map((r) => r.id as string);
   const authorIds = [...new Set(pageRows.map((r) => r.user_id as string))];

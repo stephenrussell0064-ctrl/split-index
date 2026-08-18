@@ -349,6 +349,7 @@ export function FeedPanel() {
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [emptyReason, setEmptyReason] = useState<string | null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -358,6 +359,7 @@ export function FeedPanel() {
         if (!res.ok) throw new Error(data.error ?? "Could not load the feed");
         setActivities(data.activities ?? []);
         setHasMore(!!data.hasMore);
+        setEmptyReason(data.emptyReason ?? null);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Could not load the feed");
       }
@@ -399,14 +401,32 @@ export function FeedPanel() {
   }
 
   if (activities.length === 0) {
+    // Copy has to match reality: activities are visible to accepted friends
+    // by default, so "ask your friend to switch sharing on" (the old text,
+    // written when this was opt-in) sends people hunting Settings for a
+    // control that isn't the one they need.
     return (
       <Card padding="lg">
         <div className="py-8 text-center">
-          <p className="text-sm font-medium">No activities in your feed yet</p>
+          <p className="text-sm font-medium">
+            {emptyReason === "no_friends"
+              ? "Add a friend to start your feed"
+              : "No activities in your feed yet"}
+          </p>
           <p className="mx-auto mt-1 max-w-sm text-xs text-muted">
-            You&apos;ll see activities here from friends who&apos;ve turned on &quot;Share my
-            activities with friends&quot; in Settings → Privacy. Ask a friend to turn it on, or
-            turn on your own so they can see yours.
+            {emptyReason === "no_friends" ? (
+              <>
+                Your feed shows workouts from athletes you&apos;ve added as friends. Head to the
+                Friends tab to send a request — once it&apos;s accepted, their activities show up
+                here automatically.
+              </>
+            ) : (
+              <>
+                Your friends haven&apos;t logged anything you can see yet. New workouts appear here
+                automatically — nobody has to turn sharing on. (Anyone who&apos;d rather not share
+                can switch on Private account in Settings → Privacy.)
+              </>
+            )}
           </p>
         </div>
       </Card>

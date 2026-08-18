@@ -43,11 +43,20 @@ export default function SettingsPage() {
     splitEnduranceWeight: number;
     shareActivitiesWithFriends: boolean;
   } | null>(null);
+  // Tracked separately from `profile` so the Privacy control can still be
+  // rendered (disabled, with an explanation) when the profile row fails to
+  // load. Previously every settings card here was gated on `profile` being
+  // non-null, so one failed query made the privacy switch vanish with no
+  // error — which is precisely how an athlete ends up reporting that the
+  // option "is not available" in settings.
+  const [authUserId, setAuthUserId] = useState<string | null>(null);
+  const [profileLoadFailed, setProfileLoadFailed] = useState(false);
 
   useEffect(() => {
     const supabase = createClient();
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return;
+      setAuthUserId(user.id);
       supabase
         .from("profiles")
         .select(
@@ -55,20 +64,27 @@ export default function SettingsPage() {
         )
         .eq("user_id", user.id)
         .single()
-        .then(({ data }) => {
-          if (data) {
-            setProfile({
-              tier: data.subscription_tier,
-              status: data.subscription_status,
-              createdAt: data.created_at,
-              userId: data.user_id,
-              splitEnduranceWeight:
-                typeof data.split_endurance_weight === "number"
-                  ? data.split_endurance_weight
-                  : 0.5,
-              shareActivitiesWithFriends: !!data.share_activities_with_friends,
-            });
+        .then(({ data, error }) => {
+          if (error || !data) {
+            setProfileLoadFailed(true);
+            return;
           }
+          setProfile({
+            tier: data.subscription_tier,
+            status: data.subscription_status,
+            createdAt: data.created_at,
+            userId: data.user_id,
+            splitEnduranceWeight:
+              typeof data.split_endurance_weight === "number"
+                ? data.split_endurance_weight
+                : 0.5,
+            // Activities are visible to friends by default, so anything
+            // other than an explicit `false` means visible. Never infer
+            // "private" from a missing/undefined value here — that would
+            // show the athlete a Private-account switch that doesn't
+            // match what the database is actually enforcing.
+            shareActivitiesWithFriends: data.share_activities_with_friends !== false,
+          });
         });
     });
   }, []);
@@ -184,10 +200,11 @@ export default function SettingsPage() {
         />
       )}
 
-      {profile && (
+      {(profile || (authUserId && profileLoadFailed)) && (
         <ActivityPrivacySettings
-          initialShareActivities={profile.shareActivitiesWithFriends}
-          userId={profile.userId}
+          initialShareActivities={profile ? profile.shareActivitiesWithFriends : true}
+          userId={profile?.userId ?? authUserId!}
+          loadFailed={!profile}
         />
       )}
 
