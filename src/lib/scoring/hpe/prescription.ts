@@ -38,7 +38,7 @@ import {
   INTERVAL_REP_METERS,
   INTERVAL_WORK_FRACTION,
   GREY_ZONE_EASY_BIAS,
-  LONG_RUN_VS_EASY_LOW,
+  LONG_RUN_VS_EASY,
   RECOVERY_VS_EASY,
   REP_RUN_METERS,
   REP_RUN_RECOVERY_S,
@@ -97,11 +97,11 @@ export function paceBandFor(profile: AthleteProfile, kind: EnduranceKind): { lo:
       // prescribe is what moves.
       const biasedLo = easy.lo + (easy.hi - easy.lo) * GREY_ZONE_EASY_BIAS;
       if (kind === "recovery_run") return { lo: biasedLo * RECOVERY_VS_EASY[0], hi: easy.hi * RECOVERY_VS_EASY[1] };
-      if (kind === "long_run") return { lo: biasedLo * LONG_RUN_VS_EASY_LOW, hi: easy.hi };
+      if (kind === "long_run") return { lo: biasedLo * LONG_RUN_VS_EASY[0], hi: easy.hi * LONG_RUN_VS_EASY[1] };
       return { lo: biasedLo, hi: easy.hi };
     }
     if (kind === "recovery_run") return { lo: easy.lo * RECOVERY_VS_EASY[0], hi: easy.hi * RECOVERY_VS_EASY[1] };
-    if (kind === "long_run") return { lo: easy.lo * LONG_RUN_VS_EASY_LOW, hi: easy.hi };
+    if (kind === "long_run") return { lo: easy.lo * LONG_RUN_VS_EASY[0], hi: easy.hi * LONG_RUN_VS_EASY[1] };
     return { lo: easy.lo, hi: easy.hi };
   }
   const base = profile.predicted5kS / 5.0;

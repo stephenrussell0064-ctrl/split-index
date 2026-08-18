@@ -198,3 +198,32 @@ describe("projected improvement stays inside what a human can do", () => {
     expect(inferredEnduranceTrainingAge("elite", 1800)).toBe("elite");
   });
 });
+
+describe("a long run is long and an easy run is easy", () => {
+  it("makes the long run distinctly the longest session of the week", () => {
+    const plan = hybrid({ maxSessionsPerWeek: 5 }, { target5kS: 1080, priority: 0.4 });
+    for (const w of plan.weeks) {
+      const long = w.sessions.find((s) => s.kind === "long_run");
+      const easies = w.sessions.filter((s) => s.kind === "easy_run");
+      if (!long || easies.length === 0) continue;
+      const longestEasy = Math.max(...easies.map((s) => s.minutes));
+      // An athlete was shown a 6.5km easy run beside a 6.7km "long" run. If the
+      // long run is not clearly the longest session it is a second easy run
+      // wearing the name.
+      expect(long.minutes).toBeGreaterThan(longestEasy * 1.25);
+    }
+  });
+
+  it("never prescribes the long run faster than the easy run", () => {
+    const plan = hybrid({ maxSessionsPerWeek: 5 }, { target5kS: 1080, priority: 0.4 });
+    for (const w of plan.weeks) {
+      const long = w.sessions.find((s) => s.kind === "long_run");
+      const easy = w.sessions.find((s) => s.kind === "easy_run");
+      if (!long?.prescription.paceLoSPerKm || !easy?.prescription.paceLoSPerKm) continue;
+      // Pace is seconds per km, so "not faster" means not a smaller number. The
+      // multiplier was 0.99, which made the long run 1% QUICKER at its sharp
+      // end than the easy run it is supposed to be gentler than.
+      expect(long.prescription.paceLoSPerKm).toBeGreaterThanOrEqual(easy.prescription.paceLoSPerKm);
+    }
+  });
+});

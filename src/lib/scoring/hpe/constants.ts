@@ -348,8 +348,6 @@ export const TIER_CONFIDENCE: Readonly<Record<0 | 1 | 2 | 3, number>> = {
 export const MAX_QUALITY_ENDURANCE_SESSIONS = 3;
 /** [DATA] One heavy lower-body day per week once prescribed loads exceed this fraction of 1RM. */
 export const HEAVY_LOWER_BODY_LOAD_THRESHOLD = 0.82;
-/** [ASSURED] Weekly cardio sessions needed before one of them becomes the long run. Below this there isn't a week to distribute, just sessions. */
-export const LONG_RUN_MIN_WEEKLY_CARDIO = 3;
 /**
  * [EST] Ceiling on how far the emphasis vector may pull the week away from
  * the athlete's own stated goals. The diagnostic decides what the athlete
@@ -385,8 +383,31 @@ export const SESSION_HR_RESERVE_BANDS: Readonly<Record<string, readonly [number,
 
 /** [EST] Recovery runs sit this much slower than the prescribed easy band. */
 export const RECOVERY_VS_EASY: readonly [number, number] = [1.06, 1.08];
-/** [EST] Long-run lower bound relative to the easy band — a long run may drift marginally quicker at its front end, never slower than easy. */
-export const LONG_RUN_VS_EASY_LOW = 0.99;
+/**
+ * [EST] Long-run band relative to the easy band.
+ *
+ * This was 0.99 on the low end, described as "may drift marginally quicker at
+ * its front end". Because pace is seconds per kilometre, a multiplier below 1
+ * makes the long run FASTER than easy — an athlete was shown easy 5:14-5:17
+ * and a long run at 5:11-5:17, quicker at the sharp end than the easy run it
+ * is supposed to be gentler than. A long run is aerobic work made hard by
+ * duration, not by pace, and it should sit at easy effort or a shade below.
+ */
+export const LONG_RUN_VS_EASY: readonly [number, number] = [1.0, 1.04];
+
+/**
+ * [EST] How much longer the long run must be than the week's other easy runs.
+ *
+ * The share fell back to `1 / slots` in low-frequency weeks, to stop a long
+ * run coming out shorter than an easy one. It overcorrected into identical:
+ * at two running slots both sessions got exactly 50% of the week, which is how
+ * an athlete ended up with a 6.5km easy run and a 6.7km "long" run. If the
+ * long run is not distinctly the longest session of the week it is not a long
+ * run, it is a second easy run wearing the name.
+ */
+export const LONG_RUN_MIN_MULTIPLE_OF_EASY = 1.5;
+/** [EST] Ceiling on the long run's share of weekly volume, so it cannot eat the week. */
+export const LONG_RUN_MAX_MINUTE_SHARE = 0.55;
 
 /** [DATA] Fraction of an interval session's clock actually spent at rep pace; the rest is recovery. */
 export const INTERVAL_WORK_FRACTION = 0.55;

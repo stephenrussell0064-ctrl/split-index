@@ -48,9 +48,10 @@ import {
   type TrainingSplit,
   NO_GYM_REP_RANGE,
   NO_GYM_SUBSTITUTIONS,
+  LONG_RUN_MAX_MINUTE_SHARE,
+  LONG_RUN_MIN_MULTIPLE_OF_EASY,
   LONG_RUN_MINUTE_SHARE,
   LONG_RUN_QUALITY_THRESHOLD_MIN,
-  LONG_RUN_MIN_WEEKLY_CARDIO,
   MAX_QUALITY_ENDURANCE_SESSIONS,
   MIN_ENDURANCE_SESSION_MIN,
   MIN_QUALITY_SESSION_MIN,
@@ -363,12 +364,6 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
   // deload week that drops the long run entirely is not a deload, it is a
   // gap in the one session the whole aerobic block is built around.
   const wantsLongRun = phase !== "taper" && enduranceSlots >= 1;
-  // In a week with few enough runs that the long one IS most of the week, it
-  // takes a proportional share rather than a fixed 28% — otherwise a
-  // two-session deload week prescribes a "long run" shorter than its easy run.
-  const longShare =
-    enduranceSlots >= LONG_RUN_MIN_WEEKLY_CARDIO ? LONG_RUN_MINUTE_SHARE : 1 / Math.max(1, enduranceSlots);
-  const longMinutes = Math.max(MIN_ENDURANCE_SESSION_MIN, Math.round(totalMinutes * longShare));
   const remainingEnduranceSlots = Math.max(0, enduranceSlots - (wantsLongRun ? 1 : 0));
 
   // ---- step 2: allocate the rest proportionally to emphasis ---------------
@@ -409,6 +404,36 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
   strengthDims.forEach((k, i) => {
     allocation[k] = strengthCounts[i];
   });
+
+  // ---- step 2b: size the long run against the easy runs it sits beside ----
+  //
+  // The long run has to be distinctly the longest session of the week. The
+  // share used to fall back to `1 / slots` in low-frequency weeks, to stop it
+  // coming out shorter than an easy run, and overcorrected into identical: at
+  // two slots both took exactly 50% of the week, which is how an athlete was
+  // handed a 6.5km easy run and a 6.7km "long" run.
+  //
+  // This has to run AFTER the allocation, not before it. Quality sessions take
+  // a fixed share off the top, so the long run is not competing with every
+  // other slot — only with the easy runs that divide what is left. Sizing it
+  // against the raw slot count was the first fix and it still produced 67
+  // minutes against 60, because it counted the interval session as a rival for
+  // minutes it had already been given.
+  //
+  // With q the fraction spent on quality and e easy runs sharing the rest,
+  // long/easy = L·e/(1-L-q), so holding that at or above R needs
+  // L >= R(1-q)/(e+R).
+  const qualityEnduranceCount = QUALITY_EMPHASIS.reduce((n, k) => n + allocation[k], 0);
+  const easyRunCount = Math.max(1, allocation.aerobic_base - (wantsLongRun ? 1 : 0));
+  const qualityFraction = Math.min(0.8, qualityEnduranceCount * QUALITY_SESSION_MINUTE_SHARE);
+  const ratioShare =
+    (LONG_RUN_MIN_MULTIPLE_OF_EASY * (1 - qualityFraction)) /
+    (easyRunCount + LONG_RUN_MIN_MULTIPLE_OF_EASY);
+  const longShare = Math.min(
+    LONG_RUN_MAX_MINUTE_SHARE,
+    Math.max(LONG_RUN_MINUTE_SHARE, ratioShare)
+  );
+  const longMinutes = Math.max(MIN_ENDURANCE_SESSION_MIN, Math.round(totalMinutes * longShare));
 
   // ---- step 3: hard caps ---------------------------------------------------
   const qualityMinutes = Math.round(totalMinutes * QUALITY_SESSION_MINUTE_SHARE);
