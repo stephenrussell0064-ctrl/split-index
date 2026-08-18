@@ -39,6 +39,19 @@ export type SessionType =
 
 export type Gender = "male" | "female" | "other" | "prefer_not_to_say";
 
+/**
+ * Which sex-segregated comparison tables an athlete's scores are computed
+ * against — deliberately NOT the same field as `gender`.
+ *
+ * DOTS, Glossbrenner, the age-graded pace references and the HR reference
+ * curves are all derived from sex-segregated population data. That is a
+ * property of the reference data, not a product opinion, so the basis has to
+ * be one of two values even though identity does not. Keeping them apart is
+ * what lets `gender` keep offering "other"/"prefer_not_to_say" without the
+ * scoring engines having to guess or refuse.
+ */
+export type ScoringBasis = "male" | "female";
+
 export type ExperienceLevel =
   | "beginner"
   | "intermediate"
@@ -88,6 +101,14 @@ export interface Profile {
   /** Optional — personalizes cardio HR-reference calibration to this athlete's own heart-rate-reserve range instead of a fixed population value. */
   resting_hr: number | null;
   gender: Gender | null;
+  /**
+   * Which sex-segregated standards to score this athlete against (migration
+   * 045). Derived from `gender` when that answers the question, asked
+   * explicitly when it does not. NULL means "not told yet" — scoring falls
+   * back to a documented default and flags reduced confidence rather than
+   * refusing to score, see resolveScoringBasis in lib/scoring/adapters.ts.
+   */
+  scoring_basis: ScoringBasis | null;
   experience: ExperienceLevel | null;
   training_history_years: number | null;
   goals: TrainingGoal[];

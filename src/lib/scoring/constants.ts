@@ -7,11 +7,28 @@ import type {
   EnduranceSport,
   ExperienceLevel,
   Gender,
+  ScoringBasis,
   SessionType,
 } from "@/types";
 
 export const MAX_INDEX = 999;
 export const MIN_INDEX = 1;
+
+/**
+ * Which comparison table to use when the athlete has not told us.
+ *
+ * Every sex-segregated standard in here — the 5k references, the strength
+ * ratios, and the DOTS/Glossbrenner coefficients next door — has exactly two
+ * columns, so an unanswered scoring basis has to resolve to one of them. It
+ * resolves to a documented default rather than throwing, because refusing to
+ * score is how athletes who chose "other"/"prefer not to say" ended up unable
+ * to log anything at all. Scores that rest on it are flagged: see
+ * resolveScoringBasis in scoring/adapters.ts.
+ *
+ * Lives here, next to the tables it selects between, so every boundary that
+ * needs a fallback shares one value instead of inventing its own.
+ */
+export const DEFAULT_SCORING_BASIS: ScoringBasis = "male";
 
 /** Index anchor: matching reference performance maps to 500 */
 export const INDEX_ANCHOR = 500;

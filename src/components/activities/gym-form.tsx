@@ -111,14 +111,14 @@ export function GymExercises({
   errors,
   onUpdate,
   embedded = false,
-  profileGender = null,
+  profileScoringSex = null,
 }: {
   state: WorkoutFormState;
   errors: FormErrors;
   onUpdate: UpdateField;
   /** When true, skip outer section wrapper (inside ExpandableSection) */
   embedded?: boolean;
-  profileGender?: Gender | null;
+  profileScoringSex?: Gender | null;
 }) {
   const rows = state.exercises;
   // The muscle-group filter deliberately does NOT live here. It used to be a
@@ -209,7 +209,7 @@ export function GymExercises({
               bodyweight={bodyweight}
               errors={errors}
               canRemove={rows.length > 1}
-              profileGender={profileGender}
+              profileScoringSex={profileScoringSex}
               onUpdate={(patch) => updateRow(row.id, patch)}
               onRemove={() => removeRow(row.id)}
             />
@@ -250,7 +250,7 @@ function ExerciseRow({
   bodyweight,
   errors,
   canRemove,
-  profileGender,
+  profileScoringSex,
   onUpdate,
   onRemove,
 }: {
@@ -259,7 +259,7 @@ function ExerciseRow({
   bodyweight: number | null;
   errors: FormErrors;
   canRemove: boolean;
-  profileGender?: Gender | null;
+  profileScoringSex?: Gender | null;
   onUpdate: (patch: Partial<ExerciseRowState>) => void;
   onRemove: () => void;
 }) {
@@ -301,7 +301,7 @@ function ExerciseRow({
       ? resolveScoringWeight(weightKg, row.name, row.weightEntryMode)
       : null;
   const scoringSex =
-    profileGender === "female" || profileGender === "male" ? profileGender : null;
+    profileScoringSex === "female" || profileScoringSex === "male" ? profileScoringSex : null;
   // This IS the same function activity-scorer.ts's scoreGymSession() calls
   // per-exercise to compute the real, saved score (split-strength-engine's
   // scoreStrength) — see that file's own comment: calculateStrengthIndexV2

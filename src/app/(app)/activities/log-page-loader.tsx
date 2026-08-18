@@ -9,6 +9,7 @@ import {
   nextSetId,
 } from "@/components/activities/form-state";
 import { defaultWeightEntryMode } from "@/lib/scoring/weight-entry";
+import { resolveScoringSex } from "@/lib/scoring/adapters";
 import {
   recommendNextGymSplit,
   GYM_RECOMMENDATION_CONFIG,
@@ -40,7 +41,7 @@ export async function loadLogPage({
   const { data: profile } = await supabase
     .from("profiles")
     .select(
-      "onboarding_completed, weight_kg, gender, experience, subscription_tier, subscription_status"
+      "onboarding_completed, weight_kg, gender, scoring_basis, experience, subscription_tier, subscription_status"
     )
     .eq("user_id", user.id)
     .single();
@@ -176,7 +177,7 @@ export async function loadLogPage({
       zoneMode={zoneMode}
       enduranceOnly={enduranceOnly}
       successRedirect={zoneMode === "gym" ? "/gym" : "/cardio"}
-      profileGender={profile.gender}
+      profileScoringSex={resolveScoringSex(profile)}
       profileExperience={profile.experience}
     />
   );

@@ -1,5 +1,4 @@
-import { MAX_INDEX, MIN_INDEX } from "@/lib/scoring/constants";
-import { ScoringInputError } from "@/lib/scoring/input-guards";
+import { DEFAULT_SCORING_BASIS, MAX_INDEX, MIN_INDEX } from "@/lib/scoring/constants";
 import type { Gender, GymExerciseInput, Profile, ScoreBreakdown } from "@/types";
 import { COMMON_EXERCISES } from "@/lib/constants/sports";
 import { totalVolumeKg } from "@/lib/activities/gym-sets";
@@ -212,12 +211,22 @@ export interface StrengthEngineResult {
   }>;
 }
 
-/** Never default to male (Part F) — same rule as requireScoringSex in adapters.ts, duplicated here rather than imported to keep this module's own input validated at its own boundary. */
+/**
+ * DOTS and Glossbrenner only have male and female coefficient tables, so this
+ * boundary has to resolve to one of the two.
+ *
+ * It used to throw for anything else, which — via calculateStrengthIndexV2,
+ * called on every gym submit — meant an athlete whose profile said "other" or
+ * "prefer not to say" could not log a workout at all. Callers now pass the
+ * athlete's resolved scoring basis (see resolveScoringBasis in
+ * scoring/adapters.ts, which owns the fallback and the reduced-confidence
+ * flag), and this keeps the same documented default rather than throwing if
+ * anything ever reaches it unresolved. A wrong comparison table is
+ * recoverable; a lost session is not.
+ */
 function resolveStrengthSex(gender: Gender | null): StrengthSex {
   if (gender === "female" || gender === "male") return gender;
-  throw new ScoringInputError(
-    "Set your sex (male or female) in your profile before scoring — it's required for fair strength and cardio benchmarks."
-  );
+  return DEFAULT_SCORING_BASIS;
 }
 
 function normalizeName(name: string): string {

@@ -54,13 +54,13 @@ export function SportForm({
   state,
   errors,
   onUpdate,
-  profileGender = null,
+  profileScoringSex = null,
 }: {
   sport: SportType;
   state: WorkoutFormState;
   errors: FormErrors;
   onUpdate: UpdateField;
-  profileGender?: import("@/types").Gender | null;
+  profileScoringSex?: import("@/types").Gender | null;
 }) {
   const fields = SPORT_FIELDS[sport];
   const durationSeconds = totalDurationSeconds(state);
@@ -154,7 +154,7 @@ export function SportForm({
               errors={errors}
               onUpdate={onUpdate}
               embedded
-              profileGender={profileGender}
+              profileScoringSex={profileScoringSex}
             />
           </ExpandableSection>
         </>

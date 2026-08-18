@@ -7,7 +7,12 @@ import { Sparkles, Dumbbell, Activity, Check, X, Loader2, Camera } from "lucide-
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
-import { GENDERS, SPORTS } from "@/lib/constants/sports";
+import {
+  GENDERS,
+  SCORING_BASES,
+  SCORING_BASIS_EXPLANATION,
+  SPORTS,
+} from "@/lib/constants/sports";
 import { PRESET_AVATARS } from "@/lib/constants/avatars";
 import { createClient } from "@/lib/supabase/client";
 import { supabaseErrorMessage } from "@/lib/supabase/errors";
@@ -16,7 +21,16 @@ import { ageFromDateOfBirth, maxDobForMinAge, minDobForMaxAge } from "@/lib/util
 import { cn } from "@/lib/utils/cn";
 import { ScoreRevealSequence } from "@/components/onboarding/score-reveal";
 import type { PostgrestError } from "@supabase/supabase-js";
-import type { Gender, SportType } from "@/types";
+import type { Gender, ScoringBasis, SportType } from "@/types";
+
+/**
+ * Does the identity answer already tell us which comparison tables to use?
+ * When it does, the scoring-basis question is not asked — nobody should have
+ * to answer the same thing twice.
+ */
+function genderDeterminesScoringBasis(gender: Gender | ""): boolean {
+  return gender === "male" || gender === "female";
+}
 
 const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
 const ACCEPTED_AVATAR_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
@@ -66,6 +80,9 @@ export function OnboardingFlow() {
   const [form, setForm] = useState({
     date_of_birth: "",
     gender: "" as Gender | "",
+    // Only ever filled in when `gender` does not already answer it — see
+    // scoringBasisToSave below, which derives it from gender otherwise.
+    scoring_basis: "" as ScoringBasis | "",
     height_cm: "",
     weight_kg: "",
     max_hr: "",
@@ -287,6 +304,12 @@ export function OnboardingFlow() {
       date_of_birth: form.date_of_birth,
       age: derivedAge,
       gender: form.gender as Gender,
+      // Identity answers the scoring question whenever it can, so male/female
+      // athletes are never asked twice; everyone else gets whatever they
+      // chose, or null (scoring then falls back and flags itself).
+      scoring_basis: genderDeterminesScoringBasis(form.gender)
+        ? (form.gender as ScoringBasis)
+        : form.scoring_basis || null,
       height_cm: Number(form.height_cm),
       weight_kg: Number(form.weight_kg),
       max_hr: Number(form.max_hr) || (derivedAge ? Math.round(220 - derivedAge) : null),
@@ -496,6 +519,30 @@ export function OnboardingFlow() {
                     error={errors.gender}
                     onChange={(e) => update("gender", e.target.value)}
                   />
+                  {/*
+                    Asked only when the answer above does not already settle
+                    it. Optional: an athlete who would rather not say still
+                    gets a fully working app — their scores fall back to a
+                    documented default and are flagged as such, which is a
+                    better trade than the old behaviour of refusing to score
+                    them at all.
+                  */}
+                  {form.gender !== "" && !genderDeterminesScoringBasis(form.gender) && (
+                    <div>
+                      <Select
+                        label="Score me against (optional)"
+                        options={[
+                          { value: "", label: "Not now — use the default" },
+                          ...SCORING_BASES,
+                        ]}
+                        value={form.scoring_basis}
+                        onChange={(e) => update("scoring_basis", e.target.value)}
+                      />
+                      <p className="mt-1.5 text-xs text-muted">
+                        {SCORING_BASIS_EXPLANATION}
+                      </p>
+                    </div>
+                  )}
                 </>
               )}
 

@@ -83,7 +83,7 @@ export function ActivityForm({
   activityId,
   initialEditState,
   editActivityTitle,
-  profileGender = null,
+  profileScoringSex = null,
   profileExperience = null,
   zoneMode = "generic",
   enduranceOnly = false,
@@ -98,7 +98,7 @@ export function ActivityForm({
   activityId?: string;
   initialEditState?: WorkoutFormState;
   editActivityTitle?: string;
-  profileGender?: Gender | null;
+  profileScoringSex?: Gender | null;
   profileExperience?: ExperienceLevel | null;
   zoneMode?: "gym" | "cardio" | "generic";
   enduranceOnly?: boolean;
@@ -242,7 +242,7 @@ export function ActivityForm({
         benchmarkContext = formatPaceBenchmarkContext(
           currentSport,
           pace,
-          profileGender,
+          profileScoringSex,
           profileExperience
         );
       }
@@ -617,7 +617,7 @@ export function ActivityForm({
                     state={currentState}
                     errors={errors}
                     onUpdate={updateField}
-                    profileGender={profileGender}
+                    profileScoringSex={profileScoringSex}
                   />
                 </motion.div>
               </AnimatePresence>

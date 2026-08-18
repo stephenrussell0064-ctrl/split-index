@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { AnalyticsClient } from "@/components/analytics/analytics-client";
 import { isPremiumUser } from "@/lib/retention/trial";
 import { canAccessProfile } from "@/lib/premium/features";
-import { requireScoringSex } from "@/lib/scoring/adapters";
+import { resolveScoringSex } from "@/lib/scoring/adapters";
 import { calculateOverallDotsGl } from "@/lib/scoring/strength/overall-dots-gl";
 import { computeRaceRecords } from "@/lib/scoring/race-records";
 import type { AnalyticsPayload, PredictedBenchmark, StrengthEstimate } from "@/components/analytics/types";
@@ -29,7 +29,7 @@ export default async function AnalyticsPage() {
   const { data: profile } = await supabase
     .from("profiles")
     .select(
-      "onboarding_completed, subscription_tier, subscription_status, max_hr, timezone, weight_kg, gender"
+      "onboarding_completed, subscription_tier, subscription_status, max_hr, timezone, weight_kg, gender, scoring_basis"
     )
     .eq("user_id", user.id)
     .single();
@@ -182,7 +182,7 @@ export default async function AnalyticsPage() {
 
   const overallDotsGl =
     profile.weight_kg && profile.weight_kg > 0
-      ? calculateOverallDotsGl(allTimeExercises ?? [], profile.weight_kg, requireScoringSex(profile.gender))
+      ? calculateOverallDotsGl(allTimeExercises ?? [], profile.weight_kg, resolveScoringSex(profile))
       : null;
 
   const payload: AnalyticsPayload = {

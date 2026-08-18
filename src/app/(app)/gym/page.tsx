@@ -16,7 +16,7 @@ import {
   GYM_RECOMMENDATION_CONFIG,
   type LoggedGymSet,
 } from "@/lib/scoring/gym-recommendation";
-import { requireScoringSex } from "@/lib/scoring/adapters";
+import { resolveScoringSex } from "@/lib/scoring/adapters";
 import { calculateOverallDotsGl } from "@/lib/scoring/strength/overall-dots-gl";
 import type { ExRxTier } from "@/lib/scoring/strength/ratio-tiers";
 import type { ScoreBreakdown } from "@/types";
@@ -31,7 +31,9 @@ export default async function GymPage() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("onboarding_completed, subscription_tier, subscription_status, weight_kg, gender")
+    .select(
+      "onboarding_completed, subscription_tier, subscription_status, weight_kg, gender, scoring_basis"
+    )
     .eq("user_id", user.id)
     .single();
 
@@ -123,7 +125,7 @@ export default async function GymPage() {
       ? calculateOverallDotsGl(
           allTimeExercises ?? [],
           profile.weight_kg,
-          requireScoringSex(profile.gender)
+          resolveScoringSex(profile)
         )
       : null;
 

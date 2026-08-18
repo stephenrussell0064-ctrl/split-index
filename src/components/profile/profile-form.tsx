@@ -7,11 +7,29 @@ import { Check, User, Ruler, Dumbbell, Compass } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Select, Textarea } from "@/components/ui/input";
-import { EXPERIENCE_LEVELS, GENDERS, TRAINING_GOALS } from "@/lib/constants/sports";
+import {
+  EXPERIENCE_LEVELS,
+  GENDERS,
+  SCORING_BASES,
+  SCORING_BASIS_EXPLANATION,
+  TRAINING_GOALS,
+} from "@/lib/constants/sports";
 import { createClient } from "@/lib/supabase/client";
 import { ageFromDateOfBirth, maxDobForMinAge, minDobForMaxAge } from "@/lib/utils/age";
 import { cn } from "@/lib/utils/cn";
-import type { ExperienceLevel, Gender, PrimaryMotivation, Profile, TrainingGoal } from "@/types";
+import type {
+  ExperienceLevel,
+  Gender,
+  PrimaryMotivation,
+  Profile,
+  ScoringBasis,
+  TrainingGoal,
+} from "@/types";
+
+/** See the same helper in onboarding-flow.tsx — identity answers the scoring question whenever it can. */
+function genderDeterminesScoringBasis(gender: string): boolean {
+  return gender === "male" || gender === "female";
+}
 
 const MOTIVATIONS: Array<{ value: PrimaryMotivation; label: string }> = [
   { value: "leaderboard", label: "Climb the leaderboard" },
@@ -37,6 +55,7 @@ export function ProfileForm({ profile }: ProfileFormProps) {
     country: profile.country ?? "",
     date_of_birth: profile.date_of_birth ?? "",
     gender: profile.gender ?? "",
+    scoring_basis: profile.scoring_basis ?? "",
     height_cm: profile.height_cm?.toString() ?? "",
     weight_kg: profile.weight_kg?.toString() ?? "",
     max_hr: profile.max_hr?.toString() ?? "",
@@ -75,6 +94,12 @@ export function ProfileForm({ profile }: ProfileFormProps) {
         date_of_birth: form.date_of_birth || null,
         age: ageFromDateOfBirth(form.date_of_birth),
         gender: (form.gender as Gender) || null,
+        // Kept in lockstep with identity when identity settles it, so the two
+        // can never silently disagree; otherwise it is whatever the athlete
+        // chose in the question below (null = not told, scoring falls back).
+        scoring_basis: genderDeterminesScoringBasis(form.gender)
+          ? (form.gender as ScoringBasis)
+          : (form.scoring_basis as ScoringBasis) || null,
         height_cm: form.height_cm ? Number(form.height_cm) : null,
         weight_kg: form.weight_kg ? Number(form.weight_kg) : null,
         max_hr: form.max_hr ? Number(form.max_hr) : null,
@@ -202,13 +227,33 @@ export function ProfileForm({ profile }: ProfileFormProps) {
               hint="Optional — calibrates cardio scoring to your own heart rate range instead of a fixed average"
             />
           </div>
-          <div className="mt-4">
+          <div className="mt-4 space-y-4">
             <Select
               label="Gender"
               value={form.gender}
               onChange={(e) => update("gender", e.target.value)}
               options={[{ value: "", label: "Select…" }, ...GENDERS]}
             />
+            {/*
+              Shown only when the gender answer above cannot settle which
+              comparison tables to use — for everyone else it would be the
+              same question a second time. This is where an athlete already
+              logging workouts on the fallback comes to correct it.
+            */}
+            {!genderDeterminesScoringBasis(form.gender) && (
+              <div>
+                <Select
+                  label="Score me against"
+                  value={form.scoring_basis}
+                  onChange={(e) => update("scoring_basis", e.target.value)}
+                  options={[
+                    { value: "", label: "Not set — using the default" },
+                    ...SCORING_BASES,
+                  ]}
+                />
+                <p className="mt-1.5 text-xs text-muted">{SCORING_BASIS_EXPLANATION}</p>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>

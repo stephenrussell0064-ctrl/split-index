@@ -1,12 +1,12 @@
-import type { SportType, Gender, ExperienceLevel, SessionType } from "@/types";
+import type { SportType, Gender, ScoringBasis, ExperienceLevel, SessionType } from "@/types";
 import type { Profile as AthleteProfile } from "@/lib/scoring/index-engine";
 import type { CardioInput, CardioType, Sex } from "@/lib/scoring/cardio-activity";
+import { DEFAULT_SCORING_BASIS } from "@/lib/scoring/constants";
 import { isValidIntervalWorkPiece, isValidFartlekOnPiece } from "@/lib/scoring/cardio/interval-scoring";
 import type { ActivityScore } from "@/lib/scoring/index-engine";
 import type { CardioResult } from "@/lib/scoring/cardio-activity";
 import type { CardioEnrichment } from "@/lib/scoring/cardio/confidence";
 import type { BenchmarkSport } from "@/lib/scoring/cardio-benchmarks";
-import { ScoringInputError } from "@/lib/scoring/input-guards";
 import {
   computeSessionBenchmarkEquivalentSeconds,
   computeIntervalBenchmarkEquivalentSeconds,
@@ -27,15 +27,55 @@ export function deriveAthleteProfile(preferredSports: SportType[]): AthleteProfi
   return "hybrid";
 }
 
-/** Map profile gender to scoring sex — never default to male (Part F). */
-export function requireScoringSex(gender: Gender | null | undefined): Sex {
-  if (gender === "female" || gender === "male") return gender;
-  throw new ScoringInputError(
-    "Set your sex (male or female) in your profile before scoring — it's required for fair strength and cardio benchmarks."
-  );
+export interface ScoringBasisResolution {
+  sex: Sex;
+  /** Where the answer came from — "default" means nobody has told us. */
+  source: "explicit" | "identity" | "default";
+  /** True when `sex` is a fallback rather than the athlete's own answer. */
+  isDefault: boolean;
 }
 
-/** @deprecated Use requireScoringSex — kept for non-scoring display paths only. */
+/**
+ * Resolve which sex-segregated standards to score an athlete against.
+ *
+ * Precedence, and the reason for it:
+ *  1. `scoring_basis` — the athlete answered the scoring question directly.
+ *  2. `gender`, when it is male/female — identity already answers it, so the
+ *     athlete is never asked the same thing twice (the onboarding and profile
+ *     forms only show the basis question when this branch cannot fire).
+ *  3. DEFAULT_SCORING_BASIS (see scoring/constants.ts), flagged. Reached by
+ *     athletes who chose "other"/"prefer_not_to_say" and have not set a basis
+ *     yet. They get a working app immediately and a prompt to correct it,
+ *     instead of the hard throw that used to make every single workout
+ *     unloggable for them.
+ *
+ * NEVER throws. Callers that need to know whether the number is calibrated
+ * read `isDefault`.
+ */
+export function resolveScoringBasis(profile: {
+  gender?: Gender | null;
+  scoring_basis?: ScoringBasis | null;
+}): ScoringBasisResolution {
+  const explicit = profile.scoring_basis;
+  if (explicit === "male" || explicit === "female") {
+    return { sex: explicit, source: "explicit", isDefault: false };
+  }
+  const gender = profile.gender;
+  if (gender === "male" || gender === "female") {
+    return { sex: gender, source: "identity", isDefault: false };
+  }
+  return { sex: DEFAULT_SCORING_BASIS, source: "default", isDefault: true };
+}
+
+/** Shorthand for callers that only need the sex and not the provenance. */
+export function resolveScoringSex(profile: {
+  gender?: Gender | null;
+  scoring_basis?: ScoringBasis | null;
+}): Sex {
+  return resolveScoringBasis(profile).sex;
+}
+
+/** @deprecated Use resolveScoringSex — kept for non-scoring display paths only. */
 export function mapSex(gender: Gender | null | undefined): Sex {
   return gender === "female" ? "female" : "male";
 }
@@ -189,6 +229,8 @@ export function buildCardioInput(input: {
   maxHr?: number | null;
   age?: number | null;
   gender?: Gender | null;
+  /** Which standards to compare against — see resolveScoringBasis. Falls back to `gender` when omitted. */
+  scoringBasis?: ScoringBasis | null;
   experience?: ExperienceLevel | null;
   restingHr?: number | null;
   firstHalfAvgHR?: number | null;
@@ -233,7 +275,7 @@ export function buildCardioInput(input: {
     benchmarkSport: mapSportToBenchmarkSport(input.sport),
     distanceMeters: input.distanceMeters ?? 0,
     durationSeconds: input.durationSeconds,
-    sex: requireScoringSex(input.gender),
+    sex: resolveScoringSex({ gender: input.gender, scoring_basis: input.scoringBasis }),
     age: input.age ?? 30,
     restingHR: input.restingHr ?? undefined,
     maxHR: input.maxHr ?? undefined,

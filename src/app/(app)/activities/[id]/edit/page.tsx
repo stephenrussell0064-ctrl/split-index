@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { ActivityForm } from "@/components/activities/activity-form";
 import { activityToFormState } from "@/lib/activities/db-form";
 import { isPremiumUser } from "@/lib/retention/trial";
+import { resolveScoringSex } from "@/lib/scoring/adapters";
 import type { SportType } from "@/types";
 import { SPORTS } from "@/lib/constants/sports";
 
@@ -22,7 +23,7 @@ export default async function EditActivityPage({
   const { data: profile } = await supabase
     .from("profiles")
     .select(
-      "onboarding_completed, weight_kg, gender, experience, subscription_tier, subscription_status"
+      "onboarding_completed, weight_kg, gender, scoring_basis, experience, subscription_tier, subscription_status"
     )
     .eq("user_id", user.id)
     .single();
@@ -66,7 +67,7 @@ export default async function EditActivityPage({
       initialEditState={initialEditState}
       editActivityTitle={(activity.title as string) ?? sport}
       profileWeightKg={profile.weight_kg}
-      profileGender={profile.gender}
+      profileScoringSex={resolveScoringSex(profile)}
       profileExperience={profile.experience}
       isPremium={premium}
     />

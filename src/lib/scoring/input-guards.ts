@@ -39,7 +39,9 @@ const MAX_MACHINE_BODYWEIGHT_MULTIPLE = 12;
  * by bodyweight-relative strength.
  *
  * Deliberately narrow: the leg-press family (including the calf raise done on
- * the same sled), the two squat machines, and the sleds. Everything else —
+ * the same sled), the plate-loaded squat machines — hack, pendulum and belt,
+ * all of which carry the load on a frame rather than on the spine — and the
+ * sleds. Everything else —
  * including machine chest/shoulder presses, which are loaded through the same
  * joints as their barbell equivalents — keeps the free-weight ceiling.
  *
@@ -55,6 +57,7 @@ const MACHINE_ANCHORED_EXERCISES = new Set([
   "leg press calf raise",
   "hack squat",
   "hack squat machine",
+  "pendulum squat",
   "belt squat",
   "sled push",
   "sled pull",
@@ -109,6 +112,11 @@ export function assertScoringInput(input: {
     exercise_name?: string;
     sets: Array<{ weight_kg: number; reps: number; rpe?: number | null }>;
   }>;
+  /**
+   * `gender` is accepted so callers can hand over a whole profile, but it is
+   * deliberately NOT validated here — see the note in the body. Only
+   * `weight_kg` is guarded, and only as a plausibility range.
+   */
   profile?: { weight_kg?: number | null; gender?: import("@/types").Gender | null };
 }): void {
   if (!Number.isFinite(input.durationSeconds) || input.durationSeconds <= 0) {
@@ -176,17 +184,21 @@ export function assertScoringInput(input: {
     throw new ScoringInputError("Bodyweight is out of the allowed range.");
   }
 
-  const gender = input.profile?.gender;
-  if (gender == null) {
-    throw new ScoringInputError(
-      "Set your sex (male or female) in your profile before scoring."
-    );
-  }
-  if (gender !== "male" && gender !== "female") {
-    throw new ScoringInputError(
-      "Set your sex to male or female in your profile before scoring."
-    );
-  }
+  /**
+   * There is deliberately NO check on gender / scoring basis here.
+   *
+   * This guard used to throw for anything other than male/female, and it runs
+   * on every sport and every submit — so an athlete who answered the
+   * onboarding gender question with "Other" or "Prefer not to say" (both
+   * offered by GENDERS, both stored happily by the database) could never log a
+   * single workout. That is a signup-to-dead-end, and losing the workout is a
+   * far worse outcome than an imperfect comparison.
+   *
+   * Which sex-segregated standards to score against is now resolved, never
+   * demanded: see resolveScoringBasis in scoring/adapters.ts, which falls back
+   * to a documented default and flags reduced confidence. Nothing about the
+   * athlete's profile may block a log from here.
+   */
 
   if (input.sport === "gym" && input.exercises?.length) {
     for (const ex of input.exercises) {

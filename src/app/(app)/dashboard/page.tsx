@@ -36,7 +36,7 @@ import {
   buildActivityScores,
   deriveAthleteProfile,
   labWeightFromProfile,
-  requireScoringSex,
+  resolveScoringSex,
 } from "@/lib/scoring/adapters";
 import { computeIndexes } from "@/lib/scoring/index-engine";
 import type { IndexResult } from "@/lib/scoring/index-engine";
@@ -255,7 +255,7 @@ export default async function DashboardPage() {
       : null;
   const overallDotsGl =
     profile.weight_kg && profile.weight_kg > 0
-      ? calculateOverallDotsGl(allTimeGymExercises, profile.weight_kg, requireScoringSex(profile.gender))
+      ? calculateOverallDotsGl(allTimeGymExercises, profile.weight_kg, resolveScoringSex(profile))
       : null;
 
   const hasActivities = (recentActivities?.length ?? 0) > 0;

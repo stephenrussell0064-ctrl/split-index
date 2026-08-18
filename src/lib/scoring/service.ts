@@ -55,7 +55,16 @@ interface ScoreActivityInput {
     | "training_history_years"
     | "split_endurance_weight"
     | "preferred_sports"
-  > & { resting_hr?: number | null };
+  > & {
+    resting_hr?: number | null;
+    /**
+     * Which sex-segregated standards to score against (migration 045).
+     * Optional rather than picked from Profile so the in-repo calibration
+     * fixtures stay minimal — omitted or null resolves through `gender` and
+     * then a documented default, see resolveScoringBasis in adapters.ts.
+     */
+    scoring_basis?: Profile["scoring_basis"];
+  };
   recentLoads: { acute: number; chronic: number };
   useGL?: boolean;
   startedAt?: string;

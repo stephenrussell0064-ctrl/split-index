@@ -1,4 +1,12 @@
-import type { GymExerciseInput, SessionType, SportType, Gender, ExperienceLevel, ScoreBreakdown } from "@/types";
+import type {
+  GymExerciseInput,
+  SessionType,
+  SportType,
+  Gender,
+  ScoringBasis,
+  ExperienceLevel,
+  ScoreBreakdown,
+} from "@/types";
 import {
   scoreCardioActivity,
   type CardioResult,
@@ -15,7 +23,7 @@ import {
   resolveScoringWeight,
   type WeightEntryMode,
 } from "@/lib/scoring/weight-entry";
-import { requireScoringSex } from "@/lib/scoring/adapters";
+import { resolveScoringBasis } from "@/lib/scoring/adapters";
 import {
   computeIndexes,
   type IndexResult,
@@ -87,6 +95,8 @@ export interface ActivityScoreContext {
     weight_kg?: number | null;
     age?: number | null;
     gender?: Gender | null;
+    /** Which sex-segregated standards to score against — see resolveScoringBasis. */
+    scoring_basis?: ScoringBasis | null;
     experience?: ExperienceLevel | null;
     preferred_sports?: SportType[];
     split_endurance_weight?: number;
@@ -136,6 +146,23 @@ export interface ActivityScoreOutput {
     score_breakdown: Record<string, unknown>;
   }>;
 }
+
+/**
+ * How much confidence a score loses when nobody has told us which
+ * sex-segregated standards to compare the athlete against, so
+ * DEFAULT_SCORING_BASIS was used.
+ *
+ * The session is scored and saved either way — refusing to score it is what
+ * made the app unusable for these athletes in the first place. What this does
+ * is stop the resulting number being presented as though it were calibrated:
+ * the comparison tables are a guess until the athlete answers, and the score
+ * should say so rather than quietly claim a precision it does not have.
+ */
+const UNSET_SCORING_BASIS_CONFIDENCE_FACTOR = 0.85;
+
+/** Surfaced in the score breakdown so the athlete can see why, and fix it. */
+const UNSET_SCORING_BASIS_NOTE =
+  "scored against default standards — set your scoring basis in your profile for an accurate comparison";
 
 function splitHalvesFromPaces(splitPacesSec?: number[]) {
   if (!splitPacesSec || splitPacesSec.length < 4) {
@@ -193,11 +220,14 @@ function scoreGymSession(
   const legacy = calculateStrengthIndexV2({
     exercises: repExercises,
     bodyweightKg: bodyweight,
-    gender: input.profile.gender ?? null,
+    // The resolved scoring basis, NOT the raw identity: DOTS and Glossbrenner
+    // only have male and female tables, and handing this "other" used to
+    // throw out of a code path that runs on every gym submit.
+    gender: resolveScoringBasis(input.profile).sex,
     options: { useGL: input.useGL ?? false },
   });
 
-  const sex = requireScoringSex(input.profile.gender);
+  const sex = resolveScoringBasis(input.profile).sex;
   const isPremium = input.isPremium ?? false;
   const results: ScoreStrengthResult[] = [];
   const strengthScoreRows: NonNullable<ActivityScoreOutput["strengthScoreRows"]> = [];
@@ -388,6 +418,7 @@ function scoreEnduranceSession(
     restingHr: input.profile.resting_hr,
     age: input.profile.age,
     gender: input.profile.gender,
+    scoringBasis: input.profile.scoring_basis,
     experience: input.profile.experience,
     sessionType: input.sessionType,
     rpe: input.rpe,
@@ -474,6 +505,15 @@ export function scoreActivityWithEngines(
   const endPct = Math.round((1 - weightLab) * 100);
   const strPct = 100 - endPct;
 
+  // The session is scored and returned either way; an unanswered scoring
+  // basis costs confidence and earns a visible note, never the workout.
+  const basis = resolveScoringBasis(input.profile);
+  const baseConfidence = partial.activityConfidence ?? 1;
+  const activityConfidence = basis.isDefault
+    ? baseConfidence * UNSET_SCORING_BASIS_CONFIDENCE_FACTOR
+    : baseConfidence;
+  const baseExplanation = partial.breakdown?.explanation ?? [];
+
   return {
     sportIndex: partial.sportIndex!,
     enduranceComponent: partial.enduranceComponent ?? null,
@@ -481,6 +521,9 @@ export function scoreActivityWithEngines(
     loadScore: partial.loadScore!,
     breakdown: {
       ...(partial.breakdown ?? { explanation: [] }),
+      ...(basis.isDefault
+        ? { explanation: [...baseExplanation, UNSET_SCORING_BASIS_NOTE] }
+        : {}),
       index_result: indexResult,
     },
     splitIndex,
@@ -490,7 +533,7 @@ export function scoreActivityWithEngines(
     fatigueScore,
     recoveryScore,
     predictedIndex: splitIndex,
-    activityConfidence: partial.activityConfidence ?? 1,
+    activityConfidence,
     indexResult,
     cardioActivity: partial.cardioActivity,
     strengthActivities: partial.strengthActivities,

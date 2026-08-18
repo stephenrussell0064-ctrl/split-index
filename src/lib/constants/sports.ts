@@ -405,3 +405,22 @@ export const GENDERS = [
   { value: "prefer_not_to_say", label: "Prefer not to say" },
 ];
 
+/**
+ * Options for the scoring-basis question (profiles.scoring_basis, migration
+ * 045) — which sex-segregated comparison table to score the athlete against.
+ *
+ * Separate from GENDERS on purpose. This is not a second identity question:
+ * the strength and cardio standards are built from sex-segregated population
+ * data, so the tables genuinely only come in two, and the athlete deciding
+ * which one they want to be measured against is a different act from telling
+ * us who they are. Only shown when GENDERS has not already answered it.
+ */
+export const SCORING_BASES = [
+  { value: "male", label: "Male standards" },
+  { value: "female", label: "Female standards" },
+];
+
+/** Shown next to the question, verbatim, so it never reads as a demand to pick a sex. */
+export const SCORING_BASIS_EXPLANATION =
+  "Strength and cardio scores compare you against published population tables (DOTS, age-graded pace, heart-rate references), and those tables are split by sex. Tell us which set to score you against. It only affects your comparison, not your profile, and you can change it any time.";
+
