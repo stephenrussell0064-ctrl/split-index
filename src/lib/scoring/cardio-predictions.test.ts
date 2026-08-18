@@ -6,6 +6,9 @@ import {
   PREDICTION_DECAY,
   isDirectBenchmarkDistance,
   DIRECT_EVIDENCE_IMPROVE_RATE,
+  REGRESS_RATE,
+  computeSessionBenchmarkEquivalentSeconds,
+  terrainAdjustedSessionEF,
 } from "./cardio-predictions";
 import { BENCHMARK_DISTANCE_METERS } from "./cardio-benchmarks";
 
@@ -18,7 +21,15 @@ import { BENCHMARK_DISTANCE_METERS } from "./cardio-benchmarks";
  * outright faster absolute time (IMPROVE_RATE). Reproduces the user's own
  * example: previous best 20:00 (1200s); a 30:00 easy run at 180bpm doesn't
  * move the prediction; a 29:30 easy run at 175bpm (genuinely more efficient
- * than their usual easy effort) nudges it down slightly.
+ * than their usual easy effort) nudges it — originally down, now only ever
+ * up.
+ *
+ * That last part was narrowed by a later report (see the "reported 18:22 ->
+ * 18:09 bug" block at the bottom of this file): the layer's FASTER direction
+ * is now floored at the session's own benchmark-equivalent, so it can only
+ * spend improvement the session itself demonstrated. Its slower direction —
+ * the fatigue/decline signal — is unchanged, and its faster direction still
+ * applies in full on sessions whose own equivalent beats the stored value.
  */
 describe("updatePrediction / blendPredictedBenchmark — relative-trend evidence", () => {
   const STORED = 1200; // 20:00 5k
@@ -37,18 +48,38 @@ describe("updatePrediction / blendPredictedBenchmark — relative-trend evidence
     expect(result).toBe(STORED);
   });
 
-  it("beating the athlete's own easy-run baseline nudges the prediction down slightly, never anywhere near the session's raw (far-off) absolute time", () => {
-    // Reproduces the user's example: 29:30 (1770s) at 175bpm reads as
-    // genuinely more efficient than their usual easy effort (baselineEF
-    // lower than this session's own EF).
+  it("beating the athlete's own easy-run baseline CANNOT improve the prediction when the session's own equivalent is slower than the stored value (superseded: this used to nudge it down)", () => {
+    // The user's original example — 29:30 (1770s) at 175bpm, more efficient
+    // than their usual easy effort — used to pull the stored 20:00 slightly
+    // faster. A later report proved that backwards (see the dedicated
+    // describe block at the bottom of this file): a session whose own
+    // equivalent is 1770s is evidence AGAINST a 1200s prediction, so it may
+    // not improve it. The relative-effort signal is still read, it just
+    // can't outrun what the session itself demonstrated.
     const result = updatePrediction(STORED, 1770, {
       sessionType: "easy",
       thisSessionEF: 1.15,
       baselineEF: 1.1,
     });
-    expect(result).toBeLessThan(STORED);
-    // Deliberately tiny — nowhere near blending toward the 1770s absolute time.
-    expect(result).toBeGreaterThan(STORED * 0.98);
+    expect(result).toBe(STORED);
+  });
+
+  it("still nudges the prediction faster off the same beat-your-baseline signal when the session's own equivalent DOES support an improvement", () => {
+    // Same relative-effort evidence, but on a session whose own equivalent
+    // (1150s) is genuinely faster than the stored 1200s — here the easy-run
+    // trend layer keeps its full original job, adding a little on top of the
+    // IMPROVE_RATE blend.
+    const EQUIV = 1150;
+    const primaryOnly = updatePrediction(STORED, EQUIV);
+    const withTrend = updatePrediction(STORED, EQUIV, {
+      sessionType: "easy",
+      thisSessionEF: 1.1 * 1.02,
+      baselineEF: 1.1,
+    });
+    expect(withTrend).toBeLessThan(primaryOnly);
+    // ...but never past the session's own equivalent, which remains the
+    // fastest thing this one session is entitled to claim.
+    expect(withTrend).toBeGreaterThanOrEqual(EQUIV);
   });
 
   it("nudges the prediction slightly slower for a below-baseline easy run — deliberate revision of the original always-improve-only design (user feedback: account for fatigue/declining fitness, not just improvement)", () => {
@@ -72,19 +103,22 @@ describe("updatePrediction / blendPredictedBenchmark — relative-trend evidence
   });
 
   it("caps the nudge regardless of how large the efficiency ratio is", () => {
-    const extreme = updatePrediction(STORED, 1800, {
+    // Measured on a session whose own equivalent (1100s) leaves room to
+    // improve, so the cap — not the directional floor — is what's under test.
+    const extreme = updatePrediction(STORED, 1100, {
       sessionType: "easy",
       thisSessionEF: 5.0,
       baselineEF: 1.1,
     });
-    const atCapBoundary = updatePrediction(STORED, 1800, {
+    const atCapBoundary = updatePrediction(STORED, 1100, {
       sessionType: "easy",
       // A ratio chosen so (ratio - 1) * 0.3 already exceeds the 2% cap.
       thisSessionEF: 1.1 * 1.2,
       baselineEF: 1.1,
     });
     expect(extreme).toBe(atCapBoundary);
-    expect(extreme).toBeGreaterThanOrEqual(STORED * 0.98 - 0.01);
+    const primaryOnly = updatePrediction(STORED, 1100);
+    expect(extreme).toBeGreaterThanOrEqual(primaryOnly * 0.98 - 0.01);
   });
 
   it("layers as a small additional adjustment even when the session already clears the absolute IMPROVE_RATE/REGRESS_RATE gates (user feedback: keep the prediction visibly alive between quality efforts, including when two identical quality efforts would otherwise produce a literal zero-delta update)", () => {
@@ -104,13 +138,22 @@ describe("updatePrediction / blendPredictedBenchmark — relative-trend evidence
   });
 
   it("blendPredictedBenchmark threads context through the same way", () => {
+    const result = blendPredictedBenchmark(STORED, 1150, {
+      sessionType: "easy",
+      thisSessionEF: 1.1 * 1.02,
+      baselineEF: 1.1,
+    });
+    expect(result).toBeLessThan(updatePrediction(STORED, 1150));
+    expect(result).toBeGreaterThan(STORED * 0.9);
+  });
+
+  it("blendPredictedBenchmark carries the same directional floor — a slower session can't be talked into an improvement", () => {
     const result = blendPredictedBenchmark(STORED, 1770, {
       sessionType: "easy",
       thisSessionEF: 1.15,
       baselineEF: 1.1,
     });
-    expect(result).toBeLessThan(STORED);
-    expect(result).toBeGreaterThan(STORED * 0.98);
+    expect(result).toBe(STORED);
   });
 
   it("blendPredictedBenchmark seeds the prediction on the first-ever session regardless of context", () => {
@@ -190,12 +233,23 @@ describe("updatePrediction — direct race-distance evidence snaps fully, not th
     // runs" part of the ask. A full fix for two literally-identical RACE repeats needs separate,
     // date-ordered trend-tracking plumbing not implemented here (see cardio-predictions.ts's
     // updatePrediction doc comment).
-    const easyRunAfterward = updatePrediction(afterFirstRace, afterFirstRace + 400, {
+    //
+    // The direction it can move in is now bounded by the easy run's own
+    // equivalent (fastestJustifiableBySession): a 400s-slower easy run can
+    // report a bad day, never a new PR.
+    const belowBaselineEasyRun = updatePrediction(afterFirstRace, afterFirstRace + 400, {
+      sessionType: "easy",
+      thisSessionEF: 1.0,
+      baselineEF: 1.1,
+    });
+    expect(belowBaselineEasyRun).toBeGreaterThan(afterFirstRace);
+
+    const aboveBaselineEasyRun = updatePrediction(afterFirstRace, afterFirstRace + 400, {
       sessionType: "easy",
       thisSessionEF: 1.15,
       baselineEF: 1.1,
     });
-    expect(easyRunAfterward).toBeLessThan(afterFirstRace);
+    expect(aboveBaselineEasyRun).toBe(afterFirstRace);
   });
 });
 
@@ -224,5 +278,105 @@ describe("applyDecay — inactivity vs. no-recent-quality ceilings", () => {
 
   it("within the grace period, there's no decay at all", () => {
     expect(applyDecay(STORED, 5, 5)).toBe(STORED);
+  });
+});
+
+/**
+ * User-reported bug, in the athlete's own words: "I did a run which stated I
+ * could run this pace for a 5km at 19:41, yet my 5km predicted time on the
+ * dashboard went from 18:22 to 18:09. Why has it gone down so much for an
+ * easy run that wasn't that great? This should either have stayed the same
+ * or gone up."
+ *
+ * They were right. 19:41 (1181s) is WORSE than the standing 18:22 (1102s)
+ * prediction, so it is evidence against improvement. The primary blend had
+ * it right — 1181 sits just inside QUALITY_PROXIMITY of 1102, so REGRESS_RATE
+ * moved the number the correct way, to ~18:34 — but `easyTrendNudge` then
+ * out-voted it: the run WAS efficient against this athlete's own easy
+ * baseline (low HR for the pace), and that relative-effort reading was being
+ * spent as up to 2% (~22s) off a RACE prediction. An efficient easy run is
+ * weak evidence about 5k race pace and must never outrun the session's own
+ * equivalent.
+ *
+ * The rule enforced here: a session can never move the stored prediction
+ * FASTER than that session's own benchmark-equivalent.
+ */
+describe("updatePrediction — an easy run can never improve the prediction past its own equivalent (reported 18:22 -> 18:09 bug)", () => {
+  const PRIOR = 18 * 60 + 22; // 1102s — the standing prediction on the dashboard
+  const SESSION_EQUIVALENT = 19 * 60 + 41; // 1181s — this run's own 5k-equivalent
+
+  it("reproduces the reported inputs and never lands below the prior", () => {
+    const result = updatePrediction(PRIOR, SESSION_EQUIVALENT, {
+      sessionType: "easy",
+      // Efficient relative to this athlete's own easy baseline — the exact
+      // signal that used to buy a faster race prediction.
+      thisSessionEF: 1.5134,
+      baselineEF: 1.45,
+    });
+    // "This should either have stayed the same or gone up" — and it does.
+    expect(result).toBeGreaterThanOrEqual(PRIOR);
+    // The number the athlete actually saw is now unreachable.
+    expect(Math.round(result)).not.toBe(18 * 60 + 9);
+    // The window of honest answers runs from "unchanged" to the full
+    // REGRESS_RATE move (~18:34). Here the flattering relative-effort
+    // reading is still counted — it just gets spent cancelling part of the
+    // regression instead of buying a faster race time, and lands on the
+    // floor.
+    expect(result).toBeLessThanOrEqual(PRIOR + (SESSION_EQUIVALENT - PRIOR) * REGRESS_RATE);
+    expect(result).toBe(PRIOR);
+  });
+
+  it("holds through the real session pipeline — a 10km easy run at 150bpm whose 5k-equivalent is 19:41", () => {
+    const distanceMeters = 10_000;
+    const durationSeconds = 2643; // ~4:24/km
+    const avgHR = 150;
+    const equivalent = computeSessionBenchmarkEquivalentSeconds(
+      "run",
+      distanceMeters,
+      durationSeconds,
+      avgHR
+    )!;
+    expect(Math.round(equivalent)).toBe(19 * 60 + 41); // the 19:41 the athlete was shown
+    expect(equivalent).toBeGreaterThan(PRIOR); // ...which is slower than the standing prediction
+
+    const result = blendPredictedBenchmark(PRIOR, equivalent, {
+      sessionType: "easy",
+      thisSessionEF: terrainAdjustedSessionEF(distanceMeters, durationSeconds, avgHR),
+      baselineEF: 1.45,
+      isDirectBenchmarkDistance: isDirectBenchmarkDistance(
+        distanceMeters,
+        BENCHMARK_DISTANCE_METERS.run
+      ),
+    });
+    expect(result).toBeGreaterThanOrEqual(PRIOR);
+  });
+
+  it("no relative-effort context, however flattering, can pull any session below its own equivalent", () => {
+    // Fuzz the seam directly: across a spread of priors, equivalents and
+    // efficiency ratios, the result never beats min(prior, equivalent).
+    for (const prior of [900, 1102, 1200, 1800]) {
+      for (const equivalent of [600, 950, 1102, 1181, 1400, 2400]) {
+        for (const efRatio of [0.5, 0.9, 1, 1.05, 1.5, 5]) {
+          for (const sessionType of ["easy", "recovery", "long", "race", "tempo"] as const) {
+            const result = updatePrediction(prior, equivalent, {
+              sessionType,
+              thisSessionEF: 1.2 * efRatio,
+              baselineEF: 1.2,
+              isDirectBenchmarkDistance: isDirectBenchmarkDistance(5000, BENCHMARK_DISTANCE_METERS.run),
+            });
+            expect(result).toBeGreaterThanOrEqual(Math.min(prior, equivalent) - 1e-9);
+          }
+        }
+      }
+    }
+  });
+
+  it("leaves the slower direction alone — a below-baseline easy run still reports declining fitness", () => {
+    const result = updatePrediction(PRIOR, SESSION_EQUIVALENT, {
+      sessionType: "easy",
+      thisSessionEF: 1.3,
+      baselineEF: 1.45,
+    });
+    expect(result).toBeGreaterThan(PRIOR + (SESSION_EQUIVALENT - PRIOR) * REGRESS_RATE);
   });
 });

@@ -358,6 +358,13 @@ const EASY_TREND_MAX_ADJUSTMENT_FRACTION = 0.02;
  * easy/recovery/long, or there's no EF data to compare. Applied as an
  * additional small layer in `updatePrediction` below, not a replacement for
  * the primary evidence-based blend.
+ *
+ * Its FASTER direction is only ever provisional: `updatePrediction` floors
+ * the combined result at `fastestJustifiableBySession`, so this layer can
+ * only spend improvement the session's own equivalent already earned. On a
+ * session whose equivalent is slower than the stored prediction the
+ * improvement half is inert by construction, while the slower half — real
+ * information about fatigue between quality efforts — still applies in full.
  */
 function easyTrendNudge(storedSec: number, context?: RelativeEffortTrendContext): number {
   if (!context?.sessionType || !RELATIVE_EFFORT_SESSION_TYPES.has(context.sessionType)) return storedSec;
@@ -372,6 +379,28 @@ function easyTrendNudge(storedSec: number, context?: RelativeEffortTrendContext)
 }
 
 /**
+ * The fastest prediction a single session is entitled to leave behind.
+ *
+ * A session's own benchmark-equivalent is the strongest claim that session
+ * can make about current capability, so it is the hard limit on how far that
+ * session may drag the stored prediction toward "faster":
+ *
+ *  - equivalent faster than the stored value -> the equivalent itself is the
+ *    floor (even DIRECT_EVIDENCE_IMPROVE_RATE's full snap lands exactly on
+ *    it, never past it);
+ *  - equivalent slower than the stored value -> the session demonstrated
+ *    nothing the stored value didn't already claim, so the stored value is
+ *    the floor and the only honest outcomes are "unchanged" or "slower".
+ *
+ * Deliberately one-sided: nothing here caps how far a session may push the
+ * prediction SLOWER, so the regression/fatigue signals keep their full
+ * strength.
+ */
+function fastestJustifiableBySession(storedSec: number, equivSec: number): number {
+  return Math.min(storedSec, equivSec);
+}
+
+/**
  * Asymmetric memory update (Part E1): a faster race/quality effort pulls the
  * prediction down fast; a slower one only nudges it when it's still a
  * genuine quality effort. On top of whichever of those fires, an
@@ -382,6 +411,26 @@ function easyTrendNudge(storedSec: number, context?: RelativeEffortTrendContext)
  * literal zero-delta update) rather than only reachable as a last-resort
  * fallback. `context` (optional) enables it; sessions whose type isn't
  * easy/recovery/long pass through unaffected by this layer.
+ *
+ * Everything then passes through `fastestJustifiableBySession` (user-reported
+ * bug: "I did a run which stated I could run this pace for a 5km at 19:41,
+ * yet my 5km predicted time on the dashboard went from 18:22 to 18:09 — this
+ * should either have stayed the same or gone up"). The athlete is right: a
+ * session whose own equivalent is 19:41 is evidence AGAINST an 18:22
+ * prediction. The primary blend already respected that — 19:41 sits just
+ * inside QUALITY_PROXIMITY of 18:22, so REGRESS_RATE correctly moved the
+ * number to ~18:34 — but `easyTrendNudge` then out-voted it, because a
+ * relative-effort reading ("efficient for this athlete's own easy baseline",
+ * worth up to 2% ≈ 22s here) is a statement about aerobic economy on an easy
+ * day, and spending it on a RACE prediction is a category error. An
+ * efficient easy run is weak evidence about 5k race pace and must never
+ * outrun the session's own equivalent.
+ *
+ * The guarantee lives at this seam — the single point where a session's
+ * equivalent meets the stored value, which every caller reaches through
+ * `blendPredictedBenchmark` — rather than inside `easyTrendNudge`, so it
+ * binds all three branches and any future layer added here, instead of
+ * having to be re-derived by each new nudge.
  */
 export function updatePrediction(
   storedSec: number,
@@ -398,7 +447,11 @@ export function updatePrediction(
   } else {
     primary = storedSec;
   }
-  return easyTrendNudge(primary, context);
+  const nudged = easyTrendNudge(primary, context);
+  if (!(storedSec > 0) || !(equivSec > 0) || !Number.isFinite(storedSec) || !Number.isFinite(equivSec)) {
+    return nudged;
+  }
+  return Math.max(nudged, fastestJustifiableBySession(storedSec, equivSec));
 }
 
 /**
