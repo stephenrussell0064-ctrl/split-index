@@ -12,6 +12,7 @@ import {
   summarizeGpsTrack,
   type GpsPoint,
   type GpsTrackSummary,
+  type PauseInterval,
 } from "@/lib/scoring/gps-track";
 
 /**
@@ -32,13 +33,20 @@ interface StoredSession {
   points: GpsPoint[];
   startedAt: number;
   permissionRevoked: boolean;
+  /**
+   * Optional because the offline fallback page (public/offline-track.html)
+   * writes this same record without it, and because sessions persisted before
+   * pause existed are still out there waiting to be recovered.
+   */
+  pauses?: PauseInterval[];
 }
 
 async function readSession(): Promise<StoredSession | null> {
   const { value } = await Preferences.get({ key: SESSION_KEY });
   if (!value) return null;
   try {
-    return JSON.parse(value) as StoredSession;
+    const parsed = JSON.parse(value) as StoredSession;
+    return { ...parsed, pauses: Array.isArray(parsed.pauses) ? parsed.pauses : [] };
   } catch {
     return null;
   }
@@ -70,7 +78,7 @@ export interface GpsSessionHandle {
  */
 export async function startGpsSession(onPoint?: (point: GpsPoint) => void): Promise<GpsSessionHandle> {
   const startedAt = Date.now();
-  await writeSession({ points: [], startedAt, permissionRevoked: false });
+  await writeSession({ points: [], startedAt, permissionRevoked: false, pauses: [] });
 
   const watcherId = await BackgroundGeolocation.addWatcher(
     {
@@ -96,6 +104,11 @@ export async function startGpsSession(onPoint?: (point: GpsPoint) => void): Prom
         latitude: position.latitude,
         longitude: position.longitude,
         accuracy: position.accuracy,
+        // The device's own estimate of how much to trust that altitude — the
+        // difference between a barometer-aided fix and a bare GPS one, and the
+        // signal elevationGainMeters() needs to decide how small a climb it is
+        // entitled to believe (see gps-track.ts).
+        altitudeAccuracy: position.altitudeAccuracy,
         altitude: position.altitude,
         time: position.time ?? Date.now(),
       };
@@ -106,6 +119,39 @@ export async function startGpsSession(onPoint?: (point: GpsPoint) => void): Prom
 
   await Preferences.set({ key: WATCHER_ID_KEY, value: watcherId });
   return { active: true };
+}
+
+/**
+ * Opens a pause. The native watcher is deliberately left running: tearing it
+ * down and rebuilding it on resume risks the rebuild failing (permissions
+ * changed, plugin error) and silently losing the rest of the run, and losing a
+ * recorded run is the worst outcome this feature has. A pause is bookkeeping —
+ * fixes that arrive while paused are still persisted, they just don't count
+ * toward distance, duration or climb (see gps-track.ts's pause handling).
+ *
+ * Persisted rather than held in component state so that a pause survives the
+ * app being killed mid-pause: recovery then still knows those minutes were
+ * standing still, instead of scoring them as the slowest running ever done.
+ */
+export async function pauseGpsSession(at: number = Date.now()): Promise<void> {
+  const session = await readSession();
+  if (!session) return;
+  const pauses = session.pauses ?? [];
+  // Idempotent — a double-tap must not stack two open pauses.
+  if (pauses.some((p) => p.endTime === null)) return;
+  await writeSession({ ...session, pauses: [...pauses, { startTime: at, endTime: null }] });
+}
+
+/** Closes the open pause. No-op if nothing is paused, so a stray resume can't corrupt the record. */
+export async function resumeGpsSession(at: number = Date.now()): Promise<void> {
+  const session = await readSession();
+  if (!session) return;
+  const pauses = session.pauses ?? [];
+  const openIndex = pauses.findIndex((p) => p.endTime === null);
+  if (openIndex === -1) return;
+  const next = [...pauses];
+  next[openIndex] = { ...next[openIndex], endTime: at };
+  await writeSession({ ...session, pauses: next });
 }
 
 /** Ends the session the user actually stopped themselves — the one path where `endedCleanly: true` is honest. */
@@ -125,7 +171,15 @@ export async function stopGpsSession(): Promise<GpsTrackSummary> {
   return summarizeGpsTrack(session.points, {
     endedCleanly: true,
     permissionRevoked: session.permissionRevoked,
+    // A run stopped while still paused leaves an open pause; closing it here
+    // means those final standing-still seconds aren't billed as running.
+    pauses: closeOpenPauses(session.pauses ?? []),
   });
+}
+
+/** An open pause is closed at `at` so that summarizing never treats "still paused" as "paused until the end of time". */
+function closeOpenPauses(pauses: PauseInterval[], at: number = Date.now()): PauseInterval[] {
+  return pauses.map((p) => (p.endTime === null ? { ...p, endTime: at } : p));
 }
 
 export interface RecoveredGpsSession {
@@ -157,10 +211,15 @@ export async function recoverOrphanedSession(): Promise<RecoveredGpsSession | nu
 
   if (session.points.length === 0) return null;
 
+  // An app killed mid-pause leaves that pause open; it can only have lasted
+  // until the last fix that was actually recorded, so that is where it ends.
+  const lastPointTime = session.points[session.points.length - 1].time;
+
   return {
     summary: summarizeGpsTrack(session.points, {
       endedCleanly: false,
       permissionRevoked: session.permissionRevoked,
+      pauses: closeOpenPauses(session.pauses ?? [], lastPointTime),
     }),
     points: session.points,
   };

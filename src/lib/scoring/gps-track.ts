@@ -27,8 +27,39 @@ export interface GpsPoint {
   /** Horizontal uncertainty in meters. */
   accuracy: number;
   altitude: number | null;
+  /**
+   * Vertical uncertainty in meters, as reported by the device (CoreLocation's
+   * `verticalAccuracy`, Android's `getVerticalAccuracyMeters`). Optional
+   * because imported GPX points and everything recorded before this field
+   * existed simply don't carry one.
+   *
+   * This is the only signal that distinguishes a barometer-aided altitude
+   * (good to a metre or two) from a bare GPS fix (±10-15m), and it is the
+   * one thing a filter cannot work out for itself: slow, correlated altitude
+   * drift looks exactly like gentle terrain from inside the data. A negative
+   * value is CoreLocation's way of saying the altitude is meaningless and
+   * must be discarded rather than trusted.
+   */
+  altitudeAccuracy?: number | null;
   /** Milliseconds since Unix epoch. */
   time: number;
+}
+
+/**
+ * A stretch of a run the athlete explicitly paused. `endTime` is null while a
+ * pause is still open — including the case where the app was killed mid-pause,
+ * which is why this is persisted alongside the points rather than held in
+ * component state.
+ *
+ * Everything downstream treats a paused stretch as if it never happened: its
+ * points don't contribute distance, the leg that straddles it isn't drawn as a
+ * straight line across the gap, and its seconds don't count toward duration.
+ * Waiting at a traffic light must not become a 400m sprint at 0:30/km pace.
+ */
+export interface PauseInterval {
+  startTime: number;
+  /** Null while the pause is still open. */
+  endTime: number | null;
 }
 
 export type PartialReason = "permission_revoked" | "sampling_gap" | "ended_without_stopping" | null;
@@ -59,6 +90,74 @@ export function haversineDistanceMeters(a: GpsPoint, b: GpsPoint): number {
   return 2 * EARTH_RADIUS_METERS * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
+// ---------------------------------------------------------------------------
+// Pause handling
+// ---------------------------------------------------------------------------
+
+/**
+ * True when `time` falls inside a paused stretch. An open pause (no endTime)
+ * swallows everything after it starts.
+ *
+ * The bounds are exclusive on purpose: a fix timestamped at the exact instant
+ * of the pause is the last fix of the run before it, and one timestamped at
+ * the resume is the first of the run after — both are real positions the
+ * athlete stood at, and discarding them would shorten the recorded route at
+ * both ends of every pause. The leg *between* them is still dropped, which is
+ * the part that matters.
+ */
+export function isPaused(time: number, pauses: readonly PauseInterval[]): boolean {
+  return pauses.some((p) => time > p.startTime && (p.endTime === null || time < p.endTime));
+}
+
+/** Milliseconds of `[from, to]` that were spent paused. Overlapping pauses can't be produced by the UI (one closes before the next opens), so a plain sum is correct here. */
+export function pausedMillisBetween(from: number, to: number, pauses: readonly PauseInterval[]): number {
+  let total = 0;
+  for (const pause of pauses) {
+    const start = Math.max(from, pause.startTime);
+    const end = Math.min(to, pause.endTime ?? to);
+    if (end > start) total += end - start;
+  }
+  return total;
+}
+
+/**
+ * Moving time between two instants — wall clock minus whatever was paused.
+ * The single definition of "how long was this run", shared by the live HUD's
+ * clock, the lock-screen Live Activity, and the saved activity's duration, so
+ * a pause can't shorten one and not the others.
+ */
+export function movingMillis(from: number, to: number, pauses: readonly PauseInterval[] = []): number {
+  return Math.max(0, to - from - pausedMillisBetween(from, to, pauses));
+}
+
+/**
+ * Distance actually covered, in meters. The one definition, used by the live
+ * HUD and by the final summary alike.
+ *
+ * Two things are deliberately excluded. Fixes too inaccurate to believe are
+ * dropped (a bad lock while standing still would otherwise register as
+ * running). And a leg whose two ends sit on opposite sides of a pause is
+ * skipped entirely — the athlete may have walked into a cafe, driven home, or
+ * simply stood still while the receiver drifted, and joining those two fixes
+ * with a straight line would invent distance they never ran.
+ */
+export function trackDistanceMeters(points: GpsPoint[], pauses: readonly PauseInterval[] = []): number {
+  const usable = points.filter(
+    (p) => p.accuracy <= GPS_TRACKING_CONFIG.MAX_ACCURACY_METERS && !isPaused(p.time, pauses)
+  );
+
+  let total = 0;
+  for (let i = 1; i < usable.length; i++) {
+    const prev = usable[i - 1];
+    const curr = usable[i];
+    // A pause that began after `prev` and ended before `curr` means the two
+    // fixes are not consecutive steps of the same effort.
+    if (pausedMillisBetween(prev.time, curr.time, pauses) > 0) continue;
+    total += haversineDistanceMeters(prev, curr);
+  }
+  return total;
+}
+
 /**
  * Elevation-gain de-noising. Real user report: a run with 67m of actual
  * elevation gain was logged as 269m — four times over.
@@ -74,52 +173,103 @@ export function haversineDistanceMeters(a: GpsPoint, b: GpsPoint): number {
  * one-directional because only positive deltas are counted, so noise can only
  * ever inflate the number, never cancel out.
  *
- * Three stages, each removing a different part of the problem:
+ * Four stages, each removing a different part of the problem:
  *
- *  1. Reject fixes whose accuracy is too poor to carry a believable altitude,
- *     and single-sample spikes (median-of-three), which are the multipath
+ *  1. Reject fixes whose accuracy is too poor to carry a believable altitude —
+ *     including any the device itself flags as vertically invalid — and
+ *     single-sample spikes (median-of-three), which are the multipath
  *     artefacts that produce 30m cliffs in otherwise flat data.
- *  2. Smooth what is left with a moving average, which attenuates the
- *     remaining high-frequency wander.
- *  3. Accumulate with hysteresis: only bank a climb once it exceeds
- *     GAIN_THRESHOLD_METERS above the lowest point since the last bank. This
- *     is what stops residual noise being counted at all, and it is what
- *     Strava, Garmin and every other credible implementation do.
+ *  2. Measure how noisy this particular altitude trace is, and
+ *  3. smooth it by exactly as much as that measurement calls for, so the
+ *     filter is as gentle as the data allows and as strong as it demands.
+ *  4. Accumulate by peak prominence: bank a whole valley-to-summit climb once
+ *     a descent confirms the summit was real. This is what Strava, Garmin and
+ *     every other credible implementation do.
  *
- * On the reported case — a real 67m of climb across ~900 noisy fixes — this
- * reads 67.6m where the old rule read in the hundreds, and a genuinely flat
- * run with the same noise now reads 0 rather than tens of metres.
+ * ---------------------------------------------------------------------------
+ * Second report, and why stages 2-4 changed. An athlete's run with a real 9m
+ * of climb was logged as 0.
  *
- * The honest trade: hysteresis under-reports clean terrain slightly, because
- * the last few metres of each summit sit below the threshold and are never
- * banked. On six clean 20m hills this returns about 78% of the true 120m.
- * That is the correct side to err on — every metre of phantom climb inflates
- * relative effort, which inflates load, which prescribes more training than
- * the athlete actually did.
+ * The first fix (see above) used a single flat 5m gate: a climb was banked
+ * only once it rose 5m above the lowest point since the last bank. 9m of gain
+ * on ordinary rolling ground is not one 9m hill — it is three or four rises of
+ * two or three metres each, and every one of them sits under a 5m gate. The
+ * gate discarded all of it. That gate was doing two jobs at once, rejecting
+ * noise and defining what counts as a hill, and the second job made it far too
+ * blunt for the first.
+ *
+ * The jobs are now split, which is what lets the gate come down safely:
+ *
+ *  - Noise rejection is the smoothing stage's job, and the window is now
+ *    sized from a measurement of the trace's own noise (the robust spread of
+ *    its second differences, which cancels terrain slope and so measures
+ *    sensor noise alone) rather than from the sample count. A quiet
+ *    barometric trace is barely touched, so its small real bumps survive; a
+ *    ±6m GPS-only trace is smoothed across a hundred samples, and its noise
+ *    collapses. This is the honest part of the separation: real terrain is
+ *    spatially wide, sensor noise is per-sample, so a width-based filter can
+ *    tell them apart where an amplitude gate never could.
+ *  - The gate itself is now a prominence threshold that starts at 2m and
+ *    rises, up to the old 5m, only when the device reports that its altitude
+ *    genuinely is that uncertain (see GpsPoint.altitudeAccuracy). We are never
+ *    more permissive than the previous behaviour on data the hardware admits
+ *    is poor.
+ *
+ * Accumulation is also fixed. The old rule banked only `altitude - floor` at
+ * the moment of crossing and then reset the floor there, throwing away every
+ * metre above the crossing point — a clean, continuous 9m climb read 5m, and
+ * six clean 20m hills read 94m instead of 120m. Banking the full valley-to-
+ * summit rise removes that systematic shortfall.
+ *
+ * Measured against the same fixtures: the reported 9m case now reads 8.4-10.9m
+ * across barometric and GPS-grade noise (was 0), six clean 20m hills read
+ * 120.0m (was 94m), the original 67m report reads 63m (was 67.6m), and every
+ * flat-but-noisy trace — ±1.5m through ±6m, 60 samples through 900 — still
+ * reads exactly 0.
+ *
+ * The honest trade, stated plainly: this cannot reject slow, correlated drift.
+ * If a receiver's altitude wanders several metres over several minutes, that
+ * wander has genuine prominence and is indistinguishable from gentle terrain
+ * by any local method — no window width and no threshold separates them, and
+ * a run on flat ground with a badly drifting fix can still bank a handful of
+ * phantom metres. The previous code did not solve that either; it merely
+ * under-reported everything by enough to hide it, which is precisely what
+ * produced the 0. Where the device tells us its vertical fix is that poor, the
+ * threshold widens back to 5m and we under-report on purpose, because every
+ * metre of phantom climb inflates relative effort, which inflates load, which
+ * prescribes more training than the athlete actually did.
  */
 export const ELEVATION_CONFIG = {
-  /** Fixes worse than this are dropped for elevation purposes. Stricter than the distance filter because vertical error runs 2-3x horizontal. */
+  /** Fixes with worse horizontal accuracy than this are dropped for elevation purposes. Stricter than the distance filter because vertical error runs 2-3x horizontal. */
   MAX_ACCURACY_METERS: 30,
-  /** A climb must exceed this above the running minimum before any of it is banked as gain. */
-  GAIN_THRESHOLD_METERS: 5,
+  /** Prominence a climb must have before it is banked, when the altitude source is not reporting poor vertical accuracy. */
+  MIN_GAIN_THRESHOLD_METERS: 2,
+  /** Ceiling on that threshold — reached when the device reports vertical uncertainty this bad or worse. The old fixed gate, kept as the worst case rather than the default. */
+  MAX_GAIN_THRESHOLD_METERS: 5,
   /**
-   * Moving-average window, sized as a fraction of the sample count rather
-   * than fixed. This is the part that makes the result independent of
-   * sampling rate, which matters because the bug scales with it: a fixed
-   * window under-filters a densely sampled run and erases real terrain on a
-   * sparse one.
+   * How much altitude noise the smoothing stage aims to leave behind, in
+   * meters. A moving average of width w attenuates white noise by sqrt(w), so
+   * this target is what converts a measured noise level into a window width.
+   * Chosen empirically as the largest value at which every flat-but-noisy
+   * fixture still reads exactly 0.
    */
-  SMOOTHING_WINDOW_DIVISOR: 30,
-  SMOOTHING_WINDOW_MIN: 3,
-  SMOOTHING_WINDOW_MAX: 21,
-  /** Below this many usable samples, smoothing would erase real terrain rather than noise, so it is skipped. */
-  SMOOTHING_MIN_POINTS: 10,
+  TARGET_RESIDUAL_METERS: 0.35,
+  /** Hard cap on the window. At a 10m distance filter this is ~1.2km of running — beyond it, nothing recoverable is left in the trace anyway. */
+  SMOOTHING_WINDOW_MAX: 121,
+  /** And never smooth across more than this fraction of the whole track, or a short run's real profile would be averaged away. */
+  SMOOTHING_WINDOW_TRACK_DIVISOR: 4,
   /** A sample this far from the median of its immediate neighbours is a multipath spike, not a cliff. */
   SPIKE_TOLERANCE_METERS: 25,
 } as const;
 
 function median3(a: number, b: number, c: number): number {
   return Math.max(Math.min(a, b), Math.min(Math.max(a, b), c));
+}
+
+function median(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = sorted.length >> 1;
+  return sorted.length % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
 /** Stage 1b: replace single-sample spikes with the median of their neighbourhood. */
@@ -133,18 +283,44 @@ function despike(altitudes: number[]): number[] {
   return out;
 }
 
-/** Window scaled to sample count, so a 90-second jog and a three-hour run are filtered on the same physical scale rather than the same sample count. */
-function smoothingWindow(sampleCount: number): number {
-  if (sampleCount < ELEVATION_CONFIG.SMOOTHING_MIN_POINTS) return 1;
-  return Math.min(
-    ELEVATION_CONFIG.SMOOTHING_WINDOW_MAX,
-    Math.max(ELEVATION_CONFIG.SMOOTHING_WINDOW_MIN, Math.round(sampleCount / ELEVATION_CONFIG.SMOOTHING_WINDOW_DIVISOR))
-  );
+/**
+ * Stage 2: per-sample noise, in meters, estimated from second differences.
+ *
+ * Second differences (a[i+1] - 2a[i] + a[i-1]) cancel any constant slope, so a
+ * long steady climb contributes nothing to this figure and only genuine
+ * sample-to-sample jitter does — which is the whole point, because a
+ * first-difference estimate would read a steep clean hill as "noisy" and then
+ * smooth the hill away. Median absolute value rather than a mean keeps a
+ * handful of surviving spikes from dominating; the constants convert that
+ * robust spread to a standard deviation (1.4826 for MAD, sqrt(6) for the
+ * variance a second difference adds).
+ */
+function altitudeNoiseMeters(altitudes: number[]): number {
+  if (altitudes.length < 5) return 0;
+  const curvature: number[] = [];
+  for (let i = 1; i < altitudes.length - 1; i++) {
+    curvature.push(Math.abs(altitudes[i + 1] - 2 * altitudes[i] + altitudes[i - 1]));
+  }
+  return (median(curvature) * 1.4826) / Math.sqrt(6);
 }
 
-/** Stage 2: centred moving average. */
-function smooth(altitudes: number[]): number[] {
-  const window = smoothingWindow(altitudes.length);
+/** Stage 3a: the window width that brings `noise` down to TARGET_RESIDUAL_METERS, bounded so it can neither run away nor eat a short track. */
+function smoothingWindow(noiseMeters: number, sampleCount: number): number {
+  if (noiseMeters <= ELEVATION_CONFIG.TARGET_RESIDUAL_METERS) return 1;
+  const needed = Math.ceil((noiseMeters / ELEVATION_CONFIG.TARGET_RESIDUAL_METERS) ** 2);
+  const window = Math.min(
+    needed,
+    ELEVATION_CONFIG.SMOOTHING_WINDOW_MAX,
+    Math.floor(sampleCount / ELEVATION_CONFIG.SMOOTHING_WINDOW_TRACK_DIVISOR)
+  );
+  if (window < 2) return 1;
+  // Odd widths keep the average centred, so the smoothed profile doesn't slide
+  // half a sample against the real one.
+  return window % 2 === 0 ? window + 1 : window;
+}
+
+/** Stage 3b: centred moving average. */
+function smooth(altitudes: number[], window: number): number[] {
   if (window < 2) return altitudes;
   const half = Math.floor(window / 2);
   return altitudes.map((_, i) => {
@@ -154,6 +330,56 @@ function smooth(altitudes: number[]): number[] {
     for (let j = from; j < to; j++) sum += altitudes[j];
     return sum / (to - from);
   });
+}
+
+/**
+ * Stage 4a: how prominent a climb must be before it counts. Starts at the
+ * floor and only widens toward the old 5m gate when the device says its own
+ * altitude is that uncertain — the one piece of information a filter cannot
+ * recover from the numbers themselves.
+ */
+function gainThresholdMeters(verticalAccuracies: number[]): number {
+  if (verticalAccuracies.length === 0) return ELEVATION_CONFIG.MIN_GAIN_THRESHOLD_METERS;
+  return Math.min(
+    ELEVATION_CONFIG.MAX_GAIN_THRESHOLD_METERS,
+    Math.max(ELEVATION_CONFIG.MIN_GAIN_THRESHOLD_METERS, median(verticalAccuracies))
+  );
+}
+
+/**
+ * Stage 4b: peak-prominence accumulation. Tracks the lowest point since the
+ * last bank and the highest point since that low; a climb is banked in full,
+ * valley to summit, once the trace has come back down by `threshold` and so
+ * confirmed the summit was a summit rather than a wobble. An unconfirmed climb
+ * still open when the run ends is banked too — otherwise a run that finishes
+ * at the top of a hill would lose its last climb entirely.
+ */
+function accumulateGain(series: number[], threshold: number): number {
+  let gain = 0;
+  let valley = series[0];
+  let summit = series[0];
+  let climbing = false;
+
+  for (const altitude of series) {
+    if (altitude > summit) {
+      summit = altitude;
+      if (summit - valley > threshold) climbing = true;
+    }
+    // Until a climb is confirmed, a new low simply moves the valley down.
+    if (!climbing && altitude < valley) {
+      valley = altitude;
+      summit = altitude;
+    }
+    if (climbing && altitude < summit - threshold) {
+      gain += summit - valley;
+      valley = altitude;
+      summit = altitude;
+      climbing = false;
+    }
+  }
+  if (climbing) gain += summit - valley;
+
+  return gain;
 }
 
 /**
@@ -167,35 +393,29 @@ function smooth(altitudes: number[]): number[] {
  * definition of "elevation gain" in the app.
  */
 export function elevationGainMeters(points: GpsPoint[]): number | null {
-  const altitudes = points
-    .filter(
-      (p) =>
-        p.altitude !== null &&
-        Number.isFinite(p.altitude) &&
-        // Accuracy is optional in the sense that a synthetic or imported point
-        // may report 0; only a genuinely bad reading is rejected.
-        (!Number.isFinite(p.accuracy) || p.accuracy <= ELEVATION_CONFIG.MAX_ACCURACY_METERS)
-    )
-    .map((p) => p.altitude as number);
+  const usable = points.filter(
+    (p) =>
+      p.altitude !== null &&
+      Number.isFinite(p.altitude) &&
+      // Accuracy is optional in the sense that a synthetic or imported point
+      // may report 0; only a genuinely bad reading is rejected.
+      (!Number.isFinite(p.accuracy) || p.accuracy <= ELEVATION_CONFIG.MAX_ACCURACY_METERS) &&
+      // CoreLocation reports a negative vertical accuracy when the altitude it
+      // handed over is not a measurement at all. Trusting it would put a
+      // fabricated number straight into the athlete's training load.
+      !(typeof p.altitudeAccuracy === "number" && Number.isFinite(p.altitudeAccuracy) && p.altitudeAccuracy < 0)
+  );
 
-  if (altitudes.length === 0) return null;
-  if (altitudes.length === 1) return 0;
+  if (usable.length === 0) return null;
+  if (usable.length === 1) return 0;
 
-  const series = smooth(despike(altitudes));
+  const altitudes = despike(usable.map((p) => p.altitude as number));
+  const verticalAccuracies = usable
+    .map((p) => p.altitudeAccuracy)
+    .filter((a): a is number => typeof a === "number" && Number.isFinite(a) && a > 0);
 
-  // Hysteresis. `floor` tracks the lowest point since the last bank, so a
-  // climb is measured from the bottom of the dip that preceded it rather than
-  // from wherever the previous sample happened to land.
-  let gain = 0;
-  let floorAltitude = series[0];
-  for (const altitude of series) {
-    if (altitude > floorAltitude + ELEVATION_CONFIG.GAIN_THRESHOLD_METERS) {
-      gain += altitude - floorAltitude;
-      floorAltitude = altitude;
-    } else if (altitude < floorAltitude) {
-      floorAltitude = altitude;
-    }
-  }
+  const series = smooth(altitudes, smoothingWindow(altitudeNoiseMeters(altitudes), altitudes.length));
+  const gain = accumulateGain(series, gainThresholdMeters(verticalAccuracies));
 
   return Math.round(gain * 10) / 10;
 }
@@ -302,6 +522,8 @@ export interface SummarizeGpsTrackOptions {
   endedCleanly: boolean;
   /** True when the native plugin's callback reported a permission error during the session. */
   permissionRevoked: boolean;
+  /** Stretches the athlete paused. Optional so a session recorded before pause existed — or by the offline fallback page, which has no pause control — summarizes exactly as it always did. */
+  pauses?: readonly PauseInterval[];
 }
 
 /** Builds the final track summary from a raw point buffer — the one place distance/pace/partial-status are computed, so the UI, the activity submission, and any future recovery path all agree on the same number. */
@@ -317,25 +539,29 @@ export function summarizeGpsTrack(points: GpsPoint[], options: SummarizeGpsTrack
     };
   }
 
+  const pauses = options.pauses ?? [];
   const sorted = [...points].sort((a, b) => a.time - b.time);
-  const accepted = sorted.filter((p) => p.accuracy <= GPS_TRACKING_CONFIG.MAX_ACCURACY_METERS);
+  const accepted = sorted.filter(
+    (p) => p.accuracy <= GPS_TRACKING_CONFIG.MAX_ACCURACY_METERS && !isPaused(p.time, pauses)
+  );
 
-  let distanceMeters = 0;
+  const distanceMeters = trackDistanceMeters(sorted, pauses);
+
   let largestGapSeconds = 0;
-
   for (let i = 1; i < accepted.length; i++) {
-    const prev = accepted[i - 1];
-    const curr = accepted[i];
-
-    distanceMeters += haversineDistanceMeters(prev, curr);
-
-    const gapSeconds = (curr.time - prev.time) / 1000;
+    // Time the athlete deliberately paused is not a tracking failure, so it is
+    // deducted before deciding whether this looks like an interrupted session.
+    const gapSeconds = movingMillis(accepted[i - 1].time, accepted[i].time, pauses) / 1000;
     if (gapSeconds > largestGapSeconds) largestGapSeconds = gapSeconds;
   }
 
+  // Altitude recorded while standing still at a pause is pure receiver drift,
+  // never climbing, so elevation sees the same filtered points distance does.
   const elevationGain = elevationGainMeters(accepted);
 
-  const durationSeconds = Math.round((sorted[sorted.length - 1].time - sorted[0].time) / 1000);
+  const durationSeconds = Math.round(
+    movingMillis(sorted[0].time, sorted[sorted.length - 1].time, pauses) / 1000
+  );
   const avgPaceSecondsPerKm = distanceMeters > 0 ? durationSeconds / (distanceMeters / 1000) : null;
   const samplingGap = largestGapSeconds > GPS_TRACKING_CONFIG.MAX_ACCEPTABLE_GAP_SECONDS;
 

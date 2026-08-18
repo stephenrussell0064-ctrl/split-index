@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import dynamic from "next/dynamic";
-import { MapPin, Square, AlertTriangle, Gauge, Mountain, HeartPulse, Zap, Flag, Thermometer, Footprints, TrendingUp } from "lucide-react";
+import { MapPin, Square, AlertTriangle, Gauge, Mountain, HeartPulse, Zap, Flag, Thermometer, Footprints, TrendingUp, Pause, Play, Trash2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/input";
@@ -17,6 +17,8 @@ import { livePredictionLadder, type LivePredictionEntry } from "@/lib/scoring/ca
 import {
   startGpsSession,
   stopGpsSession,
+  pauseGpsSession,
+  resumeGpsSession,
   recoverOrphanedSession,
   type RecoveredGpsSession,
 } from "@/lib/native/gps-tracking";
@@ -35,7 +37,9 @@ import { isLiveActivitySupported, startLiveActivity, updateLiveActivity, endLive
 import {
   buildRoutePolyline,
   PARTIAL_REASON_LABEL,
-  haversineDistanceMeters,
+  trackDistanceMeters,
+  movingMillis,
+  isPaused,
   elevationGainMeters,
   summarizeIntervalSegments,
   summarizeFartlekSegments,
@@ -43,6 +47,7 @@ import {
   type GpsPoint,
   type HrReading,
   type RunSegment,
+  type PauseInterval,
 } from "@/lib/scoring/gps-track";
 import type { SessionType } from "@/types";
 
@@ -138,6 +143,12 @@ export default function GpsRunPage() {
   const [saving, setSaving] = useState(false);
   const [starting, setStarting] = useState(false);
   const [stopping, setStopping] = useState(false);
+  /** User report: "No stop start button on GPS runs. Once paused you can only discard run." A paused run is not an abandoned run — everything recorded stays recorded, and this flips straight back. */
+  const [paused, setPaused] = useState(false);
+  const [pauses, setPauses] = useState<PauseInterval[]>([]);
+  const [pausing, setPausing] = useState(false);
+  /** Discard is two-step on purpose: one mis-tap must never be able to destroy a recorded run. */
+  const [confirmingDiscard, setConfirmingDiscard] = useState(false);
   const [error, setError] = useState("");
   const [overviewResult, setOverviewResult] = useState<ScoreResultSummary | null>(null);
   const [overviewIsPremium, setOverviewIsPremium] = useState(false);
@@ -148,7 +159,15 @@ export default function GpsRunPage() {
   } | null>(null);
   const startedAtRef = useRef<number>(0);
   const segmentStartRef = useRef<number>(0);
-  const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  /** Mirrors `pauses` so the once-a-second clock can read the current value without the interval being torn down and rebuilt on every pause. */
+  const pausesRef = useRef<PauseInterval[]>([]);
+  /** The instant a still-running clock would have to have started from to show the correct *moving* time — what the lock-screen Live Activity ticks from, so paused seconds don't accumulate there either. */
+  const [liveClockStartMs, setLiveClockStartMs] = useState(0);
+
+  function applyPauses(next: PauseInterval[]) {
+    pausesRef.current = next;
+    setPauses(next);
+  }
 
   const native = isNativePlatform();
   const isSegmentTracked = SEGMENT_TRACKED_TYPES.has(sessionType);
@@ -191,40 +210,63 @@ export default function GpsRunPage() {
     };
   }, [native]);
 
+  // The displayed clock is recomputed from wall time every tick rather than
+  // incremented, so it self-corrects after the WebView's JS timers are frozen
+  // by a screen lock or the app being backgrounded — and it subtracts paused
+  // stretches, so a pause genuinely stops the clock instead of just hiding it.
   useEffect(() => {
-    return () => {
-      if (tickRef.current) clearInterval(tickRef.current);
+    if (phase !== "tracking") return;
+    const tick = () => {
+      const moving = movingMillis(startedAtRef.current, Date.now(), pausesRef.current);
+      setElapsedSeconds(Math.floor(moving / 1000));
+      // While paused this keeps sliding forward by a second each second, which
+      // is exactly what holds the native lock-screen timer still.
+      setLiveClockStartMs(Date.now() - moving);
     };
-  }, []);
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [phase]);
 
-  // Live distance/pace during tracking — the same haversine sum the final
-  // summary uses, just run incrementally over whatever points have arrived
-  // so far, so the bottom-half metrics aren't just a stopwatch.
-  const liveDistanceMeters = useMemo(() => {
-    let total = 0;
-    for (let i = 1; i < livePoints.length; i++) {
-      total += haversineDistanceMeters(livePoints[i - 1], livePoints[i]);
-    }
-    return total;
-  }, [livePoints]);
+  // Live distance during tracking — the same function the final summary uses,
+  // so the number on screen mid-run is the number that gets saved. Legs that
+  // straddle a pause are skipped: standing at a crossing for two minutes must
+  // not draw a straight line across the junction and call it distance run.
+  const liveDistanceMeters = useMemo(
+    () => trackDistanceMeters(livePoints, pauses),
+    [livePoints, pauses]
+  );
 
-  const liveElevationGainMeters = useMemo(() => elevationGainMeters(livePoints), [livePoints]);
+  /** Everything recorded while actually running. Fixes captured during a pause are receiver drift around a standing athlete, not route and not climb, so neither the map nor the elevation total should see them. */
+  const movingPoints = useMemo(
+    () => livePoints.filter((p) => !isPaused(p.time, pauses)),
+    [livePoints, pauses]
+  );
+
+  const liveElevationGainMeters = useMemo(() => elevationGainMeters(movingPoints), [movingPoints]);
 
   /** Avg Split — this run's average pace from the very start, same number as the whole-session average shown after saving. Kept as its own explicitly-labeled tile (user feedback: needs to be unambiguous this is the RUN's average, not the instantaneous pace below). */
   const livePaceSecondsPerKm =
     liveDistanceMeters > 0 ? elapsedSeconds / (liveDistanceMeters / 1000) : null;
 
-  /** Current Pace — a rolling last-60-seconds window, distinct from Avg Split above. Falls back to the whole-run average until there's at least 60s/two GPS fixes of recent data to compute a genuine rolling number from. */
+  /** Current Pace — a rolling last-60-seconds-of-*running* window, distinct from Avg Split above. Falls back to the whole-run average until there's at least 60s/two GPS fixes of recent data to compute a genuine rolling number from. */
   const currentPaceSecondsPerKm = useMemo(() => {
     if (livePoints.length < 2) return null;
-    const cutoff = livePoints[livePoints.length - 1].time - 60_000;
-    const recent = livePoints.filter((p) => p.time >= cutoff);
+    // Walk back until the window holds 60 seconds of *moving* time, so a pause
+    // inside it doesn't shrink the window to nothing and report a wild pace on
+    // resume.
+    let firstIndex = livePoints.length - 1;
+    let windowMs = 0;
+    while (firstIndex > 0 && windowMs < 60_000) {
+      windowMs += movingMillis(livePoints[firstIndex - 1].time, livePoints[firstIndex].time, pauses);
+      firstIndex -= 1;
+    }
+    const recent = livePoints.slice(firstIndex);
     if (recent.length < 2) return livePaceSecondsPerKm;
-    let meters = 0;
-    for (let i = 1; i < recent.length; i++) meters += haversineDistanceMeters(recent[i - 1], recent[i]);
-    const seconds = (recent[recent.length - 1].time - recent[0].time) / 1000;
+    const meters = trackDistanceMeters(recent, pauses);
+    const seconds = movingMillis(recent[0].time, recent[recent.length - 1].time, pauses) / 1000;
     return meters > 0 && seconds > 0 ? seconds / (meters / 1000) : livePaceSecondsPerKm;
-  }, [livePoints, livePaceSecondsPerKm]);
+  }, [livePoints, livePaceSecondsPerKm, pauses]);
 
   /** Live score-prediction ladder (user feedback: "based off the current pace, heart rate... extrapolate a score prediction for set distances") — running only (see LIVE_LADDER_METERS), and only once there's enough real distance for a Riegel projection to mean anything rather than just amplifying GPS noise. */
   const livePrediction: LivePredictionEntry[] | null = useMemo(() => {
@@ -264,12 +306,17 @@ export default function GpsRunPage() {
   useEffect(() => {
     if (phase !== "tracking") return;
     updateLiveActivity({
-      startDateEpochMs: startedAtRef.current,
+      // Not the real start time: the instant a clock showing only *moving*
+      // time would have started from. While paused this is pushed forward
+      // once a second, which holds the lock-screen timer still — otherwise
+      // the widget would keep counting through a pause and disagree with the
+      // duration that actually gets saved.
+      startDateEpochMs: liveClockStartMs || startedAtRef.current,
       distanceKm: liveDistanceMeters / 1000,
       paceOrSpeedText: formatPaceOrSpeed(sport, livePaceSecondsPerKm),
       heartRateBpm: liveBpm ?? undefined,
     });
-  }, [phase, elapsedSeconds, liveDistanceMeters, livePaceSecondsPerKm, liveBpm, sport]);
+  }, [phase, liveClockStartMs, liveDistanceMeters, livePaceSecondsPerKm, liveBpm, sport]);
 
   async function handleConnectHeartRate() {
     if (connectingHr) return;
@@ -333,6 +380,9 @@ export default function GpsRunPage() {
     setHrReadings([]);
     setLiveCadence(null);
     setCadenceReadings([]);
+    setPaused(false);
+    setConfirmingDiscard(false);
+    applyPauses([]);
     try {
       await startGpsSession((point) => setLivePoints((prev) => [...prev, point]));
       if (isOnFootSport && isStepCadenceSupported()) {
@@ -346,10 +396,8 @@ export default function GpsRunPage() {
       }
       startedAtRef.current = Date.now();
       segmentStartRef.current = startedAtRef.current;
+      setLiveClockStartMs(startedAtRef.current);
       setPhase("tracking");
-      tickRef.current = setInterval(() => {
-        setElapsedSeconds(Math.floor((Date.now() - startedAtRef.current) / 1000));
-      }, 1000);
       if (isLiveActivitySupported()) {
         startLiveActivity(
           "gpsTracking",
@@ -370,16 +418,64 @@ export default function GpsRunPage() {
     setSegmentType((t) => (t === "hard" ? "easy" : "hard"));
   }
 
+  /**
+   * Pause. Nothing recorded is thrown away and native tracking is deliberately
+   * left running (see pauseGpsSession) — this only marks the stretch so that
+   * distance, duration and climb all skip over it. Resuming picks the run back
+   * up exactly where it stood.
+   */
+  async function handlePause() {
+    if (pausing || paused) return;
+    setPausing(true);
+    const now = Date.now();
+    try {
+      // Close the open hard/easy effort at the pause, so standing still never
+      // lands inside a rep and drags its pace and heart rate down.
+      if (isSegmentTracked && now > segmentStartRef.current) {
+        setSegments((prev) => [...prev, { type: segmentType, startTime: segmentStartRef.current, endTime: now }]);
+        segmentStartRef.current = now;
+      }
+      applyPauses([...pausesRef.current, { startTime: now, endTime: null }]);
+      setPaused(true);
+      await pauseGpsSession(now);
+    } finally {
+      setPausing(false);
+    }
+  }
+
+  /** Resume. The counterpart to the above — the run continues, with everything already recorded intact. */
+  async function handleResume() {
+    if (pausing || !paused) return;
+    setPausing(true);
+    const now = Date.now();
+    try {
+      applyPauses(pausesRef.current.map((p) => (p.endTime === null ? { ...p, endTime: now } : p)));
+      // The next effort segment starts from the resume, not from the pause.
+      segmentStartRef.current = now;
+      setPaused(false);
+      setConfirmingDiscard(false);
+      await resumeGpsSession(now);
+    } finally {
+      setPausing(false);
+    }
+  }
+
   async function handleStop() {
     if (stopping) return;
     setStopping(true);
     try {
-      if (tickRef.current) clearInterval(tickRef.current);
-      // Close whatever segment was open at the moment of stopping, so the
-      // final hard or easy effort isn't silently dropped from scoring.
       const now = Date.now();
-      if (isSegmentTracked && now > segmentStartRef.current) {
+      // Close whatever segment was open at the moment of stopping, so the
+      // final hard or easy effort isn't silently dropped from scoring. A run
+      // stopped while paused already closed its segment at the pause.
+      if (isSegmentTracked && !paused && now > segmentStartRef.current) {
         setSegments((prev) => [...prev, { type: segmentType, startTime: segmentStartRef.current, endTime: now }]);
+      }
+      // Finishing from a paused state closes that pause here too, so the route
+      // drawn below excludes it exactly as the summary's distance does.
+      if (paused) {
+        applyPauses(pausesRef.current.map((p) => (p.endTime === null ? { ...p, endTime: now } : p)));
+        setPaused(false);
       }
       const result = await stopGpsSession();
       if (hrSource) await handleDisconnectHeartRate();
@@ -392,9 +488,8 @@ export default function GpsRunPage() {
     }
   }
 
-  /** Bails out of a run in progress — stops native tracking and the HR monitor same as a normal stop, but throws the track away instead of moving to review. */
+  /** Bails out of a run in progress — stops native tracking and the HR monitor same as a normal stop, but throws the track away instead of moving to review. Only reachable from a paused run, behind an explicit confirmation. */
   async function handleDiscardTracking() {
-    if (tickRef.current) clearInterval(tickRef.current);
     setStopping(true);
     try {
       await stopGpsSession();
@@ -424,6 +519,11 @@ export default function GpsRunPage() {
     setLiveCadence(null);
     setCadenceReadings([]);
     setElapsedSeconds(0);
+    setPaused(false);
+    setPausing(false);
+    setConfirmingDiscard(false);
+    applyPauses([]);
+    setLiveClockStartMs(0);
     setError("");
   }
 
@@ -520,7 +620,9 @@ export default function GpsRunPage() {
           // The run's shape, simplified for storage — this is what lets the
           // logbook draw the route back. Raw fixes are deliberately not sent:
           // a 10km run is ~1000 of them and the drawn difference is invisible.
-          route: buildRoutePolyline(livePoints) ?? undefined,
+          // Fixes recorded while paused are left out so a stop at a crossing
+          // doesn't draw a spike of receiver drift into the route.
+          route: buildRoutePolyline(movingPoints) ?? undefined,
           ...segmentFields,
         }),
       });
@@ -593,13 +695,22 @@ export default function GpsRunPage() {
     return createPortal(
       <div className="fixed inset-0 z-50 flex flex-col bg-background landscape:flex-row">
         <div className="relative h-1/2 w-full shrink-0 landscape:h-full landscape:w-1/2">
-          <GpsMap points={livePoints} className="h-full w-full" />
+          <GpsMap points={movingPoints} className="h-full w-full" />
           <div
             className="pointer-events-none absolute left-4 flex items-center gap-1.5 rounded-full border border-white/20 bg-black px-3 py-1.5 text-xs font-bold text-white shadow-lg"
             style={{ top: "max(1rem, calc(env(safe-area-inset-top) + 0.5rem))" }}
           >
-            <span className="pulse-dot h-1.5 w-1.5 rounded-full bg-danger" aria-hidden />
-            Tracking — screen can lock
+            {paused ? (
+              <>
+                <Pause className="h-3 w-3 text-warning" fill="currentColor" />
+                Paused — your run is safe
+              </>
+            ) : (
+              <>
+                <span className="pulse-dot h-1.5 w-1.5 rounded-full bg-danger" aria-hidden />
+                Tracking — screen can lock
+              </>
+            )}
           </div>
         </div>
 
@@ -613,7 +724,7 @@ export default function GpsRunPage() {
               {formatElapsed(elapsedSeconds)}
             </p>
 
-            {isSegmentTracked && (
+            {isSegmentTracked && !paused && (
               <button
                 type="button"
                 onClick={toggleSegment}
@@ -711,24 +822,77 @@ export default function GpsRunPage() {
             )}
           </div>
 
-          <div className="flex items-center gap-4">
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={handleDiscardTracking}
-              disabled={stopping}
-            >
-              Discard
-            </Button>
-            <button
-              type="button"
-              onClick={handleStop}
-              disabled={stopping}
-              aria-label="Stop run"
-              className="flex h-16 w-16 items-center justify-center rounded-full bg-danger text-white shadow-lg shadow-danger/30 transition-transform active:scale-95 disabled:opacity-60"
-            >
-              <Square className="h-6 w-6" fill="currentColor" />
-            </button>
+          {/* Controls. Two big targets, both sized to be hit at a run with wet
+              hands: pause/resume and finish. Discard is not among them — it
+              lives behind a pause AND a confirmation, because the one thing
+              this screen must never do is destroy a recorded run on a
+              mis-tap (user report: "Once paused you can only discard run"). */}
+          <div className="flex w-full max-w-sm shrink-0 flex-col items-center gap-4">
+            <div className="flex items-center justify-center gap-8">
+              <button
+                type="button"
+                onClick={paused ? handleResume : handlePause}
+                disabled={pausing || stopping}
+                aria-label={paused ? "Resume run" : "Pause run"}
+                className={`flex h-20 w-20 items-center justify-center rounded-full shadow-lg transition-transform active:scale-95 disabled:opacity-60 ${
+                  paused
+                    ? "bg-accent text-accent-foreground shadow-accent/30"
+                    : "bg-white text-black shadow-white/20"
+                }`}
+              >
+                {paused ? (
+                  <Play className="h-8 w-8" fill="currentColor" />
+                ) : (
+                  <Pause className="h-8 w-8" fill="currentColor" />
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={handleStop}
+                disabled={stopping || pausing}
+                aria-label="Finish run"
+                className="flex h-20 w-20 items-center justify-center rounded-full bg-danger text-white shadow-lg shadow-danger/30 transition-transform active:scale-95 disabled:opacity-60"
+              >
+                <Square className="h-7 w-7" fill="currentColor" />
+              </button>
+            </div>
+            <div className="flex items-center justify-center gap-8 text-center">
+              <p className="w-20 micro-label text-white/50">{paused ? "Resume" : "Pause"}</p>
+              <p className="w-20 micro-label text-white/50">Finish</p>
+            </div>
+
+            {/* Discard: paused only, visually separated from the controls
+                above, and two-tap. Finishing keeps the run; this is the only
+                path that throws it away, so it should feel like one. */}
+            {paused && (
+              <div className="w-full border-t border-white/10 pt-3">
+                {confirmingDiscard ? (
+                  <div className="flex flex-col items-center gap-2">
+                    <p className="text-center text-xs text-white/70">
+                      Delete this run for good? {(liveDistanceMeters / 1000).toFixed(2)}km and{" "}
+                      {formatElapsed(elapsedSeconds)} will be lost — it can&apos;t be recovered.
+                    </p>
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="secondary" onClick={() => setConfirmingDiscard(false)} disabled={stopping}>
+                        Keep run
+                      </Button>
+                      <Button size="sm" variant="destructive" onClick={handleDiscardTracking} loading={stopping}>
+                        Delete run
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setConfirmingDiscard(true)}
+                    className="mx-auto flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white/45 transition-colors hover:text-danger"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Discard run
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>,
@@ -893,8 +1057,8 @@ export default function GpsRunPage() {
 
       {phase === "reviewing" && summary && (
         <Card padding="lg">
-          {livePoints.length > 0 && (
-            <GpsMap points={livePoints} className="mb-6 h-48 w-full overflow-hidden rounded-2xl" />
+          {movingPoints.length > 0 && (
+            <GpsMap points={movingPoints} className="mb-6 h-48 w-full overflow-hidden rounded-2xl" />
           )}
 
           {summary.isPartial && summary.partialReason && (

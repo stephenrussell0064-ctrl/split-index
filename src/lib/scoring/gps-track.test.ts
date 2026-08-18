@@ -9,10 +9,14 @@ import {
   elevationGainMeters,
   summarizeIntervalSegments,
   summarizeFartlekSegments,
+  trackDistanceMeters,
+  movingMillis,
+  isPaused,
   GPS_TRACKING_CONFIG,
   type GpsPoint,
   type HrReading,
   type RunSegment,
+  type PauseInterval,
 } from "./gps-track";
 
 function point(overrides: Partial<GpsPoint> = {}): GpsPoint {
@@ -234,6 +238,284 @@ describe("elevationGainMeters", () => {
     ];
     // +8 (100->108), -5 ignored = 8m gain, even mid-run with only 3 fixes so far.
     expect(elevationGainMeters(points)).toBeCloseTo(8, 0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Second reported elevation bug: a run with ~9m of real climb logged as 0.
+//
+// The fixtures below are the ones the algorithm was chosen against. Each is a
+// full-length track (a 5km run at a 10m distance filter is ~500 fixes), because
+// this class of bug only appears at realistic sample counts — the failure is
+// statistical, not arithmetic, and a four-point fixture cannot show it.
+// ---------------------------------------------------------------------------
+
+/** Deterministic pseudo-random in [0,1) so any failure here is reproducible. */
+function seeded(seed: number): () => number {
+  let s = seed >>> 0;
+  return () => {
+    s = (s * 1664525 + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
+}
+
+/**
+ * `bumps` raised cosine rises of `amplitude` metres each across `samples`
+ * fixes — i.e. exactly `bumps * amplitude` metres of true climb, on the kind of
+ * gently rolling ground an ordinary road run actually covers.
+ */
+function rollingTerrain(samples: number, bumps: number, amplitude: number, base = 40): number[] {
+  return Array.from(
+    { length: samples },
+    (_, i) => base + (amplitude / 2) * (1 - Math.cos((i / samples) * bumps * 2 * Math.PI))
+  );
+}
+
+/** Per-sample GPS/barometer jitter of +/- `magnitude` metres. */
+function withNoise(profile: number[], magnitude: number, seed: number): number[] {
+  const next = seeded(seed);
+  return profile.map((v) => v + (next() - 0.5) * 2 * magnitude);
+}
+
+function altitudeTrack(altitudes: number[], overrides: Partial<GpsPoint> = {}): GpsPoint[] {
+  return altitudes.map((altitude, i) =>
+    point({ latitude: 51.5 + i * 0.00009, longitude: -0.12, accuracy: 8, altitude, time: i * 10_000, ...overrides })
+  );
+}
+
+describe("elevationGainMeters — small real climbs (reported: 9m read as 0)", () => {
+  // The athlete's report. 9m of gain over a run is not one 9m hill, it is
+  // three or four rises of a couple of metres each, and the previous flat 5m
+  // gate discarded every one of them: the answer was exactly 0, on clean data
+  // and noisy data alike.
+  const TRUE_GAIN = 9;
+
+  it("reads ~9m from three 3m rises on a clean trace, not 0", () => {
+    const gain = elevationGainMeters(altitudeTrack(rollingTerrain(500, 3, 3)))!;
+    expect(gain).toBeGreaterThan(TRUE_GAIN * 0.7);
+    expect(gain).toBeLessThan(TRUE_GAIN * 1.3);
+  });
+
+  it("still reads ~9m through barometer-grade jitter (+/-1.5m)", () => {
+    const gain = elevationGainMeters(altitudeTrack(withNoise(rollingTerrain(500, 3, 3), 1.5, 7)))!;
+    expect(gain).toBeGreaterThan(TRUE_GAIN * 0.7);
+    expect(gain).toBeLessThan(TRUE_GAIN * 1.4);
+  });
+
+  it("still reads ~9m through GPS-grade jitter (+/-4m), where the noise is larger than the terrain", () => {
+    // The demanding case: every individual bump is smaller than the noise on
+    // any single sample. It is recoverable only because terrain is spatially
+    // wide and jitter is per-sample, which is what the noise-sized smoothing
+    // window exploits.
+    const gain = elevationGainMeters(altitudeTrack(withNoise(rollingTerrain(500, 3, 3), 4, 7)))!;
+    expect(gain).toBeGreaterThan(TRUE_GAIN * 0.6);
+    expect(gain).toBeLessThan(TRUE_GAIN * 1.5);
+  });
+
+  it("banks a continuous climb in full, summit included", () => {
+    // Regression on the old accumulator, which banked only up to the sample
+    // that crossed the threshold and reset there — a clean, uninterrupted 9m
+    // climb read 5m, and every hill lost its top few metres the same way.
+    const gain = elevationGainMeters(altitudeTrack(rollingTerrain(500, 0.5, 9)))!;
+    expect(gain).toBeGreaterThan(8.5);
+    expect(gain).toBeLessThan(9.5);
+  });
+});
+
+describe("elevationGainMeters — jitter must still read flat", () => {
+  // The other half of the trade. Lowering the gate is only defensible if pure
+  // noise still reads zero at every noise level and every track length, since
+  // positive-only accumulation means noise can inflate but never cancel.
+  const NOISE_CASES: [string, number, number, number][] = [
+    ["barometer-grade jitter over a 5km run", 500, 1.5, 4242],
+    ["GPS-grade jitter over a 5km run", 500, 3, 4242],
+    ["poor-reception jitter over a 9km run", 900, 6, 12345],
+    ["heavy jitter over a short 1.2km run", 120, 4, 21],
+    ["heavy jitter over a 600m warm-up", 60, 3, 33],
+  ];
+
+  for (const [label, samples, magnitude, seed] of NOISE_CASES) {
+    it(`reads 0 for ${label}`, () => {
+      const flat = new Array<number>(samples).fill(50);
+      expect(elevationGainMeters(altitudeTrack(withNoise(flat, magnitude, seed)))!).toBe(0);
+    });
+  }
+
+  it("does not let a noisy flat run out-climb a quiet real one", () => {
+    const realButSmall = elevationGainMeters(altitudeTrack(withNoise(rollingTerrain(500, 3, 3), 1.5, 7)))!;
+    const noisyButFlat = elevationGainMeters(altitudeTrack(withNoise(new Array(500).fill(50), 6, 12345)))!;
+    expect(realButSmall).toBeGreaterThan(noisyButFlat);
+  });
+});
+
+describe("elevationGainMeters — the device's own vertical accuracy", () => {
+  it("discards altitudes the device flags as invalid rather than trusting them", () => {
+    // CoreLocation reports a negative verticalAccuracy when the altitude it
+    // handed over is not a measurement. Counting it would put a fabricated
+    // climb straight into the athlete's training load.
+    const points: GpsPoint[] = [
+      point({ altitude: 100, accuracy: 5, altitudeAccuracy: 3, time: 0 }),
+      point({ altitude: 400, accuracy: 5, altitudeAccuracy: -1, time: 10_000 }),
+      point({ altitude: 102, accuracy: 5, altitudeAccuracy: 3, time: 20_000 }),
+    ];
+    expect(elevationGainMeters(points)!).toBeLessThan(5);
+  });
+
+  it("stays conservative when the device admits its altitude is uncertain", () => {
+    // Same trace, two devices. One says it is good to 2m and its small rises
+    // are believed; one says +/-15m, and on that data we deliberately
+    // under-report rather than bank climbs we cannot stand behind.
+    const profile = withNoise(rollingTerrain(500, 3, 3), 1.5, 7);
+    const precise = elevationGainMeters(altitudeTrack(profile, { altitudeAccuracy: 2 }))!;
+    const vague = elevationGainMeters(altitudeTrack(profile, { altitudeAccuracy: 15 }))!;
+    expect(precise).toBeGreaterThan(6);
+    expect(vague).toBeLessThan(precise);
+  });
+
+  it("treats a missing vertical accuracy as absent, not as zero confidence", () => {
+    // Imported GPX and everything recorded before the field existed carry no
+    // altitudeAccuracy at all; they must not be penalised for it.
+    const profile = rollingTerrain(500, 3, 3);
+    expect(elevationGainMeters(altitudeTrack(profile))).toBeGreaterThan(6);
+  });
+});
+
+describe("pause handling", () => {
+  // The pause bug's data half: a paused run must not have the pause counted as
+  // either time run or ground covered. A two-minute wait at a crossing that
+  // shows up as 400m at 0:30/km destroys the pace, the score, and the athlete's
+  // trust in every number on the screen.
+  const pause: PauseInterval[] = [{ startTime: 100_000, endTime: 400_000 }];
+
+  it("does not count a paused stretch toward moving time", () => {
+    expect(movingMillis(0, 500_000, pause)).toBe(200_000);
+  });
+
+  it("treats an open pause as running to the end of the window", () => {
+    expect(movingMillis(0, 500_000, [{ startTime: 100_000, endTime: null }])).toBe(100_000);
+  });
+
+  it("counts everything when nothing was paused", () => {
+    expect(movingMillis(0, 500_000, [])).toBe(500_000);
+    expect(movingMillis(0, 500_000)).toBe(500_000);
+  });
+
+  it("never draws a straight line across the pause", () => {
+    // Ten fixes 100m apart. The athlete stops after the second, is driven 5km
+    // away, and restarts. Only the legs on either side of the pause are real.
+    const before = buildCleanTrack(3, 30); // t = 0, 30_000, 60_000
+    const after: GpsPoint[] = [
+      point({ latitude: 51.55, longitude: -0.12, accuracy: 5, time: 420_000 }),
+      point({ latitude: 51.5509, longitude: -0.12, accuracy: 5, time: 450_000 }),
+    ];
+    const distance = trackDistanceMeters([...before, ...after], pause);
+    // 200m before + 100m after. The ~5km jump across the pause is not distance
+    // the athlete covered on foot.
+    expect(distance).toBeGreaterThan(250);
+    expect(distance).toBeLessThan(350);
+  });
+
+  it("ignores fixes recorded while paused — drift while standing still is not running", () => {
+    const points: GpsPoint[] = [
+      point({ latitude: 51.5, longitude: -0.12, accuracy: 5, time: 0 }),
+      point({ latitude: 51.5009, longitude: -0.12, accuracy: 5, time: 60_000 }),
+      // Standing at a crossing; the receiver wanders 300m around.
+      point({ latitude: 51.5036, longitude: -0.12, accuracy: 5, time: 200_000 }),
+      point({ latitude: 51.5009, longitude: -0.12, accuracy: 5, time: 300_000 }),
+      point({ latitude: 51.5018, longitude: -0.12, accuracy: 5, time: 450_000 }),
+    ];
+    // Only the first 100m leg counts; the pause swallows the drift, and the
+    // leg out of the pause is skipped as spanning it.
+    expect(trackDistanceMeters(points, pause)).toBeCloseTo(100, -1);
+  });
+
+  it("summarizes a paused run on moving time and moving distance", () => {
+    const points: GpsPoint[] = [
+      point({ latitude: 51.5, longitude: -0.12, accuracy: 5, time: 0 }),
+      point({ latitude: 51.5009, longitude: -0.12, accuracy: 5, time: 50_000 }),
+      point({ latitude: 51.5018, longitude: -0.12, accuracy: 5, time: 100_000 }),
+      // 300 seconds paused here.
+      point({ latitude: 51.5027, longitude: -0.12, accuracy: 5, time: 450_000 }),
+      point({ latitude: 51.5036, longitude: -0.12, accuracy: 5, time: 500_000 }),
+    ];
+    const summary = summarizeGpsTrack(points, {
+      endedCleanly: true,
+      permissionRevoked: false,
+      pauses: pause,
+    });
+    // 500s wall clock, 300s of it paused.
+    expect(summary.durationSeconds).toBe(200);
+    // 200m before the pause + 100m after; the leg across it is skipped.
+    expect(summary.distanceMeters).toBeGreaterThan(250);
+    expect(summary.distanceMeters).toBeLessThan(350);
+    // And the pace that falls out of those two is a real pace, not a fantasy.
+    expect(summary.avgPaceSecondsPerKm).toBeGreaterThan(400);
+    expect(summary.avgPaceSecondsPerKm).toBeLessThan(900);
+  });
+
+  it("does not flag a deliberate pause as an interrupted session", () => {
+    // A five-minute pause is longer than MAX_ACCEPTABLE_GAP_SECONDS. Without
+    // deducting it, every paused run would be saved as a partial effort and
+    // scored as if tracking had failed.
+    const points: GpsPoint[] = [
+      point({ latitude: 51.5, longitude: -0.12, accuracy: 5, time: 0 }),
+      point({ latitude: 51.5009, longitude: -0.12, accuracy: 5, time: 100_000 }),
+      point({ latitude: 51.5018, longitude: -0.12, accuracy: 5, time: 450_000 }),
+    ];
+    const summary = summarizeGpsTrack(points, {
+      endedCleanly: true,
+      permissionRevoked: false,
+      pauses: pause,
+    });
+    expect(summary.isPartial).toBe(false);
+    expect(summary.partialReason).toBeNull();
+
+    // The same track with no pause recorded genuinely is an interrupted one.
+    const unpaused = summarizeGpsTrack(points, { endedCleanly: true, permissionRevoked: false });
+    expect(unpaused.partialReason).toBe("sampling_gap");
+  });
+
+  it("keeps everything recorded before the pause — resuming is not a restart", () => {
+    const before = buildCleanTrack(3, 30);
+    const after: GpsPoint[] = [
+      point({ latitude: 51.5027, longitude: -0.12, accuracy: 5, altitude: 10, time: 420_000 }),
+      point({ latitude: 51.5036, longitude: -0.12, accuracy: 5, altitude: 10, time: 450_000 }),
+    ];
+    const summary = summarizeGpsTrack([...before, ...after], {
+      endedCleanly: true,
+      permissionRevoked: false,
+      pauses: pause,
+    });
+    // 200m from before the pause survives into the final total.
+    expect(summary.distanceMeters).toBeGreaterThan(250);
+  });
+
+  it("excludes altitude recorded while paused from elevation gain", () => {
+    // Standing still on a windy day: the barometer wanders 20m and back.
+    const points: GpsPoint[] = [
+      point({ altitude: 100, accuracy: 5, time: 0 }),
+      point({ altitude: 100, accuracy: 5, time: 60_000 }),
+      point({ altitude: 120, accuracy: 5, time: 200_000 }),
+      point({ altitude: 100, accuracy: 5, time: 300_000 }),
+      point({ altitude: 101, accuracy: 5, time: 450_000 }),
+    ];
+    const summary = summarizeGpsTrack(points, {
+      endedCleanly: true,
+      permissionRevoked: false,
+      pauses: pause,
+    });
+    expect(summary.elevationGainMeters).toBeLessThan(5);
+  });
+
+  it("identifies which instants fall inside a pause", () => {
+    expect(isPaused(50_000, pause)).toBe(false);
+    expect(isPaused(200_000, pause)).toBe(true);
+    expect(isPaused(500_000, pause)).toBe(false);
+    expect(isPaused(500_000, [{ startTime: 100_000, endTime: null }])).toBe(true);
+    // The boundary fixes themselves belong to the run: the one at the pause is
+    // the last position before it, the one at the resume the first after.
+    expect(isPaused(100_000, pause)).toBe(false);
+    expect(isPaused(400_000, pause)).toBe(false);
   });
 });
 
