@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils/cn";
 import type { MonitoringSnapshot } from "@/lib/scoring/hpe/monitoring";
+import { SAFE_RESUME_PERCENTAGE } from "@/lib/scoring/hpe/rollout";
 
 /**
  * Fleet operations view. This is the screen the kill-switch decision is made
@@ -127,6 +128,12 @@ export function FleetDashboard() {
   const s = data.snapshot;
   const smallPopulation = data.populationSize < 20;
 
+  // Where "Resume" puts you. Normally back to the exposure you paused at, but
+  // a rollout paused at 0% has no stored exposure to return to, so it resumes
+  // at the smallest real stage instead. Resuming to 0% would report success
+  // and change nothing, which is the same dead end wearing a button.
+  const resumeTarget = Math.max(data.rollout.percentage, SAFE_RESUME_PERCENTAGE);
+
   return (
     <div className="space-y-5">
       {/* 1. Alarms. */}
@@ -199,29 +206,37 @@ export function FleetDashboard() {
                   anywhere to turn generation back on. The gate logic for
                   re-enabling existed and was unit-tested; the button did not.
 
-                  Resuming is a RAISE in exposure (0 -> whatever percentage was
-                  stored), so it goes through the same fleet-review gate as any
-                  other increase — which is why it is disabled while an alarm
-                  is live. */}
-              {!data.rollout.enabled && data.rollout.percentage > 0 && (
+                  The first fix left the same door shut in a narrower place.
+                  Both resume buttons were gated on the STORED percentage —
+                  `> 0` and `> 5` — and Advance requires `enabled`. A rollout
+                  sitting at 0%, which is the state every deploy starts in and
+                  the state you land in after pausing before you ever dialled
+                  up, therefore rendered no control at all. The percentage is
+                  the wrong thing to gate on; being paused is the whole
+                  condition, and a paused switch must always show its way back.
+
+                  Resuming is a RAISE in exposure (0 -> the target), so it goes
+                  through the same fleet-review gate as any other increase —
+                  which is why it is disabled while an alarm is live. */}
+              {!data.rollout.enabled && (
                 <Button
                   size="sm"
                   disabled={busy || reason.trim().length < 8 || data.rollout.gate?.allowed === false}
-                  onClick={() => void changeRollout({ enabled: true, percentage: data.rollout.percentage })}
+                  onClick={() => void changeRollout({ enabled: true, percentage: resumeTarget })}
                 >
-                  Resume at {data.rollout.percentage}%
+                  Resume at {resumeTarget}%
                 </Button>
               )}
               {/* Resuming smaller than you paused at is the safer recovery, so
                   it is offered alongside rather than buried. */}
-              {!data.rollout.enabled && data.rollout.percentage > 5 && (
+              {!data.rollout.enabled && resumeTarget > SAFE_RESUME_PERCENTAGE && (
                 <Button
                   variant="secondary"
                   size="sm"
                   disabled={busy || reason.trim().length < 8 || data.rollout.gate?.allowed === false}
-                  onClick={() => void changeRollout({ enabled: true, percentage: 5 })}
+                  onClick={() => void changeRollout({ enabled: true, percentage: SAFE_RESUME_PERCENTAGE })}
                 >
-                  Resume at 5% instead
+                  Resume at {SAFE_RESUME_PERCENTAGE}% instead
                 </Button>
               )}
               {data.rollout.nextStage && data.rollout.enabled && (

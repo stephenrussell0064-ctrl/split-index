@@ -19,6 +19,7 @@ import {
   rolloutBucket,
   type FeatureFlag,
   type FleetReviewState,
+  SAFE_RESUME_PERCENTAGE,
 } from "./rollout";
 import {
   buildMonitoringSnapshot,
@@ -416,5 +417,55 @@ describe("WP10 — the fleet-review gate on rollout", () => {
       );
       expect(decision.allowed, `${target.label} was reachable without a fleet review`).toBe(false);
     }
+  });
+});
+
+/**
+ * The kill switch has to be reversible from every state it can reach.
+ *
+ * It has now been a one-way door twice. First because pausing at 100% left no
+ * Advance button and no other control. Then, after that fix, because both
+ * resume buttons were gated on the STORED percentage (`> 0` and `> 5`) — so a
+ * rollout paused at 0%, which is the state every deploy starts in, rendered
+ * no control at all. The percentage is the wrong thing to gate on.
+ */
+describe("WP10 — resuming from a pause", () => {
+  const resumeTarget = (storedPercentage: number) => Math.max(storedPercentage, SAFE_RESUME_PERCENTAGE);
+
+  it("offers a real target from 0%, where there is no stored exposure to return to", () => {
+    // Resuming to 0% would report success and change nothing — the same dead
+    // end wearing a button.
+    expect(resumeTarget(0)).toBe(SAFE_RESUME_PERCENTAGE);
+    expect(resumeTarget(0)).toBeGreaterThan(0);
+  });
+
+  it("returns to the exposure you paused at when there was one", () => {
+    expect(resumeTarget(25)).toBe(25);
+    expect(resumeTarget(100)).toBe(100);
+  });
+
+  it("never resumes below the safe floor", () => {
+    for (const stored of [0, 1, 5, 10, 25, 50, 100]) {
+      expect(resumeTarget(stored)).toBeGreaterThanOrEqual(SAFE_RESUME_PERCENTAGE);
+    }
+  });
+
+  it("treats resuming as a raise, so it still passes through the fleet-review gate", () => {
+    // Turning generation back on increases exposure from nothing, and an
+    // operator who has not read the fleet view has not made the decision the
+    // gate exists to require.
+    const decision = evaluateRolloutChange(
+      { currentEnabled: false, currentPercentage: 0, nextEnabled: true, nextPercentage: SAFE_RESUME_PERCENTAGE },
+      { reviewedAt: null, reviewedBy: null, alarmCount: 0 }
+    );
+    expect(decision.allowed).toBe(false);
+  });
+
+  it("allows the resume once the fleet view has been read", () => {
+    const decision = evaluateRolloutChange(
+      { currentEnabled: false, currentPercentage: 0, nextEnabled: true, nextPercentage: SAFE_RESUME_PERCENTAGE },
+      { reviewedAt: new Date().toISOString(), reviewedBy: "ops", alarmCount: 0 }
+    );
+    expect(decision.allowed).toBe(true);
   });
 });

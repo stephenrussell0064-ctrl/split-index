@@ -128,6 +128,17 @@ export const ROLLOUT_STAGES: readonly { percentage: number; label: string; gate:
 ] as const;
 
 /** The next stage up from the current percentage, or null at full rollout. */
+/**
+ * Where the fleet view's "Resume" lands when there is no prior exposure to
+ * return to.
+ *
+ * A rollout paused at 0% — the state every deploy starts in — has nothing to
+ * resume TO, and resuming to 0% would report success while changing nothing.
+ * The smallest real stage is the honest floor: it turns generation back on
+ * without restoring an exposure nobody chose.
+ */
+export const SAFE_RESUME_PERCENTAGE = 5;
+
 export function nextRolloutStage(current: number): (typeof ROLLOUT_STAGES)[number] | null {
   return ROLLOUT_STAGES.find((s) => s.percentage > current) ?? null;
 }
