@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { cn } from "@/lib/utils/cn";
 
 /**
@@ -215,6 +216,102 @@ export function Prefilled({
         <span className="shrink-0 text-sm font-semibold tabular-nums">{value}</span>
       ) : (
         <span className="shrink-0 text-right text-xs italic text-warning/90">{missing ?? "not set"}</span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * A proposed value the athlete can correct.
+ *
+ * `Prefilled` shows what the engine derived and stops there, which is right
+ * for a fact and wrong for an estimate. An adaptive 1RM is inferred from
+ * submaximal sets and an estimated max HR is age arithmetic — both are
+ * frequently wrong for an individual, and the athlete who has actually tested
+ * a single or worn a strap through a maximal effort had no way to say so while
+ * the plan was built on the estimate anyway.
+ *
+ * The proposal stays on screen next to the correction rather than being
+ * overwritten, so the athlete can see what they are disagreeing with and clear
+ * the override back to it.
+ */
+export function PrefilledOverridable({
+  label,
+  value,
+  source,
+  missing,
+  override,
+  onOverride,
+  unit,
+  min,
+  max,
+  step,
+}: {
+  label: string;
+  value: string | null;
+  source: string;
+  missing?: string;
+  override: number | null;
+  onOverride: (v: number | null) => void;
+  unit: string;
+  min: number;
+  max: number;
+  step?: number;
+}) {
+  const [editing, setEditing] = useState(override != null);
+  return (
+    <div className="border-b border-white/[0.05] py-3 last:border-0">
+      <div className="flex items-baseline justify-between gap-4">
+        <div>
+          <p className="text-sm text-foreground">{label}</p>
+          <p className="text-xs text-muted">{source}</p>
+        </div>
+        <div className="flex shrink-0 items-baseline gap-3">
+          {value != null ? (
+            <span
+              className={cn(
+                "text-sm font-semibold tabular-nums",
+                override != null && "text-muted line-through"
+              )}
+            >
+              {value}
+            </span>
+          ) : (
+            <span className="text-right text-xs italic text-warning/90">{missing ?? "not set"}</span>
+          )}
+          {!editing && (
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              className="text-xs font-medium text-accent underline-offset-2 hover:underline"
+            >
+              {value != null ? "Correct it" : "Enter it"}
+            </button>
+          )}
+        </div>
+      </div>
+      {editing && (
+        <div className="mt-3 flex items-center gap-2">
+          <NumberField
+            value={override}
+            onChange={onOverride}
+            min={min}
+            max={max}
+            step={step}
+            suffix={unit}
+            ariaLabel={`${label} — your own figure`}
+          />
+          <button
+            type="button"
+            onClick={() => {
+              onOverride(null);
+              setEditing(false);
+            }}
+            className="text-xs font-medium text-muted underline-offset-2 hover:text-foreground hover:underline"
+          >
+            Use ours
+          </button>
+        </div>
       )}
     </div>
   );

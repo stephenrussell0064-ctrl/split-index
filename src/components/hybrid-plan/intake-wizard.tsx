@@ -15,6 +15,7 @@ import {
   MultiSelect,
   NumberField,
   Prefilled,
+  PrefilledOverridable,
   SelectField,
   YesNo,
   type DayWindowValue,
@@ -723,15 +724,29 @@ export function IntakeWizard() {
                 </Field>
               )}
 
-              {["squat", "bench", "deadlift"].map((lift) => (
-                <Prefilled
-                  key={lift}
-                  label={lift.charAt(0).toUpperCase() + lift.slice(1)}
-                  value={prefilled.oneRms[lift] ? `${Math.round(prefilled.oneRms[lift])} kg` : null}
-                  source="Adaptive 1RM from your logged sets"
-                  missing="log a 3-5RM test"
-                />
-              ))}
+              {(["squat", "bench", "deadlift"] as const).map((lift) => {
+                const key = `${lift}_1rm_override` as const;
+                const current = {
+                  squat: intake.squat1rmOverride,
+                  bench: intake.bench1rmOverride,
+                  deadlift: intake.deadlift1rmOverride,
+                }[lift];
+                return (
+                  <PrefilledOverridable
+                    key={lift}
+                    label={lift.charAt(0).toUpperCase() + lift.slice(1)}
+                    value={prefilled.oneRms[lift] ? `${Math.round(prefilled.oneRms[lift])} kg` : null}
+                    source="Adaptive 1RM from your logged sets"
+                    missing="not enough logged sets yet"
+                    override={get(key, current) as number | null}
+                    onOverride={(v) => set(key, v)}
+                    unit="kg"
+                    min={1}
+                    max={600}
+                    step={2.5}
+                  />
+                );
+              })}
               <Field label="How long have you trained the barbell lifts consistently?" why="Under 12 months means a competition peaking block is not appropriate, and a general preparation plan is offered instead. That is a gate, not a judgement — a novice does not need peaking, they need consistent exposure.">
                 <NumberField
                   value={get("strength_training_years", intake.strengthTrainingYears) as number | null}
@@ -758,17 +773,27 @@ export function IntakeWizard() {
 
           {section === "heart_rate" && !hardBlock && (
             <>
-              <Prefilled
+              <PrefilledOverridable
                 label="Resting heart rate"
                 value={prefilled.restingHr != null ? `${prefilled.restingHr} bpm` : null}
                 source="From your profile"
-                missing="assumed 60 — set it in Profile"
+                missing="assumed 60"
+                override={get("resting_hr_override", intake.restingHrOverride) as number | null}
+                onOverride={(v) => set("resting_hr_override", v)}
+                unit="bpm"
+                min={25}
+                max={120}
               />
-              <Prefilled
+              <PrefilledOverridable
                 label="Maximum heart rate"
                 value={prefilled.maxHr != null ? `${prefilled.maxHr} bpm` : null}
                 source="From your profile or your logged maximal efforts"
                 missing="age-estimated"
+                override={get("max_hr_override", intake.maxHrOverride) as number | null}
+                onOverride={(v) => set("max_hr_override", v)}
+                unit="bpm"
+                min={100}
+                max={230}
               />
               <Field label="Do you know your max heart rate from a race or hard effort?" why="A measured max narrows every heart-rate band in your plan. An age-estimated one is a population average wearing your name.">
                 <YesNo value={get("max_hr_known", intake.maxHrKnown) as boolean} onChange={(v) => set("max_hr_known", v)} />

@@ -362,3 +362,39 @@ describe("WP2 — the stored row parses safely", () => {
     expect(record.injuryLast12Weeks).toBeNull();
   });
 });
+
+/**
+ * The athlete's own numbers beat the engine's estimates.
+ *
+ * The intake showed a derived 1RM and an age-estimated max HR as read-only
+ * facts. They are not facts: an adaptive 1RM is inferred from submaximal sets,
+ * and an estimated max HR is arithmetic on a birthday that is wrong for most
+ * individuals by a wide margin. Someone who had actually tested a single had
+ * no way to say so, and the plan was built on the estimate regardless.
+ */
+describe("manual overrides", () => {
+  const prefilledWith = () =>
+    parseIntakeRow({
+      squat_1rm_override: 185,
+      max_hr_override: 197,
+      resting_hr_override: 44,
+      sections_completed: ["safety", "goal", "availability", "strength", "heart_rate"],
+    } as Record<string, unknown>);
+
+  it("parses an override and leaves the untouched ones null", () => {
+    const record = prefilledWith();
+    expect(record.squat1rmOverride).toBe(185);
+    expect(record.maxHrOverride).toBe(197);
+    expect(record.restingHrOverride).toBe(44);
+    // Null means "use what the engine proposed", not zero.
+    expect(record.bench1rmOverride).toBeNull();
+    expect(record.deadlift1rmOverride).toBeNull();
+  });
+
+  it("treats a missing override as absent rather than as zero", () => {
+    const record = parseIntakeRow(null);
+    expect(record.squat1rmOverride).toBeNull();
+    expect(record.maxHrOverride).toBeNull();
+    expect(record.restingHrOverride).toBeNull();
+  });
+});

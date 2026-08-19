@@ -64,7 +64,11 @@ const SECTION_FIELDS: Record<IntakeSection, string[]> = {
     "strength_training_years",
     "current_strength_sessions_per_week",
     "lift_variants",
-    "equipment_used",
+    // Corrections over the adaptive 1RM, which is inferred from submaximal
+    // work. Someone who has tested a single knows better than the inference.
+    "squat_1rm_override",
+    "bench_1rm_override",
+    "deadlift_1rm_override",
   ],
   endurance: [
     "current_run_min_per_week",
@@ -74,7 +78,7 @@ const SECTION_FIELDS: Record<IntakeSection, string[]> = {
     "substitution_ok",
     "surface_access",
   ],
-  heart_rate: ["max_hr_known", "hr_runs_high"],
+  heart_rate: ["max_hr_known", "hr_runs_high", "max_hr_override", "resting_hr_override"],
   availability: [
     // Real clock times differ by day, and the 6h separation rule is computed
     // from them.

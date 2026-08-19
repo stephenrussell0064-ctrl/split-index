@@ -90,6 +90,16 @@ export interface IntakeRecord {
   surfaceAccess: string[];
 
   maxHrKnown: boolean;
+  /**
+   * Corrections the athlete typed over the values the engine proposed. Null
+   * means "use the proposal". Stored beside the derived value rather than over
+   * it, so the estimate stays visible next to the correction.
+   */
+  squat1rmOverride: number | null;
+  bench1rmOverride: number | null;
+  deadlift1rmOverride: number | null;
+  maxHrOverride: number | null;
+  restingHrOverride: number | null;
   hrRunsHigh: boolean;
 
   daysAvailable: string[];
@@ -207,6 +217,11 @@ export function parseIntakeRow(row: Record<string, unknown> | null): IntakeRecor
     substitutionOk: row?.substitution_ok == null ? true : Boolean(row.substitution_ok),
     surfaceAccess: arr("surface_access").length > 0 ? arr("surface_access") : ["road"],
     maxHrKnown: Boolean(row?.max_hr_known),
+    squat1rmOverride: n("squat_1rm_override"),
+    bench1rmOverride: n("bench_1rm_override"),
+    deadlift1rmOverride: n("deadlift_1rm_override"),
+    maxHrOverride: n("max_hr_override"),
+    restingHrOverride: n("resting_hr_override"),
     hrRunsHigh: Boolean(row?.hr_runs_high),
     daysAvailable: arr("days_available"),
     hasGymAccess: row?.has_gym_access == null ? true : Boolean(row.has_gym_access),
@@ -479,7 +494,15 @@ export function resolveIntakeInputs(
     heightCm: prefilled.heightCm ?? 0,
     age: prefilled.age,
     sex: prefilled.sex,
-    oneRms: prefilled.oneRms,
+    // The athlete's own numbers win. An adaptive 1RM is inferred from
+    // submaximal work and is an estimate; someone who has actually tested a
+    // single knows better than the inference does.
+    oneRms: {
+      ...prefilled.oneRms,
+      ...(record.squat1rmOverride != null ? { squat: record.squat1rmOverride } : {}),
+      ...(record.bench1rmOverride != null ? { bench: record.bench1rmOverride } : {}),
+      ...(record.deadlift1rmOverride != null ? { deadlift: record.deadlift1rmOverride } : {}),
+    },
     predicted5kS: prefilled.predicted5kS,
     strengthTrainingAge: trainingAgeFromYears(strengthYears),
     enduranceTrainingAge: trainingAgeFromYears(enduranceYears),
@@ -489,19 +512,21 @@ export function resolveIntakeInputs(
     currentStrengthSessionsPerWeek:
       record.currentStrengthSessionsPerWeek ?? DEGRADATION_DEFAULTS.currentStrengthSessionsPerWeek,
     chronicLoad: prefilled.chronicLoad,
-    restingHr: prefilled.restingHr ?? 60,
-    maxHr: record.maxHrKnown ? prefilled.maxHr : (prefilled.maxHr ?? null),
+    restingHr: record.restingHrOverride ?? prefilled.restingHr ?? 60,
+    // An estimated max HR is age arithmetic and is wrong for most people by a
+    // wide margin, so a measured one the athlete typed beats it outright.
+    maxHr: record.maxHrOverride ?? (record.maxHrKnown ? prefilled.maxHr : (prefilled.maxHr ?? null)),
     safety: flags,
     assumed,
   };
 
-  if (prefilled.restingHr == null) {
+  if (record.restingHrOverride == null && prefilled.restingHr == null) {
     assumed.push(
       "Resting heart rate was assumed at 60 rather than measured, which widens every heart-rate band below. " +
         "Measuring it on waking for three mornings narrows them to your own physiology."
     );
   }
-  if (prefilled.maxHr == null) {
+  if (record.maxHrOverride == null && prefilled.maxHr == null) {
     assumed.push(
       `Maximum heart rate is age-estimated at ${estimatedMaxHr(prefilled.age)}, not measured. Every band inherits ` +
         `that estimate until you log a maximal effort.`
