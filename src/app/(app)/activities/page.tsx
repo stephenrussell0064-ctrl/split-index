@@ -80,6 +80,10 @@ export default async function ActivitiesPage({
           initialZone={initialZone}
           sportCounts={sportCounts}
           pageSize={LOGBOOK_PAGE_SIZE}
+          // The full logbook is the one place with every session in one list,
+          // so it is the only place where picking two recordings of the same
+          // interrupted run is actually possible.
+          selectable
         />
       )}
     </div>

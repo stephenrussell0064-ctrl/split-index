@@ -61,11 +61,24 @@ function groupSummary(group: LogbookGroup): string {
   return parts.join(" · ");
 }
 
+/**
+ * Passed down only while the athlete is choosing sessions to merge. Absent —
+ * which is every server-rendered use of this component — the rows stay the
+ * plain links they have always been.
+ */
+export interface LogbookSelection {
+  selectedIds: Set<string>;
+  onToggle: (entry: LogbookEntry) => void;
+  /** Why this session cannot join what is already selected, or null if it can. */
+  blockedReason: (entry: LogbookEntry) => string | null;
+}
+
 export function LogbookGroups({
   entries,
   surface,
   showZoneBadge = true,
   sticky = false,
+  selection,
 }: {
   entries: LogbookEntry[];
   surface: LogbookSurface;
@@ -76,6 +89,7 @@ export function LogbookGroups({
    * has no scrollport to stick to and just renders static.
    */
   sticky?: boolean;
+  selection?: LogbookSelection;
 }) {
   const theme = surfaceTheme(surface);
   const groups = groupByMonth(entries);
@@ -98,14 +112,25 @@ export function LogbookGroups({
             <p className={cn("text-[11px] tabular-nums", theme.faint)}>{groupSummary(group)}</p>
           </div>
           <ul className={cn("divide-y", theme.divider)}>
-            {group.entries.map((entry) => (
-              <LogbookRow
-                key={entry.id}
-                entry={entry}
-                surface={surface}
-                showZoneBadge={showZoneBadge}
-              />
-            ))}
+            {group.entries.map((entry) => {
+              const blockedReason = selection?.blockedReason(entry) ?? null;
+              return (
+                <LogbookRow
+                  key={entry.id}
+                  entry={entry}
+                  surface={surface}
+                  showZoneBadge={showZoneBadge}
+                  selection={
+                    selection && {
+                      selected: selection.selectedIds.has(entry.id),
+                      disabled: blockedReason !== null,
+                      disabledReason: blockedReason ?? undefined,
+                      onToggle: () => selection.onToggle(entry),
+                    }
+                  }
+                />
+              );
+            })}
           </ul>
         </section>
       ))}

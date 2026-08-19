@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { format } from "date-fns";
+import { Check } from "lucide-react";
 import { RouteMap } from "@/components/activities/route-map";
 import { cn } from "@/lib/utils/cn";
 import { formatIndex, formatDuration, formatDistance, formatPace, formatSpeed } from "@/lib/utils/format";
@@ -115,15 +116,31 @@ function metricsFor(entry: LogbookEntry): Metric[] {
   return metrics;
 }
 
+/**
+ * Selection mode, used when merging sessions that are really one session.
+ * Present only while the athlete is choosing; absent, the row is the ordinary
+ * link it has always been.
+ */
+export interface LogbookRowSelection {
+  selected: boolean;
+  /** True when this session cannot join what is already selected (wrong sport, too far away). */
+  disabled: boolean;
+  /** Shown as the row's title when disabled, so a greyed-out row explains itself. */
+  disabledReason?: string;
+  onToggle: () => void;
+}
+
 export function LogbookRow({
   entry,
   surface,
   showZoneBadge = true,
+  selection,
 }: {
   entry: LogbookEntry;
   surface: LogbookSurface;
   /** Off for a zone page, where every row is the same zone and the pill is noise. */
   showZoneBadge?: boolean;
+  selection?: LogbookRowSelection;
 }) {
   const theme = surfaceTheme(surface);
   const meta = SPORTS.find((s) => s.id === entry.sport);
@@ -133,23 +150,37 @@ export function LogbookRow({
   const sessionType = SESSION_TYPES.find((t) => t.value === entry.sessionType)?.label ?? null;
   const hasRoute = !!entry.route && entry.route.length >= 2;
 
-  return (
-    <li className="relative">
-      <Link
-        href={`/activities/${entry.id}`}
-        className={cn(
-          "group relative flex items-center gap-3 py-3 pl-4 pr-3 transition-colors sm:gap-4 sm:pl-5 sm:pr-4",
-          theme.rowHover
-        )}
-      >
-        {/* Zone identity, on every row, in the one place the eye is already
-            tracking as it scans down the list. */}
+  const rowClass = cn(
+    "group relative flex w-full items-center gap-3 py-3 pl-4 pr-3 text-left transition-colors sm:gap-4 sm:pl-5 sm:pr-4",
+    theme.rowHover,
+    selection?.disabled && "opacity-40",
+    selection?.selected && "bg-accent/[0.07]"
+  );
+
+  const content = (
+    <>
+      {/* Zone identity, on every row, in the one place the eye is already
+          tracking as it scans down the list. */}
+      <span
+        aria-hidden
+        className={cn("absolute inset-y-1 left-0 w-[2px] rounded-full", zoneRailClass(entry.zone))}
+      />
+
+      {selection && (
         <span
           aria-hidden
-          className={cn("absolute inset-y-1 left-0 w-[2px] rounded-full", zoneRailClass(entry.zone))}
-        />
+          className={cn(
+            "flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition-colors",
+            selection.selected
+              ? "border-accent bg-accent text-black"
+              : cn(theme.border, "bg-transparent")
+          )}
+        >
+          {selection.selected && <Check className="h-3.5 w-3.5" strokeWidth={3} />}
+        </span>
+      )}
 
-        <div className="w-8 shrink-0 text-center sm:w-9">
+      <div className="w-8 shrink-0 text-center sm:w-9">
           <p className={cn("font-display text-lg font-bold leading-none tabular-nums", theme.text)}>
             {format(started, "d")}
           </p>
@@ -235,7 +266,33 @@ export function LogbookRow({
             </p>
           )}
         </div>
-      </Link>
+    </>
+  );
+
+  return (
+    <li className="relative">
+      {selection ? (
+        // A checkbox rather than a link while selecting: tapping a row to
+        // open it and tapping a row to tick it cannot be the same gesture,
+        // and a merge that navigates away halfway through choosing is worse
+        // than no merge at all.
+        <button
+          type="button"
+          role="checkbox"
+          aria-checked={selection.selected}
+          aria-label={`${entry.title ?? meta?.name ?? entry.sport}, ${format(started, "d MMMM yyyy")}`}
+          title={selection.disabled ? selection.disabledReason : undefined}
+          disabled={selection.disabled}
+          onClick={selection.onToggle}
+          className={cn(rowClass, selection.disabled && "cursor-not-allowed")}
+        >
+          {content}
+        </button>
+      ) : (
+        <Link href={`/activities/${entry.id}`} className={rowClass}>
+          {content}
+        </Link>
+      )}
     </li>
   );
 }

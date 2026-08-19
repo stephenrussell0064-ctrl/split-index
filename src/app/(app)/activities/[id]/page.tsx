@@ -21,6 +21,8 @@ import {
 } from "@/lib/scoring/activity-insights";
 import { GymExerciseScoreList } from "@/components/activities/gym-exercise-score-list";
 import { RawStatsPanel } from "@/components/activities/raw-stats-panel";
+import { MergedSessionBanner } from "@/components/activities/merged-session-banner";
+import { readMergeRecord } from "@/lib/activities/merge";
 import { SetActivityMode } from "@/components/layout/set-activity-mode";
 import { gateCardioEnrichment } from "@/lib/scoring/gates";
 import type { CardioEnrichment } from "@/lib/scoring/cardio/confidence";
@@ -118,6 +120,9 @@ export default async function ActivityDetailPage({
   const metadata = (activity.metadata ?? {}) as Record<string, unknown>;
   const bodyweightKg =
     typeof metadata.bodyweight_kg === "number" ? metadata.bodyweight_kg : null;
+  // Present only on a session that was made by merging — and the only route
+  // back from one, since merging deleted the rows it was made from.
+  const mergeRecord = readMergeRecord(metadata);
 
   const zone = activity.sport === "gym" ? "gym" : "cardio";
   const scoreBreakdown = (score?.score_breakdown ?? {}) as ScoreBreakdown;
@@ -166,6 +171,22 @@ export default async function ActivityDetailPage({
           />
         </div>
       </div>
+
+      {mergeRecord && (
+        <MergedSessionBanner
+          activityId={id}
+          mergedAt={mergeRecord.mergedAt ?? null}
+          totalGapSeconds={mergeRecord.totalGapSeconds ?? 0}
+          legs={[...mergeRecord.sources]
+            .sort((a, b) => new Date(a.started_at).getTime() - new Date(b.started_at).getTime())
+            .map((s) => ({
+              id: s.id,
+              startedAt: s.started_at,
+              durationSeconds: s.duration_seconds,
+              distanceMeters: s.distance_meters ?? null,
+            }))}
+        />
+      )}
 
       {zone === "cardio" && (
         <RawStatsPanel

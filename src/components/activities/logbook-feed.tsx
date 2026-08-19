@@ -1,11 +1,20 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
+import { Merge, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils/cn";
 import { SPORTS } from "@/lib/constants/sports";
 import { LogbookGroups } from "@/components/activities/logbook-groups";
+import { MergeActivitiesModal } from "@/components/activities/merge-activities-modal";
+import {
+  canJoinSelection,
+  gapBetween,
+  MERGE_MAX_GAP_SECONDS,
+  type MergeCandidate,
+} from "@/lib/activities/merge-eligibility";
+import type { LogbookEntry } from "@/lib/activities/logbook-query";
 import {
   surfaceTheme,
   zoneChipActiveClass,
@@ -56,10 +65,18 @@ export function LogbookFeed({
   pageSize = LOGBOOK_PAGE_SIZE,
   title,
   viewAllHref,
+  selectable = false,
 }: {
   initialPage: LogbookPage;
   surface: LogbookSurface;
   mode?: LogbookFeedMode;
+  /**
+   * Offers "Merge sessions" — picking two or more recordings of what was
+   * really one interrupted session and rejoining them. On for the full
+   * logbook, off for the embedded zone lists, which are summaries rather than
+   * places to edit history.
+   */
+  selectable?: boolean;
   /** In "zone" mode this is fixed and the zone filter is hidden; in "full" mode it's what "Clear filters" returns to. */
   zone?: LogbookZone;
   /** Starting selection, for deep links like /activities?zone=gym. `initialPage` must have been fetched with it. */
@@ -81,7 +98,65 @@ export function LogbookFeed({
   const [paging, setPaging] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [selecting, setSelecting] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [mergeOpen, setMergeOpen] = useState(false);
+
   const filtered = zone !== baseZone || sport !== null || sort !== "recent";
+
+  const selectedEntries = useMemo(
+    () => selectedIds.map((id) => page.entries.find((e) => e.id === id)).filter((e): e is LogbookEntry => !!e),
+    [selectedIds, page.entries]
+  );
+
+  const asCandidate = (entry: LogbookEntry): MergeCandidate => ({
+    id: entry.id,
+    sport: entry.sport,
+    startedAt: entry.startedAt,
+    durationSeconds: entry.durationSeconds,
+  });
+
+  /**
+   * Why a row cannot join what is already selected. Returned as a sentence
+   * rather than a boolean because a greyed-out row that will not say why is
+   * indistinguishable from a broken one — and the athlete's mental model
+   * ("these two are the same run") is exactly what needs correcting when the
+   * app disagrees.
+   */
+  const blockedReason = useCallback(
+    (entry: LogbookEntry): string | null => {
+      if (entry.zone === "gym") {
+        return "Only cardio sessions can be merged — a gym session is a list of exercises, not one continuous effort.";
+      }
+      if (selectedEntries.length === 0) return null;
+      if (selectedEntries.some((s) => s.id === entry.id)) return null;
+      if (selectedEntries[0].sport !== entry.sport) {
+        return "A different sport from the sessions you have selected. Merging rejoins one session recorded in pieces.";
+      }
+      if (selectedEntries.some((s) => gapBetween(asCandidate(s), asCandidate(entry)) === null)) {
+        return "Overlaps a selected session in time, so these look like the same effort recorded twice.";
+      }
+      if (!canJoinSelection(asCandidate(entry), selectedEntries.map(asCandidate))) {
+        return `More than ${MERGE_MAX_GAP_SECONDS / 3600} hours from any selected session — too far apart to be one interrupted effort.`;
+      }
+      return null;
+    },
+    [selectedEntries]
+  );
+
+  function toggleSelected(entry: LogbookEntry) {
+    setSelectedIds((current) =>
+      current.includes(entry.id)
+        ? current.filter((id) => id !== entry.id)
+        : [...current, entry.id]
+    );
+  }
+
+  function stopSelecting() {
+    setSelecting(false);
+    setSelectedIds([]);
+    setMergeOpen(false);
+  }
 
   /** Sports this athlete has actually logged in the visible zone — an empty filter option is just a dead end. */
   const sportOptions = useMemo(
@@ -277,6 +352,21 @@ export function LogbookFeed({
               <option value="oldest">Oldest first</option>
             </select>
 
+            {selectable && (
+              <button
+                type="button"
+                onClick={() => (selecting ? stopSelecting() : setSelecting(true))}
+                aria-pressed={selecting}
+                className={cn(
+                  "logbook-filter-chip inline-flex items-center gap-1.5 whitespace-nowrap",
+                  selecting && zoneChipActiveClass("all")
+                )}
+              >
+                {selecting ? <X className="h-3.5 w-3.5" /> : <Merge className="h-3.5 w-3.5" />}
+                {selecting ? "Cancel" : "Merge sessions"}
+              </button>
+            )}
+
             <p className={cn("ml-auto text-xs tabular-nums", theme.faint)} aria-live="polite">
               {loading
                 ? "Loading…"
@@ -287,6 +377,14 @@ export function LogbookFeed({
                     : `${showing} of ${page.total}`}
             </p>
           </div>
+
+          {selecting && (
+            <p className={cn("mt-3 text-xs", theme.muted)}>
+              Pick the recordings that were really one session — a run you stopped and restarted,
+              for example. They have to be the same sport and close together in time; everything
+              else is dimmed.
+            </p>
+          )}
         </div>
       )}
 
@@ -319,6 +417,15 @@ export function LogbookFeed({
             surface={surface}
             showZoneBadge={zone === "all"}
             sticky={mode === "full"}
+            selection={
+              selecting
+                ? {
+                    selectedIds: new Set(selectedIds),
+                    onToggle: toggleSelected,
+                    blockedReason,
+                  }
+                : undefined
+            }
           />
         </div>
       )}
@@ -339,6 +446,51 @@ export function LogbookFeed({
             </>
           )}
         </div>
+      )}
+
+      {/* Anchored to the viewport, not the list: the sessions being merged can
+          be far enough apart that scrolling to reach the second one would
+          otherwise scroll the action out of sight. */}
+      {selecting && selectedIds.length > 0 && (
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-[#12121a]/95 px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur">
+          <div className="mx-auto flex max-w-4xl items-center gap-3">
+            <p className="text-sm tabular-nums">
+              {selectedIds.length} selected
+              {selectedIds.length < 2 && (
+                <span className="ml-2 text-xs text-muted">pick one more to merge</span>
+              )}
+            </p>
+            <Button
+              size="sm"
+              className="ml-auto"
+              disabled={selectedIds.length < 2}
+              onClick={() => setMergeOpen(true)}
+            >
+              <Merge className="h-4 w-4" />
+              Merge
+            </Button>
+            <Button variant="ghost" size="sm" onClick={stopSelecting}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Mounted only while open, and keyed on the selection, so the dialog
+          always fetches a preview for what is actually selected rather than
+          showing the last one it computed. */}
+      {mergeOpen && selectedEntries.length >= 2 && (
+        <MergeActivitiesModal
+          key={selectedIds.join(",")}
+          entries={selectedEntries}
+          onClose={() => setMergeOpen(false)}
+          onMerged={() => {
+            stopSelecting();
+            // Re-query from the top: the merged session has new numbers and
+            // the ones it absorbed are gone, so the loaded page is now a lie.
+            void applyFilters({});
+          }}
+        />
       )}
     </div>
   );

@@ -9,8 +9,9 @@ type Supabase = Awaited<ReturnType<typeof createClient>>;
  * Full logged history per exercise (across all of the user's past gym
  * sessions), keyed by normalized exercise name — the premium adaptive 1RM
  * model needs the whole history, not just the current session's sets.
- * `excludeActivityId` lets an edit exclude the activity being edited so its
- * own (about-to-be-overwritten) sets aren't double-counted.
+ * `excludeActivityIds` lets an edit exclude the activity being edited so its
+ * own (about-to-be-overwritten) sets aren't double-counted — and a merge
+ * exclude every session it is about to consume, for the same reason.
  *
  * Known limitation: doesn't carry each historical set's attachment (see
  * strength/attachments.ts), so the adaptive 1RM blend treats e.g. a rope
@@ -23,7 +24,7 @@ export async function fetchExerciseHistory(
   supabase: Supabase,
   userId: string,
   exerciseNames: string[],
-  excludeActivityId?: string
+  excludeActivityIds: readonly string[] = []
 ): Promise<Record<string, LoggedSet[]>> {
   const uniqueNames = [...new Set(exerciseNames)];
   if (uniqueNames.length === 0) return {};
@@ -37,9 +38,8 @@ export async function fetchExerciseHistory(
     .order("started_at", { ascending: false })
     .limit(200);
 
-  const relevantActivities = (activities ?? []).filter(
-    (a) => a.id !== excludeActivityId
-  );
+  const excluded = new Set(excludeActivityIds);
+  const relevantActivities = (activities ?? []).filter((a) => !excluded.has(a.id as string));
   if (relevantActivities.length === 0) return {};
 
   const startedAtByActivity = new Map(
