@@ -48,6 +48,9 @@ android/local.properties
 android/.idea
 android/**/*.iml
 ios/App/build
+# Capacitor 8 builds through SPM, so xcodebuild drops its DerivedData here
+# rather than in ios/App/build — untracked noise on every simulator build.
+ios/App/CapApp-SPM/build
 ios/App/Pods
 ios/App/App.xcworkspace/xcuserdata
 ios/App/App.xcodeproj/xcuserdata

@@ -41,7 +41,11 @@ import {
 import { computeIndexes } from "@/lib/scoring/index-engine";
 import type { IndexResult } from "@/lib/scoring/index-engine";
 import { calculateOverallDotsGl } from "@/lib/scoring/strength/overall-dots-gl";
-import { tier2IsCalibrating } from "@/lib/scoring/cardio/race-prediction";
+import { tier2IsCalibrating, TIER2_MIN_SAMPLES_TO_DISPLAY } from "@/lib/scoring/cardio/race-prediction";
+import { riegelPredictions } from "@/lib/scoring/cardio-activity";
+import { formatPredictionLabel } from "@/lib/scoring/presentation";
+import { RacePredictionsSync } from "@/lib/native/race-predictions-sync";
+import type { RacePredictionPayload } from "@/lib/native/race-predictions";
 import { computeStreakMetrics } from "@/lib/retention/streak-utils";
 import { getGlobalRankPercentile, getNextRankTarget, seedRetentionNotifications } from "@/lib/retention/rank";
 import { isPremiumUser, hasSoftTrialAccess } from "@/lib/retention/trial";
@@ -54,6 +58,9 @@ import type { PersonalRecord, SplitIndexSnapshot, SportType } from "@/types";
 
 const DAY_MS = 86400000;
 const HEATMAP_DAYS = 112;
+
+/** Race-ladder rungs worth showing on the iOS home-screen widget, as distance-in-meters keys of `riegelPredictions`. 10K and Half only — the 5K is the widget's headline already, and 1500m/marathon don't earn the space on a small card. */
+const LADDER_WIDGET_DISTANCES = ["10000", "21097.5"];
 
 function findSnapshotOlderThan(
   history: SplitIndexSnapshot[],
@@ -258,6 +265,39 @@ export default async function DashboardPage() {
       ? calculateOverallDotsGl(allTimeGymExercises, profile.weight_kg, resolveScoringSex(profile))
       : null;
 
+  // The iOS home-screen widget can't reach Supabase from its own process, so
+  // the dashboard hands it the numbers it just computed (see
+  // lib/native/race-predictions.ts). Deliberately built from the SAME
+  // `predicted5kSeconds` gate the hero tile uses, so the widget and the app
+  // can never show different answers — and it publishes the calibrating /
+  // empty states explicitly rather than staying silent, so the widget can
+  // say why it has no time instead of inventing one.
+  const racePredictionPayload: RacePredictionPayload =
+    predicted5kSeconds !== null
+      ? {
+          status: "ready",
+          headline: { label: "5K", seconds: predicted5kSeconds },
+          // The longer rungs only — the 5K is already the headline, and
+          // 1500m/marathon don't earn their space on a small widget.
+          ladder: Object.entries(
+            riegelPredictions(5000, predicted5kSeconds, "intermediate", predictedRunBenchmark?.riegelK) ?? {}
+          )
+            .filter(([distance]) => LADDER_WIDGET_DISTANCES.includes(distance))
+            .sort(([a], [b]) => Number(a) - Number(b))
+            .map(([distance, seconds]) => ({
+              label: formatPredictionLabel(distance),
+              seconds,
+            })),
+          sampleCount: predictedRunBenchmark?.sampleCount ?? 0,
+        }
+      : predictedRunBenchmark
+        ? {
+            status: "calibrating",
+            sampleCount: predictedRunBenchmark.sampleCount,
+            samplesNeeded: TIER2_MIN_SAMPLES_TO_DISPLAY,
+          }
+        : { status: "noData" };
+
   const hasActivities = (recentActivities?.length ?? 0) > 0;
   const hasIndexHistory = !!latestIndex;
   const sessionCount = allActivityDates?.length ?? 0;
@@ -441,6 +481,12 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-5">
+      {/*
+        Renders nothing — pushes the predictions above into the iOS
+        home-screen widget's shared container. No-op on web and Android.
+      */}
+      <RacePredictionsSync payload={racePredictionPayload} />
+
       <div>
         <h1 className="headline-tight text-2xl font-bold sm:text-3xl">
           {displayName ? `Welcome back, ${displayName}` : "Welcome back"}

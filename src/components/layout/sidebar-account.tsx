@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { LogOut } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { clearRacePredictions } from "@/lib/native/race-predictions";
 import { Skeleton } from "@/components/ui/skeleton";
 
 interface AccountInfo {
@@ -63,6 +64,14 @@ export function SidebarAccount() {
 
   const handleSignOut = async () => {
     const supabase = createClient();
+    // Wipe the home-screen widget's copy of the predictions before dropping
+    // the session. The widget reads an App Group container that outlives the
+    // webview, so without this a sign-out leaves the previous account's race
+    // times sitting on the home screen — wrong for the next person to sign
+    // in, and a small privacy leak on a shared phone. Best-effort by design
+    // (it no-ops off-device), and deliberately awaited before signOut so a
+    // slow bridge call cannot race the navigation away from this component.
+    await clearRacePredictions();
     await supabase.auth.signOut();
     router.push("/");
     router.refresh();

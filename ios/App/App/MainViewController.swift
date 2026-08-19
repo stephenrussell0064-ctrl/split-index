@@ -14,5 +14,6 @@ class MainViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(HeartRateWorkoutPlugin())
         bridge?.registerPluginInstance(StepCadencePlugin())
         bridge?.registerPluginInstance(LiveActivityPlugin())
+        bridge?.registerPluginInstance(RacePredictionsPlugin())
     }
 }
