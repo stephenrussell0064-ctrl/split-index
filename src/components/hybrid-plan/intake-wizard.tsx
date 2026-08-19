@@ -741,21 +741,6 @@ export function IntakeWizard() {
                   ariaLabel="Current lifting sessions per week"
                 />
               </Field>
-              {(get("has_gym_access", intake.hasGymAccess) as boolean) && (
-              <Field label="What do you lift with?" why="Affects load prescription and attempt selection. A barbell is assumed — this is about the extras.">
-                <MultiSelect
-                  options={[
-                    { value: "raw", label: "Raw" },
-                    { value: "belt", label: "Belt" },
-                    { value: "sleeves", label: "Sleeves" },
-                    { value: "knee_wraps", label: "Knee wraps" },
-                  ]}
-                  selected={get("equipment_used", intake.equipmentUsed) as string[]}
-                  onChange={(v) => set("equipment_used", v)}
-                  ariaLabel="Equipment used"
-                />
-              </Field>
-              )}
             </>
           )}
 

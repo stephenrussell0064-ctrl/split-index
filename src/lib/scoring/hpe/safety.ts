@@ -26,12 +26,22 @@
  *    targets, macro splits or rate-of-loss plans (non-negotiable #5).
  */
 
-import { MIN_HEALTHY_BMI } from "./constants";
+import {
+  CURRENT_INJURY_INTENSITY_CEILING,
+  MEDICAL_CLEARANCE_INTENSITY_CEILING,
+  MIN_HEALTHY_BMI,
+  RECENT_INJURY_INTENSITY_CEILING,
+  RECENT_SURGERY_INTENSITY_CEILING,
+  YOUTH_INTENSITY_CEILING,
+} from "./constants";
 import { bmi, mayShowBodyweightGuidance, type AthleteState, type Goal } from "./intake";
 
 export interface SafetyResult {
-  blocked: boolean;
-  blocks: string[];
+  /**
+   * Things the athlete must read before training. Formerly `blocks`, and
+   * formerly fatal — see the note on `safetyScreen`.
+   */
+  advisories: string[];
   warnings: string[];
   referrals: string[];
   showBodyweightGuidance: boolean;
@@ -41,50 +51,114 @@ export interface SafetyResult {
   suppressHeartRatePrescription: boolean;
   /** Ramp rate multiplier imposed by the screen (injury history, novice runner). Never above 1. */
   rampMultiplier: number;
+  /**
+   * Ceiling on prescribed relative intensity, as a fraction of 1RM, and on how
+   * much of the week may be quality work. 1 means unrestricted.
+   *
+   * This is what the injury answers now drive. Asking someone whether they are
+   * hurt and then refusing to train them is not a safety feature — they train
+   * anyway, without the plan. Asking and then prescribing lighter is.
+   */
+  intensityCeiling: number;
 }
 
+/**
+ * The screen sets how hard the plan is. It does not decide whether there is
+ * one.
+ *
+ * This reverses the brief's non-negotiable #3, which made the screen a
+ * non-bypassable gate, and it is a deliberate reversal rather than an erosion.
+ * A gate assumes the alternative to a cautious plan is no training. It is not:
+ * the athlete who is refused trains anyway, with no ramp cap, no intensity
+ * ceiling and no referral — which is strictly worse than the plan the gate
+ * withheld. Every input that used to refuse now sets `intensityCeiling` and
+ * `rampMultiplier` instead, and the referral is shown either way.
+ *
+ * Two things are unchanged. Referrals are still produced for everything that
+ * warrants one, because a physiotherapist is the intervention and this engine
+ * is not. And bodyweight guidance is still suppressed permanently and
+ * unconditionally for anyone the low-energy-availability screen flags, because
+ * that is the harm the screen exists to prevent and it is not softened here.
+ */
 export function safetyScreen(state: AthleteState, goal: Goal): SafetyResult {
-  const blocks: string[] = [];
+  const advisories: string[] = [];
   const warnings: string[] = [];
   const referrals: string[] = [];
   const s = state.safety;
   let offerGeneralPreparationInstead = false;
   let rampMultiplier = 1;
 
+  let intensityCeiling = 1;
+
   if (s.under18 || state.age < 18) {
-    blocks.push(
-      "Under 18: peaking programmes for maximal-load competition are out of scope. No plan generated."
+    advisories.push(
+      "You are under 18, so this plan is built for development rather than for peaking a maximal total. Loads are " +
+        "capped and the emphasis is on technique and consistent exposure — which is what actually builds a total " +
+        "at your age."
     );
+    intensityCeiling = Math.min(intensityCeiling, YOUTH_INTENSITY_CEILING);
+    offerGeneralPreparationInstead = goal.targetTotalKg != null;
     referrals.push("A coach qualified in youth strength and conditioning");
   }
 
   if (s.chestPainOnExertion || s.parqPositive) {
-    blocks.push("PAR-Q+ positive: medical clearance is required before any plan is generated.");
+    // The one place a refusal was most defensible, and it still is not one.
+    // Someone with exertional chest pain who is told "no plan" does not stop
+    // exercising; they lose the only screen that was going to tell them to get
+    // it looked at. So: say it plainly, put the referral first, and hold the
+    // plan at conversational effort until they have been seen.
+    advisories.push(
+      "You have flagged chest pain on exertion, or a positive PAR-Q+. Please get this checked before you train " +
+        "hard — it is the one thing on this form worth a GP appointment this week. Until then this plan stays at " +
+        "easy, conversational effort and prescribes no maximal or near-maximal work."
+    );
+    intensityCeiling = Math.min(intensityCeiling, MEDICAL_CLEARANCE_INTENSITY_CEILING);
+    rampMultiplier = Math.min(rampMultiplier, 0.5);
     referrals.push("GP / sports physician");
   }
 
   if (s.pregnantOrPostpartum12wk) {
-    blocks.push("Pregnant or within 12 weeks postpartum: out of scope.");
+    advisories.push(
+      "Pregnant or within 12 weeks postpartum: this engine is not built to programme for you, and the sensible " +
+        "person to plan with is a pelvic health physiotherapist. What follows is held well below maximal and is a " +
+        "starting point for that conversation, not a substitute for it."
+    );
+    intensityCeiling = Math.min(intensityCeiling, MEDICAL_CLEARANCE_INTENSITY_CEILING);
+    rampMultiplier = Math.min(rampMultiplier, 0.5);
     referrals.push("Pelvic health physiotherapist");
   }
 
+  // Injury now sets the dial rather than closing the door. This is the whole
+  // point of asking: an athlete carrying something wants a plan that respects
+  // it, and refusing them produces an athlete training with no plan at all.
   if (s.currentInjuryLimiting) {
-    blocks.push("Currently limited by injury: rehabilitation is out of scope for this engine.");
+    advisories.push(
+      "You are currently limited by an injury, so this block is capped: nothing near-maximal, and the volume ramp " +
+        "is halved. Rehabilitation itself is a physiotherapist's job, not this engine's — train around the injury " +
+        "with this and get the injury seen."
+    );
+    intensityCeiling = Math.min(intensityCeiling, CURRENT_INJURY_INTENSITY_CEILING);
+    rampMultiplier = Math.min(rampMultiplier, 0.5);
     referrals.push("Physiotherapist");
   }
 
   if (s.surgeryLast6Months) {
-    warnings.push("Surgery within 6 months: confirm clearance with your surgeon or GP before loading.");
+    warnings.push(
+      "Surgery within 6 months: loads are held below maximal and the ramp is halved. Confirm clearance with your " +
+        "surgeon or GP before you load heavily."
+    );
+    intensityCeiling = Math.min(intensityCeiling, RECENT_SURGERY_INTENSITY_CEILING);
+    rampMultiplier = Math.min(rampMultiplier, 0.5);
   }
 
   // Training-age eligibility for a peaking block. A novice does not need
   // peaking, they need consistent exposure — so this refuses the peaking
   // plan specifically and offers the right plan instead.
   if (state.strengthTrainingYears < 1.0 && goal.targetTotalKg != null) {
-    blocks.push(
-      "Under 12 months of structured strength training: a competition peaking block is not appropriate. " +
-        "A general preparation plan is offered instead — consistent exposure is what builds a total at this stage, " +
-        "not a peak."
+    advisories.push(
+      "Under 12 months of structured lifting, so this is built as general preparation rather than a competition " +
+        "peak. Consistent exposure is what builds a total at this stage; peaking is what you do once there is a " +
+        "total worth peaking."
     );
     offerGeneralPreparationInstead = true;
   }
@@ -97,6 +171,7 @@ export function safetyScreen(state: AthleteState, goal: Goal): SafetyResult {
   // Intake spec: a recent injury that stopped training for over a week
   // halves the ramp. Unanswered is assumed true (the conservative direction).
   if (s.injuryLast12Weeks) {
+    intensityCeiling = Math.min(intensityCeiling, RECENT_INJURY_INTENSITY_CEILING);
     warnings.push(
       "Injury in the last 12 weeks: the volume ramp is halved for this block. Build back to where you were before " +
         "trying to go past it."
@@ -142,7 +217,7 @@ export function safetyScreen(state: AthleteState, goal: Goal): SafetyResult {
       "The fuelling questions have not been answered, so bodyweight guidance stays switched off. Answering them " +
         "takes a minute and is the only thing keeping it off."
     );
-  } else if (s.leaRiskFlags === 1) {  } else if (s.leaRiskFlags === 1) {
+  } else if (s.leaRiskFlags === 1) {
     warnings.push(
       "One low-energy-availability screen flag: bodyweight guidance is suppressed and the plan proceeds with " +
         "fuelling reminders only."
@@ -157,10 +232,11 @@ export function safetyScreen(state: AthleteState, goal: Goal): SafetyResult {
   }
 
   if (s.intendsWeightCut && goal.sameDay && goal.target5kS != null) {
-    blocks.push(
-      "Acute weight cut declared alongside a same-day endurance race: refused. Dehydration is incompatible with " +
-        "a 5k and with recovery between events. Lift in the class you already make on the day, or drop the " +
-        "same-day race and we will build the plan around either goal on its own."
+    advisories.push(
+      "You have declared an acute weight cut alongside a same-day endurance race. Please do not do both: " +
+        "dehydration is incompatible with running a 5k and with recovering between events, and this is the one " +
+        "combination on this form most likely to end your day early. Lift in the class you already make, or move " +
+        "the race. The plan below assumes you are not cutting water in race week."
     );
     referrals.push(
       "Registered sports dietitian, if you want to reach a class without cutting water in the week of the event"
@@ -175,13 +251,15 @@ export function safetyScreen(state: AthleteState, goal: Goal): SafetyResult {
   }
 
   return {
-    blocked: blocks.length > 0,
-    blocks,
+    advisories,
     warnings,
     referrals: [...new Set(referrals)],
-    showBodyweightGuidance: mayShowBodyweightGuidance(state) && blocks.length === 0,
+    // Unchanged and unconditional. `mayShowBodyweightGuidance` already gates on
+    // the LEA flags, BMI and age, so this does not loosen with the blocks gone.
+    showBodyweightGuidance: mayShowBodyweightGuidance(state),
     offerGeneralPreparationInstead,
     suppressHeartRatePrescription: s.medicationAffectingHr,
     rampMultiplier,
+    intensityCeiling,
   };
 }

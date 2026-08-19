@@ -84,9 +84,18 @@ export interface LeaAnswers {
 export function scoreLeaScreen(answers: LeaAnswers, applicableFemaleQuestion: boolean): number {
   // Unanswered => assumed positive, per the spec's Missing column. The
   // conservative direction is the one that suppresses bodyweight guidance.
+  // `trainsFasted` is deliberately NOT scored.
+  //
+  // It was one of five flags, so answering yes to a fasted easy run moved an
+  // athlete a fifth of the way to being told they are under-fuelling. Training
+  // fasted is an ordinary, widely-used practice — a morning easy run before
+  // breakfast is not a clinical finding, and neither is a deliberate cut.
+  // The markers that actually predict low energy availability are the ones
+  // below: restriction, UNINTENDED loss, bone stress, and amenorrhoea. The
+  // answer is still collected because it is useful context for a dietitian;
+  // it just no longer votes.
   const items = [
     answers.restrictedFood ?? true,
-    answers.trainsFasted ?? true,
     answers.unintendedWeightLoss5pct ?? true,
     answers.boneStressInjury2y ?? true,
   ];

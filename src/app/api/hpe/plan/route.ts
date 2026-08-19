@@ -18,10 +18,10 @@ import { HPE_CONSTANTS_VERSION } from "@/lib/scoring/hpe/constants";
 /**
  * Hybrid Plan Engine — plan generation endpoint (WP9's data source).
  *
- * The safety screen runs inside `generatePlan` and cannot be reached around,
- * so a blocked athlete gets `generated: false` and a refusal with next steps
- * rather than a plan. That ordering is non-negotiable #3 and it is enforced
- * by the engine, not by this route.
+ * The health screen runs inside `generatePlan` and cannot be reached around.
+ * It no longer refuses anyone — it sets the intensity ceiling and the ramp,
+ * and produces the referrals. That ordering is enforced by the engine, not by
+ * this route.
  *
  * The intake flow proper (WP2) is not yet a UI. Until it is, the fields it
  * would collect are derived from what Split Index already holds and every
@@ -32,10 +32,10 @@ import { HPE_CONSTANTS_VERSION } from "@/lib/scoring/hpe/constants";
 
 
 /**
- * WP10 telemetry. Every generation attempt is recorded, including the
- * refusals — a safety screen nobody can get past and a tier gate nobody can
- * clear both look like "no plans generated" in a naive metric and need
- * completely different responses. Never allowed to fail the request.
+ * WP10 telemetry. Every generation attempt is recorded, including the ones the
+ * health screen constrained and the ones the kill switch paused — a capped
+ * plan, a paused rollout and a tier gate all look alike in a naive metric and
+ * need completely different responses. Never allowed to fail the request.
  */
 async function recordEvent(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -53,15 +53,21 @@ async function recordEvent(
   }
 }
 
-/** Maps the first block message onto a stable slug so block rate can be grouped. */
-function safetyReasonCode(blocks: string[]): string {
-  const first = (blocks[0] ?? "").toLowerCase();
+/**
+ * Which answer caused the health screen to constrain this plan.
+ *
+ * Formerly read the refusal text. The screen no longer refuses, so this reads
+ * the advisories instead and the fleet view measures how often the engine
+ * holds someone back rather than how often it turned them away.
+ */
+function safetyReasonCode(advisories: string[]): string {
+  const first = (advisories[0] ?? "").toLowerCase();
   if (first.includes("under 18")) return "under_18";
-  if (first.includes("par-q")) return "parq_positive";
+  if (first.includes("par-q") || first.includes("chest pain")) return "parq_positive";
   if (first.includes("postpartum")) return "pregnant_or_postpartum";
   if (first.includes("injury")) return "current_injury";
   if (first.includes("low-energy-availability")) return "lea_screen";
-  if (first.includes("peaking block")) return "training_age";
+  if (first.includes("general preparation")) return "training_age";
   if (first.includes("weight cut")) return "weight_cut";
   return "other";
 }
@@ -187,12 +193,16 @@ export async function GET(request: Request) {
 
   const plan = generatePlan({ state, goal, constraints, profile, overrideEventOrder });
 
-  if (!plan.generated) {
+  // The screen no longer refuses, so there is no un-generated plan to record.
+  // What is worth recording is that it CONSTRAINED one — the fleet view reads
+  // this rate by reason, and losing the signal entirely would leave the
+  // rollout decision blind to the screen.
+  if (plan.safety.intensityCeiling < 1 || plan.safety.advisories.length > 0) {
     await recordEvent(supabase, user.id, {
-      outcome: "safety_blocked",
-      // The specific block, not just "blocked" — block rate is only
-      // actionable broken down by reason.
-      reason_code: safetyReasonCode(plan.safety.blocks),
+      outcome: "safety_capped",
+      // The specific cause, not just "capped" — the rate is only actionable
+      // broken down by reason.
+      reason_code: safetyReasonCode(plan.safety.advisories),
       tier: profile.tier,
       profile_id: diagnostic?.profileId ?? null,
     });

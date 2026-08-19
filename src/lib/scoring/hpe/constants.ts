@@ -580,6 +580,26 @@ export const PACE_COST_S_PER_KM_PER_KG = 2.7;
 /** [ASSURED] F7: the frontier refuses to report beyond ±8% of current bodyweight. Rev A extrapolated to a 14:10 5k at 60kg, which is nonsense. */
 export const FRONTIER_MAX_DELTA_FRACTION = 0.08;
 /** [ASSURED] Hard floor. Below this BMI no bodyweight-reduction pathway is offered at all. */
+/**
+ * [EST] Intensity ceilings, as a fraction of 1RM, imposed by the health screen.
+ *
+ * These replace the screen's refusals. The reasoning is on `safetyScreen`: a
+ * refusal assumes the alternative to a cautious plan is no training, when the
+ * real alternative is the same training with no cap and no referral. So the
+ * answers set how hard the plan is allowed to be instead of whether it exists.
+ *
+ * Ordered by how much the engine should back off. Exertional chest pain and
+ * pregnancy hold everything at genuinely submaximal loads; a current injury
+ * sits just above; a healed one from the last twelve weeks barely bites and is
+ * mostly carried by the halved ramp.
+ */
+export const MEDICAL_CLEARANCE_INTENSITY_CEILING = 0.65;
+export const CURRENT_INJURY_INTENSITY_CEILING = 0.75;
+export const RECENT_SURGERY_INTENSITY_CEILING = 0.8;
+export const RECENT_INJURY_INTENSITY_CEILING = 0.88;
+/** [EST] Under-18s train for development, not for a maximal total. */
+export const YOUTH_INTENSITY_CEILING = 0.85;
+
 export const MIN_HEALTHY_BMI = 19.0;
 /** [ASSURED] Ceiling on rate of loss used ONLY to state how many weeks a change would take — never as a prescription. */
 export const MAX_SAFE_LOSS_RATE_PCT_PER_WEEK = 0.006;

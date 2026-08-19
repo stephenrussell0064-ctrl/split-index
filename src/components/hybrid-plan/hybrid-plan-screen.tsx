@@ -31,11 +31,13 @@ interface PlanResponse {
   needsIntake?: boolean;
   missingSections?: string[];
   safety?: {
-    blocked: boolean;
-    blocks: string[];
+    /** Things the athlete must read before training. The screen advises now; it does not refuse. */
+    advisories: string[];
     warnings: string[];
     referrals: string[];
     offerGeneralPreparationInstead: boolean;
+    /** Below 1 when the health answers capped how hard the plan may be. */
+    intensityCeiling: number;
   };
   profile?: AthleteProfile;
   diagnostic?: AthleteProfile | null;
@@ -208,8 +210,11 @@ export function HybridPlanScreen() {
   }
 
   // ---- refusal path -------------------------------------------------------
+  // Nothing about health reaches here any more — the screen constrains the
+  // plan rather than withholding it. What is left are the refusals that are
+  // genuinely about missing input or a paused rollout, where "not yet" is the
+  // honest answer and there is something concrete to do about it.
   if (!data.generated) {
-    const blocks = data.safety?.blocks ?? [];
     const referrals = data.safety?.referrals ?? [];
     return (
       <div className="space-y-5">
@@ -220,17 +225,7 @@ export function HybridPlanScreen() {
         />
         <Card glow="none">
           <h2 className="text-lg font-semibold tracking-tight">Why</h2>
-          {blocks.length > 0 ? (
-            <ul className="mt-2 space-y-2">
-              {blocks.map((b) => (
-                <li key={b} className="text-sm leading-relaxed text-foreground/90">
-                  {b}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="mt-2 text-sm leading-relaxed text-foreground/90">{data.refusal?.reason}</p>
-          )}
+          <p className="mt-2 text-sm leading-relaxed text-foreground/90">{data.refusal?.reason}</p>
 
           {(data.refusal?.nextSteps.length ?? 0) > 0 && (
             <>
@@ -351,6 +346,39 @@ export function HybridPlanScreen() {
                 ))}
               </ul>
             </div>
+          )}
+        </Card>
+      )}
+
+      {(data.safety?.advisories.length ?? 0) > 0 && (
+        <Card>
+          <h2 className="text-base font-semibold tracking-tight">Read this first</h2>
+          <ul className="mt-2 space-y-2">
+            {data.safety!.advisories.map((a) => (
+              <li key={a} className="text-sm leading-relaxed text-foreground/90">
+                {a}
+              </li>
+            ))}
+          </ul>
+          {(data.safety?.referrals.length ?? 0) > 0 && (
+            <>
+              <h3 className="mt-5 text-sm font-semibold uppercase tracking-widest text-muted">Who to see</h3>
+              <ul className="mt-2 space-y-2">
+                {data.safety!.referrals.map((r) => (
+                  <li key={r} className="text-sm leading-relaxed text-foreground/85">
+                    {r}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+          {(data.safety?.intensityCeiling ?? 1) < 1 && (
+            <p className="mt-4 text-xs leading-relaxed text-muted/80">
+              Because of the above, this block is capped at{" "}
+              {Math.round((data.safety?.intensityCeiling ?? 1) * 100)}% of your one-rep max and nothing in it is
+              near-maximal. The plan is still yours to train — it is just held where it should be until this is
+              sorted.
+            </p>
           )}
         </Card>
       )}

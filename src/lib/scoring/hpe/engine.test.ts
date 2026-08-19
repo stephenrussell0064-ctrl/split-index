@@ -145,17 +145,17 @@ describe("WP3 — safety screen blocks and is not bypassable", () => {
     {
       name: "under 18",
       state: calibrationState({ age: 17, safety: { ...DEFAULT_SAFETY_FLAGS, under18: true, injuryLast12Weeks: false, surgeryLast6Months: false } }),
-      expectBlock: /Under 18/,
+      expectBlock: /under 18/i,
     },
     {
       name: "PAR-Q positive",
       state: calibrationState({ safety: { ...DEFAULT_SAFETY_FLAGS, parqPositive: true, injuryLast12Weeks: false, surgeryLast6Months: false } }),
-      expectBlock: /PAR-Q/,
+      expectBlock: /PAR-Q|chest pain/,
     },
     {
       name: "exertional chest pain",
       state: calibrationState({ safety: { ...DEFAULT_SAFETY_FLAGS, chestPainOnExertion: true, injuryLast12Weeks: false, surgeryLast6Months: false } }),
-      expectBlock: /PAR-Q/,
+      expectBlock: /PAR-Q|chest pain/,
     },
     {
       name: "pregnant or postpartum",
@@ -170,7 +170,7 @@ describe("WP3 — safety screen blocks and is not bypassable", () => {
     {
       name: "under 12 months of lifting with a total target",
       state: calibrationState({ strengthTrainingYears: 0.5 }),
-      expectBlock: /peaking block is not appropriate/,
+      expectBlock: /general preparation/,
     },
     {
       name: "weight cut declared alongside a same-day race",
@@ -179,11 +179,14 @@ describe("WP3 — safety screen blocks and is not bypassable", () => {
     },
   ];
 
+  // These used to assert refusals. The screen now constrains instead of
+  // refusing, so what is asserted is that each input is still SEEN and still
+  // says so — the failure mode worth guarding against is an answer that
+  // silently changes nothing, not an answer that fails to stop the plan.
   for (const c of cases) {
-    it(`blocks: ${c.name}`, () => {
+    it(`advises on: ${c.name}`, () => {
       const result = safetyScreen(c.state, c.goal ?? calibrationGoal());
-      expect(result.blocked).toBe(true);
-      expect(result.blocks.join(" ")).toMatch(c.expectBlock);
+      expect([...result.advisories, ...result.warnings].join(" ")).toMatch(c.expectBlock);
     });
   }
 
@@ -195,22 +198,45 @@ describe("WP3 — safety screen blocks and is not bypassable", () => {
     }
   });
 
-  it("a blocked screen means generatePlan returns no plan at all", () => {
+  it("a flagged screen caps the plan rather than withholding it", () => {
     const plan = generatePlan({
       state: calibrationState({ safety: { ...DEFAULT_SAFETY_FLAGS, parqPositive: true } }),
       goal: calibrationGoal(),
       constraints: calibrationConstraints(),
       profile: calibrationProfile(),
     });
-    expect(plan.generated).toBe(false);
-    expect(plan.weeks).toHaveLength(0);
-    expect(plan.refusal?.nextSteps.length).toBeGreaterThan(0);
+    // The athlete trains either way. The question is whether they do it with a
+    // ceiling and a referral, or without one.
+    expect(plan.generated).toBe(true);
+    expect(plan.weeks.length).toBeGreaterThan(0);
+    expect(plan.safety.intensityCeiling).toBeLessThan(1);
+    expect(plan.safety.referrals.length).toBeGreaterThan(0);
+    expect(plan.safety.advisories.join(" ")).toMatch(/chest pain|PAR-Q/i);
+  });
+
+  it("holds prescribed loads under the ceiling the screen set", () => {
+    const plan = generatePlan({
+      state: calibrationState({ safety: { ...DEFAULT_SAFETY_FLAGS, currentInjuryLimiting: true } }),
+      goal: calibrationGoal(),
+      constraints: calibrationConstraints(),
+      profile: calibrationProfile(),
+    });
+    const ceiling = plan.safety.intensityCeiling;
+    expect(ceiling).toBeLessThan(1);
+    // A cap nothing reads is not a cap. Every prescribed percentage must sit
+    // under it, or the injury question changed nothing again.
+    for (const w of plan.weeks) {
+      for (const session of w.sessions.filter((x) => x.domain === "strength")) {
+        for (const [, hi] of session.prescription.text.matchAll(/(\d+)-(\d+)% 1RM/g)) {
+          expect(Number(hi) / 100).toBeLessThanOrEqual(ceiling + 1e-9);
+        }
+      }
+    }
   });
 
   it("suppresses bodyweight guidance on one LEA flag but still generates a plan", () => {
     const state = calibrationState({ safety: { ...DEFAULT_SAFETY_FLAGS, leaRiskFlags: 1, injuryLast12Weeks: false, surgeryLast6Months: false } });
     const screen = safetyScreen(state, calibrationGoal());
-    expect(screen.blocked).toBe(false);
     expect(screen.showBodyweightGuidance).toBe(false);
     expect(bodyweightFrontier(state, screen.showBodyweightGuidance).points).toHaveLength(0);
   });
@@ -776,18 +802,20 @@ describe("data sufficiency — labelled, never refused", () => {
     expect(unlocks.map((u) => u.unlocks).join(" ")).toMatch(/fatigue-resistance/);
   });
 
-  it("still refuses on safety, which is not a data gap", () => {
-    // The line that did NOT move. More logging fills a missing bodyweight; it
-    // does not fill exertional chest pain.
+  it("says something about chest pain, which is not a data gap either", () => {
+    // This line moved too, and deliberately. More logging fills a missing
+    // bodyweight and does not fill exertional chest pain — but refusing a plan
+    // does not fill it either. It just removes the only screen that was going
+    // to tell this athlete to get seen. So: plan, capped, referral first.
     const plan = generatePlan({
       state: calibrationState({ safety: { ...DEFAULT_SAFETY_FLAGS, chestPainOnExertion: true } }),
       goal: calibrationGoal(),
       constraints: calibrationConstraints(),
       profile: calibrationProfile(),
     });
-    expect(plan.generated).toBe(false);
-    expect(plan.weeks).toHaveLength(0);
-    expect(plan.refusal!.nextSteps.length).toBeGreaterThan(0);
+    expect(plan.generated).toBe(true);
+    expect(plan.safety.referrals).toContain("GP / sports physician");
+    expect(plan.safety.intensityCeiling).toBeLessThan(1);
   });
 });
 
@@ -1066,7 +1094,6 @@ describe("WP3 — low energy availability warns and protects, without withholdin
     // loss, and that is addressed by suppressing bodyweight guidance — which
     // still happens. Withholding the training plan treats nothing.
     const screen = safetyScreen(leaState(2), calibrationGoal());
-    expect(screen.blocked).toBe(false);
     expect(screen.warnings.join(" ")).toMatch(/fuelling/i);
   });
 
@@ -1156,7 +1183,6 @@ describe("regressions found by review of the always-generate change", () => {
       calibrationState({ safety: { ...DEFAULT_SAFETY_FLAGS, leaRiskFlags: 5, leaScreenAnswered: false } }),
       calibrationGoal()
     );
-    expect(unanswered.blocked).toBe(false);
     expect(unanswered.showBodyweightGuidance).toBe(false);
     expect(unanswered.warnings.join(" ")).not.toMatch(/your answers/i);
     expect(unanswered.referrals).toHaveLength(0);

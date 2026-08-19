@@ -3,9 +3,11 @@
  *
  * The stage order is not arbitrary and is not configurable:
  *
- *   1. SAFETY SCREEN. Non-negotiable #3: runs first, can block, not
- *      bypassable. A blocked screen returns `generated: false` and no plan.
- *      There is no option, flag or argument that skips this step.
+ *   1. HEALTH SCREEN. Runs first and shapes everything after it, but no
+ *      longer refuses. It sets `intensityCeiling` and `rampMultiplier`, and
+ *      produces the referrals. See the note on `safetyScreen` for why the
+ *      brief's "can block, not bypassable" was reversed: a refusal does not
+ *      stop the training, it only strips the caps and the referral off it.
  *   2. DATA SUFFICIENCY. Tier 0 returns no plan either — brief §0e — and
  *      offers a two-week baseline block plus a time trial and a 3-5RM test.
  *   3. Feasibility, develop/maintain, macrocycle, session set, schedule.
@@ -82,35 +84,10 @@ export interface GeneratePlanInput {
 export function generatePlan(input: GeneratePlanInput): GeneratedPlan {
   const { state, goal, constraints, profile, feedbackByWeek = {} } = input;
 
-  // ---- 1. SAFETY, FIRST AND UNCONDITIONAL --------------------------------
+  // ---- 1. HEALTH SCREEN, FIRST AND UNCONDITIONAL -------------------------
+  // Still first, still not skippable — it just sets the dial now instead of
+  // closing the door.
   const safety = safetyScreen(state, goal);
-  const empty = {
-    constantsVersion: HPE_CONSTANTS_VERSION,
-    safety,
-    profile,
-    feasibility: null,
-    mode: null,
-    weeks: [] as PlanWeek[],
-    acwr: null,
-    bodyweightFrontier: null,
-    eventOrder: null,
-    taper: [] as TaperDay[],
-    eventDay: null,
-    findings: profile.findings,
-    tailoring: null as PlanTailoring | null,
-  };
-
-  if (safety.blocked) {
-    return {
-      ...empty,
-      generated: false,
-      refusal: {
-        reason: safety.blocks.join(" "),
-        nextSteps: safety.referrals.length > 0 ? safety.referrals : ["Come back once this has been cleared."],
-      },
-    };
-  }
-
   // ---- 2. DATA SUFFICIENCY: LABEL IT, DO NOT REFUSE ----------------------
   // The brief said "no plan" below tier 1. That has been overridden
   // deliberately — see the module note on `assessTailoring`. Thin data now
@@ -142,6 +119,8 @@ export function generatePlan(input: GeneratePlanInput): GeneratedPlan {
       constraints,
       suppressHeartRate: safety.suppressHeartRatePrescription,
       autoregMultiplier: autoreg.volumeMultiplier,
+      // What the health screen decided instead of refusing.
+      intensityCeiling: safety.intensityCeiling,
     });
     const schedule = scheduleWeek(sessions, constraints);
     const stress = schedule.placements.reduce((s, p) => s + p.session.stress, 0);

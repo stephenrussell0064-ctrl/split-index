@@ -76,9 +76,26 @@ describe("WP2 — unanswered is not 'no'", () => {
   });
 
   it("scores every unanswered LEA question as positive", () => {
-    // Four questions, all unanswered, male athlete (the fifth does not apply).
+    // Three scored questions, all unanswered, male athlete (the female-only
+    // one does not apply). Training fasted is collected but deliberately not
+    // scored — it is an ordinary practice, not a clinical finding, and it used
+    // to move an athlete a fifth of the way toward being told they were
+    // under-fuelling for eating breakfast after their run instead of before.
     const { flags } = resolveSafetyFlags(parseIntakeRow(null), { age: 30, sex: "male" });
-    expect(flags.leaRiskFlags).toBe(4);
+    expect(flags.leaRiskFlags).toBe(3);
+  });
+
+  it("does not count training fasted as a risk flag", () => {
+    const fastedOnly = parseIntakeRow({
+      lea_trains_fasted: true,
+      lea_restricted_food: false,
+      lea_unintended_weight_loss: false,
+      lea_bone_stress_injury: false,
+      lea_amenorrhoea: false,
+      sections_completed: ["safety"],
+    } as Record<string, unknown>);
+    const { flags } = resolveSafetyFlags(fastedOnly, { age: 30, sex: "male" });
+    expect(flags.leaRiskFlags).toBe(0);
   });
 
   it("includes the female-only LEA question only where it applies", () => {

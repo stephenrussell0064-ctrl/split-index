@@ -180,6 +180,12 @@ export interface SessionSetInput {
   suppressHeartRate?: boolean;
   /** F16: a reduction imposed by autoregulation on the previous week's feedback. 1 = no reduction. */
   autoregMultiplier?: number;
+  /**
+   * Ceiling on prescribed relative intensity, from the health screen. 1 means
+   * unrestricted. This is what an injury answer now does instead of refusing
+   * the plan — see the note on `safetyScreen`.
+   */
+  intensityCeiling?: number;
 }
 
 export interface SessionSet {
@@ -320,6 +326,22 @@ function primaryExerciseFor(lift: string, week: number, peakingATotal: boolean):
 
 
 /**
+ * Hold a prescribed intensity range under the health screen's ceiling.
+ *
+ * Both ends move, and the range never inverts: an athlete capped at 75% gets
+ * a band that ends at 75%, not one that starts above it.
+ */
+function capIntensity(
+  range: readonly [number, number],
+  ceiling: number
+): readonly [number, number] {
+  if (ceiling >= 1) return range;
+  const hi = Math.min(range[1], ceiling);
+  const lo = Math.min(range[0], hi);
+  return [lo, hi];
+}
+
+/**
  * Which KIND of quality session a single slot should be.
  *
  * Emphasis alone always picked the same dimension, so an athlete with one
@@ -350,7 +372,10 @@ function qualityKindForSlot(
 }
 
 export function buildSessionSet(input: SessionSetInput): SessionSet {
-  const { profile, week, mode, goal, constraints, suppressHeartRate = false, autoregMultiplier = 1 } = input;
+  const {
+    profile, week, mode, goal, constraints,
+    suppressHeartRate = false, autoregMultiplier = 1, intensityCeiling = 1,
+  } = input;
   const { phase, deload } = week;
   const notes: string[] = [];
   const sessions: PlannedSession[] = [];
@@ -691,7 +716,7 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
         // to five keeps the load high enough to maintain without making a
         // maintenance week read like a peaking week.
         reps: MAINTENANCE_REPS,
-        intensity: [MMD_STRENGTH_MIN_INTENSITY, MMD_STRENGTH_MIN_INTENSITY + 0.05],
+        intensity: capIntensity([MMD_STRENGTH_MIN_INTENSITY, MMD_STRENGTH_MIN_INTENSITY + 0.05], intensityCeiling),
         rir: [2, 3],
         // A maintenance session is still a session. Prescribing one lift and
         // nothing else is not a gym visit anybody would make.
@@ -739,7 +764,10 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
         ];
     const sets = Math.max(2, shifted.sets - (deload ? 1 : 0));
     const reps = shifted.reps;
-    const intensity = shifted.pct;
+    // The health screen's ceiling lands here. An athlete carrying an injury
+    // gets the same session structure at a load they can actually train
+    // through, which is what asking about the injury was for.
+    const intensity = capIntensity(shifted.pct, intensityCeiling);
     const rir = shifted.rir;
 
     // Accessories follow the day's patterns rather than the single lift, so a
