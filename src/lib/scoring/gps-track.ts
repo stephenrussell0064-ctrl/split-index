@@ -79,15 +79,25 @@ function toRadians(degrees: number): number {
   return (degrees * Math.PI) / 180;
 }
 
-/** Great-circle distance between two points, in meters (haversine formula) — accurate enough at running/cycling scale, far simpler than a full geodesic (Vincenty) solution. */
-export function haversineDistanceMeters(a: GpsPoint, b: GpsPoint): number {
-  const dLat = toRadians(b.latitude - a.latitude);
-  const dLon = toRadians(b.longitude - a.longitude);
-  const lat1 = toRadians(a.latitude);
-  const lat2 = toRadians(b.latitude);
+/** Great-circle distance between two lat/lng pairs, in meters. The one implementation, shared by the point-based helper below and by the route-polyline maths further down (which works on bare [lat, lng] tuples, not fixes). */
+function haversineCoordsMeters(
+  latA: number,
+  lonA: number,
+  latB: number,
+  lonB: number
+): number {
+  const dLat = toRadians(latB - latA);
+  const dLon = toRadians(lonB - lonA);
+  const lat1 = toRadians(latA);
+  const lat2 = toRadians(latB);
 
   const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
   return 2 * EARTH_RADIUS_METERS * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+/** Great-circle distance between two points, in meters (haversine formula) — accurate enough at running/cycling scale, far simpler than a full geodesic (Vincenty) solution. */
+export function haversineDistanceMeters(a: GpsPoint, b: GpsPoint): number {
+  return haversineCoordsMeters(a.latitude, a.longitude, b.latitude, b.longitude);
 }
 
 // ---------------------------------------------------------------------------
@@ -688,6 +698,151 @@ export function buildRoutePolyline(points: GpsPoint[]): RoutePoint[] | null {
   const factor = 10 ** ROUTE_CONFIG.COORDINATE_DECIMALS;
   const round = (v: number) => Math.round(v * factor) / factor;
   return simplified.map((p): RoutePoint => [round(p.latitude), round(p.longitude)]);
+}
+
+// ---------------------------------------------------------------------------
+// Privacy zone — why a stored route must not begin at the athlete's front door
+// ---------------------------------------------------------------------------
+
+/**
+ * The first fix of a run is, for most athletes, their doorstep, and the last
+ * one is the same doorstep again. `activities.metadata` is readable in full by
+ * any accepted friend — row-level security grants a visible row's every
+ * column, and the route lives in that JSONB whether or not a screen renders it
+ * — so a friend with the public anon key can read the polyline directly and
+ * take the first coordinate as a home address. No UI change closes that,
+ * because the exposure is the stored data, not the view.
+ *
+ * So the fix is at write time: the first and last stretch of every route are
+ * removed **before the route is persisted at all**, the same shape of
+ * protection Strava calls a privacy zone. There is nothing to leak because
+ * there is nothing stored.
+ *
+ * Measured ALONG THE PATH, never as a straight-line radius from the start:
+ *
+ *  - Point density varies with speed and sampling rate (and this polyline has
+ *    already been through Ramer-Douglas-Peucker, so a straight kilometre can
+ *    be a single segment), which makes "drop the first N points" meaningless.
+ *  - A straight-line radius rule would also delete the *middle* of an
+ *    out-and-back that runs past the house at halfway, chopping one route into
+ *    two disconnected fragments on the map.
+ *
+ * The honest limit of a path-distance rule, stated plainly: it hides the start
+ * and the finish, not every moment the athlete was ever near home. A loop that
+ * comes back past the door at halfway still has that passage drawn. Hiding
+ * *that* needs a declared home location to measure against — a different
+ * feature, with its own storage of exactly the coordinate this one avoids
+ * storing. What this guarantees is the property that matters: the endpoints of
+ * a stored route, the two points an attacker would actually read, are at least
+ * RADIUS_METERS of running away from where the athlete started and stopped.
+ */
+export const PRIVACY_ZONE_CONFIG = {
+  /**
+   * How much of the route, in meters measured along the path, is removed from
+   * each end before storage. 200m is the smallest of Strava's privacy-zone
+   * radii and is roughly a city block in any direction — far enough that the
+   * remaining endpoint does not single out a building, short enough that a 5km
+   * run still stores 4.6km of recognisable shape.
+   *
+   * Change it here and nowhere else: this constant is the whole policy.
+   */
+  RADIUS_METERS: 200,
+  /**
+   * Below this much surviving route there is nothing worth drawing — a stored
+   * stub a few metres long renders as a dot on a map tile, not a run — so the
+   * activity keeps no route at all rather than a smudge.
+   */
+  MIN_RETAINED_METERS: 50,
+} as const;
+
+/** Linear interpolation between two route vertices. Over a single simplified segment (metres to a few hundred metres) degree-space interpolation is indistinguishable from a great-circle one, and this point only ever has to sit on the drawn line. */
+function interpolateRoutePoint(a: RoutePoint, b: RoutePoint, fraction: number): RoutePoint {
+  const factor = 10 ** ROUTE_CONFIG.COORDINATE_DECIMALS;
+  const round = (v: number) => Math.round(v * factor) / factor;
+  return [round(a[0] + (b[0] - a[0]) * fraction), round(a[1] + (b[1] - a[1]) * fraction)];
+}
+
+/** Which segment a given along-the-path distance falls on, and how far into it. */
+function locateAlongPath(legs: number[], target: number): { index: number; fraction: number } {
+  let travelled = 0;
+  for (let i = 0; i < legs.length; i++) {
+    if (travelled + legs[i] >= target) {
+      return { index: i, fraction: legs[i] === 0 ? 0 : (target - travelled) / legs[i] };
+    }
+    travelled += legs[i];
+  }
+  return { index: legs.length - 1, fraction: 1 };
+}
+
+/**
+ * Removes the first and last `radiusMeters` of a route, measured along the
+ * path, and returns what is left — or null when nothing publishable survives.
+ *
+ * The cut lands at exactly the radius rather than snapping to the nearest
+ * stored vertex: on a simplified polyline the second vertex can be most of a
+ * kilometre away, and snapping would throw away that whole leg. The two new
+ * endpoints are interpolated onto the segments the cuts fall on, so the drawn
+ * line is the athlete's real route with its ends shortened, not a redrawn
+ * approximation of it.
+ *
+ * Edge cases, and the choice made for each:
+ *
+ *  - **A run shorter than twice the radius** (under 400m by default) is
+ *    entirely inside its own privacy zone. It stores NO route. That is the
+ *    safe direction: the alternative — keeping a token middle slice — would
+ *    publish something an attacker can bracket, since both ends are known to
+ *    sit within 200m of it. A sub-400m GPS session is a warm-up lap or a
+ *    mis-started recording; it loses a map it was never going to be read from.
+ *  - **A loop that finishes where it started** needs no special case at all,
+ *    which is the point of measuring along the path: the start and the finish
+ *    are 200m of *running* apart even when they are ten metres apart on the
+ *    ground, so both are trimmed independently and the loop is simply drawn
+ *    open instead of closed.
+ *  - **Too few points to truncate meaningfully** — fewer than two vertices in,
+ *    or fewer than two out — stores nothing. A single point is a pin dropped
+ *    on a map, and a pin on a route is worth less than no map and leaks more.
+ *
+ * Everything the athlete is scored and credited on is computed from the live
+ * GPS track before this runs — distance, elevation gain, pace and duration all
+ * come from `summarizeGpsTrack` over the raw fixes — so a shorter drawn line
+ * never shortens a recorded run. Only the drawing shrinks.
+ */
+export function applyRoutePrivacyZone(
+  route: RoutePoint[] | null,
+  radiusMeters: number = PRIVACY_ZONE_CONFIG.RADIUS_METERS
+): RoutePoint[] | null {
+  if (!route || route.length < 2) return null;
+  if (radiusMeters <= 0) return route;
+
+  const legs: number[] = [];
+  let total = 0;
+  for (let i = 1; i < route.length; i++) {
+    const leg = haversineCoordsMeters(route[i - 1][0], route[i - 1][1], route[i][0], route[i][1]);
+    legs.push(leg);
+    total += leg;
+  }
+
+  if (total - 2 * radiusMeters < PRIVACY_ZONE_CONFIG.MIN_RETAINED_METERS) return null;
+
+  const head = locateAlongPath(legs, radiusMeters);
+  const tail = locateAlongPath(legs, total - radiusMeters);
+
+  const trimmed: RoutePoint[] = [
+    interpolateRoutePoint(route[head.index], route[head.index + 1], head.fraction),
+    // Whole vertices that survive between the two cuts. Empty when both cuts
+    // land on the same long straight segment, which is fine — two points still
+    // draw that straight.
+    ...route.slice(head.index + 1, tail.index + 1),
+    interpolateRoutePoint(route[tail.index], route[tail.index + 1], tail.fraction),
+  ];
+
+  // An interpolated cut landing exactly on a kept vertex would otherwise
+  // duplicate it.
+  const deduped = trimmed.filter(
+    (p, i) => i === 0 || p[0] !== trimmed[i - 1][0] || p[1] !== trimmed[i - 1][1]
+  );
+
+  return deduped.length >= 2 ? deduped : null;
 }
 
 /** Reads a stored route back, tolerating anything malformed rather than throwing inside a render. */

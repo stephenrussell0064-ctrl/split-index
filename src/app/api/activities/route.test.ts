@@ -20,6 +20,8 @@ interface RecordedCall {
   table: string;
   op: string;
   terminal: string | null;
+  /** What a write was handed — the only way to assert on what actually reaches the database. */
+  payload?: unknown;
 }
 
 const OK: QueryResult = { data: null, error: null };
@@ -37,9 +39,10 @@ function createFakeSupabase(results: Record<string, QueryResult>) {
   function chainFor(table: string) {
     let op: string | null = null;
     let terminal: string | null = null;
+    let payload: unknown;
 
     const result = (): QueryResult => {
-      calls.push({ table, op: op ?? "select", terminal });
+      calls.push({ table, op: op ?? "select", terminal, payload });
       const override = results[`${table}:${op ?? "select"}`];
       if (override) return override;
       // Unconfigured reads look like "no rows"; list reads read as empty.
@@ -61,8 +64,9 @@ function createFakeSupabase(results: Record<string, QueryResult>) {
     };
 
     for (const write of ["insert", "upsert", "update", "delete"]) {
-      chain[write] = () => {
+      chain[write] = (values?: unknown) => {
         op = write;
+        payload = values;
         return chain;
       };
     }
@@ -144,11 +148,11 @@ function gymSessionBody() {
   };
 }
 
-function postRequest() {
+function postRequest(payload: unknown = gymSessionBody()) {
   return new Request("http://localhost/api/activities", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(gymSessionBody()),
+    body: JSON.stringify(payload),
   });
 }
 
@@ -157,11 +161,11 @@ vi.mock("@/lib/supabase/server", () => ({
   createClient: () => createClientMock(),
 }));
 
-async function postWith(results: Record<string, QueryResult>) {
+async function postWith(results: Record<string, QueryResult>, payload?: unknown) {
   const { client, calls } = createFakeSupabase(results);
   createClientMock.mockResolvedValue(client);
   const { POST } = await import("./route");
-  const response = await POST(postRequest());
+  const response = await POST(postRequest(payload));
   return { response, body: await response.json(), calls };
 }
 
@@ -282,5 +286,107 @@ describe("POST /api/activities — dependent write failures", () => {
 
     expect(response.status).toBe(400);
     expect(calls.some((c) => c.table === "activities" && c.op === "insert")).toBe(false);
+  });
+});
+
+/**
+ * The route polyline is the one field on an activity that is a physical
+ * address. `activities.metadata` is returned in full to any accepted friend by
+ * row-level security, so whatever this endpoint writes into `metadata.route`
+ * is readable by a friend with the public anon key — no app screen involved.
+ * These tests pin the guarantee at the only place that can hold it: the write.
+ */
+describe("POST /api/activities — route privacy zone", () => {
+  const HOME_LAT = 51.5;
+  const HOME_LNG = -0.12;
+  const DEG_PER_M = 1 / 111_194.93;
+  /** 3km due north, one point every 50m, starting at the athlete's door. */
+  const FULL_ROUTE: [number, number][] = Array.from({ length: 61 }, (_, i) => [
+    HOME_LAT + i * 50 * DEG_PER_M,
+    HOME_LNG,
+  ]);
+
+  function gpsRunBody(route: [number, number][] = FULL_ROUTE) {
+    return {
+      sport: "running",
+      title: "Evening run",
+      started_at: "2026-01-05T18:00:00.000Z",
+      duration_seconds: 900,
+      distance_meters: 3000,
+      elevation_meters: 12,
+      avg_heart_rate: 150,
+      session_type: "easy",
+      source: "gps",
+      route,
+    };
+  }
+
+  function insertedActivity(calls: RecordedCall[]): Record<string, unknown> {
+    const call = calls.find((c) => c.table === "activities" && c.op === "insert");
+    return (call?.payload ?? {}) as Record<string, unknown>;
+  }
+
+  function storedRoute(calls: RecordedCall[]): [number, number][] | undefined {
+    const metadata = insertedActivity(calls).metadata as { route?: [number, number][] } | undefined;
+    return metadata?.route;
+  }
+
+  function metersFromHome([lat, lng]: [number, number]): number {
+    return Math.hypot((lat - HOME_LAT) / DEG_PER_M, ((lng - HOME_LNG) / DEG_PER_M) * Math.cos((HOME_LAT * Math.PI) / 180));
+  }
+
+  it("never writes the athlete's start or finish into a friend-readable column", async () => {
+    const { response, calls } = await postWith(happyPathResults(), gpsRunBody());
+    expect(response.status).toBe(200);
+
+    const route = storedRoute(calls)!;
+    expect(route.length).toBeGreaterThan(2);
+    // The submitted route began and ended on the doorstep; the stored one does
+    // not go near it.
+    expect(metersFromHome(FULL_ROUTE[0])).toBeLessThan(1);
+    expect(metersFromHome(route[0])).toBeGreaterThan(190);
+    expect(metersFromHome(route[route.length - 1])).toBeGreaterThan(190);
+    // And the finish, 3km up the road, is trimmed by the same amount.
+    const finish = FULL_ROUTE[FULL_ROUTE.length - 1];
+    expect(Math.abs(route[route.length - 1][0] - finish[0]) / DEG_PER_M).toBeGreaterThan(190);
+  });
+
+  it("does not shorten the recorded distance, elevation or duration", async () => {
+    // The polyline is a picture; the numbers come from the live GPS track and
+    // are what the athlete is scored on. Trimming the picture must not touch
+    // them, or every athlete quietly loses 400m per run.
+    const { body, calls } = await postWith(happyPathResults(), gpsRunBody());
+    const inserted = insertedActivity(calls);
+
+    expect(inserted.distance_meters).toBe(3000);
+    expect(inserted.duration_seconds).toBe(900);
+    expect(inserted.elevation_meters).toBe(12);
+    expect(typeof body.sportIndex).toBe("number");
+    expect(body.sportIndex).toBeGreaterThan(0);
+  });
+
+  it("saves the session with no map rather than refusing a run inside its own privacy zone", async () => {
+    // 300m: swallowed whole by the 200m-each-end zone. The run still saves.
+    const shortRoute: [number, number][] = Array.from({ length: 13 }, (_, i) => [
+      HOME_LAT + i * 25 * DEG_PER_M,
+      HOME_LNG,
+    ]);
+    const { response, calls } = await postWith(happyPathResults(), {
+      ...gpsRunBody(shortRoute),
+      distance_meters: 300,
+      duration_seconds: 90,
+    });
+
+    expect(response.status).toBe(200);
+    expect(storedRoute(calls)).toBeUndefined();
+    expect(insertedActivity(calls).distance_meters).toBe(300);
+  });
+
+  it("still stores nothing for a run that sent no route at all", async () => {
+    const withoutRoute: Record<string, unknown> = { ...gpsRunBody() };
+    delete withoutRoute.route;
+    const { response, calls } = await postWith(happyPathResults(), withoutRoute);
+    expect(response.status).toBe(200);
+    expect(storedRoute(calls)).toBeUndefined();
   });
 });

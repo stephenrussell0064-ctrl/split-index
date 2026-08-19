@@ -35,20 +35,18 @@ import {
 } from "@/lib/native/step-cadence";
 import { isLiveActivitySupported, startLiveActivity, updateLiveActivity, endLiveActivity } from "@/lib/native/live-activity";
 import {
-  buildRoutePolyline,
   PARTIAL_REASON_LABEL,
   trackDistanceMeters,
   movingMillis,
   isPaused,
   elevationGainMeters,
-  summarizeIntervalSegments,
-  summarizeFartlekSegments,
   type GpsTrackSummary,
   type GpsPoint,
   type HrReading,
   type RunSegment,
   type PauseInterval,
 } from "@/lib/scoring/gps-track";
+import { buildGpsActivityPayload } from "./submission";
 import type { SessionType } from "@/types";
 
 // Leaflet touches `window` at import time — ssr: false keeps it out of the
@@ -557,74 +555,44 @@ export default function GpsRunPage() {
     };
   }
 
-  async function submitSummary(trackSummary: GpsTrackSummary, startedAtIso: string) {
+  /**
+   * Saves a finished track. `sourcePoints`/`sourcePauses` default to the live
+   * session, but MUST be passed explicitly by the recovered-orphan path.
+   *
+   * That default used to be an unconditional read of `livePoints`, which is
+   * empty on recovery — the app was killed, the component remounted, and the
+   * points live in `orphaned.points`, not in React state. So a recovered run
+   * was saved with no route (no map, ever, for the run most likely to be a
+   * long one) and no start coordinate (so no temperature was looked up, and
+   * heat is a scoring input), while the summary alongside it carried the full
+   * distance. Silent, and invisible until the athlete opened the logbook.
+   */
+  async function submitSummary(
+    trackSummary: GpsTrackSummary,
+    startedAtIso: string,
+    sourcePoints: GpsPoint[] = livePoints,
+    sourcePauses: readonly PauseInterval[] = pauses
+  ) {
     if (saving) return;
     setSaving(true);
     setError("");
     try {
-      const avgHeartRate =
-        hrReadings.length > 0
-          ? Math.round(hrReadings.reduce((sum, r) => sum + r.bpm, 0) / hrReadings.length)
-          : undefined;
-      const maxHeartRate = hrReadings.length > 0 ? Math.max(...hrReadings.map((r) => r.bpm)) : undefined;
-      const avgCadence =
-        cadenceReadings.length > 0
-          ? Math.round(cadenceReadings.reduce((sum, c) => sum + c, 0) / cadenceReadings.length)
-          : undefined;
-      const startPoint = livePoints[0];
-
-      let segmentFields: Record<string, number | undefined> = {};
-      if (sessionType === "interval") {
-        const seg = summarizeIntervalSegments(livePoints, hrReadings, segments);
-        if (seg) {
-          segmentFields = {
-            interval_reps: seg.reps,
-            interval_work_distance_meters: seg.workDistanceMeters,
-            interval_work_seconds: seg.workSecondsPerRep,
-            interval_rest_seconds: seg.restSeconds,
-            interval_work_avg_hr: seg.workAvgHr ?? undefined,
-          };
-        }
-      } else if (sessionType === "fartlek") {
-        const seg = summarizeFartlekSegments(livePoints, hrReadings, segments);
-        if (seg) {
-          segmentFields = {
-            fartlek_on_distance_meters: seg.onDistanceMeters,
-            fartlek_on_seconds: seg.onSeconds,
-            fartlek_on_avg_hr: seg.onAvgHr ?? undefined,
-          };
-        }
-      }
-
       const res = await fetch("/api/activities", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sport,
-          started_at: startedAtIso,
-          duration_seconds: trackSummary.durationSeconds,
-          distance_meters: trackSummary.distanceMeters,
-          elevation_meters: trackSummary.elevationGainMeters ?? undefined,
-          avg_pace_seconds_per_km: trackSummary.avgPaceSecondsPerKm ?? undefined,
-          avg_heart_rate: avgHeartRate,
-          max_heart_rate: maxHeartRate,
-          avg_cadence: avgCadence,
-          session_type: sessionType,
-          source: "gps",
-          is_partial_track: trackSummary.isPartial,
-          // Starting coordinates only — used server-side to auto-fetch the
-          // temperature at run time (no manual entry needed for GPS runs).
-          // Never persisted as their own column, just consumed once.
-          start_latitude: startPoint?.latitude,
-          start_longitude: startPoint?.longitude,
-          // The run's shape, simplified for storage — this is what lets the
-          // logbook draw the route back. Raw fixes are deliberately not sent:
-          // a 10km run is ~1000 of them and the drawn difference is invisible.
-          // Fixes recorded while paused are left out so a stop at a crossing
-          // doesn't draw a spike of receiver drift into the route.
-          route: buildRoutePolyline(movingPoints) ?? undefined,
-          ...segmentFields,
-        }),
+        body: JSON.stringify(
+          buildGpsActivityPayload({
+            sport,
+            sessionType,
+            startedAtIso,
+            summary: trackSummary,
+            points: sourcePoints,
+            pauses: sourcePauses,
+            hrReadings,
+            cadenceReadings,
+            segments,
+          })
+        ),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -945,7 +913,13 @@ export default function GpsRunPage() {
                   onClick={() =>
                     submitSummary(
                       orphaned.summary,
-                      new Date(Date.now() - orphaned.summary.durationSeconds * 1000).toISOString()
+                      new Date(Date.now() - orphaned.summary.durationSeconds * 1000).toISOString(),
+                      // Load-bearing: the recovered run's fixes live here, not
+                      // in `livePoints` — this component mounted fresh after
+                      // the app was killed. Without them the run saves with no
+                      // map and no temperature.
+                      orphaned.points,
+                      orphaned.pauses
                     )
                   }
                 >

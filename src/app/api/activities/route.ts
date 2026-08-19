@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { ROUTE_CONFIG, parseRoutePolyline } from "@/lib/scoring/gps-track";
+import { ROUTE_CONFIG, applyRoutePrivacyZone, parseRoutePolyline } from "@/lib/scoring/gps-track";
 import { createClient } from "@/lib/supabase/server";
 import { scoreActivity, computeRecentLoads, computeExercise1RM, buildStrengthScoreInserts, ScoringInputError } from "@/lib/scoring/service";
 import { assertScoringInput } from "@/lib/scoring/input-guards";
@@ -61,11 +61,23 @@ import { fetchCurrentTemperatureCelsius } from "@/lib/weather/fetch-temperature"
  * they are re-validated and re-capped here. Anything malformed is dropped
  * rather than rejected — a bad route should cost the athlete their map, not
  * their run.
+ *
+ * The privacy zone is applied here, at the write boundary, rather than on the
+ * client that built the polyline. `activities.metadata` is readable in full by
+ * any accepted friend (RLS grants a visible row's every column), so what must
+ * be guaranteed is that no untruncated route is ever *written* — and only the
+ * server can guarantee that. A stale app build, or anything POSTing this
+ * endpoint by hand, is covered by exactly the same rule as the current client.
+ * See applyRoutePrivacyZone in gps-track.ts for what is removed and why.
+ *
+ * Returning null (a route swallowed whole by its own privacy zone, e.g. a run
+ * under 400m) stores no route at all; the session saves normally without a
+ * map, exactly as a manually logged one does.
  */
 function sanitizeRoute(value: unknown): [number, number][] | null {
   const parsed = parseRoutePolyline(value);
   if (!parsed) return null;
-  return parsed.slice(0, ROUTE_CONFIG.MAX_POINTS);
+  return applyRoutePrivacyZone(parsed.slice(0, ROUTE_CONFIG.MAX_POINTS));
 }
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>;
@@ -306,7 +318,13 @@ export async function POST(request: Request) {
         ...(bodyweightKg ? { bodyweight_kg: bodyweightKg } : {}),
         // The run's shape, already simplified client-side (see
         // buildRoutePolyline). Validated here rather than trusted: this is
-        // user-supplied JSON going into a column the logbook renders from.
+        // user-supplied JSON going into a column the logbook renders from —
+        // and, because RLS hands a friend every column of a visible row, one
+        // a friend can read directly. sanitizeRoute has already removed the
+        // first and last 200m, so what lands here never starts or ends at the
+        // athlete's door. This is irreversible by design: the athlete's own
+        // map shows the truncated route too, because the full one was never
+        // stored.
         ...(routePolyline ? { route: routePolyline } : {}),
         ...(body.exercise_notes ? { exercise_notes: body.exercise_notes } : {}),
         ...(body.exercises?.length

@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   ROUTE_CONFIG,
+  PRIVACY_ZONE_CONFIG,
+  applyRoutePrivacyZone,
   buildRoutePolyline,
   parseRoutePolyline,
+  type RoutePoint,
   simplifyRoute,
   haversineDistanceMeters,
   summarizeGpsTrack,
@@ -667,5 +670,185 @@ describe("route polyline (logbook map)", () => {
     expect(parseRoutePolyline([[999, 0], [0, 999]])).toBeNull();
     expect(parseRoutePolyline([["a", "b"], ["c", "d"]])).toBeNull();
     expect(parseRoutePolyline([[51.5, -0.12], [51.51, -0.12]])).toHaveLength(2);
+  });
+});
+
+describe("route privacy zone", () => {
+  /**
+   * The threat these tests pin down: `activities.metadata` is handed to any
+   * accepted friend in full by row-level security, so a stored polyline whose
+   * first point is the athlete's doorstep is a home address a friend can read
+   * with the public anon key. Truncating at write time is the fix, so what is
+   * asserted here is what does and does not survive into storage.
+   */
+  const HOME: RoutePoint = [51.5, -0.12];
+  /** Degrees of latitude per metre, at the same earth radius haversine uses. */
+  const DEG_PER_M = 1 / 111_194.93;
+
+  function metersApart(a: RoutePoint, b: RoutePoint): number {
+    return haversineDistanceMeters(
+      point({ latitude: a[0], longitude: a[1] }),
+      point({ latitude: b[0], longitude: b[1] })
+    );
+  }
+
+  function pathLengthMeters(route: RoutePoint[]): number {
+    let total = 0;
+    for (let i = 1; i < route.length; i++) total += metersApart(route[i - 1], route[i]);
+    return total;
+  }
+
+  /** A leg due north (or south, for a negative length) from `from`, sampled every `spacingMeters`. */
+  function leg(from: RoutePoint, lengthMeters: number, spacingMeters = 50): RoutePoint[] {
+    const steps = Math.round(Math.abs(lengthMeters) / spacingMeters);
+    const sign = Math.sign(lengthMeters);
+    return Array.from({ length: steps }, (_, i): RoutePoint => [
+      from[0] + sign * (i + 1) * spacingMeters * DEG_PER_M,
+      from[1],
+    ]);
+  }
+
+  it("removes the athlete's front door from both ends of the stored route", () => {
+    // 2km out and 2km back along the same road: the classic shape whose first
+    // and last stored coordinate are the same doorstep.
+    const full: RoutePoint[] = [HOME, ...leg(HOME, 2000), ...leg([HOME[0] + 2000 * DEG_PER_M, HOME[1]], -2000)];
+    expect(metersApart(full[0], HOME)).toBeLessThan(1);
+    expect(metersApart(full[full.length - 1], HOME)).toBeLessThan(2);
+
+    const trimmed = applyRoutePrivacyZone(full)!;
+
+    // Neither end of what gets stored is anywhere near where the run began.
+    expect(metersApart(trimmed[0], HOME)).toBeGreaterThan(190);
+    expect(metersApart(trimmed[trimmed.length - 1], HOME)).toBeGreaterThan(190);
+    // And the removal is measured along the path: 200m off each end, no more.
+    expect(pathLengthMeters(trimmed)).toBeCloseTo(pathLengthMeters(full) - 400, -1);
+  });
+
+  it("trims by distance along the path, not by point count", () => {
+    // Densely sampled for the first 100m (a slow start, or a phone sitting on
+    // the doorstep acquiring a lock), sparse thereafter. Dropping "the first N
+    // points" would leave the athlete standing in their own front garden.
+    const dense = Array.from({ length: 100 }, (_, i): RoutePoint => [
+      HOME[0] + (i + 1) * 1 * DEG_PER_M,
+      HOME[1],
+    ]);
+    const full: RoutePoint[] = [HOME, ...dense, ...leg([HOME[0] + 100 * DEG_PER_M, HOME[1]], 1900, 100)];
+
+    const trimmed = applyRoutePrivacyZone(full)!;
+
+    expect(metersApart(trimmed[0], HOME)).toBeGreaterThan(190);
+    // 101 of the 121 stored points were inside the first 100m; a count-based
+    // rule tuned to remove "the first few" would have removed almost none of
+    // the distance that matters.
+    expect(pathLengthMeters(trimmed)).toBeCloseTo(pathLengthMeters(full) - 400, -1);
+  });
+
+  it("keeps an out-and-back that passes the house at halfway in one piece", () => {
+    // Home → 1km north → back past home → 1km south → home. A straight-line
+    // "drop everything within 200m of the start" rule would punch a hole
+    // through the middle and draw this as two disconnected fragments.
+    const north = leg(HOME, 1000);
+    const backToHome = leg([HOME[0] + 1000 * DEG_PER_M, HOME[1]], -1000);
+    const south = leg(HOME, -1000);
+    const backAgain = leg([HOME[0] - 1000 * DEG_PER_M, HOME[1]], 1000);
+    const full: RoutePoint[] = [HOME, ...north, ...backToHome, ...south, ...backAgain];
+
+    const trimmed = applyRoutePrivacyZone(full)!;
+
+    // Endpoints protected...
+    expect(metersApart(trimmed[0], HOME)).toBeGreaterThan(190);
+    expect(metersApart(trimmed[trimmed.length - 1], HOME)).toBeGreaterThan(190);
+    // ...and the route is still one continuous line: every consecutive pair is
+    // a normal running step apart, never a jump across an excised middle.
+    for (let i = 1; i < trimmed.length; i++) {
+      expect(metersApart(trimmed[i - 1], trimmed[i])).toBeLessThan(120);
+    }
+    // The documented, deliberate limit: the halfway pass by the house is still
+    // drawn. Hiding it needs a declared home coordinate — which is the very
+    // thing this feature avoids storing. What is guaranteed is that the two
+    // points an attacker reads first, the endpoints, are not the house.
+    expect(Math.min(...trimmed.map((p) => metersApart(p, HOME)))).toBeLessThan(60);
+  });
+
+  it("handles a loop that finishes where it started with no special case", () => {
+    // A 2km square starting and ending at the same corner. Start and finish
+    // are metres apart on the ground but 2km apart along the path, which is
+    // exactly why the measurement is along the path.
+    const side = 500;
+    const corner2: RoutePoint = [HOME[0] + side * DEG_PER_M, HOME[1]];
+    const east = Array.from({ length: 10 }, (_, i): RoutePoint => [corner2[0], corner2[1] + (i + 1) * (side / 10) * DEG_PER_M]);
+    const corner3 = east[east.length - 1];
+    const back = Array.from({ length: 10 }, (_, i): RoutePoint => [corner3[0] - (i + 1) * (side / 10) * DEG_PER_M, corner3[1]]);
+    const corner4 = back[back.length - 1];
+    const home = Array.from({ length: 10 }, (_, i): RoutePoint => [corner4[0], corner4[1] - (i + 1) * (side / 10) * DEG_PER_M]);
+    const full: RoutePoint[] = [HOME, ...leg(HOME, side), ...east, ...back, ...home];
+
+    // It really is a closed loop.
+    expect(metersApart(full[0], full[full.length - 1])).toBeLessThan(5);
+
+    const trimmed = applyRoutePrivacyZone(full)!;
+    expect(metersApart(trimmed[0], HOME)).toBeGreaterThan(190);
+    expect(metersApart(trimmed[trimmed.length - 1], HOME)).toBeGreaterThan(190);
+    // Drawn open rather than closed — that is the whole visible cost. The gap
+    // is the two 200m stubs meeting at the start corner, so ~200m√2 apart.
+    expect(metersApart(trimmed[0], trimmed[trimmed.length - 1])).toBeGreaterThan(250);
+  });
+
+  it("stores no route at all for a run shorter than its own privacy zone", () => {
+    // 300m: entirely inside the 200m-each-end zone. Keeping a token middle
+    // slice would be worse than keeping nothing — both ends are known to sit
+    // within 200m of whatever survived, which brackets the house.
+    expect(applyRoutePrivacyZone([HOME, ...leg(HOME, 300, 25)])).toBeNull();
+    // And just over twice the radius, where the remnant would be a smudge.
+    expect(applyRoutePrivacyZone([HOME, ...leg(HOME, 420, 20)])).toBeNull();
+    // Comfortably clear of it, the route survives.
+    expect(applyRoutePrivacyZone([HOME, ...leg(HOME, 600, 20)])).not.toBeNull();
+  });
+
+  it("stores nothing when there are too few points to truncate meaningfully", () => {
+    expect(applyRoutePrivacyZone(null)).toBeNull();
+    expect(applyRoutePrivacyZone([])).toBeNull();
+    expect(applyRoutePrivacyZone([HOME])).toBeNull();
+  });
+
+  it("cuts inside a long simplified segment rather than snapping to the next vertex", () => {
+    // Ramer-Douglas-Peucker leaves a straight kilometre as a single segment.
+    // Snapping the cut to the next stored vertex would delete that whole
+    // kilometre from the map; the cut is interpolated onto the segment instead.
+    const straightMile: RoutePoint[] = [HOME, [HOME[0] + 1600 * DEG_PER_M, HOME[1]]];
+    const trimmed = applyRoutePrivacyZone(straightMile)!;
+
+    expect(trimmed).toHaveLength(2);
+    expect(metersApart(trimmed[0], HOME)).toBeCloseTo(200, -1);
+    expect(pathLengthMeters(trimmed)).toBeCloseTo(1200, -1);
+  });
+
+  it("leaves the recorded track — and so the recorded distance — untouched", () => {
+    // The polyline is a picture. Distance, pace and climb are computed from the
+    // raw fixes by summarizeGpsTrack before any of this runs, so trimming the
+    // picture must not move the number the athlete is credited with.
+    const fixes: GpsPoint[] = Array.from({ length: 200 }, (_, i) =>
+      point({ latitude: HOME[0] + i * 10 * DEG_PER_M, longitude: HOME[1], accuracy: 5, time: i * 5_000 })
+    );
+    const summary = summarizeGpsTrack(fixes, { endedCleanly: true, permissionRevoked: false });
+    const recordedDistance = summary.distanceMeters;
+
+    const stored = applyRoutePrivacyZone(buildRoutePolyline(fixes));
+
+    // ~1990m run, ~1590m drawn — and the recorded distance is the full one.
+    expect(recordedDistance).toBeCloseTo(1990, -1);
+    expect(pathLengthMeters(stored!)).toBeCloseTo(recordedDistance - 400, -1);
+    expect(
+      summarizeGpsTrack(fixes, { endedCleanly: true, permissionRevoked: false }).distanceMeters
+    ).toBe(recordedDistance);
+  });
+
+  it("keeps the radius in one place", () => {
+    expect(PRIVACY_ZONE_CONFIG.RADIUS_METERS).toBe(200);
+    const full: RoutePoint[] = [HOME, ...leg(HOME, 2000)];
+    // An explicit radius is honoured, so the constant is genuinely the policy
+    // rather than a number duplicated inside the algorithm.
+    const wide = applyRoutePrivacyZone(full, 500)!;
+    expect(pathLengthMeters(wide)).toBeCloseTo(1000, -1);
   });
 });

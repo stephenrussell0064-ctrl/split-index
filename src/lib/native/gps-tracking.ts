@@ -190,6 +190,14 @@ export interface RecoveredGpsSession {
    * tiny "we found a run" text banner with no way to see the actual route,
    * even though the real points were sitting right there in storage. */
   points: GpsPoint[];
+  /**
+   * The session's pauses, with any pause left open by the app-kill already
+   * closed. Returned alongside the points because the caller has to be able to
+   * reproduce the same moving/paused split the summary was built from — the
+   * route it submits must exclude fixes recorded while standing still, exactly
+   * as the live path does, and it has no other way to know which those were.
+   */
+  pauses: PauseInterval[];
 }
 
 /**
@@ -214,13 +222,15 @@ export async function recoverOrphanedSession(): Promise<RecoveredGpsSession | nu
   // An app killed mid-pause leaves that pause open; it can only have lasted
   // until the last fix that was actually recorded, so that is where it ends.
   const lastPointTime = session.points[session.points.length - 1].time;
+  const pauses = closeOpenPauses(session.pauses ?? [], lastPointTime);
 
   return {
     summary: summarizeGpsTrack(session.points, {
       endedCleanly: false,
       permissionRevoked: session.permissionRevoked,
-      pauses: closeOpenPauses(session.pauses ?? [], lastPointTime),
+      pauses,
     }),
     points: session.points,
+    pauses,
   };
 }
