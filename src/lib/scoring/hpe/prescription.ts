@@ -187,6 +187,8 @@ export interface EndurancePrescriptionOptions {
 
 export interface Prescription {
   text: string;
+  /** Why this session looks the way it does. Kept out of `text` so rationale never reads as an exercise. */
+  notes?: string[];
   /** Non-negotiable #7: if the engine cannot say WHY this athlete is doing this session, it does not prescribe it. */
   findingId: FindingId;
   /** Present for every endurance session — WP7 requires distance and duration together, always. */
@@ -345,24 +347,43 @@ export function prescribeLift(
         `(${Math.round(intensity[0] * 100)}-${Math.round(intensity[1] * 100)}% 1RM)`
       : `${Math.round(intensity[0] * 100)}-${Math.round(intensity[1] * 100)}% 1RM (no logged 1RM yet — work to the RIR)`;
 
-  const name = options.substitution ?? options.variant ?? variation ?? lift.charAt(0).toUpperCase() + lift.slice(1);
-  const lines = [`${name} ${sets}x${reps[0]}-${reps[1]} @ ${loadText}, RIR ${rir[0]}-${rir[1]}`];
+  // Precedence, most specific first. A stall variation beats the hypertrophy
+  // rotation: the rotation is variety, the stall variation is a diagnostic
+  // response to this athlete's lift not moving, and the more specific reason
+  // should win. Getting this backwards produced a session led by "Back squat"
+  // with a note underneath saying "Pause Squat replaces the competition squat"
+  // — two different exercises named in the same breath.
+  const name =
+    options.substitution ?? variation ?? options.variant ?? lift.charAt(0).toUpperCase() + lift.slice(1);
+
+  // Exercises and rationale are kept apart. Both used to be joined with the
+  // same separator, so "Pause Squat replaces the competition squat this block
+  // — your squat has not moved in 12 weeks" appeared in the exercise list as
+  // though it were an exercise, and counted as one of the session's six.
+  const exercises = [`${name} ${sets}x${reps[0]}-${reps[1]} @ ${loadText}, RIR ${rir[0]}-${rir[1]}`];
+  const notes: string[] = [];
   if (options.substitution) {
-    lines.push(
+    notes.push(
       `Substituted for the ${lift} because you have no gym access. This trains the same pattern and it is not the ` +
         `same lift — the load is lower and the strength carry-over is smaller, so progress here will be slower ` +
         `than a barbell block would give you.`
     );
   }
   if (variation) {
-    lines.push(
+    notes.push(
       `${variation} replaces the competition ${lift} this block — your ${lift} has not moved in 12 weeks, and ` +
-        `a variation block breaks that before you come back to the lift itself`
+        `a variation block breaks that before you come back to the lift itself.`
+    );
+  } else if (options.variant && options.variant.toLowerCase() !== lift) {
+    notes.push(
+      `Leading with a ${options.variant.toLowerCase()} rather than the competition ${lift}. It trains the same ` +
+        `pattern with less joint cost, and your ${lift} improves anyway — you are not peaking a total, so there ` +
+        `is nothing here that needs the bar every week.`
     );
   }
-  if (options.accessories?.length) lines.push(...options.accessories);
+  if (options.accessories?.length) exercises.push(...options.accessories);
 
-  return { text: lines.join(" · "), findingId, minutes: 0 };
+  return { text: exercises.join(" · "), notes, findingId, minutes: 0 };
 }
 
 // ---------------------------------------------------------------------------

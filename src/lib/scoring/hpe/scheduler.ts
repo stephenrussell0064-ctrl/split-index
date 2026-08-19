@@ -98,6 +98,18 @@ export function scoreWeek(placements: Placement[], constraints: Constraints): Pe
     if (!constraints.daysAvailable.includes(day)) p.day_unavailable += PENALTY.day_unavailable;
   }
 
+  // Soft preferences. Weighted far below every physiological rule, so they
+  // break ties rather than win arguments.
+  if (constraints.preferredRestDay && usedDays.has(constraints.preferredRestDay)) {
+    p.preferred_rest_day_used += PENALTY.preferred_rest_day_used;
+  }
+  if (constraints.preferredLongDay) {
+    const longRun = placements.find((x) => x.session.kind === "long_run");
+    if (longRun && longRun.day !== constraints.preferredLongDay) {
+      p.preferred_long_day_missed += PENALTY.preferred_long_day_missed;
+    }
+  }
+
   const restDays = 7 - usedDays.size;
   if (restDays < constraints.minRestDays) {
     p.no_rest_day += PENALTY.no_rest_day * (constraints.minRestDays - restDays);

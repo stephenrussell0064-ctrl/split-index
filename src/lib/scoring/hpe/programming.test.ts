@@ -252,14 +252,47 @@ describe("strength sessions are sessions people would actually do", () => {
   });
 
   it("leads with a rotating variation when the athlete is not peaking a total", () => {
-    const plan = hybrid({ trainingSplit: "ppl" });
+    // Lifts must be PROGRESSING for the rotation to be observable: a stalled
+    // lift gets its stall variation instead, which is the more specific reason
+    // and correctly outranks variety.
+    const climbing = [
+      ...Array.from({ length: 10 }, (_, i) => ({ dateIdx: i * 5, lift: "squat", loadKg: 110 + i * 2.5, reps: 5 })),
+      ...Array.from({ length: 10 }, (_, i) => ({ dateIdx: i * 5 + 1, lift: "bench", loadKg: 80 + i * 1.5, reps: 5 })),
+      ...Array.from({ length: 10 }, (_, i) => ({ dateIdx: i * 6, lift: "deadlift", loadKg: 150 + i * 3, reps: 3 })),
+    ];
+    const s = state();
+    const profile = diagnose(runs(14, 8, 300, 148), climbing, s.oneRms, {
+      priority: 0.5, hrMax: 190, hrRest: 52, hrMaxSource: "measured",
+    });
+    const plan = generatePlan({
+      state: s,
+      goal: goal(),
+      constraints: constraints({ trainingSplit: "ppl" }),
+      profile,
+    });
     const leads = plan.weeks
       .flatMap((w) => w.sessions)
-      .filter((s) => s.domain === "strength")
-      .map((s) => s.prescription.text.split("·")[0].trim());
+      .filter((x) => x.domain === "strength")
+      .map((x) => x.prescription.text.split("·")[0].trim());
     // A push day led by an incline dumbbell press is still a push day, and the
     // bench goes up anyway.
-    expect(leads.some((l) => /Incline dumbbell press|Front squat|Close-grip/.test(l))).toBe(true);
+    expect(leads.some((l) => /Incline dumbbell press|Front squat|Close-grip|Trap-bar|Hack squat/i.test(l))).toBe(true);
+  });
+
+  it("prefers the stall variation over the variety rotation", () => {
+    // Both mechanisms can name the lead. The stall variation is a response to
+    // this athlete's lift not moving; the rotation is variety. The specific
+    // reason wins, and the note must name the same exercise as the lead —
+    // "Back squat" with "Pause Squat replaces the competition squat" beneath
+    // it named two different exercises in the same breath.
+    const plan = hybrid({ trainingSplit: "ppl" });
+    for (const x of plan.weeks.flatMap((w) => w.sessions).filter((z) => z.domain === "strength")) {
+      const lead = x.prescription.text.split("·")[0];
+      for (const n of x.prescription.notes ?? []) {
+        const named = n.match(/^([A-Z][A-Za-z- ]+?) replaces/);
+        if (named) expect(lead).toContain(named[1]);
+      }
+    }
   });
 
   it("keeps the competition lift when the athlete IS peaking a total", () => {

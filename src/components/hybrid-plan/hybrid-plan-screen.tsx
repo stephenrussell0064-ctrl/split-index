@@ -59,7 +59,8 @@ interface PlanResponse {
         isQuality: boolean;
         findingId: string;
         emphasisKey: string;
-        prescription: { text: string };
+        prescription: { text: string; notes?: string[] };
+        label?: string;
       };
     }[];
   }[];
@@ -114,6 +115,8 @@ function toPlanWeeks(raw: NonNullable<PlanResponse["weeks"]>): PlanWeekView[] {
       findingId: p.session.findingId as PlanWeekView["sessions"][number]["findingId"],
       emphasisKey: p.session.emphasisKey,
       prescription: p.session.prescription.text,
+      label: p.session.label,
+      notes: p.session.prescription.notes,
     })),
   }));
 }

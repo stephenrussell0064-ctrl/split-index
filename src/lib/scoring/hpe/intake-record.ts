@@ -589,6 +589,8 @@ export function resolveIntakeInputs(
     maxSessionMin: record.maxSessionMin,
     minRestDays: record.minRestDays,
     trainingSplit: record.trainingSplit,
+    preferredRestDay: record.preferredRestDay,
+    preferredLongDay: record.preferredLongDay,
     gymAccessDays,
     // Gym access governs; the equipment list refines it. Without a gym the
     // barbell is not available whatever the equipment list says.

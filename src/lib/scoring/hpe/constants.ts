@@ -742,6 +742,19 @@ export const BASE_STRESS_PER_MIN: Readonly<Record<string, number>> = {
   easy_row: 0.7,
 };
 
+/**
+ * [EST] How long a strength session actually takes: a fixed warm-up plus time
+ * per exercise.
+ *
+ * Strength sessions were built with `minutes` defaulting to 0. They displayed
+ * as "0min", and — worse — the athlete's own `maxHoursPerWeek` and
+ * `maxSessionMin` limits could not see them at all, so someone who said they
+ * had seven hours a week was given seven hours of running plus however much
+ * lifting the emphasis vector asked for.
+ */
+export const STRENGTH_WARMUP_MIN = 12;
+export const STRENGTH_MIN_PER_EXERCISE = 9;
+
 /** [BETA] Flat stress per strength session kind. */
 export const STRENGTH_STRESS: Readonly<Record<string, number>> = {
   squat_heavy: 95,
@@ -779,6 +792,12 @@ export const PENALTY: Readonly<Record<string, number>> = {
   consecutive_lower_days: 70,
   intensity_drift: 8,
   same_lift_consecutive_days: 90,
+  // Soft, and genuinely soft: the athlete said they would rather rest Sunday
+  // and go long on Saturday, not that they cannot do otherwise. Weighted below
+  // every physiological rule so a preference never displaces a separation
+  // requirement — but above zero, which is what they were worth before.
+  preferred_rest_day_used: 55,
+  preferred_long_day_missed: 35,
 };
 
 /**

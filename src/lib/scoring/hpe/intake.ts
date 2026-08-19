@@ -237,6 +237,16 @@ export interface Constraints {
    * is worse than an ordered list the athlete can place themselves.
    */
   availabilityVaries: boolean;
+  /**
+   * Soft scheduling preferences. Honoured where nothing physiological objects.
+   *
+   * These were collected by the intake, parsed into the record, and then never
+   * reached the scheduler at all — while the form told the athlete they were
+   * "soft preferences the scheduler honours where it can". Either wire them up
+   * or stop asking; this is the wiring.
+   */
+  preferredRestDay?: string | null;
+  preferredLongDay?: string | null;
   /** Fallback clock hours, used only for days with no window of their own. */
   amHour: number;
   pmHour: number;

@@ -42,6 +42,8 @@ import {
   LIFT_PRESCRIPTIONS,
   GENERAL_STRENGTH_SPEC,
   CORE_ACCESSORY_CAP,
+  STRENGTH_WARMUP_MIN,
+  STRENGTH_MIN_PER_EXERCISE,
   MIN_EXERCISES_PER_STRENGTH_SESSION,
   TARGET_EXERCISES_PER_STRENGTH_SESSION,
   STRENGTH_ACCESSORY_POOL,
@@ -84,6 +86,15 @@ export type SessionKind = EnduranceKind | "squat_heavy" | "squat_volume" | "dead
 
 export interface PlannedSession {
   kind: SessionKind;
+  /**
+   * What the athlete calls this session — "Push", "Legs", "Upper".
+   *
+   * `kind` is the engine's classification and drives stress and scheduling; a
+   * push day genuinely costs what a bench session costs. But the athlete who
+   * chose push/pull/legs and was shown "bench_volume" reasonably concluded the
+   * split had been ignored, because the only thing they can see is the label.
+   */
+  label?: string;
   domain: "endurance" | "strength";
   /** 0-1, used by the scheduler's ordering and drift penalties. */
   intensity: number;
@@ -200,15 +211,24 @@ function stressFor(kind: SessionKind, minutes: number, domain: "endurance" | "st
   return (BASE_STRESS_PER_MIN[kind] ?? DEFAULT_STRESS_PER_MIN) * minutes;
 }
 
+/** Exercises in a prescription. Rationale lives in `notes`, so this counts only lifts. */
+function exerciseCount(text: string): number {
+  return text.split("·").filter((x) => x.trim().length > 0).length;
+}
+
 function makeSession(
   kind: SessionKind,
   domain: "endurance" | "strength",
   emphasisKey: EmphasisKey,
   findingId: FindingId,
   prescription: Prescription,
-  opts: { intensity: number; isQuality: boolean; minutes?: number; isHeavyLower?: boolean; isDeadlift?: boolean; lift?: string }
+  opts: { intensity: number; isQuality: boolean; minutes?: number; isHeavyLower?: boolean; isDeadlift?: boolean; lift?: string; label?: string }
 ): PlannedSession {
-  const minutes = opts.minutes ?? 0;
+  const minutes =
+    opts.minutes ??
+    (domain === "strength"
+      ? STRENGTH_WARMUP_MIN + exerciseCount(prescription.text) * STRENGTH_MIN_PER_EXERCISE
+      : 0);
   return {
     kind,
     domain,
@@ -218,6 +238,7 @@ function makeSession(
     isHeavyLower: opts.isHeavyLower ?? false,
     isDeadlift: opts.isDeadlift ?? false,
     lift: opts.lift,
+    label: opts.label,
     prescription,
     emphasisKey,
     findingId,
@@ -727,6 +748,7 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
           intensity: MMD_STRENGTH_MIN_INTENSITY,
           isQuality: false,
           lift,
+          label: maintDay.label,
         })
       );
       continue;
@@ -800,6 +822,7 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
           isQuality: heavyLoads,
           isHeavyLower: isHeavy,
           lift,
+          label: splitDay.label,
         })
       );
     } else if (lift === "deadlift") {
@@ -810,6 +833,7 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
           isHeavyLower: heavyLoads,
           isDeadlift: true,
           lift,
+          label: splitDay.label,
         })
       );
     } else {
@@ -818,6 +842,7 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
           intensity: heavyLoads ? 0.88 : 0.65,
           isQuality: false,
           lift,
+          label: splitDay.label,
         })
       );
     }
@@ -845,6 +870,10 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
           intensity: wl.intensityHigh,
           isQuality: false,
           lift,
+          // Named for what it is. This session exists outside the split — it is
+          // an extra exposure the diagnostic bought for a lagging lift — so
+          // borrowing a "Push"/"Pull" label would misdescribe it.
+          label: `Extra ${lift} exposure`,
         })
       );
     }

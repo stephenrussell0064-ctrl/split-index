@@ -19,6 +19,10 @@ import { ACWR_BLOCK, ACWR_FLOOR, ACWR_WARN } from "@/lib/scoring/hpe/constants";
 
 export interface PlanSessionView {
   kind: string;
+  /** What the athlete calls it — "Push", "Legs". Falls back to the engine's kind. */
+  label?: string;
+  /** Why the session looks the way it does. Never rendered as an exercise. */
+  notes?: string[];
   domain: "endurance" | "strength";
   day: string | null;
   slot: string | null;
@@ -93,7 +97,15 @@ function SessionRow({
               session.domain === "endurance" ? "bg-endurance" : "bg-strength"
             )}
           />
-          <span className="text-sm font-semibold">{KIND_LABEL[session.kind] ?? session.kind}</span>
+          {/* The athlete's own word for the session first. Someone who chose
+              push/pull/legs and was shown "bench_volume" reasonably concluded
+              the split had been ignored — the label is the only part they see. */}
+          <span className="text-sm font-semibold">
+            {session.label ?? KIND_LABEL[session.kind] ?? session.kind}
+          </span>
+          {session.label && KIND_LABEL[session.kind] && (
+            <span className="text-xs text-muted/70">{KIND_LABEL[session.kind]}</span>
+          )}
           {session.isQuality && (
             <span className="rounded-full bg-warning/15 px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wider text-warning">
               Quality
@@ -106,6 +118,16 @@ function SessionRow({
       </div>
 
       <p className="mt-2 text-sm leading-relaxed text-foreground/85">{session.prescription}</p>
+
+      {(session.notes?.length ?? 0) > 0 && (
+        <ul className="mt-2 space-y-1">
+          {session.notes!.map((n) => (
+            <li key={n} className="text-xs leading-relaxed text-muted">
+              {n}
+            </li>
+          ))}
+        </ul>
+      )}
 
       <button
         type="button"
