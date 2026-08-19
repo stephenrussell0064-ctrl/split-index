@@ -2,13 +2,14 @@
 
 import { Select, Textarea } from "@/components/ui/input";
 import { SESSION_TYPES, STROKE_TYPES } from "@/lib/constants/sports";
+import { cn } from "@/lib/utils/cn";
 import type { SessionType, SportType } from "@/types";
 import {
-  DerivedChip,
   DurationInput,
   Field,
   GlassInput,
-  MicroLabel,
+  HeroInput,
+  HeroReadout,
   RpeScale,
   SplitInput,
   UnitInput,
@@ -16,14 +17,12 @@ import {
 } from "./fields";
 import { ExpandableSection } from "./expandable-section";
 import {
-  bestSetRow,
   derivePacePer100m,
   derivePacePerKm,
   deriveDistanceFromDurationAndSplit,
   deriveDurationFromDistanceAndSplit,
   deriveSpeedKmh,
   deriveSplitPer500m,
-  epley1RM,
   formatClock,
   parseNum,
   splitSecondsFromState,
@@ -34,7 +33,6 @@ import {
 } from "./form-state";
 import { GymExercises } from "./gym-form";
 import { GymWorkoutTimer } from "./gym-workout-timer";
-import { formatRelativeStrength } from "@/lib/utils/scoring-display";
 
 export type UpdateField = <K extends keyof WorkoutFormState>(
   key: K,
@@ -82,60 +80,70 @@ export function SportForm({
     ? deriveDistanceFromDurationAndSplit(durationSeconds, splitSeconds)
     : null;
 
+  // The headline number of the session, derived from what's typed above it.
+  // Rowing/ski erg enter their split directly, so for those the useful
+  // readout is whichever of distance/duration is being derived from it.
+  const paceReadout: { label: string; value: string | null; placeholder: string } | null = (() => {
+    if (isGym) return null;
+    if (logsByDistance) {
+      return {
+        label: "Duration",
+        value: derivedDurationSeconds ? formatClock(derivedDurationSeconds) : null,
+        placeholder: "Enter distance & split",
+      };
+    }
+    if (logsByTime) {
+      return {
+        label: "Distance",
+        value: derivedDistanceMeters
+          ? `${Math.round(derivedDistanceMeters).toLocaleString()} m`
+          : null,
+        placeholder: "Enter time & split",
+      };
+    }
+    const distance = parseNum(state.distance);
+    switch (sport) {
+      case "running":
+      case "walking":
+        return { label: "Pace", value: derivePacePerKm(distance, durationSeconds), placeholder: "—" };
+      case "swimming":
+        return { label: "Pace", value: derivePacePer100m(distance, durationSeconds), placeholder: "—" };
+      case "rowing":
+      case "ski_erg":
+        return { label: "Split", value: deriveSplitPer500m(distance, durationSeconds), placeholder: "—" };
+      case "bike_erg":
+        return { label: "Speed", value: deriveSpeedKmh(distance, durationSeconds), placeholder: "—" };
+      case "outdoor_cycling":
+        // distance is in km here (unlike bike_erg's raw meters) — convert
+        // before deriveSpeedKmh, which expects meters.
+        return {
+          label: "Speed",
+          value: deriveSpeedKmh(distance ? distance * 1000 : null, durationSeconds),
+          placeholder: "—",
+        };
+      default:
+        return null;
+    }
+  })();
+
+  const powerWatts = parseNum(state.avgPower);
+  const bodyweightKg = parseNum(state.bodyweight);
+  const wattsPerKg =
+    fields.power && powerWatts && bodyweightKg
+      ? `${(powerWatts / bodyweightKg).toFixed(1)} W/kg`
+      : null;
+  const readouts = [
+    paceReadout,
+    fields.power ? { label: "W/kg", value: wattsPerKg, placeholder: "—" } : null,
+  ].filter((r): r is { label: string; value: string | null; placeholder: string } => r !== null);
+
   return (
-    <div className="space-y-6">
-      <FormSummaryStrip sport={sport} state={state} durationSeconds={durationSeconds} />
-
-      {/* When — minimum upfront */}
-      <section className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-5 sm:p-6 space-y-5">
-        <SectionLabel>When</SectionLabel>
-        <Field label="Title" hint="Optional — we'll name it after the sport if left blank">
-          <GlassInput
-            value={state.title}
-            placeholder={titlePlaceholder(sport)}
-            onChange={(e) => onUpdate("title", e.target.value)}
-            className="h-12"
-          />
-        </Field>
-        <div className="grid gap-5 sm:grid-cols-2">
-          <Field label="Date & start time" error={errors.startedAt}>
-            <GlassInput
-              type="datetime-local"
-              value={state.startedAt}
-              invalid={!!errors.startedAt}
-              onChange={(e) => onUpdate("startedAt", e.target.value)}
-              className="h-12"
-            />
-          </Field>
-          <Field
-            label="Duration"
-            error={errors.duration}
-            hint={logsByDistance ? "Derived from distance ÷ split" : undefined}
-          >
-            {logsByDistance ? (
-              <div className="flex h-12 items-center rounded-xl border border-white/[0.08] bg-white/[0.02] px-4 text-sm text-muted">
-                {derivedDurationSeconds ? formatClock(derivedDurationSeconds) : "Enter distance & split"}
-              </div>
-            ) : (
-              <DurationInput
-                hours={state.hours}
-                minutes={state.minutes}
-                seconds={state.seconds}
-                invalid={!!errors.duration}
-                onChange={(part, value) => onUpdate(part, value)}
-              />
-            )}
-          </Field>
-        </div>
-      </section>
-
-      {/* Metrics — distance upfront for cardio; exercises for gym */}
+    <div className="space-y-4">
       {isGym ? (
         <>
-          {/* Sticky above the bottom nav (not inside the collapsible section
-              below) so it's reachable however far you've scrolled through
-              the exercise list, matching the sticky submit bar's own offset
-              in activity-form.tsx so the two don't collide. */}
+          {/* Sticky so it's reachable however far you've scrolled through the
+              exercise list, matching the sticky submit bar's own offset in
+              activity-form.tsx so the two don't collide. */}
           <div className="sticky top-[max(0.75rem,env(safe-area-inset-top))] z-30 lg:static">
             <GymWorkoutTimer
               onUseDuration={(totalSeconds) => {
@@ -148,53 +156,102 @@ export function SportForm({
               }}
             />
           </div>
-          <ExpandableSection title="Metrics · Strength work" defaultOpen hint="Exercises, sets, reps">
-            <GymExercises
-              state={state}
-              errors={errors}
-              onUpdate={onUpdate}
-              embedded
-              profileScoringSex={profileScoringSex}
-            />
-          </ExpandableSection>
+
+          {/* Date and total duration, on one line above the workout. Kept
+              above the exercise list (not tucked in with the notes at the
+              bottom) because duration is required at submit and the timer
+              directly above fills it — an athlete who didn't run the timer
+              should meet the field before scrolling past forty set rows. */}
+          <section className="rounded-2xl border border-gym-border/30 bg-gym-bg-elevated/60 p-3 sm:p-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Date & start time" error={errors.startedAt}>
+                <GlassInput
+                  type="datetime-local"
+                  value={state.startedAt}
+                  invalid={!!errors.startedAt}
+                  onChange={(e) => onUpdate("startedAt", e.target.value)}
+                  className="h-11"
+                />
+              </Field>
+              <Field label="Total duration" error={errors.duration}>
+                <DurationInput
+                  hours={state.hours}
+                  minutes={state.minutes}
+                  seconds={state.seconds}
+                  invalid={!!errors.duration}
+                  onChange={(part, value) => onUpdate(part, value)}
+                />
+              </Field>
+            </div>
+          </section>
+
+          {/* No section wrapper and no accordion — the exercise cards are the
+              content of this screen, not a subsection of it. */}
+          <GymExercises
+            state={state}
+            errors={errors}
+            onUpdate={onUpdate}
+            profileScoringSex={profileScoringSex}
+          />
         </>
       ) : (
-        <section className="rounded-2xl border border-cardio-border/30 bg-cardio-bg-elevated/5 p-5 sm:p-6 space-y-5">
-          <SectionLabel>Metrics</SectionLabel>
-          {fields.derivableDistance && (
-            <Field label="Log by">
-              <PillGroup
-                options={[
-                  { value: "distance", label: "Distance" },
-                  { value: "time", label: "Time" },
-                ]}
-                value={state.rowInputMode}
-                onChange={(value) => onUpdate("rowInputMode", value as "distance" | "time")}
-                layoutIdPrefix={`row-input-mode-${sport}`}
-              />
-            </Field>
-          )}
-          <div className="grid gap-5 sm:grid-cols-2">
+        <>
+          {/* The session — the numbers the athlete opened the app to type,
+              at the size that says so, and grouped together.
+              Distance and duration used to live in different cards ("Metrics"
+              and "When") with the title and date between them, and pace only
+              ever appeared as a small chip above the whole form. Split lives
+              here too for rowing/ski erg: it's the third leg of the
+              distance/time/split triangle and was previously a card away from
+              the two values it derives. */}
+          <section className="rounded-2xl border border-cardio-border/30 bg-cardio-bg-elevated/5 p-4 sm:p-6 space-y-4">
+            <SectionLabel>The session</SectionLabel>
+
+            {fields.derivableDistance && (
+              <Field label="Log by">
+                <PillGroup
+                  options={[
+                    { value: "distance", label: "Distance" },
+                    { value: "time", label: "Time" },
+                  ]}
+                  value={state.rowInputMode}
+                  onChange={(value) => onUpdate("rowInputMode", value as "distance" | "time")}
+                  layoutIdPrefix={`row-input-mode-${sport}`}
+                />
+              </Field>
+            )}
+
             {fields.distance && !logsByTime && (
               <Field label="Distance" error={errors.distance}>
-                <UnitInput
+                <HeroInput
                   value={state.distance}
                   unit={fields.distance}
                   placeholder={fields.distance === "km" ? "10" : "5000"}
                   invalid={!!errors.distance}
                   onChange={(e) => onUpdate("distance", e.target.value)}
-                  className="h-12"
                 />
               </Field>
             )}
-            {fields.distance && logsByTime && (
-              <Field label="Distance" hint="Derived from time ÷ split">
-                <div className="flex h-12 items-center rounded-xl border border-white/[0.08] bg-white/[0.02] px-4 text-sm text-muted">
-                  {derivedDistanceMeters ? `${Math.round(derivedDistanceMeters).toLocaleString()} m` : "Enter time & split"}
-                </div>
+
+            {!logsByDistance && (
+              <Field label="Duration" error={errors.duration}>
+                <DurationInput
+                  size="hero"
+                  hours={state.hours}
+                  minutes={state.minutes}
+                  seconds={state.seconds}
+                  invalid={!!errors.duration}
+                  onChange={(part, value) => onUpdate(part, value)}
+                />
               </Field>
             )}
-            {fields.split && fields.derivableDistance && (
+
+            {/* Every split-tracking sport, not just the derivable ones —
+                this is the only place split is rendered now, so gating it on
+                derivableDistance (as the old Metrics card did, with a second
+                copy inside "Advanced metrics" for the rest) would silently
+                drop the field for any sport configured with split alone. */}
+            {fields.split && (
               <Field label="Avg split / 500m" error={errors.split}>
                 <SplitInput
                   minutes={state.splitMinutes}
@@ -204,8 +261,47 @@ export function SportForm({
                 />
               </Field>
             )}
-          </div>
-        </section>
+
+            {/* Power was in the collapsed "Advanced metrics" section, which
+                made it a two-tap hunt on indoor cycling — the one sport where
+                it is the ONLY performance number there is. */}
+            {fields.power && (
+              <Field label="Avg power" error={errors.avgPower} hint="Optional">
+                <UnitInput
+                  value={state.avgPower}
+                  unit="W"
+                  placeholder="185"
+                  invalid={!!errors.avgPower}
+                  onChange={(e) => onUpdate("avgPower", e.target.value)}
+                  className="h-12"
+                />
+              </Field>
+            )}
+
+            {fields.stroke && (
+              <Field label="Stroke">
+                <Select
+                  options={STROKE_TYPES}
+                  value={state.strokeType}
+                  onChange={(e) => onUpdate("strokeType", e.target.value)}
+                />
+              </Field>
+            )}
+
+            {readouts.length > 0 && (
+              <div className={cn("grid gap-2", readouts.length > 1 && "grid-cols-2")}>
+                {readouts.map((r) => (
+                  <HeroReadout
+                    key={r.label}
+                    label={r.label}
+                    value={r.value}
+                    placeholder={r.placeholder}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+        </>
       )}
 
       {/* Effort & conditions — heart rate, RPE, elevation gain and
@@ -308,52 +404,40 @@ export function SportForm({
         </ExpandableSection>
       )}
 
-      {/* Progressive: advanced metrics — split lives in the main Metrics
-          section (mandatory there, not tucked away) when derivableDistance
-          is set, so it's excluded here to avoid duplicating the field.
-          Elevation and temperature used to live here too; they're inline in
-          "Effort & conditions" above now. */}
-      {!isGym &&
-        ((fields.split && !fields.derivableDistance) || fields.power || fields.stroke) && (
-          <ExpandableSection title="Advanced metrics" hint="Split, power, stroke" tone="cardio">
-            <div className="grid gap-5 sm:grid-cols-2">
-              {fields.split && !fields.derivableDistance && (
-                <Field label="Avg split / 500m" error={errors.split}>
-                  <SplitInput
-                    minutes={state.splitMinutes}
-                    seconds={state.splitSeconds}
-                    invalid={!!errors.split}
-                    onChange={(part, value) => onUpdate(part, value)}
-                  />
-                </Field>
-              )}
-              {fields.power && (
-                <Field label="Avg power" error={errors.avgPower}>
-                  <UnitInput
-                    value={state.avgPower}
-                    unit="W"
-                    placeholder="185"
-                    invalid={!!errors.avgPower}
-                    onChange={(e) => onUpdate("avgPower", e.target.value)}
-                    className="h-12"
-                  />
-                </Field>
-              )}
-              {fields.stroke && (
-                <Field label="Stroke">
-                  <Select
-                    options={STROKE_TYPES}
-                    value={state.strokeType}
-                    onChange={(e) => onUpdate("strokeType", e.target.value)}
-                  />
-                </Field>
-              )}
-            </div>
-          </ExpandableSection>
-        )}
+      {/* When it happened. Below the metrics rather than above them: it's a
+          required field that already defaults to now, so for the common case
+          (logging the session you just finished) it needs to be visible and
+          correct, not first. The old layout spent the entire first screen on
+          Title + Date before the athlete reached "Distance".
+          The "Advanced metrics" accordion that used to sit around here is
+          gone — split, power and stroke are all in the session card above,
+          where they belong with the numbers they relate to. */}
+      {!isGym && (
+        <section className="rounded-2xl border border-cardio-border/30 bg-cardio-bg-elevated/5 p-4 sm:p-6">
+          <Field label="Date & start time" error={errors.startedAt}>
+            <GlassInput
+              type="datetime-local"
+              value={state.startedAt}
+              invalid={!!errors.startedAt}
+              onChange={(e) => onUpdate("startedAt", e.target.value)}
+              className="h-12 sm:max-w-sm"
+            />
+          </Field>
+        </section>
+      )}
 
-      {/* Optional notes */}
-      <ExpandableSection title="Optional" hint="Notes">
+      {/* Name and notes — the only two genuinely skippable fields, together.
+          Title was previously the very first input on the form despite being
+          explicitly optional and auto-filled from the sport. */}
+      <ExpandableSection title="Name & notes" hint="Optional" tone={isGym ? "gym" : "cardio"}>
+        <Field label="Title" hint="We'll name it after the sport if left blank">
+          <GlassInput
+            value={state.title}
+            placeholder={titlePlaceholder(sport)}
+            onChange={(e) => onUpdate("title", e.target.value)}
+            className="h-12"
+          />
+        </Field>
         <Field label="Notes">
           <Textarea
             value={state.notes}
@@ -504,74 +588,6 @@ function FartlekSubForm({
           className="h-11 max-w-[220px]"
         />
       </Field>
-    </div>
-  );
-}
-
-function FormSummaryStrip({
-  sport,
-  state,
-  durationSeconds,
-}: {
-  sport: SportType;
-  state: WorkoutFormState;
-  durationSeconds: number;
-}) {
-  const chips: { label: string; value: string | null }[] = [];
-
-  if (sport === "gym") {
-    const bw = parseNum(state.bodyweight);
-    let topRatio: string | null = null;
-    for (const row of state.exercises) {
-      const top = bestSetRow(row.sets);
-      const oneRm = top ? epley1RM(parseNum(top.weight), parseNum(top.reps)) : null;
-      if (!oneRm || !bw || !row.name.trim()) continue;
-      const ratio = oneRm / bw;
-      if (!topRatio || ratio > parseFloat(topRatio)) {
-        topRatio = String(ratio);
-      }
-    }
-    if (topRatio) {
-      chips.push({ label: "Top lift", value: formatRelativeStrength(parseFloat(topRatio), true) });
-    }
-  } else {
-    const distance = parseNum(state.distance);
-    let pace: string | null = null;
-    if (sport === "running" || sport === "walking") {
-      pace = derivePacePerKm(distance, durationSeconds);
-    } else if (sport === "swimming") {
-      pace = derivePacePer100m(distance, durationSeconds);
-    } else if (sport === "rowing" || sport === "ski_erg") {
-      pace = deriveSplitPer500m(distance, durationSeconds);
-    } else if (sport === "bike_erg") {
-      pace = deriveSpeedKmh(distance, durationSeconds);
-    } else if (sport === "outdoor_cycling") {
-      // distance is in km here (unlike bike_erg's raw meters) — convert before deriveSpeedKmh, which expects meters.
-      pace = deriveSpeedKmh(distance ? distance * 1000 : null, durationSeconds);
-    }
-    if (pace) chips.push({ label: "Pace", value: pace });
-    const power = parseNum(state.avgPower);
-    const bw = parseNum(state.bodyweight);
-    if (power && bw) {
-      chips.push({ label: "W/kg", value: `${(power / bw).toFixed(1)} W/kg` });
-    }
-    const hr = parseNum(state.avgHr);
-    if (hr) chips.push({ label: "Avg HR", value: `${hr} bpm` });
-  }
-
-  if (chips.length === 0) return null;
-
-  return (
-    <div className="flex flex-wrap gap-2 rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
-      <MicroLabel className="self-center text-muted/60 mr-1">Live</MicroLabel>
-      {chips.map((c) => (
-        <DerivedChip
-          key={c.label}
-          label={c.label}
-          value={c.value}
-          tone={sport === "gym" ? "strength" : "endurance"}
-        />
-      ))}
     </div>
   );
 }

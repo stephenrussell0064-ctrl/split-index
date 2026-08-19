@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion, useMotionValue, useTransform, PanInfo } from "framer-motion";
 import {
+  Check,
   ChevronDown,
+  Copy,
   Dumbbell,
   Plus,
   Search,
@@ -31,10 +33,9 @@ import {
   getExerciseLoadConfig,
   resolveScoringWeight,
   weightEntryLabel,
-  type WeightEntryMode,
 } from "@/lib/scoring/weight-entry";
 import type { Gender } from "@/types";
-import { DerivedChip, Field, FieldError, GlassInput, MicroLabel, UnitInput } from "./fields";
+import { DerivedChip, FieldError, GlassInput, UnitInput } from "./fields";
 import {
   bestSetRow,
   createExerciseRow,
@@ -106,18 +107,25 @@ function useExerciseHistory(exerciseName: string): ExerciseHistory | null {
   return history;
 }
 
+/**
+ * The workout: a plain vertical list of exercise cards, one per movement.
+ *
+ * Deliberately NOT wrapped in a section card of its own. It used to sit
+ * inside an ExpandableSection ("Metrics · Strength work", always open) which
+ * sat inside a bordered panel — so each exercise card was a card, inside a
+ * card, inside a card, and at 375px that nesting cost ~40px of horizontal
+ * padding that the weight and reps inputs badly needed. The exercise cards
+ * are the only container the list needs.
+ */
 export function GymExercises({
   state,
   errors,
   onUpdate,
-  embedded = false,
   profileScoringSex = null,
 }: {
   state: WorkoutFormState;
   errors: FormErrors;
   onUpdate: UpdateField;
-  /** When true, skip outer section wrapper (inside ExpandableSection) */
-  embedded?: boolean;
   profileScoringSex?: Gender | null;
 }) {
   const rows = state.exercises;
@@ -141,7 +149,20 @@ export function GymExercises({
     onUpdate("exercises", [...rows, createExerciseRow()]);
   };
 
+  /**
+   * Same principle as removeSet below: the control is never inert. On the
+   * last remaining exercise this empties it rather than deleting it (the
+   * workout has to have somewhere to type), keeping the row's `id` so React
+   * doesn't remount the card and lose focus.
+   */
   const removeRow = (id: string) => {
+    if (rows.length <= 1) {
+      onUpdate(
+        "exercises",
+        rows.map((row) => (row.id === id ? { ...createExerciseRow(), id: row.id } : row))
+      );
+      return;
+    }
     onUpdate(
       "exercises",
       rows.filter((row) => row.id !== id)
@@ -168,11 +189,30 @@ export function GymExercises({
     return best;
   }, [rows, bodyweight]);
 
-  const inner = (
-    <>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        {!embedded && <MicroLabel className="text-muted/70">Strength work</MicroLabel>}
-        <div className="flex flex-wrap gap-2 ml-auto">
+  return (
+    <div className="space-y-3">
+      {/* Session bar — bodyweight (needed for every × bodyweight score) and
+          the running totals, on one line instead of a full labelled field
+          block competing with exercise 1 for the first screen. */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl border border-gym-border/40 bg-gym-bg-elevated/60 px-3 py-2.5">
+        <label
+          htmlFor="gym-bodyweight"
+          className="text-[10px] font-semibold uppercase tracking-wider text-muted/70"
+        >
+          Bodyweight
+        </label>
+        <UnitInput
+          id="gym-bodyweight"
+          value={state.bodyweight}
+          unit="kg"
+          placeholder="75"
+          aria-label="Current bodyweight in kilograms"
+          invalid={!!errors.bodyweight}
+          wrapperClassName="w-[104px]"
+          className="h-10 px-3"
+          onChange={(e) => onUpdate("bodyweight", e.target.value)}
+        />
+        <div className="ml-auto flex flex-wrap gap-2">
           {topRelative && (
             <DerivedChip
               label="Top lift"
@@ -182,24 +222,10 @@ export function GymExercises({
           )}
           <DerivedChip label="Volume" value={totalVolume} tone="strength" />
         </div>
+        <FieldError error={errors.bodyweight} />
       </div>
 
-      <Field
-        label="Current bodyweight"
-        error={errors.bodyweight}
-        hint="Used for relative strength (× bodyweight) scoring"
-        className="sm:max-w-[240px]"
-      >
-        <UnitInput
-          value={state.bodyweight}
-          unit="kg"
-          placeholder="75"
-          invalid={!!errors.bodyweight}
-          onChange={(e) => onUpdate("bodyweight", e.target.value)}
-        />
-      </Field>
-
-      <div className="space-y-2">
+      <div className="space-y-3">
         <AnimatePresence initial={false}>
           {rows.map((row, index) => (
             <ExerciseRow
@@ -223,26 +249,35 @@ export function GymExercises({
         type="button"
         onClick={addRow}
         className={cn(
-          "flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-white/15",
-          "py-3.5 text-sm font-medium text-muted transition-colors duration-200",
-          "hover:border-strength/40 hover:bg-strength/5 hover:text-foreground min-h-[48px]"
+          "flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-gym-border/60",
+          "py-4 text-sm font-semibold text-gym-accent transition-colors duration-200",
+          "hover:border-gym-accent/50 hover:bg-gym-accent/5 min-h-[52px]"
         )}
       >
         <Plus className="h-4 w-4" />
         Add exercise
-        <Dumbbell className="h-4 w-4 opacity-50" />
+        <Dumbbell className="h-4 w-4 opacity-40" />
       </button>
-    </>
-  );
-
-  if (embedded) return <div className="space-y-5">{inner}</div>;
-
-  return (
-    <section className="rounded-2xl border border-gym-border/40 bg-gym-bg-elevated/80 p-5 sm:p-6 space-y-5">
-      {inner}
-    </section>
+    </div>
   );
 }
+
+/**
+ * Explicit grid placement for the set row's single-line `sm:` layout. The
+ * mobile layout wraps the inputs in two flex rows which become
+ * `display: contents` at `sm` — at which point DOM order alone would put the
+ * delete button between reps and RIR, so every cell states its column.
+ * Written as literal class strings because Tailwind scans source text.
+ */
+const SM_COL = [
+  "",
+  "sm:col-start-1",
+  "sm:col-start-2",
+  "sm:col-start-3",
+  "sm:col-start-4",
+  "sm:col-start-5",
+  "sm:col-start-6",
+] as const;
 
 function ExerciseRow({
   row,
@@ -268,6 +303,22 @@ function ExerciseRow({
     ? getAttachmentOptionsByKey(resolveAnchorKey(row.name))
     : null;
   const history = useExerciseHistory(row.name);
+  /**
+   * The exercise picker (muscle-filter chips + search box + select) is ~150px
+   * of chrome that used to stay on screen for the life of the row, so a
+   * five-exercise workout was mostly pickers. It collapses to the chosen
+   * name once you've picked, with a "Change" button to bring it back.
+   *
+   * Explicit-open only, OR'd with "there is no name yet": a fresh row opens
+   * the picker, and `onChange` (which only fires from the custom-name text
+   * input) pins it open so typing a custom exercise doesn't collapse the
+   * field out from under the cursor on the first keystroke.
+   */
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const hasName = row.name.trim().length > 0;
+  const showPicker = pickerOpen || !hasName;
+  /** Notes are per-exercise and rarely used — revealed on demand, but always shown once written. */
+  const [noteOpen, setNoteOpen] = useState(false);
   // Pull Up / Dip / Push Up / Muscle Up — the plain bodyweight variant shows
   // no weight field at all (user feedback: these "should not require you to
   // have to add weight," and should stay a separate exercise/entry from
@@ -384,6 +435,45 @@ function ExerciseRow({
     onUpdate({ sets: [...row.sets, createSetRow()] });
   };
   /**
+   * "Adding the next set repeats the last set's shape" — but as an explicit
+   * tap, not a silent prefill.
+   *
+   * createSetRow() deliberately stopped inheriting the previous set's numbers
+   * (see its doc comment): an inherited weight you have to notice and clear
+   * gets logged and scored as real training data when you don't. That fix
+   * stands — `addSet` above still adds a blank set. This is the same
+   * convenience made honest: the athlete asks for the copy, so a number that
+   * appears is a number they chose. Only offered when there's a filled set to
+   * copy, and it copies the SHAPE (load + volume), not the effort ratings —
+   * RPE/RIR are the two values most likely to differ set to set, and a
+   * carried-over "RPE 8" on a set that felt like 10 is exactly the kind of
+   * quietly-wrong data the blank-start fix was protecting.
+   */
+  const lastFilledSet = [...row.sets]
+    .reverse()
+    .find(
+      (s) =>
+        s.weight.trim() !== "" ||
+        s.reps.trim() !== "" ||
+        (s.durationSeconds ?? "").trim() !== "" ||
+        (s.distanceMeters ?? "").trim() !== ""
+    );
+  const repeatLastSet = () => {
+    if (!lastFilledSet) return;
+    onUpdate({
+      sets: [
+        ...row.sets,
+        {
+          ...createSetRow(),
+          weight: lastFilledSet.weight,
+          reps: lastFilledSet.reps,
+          durationSeconds: lastFilledSet.durationSeconds ?? "",
+          distanceMeters: lastFilledSet.distanceMeters ?? "",
+        },
+      ],
+    });
+  };
+  /**
    * User-reported: "the delete button for a set does not work — clicking it
    * fails to remove the set."
    *
@@ -432,8 +522,16 @@ function ExerciseRow({
     dragX.set(0);
   };
 
+  // Single-line `sm:` grid: index, [weight], count, RIR, RPE, delete.
+  const smGridTemplate = isBodyweightOnly
+    ? "sm:grid-cols-[28px_1fr_0.7fr_0.7fr_40px]"
+    : "sm:grid-cols-[28px_1fr_1fr_0.7fr_0.7fr_40px]";
+  const col = isBodyweightOnly
+    ? { idx: 1, weight: 0, count: 2, rir: 3, rpe: 4, del: 5 }
+    : { idx: 1, weight: 2, count: 3, rir: 4, rpe: 5, del: 6 };
+
   return (
-    <div className="relative overflow-hidden rounded-xl">
+    <div className="relative overflow-hidden rounded-2xl">
       {canRemove && (
         <motion.div
           style={{ opacity: deleteOpacity }}
@@ -453,58 +551,101 @@ function ExerciseRow({
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, height: 0, marginBottom: 0 }}
         transition={{ duration: 0.2 }}
-        className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-3 sm:p-4 space-y-3"
+        className="rounded-2xl border border-gym-border/30 bg-gym-bg-elevated/70 p-3 sm:p-4 space-y-3"
       >
-        <div className="grid gap-3 sm:grid-cols-[minmax(140px,1.4fr)_minmax(100px,1fr)]">
-          <Field label={`Exercise ${index + 1}`} error={errors[`ex.${row.id}.name`]} className="mb-0">
-            <ExerciseNameInput
-              value={row.name}
-              invalid={!!errors[`ex.${row.id}.name`]}
-              onChange={(name, suggestedMuscle) =>
-                onUpdate({
-                  name,
-                  // Typing a CUSTOM exercise name never set a muscle group,
-                  // unlike picking one from the list (onPick below), so every
-                  // custom exercise failed submit on "Pick a muscle group" —
-                  // a field the athlete had no reason to think was required.
-                  // Seed it from the category they're browsing under, but
-                  // only where that's unambiguous (see categoryToMuscleGroup)
-                  // and only when they haven't already chosen one themselves.
-                  muscleGroup: row.muscleGroup || suggestedMuscle || "",
-                  weightEntryMode: name.trim()
-                    ? defaultWeightEntryMode(name)
-                    : row.weightEntryMode,
-                  // A previously-picked attachment (e.g. "rope") almost
-                  // certainly doesn't apply once the exercise itself
-                  // changes — reset rather than silently carry it over.
-                  attachment: null,
-                })
-              }
-              onPick={(name, muscle) =>
-                onUpdate({
-                  name,
-                  muscleGroup: muscle,
-                  weightEntryMode: defaultWeightEntryMode(name),
-                  attachment: null,
-                })
-              }
-            />
-          </Field>
-          <Field label="Muscle" error={errors[`ex.${row.id}.muscle`]} className="mb-0">
-            <MuscleSelect
-              value={row.muscleGroup}
-              invalid={!!errors[`ex.${row.id}.muscle`]}
-              onChange={(v) => onUpdate({ muscleGroup: v })}
-            />
-          </Field>
+        {/* Header — the exercise, and the two controls that act on it. The
+            remove button is visible at every width now: it used to be
+            `hidden sm:flex`, leaving swipe-to-delete (undiscoverable, and
+            nothing on screen suggests it) as the only way to drop an
+            exercise on the phone this app mostly runs on. */}
+        <div className="flex items-start gap-2.5">
+          <span className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gym-accent/10 text-xs font-bold tabular-nums text-gym-accent">
+            {index + 1}
+          </span>
+          <div className="min-w-0 flex-1 pt-1">
+            <p
+              className={cn(
+                "truncate text-[15px] font-semibold leading-tight",
+                hasName ? "text-foreground" : "text-muted/50"
+              )}
+            >
+              {hasName ? row.name : `Exercise ${index + 1}`}
+            </p>
+            <FieldError error={errors[`ex.${row.id}.name`]} />
+          </div>
+          {!showPicker && (
+            <button
+              type="button"
+              onClick={() => setPickerOpen(true)}
+              className="flex min-h-[40px] shrink-0 items-center rounded-lg px-2.5 text-xs font-semibold text-gym-accent transition-colors hover:bg-gym-accent/10"
+            >
+              Change
+            </button>
+          )}
+          <button
+            type="button"
+            /* Never inert — on the last exercise this clears it. Same
+               reasoning as the per-set button; see removeRow. */
+            aria-label={canRemove ? `Remove exercise ${index + 1}` : "Clear this exercise"}
+            title={canRemove ? "Remove this exercise" : "Clear this exercise"}
+            onClick={onRemove}
+            className="flex min-h-[40px] min-w-[40px] shrink-0 items-center justify-center rounded-lg text-muted transition-colors duration-200 hover:bg-danger/10 hover:text-danger"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
         </div>
 
-        {showConventionPicker ? (
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted/60">
-              Load convention
-            </span>
-            {loadConfig!.allowedConventions.map((convention) => {
+        {showPicker && (
+          <ExerciseNameInput
+            value={row.name}
+            invalid={!!errors[`ex.${row.id}.name`]}
+            onChange={(name, suggestedMuscle) => {
+              // Typing a custom name keeps the picker open — see pickerOpen.
+              setPickerOpen(true);
+              onUpdate({
+                name,
+                // Typing a CUSTOM exercise name never set a muscle group,
+                // unlike picking one from the list (onPick below), so every
+                // custom exercise failed submit on "Pick a muscle group" —
+                // a field the athlete had no reason to think was required.
+                // Seed it from the category they're browsing under, but
+                // only where that's unambiguous (see categoryToMuscleGroup)
+                // and only when they haven't already chosen one themselves.
+                muscleGroup: row.muscleGroup || suggestedMuscle || "",
+                weightEntryMode: name.trim()
+                  ? defaultWeightEntryMode(name)
+                  : row.weightEntryMode,
+                // A previously-picked attachment (e.g. "rope") almost
+                // certainly doesn't apply once the exercise itself
+                // changes — reset rather than silently carry it over.
+                attachment: null,
+              });
+            }}
+            onPick={(name, muscle) => {
+              setPickerOpen(false);
+              onUpdate({
+                name,
+                muscleGroup: muscle,
+                weightEntryMode: defaultWeightEntryMode(name),
+                attachment: null,
+              });
+            }}
+            onDone={hasName ? () => setPickerOpen(false) : undefined}
+          />
+        )}
+
+        {/* Exercise-level settings: muscle group (required by submit, so it
+            stays on screen), load convention, attachment. */}
+        <div className="flex flex-wrap items-center gap-2">
+          <MuscleSelect
+            compact
+            className="w-[148px]"
+            value={row.muscleGroup}
+            invalid={!!errors[`ex.${row.id}.muscle`]}
+            onChange={(v) => onUpdate({ muscleGroup: v })}
+          />
+          {showConventionPicker &&
+            loadConfig!.allowedConventions.map((convention) => {
               const mode = conventionToMode(convention);
               return (
                 <button
@@ -512,7 +653,7 @@ function ExerciseRow({
                   type="button"
                   onClick={() => onUpdate({ weightEntryMode: mode })}
                   className={cn(
-                    "rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors min-h-[36px]",
+                    "rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors min-h-[40px]",
                     row.weightEntryMode === mode
                       ? "bg-gym-accent/15 text-gym-accent border border-gym-accent/30"
                       : "bg-white/[0.03] text-muted border border-white/[0.06] hover:text-foreground"
@@ -522,11 +663,10 @@ function ExerciseRow({
                 </button>
               );
             })}
-            {loadConfig!.conventionNote && (
-              <p className="w-full text-[11px] text-muted/70">{loadConfig!.conventionNote}</p>
-            )}
-          </div>
-        ) : loadConfig?.conventionNote ? (
+        </div>
+        <FieldError error={errors[`ex.${row.id}.muscle`]} />
+
+        {loadConfig?.conventionNote ? (
           <p className="text-[11px] text-muted/70">{loadConfig.conventionNote}</p>
         ) : isBodyweightOnly ? (
           <p className="text-[11px] text-muted/70">
@@ -545,12 +685,12 @@ function ExerciseRow({
         <ExerciseHistoryHint history={history} exerciseName={row.name} unit={weightUnit} />
 
         <div className="space-y-2">
+          {/* Column headers belong to the single-line sm layout only. The
+              mobile rows label their own secondary inputs inline instead. */}
           <div
             className={cn(
-              "grid gap-2 px-1 text-[10px] font-semibold uppercase tracking-wider text-muted/60",
-              isBodyweightOnly
-                ? "grid-cols-[20px_0.6fr_0.55fr_0.55fr_auto] sm:grid-cols-[28px_1fr_0.7fr_0.7fr_40px]"
-                : "grid-cols-[20px_1.4fr_0.6fr_0.55fr_0.55fr_auto] sm:grid-cols-[28px_1fr_1fr_0.7fr_0.7fr_40px]"
+              "hidden gap-2 px-1 text-[10px] font-semibold uppercase tracking-wider text-muted/60 sm:grid",
+              smGridTemplate
             )}
           >
             <span>Set</span>
@@ -560,36 +700,25 @@ function ExerciseRow({
             <span>RPE</span>
             <span />
           </div>
-          {row.sets.map((set, setIndex) => (
-            <div
-              key={set.id}
-              className={cn(
-                "grid gap-2 items-center",
-                isBodyweightOnly
-                  ? "grid-cols-[20px_0.6fr_0.55fr_0.55fr_auto] sm:grid-cols-[28px_1fr_0.7fr_0.7fr_40px]"
-                  : "grid-cols-[20px_1.4fr_0.6fr_0.55fr_0.55fr_auto] sm:grid-cols-[28px_1fr_1fr_0.7fr_0.7fr_40px]"
-              )}
-            >
-              <span className="text-xs text-muted/70 text-center tabular-nums">{setIndex + 1}</span>
-              {!isBodyweightOnly && (
-                <UnitInput
-                  aria-label={`Set ${setIndex + 1} weight`}
-                  value={set.weight}
-                  unit={weightUnit}
-                  placeholder={row.weightEntryMode === "added" ? "0 = bodyweight" : "60"}
-                  invalid={!!errors[`ex.${row.id}.set.${set.id}.weight`]}
-                  onChange={(e) => updateSet(set.id, { weight: e.target.value })}
-                  className="h-11 sm:h-10"
-                />
-              )}
-              {tracking === "time" ? (
+          {/* One set = one tap target group. On mobile the row splits in two:
+              the numbers you came to type (weight, reps) get the full width,
+              and the effort ratings sit on a slim second line — still on
+              screen, never behind a disclosure, just no longer squeezing four
+              inputs into 223px. That old five-column grid gave RIR and RPE
+              ~24px of usable text width each at 375px, which clips a
+              two-digit number. At `sm` the wrappers become `display: contents`
+              and every cell rejoins the original single-line grid. */}
+          {row.sets.map((set, setIndex) => {
+            const countInput =
+              tracking === "time" ? (
                 <UnitInput
                   aria-label={`Set ${setIndex + 1} hold time in seconds`}
                   value={set.durationSeconds ?? ""}
                   placeholder="60"
                   invalid={!!errors[`ex.${row.id}.set.${set.id}.duration`]}
                   onChange={(e) => updateSet(set.id, { durationSeconds: e.target.value })}
-                  className="h-11 px-2 sm:h-10 sm:px-4"
+                  wrapperClassName={cn("flex-1 sm:row-start-1", SM_COL[col.count])}
+                  className="h-12 px-3 sm:h-10 sm:px-4"
                 />
               ) : tracking === "distance" ? (
                 <UnitInput
@@ -598,7 +727,8 @@ function ExerciseRow({
                   placeholder="20"
                   invalid={!!errors[`ex.${row.id}.set.${set.id}.distance`]}
                   onChange={(e) => updateSet(set.id, { distanceMeters: e.target.value })}
-                  className="h-11 px-2 sm:h-10 sm:px-4"
+                  wrapperClassName={cn("flex-1 sm:row-start-1", SM_COL[col.count])}
+                  className="h-12 px-3 sm:h-10 sm:px-4"
                 />
               ) : (
                 <UnitInput
@@ -607,101 +737,172 @@ function ExerciseRow({
                   placeholder="8"
                   invalid={!!errors[`ex.${row.id}.set.${set.id}.reps`]}
                   onChange={(e) => updateSet(set.id, { reps: e.target.value })}
-                  className="h-11 px-2 sm:h-10 sm:px-4"
+                  wrapperClassName={cn("flex-1 sm:row-start-1", SM_COL[col.count])}
+                  className="h-12 px-3 sm:h-10 sm:px-4"
                 />
-              )}
-              <UnitInput
-                aria-label={`Set ${setIndex + 1} reps in reserve`}
-                value={set.repsInReserve}
-                placeholder="0"
-                invalid={!!errors[`ex.${row.id}.set.${set.id}.rir`]}
-                onChange={(e) => updateSet(set.id, { repsInReserve: e.target.value })}
-                className="h-11 px-2 sm:h-10 sm:px-4"
-              />
-              <UnitInput
-                aria-label={`Set ${setIndex + 1} RPE`}
-                value={set.rpe}
-                placeholder="8"
-                invalid={!!errors[`ex.${row.id}.set.${set.id}.rpe`]}
-                onChange={(e) => updateSet(set.id, { rpe: e.target.value })}
-                className="h-11 px-2 sm:h-10 sm:px-4"
-              />
-              <button
-                type="button"
-                /* Never disabled — see removeSet. On the last remaining set
-                   this clears the row rather than deleting it, so the label
-                   has to say which, for screen readers and for the tooltip. */
-                aria-label={
-                  row.sets.length <= 1
-                    ? `Clear set ${setIndex + 1}`
-                    : `Remove set ${setIndex + 1}`
-                }
-                title={row.sets.length <= 1 ? "Clear this set" : "Remove this set"}
-                onClick={() => removeSet(set.id)}
-                className="rounded-lg p-2 text-muted transition-colors duration-200 hover:bg-danger/10 hover:text-danger min-h-[44px] min-w-[36px] flex items-center justify-center"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          ))}
-          <FieldError error={errors[`ex.${row.id}.sets`]} />
-          <button
-            type="button"
-            onClick={addSet}
-            className="flex items-center gap-1.5 text-xs font-medium text-gym-accent hover:text-gym-accent/80 min-h-[36px]"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            Add set
-          </button>
-        </div>
+              );
 
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-wrap gap-2">
-            <DerivedChip label="Est. 1RM" value={oneRm ? `${oneRm} kg` : null} tone="strength" />
-            <DerivedChip
-              label="× BW"
-              value={relativeBw ? formatRelativeStrength(relativeBw, true) : null}
-              tone="strength"
-            />
-            <DerivedChip label="Volume" value={volume > 0 ? `${Math.round(volume)} kg` : null} tone="strength" />
-            {/* User feedback: "why is the scoring system in the lab when
-                logging exercises still out of 999 not 99.9" — engineScore
-                is the same internal 0-999 scale as every other score in the
-                app; every other surface (dashboard, success screen, etc.)
-                runs it through formatIndex() before display, this one
-                didn't, so it showed the raw internal number instead of the
-                app-wide 0-99.9 display scale. */}
-            <span
-              className={cn(
-                "inline-flex items-center rounded-md px-2 py-0.5 text-sm font-bold tabular-nums",
-                engineScore ? "text-gym-accent bg-gym-accent/10" : "text-gym-muted/50"
-              )}
+            return (
+              <div
+                key={set.id}
+                className={cn(
+                  "rounded-xl bg-white/[0.025] p-2 sm:items-center sm:gap-2 sm:bg-transparent sm:p-0",
+                  "sm:grid",
+                  smGridTemplate
+                )}
+              >
+                <div className="flex items-center gap-2 sm:contents">
+                  <span
+                    className={cn(
+                      "w-6 shrink-0 text-center text-xs font-semibold tabular-nums text-muted/70 sm:row-start-1 sm:w-auto",
+                      SM_COL[col.idx]
+                    )}
+                  >
+                    {setIndex + 1}
+                  </span>
+                  {!isBodyweightOnly && (
+                    <UnitInput
+                      aria-label={`Set ${setIndex + 1} weight`}
+                      value={set.weight}
+                      unit={weightUnit}
+                      placeholder={row.weightEntryMode === "added" ? "0 = bw" : "60"}
+                      invalid={!!errors[`ex.${row.id}.set.${set.id}.weight`]}
+                      onChange={(e) => updateSet(set.id, { weight: e.target.value })}
+                      wrapperClassName={cn("flex-1 sm:row-start-1", SM_COL[col.weight])}
+                      className="h-12 px-3 sm:h-10 sm:px-4"
+                    />
+                  )}
+                  {countInput}
+                  <button
+                    type="button"
+                    /* Never disabled — see removeSet. On the last remaining set
+                       this clears the row rather than deleting it, so the label
+                       has to say which, for screen readers and for the tooltip. */
+                    aria-label={
+                      row.sets.length <= 1
+                        ? `Clear set ${setIndex + 1}`
+                        : `Remove set ${setIndex + 1}`
+                    }
+                    title={row.sets.length <= 1 ? "Clear this set" : "Remove this set"}
+                    onClick={() => removeSet(set.id)}
+                    className={cn(
+                      "flex min-h-[44px] min-w-[40px] shrink-0 items-center justify-center rounded-lg text-muted transition-colors duration-200 hover:bg-danger/10 hover:text-danger sm:row-start-1",
+                      SM_COL[col.del]
+                    )}
+                  >
+                    <Trash2 className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
+                  </button>
+                </div>
+                <div className="mt-2 flex items-center gap-2 pl-8 sm:mt-0 sm:contents">
+                  <div
+                    className={cn(
+                      "flex min-w-0 flex-1 items-center gap-1.5 sm:row-start-1 sm:block",
+                      SM_COL[col.rir]
+                    )}
+                  >
+                    <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-muted/60 sm:hidden">
+                      RIR
+                    </span>
+                    <UnitInput
+                      aria-label={`Set ${setIndex + 1} reps in reserve`}
+                      value={set.repsInReserve}
+                      placeholder="0"
+                      invalid={!!errors[`ex.${row.id}.set.${set.id}.rir`]}
+                      onChange={(e) => updateSet(set.id, { repsInReserve: e.target.value })}
+                      wrapperClassName="flex-1"
+                      className="h-10 px-3 sm:h-10 sm:px-4"
+                    />
+                  </div>
+                  <div
+                    className={cn(
+                      "flex min-w-0 flex-1 items-center gap-1.5 sm:row-start-1 sm:block",
+                      SM_COL[col.rpe]
+                    )}
+                  >
+                    <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-muted/60 sm:hidden">
+                      RPE
+                    </span>
+                    <UnitInput
+                      aria-label={`Set ${setIndex + 1} RPE`}
+                      value={set.rpe}
+                      placeholder="8"
+                      invalid={!!errors[`ex.${row.id}.set.${set.id}.rpe`]}
+                      onChange={(e) => updateSet(set.id, { rpe: e.target.value })}
+                      wrapperClassName="flex-1"
+                      className="h-10 px-3 sm:h-10 sm:px-4"
+                    />
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+          <FieldError error={errors[`ex.${row.id}.sets`]} />
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={addSet}
+              className="flex min-h-[44px] flex-1 items-center justify-center gap-1.5 rounded-xl border border-dashed border-gym-border/50 text-sm font-semibold text-gym-accent transition-colors hover:border-gym-accent/50 hover:bg-gym-accent/5"
             >
-              {engineScore !== null ? formatIndex(engineScore) : "—"}
-            </span>
-          </div>
-          <div className="flex gap-1">
-            {canRemove && (
+              <Plus className="h-4 w-4" />
+              Add set
+            </button>
+            {lastFilledSet && (
               <button
                 type="button"
-                aria-label="Remove exercise"
-                onClick={onRemove}
-                className="rounded-lg p-2 text-muted transition-colors duration-200 hover:bg-danger/10 hover:text-danger min-h-[44px] min-w-[44px] items-center justify-center hidden sm:flex"
+                onClick={repeatLastSet}
+                title="Add a set with the same load and volume as the last one"
+                className="flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-xl border border-white/[0.08] px-3 text-sm font-medium text-muted transition-colors hover:text-foreground"
               >
-                <Trash2 className="h-4 w-4" />
+                <Copy className="h-3.5 w-3.5" />
+                Repeat
               </button>
             )}
           </div>
         </div>
 
-        <Field label="Notes (optional)">
+        <div className="flex flex-wrap items-center gap-2">
+          <DerivedChip label="Est. 1RM" value={oneRm ? `${oneRm} kg` : null} tone="strength" />
+          <DerivedChip
+            label="× BW"
+            value={relativeBw ? formatRelativeStrength(relativeBw, true) : null}
+            tone="strength"
+          />
+          <DerivedChip label="Volume" value={volume > 0 ? `${Math.round(volume)} kg` : null} tone="strength" />
+          {/* User feedback: "why is the scoring system in the lab when
+              logging exercises still out of 999 not 99.9" — engineScore
+              is the same internal 0-999 scale as every other score in the
+              app; every other surface (dashboard, success screen, etc.)
+              runs it through formatIndex() before display, this one
+              didn't, so it showed the raw internal number instead of the
+              app-wide 0-99.9 display scale. */}
+          <span
+            className={cn(
+              "ml-auto inline-flex items-center rounded-md px-2 py-0.5 text-sm font-bold tabular-nums",
+              engineScore ? "text-gym-accent bg-gym-accent/10" : "text-gym-muted/50"
+            )}
+          >
+            {engineScore !== null ? formatIndex(engineScore) : "—"}
+          </span>
+        </div>
+
+        {noteOpen || row.notes ? (
           <GlassInput
             value={row.notes}
+            aria-label={`Notes for exercise ${index + 1}`}
             placeholder="Tempo, form cues, etc."
             onChange={(e) => onUpdate({ notes: e.target.value })}
-            className="h-11"
+            className="h-11 text-sm"
           />
-        </Field>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setNoteOpen(true)}
+            className="flex min-h-[36px] items-center gap-1.5 text-xs font-medium text-muted transition-colors hover:text-foreground"
+          >
+            <Plus className="h-3 w-3" />
+            Add a note
+          </button>
+        )}
       </motion.div>
     </div>
   );
@@ -737,7 +938,9 @@ function ExerciseHistoryHint({
     (!lastSet || personalRecord.weightKg !== lastSet.weightKg || personalRecord.reps !== lastSet.reps);
 
   return (
-    <p className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-white/[0.03] px-3 py-2 text-[11px] text-muted">
+    /* Sits directly above the set rows, so the number to beat is on the same
+       screen as the field you type it into — no navigating away. */
+    <p className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1 text-[11px] text-muted">
       {lastSet && (
         <span>
           Last time:{" "}
@@ -766,14 +969,16 @@ function MuscleSelect({
   invalid,
   onChange,
   compact,
+  className,
 }: {
   value: string;
   invalid?: boolean;
   onChange: (v: string) => void;
   compact?: boolean;
+  className?: string;
 }) {
   return (
-    <div className="relative">
+    <div className={cn("relative", className)}>
       <select
         value={value}
         aria-label="Muscle group"
@@ -784,7 +989,7 @@ function MuscleSelect({
           "cursor-pointer focus:border-accent/50 focus:ring-1 focus:ring-accent/30 outline-none",
           invalid && "border-danger/50",
           value === "" && "text-muted/50",
-          compact ? "h-10" : "h-11"
+          compact ? "h-10 text-sm" : "h-11"
         )}
       >
         <option value="" disabled className="bg-slate-900">
@@ -809,12 +1014,20 @@ function ExerciseNameInput({
   invalid,
   onChange,
   onPick,
+  onDone,
 }: {
   value: string;
   invalid?: boolean;
   /** `suggestedMuscle` is the active filter's muscle group when unambiguous — see the caller. */
   onChange: (value: string, suggestedMuscle: string | null) => void;
   onPick: (name: string, muscle: string) => void;
+  /**
+   * Collapse the picker back to the card header. Picking from the list does
+   * this on its own (see onPick's caller); a custom name has no such moment —
+   * every keystroke is a valid, unfinished name — so it gets an explicit
+   * "Done". Undefined while there's nothing to collapse to.
+   */
+  onDone?: () => void;
 }) {
   const [customMode, setCustomMode] = useState(false);
   const [search, setSearch] = useState("");
@@ -853,23 +1066,35 @@ function ExerciseNameInput({
           className="h-11 sm:h-10"
           onChange={(e) => onChange(e.target.value, suggestedMuscle)}
         />
-        <button
-          type="button"
-          onClick={() => {
-            // Clearing only `customMode` isn't enough: the render condition
-            // above (`customMode || (value && !knownExercise)`) re-enters
-            // custom mode on the very next render whenever `value` still
-            // holds unrecognized custom text — which it always does right
-            // after typing a custom name. That made this button silently
-            // no-op instead of returning to the picker.
-            setCustomMode(false);
-            setSearch("");
-            onChange("", null);
-          }}
-          className="text-xs text-gym-accent hover:text-gym-accent/80"
-        >
-          ← Pick from list
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => {
+              // Clearing only `customMode` isn't enough: the render condition
+              // above (`customMode || (value && !knownExercise)`) re-enters
+              // custom mode on the very next render whenever `value` still
+              // holds unrecognized custom text — which it always does right
+              // after typing a custom name. That made this button silently
+              // no-op instead of returning to the picker.
+              setCustomMode(false);
+              setSearch("");
+              onChange("", null);
+            }}
+            className="flex min-h-[36px] items-center text-xs text-gym-accent hover:text-gym-accent/80"
+          >
+            ← Pick from list
+          </button>
+          {onDone && (
+            <button
+              type="button"
+              onClick={onDone}
+              className="ml-auto flex min-h-[36px] items-center gap-1.5 rounded-lg bg-gym-accent/10 px-3 text-xs font-semibold text-gym-accent hover:bg-gym-accent/20"
+            >
+              <Check className="h-3.5 w-3.5" />
+              Done
+            </button>
+          )}
+        </div>
       </div>
     );
   }
@@ -906,7 +1131,7 @@ function ExerciseNameInput({
           placeholder="Filter exercises…"
           aria-label="Filter exercises"
           autoComplete="off"
-          className="pl-9 h-10 mb-2"
+          className="pl-9 h-10"
           onChange={(e) => setSearch(e.target.value)}
         />
       </div>
@@ -949,11 +1174,9 @@ function ExerciseNameInput({
         />
       </div>
 
-      {value && (
-        <p className="text-xs text-gym-muted">
-          Selected: <span className="text-gym-accent font-medium">{value}</span>
-        </p>
-      )}
+      {/* No "Selected: X" line — the card header above the picker already
+          shows the chosen exercise, in a larger type size, and keeps showing
+          it after the picker collapses. */}
     </div>
   );
 }

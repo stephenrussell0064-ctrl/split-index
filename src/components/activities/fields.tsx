@@ -89,18 +89,28 @@ export function GlassInput({
   );
 }
 
-/** Numeric-friendly input: inputMode decimal, unit suffix inside the field. */
+/**
+ * Numeric-friendly input: inputMode decimal, unit suffix inside the field.
+ *
+ * `className` styles the <input>; `wrapperClassName` styles the positioning
+ * div that actually becomes the flex/grid child. They're separate because the
+ * set rows in gym-form.tsx place this component directly into a CSS grid —
+ * `sm:col-start-*` and `flex-1` have to land on the wrapper to have any
+ * effect, while `h-*` has to land on the input.
+ */
 export function UnitInput({
   unit,
   invalid,
   className,
+  wrapperClassName,
   ...props
 }: React.InputHTMLAttributes<HTMLInputElement> & {
   unit?: string;
   invalid?: boolean;
+  wrapperClassName?: string;
 }) {
   return (
-    <div className="relative">
+    <div className={cn("relative min-w-0", wrapperClassName)}>
       <input
         type="text"
         inputMode="decimal"
@@ -122,29 +132,146 @@ export function UnitInput({
   );
 }
 
-/** Forgiving duration entry: separate H / M / S boxes. */
+/**
+ * The one or two numbers an athlete actually came to type — distance and
+ * duration on a cardio session. Same input, same validation, same state;
+ * just sized so it dominates the screen rather than sitting in the identical
+ * 44px box as "Temperature". Unit is rendered as a static suffix rather than
+ * placeholder text so it stays readable at this size.
+ */
+export function HeroInput({
+  unit,
+  invalid,
+  className,
+  wrapperClassName,
+  ...props
+}: React.InputHTMLAttributes<HTMLInputElement> & {
+  unit?: string;
+  invalid?: boolean;
+  wrapperClassName?: string;
+}) {
+  return (
+    <div className={cn("relative min-w-0", wrapperClassName)}>
+      <input
+        type="text"
+        inputMode="decimal"
+        autoComplete="off"
+        className={cn(
+          "h-16 w-full rounded-2xl glass px-4 text-3xl font-semibold tracking-tight text-foreground",
+          "placeholder:text-muted/30 placeholder:font-normal border border-white/10",
+          "focus:border-accent/50 focus:ring-1 focus:ring-accent/30",
+          "transition-colors duration-200 outline-none tabular-nums",
+          unit && "pr-14",
+          invalid && "border-danger/50 focus:border-danger/50 focus:ring-danger/30",
+          className
+        )}
+        {...props}
+      />
+      {unit && (
+        <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-xs font-medium uppercase tracking-wider text-muted/60">
+          {unit}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Read-only derived headline (pace, split, speed) shown at the same visual
+ * weight as the numbers it's derived from, so the athlete can see the figure
+ * they care about without hunting for a chip.
+ */
+export function HeroReadout({
+  label,
+  value,
+  placeholder,
+  tone = "endurance",
+}: {
+  label: string;
+  value: string | null;
+  placeholder: string;
+  tone?: "endurance" | "strength";
+}) {
+  return (
+    <div
+      className={cn(
+        "flex min-w-0 flex-col justify-center gap-0.5 rounded-2xl border px-4 py-3",
+        tone === "endurance"
+          ? "border-endurance/20 bg-endurance/[0.06]"
+          : "border-strength/20 bg-strength/[0.06]"
+      )}
+    >
+      <MicroLabel className="text-muted/70">{label}</MicroLabel>
+      <p
+        className={cn(
+          "truncate text-2xl font-semibold tabular-nums tracking-tight",
+          value
+            ? tone === "endurance"
+              ? "text-endurance"
+              : "text-strength"
+            : "text-muted/40 text-base font-normal"
+        )}
+      >
+        {value ?? placeholder}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * Forgiving duration entry: separate H / M / S boxes.
+ *
+ * `size="hero"` matches HeroInput's height and type scale so distance and
+ * duration read as a matched pair of primary inputs on the cardio form. The
+ * unit sits under each box there rather than inside it — at 3xl there isn't
+ * room for both the number and an inline suffix at 375px.
+ */
 export function DurationInput({
   hours,
   minutes,
   seconds,
   onChange,
   invalid,
+  size = "default",
 }: {
   hours: string;
   minutes: string;
   seconds: string;
   onChange: (part: "hours" | "minutes" | "seconds", value: string) => void;
   invalid?: boolean;
+  size?: "default" | "hero";
 }) {
+  const parts = [
+    { key: "hours", value: hours, unit: "hr", placeholder: "0" },
+    { key: "minutes", value: minutes, unit: "min", placeholder: "45" },
+    { key: "seconds", value: seconds, unit: "sec", placeholder: "00" },
+  ] as const;
+
+  if (size === "hero") {
+    return (
+      <div className="grid grid-cols-3 gap-2">
+        {parts.map((part) => (
+          <div key={part.key} className="min-w-0">
+            <HeroInput
+              aria-label={`Duration ${part.unit}`}
+              value={part.value}
+              placeholder={part.placeholder}
+              invalid={invalid}
+              className="px-2 text-center"
+              onChange={(e) => onChange(part.key, e.target.value)}
+            />
+            <p className="mt-1 text-center text-[10px] font-medium uppercase tracking-wider text-muted/60">
+              {part.unit}
+            </p>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   return (
     <div className="grid grid-cols-3 gap-2">
-      {(
-        [
-          { key: "hours", value: hours, unit: "hr", placeholder: "0" },
-          { key: "minutes", value: minutes, unit: "min", placeholder: "45" },
-          { key: "seconds", value: seconds, unit: "sec", placeholder: "00" },
-        ] as const
-      ).map((part) => (
+      {parts.map((part) => (
         <UnitInput
           key={part.key}
           aria-label={`Duration ${part.unit}`}
