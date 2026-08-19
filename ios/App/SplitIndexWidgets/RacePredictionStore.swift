@@ -38,6 +38,59 @@ public struct RacePredictionEntry: Codable, Hashable {
     }
 }
 
+/// One of squat/bench/deadlift at the athlete's best-ever estimated 1RM.
+/// `kg` is always a real logged lift — there is no sentinel value, and a
+/// lift the athlete has never done is absent rather than zero.
+public struct StrengthLiftEntry: Codable, Hashable {
+    /// "Squat", "Bench", "Deadlift", labelled by the web app so the two
+    /// surfaces can't name the same lift differently.
+    public var label: String
+    public var kg: Double
+
+    public init(label: String, kg: Double) {
+        self.label = label
+        self.kg = kg
+    }
+}
+
+/// The strength half of the widget.
+///
+/// Two states rather than three, unlike the race half, and the asymmetry is
+/// intentional: a race prediction is an extrapolation that needs a minimum
+/// of evidence before it says anything true, so it has a "calibrating"
+/// state. A best-ever squat is just a squat — one session is enough to
+/// state it honestly, so there is nothing to calibrate towards.
+public struct StrengthSnapshot: Codable, Hashable {
+    public enum Status: String, Codable {
+        /// At least one of the big three has been logged; `lifts` is non-empty.
+        case ready
+        /// Nothing logged, or no bodyweight on file for the app to score
+        /// against — matching exactly when the dashboard's own SBD tile
+        /// shows a dash. Show the invitation, never a 0 kg.
+        case noData
+    }
+
+    public var status: Status
+    /// Only the lifts actually logged, in platform order.
+    public var lifts: [StrengthLiftEntry]
+    /// Sum of whichever lifts are present — the dashboard's "SBD Prediction".
+    public var totalKg: Double
+    /// How many of the three have ever been logged (0–3).
+    public var liftsLogged: Int
+
+    public init(
+        status: Status,
+        lifts: [StrengthLiftEntry] = [],
+        totalKg: Double = 0,
+        liftsLogged: Int = 0
+    ) {
+        self.status = status
+        self.lifts = lifts
+        self.totalKg = totalKg
+        self.liftsLogged = liftsLogged
+    }
+}
+
 public struct RacePredictionSnapshot: Codable, Hashable {
     public enum Status: String, Codable {
         /// A real Tier 2 prediction exists — `headline` is non-nil.
@@ -64,6 +117,13 @@ public struct RacePredictionSnapshot: Codable, Hashable {
     /// When the app last handed these numbers over — NOT when the athlete
     /// last ran. Shown so a long-stale widget reads as stale rather than current.
     public var updatedAt: Date
+    /// The strength half. OPTIONAL, and it must stay optional: a payload
+    /// written by the build that shipped before strength existed is still
+    /// sitting in the container on every phone that has this widget, and a
+    /// non-optional field here would fail to decode it — turning a working
+    /// race widget into "Not synced yet" until the athlete happened to open
+    /// the app again.
+    public var strength: StrengthSnapshot?
 
     public init(
         status: Status,
@@ -71,7 +131,8 @@ public struct RacePredictionSnapshot: Codable, Hashable {
         ladder: [RacePredictionEntry] = [],
         sampleCount: Int = 0,
         samplesNeeded: Int = 0,
-        updatedAt: Date = Date()
+        updatedAt: Date = Date(),
+        strength: StrengthSnapshot? = nil
     ) {
         self.status = status
         self.headline = headline
@@ -79,6 +140,7 @@ public struct RacePredictionSnapshot: Codable, Hashable {
         self.sampleCount = sampleCount
         self.samplesNeeded = samplesNeeded
         self.updatedAt = updatedAt
+        self.strength = strength
     }
 }
 
@@ -176,6 +238,15 @@ public enum RacePredictionStore {
 /// src/lib/scoring/presentation.ts, including its rounding rule: round the
 /// whole value ONCE up front, because rounding the seconds field on its own
 /// turns 1499.6s into "24:60" rather than "25:00".
+/// Whole kilos, as the dashboard's SBD tile prints them
+/// (`${Math.round(sbdTotalKg)} kg` in components/dashboard/hero-stat-wall.tsx).
+/// Deliberately not the one-decimal form the Analytics panel uses: a widget
+/// is read at a glance from a home screen, and ".5 kg" of estimated 1RM is
+/// precision the number doesn't actually carry.
+public func formatLiftKg(_ kg: Double) -> String {
+    "\(Int(kg.rounded())) kg"
+}
+
 public func formatRacePrediction(_ seconds: Double) -> String {
     let total = Int(seconds.rounded())
     let h = total / 3600

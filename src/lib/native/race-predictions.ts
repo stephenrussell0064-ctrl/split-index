@@ -2,8 +2,12 @@ import { registerPlugin } from "@capacitor/core";
 import { isNativePlatform, getNativePlatform } from "./platform";
 
 /**
- * Feeds the iOS home-screen race-prediction widget
- * (ios/App/SplitIndexWidgets/RacePredictionWidget.swift).
+ * Feeds the iOS home-screen widget
+ * (ios/App/SplitIndexWidgets/RacePredictionWidget.swift), which carries both
+ * halves of the Split Index: predicted race times and best-ever SBD lifts.
+ * The file and plugin keep their original race-only names because renaming
+ * either would break the wire between a freshly deployed web app and a
+ * native binary the athlete has not reinstalled yet.
  *
  * A widget extension is its own process: no WebView, no Supabase session,
  * no way to fetch anything. So the numbers have to be pushed to it from
@@ -36,7 +40,33 @@ export interface RacePredictionEntry {
   seconds: number;
 }
 
-export interface RacePredictionPayload {
+/**
+ * One of the big three, at the athlete's best-ever estimated 1RM.
+ *
+ * No "calibrating" equivalent exists here and that asymmetry is deliberate:
+ * a race prediction is an extrapolation that needs a minimum of evidence
+ * before it means anything, whereas a logged squat is a squat. One session
+ * is enough to state a best-ever lift honestly.
+ */
+export interface StrengthLiftEntry {
+  /** "Squat", "Bench", "Deadlift" — passed rather than re-derived natively so the two can't disagree. */
+  label: string;
+  /** Best-ever estimated 1RM in kg. Real and positive; the native side drops anything else. */
+  kg: number;
+}
+
+export interface StrengthPayload {
+  /** Two states, not three — see StrengthLiftEntry. */
+  status: "ready" | "noData";
+  /** Only the lifts actually logged. A never-benched athlete has no bench rung, rather than a 0kg one. */
+  lifts?: StrengthLiftEntry[];
+  /** Squat+bench+deadlift of whatever has been logged — the dashboard's "SBD Prediction" tile, same number. */
+  totalKg?: number;
+  /** How many of the three have ever been logged (0–3), as the dashboard prints it. */
+  liftsLogged?: number;
+}
+
+export interface SplitIndexWidgetPayload {
   status: RacePredictionStatus;
   /** The 5K — the headline everywhere in this app. Omit unless status is "ready". */
   headline?: RacePredictionEntry;
@@ -46,6 +76,17 @@ export interface RacePredictionPayload {
   sampleCount?: number;
   /** TIER2_MIN_SAMPLES_TO_DISPLAY; only meaningful while calibrating. */
   samplesNeeded?: number;
+  /**
+   * The strength half. Added after the widget shipped, and deliberately
+   * added as a SIBLING of the race fields rather than by nesting them both
+   * under a new parent: the app is served over the network to a native shell
+   * the athlete installs separately, so there is always a window where the
+   * deployed web app is newer than the binary on the phone. Keeping the race
+   * fields exactly where they were means an older build ignores `strength`
+   * and goes on publishing race predictions correctly, instead of failing to
+   * find `status` and reporting an athlete with a 5K time as having no data.
+   */
+  strength?: StrengthPayload;
 }
 
 /** What the widget can actually see, reported from the app's side of the App Group. */
@@ -62,11 +103,17 @@ export interface RacePredictionWidgetStatus {
   headlineLabel?: string;
   headlineSeconds?: number;
   appGroup?: string;
+  /** The strength half of the stored payload. Absent on a native build that predates it. */
+  strength?: {
+    status: "ready" | "noData";
+    totalKg?: number;
+    liftsLogged?: number;
+  };
 }
 
 interface RacePredictionsPlugin {
   /** `stored` is whether the payload reached the shared container; `containerReachable` is false when the App Groups entitlement isn't live, which no amount of retrying will fix. */
-  set(options: RacePredictionPayload): Promise<{ stored: boolean; containerReachable?: boolean }>;
+  set(options: SplitIndexWidgetPayload): Promise<{ stored: boolean; containerReachable?: boolean }>;
   clear(): Promise<{ cleared: boolean }>;
   /** Added after the widget shipped — an older native build rejects this, which callers treat as "unknown". */
   status(): Promise<RacePredictionWidgetStatus>;
@@ -105,7 +152,7 @@ export type RacePredictionPublishResult =
  * what let a fully-trained athlete's home screen tell them exactly that.
  */
 export async function publishRacePredictions(
-  payload: RacePredictionPayload
+  payload: SplitIndexWidgetPayload
 ): Promise<RacePredictionPublishResult> {
   if (!isRacePredictionWidgetSupported()) {
     return { published: false, reason: "unsupported" };

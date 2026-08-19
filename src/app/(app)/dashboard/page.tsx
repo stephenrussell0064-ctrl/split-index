@@ -45,7 +45,7 @@ import { tier2IsCalibrating, TIER2_MIN_SAMPLES_TO_DISPLAY } from "@/lib/scoring/
 import { riegelPredictions } from "@/lib/scoring/cardio-activity";
 import { formatPredictionLabel } from "@/lib/scoring/presentation";
 import { RacePredictionsSync } from "@/lib/native/race-predictions-sync";
-import type { RacePredictionPayload } from "@/lib/native/race-predictions";
+import type { SplitIndexWidgetPayload } from "@/lib/native/race-predictions";
 import { computeStreakMetrics } from "@/lib/retention/streak-utils";
 import { getGlobalRankPercentile, getNextRankTarget, seedRetentionNotifications } from "@/lib/retention/rank";
 import { isPremiumUser, hasSoftTrialAccess } from "@/lib/retention/trial";
@@ -61,6 +61,13 @@ const HEATMAP_DAYS = 112;
 
 /** Race-ladder rungs worth showing on the iOS home-screen widget, as distance-in-meters keys of `riegelPredictions`. 10K and Half only — the 5K is the widget's headline already, and 1500m/marathon don't earn the space on a small card. */
 const LADDER_WIDGET_DISTANCES = ["10000", "21097.5"];
+
+/** The big three for the widget's strength half, in platform order. Labels are passed to the widget rather than re-derived natively, exactly as the race labels are, so the two surfaces can't name a lift differently. */
+const SBD_WIDGET_LIFTS = [
+  { key: "squat", label: "Squat" },
+  { key: "bench", label: "Bench" },
+  { key: "deadlift", label: "Deadlift" },
+] as const;
 
 function findSnapshotOlderThan(
   history: SplitIndexSnapshot[],
@@ -272,7 +279,30 @@ export default async function DashboardPage() {
   // can never show different answers — and it publishes the calibrating /
   // empty states explicitly rather than staying silent, so the widget can
   // say why it has no time instead of inventing one.
-  const racePredictionPayload: RacePredictionPayload =
+  //
+  // The strength half is gated on the SAME `overallDotsGl` object as the
+  // hero wall's "SBD Prediction" tile, for the same reason: whatever makes
+  // that tile show a dash must make the widget show words, or the two
+  // surfaces contradict each other about the same athlete. Note that DOTS
+  // and IPF GL are deliberately NOT published — they're premium-gated
+  // (canAccessProfile("strength_dots_gl")), and a widget has nowhere to
+  // enforce a gate. Best-ever lifts and the SBD total are free-tier, which
+  // is exactly what the hero tile already shows everyone.
+  const strengthPayload: SplitIndexWidgetPayload["strength"] =
+    overallDotsGl && overallDotsGl.sbdTotalKg > 0
+      ? {
+          status: "ready",
+          // Only lifts actually logged. A squat-and-deadlift athlete gets
+          // two rungs, never a 0 kg bench sitting between them.
+          lifts: SBD_WIDGET_LIFTS.filter(
+            ({ key }) => overallDotsGl.bestSbdKg[key] > 0
+          ).map(({ key, label }) => ({ label, kg: overallDotsGl.bestSbdKg[key] })),
+          totalKg: overallDotsGl.sbdTotalKg,
+          liftsLogged: overallDotsGl.liftsLogged,
+        }
+      : { status: "noData" };
+
+  const racePredictionPayload: SplitIndexWidgetPayload =
     predicted5kSeconds !== null
       ? {
           status: "ready",
@@ -289,14 +319,16 @@ export default async function DashboardPage() {
               seconds,
             })),
           sampleCount: predictedRunBenchmark?.sampleCount ?? 0,
+          strength: strengthPayload,
         }
       : predictedRunBenchmark
         ? {
             status: "calibrating",
             sampleCount: predictedRunBenchmark.sampleCount,
             samplesNeeded: TIER2_MIN_SAMPLES_TO_DISPLAY,
+            strength: strengthPayload,
           }
-        : { status: "noData" };
+        : { status: "noData", strength: strengthPayload };
 
   const hasActivities = (recentActivities?.length ?? 0) > 0;
   const hasIndexHistory = !!latestIndex;

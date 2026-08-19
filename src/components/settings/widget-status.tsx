@@ -43,7 +43,7 @@ export function WidgetStatus() {
 
   if (!status) return null;
 
-  const { headline, detail, tone } = describe(status);
+  const report = describe(status);
 
   return (
     <Card>
@@ -56,27 +56,40 @@ export function WidgetStatus() {
       <CardContent className="space-y-2">
         <p
           className={
-            tone === "bad"
+            report.kind === "problem"
               ? "text-sm font-medium text-warning"
               : "text-sm font-medium"
           }
         >
-          {headline}
+          {report.headline}
         </p>
-        <p className="text-sm text-muted">{detail}</p>
+        {report.kind === "ok" && (
+          // Both halves, named, because "the widget is empty" has two
+          // completely different causes depending on which side is empty
+          // and only one of them is a fault worth acting on.
+          <ul className="space-y-1">
+            <li className="text-sm text-muted">
+              <span className="text-foreground">Races:</span> {report.race}
+            </li>
+            <li className="text-sm text-muted">
+              <span className="text-foreground">Lifts:</span> {report.lifts}
+            </li>
+          </ul>
+        )}
+        <p className="text-sm text-muted">{report.detail}</p>
       </CardContent>
     </Card>
   );
 }
 
-function describe(status: RacePredictionWidgetStatus): {
-  headline: string;
-  detail: string;
-  tone: "ok" | "bad";
-} {
+type WidgetReport =
+  | { kind: "problem"; headline: string; detail: string }
+  | { kind: "ok"; headline: string; detail: string; race: string; lifts: string };
+
+function describe(status: RacePredictionWidgetStatus): WidgetReport {
   if (status.state === "disconnected" || !status.containerReachable) {
     return {
-      tone: "bad",
+      kind: "problem",
       headline: "Not connected",
       detail:
         "This build of the app can't reach the storage it shares with the widget, so nothing sent from here arrives and the widget stays empty no matter how much you log. Nothing is wrong with your training data — this is fixed by a new build of the app, not by logging more.",
@@ -85,7 +98,7 @@ function describe(status: RacePredictionWidgetStatus): {
 
   if (status.state === "empty") {
     return {
-      tone: "bad",
+      kind: "problem",
       headline: "Connected, nothing sent yet",
       detail:
         "The widget can read from the app, but the app hasn't sent it anything. Open the home screen tab of Split Index once and it will fill in.",
@@ -94,27 +107,38 @@ function describe(status: RacePredictionWidgetStatus): {
 
   const sent = status.updatedAt ? formatSent(status.updatedAt) : "recently";
 
-  if (status.status === "ready" && status.headlineSeconds) {
-    return {
-      tone: "ok",
-      headline: `Showing your ${status.headlineLabel ?? "5K"}: ${formatRiegelPrediction(status.headlineSeconds)}`,
-      detail: `Sent to the widget ${sent}. If your home screen shows something different, remove the widget and add it again.`,
-    };
-  }
-
-  if (status.status === "calibrating") {
-    return {
-      tone: "ok",
-      headline: "Showing: still calibrating",
-      detail: `The widget is up to date as of ${sent}. It's showing your progress towards a prediction rather than a time, which matches the app.`,
-    };
-  }
-
   return {
-    tone: "ok",
-    headline: "Showing: no prediction yet",
-    detail: `The widget is up to date as of ${sent}. It's showing the empty state because that's genuinely what the app has — not because the connection is broken.`,
+    kind: "ok",
+    headline: `Connected · last sent ${sent}`,
+    race: describeRace(status),
+    lifts: describeLifts(status),
+    detail:
+      "If your home screen shows something different from this, remove the widget and add it again.",
   };
+}
+
+function describeRace(status: RacePredictionWidgetStatus): string {
+  if (status.status === "ready" && status.headlineSeconds) {
+    return `showing your ${status.headlineLabel ?? "5K"}, ${formatRiegelPrediction(status.headlineSeconds)}`;
+  }
+  if (status.status === "calibrating") {
+    return "still calibrating — showing progress, not a time, which matches the app";
+  }
+  return "no prediction yet — the widget says so because that's genuinely what the app has";
+}
+
+function describeLifts(status: RacePredictionWidgetStatus): string {
+  // Absent rather than "noData": this app version never sent a strength
+  // half at all, which is a different thing from sending an empty one and
+  // shouldn't be reported as "you have no lifts".
+  if (!status.strength) {
+    return "not sent by this version of the app — reinstall to get lifts on the widget";
+  }
+  if (status.strength.status === "ready" && status.strength.totalKg) {
+    const logged = status.strength.liftsLogged ?? 0;
+    return `showing ${Math.round(status.strength.totalKg)} kg total, ${logged}/3 lifts logged`;
+  }
+  return "no lifts yet — log a squat, bench, or deadlift";
 }
 
 /** Deliberately coarse. The exact second the payload was handed over is noise; whether it was minutes or weeks ago is the whole signal. */

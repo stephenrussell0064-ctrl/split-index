@@ -67,7 +67,8 @@ public class RacePredictionsPlugin: CAPPlugin, CAPBridgedPlugin {
             ladder: ladder,
             sampleCount: call.getInt("sampleCount") ?? 0,
             samplesNeeded: call.getInt("samplesNeeded") ?? 0,
-            updatedAt: Date()
+            updatedAt: Date(),
+            strength: Self.strength(from: call.getObject("strength"))
         )
 
         let stored = RacePredictionStore.save(snapshot)
@@ -105,6 +106,15 @@ public class RacePredictionsPlugin: CAPPlugin, CAPBridgedPlugin {
                 result["headlineLabel"] = headline.label
                 result["headlineSeconds"] = headline.seconds
             }
+            // Reported separately from the race half so Settings can say
+            // which SIDE of the widget is empty. "The widget is fine, you
+            // just haven't lifted" and "the widget never got your lifts"
+            // are different sentences and only one of them is a fault.
+            var strength = JSObject()
+            strength["status"] = snapshot.strength?.status.rawValue ?? "noData"
+            strength["totalKg"] = snapshot.strength?.totalKg ?? 0
+            strength["liftsLogged"] = snapshot.strength?.liftsLogged ?? 0
+            result["strength"] = strength
         }
 
         call.resolve(result)
@@ -126,6 +136,51 @@ public class RacePredictionsPlugin: CAPPlugin, CAPBridgedPlugin {
     /// label, a missing/zero/negative seconds value, or a non-finite double
     /// that slipped across the JS bridge. Callers treat nil as "no rung",
     /// so a malformed entry disappears instead of rendering as 0:00.
+    /// The strength half, held to the same standard as the race half: a
+    /// `ready` that arrives without a single usable lift is downgraded to
+    /// `noData` rather than published as an empty column. Nil when the key
+    /// is absent entirely, which is what a web app older than this field
+    /// sends — the widget then shows the strength side's empty state
+    /// instead of claiming the athlete has never lifted.
+    private static func strength(from object: JSObject?) -> StrengthSnapshot? {
+        guard let object else { return nil }
+
+        let statusRaw = object["status"] as? String ?? "noData"
+        // Read the nested array as plain Foundation types rather than
+        // `[JSObject]`. A failed bridge here would produce zero lifts, which
+        // this function would then honestly report as "never lifted" — a
+        // silent wrong empty state, which is the exact bug class this whole
+        // widget has already been burned by once. `[Any]` / `[String: Any]`
+        // is a cast that cannot fail on anything the WebView can send.
+        let rawLifts = object["lifts"] as? [Any] ?? []
+        let lifts = rawLifts.compactMap { lift(from: $0 as? [String: Any]) }
+
+        guard StrengthSnapshot.Status(rawValue: statusRaw) == .ready, !lifts.isEmpty else {
+            return StrengthSnapshot(status: .noData)
+        }
+
+        return StrengthSnapshot(
+            status: .ready,
+            lifts: lifts,
+            totalKg: (object["totalKg"] as? NSNumber)?.doubleValue ?? 0,
+            liftsLogged: (object["liftsLogged"] as? NSNumber)?.intValue ?? lifts.count
+        )
+    }
+
+    /// Nil for anything that isn't a real, positive load — same rule as the
+    /// race entries. A lift the athlete has never done must arrive as an
+    /// absent rung, never as 0 kg.
+    private static func lift(from object: [String: Any]?) -> StrengthLiftEntry? {
+        guard let object,
+              let label = object["label"] as? String,
+              !label.isEmpty,
+              let kg = (object["kg"] as? NSNumber)?.doubleValue,
+              kg.isFinite,
+              kg > 0
+        else { return nil }
+        return StrengthLiftEntry(label: label, kg: kg)
+    }
+
     private static func entry(from object: JSObject?) -> RacePredictionEntry? {
         guard let object,
               let label = object["label"] as? String,

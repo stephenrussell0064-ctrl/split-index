@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { publishRacePredictions, type RacePredictionPayload } from "./race-predictions";
+import { publishRacePredictions, type SplitIndexWidgetPayload } from "./race-predictions";
 
 /**
  * Renders nothing. Its only job is to carry the dashboard's already-computed
@@ -23,7 +23,7 @@ import { publishRacePredictions, type RacePredictionPayload } from "./race-predi
  * every run costs a native round-trip plus a WidgetKit timeline reload,
  * which is a metered system resource, not something to spend per render.
  */
-export function RacePredictionsSync({ payload }: { payload: RacePredictionPayload }) {
+export function RacePredictionsSync({ payload }: { payload: SplitIndexWidgetPayload }) {
   const serialized = JSON.stringify(payload);
 
   useEffect(() => {
@@ -31,7 +31,7 @@ export function RacePredictionsSync({ payload }: { payload: RacePredictionPayloa
     // depends on the value, not on the object identity a fresh server
     // render hands it every time.
     void publishRacePredictions(
-      JSON.parse(serialized) as RacePredictionPayload
+      JSON.parse(serialized) as SplitIndexWidgetPayload
     ).then((result) => {
       // "unsupported" is every web and Android render — not a fault, and
       // logging it would bury the one line that matters.
