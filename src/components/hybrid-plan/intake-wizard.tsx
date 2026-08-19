@@ -52,59 +52,58 @@ interface IntakeResponse {
 }
 
 const SECTION_META: Record<IntakeSection, { title: string; blurb: string; skipCost: string | null }> = {
-  safety: {
-    title: "Safety",
-    blurb: "Asked first, before anything else. A coach's first hour with any athlete is screening.",
+  health: {
+    title: "Health and injuries",
+    blurb: "Asked first, before anything else. A coach's first hour with any athlete is screening. Nothing here stops you getting a plan — it sets how hard the plan is allowed to be.",
     skipCost: null,
+  },
+  fuelling: {
+    title: "Fuelling",
+    blurb: "Questions about eating, kept apart from the medical screen because it is a different conversation. Training fasted is not counted against you.",
+    skipCost: "Skipping leaves bodyweight guidance switched off, which is the only thing these questions control.",
   },
   goal: {
-    title: "Your goal",
-    blurb: "What you are training for and when. The macrocycle length, the taper and the peak all measure back from it.",
+    title: "What you're training for",
+    blurb: "The disciplines, how long the block runs, and — only if you have one — the date it counts down to.",
     skipCost: null,
+  },
+  history: {
+    title: "What you have been doing",
+    blurb: "Your recent and best training, in numbers. Week 1 of your plan is built directly on these.",
+    skipCost:
+      "Skipping means your experience is assumed to be under six months in both domains, which halves your volume ramp.",
+  },
+  body: {
+    title: "Your numbers",
+    blurb: "What we worked out from your logged sessions and your profile. Every one of these is an estimate, so correct any you know better.",
+    skipCost: "Skipping means loads and heart-rate bands stay estimated, and wider than they need to be.",
+  },
+  training: {
+    title: "How you train",
+    blurb: "Where you train, how the gym week is carved up, and what you are happy to substitute.",
+    skipCost: "Skipping means a gym is assumed, with an upper/lower split and no substitutions.",
   },
   availability: {
-    title: "Availability",
-    blurb: "Which days, and what time of day. This drives the scheduler directly.",
+    title: "When you can train",
+    blurb: "Which days, what time, and how much. This drives the scheduler directly.",
     skipCost: null,
-  },
-  strength: {
-    title: "Current strength",
-    blurb: "Confirm what we already hold, and tell us how long you have been lifting.",
-    skipCost:
-      "Skipping means your lifting experience is assumed to be under a year, which blocks a competition peaking block and offers general preparation instead.",
-  },
-  endurance: {
-    title: "Current running",
-    blurb: "The on-ramp anchor. Week 1 of your plan is built on this number.",
-    skipCost:
-      "Skipping means your running experience is assumed to be under six months and your volume ramp is halved.",
-  },
-  heart_rate: {
-    title: "Heart rate",
-    blurb: "How much to trust the heart-rate bands in your plan.",
-    skipCost: "Skipping means heart-rate bands stay age-estimated and wider than they need to be.",
   },
   recovery: {
     title: "Recovery and life load",
     blurb: "The 'how are you doing' questions. Individually weak, collectively the difference between a plan that fits a life and one that fits a spreadsheet.",
     skipCost: "Skipping means sleep is assumed at 7 hours and life stress at average, which nudges your ramp rate.",
   },
-  preferences: {
-    title: "Preferences",
-    blurb: "Soft preferences the scheduler honours where it can.",
-    skipCost: "Skipping costs you nothing except sessions landing on days you'd rather they didn't.",
-  },
 };
 
 const ORDER: IntakeSection[] = [
-  "safety",
+  "health",
+  "fuelling",
   "goal",
   "availability",
-  "endurance",
-  "strength",
-  "heart_rate",
+  "history",
+  "body",
+  "training",
   "recovery",
-  "preferences",
 ];
 
 const DAY_OPTIONS = INTAKE_DAYS.map((d) => ({ value: d, label: d }));
@@ -225,21 +224,29 @@ export function IntakeWizard() {
     return answers.filter((a) => a === true).length;
   }, [get, intake, prefilled?.sex]);
 
-  // "A user who blocks here should never see a goal-setting screen."
-  const hardBlock = useMemo(() => {
+  // Advisory, not a gate.
+  //
+  // This was `hardBlock`, and it hid every section after the screen — so an
+  // athlete who reported a limiting injury never reached the goal screen at
+  // all, and the Save button was disabled so they could not even record their
+  // answers. The engine stopped refusing these people; the form had not, which
+  // meant the refusal simply moved up a layer where it was harder to see. The
+  // text is unchanged in substance and now sits at the top of the section it
+  // belongs to while the athlete carries on filling the form in.
+  const healthAdvisory = useMemo(() => {
     if (!intake || !prefilled) return null;
-    if (prefilled.age < 18) return "Under 18: peaking programmes for maximal-load competition are out of scope.";
+    if (prefilled.age < 18) return "Under 18: this plan is built for development rather than for peaking a maximal total, so loads are capped.";
     if (get("parq_positive", intake.parqPositive) === true || get("chest_pain_on_exertion", intake.chestPainOnExertion) === true) {
-      return "Medical clearance is required before any plan can be generated. Please see a GP or sports physician first.";
+      return "Please see a GP or sports physician about this before you train hard. Your plan is still built, and it stays at easy, conversational effort until you have been seen.";
     }
     if (get("pregnant_or_postpartum_12wk", intake.pregnantOrPostpartum12wk) === true) {
-      return "Pregnant or within 12 weeks postpartum: out of scope. A pelvic health physiotherapist is the right first call.";
+      return "Pregnant or within 12 weeks postpartum: a pelvic health physiotherapist is the right person to plan with. What follows is held well below maximal and is a starting point for that conversation.";
     }
     if (get("current_injury_limiting", intake.currentInjuryLimiting) === true) {
-      return "Currently limited by injury: rehabilitation is out of scope for this engine. A physiotherapist first, then come back.";
+      return "Currently limited by an injury: your block is capped below maximal and the ramp is halved. Rehabilitating the injury itself is a physiotherapist\u2019s job rather than this engine\u2019s.";
     }
     if (leaCount >= 2) {
-      return "Two or more low-energy-availability flags. No plan is generated and no bodyweight guidance is shown. A registered sports dietitian is the right next step; the National Alliance for Eating Disorders helpline is there if you want support.";
+      return "Your fuelling answers suggest you may be training on less energy than you are using. No bodyweight guidance will be shown. A registered sports dietitian is the right next step, and the National Alliance for Eating Disorders helpline is there if you want support.";
     }
     return null;
   }, [get, intake, leaCount, prefilled]);
@@ -292,14 +299,14 @@ export function IntakeWizard() {
         </div>
         <p className="mt-1 text-sm leading-relaxed text-muted">{meta.blurb}</p>
 
-        {hardBlock && section !== "safety" && (
-          <p className="mt-4 rounded-2xl border border-danger/30 bg-danger/[0.06] p-4 text-sm leading-relaxed text-danger">
-            {hardBlock}
+        {healthAdvisory && (section === "health" || section === "fuelling") && (
+          <p className="mt-4 rounded-2xl border border-warning/30 bg-warning/[0.06] p-4 text-sm leading-relaxed text-warning/90">
+            {healthAdvisory}
           </p>
         )}
 
         <div className="mt-4">
-          {section === "safety" && (
+          {section === "health" && (
             <>
               <Prefilled
                 label="Age"
@@ -330,12 +337,15 @@ export function IntakeWizard() {
                 <YesNo value={get("medication_affecting_hr", intake.medicationAffectingHr)} onChange={(v) => set("medication_affecting_hr", v)} />
               </Field>
 
-              <div className="mt-5 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4">
-                <p className="text-sm font-semibold">Fuelling and energy availability</p>
-                <p className="mt-1 text-xs leading-relaxed text-muted">
+            </>
+          )}
+
+          {section === "fuelling" && (
+            <>
+                <p className="text-xs leading-relaxed text-muted">
                   Hybrid athletes chasing a weight class and a run time are a higher-risk group for low energy
-                  availability. Two or more yes answers here means no plan and no bodyweight guidance — that is
-                  deliberate, and the referral it offers is the useful part.
+                  availability. These answers never stop you getting a plan — all they decide is whether
+                  bodyweight guidance is shown, and whether you are pointed at a dietitian.
                 </p>
                 <Field label="In the last 3 months, have you deliberately restricted food to change your weight or performance?" why="One of three. Assumed yes until answered.">
                   <YesNo value={get("lea_restricted_food", intake.leaRestrictedFood)} onChange={(v) => set("lea_restricted_food", v)} />
@@ -354,17 +364,10 @@ export function IntakeWizard() {
                     <YesNo value={get("lea_amenorrhoea", intake.leaAmenorrhoea)} onChange={(v) => set("lea_amenorrhoea", v)} />
                   </Field>
                 )}
-              </div>
-
-              {hardBlock && (
-                <p className="mt-4 rounded-2xl border border-danger/30 bg-danger/[0.06] p-4 text-sm leading-relaxed text-danger">
-                  {hardBlock}
-                </p>
-              )}
             </>
           )}
 
-          {section === "goal" && !hardBlock && (
+          {section === "goal" && (
             <>
               <Field label="What do you want to train for?" why="Decides which engines load. You can pick more than one, and none of them has to be a race." required>
                 <MultiSelect
@@ -528,7 +531,7 @@ export function IntakeWizard() {
             </>
           )}
 
-          {section === "availability" && !hardBlock && (
+          {section === "availability" && (
             <>
               <Field label="Which days can you train?" why="A hard scheduler constraint — at least three. Sessions are never placed on a day you have not picked." required>
                 <MultiSelect
@@ -580,7 +583,7 @@ export function IntakeWizard() {
                   ariaLabel="Max session minutes"
                 />
               </Field>
-              <Field label="Days you can get to a barbell" why="Strength sessions are only ever placed on these. Defaults to every day you train.">
+              <Field label="Days you can get to a gym" why="Strength sessions are only ever placed on these. Defaults to every day you train.">
                 <MultiSelect
                   options={DAY_OPTIONS}
                   selected={get("gym_access_days", intake.gymAccessDays) as string[]}
@@ -603,33 +606,27 @@ export function IntakeWizard() {
                   />
                 </Field>
               )}
+              <Field label="Best day for your longest session" why="A soft preference. The scheduler honours it unless a hard constraint says otherwise.">
+                <SelectField
+                  value={get("preferred_long_day", intake.preferredLongDay) as string | null}
+                  onChange={(v) => set("preferred_long_day", v)}
+                  options={DAY_OPTIONS}
+                  ariaLabel="Preferred long day"
+                />
+              </Field>
+              <Field label="Preferred rest day" why="Also soft. Every week gets at least one rest day regardless.">
+                <SelectField
+                  value={get("preferred_rest_day", intake.preferredRestDay) as string | null}
+                  onChange={(v) => set("preferred_rest_day", v)}
+                  options={DAY_OPTIONS}
+                  ariaLabel="Preferred rest day"
+                />
+              </Field>
             </>
           )}
 
-          {section === "endurance" && !hardBlock && (
+          {section === "history" && (
             <>
-
-              <Field label="Highest weekly running volume you have ever sustained for a month" why="A ceiling on the ramp. If you have held 300 min/week before, getting back there is a different problem from reaching it the first time.">
-                <NumberField
-                  value={get("previous_max_volume", intake.previousMaxVolume) as number | null}
-                  onChange={(v) => set("previous_max_volume", v)}
-                  min={0}
-                  max={800}
-                  suffix="min/week"
-                  ariaLabel="Previous max weekly volume"
-                />
-              </Field>
-              <Prefilled
-                label="Weekly running from your logs"
-                value={prefilled.loggedWeeklyRunMinutes != null ? `${Math.round(prefilled.loggedWeeklyRunMinutes)} min` : null}
-                source="8-week average from your logged sessions"
-                missing="no logged runs yet"
-              />
-              <Prefilled
-                label="Predicted 5k"
-                value={fmtDuration(prefilled.predicted5kS)}
-                source="From the prediction engine"
-              />
               <Field label="How many minutes of running are you doing in a typical week right now?" why="The single most important field here. Week 1 of your plan is exactly this number. If it disagrees with your logs, the lower of the two is used — starting above where you actually are is the most common way generated plans cause injury.">
                 <NumberField
                   value={get("current_run_min_per_week", intake.currentRunMinPerWeek) as number | null}
@@ -661,13 +658,42 @@ export function IntakeWizard() {
                   ariaLabel="Longest recent run"
                 />
               </Field>
-              <Field label="Happy to do some easy volume on a bike or rower?" why="Lets the engine swap some easy running for low-impact work, which limits interference with heavy lifting.">
-                <YesNo value={get("substitution_ok", intake.substitutionOk) as boolean} onChange={(v) => set("substitution_ok", v)} />
+              <Field label="Highest weekly running volume you have ever sustained for a month" why="A ceiling on the ramp. If you have held 300 min/week before, getting back there is a different problem from reaching it the first time.">
+                <NumberField
+                  value={get("previous_max_volume", intake.previousMaxVolume) as number | null}
+                  onChange={(v) => set("previous_max_volume", v)}
+                  min={0}
+                  max={800}
+                  suffix="min/week"
+                  ariaLabel="Previous max weekly volume"
+                />
               </Field>
+              <Field label="How many lifting sessions are you doing now?" why="Part of the on-ramp: the plan starts from what you are doing, not from what it would like you to do.">
+                <NumberField
+                  value={get("current_strength_sessions_per_week", intake.currentStrengthSessionsPerWeek) as number | null}
+                  onChange={(v) => set("current_strength_sessions_per_week", v)}
+                  min={0}
+                  max={10}
+                  suffix="per week"
+                  ariaLabel="Current lifting sessions per week"
+                />
+              </Field>
+              <Field label="How long have you trained the barbell lifts consistently?" why="Under 12 months means a competition peaking block is not appropriate, and a general preparation plan is offered instead. That is a gate, not a judgement — a novice does not need peaking, they need consistent exposure.">
+                <NumberField
+                  value={get("strength_training_years", intake.strengthTrainingYears) as number | null}
+                  onChange={(v) => set("strength_training_years", v)}
+                  min={0}
+                  max={40}
+                  step={0.5}
+                  suffix="years"
+                  ariaLabel="Years lifting"
+                />
+              </Field>
+
             </>
           )}
 
-          {section === "strength" && !hardBlock && (
+          {section === "training" && (
             <>
               {/* First, because it decides whether anything below is even
                   performable. "Do you have a barbell" was the old question and
@@ -724,6 +750,25 @@ export function IntakeWizard() {
                 </Field>
               )}
 
+              <Field label="Happy to do some easy volume on a bike or rower?" why="Lets the engine swap some easy running for low-impact work, which limits interference with heavy lifting.">
+                <YesNo value={get("substitution_ok", intake.substitutionOk) as boolean} onChange={(v) => set("substitution_ok", v)} />
+              </Field>
+            </>
+          )}
+
+          {section === "body" && (
+            <>
+              <Prefilled
+                label="Weekly running from your logs"
+                value={prefilled.loggedWeeklyRunMinutes != null ? `${Math.round(prefilled.loggedWeeklyRunMinutes)} min` : null}
+                source="8-week average from your logged sessions"
+                missing="no logged runs yet"
+              />
+              <Prefilled
+                label="Predicted 5k"
+                value={fmtDuration(prefilled.predicted5kS)}
+                source="From the prediction engine"
+              />
               {(["squat", "bench", "deadlift"] as const).map((lift) => {
                 const key = `${lift}_1rm_override` as const;
                 const current = {
@@ -747,32 +792,6 @@ export function IntakeWizard() {
                   />
                 );
               })}
-              <Field label="How long have you trained the barbell lifts consistently?" why="Under 12 months means a competition peaking block is not appropriate, and a general preparation plan is offered instead. That is a gate, not a judgement — a novice does not need peaking, they need consistent exposure.">
-                <NumberField
-                  value={get("strength_training_years", intake.strengthTrainingYears) as number | null}
-                  onChange={(v) => set("strength_training_years", v)}
-                  min={0}
-                  max={40}
-                  step={0.5}
-                  suffix="years"
-                  ariaLabel="Years lifting"
-                />
-              </Field>
-              <Field label="How many lifting sessions are you doing now?" why="Part of the on-ramp: the plan starts from what you are doing, not from what it would like you to do.">
-                <NumberField
-                  value={get("current_strength_sessions_per_week", intake.currentStrengthSessionsPerWeek) as number | null}
-                  onChange={(v) => set("current_strength_sessions_per_week", v)}
-                  min={0}
-                  max={10}
-                  suffix="per week"
-                  ariaLabel="Current lifting sessions per week"
-                />
-              </Field>
-            </>
-          )}
-
-          {section === "heart_rate" && !hardBlock && (
-            <>
               <PrefilledOverridable
                 label="Resting heart rate"
                 value={prefilled.restingHr != null ? `${prefilled.restingHr} bpm` : null}
@@ -811,7 +830,7 @@ export function IntakeWizard() {
             </>
           )}
 
-          {section === "recovery" && !hardBlock && (
+          {section === "recovery" && (
             <>
               <Field label="Typical nightly sleep" why="Modifies how fast volume is allowed to ramp. Assumed 7 hours if you skip.">
                 <NumberField
@@ -841,26 +860,6 @@ export function IntakeWizard() {
               </Field>            </>
           )}
 
-          {section === "preferences" && !hardBlock && (
-            <>
-              <Field label="Best day for your longest session" why="A soft preference. The scheduler honours it unless a hard constraint says otherwise.">
-                <SelectField
-                  value={get("preferred_long_day", intake.preferredLongDay) as string | null}
-                  onChange={(v) => set("preferred_long_day", v)}
-                  options={DAY_OPTIONS}
-                  ariaLabel="Preferred long day"
-                />
-              </Field>
-              <Field label="Preferred rest day" why="Also soft. Every week gets at least one rest day regardless.">
-                <SelectField
-                  value={get("preferred_rest_day", intake.preferredRestDay) as string | null}
-                  onChange={(v) => set("preferred_rest_day", v)}
-                  options={DAY_OPTIONS}
-                  ariaLabel="Preferred rest day"
-                />
-              </Field>
-            </>
-          )}
         </div>
 
         {error && (
@@ -873,10 +872,10 @@ export function IntakeWizard() {
               Back
             </Button>
           )}
-          <Button size="sm" onClick={() => void save(true)} loading={saving} disabled={Boolean(hardBlock)}>
+          <Button size="sm" onClick={() => void save(true)} loading={saving}>
             {step === ORDER.length - 1 ? "Finish" : "Save and continue"}
           </Button>
-          {!isMandatory && !hardBlock && (
+          {!isMandatory && (
             <Button
               variant="ghost"
               size="sm"
@@ -886,15 +885,10 @@ export function IntakeWizard() {
               Skip
             </Button>
           )}
-          {hardBlock && (
-            <Link href="/dashboard" className="text-sm font-medium text-accent hover:underline">
-              Back to dashboard
-            </Link>
-          )}
         </div>
 
         {/* The cost of skipping, stated before the skip rather than after. */}
-        {!isMandatory && meta.skipCost && !hardBlock && (
+        {!isMandatory && meta.skipCost && (
           <p className="mt-3 text-xs leading-relaxed text-muted">{meta.skipCost}</p>
         )}
       </Card>

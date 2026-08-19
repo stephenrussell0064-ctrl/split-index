@@ -21,7 +21,7 @@ import { loadPrefilledIntake } from "@/lib/scoring/hpe/load-intake";
 
 /** Only these keys are writable, and only within their own section. An unknown key is dropped rather than stored. */
 const SECTION_FIELDS: Record<IntakeSection, string[]> = {
-  safety: [
+  health: [
     "parq_positive",
     "chest_pain_on_exertion",
     "current_injury_limiting",
@@ -30,7 +30,10 @@ const SECTION_FIELDS: Record<IntakeSection, string[]> = {
     "surgery_last_6_months",
     "pregnant_or_postpartum_12wk",
     "medication_affecting_hr",
+  ],
+  fuelling: [
     "lea_restricted_food",
+    // Collected as context for a dietitian; deliberately not scored.
     "lea_trains_fasted",
     "lea_unintended_weight_loss",
     "lea_bone_stress_injury",
@@ -56,29 +59,39 @@ const SECTION_FIELDS: Record<IntakeSection, string[]> = {
     "intends_weight_cut",
     "federation",
   ],
-  strength: [
-    // The primary question. Barbell availability is a detail inside this.
-    "has_gym_access",
-    // How the gym week is carved up — push/pull/legs, upper/lower, and so on.
-    "training_split",
-    "strength_training_years",
+  history: [
+    "current_run_min_per_week",
+    "longest_recent_run_min",
+    "endurance_training_years",
+    // The biggest month of running they have ever held. This lived in
+    // "recovery and life load", which is where the athlete could not find it
+    // and where the save quietly rejected it after the field moved.
+    "previous_max_volume",
     "current_strength_sessions_per_week",
-    "lift_variants",
-    // Corrections over the adaptive 1RM, which is inferred from submaximal
-    // work. Someone who has tested a single knows better than the inference.
+    "strength_training_years",
+  ],
+  body: [
+    "max_hr_known",
+    "hr_runs_high",
+    // Corrections over what the engine proposed. An adaptive 1RM is inferred
+    // from submaximal work and an estimated max HR is age arithmetic.
+    "max_hr_override",
+    "resting_hr_override",
     "squat_1rm_override",
     "bench_1rm_override",
     "deadlift_1rm_override",
   ],
-  endurance: [
-    "current_run_min_per_week",
-    "longest_recent_run_min",
-    "endurance_training_years",
+  training: [
+    // The primary question. Barbell availability is a detail inside this.
+    "has_gym_access",
+    // How the gym week is carved up — push/pull/legs, upper/lower, and so on.
+    "training_split",
+    "lift_variants",
     "primary_modality",
     "substitution_ok",
     "surface_access",
+    "disliked_exercises",
   ],
-  heart_rate: ["max_hr_known", "hr_runs_high", "max_hr_override", "resting_hr_override"],
   availability: [
     // Real clock times differ by day, and the 6h separation rule is computed
     // from them.
@@ -95,9 +108,12 @@ const SECTION_FIELDS: Record<IntakeSection, string[]> = {
     "min_rest_days",
     "gym_access_days",
     "travel_weeks",
+    // Soft scheduling preferences belong with the scheduling questions.
+    "preferred_long_day",
+    "preferred_rest_day",
+    "notes",
   ],
-  recovery: ["sleep_hours_typical", "shift_work", "job_physicality", "life_stress_now", "previous_max_volume"],
-  preferences: ["disliked_exercises", "preferred_long_day", "preferred_rest_day", "notes"],
+  recovery: ["sleep_hours_typical", "shift_work", "job_physicality", "life_stress_now"],
 };
 
 export async function GET() {

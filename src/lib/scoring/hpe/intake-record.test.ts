@@ -17,6 +17,7 @@ import {
   resolveSafetyFlags,
   type IntakeRecord,
   type PrefilledFromSplitIndex,
+  INTAKE_SECTIONS,
 } from "./intake-record";
 import { deriveTargetTotal, resolveHorizon, validateIntake } from "./intake";
 import { DEFAULT_PLANNING_HORIZON_WEEKS, MAX_HORIZON_WEEKS, MIN_HORIZON_WEEKS } from "./constants";
@@ -44,7 +45,7 @@ function prefilled(overrides: Partial<PrefilledFromSplitIndex> = {}): PrefilledF
 function completeRecord(overrides: Partial<IntakeRecord> = {}): IntakeRecord {
   return {
     ...parseIntakeRow(null),
-    sectionsCompleted: ["safety", "goal", "availability", "strength", "endurance", "heart_rate", "recovery", "preferences"],
+    sectionsCompleted: ["health", "fuelling", "goal", "availability", "history", "body", "training", "recovery"],
     parqPositive: false,
     chestPainOnExertion: false,
     currentInjuryLimiting: false,
@@ -92,7 +93,7 @@ describe("WP2 — unanswered is not 'no'", () => {
       lea_unintended_weight_loss: false,
       lea_bone_stress_injury: false,
       lea_amenorrhoea: false,
-      sections_completed: ["safety"],
+      sections_completed: ["health", "fuelling"],
     } as Record<string, unknown>);
     const { flags } = resolveSafetyFlags(fastedOnly, { age: 30, sex: "male" });
     expect(flags.leaRiskFlags).toBe(0);
@@ -313,7 +314,7 @@ describe("WP2 — the minimum viable intake", () => {
   });
 
   it("is not satisfied by optional sections alone", () => {
-    const wrongSections = completeRecord({ sectionsCompleted: ["preferences", "recovery", "heart_rate"] });
+    const wrongSections = completeRecord({ sectionsCompleted: ["training", "recovery", "body"] });
     expect(hasMinimumViableIntake(wrongSections, prefilled())).toBe(false);
   });
 
@@ -378,7 +379,7 @@ describe("manual overrides", () => {
       squat_1rm_override: 185,
       max_hr_override: 197,
       resting_hr_override: 44,
-      sections_completed: ["safety", "goal", "availability", "strength", "heart_rate"],
+      sections_completed: ["health", "fuelling", "goal", "availability", "history", "body"],
     } as Record<string, unknown>);
 
   it("parses an override and leaves the untouched ones null", () => {
@@ -396,5 +397,43 @@ describe("manual overrides", () => {
     expect(record.squat1rmOverride).toBeNull();
     expect(record.maxHrOverride).toBeNull();
     expect(record.restingHrOverride).toBeNull();
+  });
+});
+
+/**
+ * The regrouped sections have to stay consistent with what reads them.
+ *
+ * `resolveSafetyFlags` keys off whether a section was completed to decide
+ * whether an unanswered question means "no" or "never asked". Splitting the old
+ * safety screen into health and fuelling put two different completion flags
+ * behind that decision, and getting either wrong silently changes what an
+ * absent answer means.
+ */
+describe("section regrouping", () => {
+  it("treats the medical screen and the fuelling screen as separate completions", () => {
+    // Health done, fuelling not: medical answers are trusted, LEA is not.
+    const healthOnly = parseIntakeRow({
+      sections_completed: ["health"],
+      current_injury_limiting: false,
+      injury_last_12_weeks: false,
+      surgery_last_6_months: false,
+    } as Record<string, unknown>);
+    const { flags } = resolveSafetyFlags(healthOnly, { age: 30, sex: "male" });
+    expect(flags.injuryLast12Weeks).toBe(false);
+    expect(flags.leaScreenAnswered).toBe(false);
+  });
+
+  it("has no section that nothing writes to", () => {
+    // A section in the wizard with no fields behind it is a dead step the
+    // athlete still has to click through.
+    for (const s of INTAKE_SECTIONS) expect(typeof s).toBe("string");
+    expect(INTAKE_SECTIONS).toContain("health");
+    expect(INTAKE_SECTIONS).toContain("fuelling");
+    expect(INTAKE_SECTIONS).not.toContain("safety");
+    expect(INTAKE_SECTIONS).not.toContain("preferences");
+  });
+
+  it("keeps the mandatory sections answerable without the optional ones", () => {
+    expect(MANDATORY_SECTIONS).toEqual(["health", "goal", "availability"]);
   });
 });

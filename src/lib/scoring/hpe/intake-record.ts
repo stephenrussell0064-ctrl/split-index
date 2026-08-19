@@ -138,11 +138,36 @@ export interface IntakeRecord {
   preferredRestDay: string | null;
 }
 
-export const INTAKE_SECTIONS = ["safety", "goal", "strength", "endurance", "heart_rate", "availability", "recovery", "preferences"] as const;
+/**
+ * Sections, grouped by what the question is ABOUT rather than by which part of
+ * the engine consumes the answer.
+ *
+ * The old split was drawn along engine boundaries and it showed. "Safety" held
+ * a medical screen and a fuelling screen, which are different conversations
+ * with different tones. "Recovery and life load" — sleep, shift work, how
+ * physical the job is — also held the biggest month of running the athlete had
+ * ever done, which is not a fact about their life load at all. "Current
+ * strength" held a 1RM and a training-years question; "heart rate" held two
+ * numbers and nothing else.
+ *
+ * Regrouped so that answering feels like one topic at a time: the numbers the
+ * engine proposes sit together in `body`, everything the athlete has actually
+ * been doing sits in `history`, and how they train sits in `training`.
+ */
+export const INTAKE_SECTIONS = [
+  "health",
+  "fuelling",
+  "goal",
+  "history",
+  "body",
+  "training",
+  "availability",
+  "recovery",
+] as const;
 export type IntakeSection = (typeof INTAKE_SECTIONS)[number];
 
 /** Sections the athlete cannot skip. Everything else degrades with a stated consequence. */
-export const MANDATORY_SECTIONS: IntakeSection[] = ["safety", "goal", "availability"];
+export const MANDATORY_SECTIONS: IntakeSection[] = ["health", "goal", "availability"];
 
 const ALL_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -270,7 +295,8 @@ export function resolveSafetyFlags(
   athlete: { age: number; sex: "male" | "female" | "other" }
 ): { flags: SafetyFlags; assumed: string[] } {
   const assumed: string[] = [];
-  const safetyDone = record.sectionsCompleted.includes("safety");
+  const safetyDone = record.sectionsCompleted.includes("health");
+  const fuellingDone = record.sectionsCompleted.includes("fuelling");
 
   const conservative = (value: boolean | null, label: string, fallback: boolean): boolean => {
     if (value != null) return value;
@@ -279,7 +305,7 @@ export function resolveSafetyFlags(
   };
 
   const femaleQuestionApplies = athlete.sex === "female";
-  const leaFlags = safetyDone
+  const leaFlags = fuellingDone
     ? scoreLeaScreen(
         {
           restrictedFood: record.leaRestrictedFood ?? undefined,
