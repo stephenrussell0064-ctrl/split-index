@@ -22,8 +22,11 @@ import WidgetKit
  * (`group.co.uk.splitindex.app`) being present in BOTH targets' entitlements
  * AND registered for both bundle IDs on the developer portal. Without it,
  * `UserDefaults(suiteName:)` still hands back an object but its writes never
- * reach the extension — which is why `set` reports `stored` back to JS from
- * a real read-back rather than assuming success.
+ * reach the extension — so `set` reports `stored` and `containerReachable`
+ * back to JS from `RacePredictionStore.containerIsReachable`, a sandbox-level
+ * check. It used to report a same-process read-back instead, which succeeds
+ * even when the entitlement is missing and therefore always said "stored" —
+ * a safeguard that could not fail, and so never caught anything.
  */
 @objc(RacePredictionsPlugin)
 public class RacePredictionsPlugin: CAPPlugin, CAPBridgedPlugin {
@@ -32,6 +35,7 @@ public class RacePredictionsPlugin: CAPPlugin, CAPBridgedPlugin {
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "set", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "clear", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "status", returnType: CAPPluginReturnPromise),
     ]
 
     /// The web app sends one of three states, never "a number that might be
@@ -68,7 +72,42 @@ public class RacePredictionsPlugin: CAPPlugin, CAPBridgedPlugin {
 
         let stored = RacePredictionStore.save(snapshot)
         if stored { Self.reloadWidget() }
-        call.resolve(["stored": stored])
+        // `containerReachable` is reported separately so the JS side can tell
+        // "the App Group isn't live on this build" (nothing will ever work
+        // until someone fixes signing) apart from "the write itself failed"
+        // (transient). They need different words in front of an athlete.
+        call.resolve([
+            "stored": stored,
+            "containerReachable": RacePredictionStore.containerIsReachable,
+        ])
+    }
+
+    /// Read-only truth about the shared container, for the app to show the
+    /// athlete instead of making them guess why their home screen is empty.
+    /// Reports what the WIDGET would see, from the app's side of the group —
+    /// if this says disconnected, so is the widget.
+    @objc func status(_ call: CAPPluginCall) {
+        var result = JSObject()
+        result["containerReachable"] = RacePredictionStore.containerIsReachable
+        result["appGroup"] = RacePredictionStore.appGroupIdentifier
+
+        switch RacePredictionStore.resolve() {
+        case .disconnected:
+            result["state"] = "disconnected"
+        case .neverPublished:
+            result["state"] = "empty"
+        case .published(let snapshot):
+            result["state"] = "published"
+            result["status"] = snapshot.status.rawValue
+            result["sampleCount"] = snapshot.sampleCount
+            result["updatedAt"] = ISO8601DateFormatter().string(from: snapshot.updatedAt)
+            if let headline = snapshot.headline {
+                result["headlineLabel"] = headline.label
+                result["headlineSeconds"] = headline.seconds
+            }
+        }
+
+        call.resolve(result)
     }
 
     /// Sign-out. A widget left showing the previous account's predicted

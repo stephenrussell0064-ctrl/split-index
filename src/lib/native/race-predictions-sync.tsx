@@ -30,7 +30,22 @@ export function RacePredictionsSync({ payload }: { payload: RacePredictionPayloa
     // Parsed from the dep rather than closing over `payload` so the effect
     // depends on the value, not on the object identity a fresh server
     // render hands it every time.
-    void publishRacePredictions(JSON.parse(serialized) as RacePredictionPayload);
+    void publishRacePredictions(
+      JSON.parse(serialized) as RacePredictionPayload
+    ).then((result) => {
+      // "unsupported" is every web and Android render — not a fault, and
+      // logging it would bury the one line that matters.
+      if (result.published || result.reason === "unsupported") return;
+      // Everything else means the athlete's home screen is about to
+      // disagree with the app they are holding. That must leave a trace:
+      // this failure is otherwise completely silent on both sides.
+      console.warn(
+        `[race-predictions] widget not updated (${result.reason}).` +
+          (result.reason === "disconnected"
+            ? " The App Group entitlement is not live on this build, so nothing published here can reach the widget."
+            : "")
+      );
+    });
   }, [serialized]);
 
   return null;

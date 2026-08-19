@@ -101,23 +101,63 @@ public enum RacePredictionStore {
         UserDefaults(suiteName: appGroupIdentifier)
     }
 
-    /// Returns nil when nothing has ever been written, when the App Group
-    /// isn't reachable (entitlement missing/not yet provisioned), or when
-    /// the stored payload can't be decoded. Every one of those is rendered
-    /// as the empty state, never as a zero.
-    public static func load() -> RacePredictionSnapshot? {
-        guard let data = sharedDefaults?.data(forKey: storageKey) else { return nil }
-        return try? JSONDecoder().decode(RacePredictionSnapshot.self, from: data)
+    /// Whether THIS process can actually reach the shared container.
+    ///
+    /// This is the only trustworthy probe, and the reason matters. An
+    /// earlier version of `save` "verified" the write by reading the key
+    /// straight back out of the same `UserDefaults` instance — which always
+    /// succeeds and therefore proved nothing. `UserDefaults(suiteName:)`
+    /// does not fail when the App Groups entitlement is missing: it returns
+    /// a working-looking object, keeps the value in this process's own
+    /// in-memory domain (so any same-process read-back matches), and simply
+    /// never persists it anywhere the widget extension can see. The write
+    /// looks perfect from the inside and lands nowhere.
+    ///
+    /// `containerURL(forSecurityApplicationGroupIdentifier:)` is answered by
+    /// the sandbox from the code-signed entitlement rather than from
+    /// anything this process holds in memory, so it returns nil exactly when
+    /// the App Group is not live for this build — which is the condition we
+    /// need to be able to tell the athlete about.
+    public static var containerIsReachable: Bool {
+        FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: appGroupIdentifier
+        ) != nil
     }
 
-    /// Reads back what it just wrote and reports whether it actually landed.
-    /// `UserDefaults(suiteName:)` does not fail loudly when the App Group
-    /// entitlement is absent — it hands back an object whose writes go
-    /// nowhere the extension can see. Verifying here is what lets the JS
-    /// side find out the widget will stay empty, instead of assuming success.
+    /// What the reader (widget, or the app's own status check) can actually
+    /// see. Three outcomes that used to be one indistinguishable nil — and
+    /// collapsing them is what let a disconnected widget tell an athlete
+    /// with a full training history that they had never logged a run.
+    public enum Availability {
+        /// A payload is present and readable.
+        case published(RacePredictionSnapshot)
+        /// The container is reachable but empty — the app has not published
+        /// yet (fresh install, or the dashboard hasn't been opened since).
+        /// An undecodable payload lands here too: the next publish
+        /// overwrites it, so "open the app" is the honest advice either way.
+        case neverPublished
+        /// The App Group is not live for this process. Nothing this app
+        /// writes will ever reach the widget until that is fixed.
+        case disconnected
+    }
+
+    public static func resolve() -> Availability {
+        guard containerIsReachable else { return .disconnected }
+        guard let data = sharedDefaults?.data(forKey: storageKey) else { return .neverPublished }
+        guard let snapshot = try? JSONDecoder().decode(RacePredictionSnapshot.self, from: data) else {
+            return .neverPublished
+        }
+        return .published(snapshot)
+    }
+
+    /// Reports whether the payload actually landed somewhere the extension
+    /// can read it. The reachability guard is doing the real work here (see
+    /// `containerIsReachable`); the read-back that follows only catches an
+    /// encode/write fault, which is the cheap half of the problem.
     @discardableResult
     public static func save(_ snapshot: RacePredictionSnapshot) -> Bool {
-        guard let defaults = sharedDefaults,
+        guard containerIsReachable,
+              let defaults = sharedDefaults,
               let data = try? JSONEncoder().encode(snapshot) else { return false }
         defaults.set(data, forKey: storageKey)
         return defaults.data(forKey: storageKey) == data

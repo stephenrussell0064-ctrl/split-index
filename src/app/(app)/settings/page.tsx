@@ -23,6 +23,7 @@ import { FREE_TIER_FEATURES } from "@/lib/retention/tiers";
 import { getTrialDaysRemaining, isPremiumUser } from "@/lib/retention/trial";
 import { SplitIndexSettings } from "@/components/settings/split-index-settings";
 import { ActivityPrivacySettings } from "@/components/settings/activity-privacy-settings";
+import { WidgetStatus } from "@/components/settings/widget-status";
 import { PremiumBadge } from "@/components/retention/premium-badge";
 import { createClient } from "@/lib/supabase/client";
 import type { SubscriptionStatus, SubscriptionTier } from "@/types";
@@ -207,6 +208,13 @@ export default function SettingsPage() {
           loadFailed={!profile}
         />
       )}
+
+      {/*
+        iOS only, and renders nothing at all unless there's a widget
+        container to report on — so it stays invisible for everyone whose
+        answer to "why is my widget empty?" is "you don't have one".
+      */}
+      <WidgetStatus />
 
       {/* Subscription */}
       <Card glow={premium ? undefined : "accent"}>

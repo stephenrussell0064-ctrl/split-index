@@ -48,10 +48,28 @@ export interface RacePredictionPayload {
   samplesNeeded?: number;
 }
 
+/** What the widget can actually see, reported from the app's side of the App Group. */
+export interface RacePredictionWidgetStatus {
+  /** False means the App Group isn't live on this build: nothing this app writes will ever reach the widget. */
+  containerReachable: boolean;
+  /** `disconnected` = no container; `empty` = container present but never written; `published` = a payload is there. */
+  state: "disconnected" | "empty" | "published";
+  /** The status of the stored payload — only when `state` is "published". */
+  status?: RacePredictionStatus;
+  sampleCount?: number;
+  /** ISO 8601. When the app last published, NOT when the athlete last ran. */
+  updatedAt?: string;
+  headlineLabel?: string;
+  headlineSeconds?: number;
+  appGroup?: string;
+}
+
 interface RacePredictionsPlugin {
-  /** `stored` is a real read-back from the App Group, not an assumption — false means the entitlement isn't live and the widget will stay empty. */
-  set(options: RacePredictionPayload): Promise<{ stored: boolean }>;
+  /** `stored` is whether the payload reached the shared container; `containerReachable` is false when the App Groups entitlement isn't live, which no amount of retrying will fix. */
+  set(options: RacePredictionPayload): Promise<{ stored: boolean; containerReachable?: boolean }>;
   clear(): Promise<{ cleared: boolean }>;
+  /** Added after the widget shipped — an older native build rejects this, which callers treat as "unknown". */
+  status(): Promise<RacePredictionWidgetStatus>;
 }
 
 const RacePredictions = registerPlugin<RacePredictionsPlugin>("RacePredictions");
@@ -61,21 +79,65 @@ export function isRacePredictionWidgetSupported(): boolean {
   return isNativePlatform() && getNativePlatform() === "ios";
 }
 
+export type RacePredictionPublishResult =
+  | { published: true }
+  | {
+      published: false;
+      reason:
+        /** Not iOS. Expected, not a fault. */
+        | "unsupported"
+        /** The App Group isn't live on this build. Permanent until signing is fixed. */
+        | "disconnected"
+        /** Container reachable, write didn't land. Encode fault or defaults failure. */
+        | "writeFailed"
+        /** The native plugin didn't answer — old build, or the bridge isn't up yet. */
+        | "bridgeUnavailable";
+    };
+
 /**
  * Best-effort, like the Live Activity bridge: a home-screen widget is a
  * bonus surface, never something the dashboard should block or error on.
- * Returns whether the payload actually reached the shared container, for
- * callers that want to log it — the dashboard doesn't act on it.
+ *
+ * But best-effort is not the same as unaccountable. This returns WHY it
+ * failed, because the three failures are genuinely different and one of them
+ * ("disconnected") is invisible from the widget's side in a way that reads
+ * to an athlete as "you have never logged a run". A silent boolean false is
+ * what let a fully-trained athlete's home screen tell them exactly that.
  */
 export async function publishRacePredictions(
   payload: RacePredictionPayload
-): Promise<boolean> {
-  if (!isRacePredictionWidgetSupported()) return false;
+): Promise<RacePredictionPublishResult> {
+  if (!isRacePredictionWidgetSupported()) {
+    return { published: false, reason: "unsupported" };
+  }
   try {
-    const { stored } = await RacePredictions.set(payload);
-    return stored;
+    const { stored, containerReachable } = await RacePredictions.set(payload);
+    if (stored) return { published: true };
+    // `containerReachable` is absent on a native build older than this
+    // field; treat only an explicit `false` as the permanent diagnosis.
+    return {
+      published: false,
+      reason: containerReachable === false ? "disconnected" : "writeFailed",
+    };
   } catch {
-    return false;
+    return { published: false, reason: "bridgeUnavailable" };
+  }
+}
+
+/**
+ * What the widget would see right now, read from the app's side of the same
+ * App Group. Null when there is nothing meaningful to report — off iOS, or
+ * on a native build that predates the `status` method.
+ *
+ * This exists so "why is my widget empty?" is answerable by the athlete
+ * looking at Settings, rather than only by someone with Xcode attached.
+ */
+export async function getRacePredictionWidgetStatus(): Promise<RacePredictionWidgetStatus | null> {
+  if (!isRacePredictionWidgetSupported()) return null;
+  try {
+    return await RacePredictions.status();
+  } catch {
+    return null;
   }
 }
 

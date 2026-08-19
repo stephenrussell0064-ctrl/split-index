@@ -61,7 +61,7 @@ private extension Color {
 
 struct RacePredictionEntryModel: TimelineEntry {
     let date: Date
-    let snapshot: RacePredictionSnapshot?
+    let availability: RacePredictionStore.Availability
 }
 
 struct RacePredictionProvider: TimelineProvider {
@@ -76,16 +76,18 @@ struct RacePredictionProvider: TimelineProvider {
     )
 
     func placeholder(in context: Context) -> RacePredictionEntryModel {
-        RacePredictionEntryModel(date: Date(), snapshot: Self.previewSnapshot)
+        RacePredictionEntryModel(date: Date(), availability: .published(Self.previewSnapshot))
     }
 
     func getSnapshot(in context: Context, completion: @escaping (RacePredictionEntryModel) -> Void) {
-        let stored = context.isPreview ? Self.previewSnapshot : RacePredictionStore.load()
-        completion(RacePredictionEntryModel(date: Date(), snapshot: stored))
+        let availability: RacePredictionStore.Availability = context.isPreview
+            ? .published(Self.previewSnapshot)
+            : RacePredictionStore.resolve()
+        completion(RacePredictionEntryModel(date: Date(), availability: availability))
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<RacePredictionEntryModel>) -> Void) {
-        let entry = RacePredictionEntryModel(date: Date(), snapshot: RacePredictionStore.load())
+        let entry = RacePredictionEntryModel(date: Date(), availability: RacePredictionStore.resolve())
         // The app calls WidgetCenter.reloadTimelines whenever the numbers
         // change (RacePredictionsPlugin), so this refresh is only a safety
         // net for the case where that call never arrived — six hours is
@@ -104,7 +106,7 @@ struct RacePredictionWidget: Widget {
             kind: RacePredictionStore.widgetKind,
             provider: RacePredictionProvider()
         ) { entry in
-            RacePredictionWidgetView(snapshot: entry.snapshot)
+            RacePredictionWidgetView(availability: entry.availability)
                 .widgetContainerBackground()
         }
         .configurationDisplayName("Race Predictions")
@@ -132,7 +134,7 @@ private extension View {
 
 private struct RacePredictionWidgetView: View {
     @Environment(\.widgetFamily) private var family
-    let snapshot: RacePredictionSnapshot?
+    let availability: RacePredictionStore.Availability
 
     var body: some View {
         Group {
@@ -162,6 +164,31 @@ private struct RacePredictionWidgetView: View {
                     message: "Log a run to see predictions",
                     detail: "Split Index builds your 5K time from your own sessions."
                 )
+            case .notSynced:
+                // Reachable container, nothing in it. The app has never
+                // handed anything over — which is a different sentence from
+                // "you have no runs", and telling an athlete the second when
+                // the first is true is how this widget lost their trust.
+                MessageView(
+                    title: "Not synced yet",
+                    message: "Open Split Index to sync",
+                    detail: "Your predictions appear here once you've opened the app's home screen."
+                )
+            case .disconnected:
+                // The App Group isn't live for this build, so nothing the app
+                // writes can ever arrive. Say so. Silently rendering the
+                // empty state here is precisely the failure that made a
+                // fully-trained athlete look untrained.
+                // Points at Settings rather than guessing at a remedy: a
+                // widget has no room to explain this, and the app's Settings
+                // screen says exactly what is broken. Promising "reinstall
+                // and it'll work" would be a second false statement on top
+                // of the one this replaces.
+                MessageView(
+                    title: "Widget not connected",
+                    message: "Check Settings in the app",
+                    detail: "Split Index can't share data with this widget on this build. Your predictions are still in the app."
+                )
             }
         }
         .foregroundStyle(surfaceText)
@@ -174,7 +201,12 @@ private struct RacePredictionWidgetView: View {
     private enum ResolvedState {
         case ready(headline: RacePredictionEntry, ladder: [RacePredictionEntry], sampleCount: Int, updatedAt: Date)
         case calibrating(logged: Int, needed: Int)
+        /// The app said, in as many words, that it has no prediction.
         case empty
+        /// The app has not said anything yet.
+        case notSynced
+        /// The app cannot say anything, ever, on this build.
+        case disconnected
     }
 
     /// `.ready` is only honoured when a headline entry is actually present.
@@ -182,7 +214,12 @@ private struct RacePredictionWidgetView: View {
     /// upstream, and the safe reading of it is "we have nothing", not "show
     /// something plausible".
     private var resolvedState: ResolvedState {
-        guard let snapshot else { return .empty }
+        let snapshot: RacePredictionSnapshot
+        switch availability {
+        case .disconnected: return .disconnected
+        case .neverPublished: return .notSynced
+        case .published(let stored): snapshot = stored
+        }
         switch snapshot.status {
         case .ready:
             guard let headline = snapshot.headline else { return .empty }
