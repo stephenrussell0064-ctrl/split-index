@@ -336,20 +336,20 @@ export function IntakeWizard() {
                   availability. Two or more yes answers here means no plan and no bodyweight guidance — that is
                   deliberate, and the referral it offers is the useful part.
                 </p>
-                <Field label="In the last 3 months, have you deliberately restricted food to change your weight or performance?" why="One of five. Assumed yes until answered.">
+                <Field label="In the last 3 months, have you deliberately restricted food to change your weight or performance?" why="One of three. Assumed yes until answered.">
                   <YesNo value={get("lea_restricted_food", intake.leaRestrictedFood)} onChange={(v) => set("lea_restricted_food", v)} />
                 </Field>
-                <Field label="Do you often train fasted or under-fuelled?" why="Two of five.">
+                <Field label="Do you often train fasted or under-fuelled?" why="Context for a dietitian if you ever see one. Not scored — training fasted is ordinary and does not count against you here.">
                   <YesNo value={get("lea_trains_fasted", intake.leaTrainsFasted)} onChange={(v) => set("lea_trains_fasted", v)} />
                 </Field>
-                <Field label="Have you lost more than 5% of your bodyweight in the last 3 months without intending to?" why="Three of five.">
+                <Field label="Have you lost more than 5% of your bodyweight in the last 3 months without intending to?" why="Two of three.">
                   <YesNo value={get("lea_unintended_weight_loss", intake.leaUnintendedWeightLoss)} onChange={(v) => set("lea_unintended_weight_loss", v)} />
                 </Field>
-                <Field label="Have you had a stress fracture or bone stress injury in the last 2 years?" why="Four of five.">
+                <Field label="Have you had a stress fracture or bone stress injury in the last 2 years?" why="Three of three.">
                   <YesNo value={get("lea_bone_stress_injury", intake.leaBoneStressInjury)} onChange={(v) => set("lea_bone_stress_injury", v)} />
                 </Field>
                 {prefilled.sex === "female" && (
-                  <Field label="Have your periods been absent or irregular for 3+ months, other than from contraception?" why="Five of five.">
+                  <Field label="Have your periods been absent or irregular for 3+ months, other than from contraception?" why="Asked only where it applies, and scored alongside the three above.">
                     <YesNo value={get("lea_amenorrhoea", intake.leaAmenorrhoea)} onChange={(v) => set("lea_amenorrhoea", v)} />
                   </Field>
                 )}
@@ -365,18 +365,27 @@ export function IntakeWizard() {
 
           {section === "goal" && !hardBlock && (
             <>
-              <Field label="When is your event?" why="Optional. If you have one, phase lengths, the taper and the peak all measure back from this date. Without a date, pick a block length below instead — you still get a complete plan.">
-                <input
-                  type="date"
-                  value={(get("event_date", intake.eventDate) as string | null) ?? ""}
-                  onChange={(e) => set("event_date", e.target.value || null)}
-                  aria-label="Event date"
-                  className="min-h-11 rounded-xl border border-white/10 bg-white/[0.03] px-3 text-sm text-foreground focus:border-accent focus:outline-none"
+              <Field label="What do you want to train for?" why="Decides which engines load. You can pick more than one, and none of them has to be a race." required>
+                <MultiSelect
+                  options={[
+                    { value: "5k", label: "5k" },
+                    { value: "10k", label: "10k" },
+                    { value: "half", label: "Half" },
+                    { value: "marathon", label: "Marathon" },
+                    { value: "2k_row", label: "2k row" },
+                    { value: "powerlifting", label: "Powerlifting meet" },
+                    { value: "hyrox", label: "HYROX" },
+                  ]}
+                  selected={get("events", intake.events) as string[]}
+                  onChange={(v) => set("events", v)}
+                  ariaLabel="Events"
                 />
               </Field>
-              {/* No event date required. A block only makes sense once there is no date to measure back from, so this only shows then. */}
-              {!(get("event_date", intake.eventDate) as string | null) && (
-                <Field label="No event date? Choose a block length." why="Without a date there is no taper to land on, so you pick how long this block runs instead. Leave it on 'let the engine choose' and it defaults to a standard 12-week block.">
+
+              {/* Always shown. Training without a date is the ordinary case, not the
+                  fallback — an event date simply overrides this when there is one. */}
+              <>
+                <Field label="How long should this plan run?" why="Most people are training rather than counting down to a date, so this is the normal way to answer. Leave it on 'let the engine choose' for a standard 12-week block.">
                   <div className="flex flex-wrap gap-2" role="group" aria-label="Planning horizon">
                     {PLANNING_HORIZONS.map((h) => (
                       <button
@@ -415,24 +424,16 @@ export function IntakeWizard() {
                     return chosen ? <p className="mt-2 text-xs leading-relaxed text-muted">{chosen.blurb}</p> : null;
                   })()}
                 </Field>
-              )}
-              <Field label="What are you competing in?" why="Decides which engines load. You can pick more than one." required>
-                <MultiSelect
-                  options={[
-                    { value: "5k", label: "5k" },
-                    { value: "10k", label: "10k" },
-                    { value: "half", label: "Half" },
-                    { value: "marathon", label: "Marathon" },
-                    { value: "2k_row", label: "2k row" },
-                    { value: "powerlifting", label: "Powerlifting meet" },
-                    { value: "hyrox", label: "HYROX" },
-                  ]}
-                  selected={get("events", intake.events) as string[]}
-                  onChange={(v) => set("events", v)}
-                  ariaLabel="Events"
+              </>
+              <Field label="Do you have an event? When is it?" why="Optional, and most people do not. Given a date, phase lengths, the taper and the peak all measure back from it and it overrides the block length above.">
+                <input
+                  type="date"
+                  value={(get("event_date", intake.eventDate) as string | null) ?? ""}
+                  onChange={(e) => set("event_date", e.target.value || null)}
+                  aria-label="Event date"
+                  className="min-h-11 rounded-xl border border-white/10 bg-white/[0.03] px-3 text-sm text-foreground focus:border-accent focus:outline-none"
                 />
-              </Field>
-              {((get("events", intake.events) as string[]).length >= 2) && (
+              </Field>              {((get("events", intake.events) as string[]).length >= 2) && (
                 <>
                   <Field label="Are these on the same day?" why="Same-day events need an order, and one of the two orders is a safety block rather than a preference.">
                     <YesNo value={get("same_day", intake.sameDay) as boolean} onChange={(v) => set("same_day", v)} />
@@ -606,6 +607,17 @@ export function IntakeWizard() {
 
           {section === "endurance" && !hardBlock && (
             <>
+
+              <Field label="Highest weekly running volume you have ever sustained for a month" why="A ceiling on the ramp. If you have held 300 min/week before, getting back there is a different problem from reaching it the first time.">
+                <NumberField
+                  value={get("previous_max_volume", intake.previousMaxVolume) as number | null}
+                  onChange={(v) => set("previous_max_volume", v)}
+                  min={0}
+                  max={800}
+                  suffix="min/week"
+                  ariaLabel="Previous max weekly volume"
+                />
+              </Field>
               <Prefilled
                 label="Weekly running from your logs"
                 value={prefilled.loggedWeeklyRunMinutes != null ? `${Math.round(prefilled.loggedWeeklyRunMinutes)} min` : null}
@@ -801,18 +813,7 @@ export function IntakeWizard() {
                   ]}
                   ariaLabel="Job physicality"
                 />
-              </Field>
-              <Field label="Highest weekly running volume you have ever sustained for a month" why="A ceiling on the ramp. If you have held 300 min/week before, getting back there is a different problem from reaching it the first time.">
-                <NumberField
-                  value={get("previous_max_volume", intake.previousMaxVolume) as number | null}
-                  onChange={(v) => set("previous_max_volume", v)}
-                  min={0}
-                  max={800}
-                  suffix="min/week"
-                  ariaLabel="Previous max weekly volume"
-                />
-              </Field>
-            </>
+              </Field>            </>
           )}
 
           {section === "preferences" && !hardBlock && (
