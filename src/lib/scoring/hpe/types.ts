@@ -111,7 +111,12 @@ export type EmphasisVector = Record<EmphasisKey, number>;
 
 export type DataTier = 0 | 1 | 2 | 3;
 
-export type Predicted5kSource = "maximal_effort" | "prediction_engine" | "unknown";
+export type Predicted5kSource =
+  | "maximal_effort"
+  | "prediction_engine"
+  /** The fallback was slower than a pace the athlete has already sustained past 5km, so it was pulled back to that. */
+  | "sustained_pace_bound"
+  | "unknown";
 
 export interface AthleteProfile {
   /** Stamped so a plan is never silently attributed to the wrong constants. Non-negotiable #2. */

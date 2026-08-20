@@ -1288,6 +1288,25 @@ export const MAX_ENDURANCE_GAIN_PER_BLOCK = 0.05;
  * relative, so it scales itself: an advanced runner is held near the advanced
  * rate no matter what the priority slider does.
  */
+/**
+ * [EST] Share of the modelled gain the CAUTIOUS end of a projection assumes.
+ *
+ * The range used to run from the modelled best down to the athlete's current
+ * time, so its slow end said "this block may do nothing for you". That was an
+ * overcorrection from the opposite error — a single optimistic number read as
+ * a promise — and it is wrong in its own way: a block the athlete actually
+ * completes should be expected to make them faster, and quoting their own PB
+ * back to them as a possible outcome of sixteen weeks' work is dispiriting and
+ * not what the evidence says either.
+ *
+ * A third of the modelled gain is the conservative end now. The whole band
+ * therefore sits faster than where they are today, and the caveat that
+ * progress is not linear is stated in words instead of smuggled into the
+ * arithmetic — which is the honest place for it, because a plateau is a real
+ * possibility rather than a number.
+ */
+export const CAUTIOUS_GAIN_SHARE = 0.35;
+
 export const MAX_GAIN_MULTIPLE_OF_RATE = 1.5;
 /** [EST] Same, for strength. Totals move faster than 5k times but not without limit. */
 export const MAX_STRENGTH_GAIN_PER_BLOCK = 0.08;

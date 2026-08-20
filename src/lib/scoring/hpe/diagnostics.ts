@@ -1116,6 +1116,30 @@ export function diagnose(
       predicted5kS = NO_MAXIMAL_EFFORT_5K_S;
       predicted5kSource = "unknown";
     }
+
+    // Whatever the fallback says, the athlete cannot be slower over 5k than a
+    // pace they have already held for longer than 5k.
+    //
+    // The placeholder is a flat 25:00, and the benchmark the engine offers can
+    // be stale. Either can land slower than the athlete's own easy running —
+    // and since the easy band is derived FROM the predicted 5k, that produces
+    // the absurd result of an easy pace quicker than the 5k pace it was
+    // calculated from, which is what an athlete sees as "my easy runs are
+    // prescribed slower than I actually jog".
+    //
+    // Any logged run of 5km or more is a real, sustained effort at a known
+    // pace, so it bounds the 5k from above. This is a ceiling, not an
+    // estimate: it only ever pulls an implausible fallback back toward
+    // evidence, and a genuine maximal effort above never reaches this code.
+    const sustained = runs.filter((r) => r.distanceKm >= 5 && r.durationS > 0);
+    if (sustained.length > 0) {
+      const bestPaceSPerKm = Math.min(...sustained.map((r) => r.durationS / r.distanceKm));
+      const bound = bestPaceSPerKm * 5;
+      if (bound < predicted5kS) {
+        predicted5kS = bound;
+        predicted5kSource = "sustained_pace_bound";
+      }
+    }
     predicted5kFromEffort = false;
   }
 

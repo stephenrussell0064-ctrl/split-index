@@ -26,6 +26,7 @@ import {
   ENDURANCE_GAIN_PER_BLOCK,
   ENDURANCE_TRAINING_AGE_FLOOR_BY_5K,
   MAX_ENDURANCE_GAIN_PER_BLOCK,
+  CAUTIOUS_GAIN_SHARE,
   MAX_GAIN_MULTIPLE_OF_RATE,
   MAX_STRENGTH_GAIN_PER_BLOCK,
   FRONTIER_MAX_DELTA_FRACTION,
@@ -196,18 +197,27 @@ export function feasibilityScreen(state: AthleteState, goal: Goal): FeasibilityR
   const projectedTotalKg = currentTotal * (1 + cappedStrengthGain);
   const projected5kS = state.predicted5kS * (1 - cappedEnduranceGain);
 
-  // The projection is a RANGE, and the slow end is where the athlete is today.
+  // The projection is a RANGE, and all of it is faster than today.
   //
-  // Endurance progress is not linear and not guaranteed. Eleven weeks of good
-  // training can return a personal best, and it can equally return the same
-  // time in worse weather on a tireder day, and both are normal. A single
-  // number hides that: an athlete shown "17:45" reads a commitment, and when
-  // they run 18:20 off a block they executed well, the plan has told them they
-  // failed at something they did not fail at. Quoting the band from today's
-  // fitness to the modelled best keeps the good outcome visible without
-  // pretending the bad one is off the table.
-  const projected5kRangeS: [number, number] = [projected5kS, state.predicted5kS];
-  const projectedTotalRangeKg: [number, number] = [currentTotal, projectedTotalKg];
+  // The slow end used to be the athlete's current time, which made the bottom
+  // of every band "this block may do nothing". That was an overcorrection from
+  // the opposite error — a single optimistic number, read as a promise — and
+  // it is wrong in its own way: quoting someone's own PB back at them as a
+  // possible outcome of sixteen weeks of work is dispiriting, and it is not
+  // what the evidence says either. A block that gets completed makes people
+  // faster; how much is the uncertain part, not whether.
+  //
+  // So the band runs from a cautious share of the modelled gain to the full
+  // modelled gain, and the fact that progress is not linear is said in words
+  // underneath. That is the honest place for it. A plateau is a real
+  // possibility and it deserves a sentence, not a silent widening of the
+  // arithmetic until the range stops claiming anything.
+  const cautious5kS = state.predicted5kS * (1 - cappedEnduranceGain * CAUTIOUS_GAIN_SHARE);
+  const projected5kRangeS: [number, number] = [projected5kS, cautious5kS];
+  const projectedTotalRangeKg: [number, number] = [
+    currentTotal * (1 + cappedStrengthGain * CAUTIOUS_GAIN_SHARE),
+    projectedTotalKg,
+  ];
 
   const messages: string[] = [];
   let strengthReachable: boolean | null = null;
@@ -236,16 +246,18 @@ export function feasibilityScreen(state: AthleteState, goal: Goal): FeasibilityR
     // moves in steps and setbacks, not down a line, and an athlete who runs
     // 18:20 off a well-executed block has not failed at anything — but a plan
     // that promised them one number has told them they did.
+    // Best first, then the cautious end — both faster than where they are now.
     const band = `${fmt(projected5kRangeS[0])}-${fmt(projected5kRangeS[1])}`;
     messages.push(
       enduranceReachable
-        ? `5k: ${fmt(goal.target5kS)} is reachable — ${goal.weeksOut} weeks puts you in the ${band} range, ` +
-          `with the fast end assuming the block goes well. Running does not improve in a straight line, so ` +
-          `treat the whole range as the honest answer.`
-        : `5k: ${fmt(goal.target5kS)} is ambitious. ${goal.weeksOut} weeks puts you in the ${band} range — about ` +
-          `${Math.round(enduranceShortfallS)}s short at best. Running does not improve in a straight line and ` +
-          `plateaus are normal, so this is the range rather than a promise. Worth knowing now rather than at ` +
-          `the finish line.`
+        ? `5k: ${fmt(goal.target5kS)} is reachable — ${goal.weeksOut} weeks of this block projects ${band}, from ` +
+          `${fmt(state.predicted5kS)} today. The fast end assumes the block goes well. Running does not improve in ` +
+          `a straight line and a flat block happens to everyone, so treat this as the range worth training for ` +
+          `rather than a guarantee.`
+        : `5k: ${fmt(goal.target5kS)} is ambitious. ${goal.weeksOut} weeks of this block projects ${band}, from ` +
+          `${fmt(state.predicted5kS)} today — about ${Math.round(enduranceShortfallS)}s short of the target at ` +
+          `best. Running does not improve in a straight line and a flat block happens to everyone, so this is a ` +
+          `range rather than a promise. Worth knowing now rather than at the finish line.`
     );
   }
 

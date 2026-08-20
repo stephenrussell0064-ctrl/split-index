@@ -181,13 +181,16 @@ describe("projected improvement stays inside what a human can do", () => {
     const s = state({ predicted5kS: 1105, enduranceTrainingAge: "novice" });
     const f = feasibilityScreen(s, goal({ weeksOut: 11, target5kS: 1080, priority: 0 }));
 
-    // The slow end of the band is today's fitness. Eleven weeks of good work
-    // can return the same time, and the athlete should not read that as having
-    // failed at something the plan promised them.
-    expect(f.projected5kRangeS[1]).toBe(1105);
+    // The whole band is faster than where the athlete is today. Quoting their
+    // own PB back at them as a possible outcome of eleven weeks' work is
+    // dispiriting and is not what the evidence says — a block that gets
+    // completed makes people faster, and how much is the uncertain part.
     expect(f.projected5kRangeS[0]).toBe(f.projected5kS);
+    expect(f.projected5kRangeS[1]).toBeLessThan(1105);
+    expect(f.projected5kRangeS[1]).toBeGreaterThan(f.projected5kRangeS[0]);
+    // The caveat is stated in words rather than smuggled into the arithmetic.
     expect(f.messages.join(" ")).toMatch(/not improve in a straight line/);
-    expect(f.messages.join(" ")).toMatch(/18:0\d-18:25/);
+    expect(f.messages.join(" ")).toMatch(/from 18:25 today/);
   });
 
   it("stops treating a fast runner as a novice whatever the intake said", () => {
@@ -428,5 +431,39 @@ describe("injury changes the plan without sending anyone to a clinic", () => {
     // This engine improves hybrid performance; it does not refer people.
     expect(plan.safety.referrals.join(" ")).not.toMatch(/physio/i);
     expect(plan.safety.advisories.join(" ")).not.toMatch(/physio/i);
+  });
+});
+
+describe("the predicted 5k respects what the athlete has actually run", () => {
+  const easyRuns = (paceS: number) =>
+    Array.from({ length: 12 }, (_, i) => ({ dateIdx: i * 3, distanceKm: 10, durationS: 10 * paceS, avgHr: 148 }));
+
+  it("never predicts a 5k slower than a pace already held for longer than 5k", () => {
+    // The fallback is a flat 25:00 and the app's benchmark can be stale.
+    // Either can land slower than the athlete's own easy running — and since
+    // the easy band is derived FROM the predicted 5k, that yields an easy pace
+    // quicker than the 5k pace it was calculated from, which the athlete reads
+    // as "my easy runs are prescribed slower than I actually jog".
+    const fast = diagnose(easyRuns(240), [], {}, { priority: 0.5, hrMax: 190, hrRest: 52 });
+    // 4:00/km held for 10km bounds the 5k at 20:00, well inside the 25:00 default.
+    expect(fast.predicted5kS).toBeLessThanOrEqual(240 * 5 + 1);
+    expect(fast.predicted5kSource).toBe("sustained_pace_bound");
+  });
+
+  it("leaves the fallback alone when it is already the tighter number", () => {
+    // 5:12/km implies a 26:00 5k, so the 25:00 default is the better claim and
+    // the bound must not loosen it. This only ever pulls toward evidence.
+    const slow = diagnose(easyRuns(312), [], {}, { priority: 0.5, hrMax: 190, hrRest: 52 });
+    expect(slow.predicted5kS).toBeLessThanOrEqual(1500);
+    expect(slow.predicted5kSource).toBe("unknown");
+  });
+
+  it("does not touch a genuine maximal effort", () => {
+    const withEffort = diagnose(
+      [...easyRuns(312), { dateIdx: 40, distanceKm: 5, durationS: 1150, avgHr: 185, isMaxEffort: true }],
+      [], {}, { priority: 0.5, hrMax: 190, hrRest: 52 }
+    );
+    expect(withEffort.predicted5kSource).toBe("maximal_effort");
+    expect(withEffort.predicted5kS).toBeCloseTo(1150, 0);
   });
 });
