@@ -67,6 +67,12 @@ export function GymExerciseScoreList({
           insights
         );
         const result = insight?.result as ScoreStrengthResult | undefined;
+        // Results scored before the 1RM split existed have neither half, and
+        // for those the single stored figure is still the best thing to show.
+        const split =
+          result?.currentOneRM != null && result.allTimeOneRM != null
+            ? { current: result.currentOneRM, allTime: result.allTimeOneRM }
+            : null;
 
         return (
           <li
@@ -78,10 +84,16 @@ export function GymExerciseScoreList({
                 <p className="font-medium text-gym-text">{ex.exercise_name}</p>
                 <p className="mt-1 text-xs text-gym-muted tabular-nums">
                   {formatSetSummary(ex)}
-                  {ex.estimated_1rm_kg
+                  {!split && ex.estimated_1rm_kg
                     ? ` · est. 1RM ${formatWeight(ex.estimated_1rm_kg)}`
                     : ""}
                 </p>
+                {split && (
+                  <p className="mt-1 text-xs text-gym-muted tabular-nums">
+                    Current 1RM {formatWeight(split.current)} · All-time best{" "}
+                    {formatWeight(split.allTime)}
+                  </p>
+                )}
                 {result && (
                   <p className="mt-1 text-xs text-gym-muted tabular-nums">
                     {result.tier}

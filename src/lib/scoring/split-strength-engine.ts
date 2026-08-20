@@ -25,6 +25,20 @@
  * serializer (`serializeStrengthResult`), not by computing and hiding them
  * on the client.
  *
+ * Three 1RM numbers, deliberately, because "my 1RM" means two different
+ * things to an athlete and a single figure cannot be both:
+ *  - `allTimeOneRM` — the best they have ever hit. A high-water mark: a bad
+ *    session can never lower it, only a new best moves it.
+ *  - `currentOneRM` — what the recent block says they could do today. A
+ *    session worse than the last one pulls this DOWN, which is the entire
+ *    point; it is a statement about present fitness, not about a lifetime.
+ *  - `oneRM` — the SCORING estimate, unchanged, sitting between the two (see
+ *    adaptiveOneRM). The index should neither collapse on one bad day nor be
+ *    owned forever by one good one, so it is not simply either of the above.
+ * Both athlete-facing numbers are derived from the logged sets on every
+ * scoring pass — nothing about them is stored, so they cannot drift from the
+ * sets they claim to summarise.
+ *
  * Bodyweight-relative lifts (`BODYWEIGHT_RELATIVE_LIFTS`: pull-ups, dips,
  * push-ups): the logged weight is *added* load, not the total load under
  * tension. 1RM is estimated from (a fraction of) bodyweight + added weight,
@@ -86,6 +100,14 @@ export interface ScoreStrengthInput {
   history: LoggedSet[];
   /** Most recent/best set from the current session — the free-tier path scores off this alone. */
   latestSet: { weightKg: number; reps: number; repsInReserve?: number | null };
+  /**
+   * ISO timestamp of the session `latestSet` belongs to. Defaults to now,
+   * which is right for a live log but wrong for a re-score of an old session
+   * (`/api/activities/recompute`) — without it, a two-year-old session would
+   * be weighted as if it happened today by the recency decay behind
+   * `currentOneRM`.
+   */
+  latestSetPerformedAt?: string;
   /** User-stated 1RM for variance guard (Part B4) — optional. */
   statedOneRMKg?: number | null;
   bodyweightKg: number;
@@ -117,7 +139,20 @@ export interface ScoreStrengthResult {
   liftKey: string;
   score: number;
   tier: StrengthTier;
+  /** Scoring estimate — what `score` is derived from. Between the two below; see the file header. */
   oneRM: number;
+  /**
+   * Best 1RM ever achieved across the supplied history plus this set — a
+   * high-water mark, never lowered by a worse session.
+   *
+   * Optional for the same reason as `exerciseIndex` below: results persisted
+   * before the split existed genuinely do not have it, and claiming otherwise
+   * would make every reader of a stored `score_breakdown` trust a number that
+   * isn't there. Fall back to `oneRM` when absent.
+   */
+  allTimeOneRM?: number;
+  /** Recency-weighted estimate of what the athlete could lift now — falls after a worse session. Optional, same reason as `allTimeOneRM`. */
+  currentOneRM?: number;
   oneRMConfidence: number;
   bodyweightRatio: number;
   source: StrengthSource;
@@ -150,6 +185,9 @@ export interface FreeStrengthResult {
   score: number;
   tier: StrengthTier;
   oneRM: number;
+  /** Not premium-gated: an achieved best is a personal record, and records are free here (same call as race records in race-records.ts). */
+  allTimeOneRM?: number;
+  currentOneRM?: number;
   bodyweightRatio: number;
   nextTier: NextTierTarget | null;
   source: StrengthSource;
@@ -836,7 +874,8 @@ function computeNextTierFromWeightAnchors(
 }
 
 // ---------------------------------------------------------------------------
-// Adaptive 1RM (premium) — uses the full logged history, not just this session
+// History-derived 1RMs — the premium scoring blend, plus the all-time/current
+// split every tier sees (see the file header for what each number means)
 // ---------------------------------------------------------------------------
 
 interface AdaptiveEstimate {
@@ -846,14 +885,21 @@ interface AdaptiveEstimate {
   band: [number, number];
 }
 
-/**
- * Blends the heaviest e1RM ever logged (a real achieved data point) with a
- * recency- and intensity-weighted average across the full history, then
- * corrects for the known low bias of sub-maximal-set formulas when there's
- * no low-rep (near-max) data to anchor against. Constants here are
- * engineering judgment calls, not lab-derived — the point is a materially
- * better estimate than a single set, not a precise one.
- */
+/** The two athlete-facing 1RMs — see the file header. */
+export interface OneRMSplit {
+  allTimeOneRM: number;
+  currentOneRM: number;
+}
+
+/** One logged set reduced to an estimated 1RM, tagged with when it happened. */
+interface DatedEstimate {
+  e1rm: number;
+  daysAgo: number;
+  reps: number;
+  /** Session identity — every set logged in one session shares its `performedAt`. */
+  performedAt: string;
+}
+
 function effectiveSetWeight(
   weightKg: number,
   weightEntryMode?: WeightEntryMode,
@@ -865,45 +911,71 @@ function effectiveSetWeight(
   return weightEntryMode === "per_hand" ? weightKg * 2 : weightKg;
 }
 
-function adaptiveOneRM(
-  history: LoggedSet[],
+/** Days between `performedAt` and `now`, treating an unparseable timestamp as today rather than letting a NaN poison every average downstream of it. */
+function daysSince(performedAt: string, now: number): number {
+  const at = new Date(performedAt).getTime();
+  if (!Number.isFinite(at)) return 0;
+  return Math.max(0, (now - at) / 86_400_000);
+}
+
+function e1rmSeries(
+  sets: LoggedSet[],
+  now: number,
   bodyweightKg: number,
   isBodyweightRelative: boolean,
   exerciseClass: ExerciseClass,
   weightEntryMode?: WeightEntryMode,
   exerciseName?: string,
   loadFraction = 1.0
-): AdaptiveEstimate {
-  const now = Date.now();
-  const loadedBodyweight = bodyweightKg * loadFraction;
-  const weighted = history.map((s) => {
-    const logged = effectiveSetWeight(s.weightKg, weightEntryMode, exerciseName);
-    const e1rm = estimate1RMFromSet(
-      logged,
+): DatedEstimate[] {
+  return sets.map((s) => ({
+    e1rm: estimate1RMFromSet(
+      effectiveSetWeight(s.weightKg, weightEntryMode, exerciseName),
       s.reps,
       exerciseClass,
       isBodyweightRelative,
       bodyweightKg,
       loadFraction,
       s.repsInReserve
-    );
-    const daysAgo = Math.max(0, (now - new Date(s.performedAt).getTime()) / 86_400_000);
-    const recencyWeight = Math.exp(-daysAgo / 180); // ~6-month half-life
+    ),
+    daysAgo: daysSince(s.performedAt, now),
+    reps: s.reps,
+    performedAt: s.performedAt,
+  }));
+}
+
+/** Near-max evidence: a set at 3 reps or fewer, which is what anchors a rep-formula estimate. */
+function hasLowRepData(series: DatedEstimate[]): boolean {
+  return series.some((s) => s.reps <= 3);
+}
+
+/**
+ * Blends the heaviest e1RM ever logged (a real achieved data point) with a
+ * recency- and intensity-weighted average across the full history, then
+ * corrects for the known low bias of sub-maximal-set formulas when there's
+ * no low-rep (near-max) data to anchor against. Constants here are
+ * engineering judgment calls, not lab-derived — the point is a materially
+ * better estimate than a single set, not a precise one.
+ */
+function adaptiveOneRM(
+  series: DatedEstimate[],
+  biasCorrection: number,
+  nearMaxEvidence: boolean
+): AdaptiveEstimate {
+  const weighted = series.map((s) => {
+    const recencyWeight = Math.exp(-s.daysAgo / 180); // ~6-month half-life
     const repWeight = s.reps <= 3 ? 1.0 : s.reps <= 6 ? 0.8 : s.reps <= 10 ? 0.55 : 0.35;
-    return { e1rm, weight: recencyWeight * repWeight, reps: s.reps };
+    return { e1rm: s.e1rm, daysAgo: s.daysAgo, weight: recencyWeight * repWeight };
   });
 
   const totalWeight = weighted.reduce((sum, w) => sum + w.weight, 0) || 1;
   const weightedAvg = weighted.reduce((sum, w) => sum + w.e1rm * w.weight, 0) / totalWeight;
   const maxE1rm = Math.max(...weighted.map((w) => w.e1rm));
 
-  const hasLowRepData = weighted.some((w) => w.reps <= 3);
-  const biasCorrection = subMaxBiasCorrection(hasLowRepData, isBodyweightRelative, exerciseClass);
-
   const oneRM = (maxE1rm * 0.6 + weightedAvg * 0.4) * biasCorrection;
 
   const confidence = clamp(
-    0.5 + Math.min(weighted.length, 10) * 0.03 + (hasLowRepData ? 0.15 : 0),
+    0.5 + Math.min(weighted.length, 10) * 0.03 + (nearMaxEvidence ? 0.15 : 0),
     0,
     0.97
   );
@@ -914,14 +986,72 @@ function adaptiveOneRM(
 
   let trend: StrengthTrend | null = null;
   if (weighted.length >= 4) {
-    const third = Math.max(1, Math.floor(weighted.length / 3));
-    const early = weighted.slice(0, third).reduce((s, w) => s + w.e1rm, 0) / third;
-    const recent = weighted.slice(-third).reduce((s, w) => s + w.e1rm, 0) / third;
+    // Oldest first. The caller's history arrives in whatever order the rows
+    // came back from the database, and "early third vs recent third" is
+    // meaningless — occasionally backwards — read off an unsorted array.
+    const chronological = [...weighted].sort((a, b) => b.daysAgo - a.daysAgo);
+    const third = Math.max(1, Math.floor(chronological.length / 3));
+    const early = chronological.slice(0, third).reduce((s, w) => s + w.e1rm, 0) / third;
+    const recent = chronological.slice(-third).reduce((s, w) => s + w.e1rm, 0) / third;
     const delta = (recent - early) / early;
     trend = delta > 0.03 ? "up" : delta < -0.03 ? "down" : "flat";
   }
 
   return { oneRM, confidence, trend, band };
+}
+
+/**
+ * Half-life (days) of the recency decay behind `currentOneRM`. ESTIMATE, not
+ * lab-calibrated: detraining work puts the onset of measurable loss of
+ * maximal strength somewhere around 2–4 weeks off training, and a training
+ * block typically runs 3–6 weeks, so three weeks keeps the block the athlete
+ * is actually in dominant while a session from six weeks ago still counts for
+ * a quarter of a session logged today.
+ *
+ * Deliberately far shorter than the 180-day constant in adaptiveOneRM above:
+ * that number answers "how strong is this athlete", this one answers "how
+ * strong are they right now", and those two questions want different memories.
+ */
+const CURRENT_ONE_RM_HALF_LIFE_DAYS = 21;
+
+/**
+ * Both athlete-facing 1RMs, derived from the same set history on every
+ * scoring pass rather than stored — a high-water mark recomputed from the
+ * sets can never disagree with them, needs no backfill, and stays correct
+ * when a mis-logged session is edited or deleted.
+ *
+ * `currentOneRM` averages SESSION bests, not every set: warm-ups and back-off
+ * sets say nothing about what the athlete could manage that day, and letting
+ * them into the mean would make simply doing more volume look like getting
+ * weaker. Because the newest session always carries the largest decay weight,
+ * a session below the running estimate necessarily drags it down — that
+ * property is the whole reason this number exists.
+ */
+function splitOneRM(series: DatedEstimate[], biasCorrection: number): OneRMSplit {
+  const bestPerSession = new Map<string, DatedEstimate>();
+  for (const s of series) {
+    const previous = bestPerSession.get(s.performedAt);
+    if (!previous || s.e1rm > previous.e1rm) bestPerSession.set(s.performedAt, s);
+  }
+  const sessions = [...bestPerSession.values()];
+  if (sessions.length === 0) return { allTimeOneRM: 0, currentOneRM: 0 };
+
+  const allTimeOneRM = Math.max(...sessions.map((s) => s.e1rm)) * biasCorrection;
+
+  let weightedSum = 0;
+  let totalWeight = 0;
+  for (const s of sessions) {
+    const weight = 0.5 ** (s.daysAgo / CURRENT_ONE_RM_HALF_LIFE_DAYS);
+    weightedSum += s.e1rm * weight;
+    totalWeight += weight;
+  }
+
+  // Every session old enough for its decay weight to underflow to zero (~60
+  // years): report the high-water mark rather than dividing by nothing.
+  const currentOneRM =
+    totalWeight > 0 ? (weightedSum / totalWeight) * biasCorrection : allTimeOneRM;
+
+  return { allTimeOneRM, currentOneRM };
 }
 
 // ---------------------------------------------------------------------------
@@ -941,36 +1071,60 @@ export function scoreStrength(input: ScoreStrengthInput): ScoreStrengthResult {
   const loadFraction = bodyweightFraction(resolvedKey);
   const exerciseName = input.exerciseName ?? liftKey;
 
-  let oneRM: number;
-  let oneRMConfidence: number;
-  let trend: StrengthTrend | null = null;
-  let oneRMBandKg: [number, number] | null = null;
-
-  if (isPremium && history.length > 0) {
-    const adaptive = adaptiveOneRM(
-      history,
-      bodyweightKg,
-      isBodyweightRelative,
-      exerciseClass,
-      input.weightEntryMode,
-      exerciseName,
-      loadFraction
-    );
-    oneRM = adaptive.oneRM;
-    oneRMConfidence = adaptive.confidence;
-    trend = adaptive.trend;
-    oneRMBandKg = adaptive.band;
-  } else {
-    const scoringWeight = latestSet.weightKg;
-    oneRM = estimate1RMFromSet(
-      scoringWeight,
+  const now = Date.now();
+  const historySeries = e1rmSeries(
+    history,
+    now,
+    bodyweightKg,
+    isBodyweightRelative,
+    exerciseClass,
+    input.weightEntryMode,
+    exerciseName,
+    loadFraction
+  );
+  // latestSet.weightKg arrives already resolved to a scoring weight by the
+  // caller, while history sets do not — putting it through effectiveSetWeight
+  // as well would double a per-hand dumbbell load. It is appended rather than
+  // assumed to be in `history`: for a freshly logged session the row doesn't
+  // exist yet, and on an edit or a merge the caller deliberately excludes it.
+  const latestEstimate: DatedEstimate = {
+    e1rm: estimate1RMFromSet(
+      latestSet.weightKg,
       latestSet.reps,
       exerciseClass,
       isBodyweightRelative,
       bodyweightKg,
       loadFraction,
       latestSet.repsInReserve
+    ),
+    daysAgo: input.latestSetPerformedAt ? daysSince(input.latestSetPerformedAt, now) : 0,
+    reps: latestSet.reps,
+    performedAt: input.latestSetPerformedAt ?? new Date(now).toISOString(),
+  };
+  const fullSeries = [...historySeries, latestEstimate];
+  const split = splitOneRM(
+    fullSeries,
+    subMaxBiasCorrection(hasLowRepData(fullSeries), isBodyweightRelative, exerciseClass)
+  );
+
+  let oneRM: number;
+  let oneRMConfidence: number;
+  let trend: StrengthTrend | null = null;
+  let oneRMBandKg: [number, number] | null = null;
+
+  if (isPremium && history.length > 0) {
+    const nearMaxEvidence = hasLowRepData(historySeries);
+    const adaptive = adaptiveOneRM(
+      historySeries,
+      subMaxBiasCorrection(nearMaxEvidence, isBodyweightRelative, exerciseClass),
+      nearMaxEvidence
     );
+    oneRM = adaptive.oneRM;
+    oneRMConfidence = adaptive.confidence;
+    trend = adaptive.trend;
+    oneRMBandKg = adaptive.band;
+  } else {
+    oneRM = latestEstimate.e1rm;
     oneRM *= subMaxBiasCorrection(
       latestSet.reps + (latestSet.repsInReserve ?? 0) <= 3,
       isBodyweightRelative,
@@ -1005,6 +1159,8 @@ export function scoreStrength(input: ScoreStrengthInput): ScoreStrengthResult {
       score: MIN_SCORE,
       tier: "Beginner",
       oneRM: 0,
+      allTimeOneRM: 0,
+      currentOneRM: 0,
       oneRMConfidence: 0,
       bodyweightRatio: 0,
       source,
@@ -1101,6 +1257,8 @@ export function scoreStrength(input: ScoreStrengthInput): ScoreStrengthResult {
     score,
     tier,
     oneRM: round1(oneRM),
+    allTimeOneRM: round1(split.allTimeOneRM),
+    currentOneRM: round1(split.currentOneRM),
     oneRMConfidence: round2(oneRMConfidence),
     bodyweightRatio: round2(ratio),
     source,
@@ -1137,6 +1295,8 @@ export function serializeStrengthResult(
     score: result.score,
     tier: result.tier,
     oneRM: result.oneRM,
+    allTimeOneRM: result.allTimeOneRM,
+    currentOneRM: result.currentOneRM,
     bodyweightRatio: result.bodyweightRatio,
     nextTier: result.nextTier,
     source: result.source,

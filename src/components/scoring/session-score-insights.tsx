@@ -197,6 +197,10 @@ function StrengthRow({ result, liftName }: { result: ScoreStrengthResult; liftNa
     result.flags?.includes("sex-factor-beta") ||
     result.appliedFactors?.some((f) => f.includes("beta"));
   const isEstimated = result.source === "generic";
+  // Results persisted before the 1RM split existed carry only the single
+  // blended figure — show it as both rather than a blank or a zero.
+  const currentOneRM = result.currentOneRM ?? result.oneRM;
+  const allTimeOneRM = result.allTimeOneRM ?? result.oneRM;
   return (
     <div className="rounded-lg border border-gym-border/20 bg-gym-bg/40 p-3">
       <div className="flex items-baseline justify-between gap-2">
@@ -213,14 +217,16 @@ function StrengthRow({ result, liftName }: { result: ScoreStrengthResult; liftNa
         </p>
       </div>
       <p className="mt-1 text-xs text-gym-muted tabular-nums">
-        Est. 1RM {formatWeight(result.oneRM)} · {result.tier}
-        {isBeta ? " (beta)" : ""}
+        Current 1RM {formatWeight(currentOneRM)} · All-time best {formatWeight(allTimeOneRM)}
       </p>
-      <p className="text-xs text-gym-muted tabular-nums">{result.bodyweightRatio}× bodyweight</p>
+      <p className="text-xs text-gym-muted tabular-nums">
+        {result.tier}
+        {isBeta ? " (beta)" : ""} · {result.bodyweightRatio}× bodyweight
+      </p>
       {isBodyweightOnlyExercise(liftName) && (
         <ScoringExplainerNote className="text-gym-muted">
-          Est. 1RM here is the added weight a weighted {liftName.toLowerCase()} would need to be
-          equally hard for one rep — not your bodyweight, and not a literal weight you lifted.
+          Both 1RM figures here are the added weight a weighted {liftName.toLowerCase()} would need
+          to be equally hard for one rep — not your bodyweight, and not a literal weight you lifted.
         </ScoringExplainerNote>
       )}
       {result.nextTier && (
@@ -314,6 +320,10 @@ export function SessionScoreInsights({
   if (zone === "gym" && strengthResults?.length) {
     return (
       <div className={cn("space-y-3", className)}>
+        <ScoringExplainerNote href="/how-scoring-works#one-rm" className="mt-0 text-gym-muted">
+          All-time best is a high-water mark — a worse session can never lower it, only beating it
+          moves it. Current 1RM is read from your recent training, so it falls when your sessions do.
+        </ScoringExplainerNote>
         {strengthResults.map(({ name, result }) => {
           const full =
             isPremium || !isStrengthResultLocked(result) ? (result as ScoreStrengthResult) : null;

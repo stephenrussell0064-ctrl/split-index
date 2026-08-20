@@ -163,9 +163,16 @@ function PredictionsContent({
           <p className="micro-label text-muted mb-2 flex items-center gap-1.5">
             <Target className="h-3 w-3" /> Adaptive 1RM · every lift logged
           </p>
+          <ScoringExplainerNote href="/how-scoring-works#one-rm" className="mb-2 mt-0">
+            Two numbers per lift, because they answer different questions.{" "}
+            <strong className="text-foreground/90">Now</strong> is what your recent training says
+            you could lift today — it falls when your sessions do.{" "}
+            <strong className="text-foreground/90">Best</strong> is the heaviest you have ever hit;
+            nothing but beating it can move it.
+          </ScoringExplainerNote>
           {strengthEstimates.some((est) => isBodyweightOnlyExercise(est.exerciseName)) && (
             <ScoringExplainerNote className="mb-2 mt-0">
-              For bodyweight-only lifts (Pull Up, Push Up, Dip, Muscle Up), this is the added
+              For bodyweight-only lifts (Pull Up, Push Up, Dip, Muscle Up), these are the added
               weight a weighted version would need to be equally hard for one rep — not your
               bodyweight itself.
             </ScoringExplainerNote>
@@ -174,18 +181,26 @@ function PredictionsContent({
             {strengthEstimates.map((est) => (
               <li
                 key={est.exerciseName}
-                className="flex items-center justify-between gap-2 glass rounded-lg px-3 py-2 text-sm"
+                className="glass rounded-lg px-3 py-2 text-sm"
               >
-                <span className="text-foreground/90">{est.exerciseName}</span>
-                <span className="flex items-center gap-2 tabular-nums">
-                  <TrendIcon trend={est.trend} />
-                  <span className="font-medium">{formatWeight(est.estimated1RmKg)}</span>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-foreground/90">{est.exerciseName}</span>
+                  <span className="flex items-center gap-2 tabular-nums">
+                    <TrendIcon trend={est.trend} />
+                    <span className="font-medium">{formatWeight(est.current1RmKg)}</span>
+                    <span className="text-[10px] uppercase tracking-wider text-muted">now</span>
+                  </span>
+                </div>
+                <div className="mt-1 flex items-center justify-between gap-2 text-[10px] text-muted">
+                  <span className="uppercase tracking-wider">
+                    Best {formatWeight(est.allTime1RmKg)}
+                  </span>
                   {showConfidence && est.bandKg && (
-                    <span className="text-[10px] text-muted">
+                    <span className="tabular-nums">
                       {formatWeight(est.bandKg[0])}–{formatWeight(est.bandKg[1])}
                     </span>
                   )}
-                </span>
+                </div>
               </li>
             ))}
           </ul>
@@ -236,6 +251,8 @@ export function StoredPredictionsPanel({
                   {
                     exerciseName: "Bench Press",
                     estimated1RmKg: 102.4,
+                    current1RmKg: 99.8,
+                    allTime1RmKg: 107.5,
                     trend: "up",
                     bandKg: [96.3, 108.1],
                     recordedAt: "",

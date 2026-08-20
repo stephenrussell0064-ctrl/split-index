@@ -58,6 +58,10 @@ export interface PredictedBenchmark {
 export interface StrengthEstimate {
   exerciseName: string;
   estimated1RmKg: number;
+  /** Best ever achieved on this lift — mined from every session's stored 1RM, so it is a true high-water mark rather than whatever the most recent session implied. */
+  allTime1RmKg: number;
+  /** What recent training says the athlete could lift today — falls after a worse block. See split-strength-engine.ts. */
+  current1RmKg: number;
   trend?: "up" | "down" | "flat";
   confidence?: number;
   bandKg?: [number, number];

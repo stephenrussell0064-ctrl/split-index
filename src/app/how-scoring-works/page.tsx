@@ -340,6 +340,36 @@ export default async function HowScoringWorksPage() {
               </p>
             </section>
 
+            <section id="one-rm">
+              <h2 className="text-lg font-semibold text-foreground">
+                Your two 1RMs: all-time best and current
+              </h2>
+              <p className="mt-3">
+                &quot;My one-rep max&quot; means two different things depending on when you ask, so
+                you get both rather than one number pretending to be both.
+              </p>
+              <p className="mt-3">
+                <strong className="text-foreground">All-time best</strong> is the heaviest single
+                rep your logged sets have ever implied. It is a high-water mark: a bad session, a
+                deload or six months off cannot lower it. Only beating it moves it.
+              </p>
+              <p className="mt-3">
+                <strong className="text-foreground">Current 1RM</strong> is what your recent
+                training says you could do today. Each session counts by how recently it happened,
+                with a three-week half-life — a session from six weeks ago carries about a quarter
+                of the weight of one logged today. So it rises when you train well and falls when
+                you train worse, which is exactly what an all-time best must never do. Three weeks
+                is our estimate rather than a measured constant: it sits inside the two-to-four
+                weeks after which detraining studies start to see measurable strength loss, and
+                roughly matches the length of a training block.
+              </p>
+              <p className="mt-3">
+                Each session is read by its best set, so warm-ups and back-off sets never make a
+                good day look like a bad one. Neither number is stored — both are recalculated from
+                your logged sets, so correcting a mis-typed session corrects them too.
+              </p>
+            </section>
+
             <section id="dots-gl">
               <h2 className="text-lg font-semibold text-foreground">Strength Index: DOTS and IPF GL</h2>
               <p className="mt-3">

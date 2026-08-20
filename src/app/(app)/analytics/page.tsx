@@ -7,6 +7,7 @@ import { resolveScoringSex } from "@/lib/scoring/adapters";
 import { calculateOverallDotsGl } from "@/lib/scoring/strength/overall-dots-gl";
 import { computeRaceRecords } from "@/lib/scoring/race-records";
 import type { AnalyticsPayload, PredictedBenchmark, StrengthEstimate } from "@/components/analytics/types";
+import { normalizeName } from "@/lib/scoring/split-strength-engine";
 import type { ScoreStrengthResult } from "@/lib/scoring/split-strength-engine";
 import type { PersonalRecord } from "@/types";
 
@@ -138,24 +139,6 @@ export default async function AnalyticsPage() {
       ? hrvBaselineReadings.reduce((sum, v) => sum + v, 0) / hrvBaselineReadings.length
       : null;
 
-  // latest_strength_scores() already returns one row per exercise — this
-  // dedup is just a defensive no-op if that ever changes.
-  const strengthEstimateByLift = new Map<string, StrengthEstimate>();
-  for (const row of strengthScoresRaw ?? []) {
-    const name = row.exercise_name as string;
-    if (strengthEstimateByLift.has(name)) continue;
-    const breakdown = row.score_breakdown as { strength_result?: ScoreStrengthResult } | null;
-    const result = breakdown?.strength_result;
-    strengthEstimateByLift.set(name, {
-      exerciseName: name,
-      estimated1RmKg: row.estimated_1rm_kg as number,
-      trend: result?.trend ?? undefined,
-      confidence: result?.oneRMConfidence,
-      bandKg: result?.oneRMBandKg ?? undefined,
-      recordedAt: row.recorded_at as string,
-    });
-  }
-
   const raceRecords = computeRaceRecords(
     (raceRecordActivities ?? []).map((a) => ({
       distanceMeters: a.distance_meters as number | null,
@@ -184,6 +167,50 @@ export default async function AnalyticsPage() {
     profile.weight_kg && profile.weight_kg > 0
       ? calculateOverallDotsGl(allTimeExercises ?? [], profile.weight_kg, resolveScoringSex(profile))
       : null;
+
+  // All-time best per lift, mined from every gym_exercises row ever logged
+  // rather than read off the latest scoring pass. The engine only ever sees
+  // the most recent 200 sessions (fetchExerciseHistory), and a high-water
+  // mark that quietly forgets anything older is not a high-water mark. These
+  // are the same rows the DOTS/GL card above already needs, so it costs no
+  // extra query. Names are normalized because the same lift can have been
+  // typed with different casing across sessions.
+  const allTime1RmByLift = new Map<string, number>();
+  for (const row of allTimeExercises ?? []) {
+    const value = (row.estimated_1rm_kg as number | null) ?? 0;
+    if (value <= 0) continue;
+    const key = normalizeName(row.exercise_name as string);
+    allTime1RmByLift.set(key, Math.max(allTime1RmByLift.get(key) ?? 0, value));
+  }
+
+  // latest_strength_scores() already returns one row per exercise — this
+  // dedup is just a defensive no-op if that ever changes.
+  const strengthEstimateByLift = new Map<string, StrengthEstimate>();
+  for (const row of strengthScoresRaw ?? []) {
+    const name = row.exercise_name as string;
+    if (strengthEstimateByLift.has(name)) continue;
+    const breakdown = row.score_breakdown as { strength_result?: ScoreStrengthResult } | null;
+    const result = breakdown?.strength_result;
+    const estimated1RmKg = row.estimated_1rm_kg as number;
+    strengthEstimateByLift.set(name, {
+      exerciseName: name,
+      estimated1RmKg,
+      // Highest of every source that could hold the real best — a row scored
+      // before the split existed has no allTimeOneRM at all, so falling back
+      // to the stored per-session figure keeps the number honest instead of
+      // reporting a zero.
+      allTime1RmKg: Math.max(
+        allTime1RmByLift.get(normalizeName(name)) ?? 0,
+        result?.allTimeOneRM ?? 0,
+        estimated1RmKg
+      ),
+      current1RmKg: result?.currentOneRM ?? estimated1RmKg,
+      trend: result?.trend ?? undefined,
+      confidence: result?.oneRMConfidence,
+      bandKg: result?.oneRMBandKg ?? undefined,
+      recordedAt: row.recorded_at as string,
+    });
+  }
 
   const payload: AnalyticsPayload = {
     isPremium: premium,

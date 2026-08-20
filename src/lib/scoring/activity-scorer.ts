@@ -309,6 +309,10 @@ function scoreGymSession(
         reps: top.reps,
         repsInReserve: top.reps_in_reserve ?? null,
       },
+      // Without this a recompute of an old session would date its sets to
+      // today, and the recency decay behind currentOneRM would read a
+      // two-year-old session as current form.
+      latestSetPerformedAt: input.startedAt,
       bodyweightKg: bodyweight,
       sex,
       age: input.profile.age ?? null,

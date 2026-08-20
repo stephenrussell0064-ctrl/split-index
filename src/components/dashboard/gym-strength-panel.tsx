@@ -11,6 +11,10 @@ import type { ExRxTier } from "@/lib/scoring/strength/ratio-tiers";
 interface LiftRow {
   name: string;
   estimated1RM: number;
+  /** What recent training says this lift is worth today — absent on sessions scored before the 1RM split existed. */
+  currentOneRM?: number;
+  /** Best ever hit on this lift; a high-water mark, never lowered by a worse session. */
+  allTimeOneRM?: number;
   relativeStrength: number;
   tier?: ExRxTier;
   tierLabel?: string;
@@ -136,6 +140,11 @@ export function GymStrengthPanel({
       {lifts.length > 0 && showDotsGl && (
         <div className="border-t border-gym-border/30 pt-4 mt-4">
           <p className="micro-label text-gym-muted mb-3">Per-lift breakdown</p>
+          <ScoringExplainerNote href="/how-scoring-works#one-rm" className="mt-0 mb-3 text-gym-muted">
+            The headline kg is your current 1RM — what recent training says you could lift today, so
+            it falls after a worse block. &quot;Best&quot; is your all-time high-water mark, which
+            only ever moves when you beat it.
+          </ScoringExplainerNote>
           {/* Bar width uses relativeStrength (× bodyweight), not raw kg —
               the only unit that's actually comparable across different
               lifts (user feedback, Slice 10: "the comparison between the
@@ -147,11 +156,13 @@ export function GymStrengthPanel({
             zone="gym"
             items={lifts.map((lift) => {
               const tierLabel = lift.tierLabel ?? (lift.tier ? formatExRxTier(lift.tier) : null);
+              const current = lift.currentOneRM ?? lift.estimated1RM;
+              const allTime = lift.allTimeOneRM ?? lift.estimated1RM;
               return {
                 label: lift.name,
                 value: lift.relativeStrength,
-                displayValue: `${lift.estimated1RM.toFixed(1)} kg`,
-                sublabel: `${lift.relativeStrength.toFixed(2)}× BW${tierLabel ? ` · ${tierLabel}` : ""}`,
+                displayValue: `${current.toFixed(1)} kg`,
+                sublabel: `best ${allTime.toFixed(1)} kg · ${lift.relativeStrength.toFixed(2)}× BW${tierLabel ? ` · ${tierLabel}` : ""}`,
               };
             })}
           />

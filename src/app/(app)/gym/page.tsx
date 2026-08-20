@@ -18,6 +18,7 @@ import {
 } from "@/lib/scoring/gym-recommendation";
 import { resolveScoringSex } from "@/lib/scoring/adapters";
 import { calculateOverallDotsGl } from "@/lib/scoring/strength/overall-dots-gl";
+import { resolveAnchorKey } from "@/lib/scoring/split-strength-engine";
 import type { ExRxTier } from "@/lib/scoring/strength/ratio-tiers";
 import type { ScoreBreakdown } from "@/types";
 
@@ -80,25 +81,6 @@ export default async function GymPage() {
   const hasHistory = (gymScores?.length ?? 0) > 0;
   const breakdown = (latestGymScore?.score_breakdown ?? {}) as ScoreBreakdown;
 
-  const lifts: Array<{
-    name: string;
-    estimated1RM: number;
-    relativeStrength: number;
-    tier?: ExRxTier;
-    tierLabel?: string;
-  }> = [];
-
-  if (breakdown.per_lift) {
-    for (const [key, val] of Object.entries(breakdown.per_lift)) {
-      if (!val) continue;
-      lifts.push({
-        name: key.charAt(0).toUpperCase() + key.slice(1),
-        estimated1RM: val.estimated1RM,
-        relativeStrength: val.relativeStrength,
-      });
-    }
-  }
-
   // Overall/profile DOTS & IPF GL — the athlete's best-ever squat/bench/
   // deadlift across every logged gym session, not just the most recently
   // logged one. Shown alongside (never instead of) the per-workout number
@@ -128,6 +110,52 @@ export default async function GymPage() {
           resolveScoringSex(profile)
         )
       : null;
+
+  // Best ever per lift, from every logged session rather than from the latest
+  // one — the same reasoning (and the same already-fetched rows) as the
+  // all-time DOTS/GL pair above. Keyed by resolved anchor key so the free-text
+  // names athletes actually type ("Bench Press", "Sumo Deadlift") line up with
+  // the canonical per_lift keys below.
+  const allTime1RmByLift = new Map<string, number>();
+  for (const row of allTimeExercises ?? []) {
+    const value = (row.estimated_1rm_kg as number | null) ?? 0;
+    if (value <= 0) continue;
+    const key = resolveAnchorKey(row.exercise_name as string);
+    allTime1RmByLift.set(key, Math.max(allTime1RmByLift.get(key) ?? 0, value));
+  }
+
+  // per_lift and strength_activities come from the same scoring pass over the
+  // same session, so a lift present in one is present in the other — the
+  // engine result is where the recency-aware current 1RM lives.
+  const strengthResults = breakdown.strength_activities ?? [];
+
+  const lifts: Array<{
+    name: string;
+    estimated1RM: number;
+    currentOneRM?: number;
+    allTimeOneRM?: number;
+    relativeStrength: number;
+    tier?: ExRxTier;
+    tierLabel?: string;
+  }> = [];
+
+  if (breakdown.per_lift) {
+    for (const [key, val] of Object.entries(breakdown.per_lift)) {
+      if (!val) continue;
+      const result = strengthResults.find((r) => r.liftKey === key);
+      lifts.push({
+        name: key.charAt(0).toUpperCase() + key.slice(1),
+        estimated1RM: val.estimated1RM,
+        currentOneRM: result?.currentOneRM,
+        allTimeOneRM: Math.max(
+          allTime1RmByLift.get(key) ?? 0,
+          result?.allTimeOneRM ?? 0,
+          val.estimated1RM
+        ),
+        relativeStrength: val.relativeStrength,
+      });
+    }
+  }
 
   // Balanced-split recommendation: mine muscle-group training recency/volume
   // from the same lookback window the pure engine expects, so "what should I
