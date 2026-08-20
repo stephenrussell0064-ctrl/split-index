@@ -326,10 +326,25 @@ export function classifyDomains(
     out.strength = gap > DEVELOP_GAP_THRESHOLD * headroom ? "develop" : "maintain";
   }
 
+  // Entering a race is a develop goal, with or without a target time.
+  //
+  // This read `target5kS` and nothing else, so an athlete training for a half
+  // marathon who had not named a time was classified as MAINTAINING endurance
+  // — and maintain mode never reaches the quality floor, which is why their
+  // plan was long runs and easy runs for sixteen weeks with no speed work in
+  // it anywhere. Most people entering a race want to finish it well and have
+  // no goal time in mind; that is a develop goal without a number attached,
+  // exactly as a gym split is.
+  if (goal.enduranceEventKm != null) {
+    out.endurance = "develop";
+  }
+
   if (goal.target5kS != null) {
     const gap = (state.predicted5kS - goal.target5kS) / Math.max(state.predicted5kS, 1);
     const headroom = ENDURANCE_GAIN_PER_BLOCK[inferredEnduranceTrainingAge(state.enduranceTrainingAge, state.predicted5kS)] * (goal.weeksOut / 12);
-    out.endurance = gap > DEVELOP_GAP_THRESHOLD * headroom ? "develop" : "maintain";
+    // A named time can only ever RAISE the ambition. Someone who enters a
+    // marathon and names a soft time is still training for a marathon.
+    if (gap > DEVELOP_GAP_THRESHOLD * headroom) out.endurance = "develop";
   }
 
   return out;

@@ -33,6 +33,7 @@ function state(o: Partial<AthleteState> = {}): AthleteState {
 function goal(o: Partial<Goal> = {}): Goal {
   return {
     weeksOut: 12, horizonSource: "chosen_timeframe", target5kS: null,
+    enduranceEventKm: null, enduranceEventKey: null,
     targetSquatKg: null, targetBenchKg: null, targetDeadliftKg: null, targetTotalKg: null,
     priority: 0.5, sameDay: false, interEventGapH: 4, weightClassKg: null, eventOrderKnown: false, ...o,
   };

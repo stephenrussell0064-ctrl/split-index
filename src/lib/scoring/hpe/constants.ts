@@ -37,6 +37,22 @@ export const HPE_CONSTANTS_VERSION = "2.1.0";
 // ---------------------------------------------------------------------------
 
 /** [DATA] Population norm. Matches the live race-prediction engine's own RIEGEL_K_DEFAULT — deliberately the same number, sourced independently here so the diagnostic never silently inherits a change made for scoring reasons. */
+/**
+ * [ASSURED] Distance range, as a multiple of 5km, within which a maximal
+ * effort may be extrapolated to a 5k prediction.
+ *
+ * Non-negotiable #6 says bound every extrapolation or refuse, and this one was
+ * unbounded. Riegel is a power law: run a hard 2km and it will happily project
+ * a 5k time nobody could hold, because it assumes the athlete's fatigue
+ * exponent measured over two kilometres continues over five. An 18:25 runner
+ * was shown a predicted 17:30 this way.
+ *
+ * 3km to 10km is the range Riegel is usually quoted as reliable across for a
+ * 5k target. Outside it the app's own prediction engine — built from every
+ * logged session rather than one effort — is the better answer.
+ */
+export const RIEGEL_5K_EXTRAPOLATION_RANGE_KM: readonly [number, number] = [3, 10];
+
 export const RIEGEL_K_DEFAULT = 1.06;
 /** [DATA] Below this, fatigue resistance is strong — speed, not endurance, is the limiter. */
 export const RIEGEL_K_ENDURANCE_STRONG = 1.045;
@@ -406,8 +422,6 @@ export const LONG_RUN_VS_EASY: readonly [number, number] = [1.0, 1.04];
  * run, it is a second easy run wearing the name.
  */
 export const LONG_RUN_MIN_MULTIPLE_OF_EASY = 1.5;
-/** [EST] Ceiling on the long run's share of weekly volume, so it cannot eat the week. */
-export const LONG_RUN_MAX_MINUTE_SHARE = 0.55;
 
 /** [DATA] Fraction of an interval session's clock actually spent at rep pace; the rest is recovery. */
 export const INTERVAL_WORK_FRACTION = 0.55;
@@ -703,6 +717,51 @@ export const ENDURANCE_SESSIONS_BY_PHASE: Readonly<Record<Phase, number>> = {
 
 /** [ASSURED] Share of weekly endurance minutes allocated to each quality session, and to the long run. */
 export const QUALITY_SESSION_MINUTE_SHARE = 0.15;
+/**
+ * [DATA] Race distance in kilometres for each endurance event the intake offers.
+ *
+ * The intake has always asked what the athlete is training for and the answer
+ * has never reached the engine: `Goal` carried `target5kS` and nothing else,
+ * so a marathon runner and a 5k runner were programmed identically. That is
+ * how someone training for a half was handed a 7km long run.
+ *
+ * Null means the event is not a run, so it sets no long-run target.
+ */
+export const EVENT_DISTANCE_KM: Readonly<Record<string, number | null>> = {
+  "5k": 5,
+  "10k": 10,
+  half: 21.0975,
+  marathon: 42.195,
+  "2k_row": null,
+  powerlifting: null,
+  hyrox: null,
+};
+
+/**
+ * [DATA] Peak long run as a fraction of race distance.
+ *
+ * Shorter races are limited by the weekly-volume share rather than by this —
+ * a 5k runner's long run is not driven by the 5k. The marathon fraction is
+ * deliberately well under 1.0: the standard practice is to peak around 30-35km
+ * rather than run the full distance in training, because the recovery cost of
+ * a full-distance run outweighs what it teaches.
+ */
+export const LONG_RUN_PEAK_FRACTION_OF_RACE: Readonly<Record<string, number>> = {
+  "5k": 2.4,
+  "10k": 1.8,
+  half: 0.95,
+  marathon: 0.78,
+};
+
+/**
+ * [ASSURED] Hard ceiling on a single long run, whatever the race distance says.
+ *
+ * Above about three hours the session stops buying aerobic adaptation in
+ * proportion to what it costs to recover from, and this is the number most
+ * marathon coaching caps on rather than distance.
+ */
+export const LONG_RUN_MAX_MINUTES = 180;
+
 export const LONG_RUN_MINUTE_SHARE = 0.28;
 
 /**

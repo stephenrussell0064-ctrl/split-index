@@ -115,6 +115,7 @@ import {
   VOLUME_ADEQUACY_MIN_PER_WEEK,
   VO2MAX_PACE_MULTIPLIER,
   type EmphasisKey,
+  RIEGEL_5K_EXTRAPOLATION_RANGE_KM,
 } from "./constants";
 import {
   paceSPerKm,
@@ -1078,7 +1079,15 @@ export function diagnose(
   const kEff = riegelK ?? RIEGEL_K_DEFAULT;
 
   // Predicted 5k from the best maximal effort, using the athlete's OWN k.
-  const efforts = runs.filter((r) => r.isMaxEffort && r.distanceKm > 0 && r.durationS > 0);
+  // Bounded. An effort far shorter than 5k extrapolates to a 5k time the
+  // athlete cannot run — see RIEGEL_5K_EXTRAPOLATION_RANGE_KM.
+  const efforts = runs.filter(
+    (r) =>
+      r.isMaxEffort &&
+      r.distanceKm >= RIEGEL_5K_EXTRAPOLATION_RANGE_KM[0] &&
+      r.distanceKm <= RIEGEL_5K_EXTRAPOLATION_RANGE_KM[1] &&
+      r.durationS > 0
+  );
   let predicted5kS: number;
   let predicted5kFromEffort: boolean;
   let predicted5kSource: Predicted5kSource;
@@ -1090,7 +1099,8 @@ export function diagnose(
     predicted5kFromEffort = true;
     predicted5kSource = "maximal_effort";
   } else {
-    // No maximal effort at all. Nothing may be prescribed off an
+    // No maximal effort CLOSE ENOUGH TO 5K to extrapolate from. Nothing may be
+    // prescribed off an
     // extrapolation the athlete's data does not cover (non-negotiable #6),
     // so this is flagged rather than quietly treated as a real prediction —
     // tier assessment above independently caps such an athlete at tier 1.

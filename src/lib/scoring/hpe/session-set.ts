@@ -55,7 +55,8 @@ import {
   type TrainingSplit,
   NO_GYM_REP_RANGE,
   NO_GYM_SUBSTITUTIONS,
-  LONG_RUN_MAX_MINUTE_SHARE,
+  LONG_RUN_MAX_MINUTES,
+  LONG_RUN_PEAK_FRACTION_OF_RACE,
   LONG_RUN_MIN_MULTIPLE_OF_EASY,
   LONG_RUN_MINUTE_SHARE,
   LONG_RUN_QUALITY_THRESHOLD_MIN,
@@ -526,14 +527,74 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
   const ratioShare =
     (LONG_RUN_MIN_MULTIPLE_OF_EASY * (1 - qualityFraction)) /
     (easyRunCount + LONG_RUN_MIN_MULTIPLE_OF_EASY);
-  const longShare = Math.min(
-    LONG_RUN_MAX_MINUTE_SHARE,
-    Math.max(LONG_RUN_MINUTE_SHARE, ratioShare)
-  );
-  const longMinutes = Math.max(MIN_ENDURANCE_SESSION_MIN, Math.round(totalMinutes * longShare));
+  // No ceiling here, deliberately. A ceiling fights the ratio: with one easy
+  // run in the week, holding the long run at a third of the volume makes the
+  // EASY run the longest session, which is the defect this ratio exists to
+  // prevent. `ratioShare` is self-limiting anyway — it only approaches 0.6
+  // when there is a single easy run to be 1.5x longer than, and falls to 0.19
+  // once there are four, where the 28% floor takes over instead.
+  const longShare = Math.max(LONG_RUN_MINUTE_SHARE, ratioShare);
+  const shareLongMinutes = Math.max(MIN_ENDURANCE_SESSION_MIN, Math.round(totalMinutes * longShare));
+
+  // ---- the race distance decides how long "long" has to be ----------------
+  //
+  // A share of weekly volume is the right way to size a long run when there is
+  // no race, and completely the wrong way when there is one. Someone training
+  // for a half was handed a 7km long run because 28% of their week is 7km —
+  // arithmetic that never asked what they were preparing for. The event
+  // distance now sets a target and the block ramps toward it.
+  //
+  // The ramp matters as much as the target. Jumping straight to a 30km long
+  // run in week one is how people get hurt, so the peak is approached over the
+  // block and the ACWR pass downstream still governs the whole week.
+  let longMinutes = shareLongMinutes;
+  let longRunNote: string | null = null;
+  const raceKm = goal.enduranceEventKm;
+  const easyPaceS = profile.easyBand ? (profile.easyBand.lo + profile.easyBand.hi) / 2 : null;
+  if (raceKm != null && goal.enduranceEventKey && easyPaceS != null && phase !== "taper") {
+    const peakFraction = LONG_RUN_PEAK_FRACTION_OF_RACE[goal.enduranceEventKey];
+    if (peakFraction != null) {
+      const peakKm = raceKm * peakFraction;
+      // Ramped: 60% of the peak at the start of the block, the full peak by
+      // the end of the specific phase.
+      const progress = Math.min(1, blockProgress(week));
+      const targetKm = peakKm * (0.6 + 0.4 * progress);
+      const targetMinutes = Math.min(LONG_RUN_MAX_MINUTES, Math.round((targetKm * easyPaceS) / 60));
+      // The race distance is authoritative in BOTH directions. It raises the
+      // long run for a marathoner whose weekly share would have given them
+      // 7km, and it holds one down for a half runner with a big weekly volume
+      // whose share would otherwise have prescribed 34km — further in training
+      // than they will race, which is nobody's idea of a half-marathon plan.
+      longMinutes = targetMinutes;
+      {
+        // The athlete's own stated session ceiling still wins. Overriding it
+        // would prescribe a session they have already said they cannot fit,
+        // which is not a plan, it is a wish — but they should be told, because
+        // a marathon cannot be trained for in 90-minute pieces.
+        longMinutes = Math.min(targetMinutes, constraints.maxSessionMin);
+        if (targetMinutes > constraints.maxSessionMin) {
+          longRunNote =
+            `Your ${goal.enduranceEventKey} needs a long run building toward about ` +
+            `${Math.round(targetMinutes / 5) * 5} minutes, and you have said your longest available session is ` +
+            `${constraints.maxSessionMin}. The long run is capped at what you said you can fit — if you can free ` +
+            `up a longer window once a week, this is the session to spend it on.`;
+        }
+      }
+    }
+  }
+
+  if (longRunNote) notes.push(longRunNote);
+
+  // The athlete's stated session ceiling binds every endurance session, not
+  // just the long run. It was a scheduler penalty and nothing else, so a
+  // high-volume week with few slots could hand someone a 153-minute easy run
+  // after they had said 90 was their limit — a session they had already told
+  // us they could not do.
+  const capEnduranceMinutes = (m: number) => Math.min(m, constraints.maxSessionMin);
+  longMinutes = capEnduranceMinutes(longMinutes);
 
   // ---- step 3: hard caps ---------------------------------------------------
-  const qualityMinutes = Math.round(totalMinutes * QUALITY_SESSION_MINUTE_SHARE);
+  const qualityMinutes = capEnduranceMinutes(Math.round(totalMinutes * QUALITY_SESSION_MINUTE_SHARE));
   const longRunCountsAsQuality = wantsLongRun && longMinutes >= LONG_RUN_QUALITY_THRESHOLD_MIN;
   const qualityAllocated = () => QUALITY_EMPHASIS.reduce((s, k) => s + allocation[k], 0);
   const demote = (reason: string) => {
@@ -591,7 +652,14 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
     !deload &&
     qualityMinutes >= MIN_QUALITY_SESSION_MIN &&
     qualityAllocated() < MMD_ENDURANCE_QUALITY_PER_WEEK &&
-    allocation.aerobic_base > (wantsLongRun ? 2 : 1)
+    // Only the long run is protected. This used to hold back TWO aerobic
+    // slots, so an athlete whose week had exactly two runs — a long one and an
+    // easy one, which is what three gym days leaves most people — could never
+    // reach the floor at all, and the guard meant to guarantee quality
+    // guaranteed its absence instead. Long plus a session that actually
+    // changes something beats long plus easy for anyone with a race goal, and
+    // the long run keeps the week aerobic by minutes regardless.
+    allocation.aerobic_base > (wantsLongRun ? 1 : 0)
   ) {
     const receiver = qualityKindForSlot(phase, week.week, profile, repSessionsAllowed);
     allocation[receiver] += 1;
@@ -611,7 +679,7 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
     );
     let current = qualityAllocated();
     while (current > targetQuality && demote("")) current--;
-    while (current < targetQuality && allocation.aerobic_base > (wantsLongRun ? 2 : 1)) {
+    while (current < targetQuality && allocation.aerobic_base > (wantsLongRun ? 1 : 0)) {
       // The phase decides HOW MUCH quality; the emphasis vector still decides
       // WHICH quality.
       const receiver = qualityKindForSlot(phase, week.week + current, profile, repSessionsAllowed);
@@ -672,9 +740,21 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
 
   const easySlots = Math.max(0, allocation.aerobic_base - (wantsLongRun ? 1 : 0));
   const usedMinutes = sessions.reduce((s, x) => s + x.minutes, 0);
+  // The long run stays the longest session even when the athlete's own ceiling
+  // has trimmed it. Capping only the long run inverted the week: a 90-minute
+  // limit pulled the long run to 90 and left an 81-minute "easy" run beside
+  // it, which is two long runs and no easy day.
+  const easyCeiling = wantsLongRun
+    ? Math.max(MIN_ENDURANCE_SESSION_MIN, Math.floor(longMinutes / LONG_RUN_MIN_MULTIPLE_OF_EASY))
+    : constraints.maxSessionMin;
   const easyMinutes =
     easySlots > 0
-      ? Math.max(MIN_ENDURANCE_SESSION_MIN, Math.round((totalMinutes - usedMinutes) / easySlots))
+      ? Math.min(
+          capEnduranceMinutes(
+            Math.max(MIN_ENDURANCE_SESSION_MIN, Math.round((totalMinutes - usedMinutes) / easySlots))
+          ),
+          easyCeiling
+        )
       : 0;
   for (let i = 0; i < easySlots; i++) {
     const findingId = attributeFinding("aerobic_base", profile.findings) ?? "hybrid-baseline";
@@ -712,7 +792,21 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
   // The split governs in BOTH modes. Maintenance previously hardcoded
   // squat+bench and ignored the athlete's choice entirely, so someone who
   // asked for push/pull/legs got a bench day and a squat day.
-  const rotation = splitDays.map((d) => d.primaryLift ?? "squat").slice(0, Math.max(2, rotationSlots));
+  //
+  // The cycle CONTINUES across weeks rather than restarting at day one. Taking
+  // a prefix — `slice(0, slots)` — is what gave an upper/lower athlete with
+  // three gym days Lower, Upper, Lower every single week: two lower sessions
+  // and one upper, forever, because the slice always began at index 0. Three
+  // sessions cannot be two-and-two inside one week, but they even out across
+  // two if the second week picks up where the first left off, which is also
+  // how anybody actually runs an upper/lower split.
+  const cycleOffset =
+    splitDays.length > 0 ? ((week.week - 1) * Math.max(1, rotationSlots)) % splitDays.length : 0;
+  const dayIndexFor = (i: number) => (cycleOffset + i) % Math.max(1, splitDays.length);
+  const rotation = Array.from(
+    { length: Math.max(2, rotationSlots) },
+    (_, i) => splitDays[dayIndexFor(i)]?.primaryLift ?? "squat"
+  );
 
   // Whether the athlete can actually perform what is about to be prescribed.
   // `constraints.equipment` was previously written and never read, so a
@@ -727,7 +821,7 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
 
     if (mode.strength === "maintain") {
       const findingId = attributeFinding("maximal_strength", profile.findings) ?? "hybrid-baseline";
-      const maintDay = splitDays[i % splitDays.length];
+      const maintDay = splitDays[dayIndexFor(i)];
       const prescription = prescribeLift(profile, findingId, {
         lift,
         // No barbell: a substitution, named as one. See NO_GYM_SUBSTITUTIONS.
@@ -795,7 +889,7 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
     // Accessories follow the day's patterns rather than the single lift, so a
     // "Push" day is a push session rather than a bench press with two
     // afterthoughts attached.
-    const splitDay = splitDays[i % splitDays.length];
+    const splitDay = splitDays[dayIndexFor(i)];
     const accessories = accessoriesForDay(splitDay, lift, week.week);
     const prescription = prescribeLift(profile, findingId, {
       lift,

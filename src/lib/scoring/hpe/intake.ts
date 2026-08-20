@@ -185,6 +185,17 @@ export interface Goal {
   horizonSource: HorizonSource;
   target5kS: number | null;
   /**
+   * The endurance race distance the athlete is training for, in kilometres.
+   *
+   * The intake asked and the answer stopped at the intake — every endurance
+   * goal reached the engine as `target5kS` or as nothing, so a marathon block
+   * and a 5k block were the same block. This is what makes a long run long
+   * enough to be a marathon long run.
+   */
+  enduranceEventKm: number | null;
+  /** The raw event key, so the plan can name what it is preparing for. */
+  enduranceEventKey: string | null;
+  /**
    * Per-lift targets, each independently skippable. Asking for a "total" is
    * asking the athlete to do arithmetic on three numbers they may not all
    * know — and it makes the whole answer unavailable if one of the three is
@@ -421,7 +432,9 @@ export function deriveTargetTotal(
  */
 export function reconcileCurrentVolume(
   statedMinPerWeek: number | null,
-  loggedMinPerWeek: number | null
+  loggedMinPerWeek: number | null,
+  /** The athlete has said not all their training is recorded in this app. */
+  trainsOutsideApp = false
 ): { value: number | null; issue: IntakeIssue | null } {
   if (statedMinPerWeek == null && loggedMinPerWeek == null) return { value: null, issue: null };
   if (statedMinPerWeek == null) return { value: loggedMinPerWeek, issue: null };
@@ -435,6 +448,31 @@ export function reconcileCurrentVolume(
       },
     };
   }
+  // The athlete's own figure wins when they have said they train outside the
+  // app.
+  //
+  // Taking the lower of the two is the right default: an inflated starting
+  // number ramps someone into an injury, and most gaps between stated and
+  // logged are optimism. But it is wrong when the gap is simply that the
+  // training was not recorded here — a week on a treadmill at a hotel, a club
+  // session logged on someone else's watch — and there was no way to say so.
+  // The plan then anchored week 1 to a number the athlete had already told us
+  // was incomplete, and no amount of re-typing it would move it.
+  if (trainsOutsideApp) {
+    return {
+      value: statedMinPerWeek,
+      issue: {
+        field: "currentRunMinPerWeek",
+        severity: "assumed",
+        message:
+          `Using your stated ${Math.round(statedMinPerWeek)} min/week rather than the ` +
+          `${Math.round(loggedMinPerWeek)} your logs show, because you said not all of your training gets ` +
+          `recorded here. Week 1 is built on this number, so it is worth being honest rather than optimistic ` +
+          `about it — the ramp is measured from here.`,
+      },
+    };
+  }
+
   const value = Math.min(statedMinPerWeek, loggedMinPerWeek);
   if (Math.abs(statedMinPerWeek - loggedMinPerWeek) < 1) return { value, issue: null };
   return {
@@ -445,7 +483,8 @@ export function reconcileCurrentVolume(
       message:
         `You said ${Math.round(statedMinPerWeek)} min/week; your logs show ${Math.round(loggedMinPerWeek)}. ` +
         `The plan starts from ${Math.round(value)} — the lower of the two. This number is what week 1 is built on, ` +
-        `so it is deliberately the conservative one.`,
+        `so it is deliberately the conservative one. If the gap is because not all your training is recorded ` +
+        `here, say so on the intake and your own figure will be used instead.`,
     },
   };
 }

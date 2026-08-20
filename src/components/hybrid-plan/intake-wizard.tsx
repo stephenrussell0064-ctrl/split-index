@@ -627,7 +627,7 @@ export function IntakeWizard() {
 
           {section === "history" && (
             <>
-              <Field label="How many minutes of running are you doing in a typical week right now?" why="The single most important field here. Week 1 of your plan is exactly this number. If it disagrees with your logs, the lower of the two is used — starting above where you actually are is the most common way generated plans cause injury.">
+              <Field label="How many minutes of running are you doing in a typical week right now?" why="The single most important field here. Week 1 of your plan is exactly this number. If it disagrees with your logs, the lower of the two is used unless you say below that some training goes unrecorded.">
                 <NumberField
                   value={get("current_run_min_per_week", intake.currentRunMinPerWeek) as number | null}
                   onChange={(v) => set("current_run_min_per_week", v)}
@@ -635,6 +635,15 @@ export function IntakeWizard() {
                   max={800}
                   suffix="min/week"
                   ariaLabel="Current weekly running minutes"
+                />
+              </Field>
+              <Field
+                label="Is some of your training not recorded in Split Index?"
+                why="If yes, the number above is used as-is. If no, the lower of your figure and your logs is used, because starting a plan above where you actually are is the most common way generated plans cause injury."
+              >
+                <YesNo
+                  value={get("trains_outside_app", intake.trainsOutsideApp) as boolean}
+                  onChange={(v) => set("trains_outside_app", v)}
                 />
               </Field>
               <Field label="How long have you been running consistently?" why="Under six months halves your ramp rate and caps endurance targets.">

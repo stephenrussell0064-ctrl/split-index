@@ -62,6 +62,8 @@ function calibrationGoal(overrides: Partial<Goal> = {}): Goal {
     weeksOut: 24,
     horizonSource: "event_date",
     target5kS: 17 * 60 + 30,
+    enduranceEventKm: 5,
+    enduranceEventKey: "5k",
     targetSquatKg: 200,
     targetBenchKg: 150,
     targetDeadliftKg: 200,
@@ -190,11 +192,22 @@ describe("WP3 — safety screen blocks and is not bypassable", () => {
     });
   }
 
-  it("produces a referral or a concrete alternative with every refusal, never a bare no", () => {
+  it("always says what it did about the answer, never just notes it", () => {
+    // Referrals are now reserved for possible cardiac symptoms and the
+    // fuelling screen. Injury does not produce one — this engine improves
+    // hybrid performance, and telling an adult with a sore knee to see a
+    // physiotherapist is neither its job nor news to them. So the guarantee
+    // is no longer "there is a referral"; it is that every flagged answer
+    // visibly changes the plan or offers a concrete alternative. An answer
+    // that is collected and then does nothing is the defect worth catching.
     for (const c of cases) {
       const result = safetyScreen(c.state, c.goal ?? calibrationGoal());
-      const hasNextStep = result.referrals.length > 0 || result.offerGeneralPreparationInstead;
-      expect(hasNextStep, `${c.name} refused with no next step`).toBe(true);
+      const didSomething =
+        result.intensityCeiling < 1 ||
+        result.rampMultiplier < 1 ||
+        result.referrals.length > 0 ||
+        result.offerGeneralPreparationInstead;
+      expect(didSomething, `${c.name} was noted and changed nothing`).toBe(true);
     }
   });
 

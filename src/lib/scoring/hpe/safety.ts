@@ -74,9 +74,15 @@ export interface SafetyResult {
  * withheld. Every input that used to refuse now sets `intensityCeiling` and
  * `rampMultiplier` instead, and the referral is shown either way.
  *
- * Two things are unchanged. Referrals are still produced for everything that
- * warrants one, because a physiotherapist is the intervention and this engine
- * is not. And bodyweight guidance is still suppressed permanently and
+ * Referrals are now reserved for the two things that genuinely are not a
+ * training question: possible cardiac symptoms, and the low-energy-availability
+ * screen. Injury does not produce one. This engine exists to improve hybrid
+ * performance, and telling an adult who reported a sore knee to see a
+ * physiotherapist is neither its job nor news to them — what is its job is not
+ * writing them a block that makes it worse, which is what the intensity
+ * ceiling and the halved ramp are for.
+ *
+ * Bodyweight guidance is still suppressed permanently and
  * unconditionally for anyone the low-energy-availability screen flags, because
  * that is the harm the screen exists to prevent and it is not softened here.
  */
@@ -120,26 +126,31 @@ export function safetyScreen(state: AthleteState, goal: Goal): SafetyResult {
   if (s.pregnantOrPostpartum12wk) {
     advisories.push(
       "Pregnant or within 12 weeks postpartum: this engine is not built to programme for you, and the sensible " +
-        "person to plan with is a pelvic health physiotherapist. What follows is held well below maximal and is a " +
-        "starting point for that conversation, not a substitute for it."
+        "person to plan with is someone qualified in perinatal training. What follows is held well below maximal " +
+        "and is a starting point for that conversation, not a substitute for it."
     );
     intensityCeiling = Math.min(intensityCeiling, MEDICAL_CLEARANCE_INTENSITY_CEILING);
     rampMultiplier = Math.min(rampMultiplier, 0.5);
-    referrals.push("Pelvic health physiotherapist");
   }
 
   // Injury now sets the dial rather than closing the door. This is the whole
   // point of asking: an athlete carrying something wants a plan that respects
   // it, and refusing them produces an athlete training with no plan at all.
+  // The injury answers set the dial. They no longer produce a referral.
+  //
+  // This engine exists to improve hybrid performance, and telling an adult who
+  // reported a niggle to go and see a physiotherapist is neither its job nor
+  // news to them. What IS its job is not writing them a block that makes the
+  // niggle worse, which is what the ceiling and the halved ramp do. Say what
+  // the plan did about it and stop there.
   if (s.currentInjuryLimiting) {
     advisories.push(
-      "You are currently limited by an injury, so this block is capped: nothing near-maximal, and the volume ramp " +
-        "is halved. Rehabilitation itself is a physiotherapist's job, not this engine's — train around the injury " +
-        "with this and get the injury seen."
+      "You have said an injury is currently changing how you train, so this block is capped: nothing " +
+        "near-maximal, and the volume ramp is halved. Train around it rather than through it, and drop anything " +
+        "that provokes it."
     );
     intensityCeiling = Math.min(intensityCeiling, CURRENT_INJURY_INTENSITY_CEILING);
     rampMultiplier = Math.min(rampMultiplier, 0.5);
-    referrals.push("Physiotherapist");
   }
 
   if (s.surgeryLast6Months) {

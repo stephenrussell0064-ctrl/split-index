@@ -38,6 +38,7 @@ function state(o: Partial<AthleteState> = {}): AthleteState {
 function goal(o: Partial<Goal> = {}): Goal {
   return {
     weeksOut: 12, horizonSource: "chosen_timeframe", target5kS: null,
+    enduranceEventKm: null, enduranceEventKey: null,
     targetSquatKg: null, targetBenchKg: null, targetDeadliftKg: null, targetTotalKg: null,
     priority: 0.5, sameDay: false, interEventGapH: 4, weightClassKg: null, eventOrderKnown: false, ...o,
   };
@@ -335,5 +336,97 @@ describe("strength sessions are sessions people would actually do", () => {
         expect(lead).not.toMatch(/\d+kg/);
       }
     }
+  });
+});
+
+describe("the plan is built for the event the athlete entered", () => {
+  const raceGoal = (key: string, km: number) =>
+    goal({ weeksOut: 16, horizonSource: "event_date", enduranceEventKey: key, enduranceEventKm: km, priority: 0.3 });
+
+  function racePlan(key: string, km: number, maxSessionMin = 200) {
+    const s = state({ currentRunMinPerWeek: 300, chronicLoad: 600, predicted5kS: 1105 });
+    const profile = diagnose(
+      [...runs(16, 10, 312, 150), ...runs(6, 20, 335, 146)],
+      [],
+      s.oneRms,
+      { priority: 0.3, hrMax: 192, hrRest: 48, hrMaxSource: "measured" }
+    );
+    return generatePlan({
+      state: s,
+      goal: raceGoal(key, km),
+      constraints: constraints({ maxSessionsPerWeek: 6, maxHoursPerWeek: 12, maxSessionMin, trainingSplit: "upper_lower" }),
+      profile,
+    });
+  }
+  const peakLongKm = (p: ReturnType<typeof generatePlan>) =>
+    Math.max(...p.weeks.flatMap((w) => w.sessions.filter((x) => x.kind === "long_run").map((x) => x.prescription.distanceKm ?? 0)));
+
+  it("gives a marathon runner a longer long run than a half runner, and both more than a 5k runner", () => {
+    // The athlete said "half marathon" and was handed a 7km long run, because
+    // the event never reached the engine — Goal carried target5kS and nothing
+    // else, so every endurance athlete was programmed identically.
+    const marathon = peakLongKm(racePlan("marathon", 42.195));
+    const half = peakLongKm(racePlan("half", 21.0975));
+    const fiveK = peakLongKm(racePlan("5k", 5));
+    expect(marathon).toBeGreaterThan(half);
+    expect(half).toBeGreaterThan(fiveK);
+    expect(half).toBeGreaterThan(14);
+  });
+
+  it("says so when the athlete's session ceiling cannot fit the long run", () => {
+    // Overriding a stated constraint would prescribe a session they have
+    // already said they cannot do. Capping silently would hide that a marathon
+    // cannot be trained for in 90-minute pieces.
+    const capped = racePlan("marathon", 42.195, 90);
+    expect(capped.weeks.flatMap((w) => w.notes).join(" ")).toMatch(/longest available session is 90/);
+    for (const w of capped.weeks) {
+      for (const x of w.sessions) expect(x.minutes).toBeLessThanOrEqual(90);
+    }
+  });
+
+  it("programmes speed work for a race entrant who never named a target time", () => {
+    // Entering a race is a develop goal. Reading only target5kS classified
+    // this athlete as MAINTAINING endurance, and maintain never reaches the
+    // quality floor — sixteen weeks of long runs and easy runs, no speed work.
+    const plan = racePlan("half", 21.0975);
+    const kinds = new Set(plan.weeks.flatMap((w) => w.sessions.map((x) => x.kind)));
+    expect(kinds.has("interval_run") || kinds.has("threshold_run")).toBe(true);
+    const withoutQuality = plan.weeks.filter(
+      (w) => !w.deload && !w.sessions.some((x) => x.kind === "interval_run" || x.kind === "threshold_run")
+    );
+    expect(withoutQuality.map((w) => w.week)).toEqual([]);
+  });
+});
+
+describe("upper/lower balances across the block", () => {
+  it("does not give two lower days and one upper every single week", () => {
+    // `slice(0, slots)` took a prefix of a four-day cycle, so three gym days
+    // produced Lower, Upper, Lower forever — the slice always began at zero.
+    const plan = hybrid({ trainingSplit: "upper_lower", maxSessionsPerWeek: 6 });
+    const labels = plan.weeks.flatMap((w) =>
+      w.sessions.filter((x) => x.domain === "strength").map((x) => x.label)
+    );
+    const upper = labels.filter((l) => l === "Upper").length;
+    const lower = labels.filter((l) => l === "Lower").length;
+    expect(upper).toBeGreaterThan(0);
+    expect(lower).toBeGreaterThan(0);
+    // Three sessions cannot be two-and-two inside one week; across a block
+    // they must come out close to even.
+    expect(Math.abs(upper - lower) / (upper + lower)).toBeLessThan(0.2);
+  });
+});
+
+describe("injury changes the plan without sending anyone to a clinic", () => {
+  it("caps intensity but issues no physiotherapist referral", () => {
+    const s = state({ safety: { ...DEFAULT_SAFETY_FLAGS, currentInjuryLimiting: true, injuryLast12Weeks: false, surgeryLast6Months: false } });
+    const profile = diagnose(runs(14, 8, 300, 148), [], s.oneRms, { priority: 0.5, hrMax: 190, hrRest: 52, hrMaxSource: "measured" });
+    const plan = generatePlan({ state: s, goal: goal(), constraints: constraints(), profile });
+    expect(plan.generated).toBe(true);
+    // The answer must still change something.
+    expect(plan.safety.intensityCeiling).toBeLessThan(1);
+    expect(plan.safety.rampMultiplier).toBeLessThan(1);
+    // This engine improves hybrid performance; it does not refer people.
+    expect(plan.safety.referrals.join(" ")).not.toMatch(/physio/i);
+    expect(plan.safety.advisories.join(" ")).not.toMatch(/physio/i);
   });
 });

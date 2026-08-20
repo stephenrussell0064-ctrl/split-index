@@ -23,7 +23,7 @@
  * pathway in generated plans.
  */
 
-import { DAYS, type TrainingAge, type TrainingSplit } from "./constants";
+import { DAYS, EVENT_DISTANCE_KM, type TrainingAge, type TrainingSplit } from "./constants";
 import {
   DEFAULT_SAFETY_FLAGS,
   estimatedMaxHr,
@@ -90,6 +90,12 @@ export interface IntakeRecord {
   surfaceAccess: string[];
 
   maxHrKnown: boolean;
+  /**
+   * Not all of this athlete's training is recorded in Split Index. Makes their
+   * stated weekly volume authoritative instead of the logged figure, which is
+   * otherwise taken as the conservative lower bound.
+   */
+  trainsOutsideApp: boolean;
   /**
    * Corrections the athlete typed over the values the engine proposed. Null
    * means "use the proposal". Stored beside the derived value rather than over
@@ -242,6 +248,7 @@ export function parseIntakeRow(row: Record<string, unknown> | null): IntakeRecor
     substitutionOk: row?.substitution_ok == null ? true : Boolean(row.substitution_ok),
     surfaceAccess: arr("surface_access").length > 0 ? arr("surface_access") : ["road"],
     maxHrKnown: Boolean(row?.max_hr_known),
+    trainsOutsideApp: Boolean(row?.trains_outside_app),
     squat1rmOverride: n("squat_1rm_override"),
     bench1rmOverride: n("bench_1rm_override"),
     deadlift1rmOverride: n("deadlift_1rm_override"),
@@ -429,7 +436,11 @@ export function resolveIntakeInputs(
   assumed.push(...safetyAssumed);
 
   // The on-ramp anchor: stated versus logged, lower wins.
-  const volume = reconcileCurrentVolume(record.currentRunMinPerWeek, prefilled.loggedWeeklyRunMinutes);
+  const volume = reconcileCurrentVolume(
+    record.currentRunMinPerWeek,
+    prefilled.loggedWeeklyRunMinutes,
+    record.trainsOutsideApp
+  );
   if (volume.issue) {
     issues.push(volume.issue);
     assumed.push(volume.issue.message);
@@ -559,6 +570,11 @@ export function resolveIntakeInputs(
     );
   }
 
+  const enduranceEvent =
+    record.events
+      .filter((e) => EVENT_DISTANCE_KM[e] != null)
+      .sort((a, b) => (EVENT_DISTANCE_KM[b] ?? 0) - (EVENT_DISTANCE_KM[a] ?? 0))[0] ?? null;
+
   const goal: Goal = {
     weeksOut: horizon.weeksOut,
     horizonSource: horizon.horizonSource,
@@ -575,6 +591,11 @@ export function resolveIntakeInputs(
     interEventGapH: record.interEventGapH,
     weightClassKg: record.weightClassKg,
     eventOrderKnown: record.eventOrderKnown,
+    // The longest running event the athlete named. Longest, because someone
+    // entering a 10k and a marathon needs the marathon's long run — training
+    // for the longer one covers the shorter, never the other way round.
+    enduranceEventKey: enduranceEvent,
+    enduranceEventKm: enduranceEvent ? EVENT_DISTANCE_KM[enduranceEvent] ?? null : null,
   };
 
   const constraints: Constraints = {

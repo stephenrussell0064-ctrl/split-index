@@ -67,6 +67,8 @@ const SECTION_FIELDS: Record<IntakeSection, string[]> = {
     // "recovery and life load", which is where the athlete could not find it
     // and where the save quietly rejected it after the field moved.
     "previous_max_volume",
+    // Makes the stated figure authoritative — see reconcileCurrentVolume.
+    "trains_outside_app",
     "current_strength_sessions_per_week",
     "strength_training_years",
   ],
