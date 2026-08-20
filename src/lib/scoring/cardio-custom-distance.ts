@@ -14,7 +14,7 @@
  * not a guess or a null.
  */
 
-import { riegelEquivalentSeconds, RIEGEL_K } from "./cardio-predictions";
+import { riegelEquivalentSeconds, benchmarkRiegelK } from "./cardio-predictions";
 import type { BenchmarkSport } from "./cardio-benchmarks";
 
 export interface DistanceOption {
@@ -89,7 +89,15 @@ export function projectToDistance(
     // Linear pace scaling — walk's own documented model elsewhere in this app.
     return (canonicalSeconds / canonicalMeters) * targetMeters;
   }
-  return riegelEquivalentSeconds(canonicalSeconds, canonicalMeters, targetMeters, personalizedRiegelK ?? RIEGEL_K);
+  // Sport-specific exponent (BENCHMARK_RIEGEL_K) rather than the flat
+  // running-tuned RIEGEL_K — see cardio-predictions.ts. Row/ski project on
+  // Paul's Law, swim on Riegel's swimming exponent; run is unchanged.
+  return riegelEquivalentSeconds(
+    canonicalSeconds,
+    canonicalMeters,
+    targetMeters,
+    personalizedRiegelK ?? benchmarkRiegelK(sport)
+  );
 }
 
 /** Parses a training_goals target_key of the form "sport" (canonical distance) or "sport_meters" (custom distance) back into its parts. */

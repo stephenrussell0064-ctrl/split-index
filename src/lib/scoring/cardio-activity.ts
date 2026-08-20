@@ -65,7 +65,7 @@ import {
   computeSessionBenchmarkEquivalentSeconds,
   computeIntervalBenchmarkEquivalentSeconds,
   riegelEquivalentSeconds,
-  RIEGEL_K,
+  benchmarkRiegelK,
   RELATIVE_EFFORT_SESSION_TYPES,
   MISTAG_GUARD_MAX_RATIO,
   elevationDifficultyFraction,
@@ -513,7 +513,7 @@ export function livePredictionLadder(
   );
   if (benchmarkEquivalentSeconds === null) return null;
   const benchmarkDistance = BENCHMARK_DISTANCE_METERS[benchmarkSport];
-  const k = personalizedK ?? RIEGEL_K;
+  const k = personalizedK ?? benchmarkRiegelK(benchmarkSport);
   return ladder.map(({ meters, label }) => {
     const seconds = benchmarkEquivalentSeconds * Math.pow(meters / benchmarkDistance, k);
     return { label, meters, seconds, score: timeToScore(benchmarkSport, seconds, sex) };
@@ -701,7 +701,12 @@ export function scoreCardioActivity(input: CardioInput): CardioResult {
               input.durationSeconds,
               input.distanceMeters,
               BENCHMARK_DISTANCE_METERS[input.benchmarkSport],
-              riegelK
+              // Same sport-specific default as computeSessionBenchmarkEquivalentSeconds
+              // above — `riegelK` is undefined unless this athlete has a
+              // personalized k, and falling through to riegelEquivalentSeconds'
+              // own running default here would leave the relative-effort
+              // branches projecting a row/ski/swim session on a running curve.
+              riegelK ?? benchmarkRiegelK(input.benchmarkSport)
             )
         : null;
     const looksMistagged =

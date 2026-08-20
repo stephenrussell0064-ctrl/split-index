@@ -26,6 +26,61 @@ const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x
 export const RIEGEL_K = 1.08;
 
 /**
+ * Per-sport Riegel exponent for the session→benchmark projection.
+ *
+ * RIEGEL_K above is a RUNNING number twice over: Riegel fitted k≈1.06 on
+ * running race data, and this codebase then nudged it to 1.08 off running
+ * feedback ("an 18km tempo run projected to 5k"). Using it for every sport
+ * was defensible while the only sport whose sessions sat far from its
+ * benchmark distance was running — a typical run is 5-20km against a 5km
+ * benchmark, at most a ~4x ratio and usually far less.
+ *
+ * It is not defensible for the erg/pool sports, whose benchmark distances
+ * are much shorter than a normal session: a 40-minute row is ~9,400m against
+ * a 2,000m benchmark (4.7x) and a steady swim is 2,000m+ against a 400m
+ * benchmark (5x+). Riegel's exponent is applied to the LOG of that ratio, so
+ * an exponent that is too high by 0.02 costs ~0.3% on a running projection
+ * and ~3% on a rowing one — and because the row/swim anchor tables are far
+ * steeper in time terms than running's (row's whole 125-925 band spans 127
+ * seconds vs running's 1,920), a few percent of projected time is worth
+ * hundreds of index points there. That combination is what let a 2:08/500m
+ * 40-minute row read as a 7:32 2k (a strong club 2k) instead of the ~7:47 it
+ * really implies.
+ *
+ * Values:
+ *  - run 1.08 — unchanged; this is the running-tuned value the constant above
+ *    documents, and running's own regression suite is calibrated to it.
+ *  - row / ski 1.06 — Paul's Law, the standard Concept2 distance-pace rule
+ *    (+5 sec/500m per doubling of distance). Solving it as a Riegel exponent
+ *    over 2k->5k and 2k->10k gives k = 1.060 and 1.059 respectively, i.e. the
+ *    textbook exponent, NOT running's upward nudge. Ski inherits it: same
+ *    machine family, already scored on the rowing curve.
+ *  - swim 1.03 — Riegel's own published swimming exponent; swimming's
+ *    endurance decay is much flatter than running's.
+ *  - cycle 1.05 — Riegel's cycling exponent. Barely matters in practice (a
+ *    typical ride sits close to the 20km benchmark) but there is no reason to
+ *    hand cycling a running exponent either.
+ *  - walk — never reaches Riegel at all (walk is scored on per-km pace); the
+ *    entry exists only so the record is total.
+ *
+ * A personalized k (see personalizedRiegelK) still overrides this wherever
+ * one is available — this only replaces the flat default.
+ */
+export const BENCHMARK_RIEGEL_K: Record<BenchmarkSport, number> = {
+  run: RIEGEL_K,
+  walk: RIEGEL_K,
+  row: 1.06,
+  ski: 1.06,
+  swim: 1.03,
+  cycle: 1.05,
+};
+
+/** The default Riegel exponent for a sport's session→benchmark projection — see BENCHMARK_RIEGEL_K. */
+export function benchmarkRiegelK(sport: BenchmarkSport): number {
+  return BENCHMARK_RIEGEL_K[sport] ?? RIEGEL_K;
+}
+
+/**
  * Riegel k personalization (Part H, scoring-calibration-rewrite.md).
  * k=1.06 is the literature-standard population average — confirmed
  * correct, not a finding, and still what RIEGEL_K above is nudged from.
@@ -265,7 +320,7 @@ export function computeSessionBenchmarkEquivalentSeconds(
   distanceMeters: number,
   durationSeconds: number,
   avgHR?: number | null,
-  riegelK: number = RIEGEL_K,
+  riegelK: number = benchmarkRiegelK(sport),
   personalization?: HrPersonalization
 ): number | null {
   if (distanceMeters <= 0 || durationSeconds <= 0) return null;
@@ -295,7 +350,7 @@ export function computeIntervalBenchmarkEquivalentSeconds(
   totalWorkDistanceMeters: number,
   equivalentPaceSecPerKm: number,
   workAvgHR?: number | null,
-  riegelK: number = RIEGEL_K,
+  riegelK: number = benchmarkRiegelK(sport),
   personalization?: HrPersonalization
 ): number | null {
   if (totalWorkDistanceMeters <= 0 || equivalentPaceSecPerKm <= 0) return null;
@@ -645,7 +700,7 @@ export const MISTAG_GUARD_MAX_RATIO = 1.08;
 export function personalRecentHardEffortBenchmarkSeconds(
   sport: BenchmarkSport,
   sessions: EasyEffortSession[],
-  riegelK: number = RIEGEL_K
+  riegelK: number = benchmarkRiegelK(sport)
 ): number | null {
   if (sport === "walk") return null;
   const benchmarkDistance = BENCHMARK_DISTANCE_METERS[sport];
@@ -679,7 +734,7 @@ export function personalRecentHardEffortBenchmarkSeconds(
 export function personalEasyEffortBaselineEF(
   sport: BenchmarkSport,
   sessions: EasyEffortSession[],
-  riegelK: number = RIEGEL_K
+  riegelK: number = benchmarkRiegelK(sport)
 ): number | null {
   const hardEffortReferenceSeconds = personalRecentHardEffortBenchmarkSeconds(sport, sessions, riegelK);
   const benchmarkDistance = sport === "walk" ? null : BENCHMARK_DISTANCE_METERS[sport];
@@ -711,7 +766,7 @@ export function personalEasyEffortBaselineEF(
 export function personalEasyEffortBaselinePaceSeconds(
   sport: BenchmarkSport,
   sessions: EasyEffortSession[],
-  riegelK: number = RIEGEL_K
+  riegelK: number = benchmarkRiegelK(sport)
 ): number | null {
   if (sport === "walk") return null;
   const hardEffortReferenceSeconds = personalRecentHardEffortBenchmarkSeconds(sport, sessions, riegelK);
