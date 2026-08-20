@@ -20,6 +20,25 @@
 -- dependence on what happens to be there already. Read it as "assert these
 -- policies are exactly this", not as a change.
 
+--
+-- Locking.
+--
+-- DROP POLICY and ALTER TABLE both take ACCESS EXCLUSIVE locks. Run against a
+-- live database, this file wants exclusive locks on four tables while the
+-- running app holds share locks on the same ones, and the first attempt at it
+-- deadlocked: the migration waited on `activities` while an app query waited
+-- on a table the migration already held.
+--
+-- `lock_timeout` is the fix. Rather than queueing behind app traffic until two
+-- waiters form a cycle, each statement gives up after five seconds and the
+-- file rolls back cleanly — a fast, obvious failure you retry, instead of a
+-- deadlock that kills whichever side Postgres happens to pick. Retrying in a
+-- quiet moment then succeeds.
+--
+-- If it still times out, run the sections below one at a time. Each touches a
+-- single table, so each holds one lock, which cannot deadlock against the app.
+SET lock_timeout = '5s';
+
 -- The column and the two tables, in case 031 never ran at all.
 ALTER TABLE profiles
   ADD COLUMN IF NOT EXISTS share_activities_with_friends BOOLEAN NOT NULL DEFAULT true;
@@ -54,11 +73,14 @@ CREATE INDEX IF NOT EXISTS idx_activity_comments_activity ON activity_comments(a
 ALTER TABLE activity_reactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE activity_comments ENABLE ROW LEVEL SECURITY;
 
--- The eight policies, asserted rather than assumed.
+-- Policies, grouped by table so this can be run in pieces.
+
+-- activities
 DROP POLICY IF EXISTS "Friends view shared activities" ON activities;
 CREATE POLICY "Friends view shared activities" ON activities FOR SELECT
   USING (activity_is_visible_to(id, auth.uid()));
 
+-- activity_reactions
 DROP POLICY IF EXISTS "View reactions on visible activities" ON activity_reactions;
 CREATE POLICY "View reactions on visible activities" ON activity_reactions FOR SELECT
   USING (activity_is_visible_to(activity_id, auth.uid()));
@@ -75,6 +97,7 @@ DROP POLICY IF EXISTS "Delete own reactions" ON activity_reactions;
 CREATE POLICY "Delete own reactions" ON activity_reactions FOR DELETE
   USING (user_id = auth.uid());
 
+-- activity_comments
 DROP POLICY IF EXISTS "View comments on visible activities" ON activity_comments;
 CREATE POLICY "View comments on visible activities" ON activity_comments FOR SELECT
   USING (activity_is_visible_to(activity_id, auth.uid()));
