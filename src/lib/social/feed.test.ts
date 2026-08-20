@@ -22,8 +22,16 @@ interface RecordedQuery {
   or?: string;
 }
 
-/** Minimal stand-in for the PostgREST query builder — records what was asked for, returns canned rows per table. */
-function makeSupabase(tables: Record<string, Record<string, unknown>[]>) {
+/**
+ * Minimal stand-in for the PostgREST query builder — records what was asked
+ * for, returns canned rows per table. `errors` makes a named table fail the
+ * way a missing table/column/policy does: `data: null` plus an error, which is
+ * indistinguishable from an empty result unless the error is actually read.
+ */
+function makeSupabase(
+  tables: Record<string, Record<string, unknown>[]>,
+  errors: Record<string, { message: string; code?: string }> = {}
+) {
   const queries: RecordedQuery[] = [];
 
   const client = {
@@ -53,8 +61,11 @@ function makeSupabase(tables: Record<string, Record<string, unknown>[]>) {
         range() {
           return builder;
         },
-        then(resolve: (v: { data: unknown; error: null }) => unknown) {
-          return Promise.resolve({ data: tables[table] ?? [], error: null }).then(resolve);
+        then(resolve: (v: { data: unknown; error: unknown }) => unknown) {
+          const failure = errors[table];
+          return Promise.resolve(
+            failure ? { data: null, error: failure } : { data: tables[table] ?? [], error: null }
+          ).then(resolve);
         },
       };
       return builder;
@@ -190,6 +201,61 @@ describe("fetchFriendFeed — who can see what", () => {
     // ...and the usernameless friend's activity still makes it through.
     expect(page.activities).toHaveLength(1);
     expect(page.activities[0].author.userId).toBe(FRIEND);
+  });
+
+  it("reports a failed activities query as an error, not as an empty feed", async () => {
+    // The bug this guards: a database missing migration 031 has no
+    // "Friends view shared activities" policy and no activity_is_visible_to(),
+    // so this query fails. With the error discarded, `data` was null, which
+    // read as zero rows, which the UI rendered as "your friends haven't logged
+    // anything you can see yet" — sending the athlete to look at their
+    // friends' privacy settings for a problem in their own database.
+    const { supabase } = makeSupabase(
+      { friends: [{ user_id: FRIEND, friend_id: ME }] },
+      { activities: { message: 'relation "activity_is_visible_to" does not exist', code: "42P01" } }
+    );
+
+    const page = await fetchFriendFeed(supabase, ME);
+
+    expect(page.error).toBeTruthy();
+    expect(page.emptyReason).toBeUndefined();
+    expect(page.activities).toEqual([]);
+  });
+
+  it("reports a failed friends query as an error, not as 'you have no friends'", async () => {
+    const { supabase } = makeSupabase(
+      {},
+      { friends: { message: "connection terminated unexpectedly" } }
+    );
+
+    const page = await fetchFriendFeed(supabase, ME);
+
+    expect(page.error).toBeTruthy();
+    expect(page.emptyReason).not.toBe("no_friends");
+  });
+
+  it("still renders the feed when only the enrichment queries fail", async () => {
+    // Scores, authors, reactions and comments are decoration. Losing the
+    // reaction count is not a reason to replace a readable feed with an error.
+    const { supabase } = makeSupabase(
+      {
+        friends: [{ user_id: FRIEND, friend_id: ME }],
+        activities: [activityRow(FRIEND, "a1")],
+      },
+      {
+        workout_scores: { message: "nope" },
+        profiles: { message: "nope" },
+        activity_reactions: { message: 'relation "activity_reactions" does not exist' },
+        activity_comments: { message: 'relation "activity_comments" does not exist' },
+      }
+    );
+
+    const page = await fetchFriendFeed(supabase, ME);
+
+    expect(page.error).toBeUndefined();
+    expect(page.activities).toHaveLength(1);
+    expect(page.activities[0].author.username).toBeNull();
+    expect(page.activities[0].reactionCount).toBe(0);
   });
 
   it("never selects activities.metadata, which carries the GPS route and home start point", async () => {

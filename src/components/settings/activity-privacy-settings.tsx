@@ -24,12 +24,17 @@ import { cn } from "@/lib/utils/cn";
 export function ActivityPrivacySettings({
   initialShareActivities,
   userId,
-  /** Set when the profile row couldn't be read — we show the control in a disabled state rather than hiding it, because a silently missing privacy switch is exactly the bug this replaces. */
-  loadFailed = false,
+  /**
+   * Why the current setting couldn't be read, or null when it was. The control
+   * is shown disabled rather than hidden — a silently missing privacy switch
+   * is exactly the bug this replaces — and the two reasons get different copy
+   * because only one of them is worth retrying.
+   */
+  unavailable = null,
 }: {
   initialShareActivities: boolean;
   userId: string;
-  loadFailed?: boolean;
+  unavailable?: "missing_column" | "read_failed" | null;
 }) {
   const [isPrivate, setIsPrivate] = useState(!initialShareActivities);
   const [saving, setSaving] = useState(false);
@@ -79,7 +84,7 @@ export function ActivityPrivacySettings({
             role="switch"
             aria-checked={isPrivate}
             aria-label="Private account"
-            disabled={saving || loadFailed}
+            disabled={saving || unavailable !== null}
             onClick={toggle}
             className={cn(
               "relative h-7 w-12 shrink-0 rounded-full transition-colors disabled:opacity-50",
@@ -94,7 +99,15 @@ export function ActivityPrivacySettings({
             />
           </button>
         </div>
-        {loadFailed && (
+        {unavailable === "missing_column" && (
+          <p className="mt-3 text-xs text-warning">
+            This app&apos;s database is missing the update that adds account privacy, so the switch
+            is disabled — it would have nowhere to save to, and the activity feed won&apos;t work
+            either until it&apos;s applied. Reloading won&apos;t help. If you run this app, apply the
+            outstanding migrations in <code>supabase/migrations</code> (031 onwards).
+          </p>
+        )}
+        {unavailable === "read_failed" && (
           <p className="mt-3 text-xs text-warning">
             We couldn&apos;t load your current privacy setting, so this switch is disabled to avoid
             showing you the wrong state. Reload the page to try again.

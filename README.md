@@ -81,6 +81,18 @@ cp .env.example .env.local
    | 040 | `040_hpe_monitoring_and_rollout.sql` | HPE monitoring, feature flags (kill switch), adherence and injury reporting |
    | 041 | `041_admin_roles_and_fleet_review.sql` | `admin_users`, the fleet-review gate and the rollout audit log |
    | 042 | `042_hpe_intake.sql` | HPE athlete intake: safety screen answers, goal, availability and preferences |
+   | 043 | `043_hpe_intake_plan_flexibility.sql` | Plan flexibility on the intake |
+   | 044 | `044_hpe_training_split.sql` | Preferred training split |
+   | 045 | `045_scoring_basis.sql` | Explicit scoring basis for athletes who are not male or female |
+   | 046 | `046_hpe_safety_capped_outcome.sql` | The health screen caps plans instead of refusing them |
+   | 047 | `047_hpe_intake_overrides.sql` | Manual overrides for engine-proposed 1RM and heart rates |
+   | 048 | `048_hpe_intake_section_regroup.sql` | Remaps stored intake progress onto the regrouped sections |
+   | 049 | `049_private_account_visibility.sql` | "Private account" switch and the activity-visibility predicate behind it |
+
+   **Skipping the tail of this list breaks the social feed.** `031` adds
+   `profiles.share_activities_with_friends` and the `activities` policy that lets a friend's workout be read at
+   all; `049` hardens both. Without them the Settings privacy switch reports it cannot load and the feed stays
+   permanently empty, because RLS returns zero rows rather than an error. Run the whole list.
 
    **After 041:** the Hybrid Plan Engine ships disabled at 0% rollout and grants no admin roles. `admin_users` has no
    INSERT policy by design, so the first operator has to be granted directly:

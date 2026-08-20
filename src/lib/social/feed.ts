@@ -58,6 +58,8 @@ export interface FeedActivity {
  * "this friend hasn't logged anything" — the sharing flag lives behind RLS
  * on someone else's profile row and is none of the viewer's business — so
  * those collapse into one honest "nothing to show yet" case.
+ *
+ * A failed query is NOT one of those cases and must never be reported as one.
  */
 export type FeedEmptyReason = "no_friends" | "no_visible_activities";
 
@@ -66,9 +68,37 @@ export interface FeedPage {
   hasMore: boolean;
   /** Only set when `activities` is empty. */
   emptyReason?: FeedEmptyReason;
+  /**
+   * Set when a query the feed depends on failed outright — a missing table,
+   * column or policy (i.e. an unapplied migration), or a dropped connection.
+   *
+   * This exists because the alternative is worse than useless: every Supabase
+   * call here used to have its `error` discarded, so a database missing
+   * migration 031 produced `data === null`, which read as zero rows, which the
+   * UI rendered as "your friends haven't logged anything you can see yet".
+   * That sentence is a lie in that state, and it points the athlete at their
+   * friends' settings instead of at the one thing actually wrong. An athlete
+   * reporting "the social feed doesn't work" while being shown a cheerful
+   * empty state is exactly how this stayed unfixed.
+   */
+  error?: string;
 }
 
 const FEED_PAGE_SIZE = 15;
+
+/**
+ * The detail is only safe to show in development — a raw PostgREST message
+ * names columns and constraints — but the operator running this app locally
+ * is precisely the person who needs to read "column
+ * profiles.share_activities_with_friends does not exist". Same split the
+ * onboarding flow already uses for its save errors.
+ */
+function describeFailure(what: string, error: { message?: string } | null): string {
+  const base = `Your feed couldn't be loaded — ${what} failed.`;
+  return process.env.NODE_ENV === "development" && error?.message
+    ? `${base} (${error.message})`
+    : base;
+}
 
 /**
  * This viewer's accepted friends. Note what this deliberately does NOT do:
@@ -85,18 +115,24 @@ const FEED_PAGE_SIZE = 15;
  * RLS still has the final say on every row returned, so a mistake here can
  * only ever under-fetch, never leak a private athlete's activity.
  */
-async function fetchAcceptedFriendIds(supabase: SupabaseClient, userId: string): Promise<string[]> {
-  const { data: friendRows } = await supabase
+async function fetchAcceptedFriendIds(
+  supabase: SupabaseClient,
+  userId: string
+): Promise<{ ids: string[]; error: { message?: string } | null }> {
+  const { data: friendRows, error } = await supabase
     .from("friends")
     .select("user_id, friend_id")
     .eq("status", "accepted")
     .or(`user_id.eq.${userId},friend_id.eq.${userId}`);
 
-  return [
-    ...new Set(
-      (friendRows ?? []).map((r) => (r.user_id === userId ? (r.friend_id as string) : (r.user_id as string)))
-    ),
-  ];
+  return {
+    ids: [
+      ...new Set(
+        (friendRows ?? []).map((r) => (r.user_id === userId ? (r.friend_id as string) : (r.user_id as string)))
+      ),
+    ],
+    error: error ?? null,
+  };
 }
 
 /** Pulls out only the fields worth surfacing on a feed post — never the raw score_breakdown blob (internal flags/explanation strings aren't meant for another user's eyes). */
@@ -123,7 +159,14 @@ export async function fetchFriendFeed(
   options: { offset?: number } = {}
 ): Promise<FeedPage> {
   const offset = options.offset ?? 0;
-  const friendIds = await fetchAcceptedFriendIds(supabase, userId);
+  const { ids: friendIds, error: friendsError } = await fetchAcceptedFriendIds(supabase, userId);
+  if (friendsError) {
+    return {
+      activities: [],
+      hasMore: false,
+      error: describeFailure("reading your friends list", friendsError),
+    };
+  }
   if (friendIds.length === 0) {
     return { activities: [], hasMore: false, emptyReason: "no_friends" };
   }
@@ -139,7 +182,7 @@ export async function fetchFriendFeed(
   // The sharing/friendship check is enforced by RLS (activity_is_visible_to),
   // not here — rows belonging to a friend who has gone private simply never
   // come back from this query.
-  const { data: activityRows } = await supabase
+  const { data: activityRows, error: activitiesError } = await supabase
     .from("activities")
     .select(
       "id, user_id, sport, title, started_at, duration_seconds, distance_meters, elevation_meters, avg_heart_rate, max_heart_rate, avg_power_watts, avg_cadence, avg_pace_seconds_per_km, temperature_celsius, session_type, rpe, notes"
@@ -148,6 +191,16 @@ export async function fetchFriendFeed(
     .eq("is_draft", false)
     .order("started_at", { ascending: false })
     .range(offset, offset + FEED_PAGE_SIZE); // fetch one extra to detect hasMore
+
+  // An RLS-filtered empty result and a failed query both arrive as no rows.
+  // Only the first of those means "nothing to show".
+  if (activitiesError) {
+    return {
+      activities: [],
+      hasMore: false,
+      error: describeFailure("reading your friends' activities", activitiesError),
+    };
+  }
 
   const rows = activityRows ?? [];
   const hasMore = rows.length > FEED_PAGE_SIZE;
@@ -159,6 +212,11 @@ export async function fetchFriendFeed(
   const activityIds = pageRows.map((r) => r.id as string);
   const authorIds = [...new Set(pageRows.map((r) => r.user_id as string))];
 
+  // These four are enrichment, not the feed itself: a failure costs a score
+  // badge, an avatar or a comment count, and the workout still renders. Their
+  // errors are deliberately not promoted to a page-level failure the way the
+  // two queries above are — losing the reaction count is not worth replacing
+  // a readable feed with an error card.
   const [{ data: scores }, { data: authors }, { data: reactions }, { data: comments }] = await Promise.all([
     supabase
       .from("workout_scores")

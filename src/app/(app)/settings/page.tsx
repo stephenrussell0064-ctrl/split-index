@@ -28,6 +28,18 @@ import { PremiumBadge } from "@/components/retention/premium-badge";
 import { createClient } from "@/lib/supabase/client";
 import type { SubscriptionStatus, SubscriptionTier } from "@/types";
 
+/**
+ * The privacy switch loads independently of the rest of the profile, so the
+ * three outcomes are tracked separately: it worked, the column isn't there
+ * (the database is behind on migrations — reloading cannot help), or the read
+ * failed for some other reason (it might).
+ */
+type PrivacyState =
+  | { status: "loading" }
+  | { status: "loaded"; shareActivitiesWithFriends: boolean }
+  | { status: "missing_column" }
+  | { status: "read_failed" };
+
 export default function SettingsPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -42,7 +54,6 @@ export default function SettingsPage() {
     createdAt: string;
     userId: string;
     splitEnduranceWeight: number;
-    shareActivitiesWithFriends: boolean;
   } | null>(null);
   // Tracked separately from `profile` so the Privacy control can still be
   // rendered (disabled, with an explanation) when the profile row fails to
@@ -52,16 +63,25 @@ export default function SettingsPage() {
   // option "is not available" in settings.
   const [authUserId, setAuthUserId] = useState<string | null>(null);
   const [profileLoadFailed, setProfileLoadFailed] = useState(false);
+  const [privacy, setPrivacy] = useState<PrivacyState>({ status: "loading" });
 
   useEffect(() => {
     const supabase = createClient();
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return;
       setAuthUserId(user.id);
+
+      // Two reads, not one. `share_activities_with_friends` arrived in
+      // migration 031, and asking for it in the same SELECT as everything
+      // else meant a database that had not taken 031 failed the WHOLE
+      // profile read with `column ... does not exist` — so the Split Index
+      // card vanished, the subscription card fell back to "free", and the
+      // Privacy card could only say it had no idea. One missing column must
+      // not be able to empty the Settings page.
       supabase
         .from("profiles")
         .select(
-          "subscription_tier, subscription_status, created_at, split_endurance_weight, share_activities_with_friends, user_id"
+          "subscription_tier, subscription_status, created_at, split_endurance_weight, user_id"
         )
         .eq("user_id", user.id)
         .single()
@@ -79,11 +99,32 @@ export default function SettingsPage() {
               typeof data.split_endurance_weight === "number"
                 ? data.split_endurance_weight
                 : 0.5,
-            // Activities are visible to friends by default, so anything
-            // other than an explicit `false` means visible. Never infer
-            // "private" from a missing/undefined value here — that would
-            // show the athlete a Private-account switch that doesn't
-            // match what the database is actually enforcing.
+          });
+        });
+
+      supabase
+        .from("profiles")
+        .select("share_activities_with_friends")
+        .eq("user_id", user.id)
+        .single()
+        .then(({ data, error }) => {
+          if (error || !data) {
+            // 42703 is Postgres' undefined_column. It is not a blip and
+            // reloading will never clear it: the database is behind on
+            // migrations. Say so, because "try again" wastes the one person
+            // who could actually fix it.
+            setPrivacy({
+              status: error?.code === "42703" ? "missing_column" : "read_failed",
+            });
+            return;
+          }
+          // Activities are visible to friends by default, so anything
+          // other than an explicit `false` means visible. Never infer
+          // "private" from a missing/undefined value here — that would
+          // show the athlete a Private-account switch that doesn't
+          // match what the database is actually enforcing.
+          setPrivacy({
+            status: "loaded",
             shareActivitiesWithFriends: data.share_activities_with_friends !== false,
           });
         });
@@ -171,6 +212,18 @@ export default function SettingsPage() {
         </p>
       </div>
 
+      {/*
+        Cards that need the profile row render nothing without it. Saying so
+        beats letting the page look like it simply has fewer settings than it
+        does — which is how a failed read gets reported as a missing feature.
+      */}
+      {profileLoadFailed && (
+        <p className="text-sm text-warning">
+          We couldn&apos;t load your profile, so some settings below are missing.
+          Your subscription and Split Index cards need it.
+        </p>
+      )}
+
       {/* Profile */}
       <Card>
         <CardHeader>
@@ -201,11 +254,20 @@ export default function SettingsPage() {
         />
       )}
 
-      {(profile || (authUserId && profileLoadFailed)) && (
+      {/*
+        Rendered as soon as we know who the athlete is, even if nothing about
+        their profile could be read. A privacy control that quietly disappears
+        when a query fails is indistinguishable from one that was never built,
+        and that is what the original report ("this option is not available
+        there") actually described.
+      */}
+      {authUserId && privacy.status !== "loading" && (
         <ActivityPrivacySettings
-          initialShareActivities={profile ? profile.shareActivitiesWithFriends : true}
-          userId={profile?.userId ?? authUserId!}
-          loadFailed={!profile}
+          initialShareActivities={
+            privacy.status === "loaded" ? privacy.shareActivitiesWithFriends : true
+          }
+          userId={authUserId}
+          unavailable={privacy.status === "loaded" ? null : privacy.status}
         />
       )}
 
