@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { LogOut } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { clearRacePredictions } from "@/lib/native/race-predictions";
+import { clearDailyTraining } from "@/lib/native/daily-training";
 import { Skeleton } from "@/components/ui/skeleton";
 
 interface AccountInfo {
@@ -72,6 +73,10 @@ export function SidebarAccount() {
     // (it no-ops off-device), and deliberately awaited before signOut so a
     // slow bridge call cannot race the navigation away from this component.
     await clearRacePredictions();
+    // Same reasoning for the daily-training widget, and the stakes are a
+    // little higher: a training block names what someone is doing and when,
+    // so it must not outlive their session on a shared phone either.
+    await clearDailyTraining();
     await supabase.auth.signOut();
     router.push("/");
     router.refresh();

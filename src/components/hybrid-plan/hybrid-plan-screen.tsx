@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,8 @@ import { DiagnosticReport } from "./diagnostic-report";
 import { EventDayView } from "./event-day-view";
 import { EventOrderDecision } from "./event-order-decision";
 import { PlanView, type PlanWeekView } from "./plan-view";
+import { buildDailyTrainingPayload } from "./daily-widget-payload";
+import { DailyTrainingSync } from "@/lib/native/daily-training-sync";
 import type { AthleteProfile, AttemptSelection, EventDayStep, EventOrderResult, RacePacing, TaperDay } from "@/lib/scoring/hpe";
 
 /**
@@ -59,7 +61,23 @@ interface PlanResponse {
         isQuality: boolean;
         findingId: string;
         emphasisKey: string;
-        prescription: { text: string; notes?: string[] };
+        /**
+         * The engine has always sent the structured half of the prescription
+         * alongside the sentence; this screen used to read `text` and drop the
+         * rest. The day view puts the numbers where the eye lands first, so
+         * they are declared here now. Every one is optional because a lift
+         * prescription genuinely carries none of them.
+         */
+        prescription: {
+          text: string;
+          notes?: string[];
+          distanceKm?: number;
+          paceLoSPerKm?: number;
+          paceHiSPerKm?: number;
+          hrLo?: number;
+          hrHi?: number;
+          hrSource?: string;
+        };
         label?: string;
       };
     }[];
@@ -117,6 +135,12 @@ function toPlanWeeks(raw: NonNullable<PlanResponse["weeks"]>): PlanWeekView[] {
       prescription: p.session.prescription.text,
       label: p.session.label,
       notes: p.session.prescription.notes,
+      distanceKm: p.session.prescription.distanceKm,
+      paceLoSPerKm: p.session.prescription.paceLoSPerKm,
+      paceHiSPerKm: p.session.prescription.paceHiSPerKm,
+      hrLo: p.session.prescription.hrLo,
+      hrHi: p.session.prescription.hrHi,
+      hrSource: p.session.prescription.hrSource,
     })),
   }));
 }
@@ -132,6 +156,51 @@ export function HybridPlanScreen() {
   // itself outside the effect.
   const [reloadKey, setReloadKey] = useState(0);
   const retry = useCallback(() => setReloadKey((k) => k + 1), []);
+
+  /**
+   * What week 1 of the block is anchored to.
+   *
+   * The engine emits "week 3, Sat" and never a date, because everything it
+   * reasons about is relative. The day-first screen needs real dates, and
+   * there is one honest source for them: the plan was generated from `now`
+   * (the route derives `weeksOut` as event date minus now), so week 1 is the
+   * week it was built in.
+   *
+   * A stored plan read back while generation is paused was built at
+   * `storedPlan.generatedAt`, NOT today — anchoring that one to today would
+   * slide the whole block forward and tell an athlete in week 4 they were in
+   * week 1.
+   */
+  const generatedAt = data?.storedPlan?.generatedAt ?? null;
+  const planStart = useMemo(
+    () => (generatedAt ? new Date(generatedAt) : new Date()),
+    [generatedAt]
+  );
+
+  /**
+   * What the iOS home-screen widget will show.
+   *
+   * Built from the same weeks the screen below renders, so the phone's home
+   * screen and the app it opens can never disagree about today. Computed
+   * unconditionally — including on the refusal path, where the honest payload
+   * is "no plan yet" rather than nothing at all. A widget left holding a
+   * previous block after the athlete's plan was withdrawn would be the worst
+   * of the available failures.
+   *
+   * `loading` is the one state deliberately NOT published: an in-flight fetch
+   * is not evidence that the athlete has no plan, and publishing "noPlan"
+   * mid-request would blank a correct widget on every app launch.
+   */
+  const widgetPayload = useMemo(() => {
+    if (!data) return null;
+    const weeks = data.generated ? (data.weeks ?? []) : (data.paused ? (data.weeks ?? []) : []);
+    return buildDailyTrainingPayload({
+      weeks: toPlanWeeks(weeks),
+      planStart,
+      refusalReason: data.refusal?.reason ?? null,
+      needsIntake: data.needsIntake,
+    });
+  }, [data, planStart]);
 
   useEffect(() => {
     let cancelled = false;
@@ -185,6 +254,17 @@ export function HybridPlanScreen() {
 
   const storedWeeks = data.weeks ?? [];
 
+  /**
+   * Renders nothing — pushes the days above into the iOS home-screen widget's
+   * shared container. No-op on web and Android.
+   *
+   * Included in EVERY branch below, refusal included. A widget still showing
+   * last month's block after the plan was withdrawn is worse than one saying
+   * "no plan yet", and the only way to guarantee the second is to publish on
+   * the refusal path too.
+   */
+  const widgetSync = widgetPayload ? <DailyTrainingSync payload={widgetPayload} /> : null;
+
   // ---- paused, but the plan survives --------------------------------------
   // The kill switch stops NEW generation and leaves existing plans readable.
   // That asymmetry is the whole reason a pause is safe to perform, and it was
@@ -192,6 +272,7 @@ export function HybridPlanScreen() {
   if (!data.generated && data.paused && storedWeeks.length > 0 && profile) {
     return (
       <div className="space-y-5">
+        {widgetSync}
         <PageHeader
           eyebrow="Hybrid plan"
           title="Your block"
@@ -207,7 +288,7 @@ export function HybridPlanScreen() {
             </p>
           )}
         </Card>
-        <PlanView weeks={toPlanWeeks(storedWeeks)} profile={profile} />
+        <PlanView weeks={toPlanWeeks(storedWeeks)} profile={profile} planStart={planStart} />
       </div>
     );
   }
@@ -221,6 +302,7 @@ export function HybridPlanScreen() {
     const referrals = data.safety?.referrals ?? [];
     return (
       <div className="space-y-5">
+        {widgetSync}
         <PageHeader
           eyebrow="Hybrid plan"
           title="Not yet"
@@ -284,6 +366,7 @@ export function HybridPlanScreen() {
 
   return (
     <div className="space-y-5">
+      {widgetSync}
       <PageHeader
         eyebrow="Hybrid plan"
         title="Your block"
@@ -429,7 +512,7 @@ export function HybridPlanScreen() {
         ))}
       </div>
 
-      {tab === "plan" && profile && <PlanView weeks={weeks} profile={profile} />}
+      {tab === "plan" && profile && <PlanView weeks={weeks} profile={profile} planStart={planStart} />}
       {tab === "diagnostic" && profile && <DiagnosticReport profile={profile} assumptions={data.assumptions} />}
       {tab === "event" && (
         <div className="space-y-5">

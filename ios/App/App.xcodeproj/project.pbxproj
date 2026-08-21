@@ -15,6 +15,8 @@
 		4D22ABE92AF431CB00220026 /* CapApp-SPM in Frameworks */ = {isa = PBXBuildFile; productRef = 4D22ABE82AF431CB00220026 /* CapApp-SPM */; };
 		AA01F1E2C3D4B5A600000101 /* SplitIndexWidgets/RacePredictionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA01F1E2C3D4B5A600000102 /* SplitIndexWidgets/RacePredictionStore.swift */; };
 		AA01F1E2C3D4B5A600000103 /* RacePredictionsPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA01F1E2C3D4B5A600000104 /* RacePredictionsPlugin.swift */; };
+		AA01F1E2C3D4B5A600000105 /* SplitIndexWidgets/DailyTrainingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA01F1E2C3D4B5A600000106 /* SplitIndexWidgets/DailyTrainingStore.swift */; };
+		AA01F1E2C3D4B5A600000107 /* DailyTrainingPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA01F1E2C3D4B5A600000108 /* DailyTrainingPlugin.swift */; };
 		50379B232058CBB4000EE86E /* capacitor.config.json in Resources */ = {isa = PBXBuildFile; fileRef = 50379B222058CBB4000EE86E /* capacitor.config.json */; };
 		504EC3081FED79650016851F /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 504EC3071FED79650016851F /* AppDelegate.swift */; };
 		504EC30D1FED79650016851F /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30B1FED79650016851F /* Main.storyboard */; };
@@ -70,6 +72,8 @@
 		98252592C588BFFF1721B263 /* LiveActivityPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityPlugin.swift; sourceTree = "<group>"; };
 		AA01F1E2C3D4B5A600000102 /* SplitIndexWidgets/RacePredictionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitIndexWidgets/RacePredictionStore.swift; sourceTree = "<group>"; };
 		AA01F1E2C3D4B5A600000104 /* RacePredictionsPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RacePredictionsPlugin.swift; sourceTree = "<group>"; };
+		AA01F1E2C3D4B5A600000106 /* SplitIndexWidgets/DailyTrainingStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitIndexWidgets/DailyTrainingStore.swift; sourceTree = "<group>"; };
+		AA01F1E2C3D4B5A600000108 /* DailyTrainingPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyTrainingPlugin.swift; sourceTree = "<group>"; };
 		B06D17B99535773D2986A555 /* SplitIndexWidgets/SplitIndexActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitIndexWidgets/SplitIndexActivityAttributes.swift; sourceTree = "<group>"; };
 		DDF7CC0A247F567D9441DF09 /* App.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = App.entitlements; sourceTree = "<group>"; };
 		EEBF54E23022651800657F01 /* SplitIndexWidgetsExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = SplitIndexWidgetsExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -121,6 +125,7 @@
 				EEBF54E83022651800657F01 /* SplitIndexWidgets */,
 				B06D17B99535773D2986A555 /* SplitIndexWidgets/SplitIndexActivityAttributes.swift */,
 				AA01F1E2C3D4B5A600000102 /* SplitIndexWidgets/RacePredictionStore.swift */,
+				AA01F1E2C3D4B5A600000106 /* SplitIndexWidgets/DailyTrainingStore.swift */,
 				EEBF54E33022651800657F01 /* Frameworks */,
 				504EC3051FED79650016851F /* Products */,
 			);
@@ -144,6 +149,7 @@
 				06E549172EFD899E1B52C9C3 /* StepCadencePlugin.swift */,
 				98252592C588BFFF1721B263 /* LiveActivityPlugin.swift */,
 				AA01F1E2C3D4B5A600000104 /* RacePredictionsPlugin.swift */,
+				AA01F1E2C3D4B5A600000108 /* DailyTrainingPlugin.swift */,
 				DDF7CC0A247F567D9441DF09 /* App.entitlements */,
 				50379B222058CBB4000EE86E /* capacitor.config.json */,
 				504EC3071FED79650016851F /* AppDelegate.swift */,
@@ -292,6 +298,8 @@
 				B67CD127024B78C9493D382A /* LiveActivityPlugin.swift in Sources */,
 				AA01F1E2C3D4B5A600000101 /* SplitIndexWidgets/RacePredictionStore.swift in Sources */,
 				AA01F1E2C3D4B5A600000103 /* RacePredictionsPlugin.swift in Sources */,
+				AA01F1E2C3D4B5A600000105 /* SplitIndexWidgets/DailyTrainingStore.swift in Sources */,
+				AA01F1E2C3D4B5A600000107 /* DailyTrainingPlugin.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
