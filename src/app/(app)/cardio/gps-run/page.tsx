@@ -20,6 +20,7 @@ import {
   pauseGpsSession,
   resumeGpsSession,
   recoverOrphanedSession,
+  rejoinGpsSession,
   type RecoveredGpsSession,
 } from "@/lib/native/gps-tracking";
 import { connectHeartRateMonitor, disconnectHeartRateMonitor } from "@/lib/native/heart-rate";
@@ -141,6 +142,7 @@ export default function GpsRunPage() {
   const [saving, setSaving] = useState(false);
   const [starting, setStarting] = useState(false);
   const [stopping, setStopping] = useState(false);
+  const [rejoining, setRejoining] = useState(false);
   /** User report: "No stop start button on GPS runs. Once paused you can only discard run." A paused run is not an abandoned run — everything recorded stays recorded, and this flips straight back. */
   const [paused, setPaused] = useState(false);
   const [pauses, setPauses] = useState<PauseInterval[]>([]);
@@ -405,6 +407,69 @@ export default function GpsRunPage() {
       }
     } finally {
       setStarting(false);
+    }
+  }
+
+  /**
+   * Picks a run back up after the WebView was reloaded underneath it.
+   *
+   * This is the fix for "pause only stops the run permanently". The athlete
+   * pauses, pockets the phone, iOS re-creates the WKWebView behind the
+   * backgrounded app, and this component remounts with `phase` back at "idle"
+   * and every bit of run state gone. Before this existed the only thing on
+   * offer was to save the run as a partial effort or throw it away — the run
+   * they were standing in the middle of was simply over.
+   *
+   * Everything is restored from the recovered record, not re-derived: the
+   * original start time (so the clock does not restart at zero), every fix,
+   * and the pauses with the one they are currently standing in still OPEN, so
+   * they come back to a paused run with a Resume button rather than to a run
+   * that quietly started counting again while they were still stopped.
+   */
+  async function handleRejoin() {
+    if (!orphaned || rejoining) return;
+    setRejoining(true);
+    setError("");
+    try {
+      const recovered = orphaned;
+      await rejoinGpsSession(
+        {
+          points: recovered.points,
+          pauses: recovered.livePauses,
+          startedAt: recovered.startedAt,
+        },
+        (point) => setLivePoints((prev) => [...prev, point])
+      );
+      if (isOnFootSport && isStepCadenceSupported()) {
+        startStepCadence((cadence) => {
+          setLiveCadence(cadence);
+          setCadenceReadings((prev) => [...prev, cadence]);
+        }).catch(() => {});
+      }
+      setLivePoints(recovered.points);
+      applyPauses(recovered.livePauses);
+      setPaused(recovered.wasPaused);
+      setConfirmingDiscard(false);
+      startedAtRef.current = recovered.startedAt;
+      // Effort segments are not persisted, so a rejoined interval run starts a
+      // fresh segment here rather than pretending one has been open since the
+      // start of the run.
+      segmentStartRef.current = Date.now();
+      setSegments([]);
+      setSegmentType("easy");
+      setOrphaned(null);
+      setPhase("tracking");
+      if (isLiveActivitySupported()) {
+        startLiveActivity(
+          "gpsTracking",
+          GPS_SPORTS.find((s) => s.value === sport)?.label ?? "GPS Tracking",
+          { startDateEpochMs: recovered.startedAt, distanceKm: recovered.summary.distanceMeters / 1000 }
+        );
+      }
+    } catch {
+      setError("Couldn't pick that run back up. You can still save it as a partial session below.");
+    } finally {
+      setRejoining(false);
     }
   }
 
@@ -836,9 +901,16 @@ export default function GpsRunPage() {
               <div className="w-full border-t border-white/10 pt-3">
                 {confirmingDiscard ? (
                   <div className="flex flex-col items-center gap-2">
+                    {/* Built as one string rather than interleaved JSX text and
+                        expressions: the split version rendered as "02:21will be
+                        lost" on device, because the space before "will" sat at
+                        the start of a text node and was stripped. A warning
+                        about permanent deletion is the last place to ship a
+                        typo. */}
                     <p className="text-center text-xs text-white/70">
-                      Delete this run for good? {(liveDistanceMeters / 1000).toFixed(2)}km and{" "}
-                      {formatElapsed(elapsedSeconds)} will be lost — it can&apos;t be recovered.
+                      {`Delete this run for good? ${(liveDistanceMeters / 1000).toFixed(2)}km and ${formatElapsed(
+                        elapsedSeconds
+                      )} will be lost — it can't be recovered.`}
                     </p>
                     <div className="flex gap-2">
                       <Button size="sm" variant="secondary" onClick={() => setConfirmingDiscard(false)} disabled={stopping}>
@@ -884,20 +956,57 @@ export default function GpsRunPage() {
           number and nothing else. recoverOrphanedSession() now returns the
           raw points too, so the actual route renders immediately. */}
       {orphaned && (
-        <Card padding="sm" className="border border-warning/30 bg-warning/5">
-          <div className="flex items-start gap-2 text-sm text-warning">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+        <Card
+          padding="sm"
+          className={
+            orphaned.resumable
+              ? "border border-accent/30 bg-accent/5"
+              : "border border-warning/30 bg-warning/5"
+          }
+        >
+          <div
+            className={`flex items-start gap-2 text-sm ${orphaned.resumable ? "text-accent" : "text-warning"}`}
+          >
+            {orphaned.resumable ? (
+              <MapPin className="mt-0.5 h-4 w-4 shrink-0" />
+            ) : (
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            )}
             <div className="flex-1">
-              <p className="font-medium">
-                We found a run that didn&apos;t stop normally last time
-                {orphaned.summary.distanceMeters > 0
-                  ? ` (~${(orphaned.summary.distanceMeters / 1000).toFixed(2)}km)`
-                  : ""}
-                .
-              </p>
-              <p className="mt-1 text-xs text-warning/80">
-                It&apos;ll be saved as a partial/incomplete session, not a full clean effort.
-              </p>
+              {/* A run that is still live gets offered back as a run, not as
+                  wreckage. Pausing and pocketing the phone is enough to make
+                  iOS rebuild the WebView, and the old copy of this banner was
+                  the whole of the athlete's "pause only stops the run
+                  permanently" report: two buttons, both of which ended it. */}
+              {orphaned.resumable ? (
+                <>
+                  <p className="font-medium">
+                    Your run is still going
+                    {orphaned.summary.distanceMeters > 0
+                      ? ` — ${(orphaned.summary.distanceMeters / 1000).toFixed(2)}km so far`
+                      : ""}
+                    {orphaned.wasPaused ? ", paused" : ""}.
+                  </p>
+                  <p className="mt-1 text-xs text-accent/80">
+                    {orphaned.wasPaused
+                      ? "Pick it up where you stopped — nothing you've run is lost."
+                      : "The app restarted mid-run. Carry on and it'll be saved as one session."}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="font-medium">
+                    We found a run that didn&apos;t stop normally last time
+                    {orphaned.summary.distanceMeters > 0
+                      ? ` (~${(orphaned.summary.distanceMeters / 1000).toFixed(2)}km)`
+                      : ""}
+                    .
+                  </p>
+                  <p className="mt-1 text-xs text-warning/80">
+                    It&apos;ll be saved as a partial/incomplete session, not a full clean effort.
+                  </p>
+                </>
+              )}
 
               {orphaned.points.length > 0 && (
                 <GpsMap
@@ -906,10 +1015,17 @@ export default function GpsRunPage() {
                 />
               )}
 
-              <div className="mt-1 flex gap-2">
+              <div className="mt-1 flex flex-wrap gap-2">
+                {orphaned.resumable && (
+                  <Button size="sm" loading={rejoining} onClick={handleRejoin}>
+                    <Play className="h-4 w-4" fill="currentColor" />
+                    {orphaned.wasPaused ? "Back to my run" : "Continue run"}
+                  </Button>
+                )}
                 <Button
                   size="sm"
                   variant="secondary"
+                  disabled={rejoining}
                   onClick={() =>
                     submitSummary(
                       orphaned.summary,
