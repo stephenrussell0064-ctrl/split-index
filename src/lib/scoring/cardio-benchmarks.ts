@@ -73,31 +73,72 @@ const RUN_5K_ANCHORS: Anchor[] = [
 ];
 
 /**
- * Corrected against Rowing Regimen (rowingregimen.com), Concept2-logbook-
- * derived, age-30 (== age-25 for this purpose — the source treats 20-30 as
- * a flat band, consistent with the age-factor curve below doing the same
- * for 25-35). Same 5/20/50/80/95th percentile convention as run (same
- * sibling-site network) — high confidence, already a clean single source,
- * unchanged in substance from the prior pass (only the 99th-percentile
- * anchor is now derived via the same WR-gap rule as every other activity,
- * rather than a one-off floor point).
+ * Rebased onto the SAME REFERENCE POPULATION as the run table above.
+ *
+ * The previous table read its percentiles off Rowing Regimen
+ * (rowingregimen.com), which are Concept2-LOGBOOK percentiles: people who
+ * own an erg and bother to upload results. That was internally fine, and
+ * these anchors are still what that source says. It stopped being
+ * comparable the moment the run table was rebased (see RUN_5K_ANCHORS and
+ * "Recalibrate run scoring to general population, not competitive
+ * runners") — run moved to the general population of people who run 5Ks
+ * and row did not, leaving one shared 0-1000 ruler measuring two different
+ * populations. Nothing in the scoring pipeline can absorb that: an athlete
+ * gets one Split Index across sports, so a run score and a row score have
+ * to mean the same thing.
+ *
+ * Measured, not asserted. Bridging both tables to aerobic capacity —
+ * running via Daniels VDOT, rowing via Concept2 power (W = 2.80/(s/m)^3),
+ * 20% gross ergometer efficiency and the duration-appropriate aerobic
+ * share — the old table demanded 9.7 to 14.0 mL/kg/min MORE at every
+ * single anchor, 5th percentile through 99th. A near-constant offset the
+ * whole length of the curve is the signature of a different reference
+ * population, not of a bad anchor or two. Concretely: the logbook's median
+ * 2k (7:04.6) needs ~45 mL/kg/min, which is the run table's EIGHTIETH
+ * percentile, so "median rower" was being scored against "top-fifth
+ * runner". The bridge validates against known points before being trusted
+ * — 5:45 at 93 kg gives 70.5, 7:00 at 82 kg gives 45.1, 9:00 gives 21.8,
+ * all where the rowing literature puts them.
+ *
+ * Each anchor below is therefore the 2k an athlete of the SAME aerobic
+ * capacity as the correspondingly-scored runner would pull, at an 80 kg
+ * male reference. Mass is the real free parameter here (the erg carries
+ * the athlete's weight, the road does not) and it is a gentle one: 78 kg
+ * and 82 kg move every anchor by only ~3 seconds, well inside the noise
+ * of the source data either table is built on.
+ *
+ * Note what this also repairs. The old band packed 5th-to-99th percentile
+ * into a 1.353x spread of time where running's spans 2.882x, which is what
+ * made a few percent of projected time worth hundreds of index points and
+ * left the table hypersensitive to every upstream credit. The rebased band
+ * spans 1.558x. It is still narrower than running's, and that part is real
+ * physics rather than a calibration artefact — erg pace goes as
+ * power^(-1/3), so a given physiological range always compresses into a
+ * narrower pace range on the erg than on the road. That is precisely why
+ * the relative-effort credits in cardio-activity.ts cannot be denominated
+ * in percent-of-time across sports, and are capped in index points there.
+ *
+ * The female table keeps the sourced male:female ratio at each anchor
+ * (1.145 at the 99th rising to 1.261 at the 5th) applied to the rebased
+ * male times — the sex relationship in the source data is not what was
+ * wrong, so it is preserved rather than re-derived.
  */
 const ROW_2K_ANCHORS_MALE: Anchor[] = [
-  [359.9, 925], // 5:59.9 — 99th percentile (30% of gap toward WR 5:35.8)
-  [370.2, 850], // 6:10.2 — 95th percentile
-  [395.9, 725], // 6:35.9 — 80th percentile
-  [424.6, 475], // 7:04.6 — 50th percentile
-  [455.4, 250], // 7:35.4 — 20th percentile
-  [486.9, 125], // 8:06.9 — 5th percentile
+  [383.5, 925], // 6:23.5 — 99th percentile (was 5:59.9 on logbook percentiles)
+  [401.0, 850], // 6:41.0 — 95th percentile (was 6:10.2)
+  [423.4, 725], // 7:03.4 — 80th percentile (was 6:35.9)
+  [483.1, 475], // 8:03.1 — 50th percentile (was 7:04.6)
+  [536.9, 250], // 8:56.9 — 20th percentile (was 7:35.4)
+  [597.4, 125], // 9:57.4 — 5th percentile (was 8:06.9)
 ];
 
 const ROW_2K_ANCHORS_FEMALE: Anchor[] = [
-  [412.2, 925], // 6:52.2 — 99th percentile (30% of gap toward WR 6:24.8)
-  [423.9, 850], // 7:03.9 — 95th percentile
-  [464.0, 725], // 7:44.0 — 80th percentile
-  [510.2, 475], // 8:30.2 — 50th percentile
-  [561.0, 250], // 9:21.0 — 20th percentile
-  [614.2, 125], // 10:14.2 — 5th percentile
+  [439.2, 925], // 7:19.2 — 99th percentile (was 6:52.2; sourced sex ratio 1.145)
+  [459.1, 850], // 7:39.1 — 95th percentile (was 7:03.9; 1.145)
+  [496.3, 725], // 8:16.3 — 80th percentile (was 7:44.0; 1.172)
+  [580.5, 475], // 9:40.5 — 50th percentile (was 8:30.2; 1.202)
+  [661.4, 250], // 11:01.4 — 20th percentile (was 9:21.0; 1.232)
+  [753.6, 125], // 12:33.6 — 5th percentile (was 10:14.2; 1.261)
 ];
 
 /**

@@ -7,6 +7,9 @@ import {
   isDirectBenchmarkDistance,
   DIRECT_EVIDENCE_IMPROVE_RATE,
   REGRESS_RATE,
+  IMPROVE_RATE,
+  IMPROVE_RATE_FLOOR,
+  confidenceWeightedImproveRate,
   computeSessionBenchmarkEquivalentSeconds,
   terrainAdjustedSessionEF,
 } from "./cardio-predictions";
@@ -378,5 +381,103 @@ describe("updatePrediction — an easy run can never improve the prediction past
       baselineEF: 1.45,
     });
     expect(result).toBeGreaterThan(PRIOR + (SESSION_EQUIVALENT - PRIOR) * REGRESS_RATE);
+  });
+});
+
+/**
+ * Reported bug: "A single run can influence my 5km prediction score too
+ * much." IMPROVE_RATE was one flat 0.55 no matter how much history stood
+ * behind the stored value, so an athlete with thirty logged sessions had
+ * their prediction dragged 55% of the way toward whatever one session
+ * projected — a rewrite, not a blend. See confidenceWeightedImproveRate.
+ */
+describe("updatePrediction — one session's pull decays as evidence accumulates", () => {
+  const STORED = 1120; // an established 18:40 5k prediction
+  const OUTLIER = 1060; // 17:40 — a flattering one-off (downhill, GPS overread, mistag)
+
+  it("is unchanged for a caller that passes no sample count", () => {
+    // Opting in is explicit: the flat rate is what a caller who has not been
+    // taught to pass sample_count keeps getting, rather than being silently
+    // re-rated off an assumed sample size.
+    expect(confidenceWeightedImproveRate(undefined)).toBe(IMPROVE_RATE);
+    expect(confidenceWeightedImproveRate(null)).toBe(IMPROVE_RATE);
+    expect(updatePrediction(STORED, OUTLIER)).toBeCloseTo(STORED + (OUTLIER - STORED) * IMPROVE_RATE, 6);
+  });
+
+  it("moves a well-established prediction only a little on one outlier session", () => {
+    const established = updatePrediction(STORED, OUTLIER, { sampleCount: 30 });
+    // 60 seconds of claimed improvement, from one session, against thirty
+    // sessions of evidence. Flat 0.55 spent 33s of it — 18:40 -> 18:07.
+    const flat = updatePrediction(STORED, OUTLIER);
+    expect(STORED - flat).toBeGreaterThan(30);
+    expect(STORED - established).toBeLessThan(9);
+    expect(established).toBeGreaterThan(1111); // still inside 18:31
+  });
+
+  it("stays responsive for an athlete who has barely logged anything", () => {
+    // A three-session athlete's prediction is mostly guesswork and SHOULD
+    // move; stickiness is earned by evidence, not granted by default.
+    const novice = updatePrediction(STORED, OUTLIER, { sampleCount: 3 });
+    const veteran = updatePrediction(STORED, OUTLIER, { sampleCount: 30 });
+    expect(STORED - novice).toBeGreaterThan(2 * (STORED - veteran));
+    expect(confidenceWeightedImproveRate(3)).toBeGreaterThan(0.35);
+  });
+
+  it("never locks a genuinely improving athlete out of their own prediction", () => {
+    // The rate floors rather than decaying to zero: repeated faster sessions
+    // must still compound to a real move over a training block.
+    expect(confidenceWeightedImproveRate(500)).toBe(IMPROVE_RATE_FLOOR);
+    let prediction = STORED;
+    for (let i = 0; i < 10; i++) {
+      prediction = updatePrediction(prediction, OUTLIER, { sampleCount: 200 });
+    }
+    expect(prediction).toBeLessThan(1080); // converging on the evidence, just not in one leap
+    expect(prediction).toBeGreaterThan(OUTLIER);
+  });
+
+  it("decays monotonically with sample count and never inverts", () => {
+    let previous = Infinity;
+    for (const n of [0, 1, 3, 6, 12, 18, 24, 50, 100]) {
+      const rate = confidenceWeightedImproveRate(n);
+      expect(rate).toBeLessThanOrEqual(previous);
+      expect(rate).toBeGreaterThanOrEqual(IMPROVE_RATE_FLOOR);
+      expect(rate).toBeLessThanOrEqual(IMPROVE_RATE);
+      previous = rate;
+    }
+  });
+
+  it("still snaps fully on a real race at the benchmark distance, at any sample count", () => {
+    // DIRECT_EVIDENCE_IMPROVE_RATE is deliberately exempt: racing the
+    // distance itself is not one noisy projection to be averaged against
+    // history. A 30-session veteran who races an 17:40 5k gets 17:40.
+    const raced = updatePrediction(STORED, OUTLIER, {
+      sessionType: "race",
+      isDirectBenchmarkDistance: true,
+      sampleCount: 30,
+    });
+    expect(raced).toBeCloseTo(OUTLIER, 6);
+    expect(DIRECT_EVIDENCE_IMPROVE_RATE).toBe(1);
+  });
+
+  it("keeps the one-sided floor — a session never pulls the prediction faster than its own equivalent", () => {
+    // The dc9c261 guarantee, unaffected by sample weighting in either
+    // direction: a SLOWER session still cannot drag the number below what it
+    // itself demonstrated, and the improvement side stops exactly at the
+    // session's equivalent rather than overshooting it.
+    for (const sampleCount of [0, 3, 30, 200]) {
+      const slower = updatePrediction(STORED, 1180, { sampleCount });
+      expect(slower).toBeGreaterThanOrEqual(STORED);
+      const faster = updatePrediction(STORED, OUTLIER, { sampleCount });
+      expect(faster).toBeGreaterThanOrEqual(OUTLIER);
+      expect(faster).toBeLessThanOrEqual(STORED);
+    }
+  });
+
+  it("leaves the regression side alone — REGRESS_RATE is already gentle and gated", () => {
+    const slowerQuality = 1180; // inside QUALITY_PROXIMITY of 1120
+    expect(updatePrediction(STORED, slowerQuality, { sampleCount: 30 })).toBeCloseTo(
+      updatePrediction(STORED, slowerQuality),
+      6
+    );
   });
 });

@@ -202,10 +202,64 @@ export function personalizedReferenceHR(
   return restingHR + populationIntensity * (maxHR - restingHR);
 }
 
-/** A faster-predicting session pulls the stored prediction down this fraction of the gap (Part E1). */
+/**
+ * A faster-predicting session pulls the stored prediction down this fraction
+ * of the gap (Part E1) — the rate for a prediction with NO accumulated
+ * evidence behind it yet. See confidenceWeightedImproveRate for how it
+ * decays once there is.
+ */
 export const IMPROVE_RATE = 0.55;
 /** Alias for callers still using the old name. */
 export const FASTER_PULL_FACTOR = IMPROVE_RATE;
+
+/**
+ * How sticky a stored prediction gets as evidence accumulates behind it.
+ *
+ * User feedback: "a single run can influence my 5km prediction score too
+ * much." Correct. IMPROVE_RATE was one flat number regardless of how much
+ * history the stored value represented, so an athlete with thirty logged
+ * sessions and an athlete with three both had their prediction dragged 55%
+ * of the way to whatever one session happened to project. On thirty
+ * sessions that is not a blend, it is a rewrite: one flattering session — a
+ * downhill route, a GPS distance overread, a mis-tagged tempo — substantially
+ * replaces a memory built from everything before it.
+ *
+ * The rate now halves every HALF_LIFE_SAMPLES sessions of accumulated
+ * evidence:
+ *
+ *   sessions behind the stored value:   0     3     6    12    18    21+
+ *   fraction of the gap one session moves:  .55   .37   .28   .18   .14   .12
+ *
+ * Two properties this deliberately keeps:
+ *
+ *  - It never reaches zero. A genuinely improving athlete must not be locked
+ *    out of their own prediction by having logged a lot, so the rate floors
+ *    at IMPROVE_RATE_FLOOR — thirty sessions of history still yield 12% of
+ *    the gap per faster session, which compounds to a real move over a
+ *    training block while refusing to snap on one outlier.
+ *
+ *  - It does not touch DIRECT_EVIDENCE_IMPROVE_RATE. Racing the benchmark
+ *    distance itself is not one noisy projection among many and never gets
+ *    averaged against history — see that constant. Nor does it touch
+ *    REGRESS_RATE (already a gentle 0.15, and gated on QUALITY_PROXIMITY) or
+ *    the one-sided fastestJustifiableBySession floor, both of which keep
+ *    their full strength.
+ */
+export const IMPROVE_RATE_FLOOR = 0.12;
+export const IMPROVE_RATE_HALF_LIFE_SAMPLES = 6;
+
+/**
+ * The improve rate for a stored prediction with `sampleCount` sessions of
+ * evidence already behind it. A null/undefined/negative count means "not
+ * known" and returns the flat IMPROVE_RATE unchanged — callers that have not
+ * been taught to pass a sample count keep exactly their previous behaviour.
+ */
+export function confidenceWeightedImproveRate(sampleCount?: number | null): number {
+  if (sampleCount == null || !Number.isFinite(sampleCount) || sampleCount <= 0) return IMPROVE_RATE;
+  const decayed =
+    IMPROVE_RATE * (IMPROVE_RATE_HALF_LIFE_SAMPLES / (IMPROVE_RATE_HALF_LIFE_SAMPLES + sampleCount));
+  return Math.max(IMPROVE_RATE_FLOOR, decayed);
+}
 
 /**
  * A "race"-tagged session run at (or within DIRECT_EVIDENCE_DISTANCE_TOLERANCE
@@ -400,6 +454,18 @@ export interface RelativeEffortTrendContext {
   baselineEF?: number | null;
   /** True when this session's own distance is at (or within DIRECT_EVIDENCE_DISTANCE_TOLERANCE of) the sport's benchmark distance itself, rather than Riegel-projected from a different distance — see isDirectBenchmarkDistance below. */
   isDirectBenchmarkDistance?: boolean;
+  /**
+   * How many sessions of evidence already stand BEHIND the stored prediction
+   * — `predicted_benchmarks.sample_count` as it was read, before this
+   * session is counted into it. Drives how far one session may move the
+   * stored value (see confidenceWeightedImproveRate).
+   *
+   * Omit or null to keep the flat, sample-blind IMPROVE_RATE. That is
+   * deliberately the default so nothing changes for a caller that has not
+   * been taught to pass it, rather than silently re-rating every athlete
+   * off an assumed sample size.
+   */
+  sampleCount?: number | null;
 }
 
 const EASY_TREND_SENSITIVITY = 0.3;
@@ -495,7 +561,9 @@ export function updatePrediction(
   let primary: number;
   if (equivSec < storedSec) {
     const isDirectRaceEvidence = context?.isDirectBenchmarkDistance && context.sessionType === "race";
-    const rate = isDirectRaceEvidence ? DIRECT_EVIDENCE_IMPROVE_RATE : IMPROVE_RATE;
+    const rate = isDirectRaceEvidence
+      ? DIRECT_EVIDENCE_IMPROVE_RATE
+      : confidenceWeightedImproveRate(context?.sampleCount);
     primary = storedSec + (equivSec - storedSec) * rate;
   } else if (isQualityEffort(storedSec, equivSec)) {
     primary = storedSec + (equivSec - storedSec) * REGRESS_RATE;
@@ -819,6 +887,27 @@ export interface HrZoneProfile {
 /** Sports the personalized HR-zone model applies to — walking is typically done at low, non-zone-driven intensity (user feedback), so it keeps the population/EF-baseline path instead. */
 export const HR_ZONE_SPORTS = new Set<BenchmarkSport>(["run", "row", "swim", "cycle", "ski"]);
 
+/**
+ * KNOWN GAP, deliberately not closed here: this is sport-blind. It derives
+ * base/target from one stored max HR, and that max HR is in practice a
+ * RUNNING number — it is what athletes measure and what Tanaka estimates.
+ * Rowing and cycling run several bpm lower than running at the same felt
+ * effort (the below-base guard's own doc comment says as much), so a row
+ * judged against a running-derived max HR reads as easier than it was and
+ * collects zone credit it did not earn. Note HR_ADJUST_REF_HR above has the
+ * same shape of gap: it is sport-aware for swim and cycle but sets row to
+ * 175, identical to run.
+ *
+ * Left alone on purpose. Correcting it means lowering row/cycle scores,
+ * which is the opposite direction to the under-scoring actually reported,
+ * and it needs a defensible per-sport offset measured against this athlete's
+ * own HR data rather than a literature constant applied blind. The
+ * exploitable magnitude is also now bounded from the other end: the total
+ * relative-effort credit is capped in index points (see
+ * RELATIVE_EFFORT_CREDIT_KNEE_POINTS in cardio-activity.ts), so an inflated
+ * zone reading can no longer be worth ~500 points on rowing's curve the way
+ * it was when the cap was a fraction of time.
+ */
 export function computeHrZoneProfile(
   restingHR: number | null | undefined,
   maxHR: number | null | undefined

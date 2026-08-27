@@ -261,6 +261,49 @@ function secondsForScore(sport: BenchmarkSport, targetScore: number, sex: 'male'
   return (lo + hi) / 2;
 }
 
+/**
+ * Knee and taper scale, in index points, for the total relative-effort
+ * credit any one easy/recovery/long session may earn — see the call site in
+ * scoreCardioActivity for why this has to be denominated in points rather
+ * than in percent of time.
+ *
+ * The knee sits just above the most the existing 20%-of-time cap is ever
+ * worth on running (+197 at its steepest), so running is bit-for-bit
+ * unchanged and its hard-won 0.30 -> 0.25 -> 0.20 tuning still governs
+ * there. Past the knee credit grows logarithmically instead of linearly:
+ * the first extra `SCALE` points beyond the knee are worth ~63% of their
+ * face value, the next e-fold rather less, and so on. In practice that puts
+ * a realistic worst case (an untagged +630-point row credit) at about +326.
+ *
+ * Deliberately NOT an asymptote toward a fixed ceiling. That was tried
+ * first and it reintroduces the exact defect it was meant to avoid: once
+ * two sessions both sit far past the knee, an asymptote flattens them onto
+ * the same number to within a rounding error, and "corroborated below-base"
+ * stops out-scoring "uncorroborated below-base" (cardio-hr-zone.test.ts
+ * pins that ordering). A logarithm has no ceiling to saturate against, so
+ * the derivative stays meaningful however large the raw credit gets, while
+ * still growing slowly enough to cap the practical damage.
+ *
+ * The above-target pair keeps the same 0.15/0.20 ratio the fractional caps
+ * use — a session whose HR already reads harder than this athlete's own
+ * target has less business earning near-max easy-effort credit.
+ */
+const RELATIVE_EFFORT_CREDIT_KNEE_POINTS = 200;
+const RELATIVE_EFFORT_CREDIT_TAPER_SCALE_POINTS = 60;
+const ABOVE_TARGET_CREDIT_KNEE_POINTS = 150;
+const ABOVE_TARGET_CREDIT_TAPER_SCALE_POINTS = 45;
+
+/**
+ * Identity below `knee`, logarithmic above it. Strictly increasing with a
+ * strictly positive derivative across its whole domain, which is the
+ * property that matters: two sessions that earned different credit keep
+ * scoring differently no matter how far past the knee both of them are.
+ */
+function softCappedCredit(earnedPoints: number, knee: number, scale: number): number {
+  if (earnedPoints <= knee) return earnedPoints;
+  return knee + scale * Math.log1p((earnedPoints - knee) / scale);
+}
+
 // Volume/terrain/environment bonuses — orthogonal to the pace/HR-based base
 // score above. A long session, a hilly one, or one done in harsh heat/cold
 // demonstrates something a pure pace-per-heartbeat estimate can't: sustained
@@ -284,11 +327,36 @@ function enduranceVolumeBonus(durationSeconds: number): number {
 
 // Long-run endurance credit for easy/recovery/long-tagged sessions (user
 // feedback: "the longer you run, the harder it is at any split, therefore
-// these should be scoring higher for the further distance" — the pure
-// pace/HR equivalent above doesn't reflect this at all: Riegel's exponent
-// actually discounts a LONGER session's projected 5K time relative to a
-// shorter one at the same pace/HR, the opposite of what sustaining that
-// effort for longer actually demonstrates). Distinct from
+// these should be scoring higher for the further distance").
+//
+// CORRECTION — the justification this comment used to carry was backwards,
+// and it matters. It read: "the pure pace/HR equivalent above doesn't
+// reflect this at all: Riegel's exponent actually discounts a LONGER
+// session's projected 5K time relative to a shorter one at the same
+// pace/HR, the opposite of what sustaining that effort for longer actually
+// demonstrates." Riegel does the opposite of that. Projecting DOWN to the
+// benchmark distance with k > 1, a longer session at the same pace yields a
+// FASTER equivalent, and by a lot — at a flat 5:00/km, k=1.08:
+//
+//   5km -> 25:00    10km -> 23:39    20km -> 22:22    30km -> 21:40
+//
+// So the user's request was already being honoured by the projection before
+// this credit existed. This credit is therefore a SECOND duration reward
+// stacked on a mechanism that already delivers one, worth up to another 18%
+// of projected time on top of Riegel's ~3 minutes. That is a real
+// double-count.
+//
+// Left in place deliberately rather than removed here. Its magnitude was
+// tuned directly on running against real user feedback ("the long runs need
+// to be credited in the 5km prediction slightly more"), so whatever the
+// stated reasoning, the NUMBER encodes a preference that was checked
+// against real sessions — and unpicking it is a running recalibration, not
+// part of the rowing fix this pass exists for. Off running the damage is
+// now bounded regardless, since the total credit stack is capped in index
+// points (see RELATIVE_EFFORT_CREDIT_KNEE_POINTS). Flagged for a running
+// pass with the athlete in the loop.
+//
+// Distinct from
 // `enduranceVolumeBonus` above — that's a separate, secondary metric folded
 // only into `executionScore`, never the primary score (see this file's
 // monotonicity-guarantee comment); this credit instead nudges
@@ -936,6 +1004,90 @@ export function scoreCardioActivity(input: CardioInput): CardioResult {
       if (sessionEquivalentSeconds < flooredByAboveTargetCap) {
         sessionEquivalentSeconds = flooredByAboveTargetCap;
         flags.push('above-target-discount-capped');
+      }
+    }
+
+    // Same two caps again, denominated in INDEX POINTS instead of percent of
+    // time — because percent-of-time is not a currency that means the same
+    // thing in two different sports, and both caps above were tuned entirely
+    // on running.
+    //
+    // Measure what the 20% cap actually buys, sport by sport, by discounting
+    // a session at each score level and reading off the anchor table:
+    //
+    //   raw score:      200   300   400   500   600   700   800
+    //   run            +166  +197  +189  +177  +173  +186  +169
+    //   row / ski      +630  +636  +587  +497  +399  +299  +199
+    //   swim           +676  +623  +563  +480  +386  +289  +194
+    //   cycle          +413  +507  +468  +401  +322  +244  +174
+    //
+    // On running the knob is worth a flat ~170-200 points wherever it lands,
+    // which is exactly why it was tunable there and why rounds of real-data
+    // feedback converged it on 0.30 -> 0.25 -> 0.20. Off running it is worth
+    // up to three and a half times that, and it is worth MORE the worse the
+    // session was — an untagged 6,000m row at 1:56/500m scores 403, and the
+    // identical session tagged "long" scores 872, a 469-point swing from a
+    // tag. The athlete's genuine 18:25 5k also scores 872. That is the whole
+    // reported defect: nothing about the row earned those points.
+    //
+    // This is not an artefact of the row anchor table being mis-populated
+    // (it was, and cardio-benchmarks.ts has since rebased it) — the leverage
+    // survives the rebase, because it is physics. Erg pace goes as
+    // power^(-1/3), so a fixed physiological range always compresses into a
+    // narrower band of TIME on an erg than on the road, and a fixed fraction
+    // of time therefore covers far more of the table. Percent-of-time will
+    // never be portable across sports; index points are the thing every
+    // sport already shares.
+    //
+    // Deliberately layered on top of the fractional caps rather than
+    // replacing them: at 200 points this is looser than the 20% cap
+    // everywhere on running's curve (max +197), so every running session
+    // scores exactly what it scored before and running's hard-won tuning is
+    // untouched. It binds on row/ski/swim/cycle, which is the point. The
+    // above-target variant keeps the same 0.15/0.20 ratio the fractional
+    // pair uses.
+    // Compressed, never clipped. A hard clip is the one thing this seam
+    // must not do: the fractional caps above are hard clips, and the
+    // comment on the 0.15 experiment records what that costs — sessions
+    // that were genuinely different ("below target" vs "at target",
+    // "corroborated below-base" vs "uncorroborated") converge on the
+    // identical number the moment they both hit the ceiling, and the
+    // ordering the mechanisms exist to express is gone. Softening instead
+    // of clipping is what lets this cap be tight enough to matter off
+    // running without flattening anything: `softCappedCredit` is strictly
+    // increasing, so a session that earned more credit still scores higher
+    // than one that earned less, however far past the knee both are.
+    //
+    // Below the knee it is exactly the identity, and the knee sits above
+    // running's worst case (+197), so every running session scores exactly
+    // what it scored before this cap existed.
+    if (
+      isRelativeEffortSession &&
+      !looksMistagged &&
+      sessionEquivalentSeconds !== null &&
+      rawProjectedSeconds !== null
+    ) {
+      const aboveTarget = flags.includes('hr-zone-above-target');
+      const knee = aboveTarget ? ABOVE_TARGET_CREDIT_KNEE_POINTS : RELATIVE_EFFORT_CREDIT_KNEE_POINTS;
+      const taperScale = aboveTarget
+        ? ABOVE_TARGET_CREDIT_TAPER_SCALE_POINTS
+        : RELATIVE_EFFORT_CREDIT_TAPER_SCALE_POINTS;
+      // Score space is age-graded space (see paceScore below), so times go
+      // in graded and the resulting seconds come back out ungraded — the
+      // same round trip the easy-session floor below makes.
+      const ageFactorForCap = enduranceAgeGradeFactor(input.age);
+      const rawScore = timeToScore(input.benchmarkSport, rawProjectedSeconds * ageFactorForCap, input.sex);
+      const creditedScore = timeToScore(
+        input.benchmarkSport,
+        sessionEquivalentSeconds * ageFactorForCap,
+        input.sex
+      );
+      const earnedPoints = creditedScore - rawScore;
+      if (earnedPoints > knee) {
+        const allowedPoints = softCappedCredit(earnedPoints, knee, taperScale);
+        sessionEquivalentSeconds =
+          secondsForScore(input.benchmarkSport, rawScore + allowedPoints, input.sex) / ageFactorForCap;
+        flags.push('relative-effort-points-compressed');
       }
     }
 
