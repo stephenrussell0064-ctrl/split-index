@@ -54,6 +54,15 @@ import {
   WEIGHT_ROUNDING_KG,
 } from "./constants";
 import { predictHrAtPace } from "./diagnostics";
+// modality.ts imports `EnduranceKind` from this file as a TYPE only, so this is
+// not a runtime cycle — the type import is erased before either module loads.
+import {
+  MODALITY_SPEC,
+  formatModalityBand,
+  metresAtPace,
+  modalityPaceBand,
+  type ModalityFitness,
+} from "./modality";
 import type { AthleteProfile, FindingId } from "./types";
 
 export type EnduranceKind = "recovery_run" | "easy_run" | "long_run" | "threshold_run" | "interval_run" | "rep_run";
@@ -292,6 +301,159 @@ export function prescribeEndurance(
     minutes,
     paceLoSPerKm: band.lo,
     paceHiSPerKm: band.hi,
+    hrLo: hr?.lo,
+    hrHi: hr?.hi,
+    hrSource: hr?.source,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Endurance prescriptions in a modality that is not running
+// ---------------------------------------------------------------------------
+
+/**
+ * The same session, prescribed in the athlete's own sport's units.
+ *
+ * Kept as a separate function rather than a branch inside `prescribeEndurance`
+ * on purpose. Everything above this line is denominated in running seconds per
+ * kilometre and is fitted on `RunLog`; threading a modality through it would
+ * have meant either converting rowing into fake running pace (the failure this
+ * exists to prevent) or rewriting the running path, which is the one part of
+ * this engine with a calibrated regression suite behind it. Two functions that
+ * each say one true thing beat one function that says two half-true ones.
+ *
+ * Three deliberate omissions:
+ *
+ *  - `paceLoSPerKm` / `paceHiSPerKm` are NOT set. They are read downstream and
+ *    formatted unconditionally as "mm:ss/km"; putting a 500m split in them
+ *    would print a rower's 2:05/500m as "2:05/km", which is the exact class of
+ *    lie this module was written to stop. The sport-correct pace lives in
+ *    `text`, where it is already carrying its own unit.
+ *  - No heart rate for swimming beyond the band itself — see the HRmax offsets
+ *    in `MODALITY_SPEC`, which are applied here so an easy swim is not
+ *    prescribed at a heart rate the athlete cannot reach in water.
+ *  - No pace at all when the athlete has logged nothing in the modality. The
+ *    session is then prescribed by RPE and says why, rather than inheriting a
+ *    number from a sport they do not do.
+ */
+export interface ModalityPrescriptionOptions {
+  minutes: number;
+  suppressHeartRate?: boolean;
+  extra?: string;
+}
+
+export function prescribeModalityEndurance(
+  profile: AthleteProfile,
+  fitness: ModalityFitness,
+  kind: EnduranceKind,
+  findingId: FindingId,
+  options: ModalityPrescriptionOptions
+): Prescription {
+  const { minutes, suppressHeartRate = false } = options;
+  const modality = fitness.modality;
+  const spec = MODALITY_SPEC[modality];
+  const band = modalityPaceBand(fitness, kind);
+
+  // HRmax is modality-specific. Applying the running maximum to a swim set
+  // prescribes a rate the athlete cannot reach face-down in water, which turns
+  // every "easy" swim into a maximal one.
+  const hrMax = Math.max(profile.hrRest + 30, profile.hrMax + spec.hrMaxOffset);
+  const hrRest = profile.hrRest;
+  const reserve = SESSION_HR_RESERVE_BANDS[kind] ?? SESSION_HR_RESERVE_BANDS.easy_run;
+  const clamp = (v: number) => Math.min(hrMax, Math.max(hrRest, Math.round(v)));
+  const hr = suppressHeartRate
+    ? null
+    : {
+        lo: clamp(hrRest + reserve[0] * (hrMax - hrRest)),
+        hi: clamp(hrRest + reserve[1] * (hrMax - hrRest)),
+        source:
+          spec.hrMaxOffset === 0
+            ? "HR reserve"
+            : `HR reserve, with your maximum taken ${Math.abs(spec.hrMaxOffset)} lower than running — ` +
+              `${spec.label.toLowerCase()} peaks below a running maximum in almost everyone`,
+      };
+
+  const hrText = hr
+    ? `HR ${hr.lo}-${hr.hi} (${hr.source})`
+    : "Prescribed by effort (heart-rate zones are not meaningful on your medication)";
+
+  const paceText = band ? formatModalityBand(band, modality) : null;
+  const noPaceNote = band
+    ? null
+    : `No ${spec.label.toLowerCase()} pace target yet — nothing in this modality is logged for the engine to ` +
+      `anchor one to, so this is prescribed by effort. A single hard effort turns every band below into your own numbers.`;
+
+  const notes: string[] = [];
+  if (noPaceNote) notes.push(noPaceNote);
+  if (band && fitness.benchmarkSource === "projected") {
+    notes.push(
+      `Paces come from your logged ${spec.label.toLowerCase()} projected to a benchmark effort, not from a ` +
+        `benchmark you have actually done — treat them as a starting point rather than a verdict.`
+    );
+  }
+
+  const tail = options.extra ? ` ${options.extra}` : "";
+  const mid = band ? (band.lo + band.hi) / 2 : 0;
+  const distanceKm = mid > 0 ? metresAtPace(mid, minutes, modality) / 1000 : undefined;
+
+  // Interval and rep work is expressed in each sport's own repeat distances —
+  // 1000m rowing repeats, 200m swimming repeats — not in running's 800s.
+  if ((kind === "interval_run" || kind === "rep_run") && spec.qualityCapable && band) {
+    const repMeters = kind === "interval_run" ? spec.intervalRepMeters : spec.shortRepMeters;
+    const repTimeS = (repMeters / spec.paceUnitMeters) * mid;
+    const reps = Math.max(
+      3,
+      Math.min(10, Math.round((minutes * 60 * (kind === "interval_run" ? 0.55 : 0.3)) / Math.max(1, repTimeS)))
+    );
+    const recovery = kind === "interval_run" ? 120 : 90;
+    return {
+      text:
+        `${spec.verb} ${reps} x ${repMeters}m in ${mmss(repTimeS)} each (${paceText}), ${recovery}s easy between. ` +
+        `${hrText}. About ${((reps * repMeters) / 1000).toFixed(1)}km of work inside a ${Math.round(minutes)}min ` +
+        `session.${tail}`,
+      notes,
+      findingId,
+      distanceKm: (reps * repMeters) / 1000,
+      minutes,
+      hrLo: hr?.lo,
+      hrHi: hr?.hi,
+      hrSource: hr?.source,
+    };
+  }
+
+  if (kind === "threshold_run" && spec.qualityCapable && band) {
+    const blocks = minutes < 45 ? 2 : 3;
+    const perBlockMin = (minutes * 0.55) / blocks;
+    return {
+      text:
+        `${spec.verb} ${blocks} x ${perBlockMin.toFixed(0)}min at ${paceText}, 3min easy between. ${hrText}. ` +
+        `${Math.round(minutes)}min total including warm-up and cooldown.${tail}`,
+      notes,
+      findingId,
+      distanceKm:
+        mid > 0 ? (metresAtPace(mid, perBlockMin * blocks, modality) / 1000) : undefined,
+      minutes,
+      hrLo: hr?.lo,
+      hrHi: hr?.hi,
+      hrSource: hr?.source,
+    };
+  }
+
+  // Continuous — easy, long, recovery, and anything quality-shaped that this
+  // modality cannot carry (a walking "interval" becomes a steady walk, named
+  // as one, rather than a session nobody can perform).
+  const distanceText = distanceKm != null ? `${distanceKm.toFixed(1)}km in ` : "";
+  const paceClause = paceText ? ` at ${paceText}` : " at a conversational effort";
+  const upperBound =
+    hr && (kind === "easy_run" || kind === "long_run" || kind === "recovery_run")
+      ? ` Do not exceed ${hr.hi} — on easy days the upper bound matters more than the lower one.`
+      : "";
+  return {
+    text: `${spec.verb} ${distanceText}${Math.round(minutes)}min${paceClause}. ${hrText}.${upperBound}${tail}`,
+    notes,
+    findingId,
+    distanceKm,
+    minutes,
     hrLo: hr?.lo,
     hrHi: hr?.hi,
     hrSource: hr?.source,

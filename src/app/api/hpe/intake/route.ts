@@ -53,6 +53,10 @@ const SECTION_FIELDS: Record<IntakeSection, string[]> = {
     "event_order_known",
     "target_5k_s",
     "target_total_kg",
+    // Which kinds of cardio the athlete actually wants, and whether the plan
+    // may mix them. A whitelist — nothing outside it is ever prescribed.
+    "cardio_modalities",
+    "cross_train_ok",
     "priority",
     "priority_user_set",
     "weight_class_kg",
@@ -88,6 +92,10 @@ const SECTION_FIELDS: Record<IntakeSection, string[]> = {
     "has_gym_access",
     // How the gym week is carved up — push/pull/legs, upper/lower, and so on.
     "training_split",
+    // The athlete's own day structure, when none of the five stock splits
+    // describes their week, and the exercises they chose for each day.
+    "custom_split_days",
+    "exercises_by_day",
     "lift_variants",
     "primary_modality",
     "substitution_ok",

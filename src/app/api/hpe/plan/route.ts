@@ -14,6 +14,11 @@ import { parseIntakeRow, resolveIntakeInputs } from "@/lib/scoring/hpe/intake-re
 import { loadPrefilledIntake } from "@/lib/scoring/hpe/load-intake";
 import { evaluateAccess, type FeatureFlag } from "@/lib/scoring/hpe/rollout";
 import { HPE_CONSTANTS_VERSION } from "@/lib/scoring/hpe/constants";
+import { ingestModalityFitness } from "@/lib/scoring/hpe/modality";
+import type { ActivityRow } from "@/lib/scoring/hpe/ingest";
+
+/** Window the per-modality benchmark is projected from. Matches the diagnostic's own history window. */
+const MODALITY_HISTORY_WEEKS = 12;
 
 /**
  * Hybrid Plan Engine — plan generation endpoint (WP9's data source).
@@ -191,7 +196,27 @@ export async function GET(request: Request) {
   const { state, goal, constraints } = resolved;
   const eventDate = intake.eventDate;
 
-  const plan = generatePlan({ state, goal, constraints, profile, overrideEventOrder });
+  // Per-modality fitness for whichever cardio the athlete chose. Read here
+  // rather than inside the engine for the same reason the diagnostic is: there
+  // is one reader of the activity table, and the engine is not it.
+  //
+  // Running is deliberately included when they chose it — `ingestModality` is
+  // a PARALLEL model that never feeds the running pace pool, so this cannot
+  // disturb `predicted5kS` or anything fitted on it.
+  const modalityFitness = await (async () => {
+    const chosen = constraints.cardioModalities ?? [];
+    if (chosen.length === 0) return {};
+    const since = new Date(Date.now() - MODALITY_HISTORY_WEEKS * 7 * 86_400_000).toISOString();
+    const { data: rows } = await supabase
+      .from("activities")
+      .select("started_at, sport, duration_seconds, distance_meters, session_type, is_partial_track")
+      .eq("user_id", user.id)
+      .eq("is_draft", false)
+      .gte("started_at", since);
+    return ingestModalityFitness((rows ?? []) as unknown as ActivityRow[], chosen, MODALITY_HISTORY_WEEKS);
+  })();
+
+  const plan = generatePlan({ state, goal, constraints, profile, overrideEventOrder, modalityFitness });
 
   // The screen no longer refuses, so there is no un-generated plan to record.
   // What is worth recording is that it CONSTRAINED one — the fleet view reads

@@ -464,3 +464,186 @@ export function DurationField({
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Per-day exercise selection, seeded from what the athlete has actually logged
+// ---------------------------------------------------------------------------
+
+export interface LoggedExercise {
+  name: string;
+  count: number;
+  lastLoggedAt: string;
+  bestWeightKg: number | null;
+}
+
+function sinceLabel(iso: string): string {
+  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
+  if (days <= 1) return "yesterday";
+  if (days < 14) return `${days}d ago`;
+  if (days < 60) return `${Math.round(days / 7)}w ago`;
+  return `${Math.round(days / 30)}mo ago`;
+}
+
+/**
+ * Picks exercises for one gym day.
+ *
+ * Seeded from the athlete's OWN logged exercises rather than from the 186-item
+ * catalogue. Asking someone to build a push day out of 186 options is a chore
+ * rather than a choice, and the answer they give after scrolling that far is
+ * worse than the one the engine would have picked. What they have already done
+ * is short, is theirs, and every entry is something they can actually perform
+ * in the gym they actually go to.
+ *
+ * Skippable in the strongest sense: picking nothing here is not an empty
+ * answer, it is the answer "the engine chooses", which is exactly what
+ * happened before this control existed.
+ */
+export function ExercisePicker({
+  dayLabel,
+  available,
+  selected,
+  onChange,
+}: {
+  dayLabel: string;
+  available: LoggedExercise[];
+  selected: string[];
+  onChange: (names: string[]) => void;
+}) {
+  const toggle = (name: string) =>
+    onChange(selected.includes(name) ? selected.filter((n) => n !== name) : [...selected, name]);
+
+  if (available.length === 0) {
+    return (
+      <p className="text-xs leading-relaxed text-muted">
+        Nothing logged in the gym yet, so there is nothing to choose from. The engine picks your exercises until
+        there is — log a few sessions and they appear here.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-2" role="group" aria-label={`Exercises for ${dayLabel}`}>
+        {available.map((ex) => (
+          <button
+            key={ex.name}
+            type="button"
+            onClick={() => toggle(ex.name)}
+            aria-pressed={selected.includes(ex.name)}
+            className={cn(
+              "min-h-11 rounded-xl border px-3 text-left text-sm font-medium transition-colors",
+              selected.includes(ex.name)
+                ? "border-accent/40 bg-accent/15 text-accent"
+                : "border-white/10 text-muted hover:border-white/20 hover:text-foreground"
+            )}
+          >
+            {ex.name}
+            <span className="ml-2 text-[0.7rem] font-normal opacity-60">
+              {ex.count}x · {sinceLabel(ex.lastLoggedAt)}
+            </span>
+          </button>
+        ))}
+      </div>
+      <p className="text-xs leading-relaxed text-muted">
+        {selected.length === 0
+          ? `Nothing picked for ${dayLabel} — the engine chooses, which is a perfectly good answer.`
+          : `${selected.length} picked. Your first pick leads the session; the rest follow it. Loads and rep ranges still come from your diagnostic.`}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * The athlete's own gym day structure, for the week none of the five stock
+ * splits describes.
+ *
+ * Each day needs at least one movement pattern, because the pattern is what
+ * the accessory selector fills the day from — a day with a name and nothing
+ * else produces a session with one lift in it, which is the "fragment of a
+ * session" the split work exists to prevent. A day left without one is dropped
+ * on read rather than silently half-honoured.
+ */
+export interface CustomSplitDayValue {
+  label: string;
+  primary_lift: string | null;
+  patterns: string[];
+}
+
+const PATTERN_OPTIONS = [
+  { value: "push", label: "Push" },
+  { value: "pull", label: "Pull" },
+  { value: "legs", label: "Legs" },
+  { value: "core", label: "Core" },
+];
+
+const PRIMARY_OPTIONS = [
+  { value: "", label: "Engine picks" },
+  { value: "squat", label: "Squat" },
+  { value: "bench", label: "Bench" },
+  { value: "deadlift", label: "Deadlift" },
+];
+
+export function CustomSplitEditor({
+  value,
+  onChange,
+}: {
+  value: CustomSplitDayValue[];
+  onChange: (days: CustomSplitDayValue[]) => void;
+}) {
+  const update = (i: number, patch: Partial<CustomSplitDayValue>) =>
+    onChange(value.map((d, j) => (i === j ? { ...d, ...patch } : d)));
+
+  return (
+    <div className="space-y-3">
+      {value.map((day, i) => (
+        <div key={i} className="rounded-2xl border border-white/10 p-3">
+          <div className="flex items-center gap-2">
+            <input
+              value={day.label}
+              onChange={(e) => update(i, { label: e.target.value })}
+              placeholder="Day name, e.g. Chest and arms"
+              aria-label={`Day ${i + 1} name`}
+              className="min-h-11 flex-1 rounded-xl border border-white/10 bg-white/[0.03] px-3 text-sm focus:border-accent focus:outline-none"
+            />
+            <button
+              type="button"
+              onClick={() => onChange(value.filter((_, j) => j !== i))}
+              aria-label={`Remove day ${i + 1}`}
+              className="min-h-11 rounded-xl border border-white/10 px-3 text-sm text-muted hover:text-foreground"
+            >
+              Remove
+            </button>
+          </div>
+          <div className="mt-2">
+            <MultiSelect
+              options={PATTERN_OPTIONS}
+              selected={day.patterns}
+              onChange={(patterns) => update(i, { patterns })}
+              ariaLabel={`Patterns for day ${i + 1}`}
+            />
+          </div>
+          <div className="mt-2">
+            <SelectField
+              value={day.primary_lift ?? ""}
+              onChange={(v) => update(i, { primary_lift: v === "" ? null : v })}
+              options={PRIMARY_OPTIONS}
+              ariaLabel={`Lead lift for day ${i + 1}`}
+            />
+          </div>
+          {day.patterns.length === 0 && (
+            <p className="mt-2 text-xs leading-relaxed text-warning/90">
+              Pick at least one pattern — it is what the day gets filled with. A day without one is skipped.
+            </p>
+          )}
+        </div>
+      ))}
+      <button
+        type="button"
+        onClick={() => onChange([...value, { label: "", primary_lift: null, patterns: [] }])}
+        className="min-h-11 rounded-xl border border-white/10 px-3.5 text-sm font-medium text-muted hover:border-white/20 hover:text-foreground"
+      >
+        Add a day
+      </button>
+    </div>
+  );
+}

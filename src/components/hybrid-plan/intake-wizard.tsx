@@ -9,8 +9,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils/cn";
 import { DEFAULT_TRAINING_SPLIT, TRAINING_SPLITS, type TrainingSplit } from "@/lib/scoring/hpe/constants";
 import {
+  CustomSplitEditor,
   DayWindowsEditor,
   DurationField,
+  ExercisePicker,
   Field,
   MultiSelect,
   NumberField,
@@ -18,7 +20,9 @@ import {
   PrefilledOverridable,
   SelectField,
   YesNo,
+  type CustomSplitDayValue,
   type DayWindowValue,
+  type LoggedExercise,
 } from "./intake-fields";
 import {
   INTAKE_DAYS,
@@ -135,10 +139,33 @@ function normalizeDayWindows(raw: unknown): DayWindowValue[] {
     .filter((w) => w.day.length > 0);
 }
 
+/**
+ * A draft in progress holds the snake_case wire shape; a saved record comes
+ * back camelCased. Both have to land on the editor's shape before it can read
+ * them — the same problem `normalizeDayWindows` solves for training windows.
+ */
+function normalizeCustomDays(raw: unknown): CustomSplitDayValue[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((entry) => {
+    const e = entry as Record<string, unknown>;
+    const primary = e.primary_lift ?? e.primaryLift;
+    return {
+      label: String(e.label ?? ""),
+      primary_lift: typeof primary === "string" && primary.length > 0 ? primary : null,
+      patterns: Array.isArray(e.patterns) ? e.patterns.map(String) : [],
+    };
+  });
+}
+
 export function IntakeWizard() {
   const router = useRouter();
   const [data, setData] = useState<IntakeResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  // The athlete's own logged exercises, for the per-day picker. Fetched lazily
+  // and failing silently: the picker degrades to "nothing logged yet", which is
+  // the same message an athlete with no gym history sees, and the plan is
+  // unaffected either way because picking nothing is a complete answer.
+  const [loggedExercises, setLoggedExercises] = useState<LoggedExercise[]>([]);
   const [step, setStep] = useState(0);
   const [draft, setDraft] = useState<Record<string, unknown>>({});
   const [saving, setSaving] = useState(false);
@@ -161,9 +188,46 @@ export function IntakeWizard() {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/hpe/intake/exercises");
+        if (!res.ok || cancelled) return;
+        const json = (await res.json()) as { exercises?: LoggedExercise[] };
+        if (!cancelled) setLoggedExercises(json.exercises ?? []);
+      } catch {
+        // The picker is an enhancement. Losing it must not cost the athlete
+        // the rest of the intake.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const section = ORDER[step];
   const intake = data?.intake;
   const prefilled = data?.prefilled;
+
+  /**
+   * The day names to offer exercise picks for — the athlete's own days when
+   * they laid some out, otherwise the days of whichever split is in force.
+   * De-duplicated, because an upper/lower rotation names "Upper" twice and
+   * asking the same question twice is how a form loses somebody.
+   */
+  const exerciseDayLabels = useMemo(() => {
+    if (!intake) return [] as string[];
+    const custom = normalizeCustomDays(
+      "custom_split_days" in draft ? draft.custom_split_days : intake.customSplitDays
+    ).filter((d) => d.label.trim().length > 0);
+    if (custom.length > 0) return [...new Set(custom.map((d) => d.label.trim()))];
+    const chosen = ("training_split" in draft ? draft.training_split : intake.trainingSplit) as
+      | TrainingSplit
+      | null;
+    const spec = TRAINING_SPLITS[chosen ?? DEFAULT_TRAINING_SPLIT];
+    return [...new Set(spec.days.map((d) => d.label))];
+  }, [draft, intake]);
 
   // Unsaved edits are dropped when the step changes — `get` falls back to the
   // stored value, so revisiting a section shows the athlete's own saved
@@ -383,6 +447,64 @@ export function IntakeWizard() {
                   selected={get("events", intake.events) as string[]}
                   onChange={(v) => set("events", v)}
                   ariaLabel="Events"
+                />
+              </Field>
+
+              {/* Which cardio, and whether the plan may mix it.
+                  Sits with the goal because it decides what the endurance half
+                  of the plan IS, not merely how it is scheduled. Skippable
+                  like everything else here: no answer means running, which is
+                  what the engine did before the question existed. */}
+              <Field
+                label="Which kinds of cardio do you actually want to do?"
+                why="Nothing outside what you pick here is ever prescribed. Pick rowing alone and every endurance session is a row, with paces in /500m rather than minutes per kilometre. Leave it blank and the plan is written as running."
+              >
+                <MultiSelect
+                  options={[
+                    { value: "run", label: "Running" },
+                    { value: "walk", label: "Walking" },
+                    { value: "row", label: "Rowing" },
+                    { value: "cycle", label: "Cycling" },
+                    { value: "swim", label: "Swimming" },
+                  ]}
+                  selected={get("cardio_modalities", intake.cardioModalities) as string[]}
+                  onChange={(v) => set("cardio_modalities", v)}
+                  ariaLabel="Cardio modalities"
+                />
+                {(() => {
+                  const chosen = get("cardio_modalities", intake.cardioModalities) as string[];
+                  if (chosen.length === 0) {
+                    return (
+                      <p className="mt-2 text-sm leading-relaxed text-muted">
+                        Left blank you get a running plan. If you never run, this is the one question on this
+                        screen worth answering — it is the difference between a plan in your sport and a running
+                        plan with your sport&rsquo;s name on it.
+                      </p>
+                    );
+                  }
+                  if (chosen.length === 1 && chosen[0] === "walk") {
+                    return (
+                      <p className="mt-2 text-sm leading-relaxed text-muted">
+                        Walking only means steady volume and no hard sessions — walking cannot carry an interval,
+                        and inventing one would be dishonest. Adding anything else, even a bike, changes that.
+                      </p>
+                    );
+                  }
+                  return (
+                    <p className="mt-2 text-sm leading-relaxed text-muted">
+                      Hard sessions stay in one of these so they progress against a single benchmark; easy volume
+                      is spread across the rest.
+                    </p>
+                  );
+                })()}
+              </Field>
+              <Field
+                label="Do you want to cross-train?"
+                why="Say no and every endurance session stays in what you picked above — with one modality chosen, nothing in the plan will ever ask you to run. Say yes and easy volume is spread across your choices."
+              >
+                <YesNo
+                  value={get("cross_train_ok", intake.crossTrainOk) as boolean}
+                  onChange={(v) => set("cross_train_ok", v)}
                 />
               </Field>
 
@@ -757,6 +879,58 @@ export function IntakeWizard() {
                     );
                   })()}
                 </Field>
+              )}
+
+              {(get("has_gym_access", intake.hasGymAccess) as boolean) && (
+                <>
+                  <Field
+                    label="Prefer to lay out your own gym days?"
+                    why="Optional, and only worth it if none of the splits above describes your week. Each day needs at least one movement pattern — that is what the day gets filled with. Leave this empty and the split above is used."
+                  >
+                    <CustomSplitEditor
+                      value={normalizeCustomDays(get("custom_split_days", intake.customSplitDays))}
+                      onChange={(v) => set("custom_split_days", v)}
+                    />
+                  </Field>
+
+                  <Field
+                    label="Pick your own exercises for each day"
+                    why="Seeded from what you have actually logged, not from the full catalogue. Pick nothing and the engine chooses for you, which is what it does today — this only ever adds."
+                  >
+                    {exerciseDayLabels.length === 0 ? (
+                      <p className="text-xs leading-relaxed text-muted">
+                        Choose a split above, or lay out your own days, and each day appears here to pick for.
+                      </p>
+                    ) : (
+                      <div className="space-y-4">
+                        {exerciseDayLabels.map((dayLabel) => (
+                          <div key={dayLabel}>
+                            <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted">
+                              {dayLabel}
+                            </p>
+                            <ExercisePicker
+                              dayLabel={dayLabel}
+                              available={loggedExercises}
+                              selected={
+                                (get("exercises_by_day", intake.exercisesByDay) as Record<string, string[]>)[
+                                  dayLabel
+                                ] ?? []
+                              }
+                              onChange={(names) => {
+                                const current = {
+                                  ...(get("exercises_by_day", intake.exercisesByDay) as Record<string, string[]>),
+                                };
+                                if (names.length === 0) delete current[dayLabel];
+                                else current[dayLabel] = names;
+                                set("exercises_by_day", current);
+                              }}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </Field>
+                </>
               )}
 
               <Field label="Happy to do some easy volume on a bike or rower?" why="Lets the engine swap some easy running for low-impact work, which limits interference with heavy lifting.">

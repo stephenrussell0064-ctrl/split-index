@@ -218,6 +218,47 @@ export interface ScheduleResult {
   hardPenalty: number;
   /** Set when there were more sessions than slots — the week is truncated rather than overbooked, and the caller is told. */
   droppedSessions: PlannedSession[];
+  /**
+   * The week as an ORDERED LIST rather than a set of fixed weekdays, produced
+   * when `constraints.availabilityVaries` says the athlete's week genuinely
+   * varies.
+   *
+   * `availabilityVaries` was collected by the intake, parsed into the record
+   * and passed into `Constraints` — and this module never read it. The intake
+   * promised "an ordered list of sessions rather than fixing them to days" and
+   * the scheduler pinned every session to a weekday anyway, which made the
+   * question worse than not asking: the athlete answered it and nothing
+   * changed. This is the missing half.
+   *
+   * Null when the athlete's week is fixed, in which case the day placements
+   * are the answer and an order would be noise.
+   */
+  prioritisedOrder: PlannedSession[] | null;
+}
+
+/**
+ * Priority for a shift-worker's ordered week: what to protect when the week
+ * collapses, hardest and most-specific first.
+ *
+ * The same ordering the drop rule already uses, extended past its single
+ * quality/not-quality split — when the athlete is placing sessions themselves,
+ * "these two are equally important" is not useful guidance.
+ */
+function sessionPriority(s: PlannedSession): number {
+  if (s.domain === "endurance" && s.isQuality && s.kind !== "long_run") return 0;
+  if (s.isHeavyLower) return 1;
+  if (s.kind === "long_run") return 2;
+  if (s.domain === "strength") return 3;
+  return 4;
+}
+
+export function prioritiseWeek(sessions: PlannedSession[]): PlannedSession[] {
+  // Stable within a priority band: the order sessions were built in is the
+  // order the emphasis vector produced them, which is itself meaningful.
+  return sessions
+    .map((session, i) => ({ session, i }))
+    .sort((a, b) => sessionPriority(a.session) - sessionPriority(b.session) || a.i - b.i)
+    .map((x) => x.session);
 }
 
 /**
@@ -244,8 +285,16 @@ export function scheduleWeek(sessions: PlannedSession[], constraints: Constraint
     droppedSessions = ordered.slice(candidates.length);
   }
 
+  // The athlete said their week varies. The spacing rules are still real and
+  // still worth optimising — they are what tells them not to put the heavy
+  // squat the day before the long session — so the search below still runs and
+  // the placements it finds are kept as a suggested shape. What changes is
+  // that the week ALSO comes back as an order, which is what the intake
+  // promised and what a shift worker can actually use.
+  const prioritisedOrder = constraints.availabilityVaries ? prioritiseWeek(toPlace) : null;
+
   if (toPlace.length === 0) {
-    return { placements: [], penalty: 0, hardPenalty: 0, droppedSessions };
+    return { placements: [], penalty: 0, hardPenalty: 0, droppedSessions, prioritisedOrder };
   }
 
   let bestGlobal: Placement[] | null = null;
@@ -315,5 +364,6 @@ export function scheduleWeek(sessions: PlannedSession[], constraints: Constraint
     penalty: bestGlobalScore,
     hardPenalty: hardViolations(placements, constraints),
     droppedSessions,
+    prioritisedOrder,
   };
 }

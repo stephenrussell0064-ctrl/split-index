@@ -23,7 +23,8 @@
  * pathway in generated plans.
  */
 
-import { DAYS, EVENT_DISTANCE_KM, type TrainingAge, type TrainingSplit } from "./constants";
+import { DAYS, EVENT_DISTANCE_KM, type SplitDay, type TrainingAge, type TrainingSplit } from "./constants";
+import { isCardioModality, type CardioModality } from "./modality";
 import {
   DEFAULT_SAFETY_FLAGS,
   estimatedMaxHr,
@@ -118,6 +119,14 @@ export interface IntakeRecord {
   hasGymAccess: boolean;
   /** The athlete's chosen gym split. Null = let the engine pick a sensible default. */
   trainingSplit: TrainingSplit | null;
+  /** The athlete's own day structure, when none of the five stock splits describes their week. Empty = use `trainingSplit`. */
+  customSplitDays: SplitDay[];
+  /** Exercises chosen per day label, seeded from what they have actually logged. Empty = the engine picks, as before. */
+  exercisesByDay: Record<string, string[]>;
+  /** Which cardio modalities the athlete wants. Empty = running, the pre-question default. */
+  cardioModalities: CardioModality[];
+  /** Whether the plan may mix modalities. False with one modality chosen means every endurance session is that one. */
+  crossTrainOk: boolean;
   twoADaysPossible: boolean;
   /** Per-day training windows — real clock times, which differ by day. */
   dayWindows: DayWindow[];
@@ -202,6 +211,54 @@ function parseDayWindows(value: unknown): DayWindow[] {
   return out;
 }
 
+/**
+ * The athlete's own day structure. Anything malformed is dropped rather than
+ * thrown, for the same reason `parseDayWindows` drops rather than throws: a bad
+ * row must not take down a request, and a half-readable custom split is still
+ * better than none.
+ *
+ * A day with no recognised movement pattern is dropped entirely — a day the
+ * accessory selector cannot fill would produce a session with a primary lift
+ * and nothing else, which is precisely the "fragment of a session" the split
+ * work was done to stop.
+ */
+const SPLIT_PATTERNS = new Set(["push", "pull", "legs", "core"]);
+
+function parseCustomSplitDays(value: unknown): SplitDay[] {
+  if (!Array.isArray(value)) return [];
+  const out: SplitDay[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") continue;
+    const e = entry as Record<string, unknown>;
+    const label = String(e.label ?? "").trim();
+    if (label.length === 0) continue;
+    const patterns = (Array.isArray(e.patterns) ? e.patterns : [])
+      .map((p) => String(p))
+      .filter((p) => SPLIT_PATTERNS.has(p)) as SplitDay["patterns"];
+    if (patterns.length === 0) continue;
+    const primary = e.primary_lift ?? e.primaryLift;
+    out.push({
+      label,
+      primaryLift:
+        typeof primary === "string" && ["squat", "bench", "deadlift"].includes(primary) ? primary : null,
+      patterns,
+    });
+  }
+  return out;
+}
+
+/** Per-day exercise picks. Names are the athlete's own logged exercise names, kept verbatim so they read as what they log. */
+function parseExercisesByDay(value: unknown): Record<string, string[]> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const out: Record<string, string[]> = {};
+  for (const [day, picks] of Object.entries(value as Record<string, unknown>)) {
+    if (!Array.isArray(picks)) continue;
+    const names = [...new Set(picks.map((p) => String(p).trim()).filter((p) => p.length > 0))];
+    if (names.length > 0) out[day] = names;
+  }
+  return out;
+}
+
 export function parseIntakeRow(row: Record<string, unknown> | null): IntakeRecord {
   const b = (key: string): boolean | null => (row?.[key] == null ? null : Boolean(row[key]));
   const n = (key: string): number | null => (row?.[key] == null ? null : Number(row[key]));
@@ -258,6 +315,10 @@ export function parseIntakeRow(row: Record<string, unknown> | null): IntakeRecor
     daysAvailable: arr("days_available"),
     hasGymAccess: row?.has_gym_access == null ? true : Boolean(row.has_gym_access),
     trainingSplit: (row?.training_split as TrainingSplit | null) ?? null,
+    customSplitDays: parseCustomSplitDays(row?.custom_split_days),
+    exercisesByDay: parseExercisesByDay(row?.exercises_by_day),
+    cardioModalities: arr("cardio_modalities").filter(isCardioModality),
+    crossTrainOk: Boolean(row?.cross_train_ok),
     twoADaysPossible: Boolean(row?.two_a_days_possible),
     dayWindows: parseDayWindows(row?.day_windows),
     availabilityVaries: Boolean(row?.availability_varies),
@@ -526,6 +587,32 @@ export function resolveIntakeInputs(
     assumed.push("Typical sleep is assumed at 7 hours, which nudges the ramp rate.");
   }
 
+  // Cardio modality. An unanswered question keeps the pre-question behaviour —
+  // running — and says so, because an athlete who never runs would otherwise
+  // have no way of knowing why their plan is full of runs.
+  if (record.cardioModalities.length === 0) {
+    assumed.push(
+      "You have not said which kinds of cardio you want, so the plan is written as running. If you row, ride, swim " +
+        "or walk instead, saying so changes every endurance session — including the paces, which are then quoted in " +
+        "your own sport's units rather than in minutes per kilometre."
+    );
+  } else if (!record.cardioModalities.includes("run")) {
+    assumed.push(
+      `You train ${record.cardioModalities.join(", ")} rather than running, so nothing in this plan asks you to ` +
+        `run and the 5k projection is replaced by your own sport's benchmark. The running-specific diagnostics — ` +
+        `easy-pace band, decoupling, fatigue resistance — stay blank, because they are measured from running and ` +
+        `you are not running.`
+    );
+  }
+
+  if (record.exercisesByDay && Object.keys(record.exercisesByDay).length > 0) {
+    assumed.push(
+      "You picked your own exercises for some gym days, so those days are built from your list. The load, the reps " +
+        "and how hard each day is still come from your diagnostic — choosing what to do is yours, choosing how hard " +
+        "to do it is not."
+    );
+  }
+
   const state: AthleteState = {
     bodyweightKg: prefilled.bodyweightKg ?? 0,
     heightCm: prefilled.heightCm ?? 0,
@@ -610,6 +697,14 @@ export function resolveIntakeInputs(
     maxSessionMin: record.maxSessionMin,
     minRestDays: record.minRestDays,
     trainingSplit: record.trainingSplit,
+    // The athlete's own week beats the five stock splits, and picking their own
+    // exercises beats the engine's rotation. Both are empty by default and both
+    // are optional — the engine's own choice is what an empty answer means, not
+    // a missing one.
+    customSplitDays: record.customSplitDays,
+    exercisesByDay: record.exercisesByDay,
+    cardioModalities: record.cardioModalities,
+    crossTrainOk: record.crossTrainOk,
     preferredRestDay: record.preferredRestDay,
     preferredLongDay: record.preferredLongDay,
     gymAccessDays,

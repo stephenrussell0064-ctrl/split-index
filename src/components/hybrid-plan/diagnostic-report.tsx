@@ -68,9 +68,26 @@ function Metric({
 export function DiagnosticReport({
   profile,
   assumptions = [],
+  cardio = null,
 }: {
   profile: AthleteProfile;
   assumptions?: string[];
+  /**
+   * Which cardio modalities this plan is written in.
+   *
+   * Everything in the "Aerobic base" card below is a RUNNING measurement —
+   * predicted 5k, longest run, easy-pace band, fatigue resistance, decoupling.
+   * Showing them to an athlete who has told the intake they row and do not run
+   * breaks this screen's own rule: an athlete who has never logged a sprint
+   * has not been measured as slow, and an athlete who does not run has not
+   * been measured as a slow runner either. When running is not one of their
+   * modalities the 5k is replaced by their own sport's benchmark rather than
+   * shown as a number about a sport they do not do.
+   */
+  cardio?: {
+    suppressRunningDiagnostics: boolean;
+    benchmark: { label: string; seconds: number | null; source: string; unmeasured: string; thresholdPace: string | null };
+  } | null;
 }) {
   const emphasis = (Object.entries(profile.emphasis) as [EmphasisKey, number][]).sort((a, b) => b[1] - a[1]);
   const max = Math.max(...emphasis.map(([, v]) => v), 0.001);
@@ -207,20 +224,46 @@ export function DiagnosticReport({
               own k" is false whenever riegelK is null. Both halves of the old
               string could be untrue at once: an athlete who had never raced
               saw a flat 25:00 described as their own. */}
-          <Metric
-            label="Predicted 5k"
-            value={profile.predicted5kSource === "unknown" ? null : mmss(profile.predicted5kS)}
-            verdict={
-              profile.predicted5kSource === "maximal_effort"
-                ? profile.riegelK != null
-                  ? "from your own maximal effort, using your own k"
-                  : "from your own maximal effort"
-                : profile.predicted5kSource === "prediction_engine"
-                  ? "from your logged sessions, not a race"
-                  : undefined
-            }
-            unmeasured="log a race or time trial"
-          />
+          {cardio?.suppressRunningDiagnostics ? (
+            // Their sport's benchmark, in their sport's units — never a 5k for
+            // someone who does not run.
+            <Metric
+              label={`Projected ${cardio.benchmark.label}`}
+              value={cardio.benchmark.seconds != null ? mmss(cardio.benchmark.seconds) : null}
+              verdict={
+                cardio.benchmark.source === "maximal_effort"
+                  ? "from your own maximal effort"
+                  : cardio.benchmark.source === "projected"
+                    ? "projected from your logged sessions, not a benchmark you have done"
+                    : cardio.benchmark.source === "typical_pace"
+                      ? "your own typical pace"
+                      : undefined
+              }
+              unmeasured={cardio.benchmark.unmeasured}
+            />
+          ) : (
+            <Metric
+              label="Predicted 5k"
+              value={profile.predicted5kSource === "unknown" ? null : mmss(profile.predicted5kS)}
+              verdict={
+                profile.predicted5kSource === "maximal_effort"
+                  ? profile.riegelK != null
+                    ? "from your own maximal effort, using your own k"
+                    : "from your own maximal effort"
+                  : profile.predicted5kSource === "prediction_engine"
+                    ? "from your logged sessions, not a race"
+                    : undefined
+              }
+              unmeasured="log a race or time trial"
+            />
+          )}
+          {cardio?.suppressRunningDiagnostics && cardio.benchmark.thresholdPace && (
+            <Metric
+              label="Pace you could hold for an hour"
+              value={cardio.benchmark.thresholdPace}
+              verdict="every band in your plan is a fraction of this"
+            />
+          )}
           <Metric
             label="Max heart rate"
             value={`${profile.hrMax} bpm`}

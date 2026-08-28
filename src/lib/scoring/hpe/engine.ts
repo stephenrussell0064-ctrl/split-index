@@ -32,12 +32,23 @@ import { buildMacrocycle, enforceAcwr, type AcwrEnforcement, type MacrocycleWeek
 import { autoregulate, type SessionFeedback } from "./progression";
 import { scheduleWeek, type Placement } from "./scheduler";
 import { buildSessionSet, type PlannedSession } from "./session-set";
+import {
+  emptyModalityFitness,
+  enduranceBenchmark,
+  modalityForEvent,
+  resolveCardioPlan,
+  type CardioModality,
+  type EnduranceBenchmark,
+  type ModalityFitness,
+} from "./modality";
 import { safetyScreen, type SafetyResult } from "./safety";
 import type { AthleteProfile, Finding } from "./types";
 
 export interface PlanWeek extends MacrocycleWeek {
   sessions: PlannedSession[];
   placements: Placement[];
+  /** The week as an ordered list, when the athlete said their availability varies. Null otherwise. */
+  prioritisedOrder?: PlannedSession[] | null;
   allocation: Record<EmphasisKey, number>;
   notes: string[];
   penalty: number;
@@ -67,6 +78,30 @@ export interface GeneratedPlan {
   findings: Finding[];
   /** How individual this plan actually is, and what would make it more so. Never null on a generated plan. */
   tailoring: PlanTailoring | null;
+  /**
+   * Which cardio modalities this plan is written in, and the headline endurance
+   * number that goes with them.
+   *
+   * `profile.predicted5kS` is running's diagnostic and stays running's. An
+   * athlete who has told the intake they row and do not run must not be shown a
+   * predicted 5k — it is a number about a sport they do not do, and the
+   * diagnostic report already has a rule against presenting a number that is
+   * really about something else. `benchmark` is the same idea in their own
+   * sport: a projected 2k row, 400m swim or 20k ride, from their own logs,
+   * using their own sport's decay exponent.
+   *
+   * Null only when the plan was not generated.
+   */
+  cardio: {
+    modalities: CardioModality[];
+    primary: CardioModality;
+    /** The modality quality sessions are prescribed in. */
+    qualityModality: CardioModality;
+    crossTrain: boolean;
+    /** True when running is not among the chosen modalities — the signal to suppress the 5k. */
+    suppressRunningDiagnostics: boolean;
+    benchmark: EnduranceBenchmark;
+  } | null;
 }
 
 export interface GeneratePlanInput {
@@ -79,10 +114,19 @@ export interface GeneratePlanInput {
   feedbackByWeek?: Record<number, SessionFeedback[]>;
   /** F11: the athlete has explicitly overridden the safety-constrained event order. */
   overrideEventOrder?: boolean;
+  /**
+   * Per-modality fitness for the cardio modalities the athlete chose, built by
+   * the caller from their activity rows (`ingestModalityFitness`).
+   *
+   * The engine never re-derives it, for the same reason it never re-derives
+   * the diagnostic: there is one reader of the activity table and it is not
+   * this module.
+   */
+  modalityFitness?: Partial<Record<CardioModality, ModalityFitness>>;
 }
 
 export function generatePlan(input: GeneratePlanInput): GeneratedPlan {
-  const { state, goal, constraints, profile, feedbackByWeek = {} } = input;
+  const { state, goal, constraints, profile, feedbackByWeek = {}, modalityFitness = {} } = input;
 
   // ---- 1. HEALTH SCREEN, FIRST AND UNCONDITIONAL -------------------------
   // Still first, still not skippable — it just sets the dial now instead of
@@ -121,16 +165,34 @@ export function generatePlan(input: GeneratePlanInput): GeneratedPlan {
       autoregMultiplier: autoreg.volumeMultiplier,
       // What the health screen decided instead of refusing.
       intensityCeiling: safety.intensityCeiling,
+      // The athlete's chosen cardio modalities are prescribed in their own
+      // sports' units from here.
+      modalityFitness,
     });
     const schedule = scheduleWeek(sessions, constraints);
     const stress = schedule.placements.reduce((s, p) => s + p.session.stress, 0);
     rawStress.push(stress);
+    // The athlete said their week varies, so the week is delivered as an order
+    // as well as a shape. The intake has promised this since it was written and
+    // the scheduler never read the answer — see `ScheduleResult.prioritisedOrder`.
+    const orderNote =
+      schedule.prioritisedOrder && schedule.prioritisedOrder.length > 0
+        ? [
+            `Your week varies, so place these yourself in this order of priority: ` +
+              schedule.prioritisedOrder
+                .map((s, i) => `${i + 1}. ${s.label ?? s.kind.replace(/_/g, " ")}`)
+                .join(", ") +
+              `. The days shown are a suggested shape, not a fixture — what matters is keeping the hard sessions ` +
+              `apart and doing the ones near the top of this list.`,
+          ]
+        : [];
     weeks.push({
       ...weekRecord,
       sessions,
       placements: schedule.placements,
+      prioritisedOrder: schedule.prioritisedOrder,
       allocation,
-      notes: [...notes, ...autoreg.reasons],
+      notes: [...notes, ...orderNote, ...autoreg.reasons],
       penalty: schedule.penalty,
       hardPenalty: schedule.hardPenalty,
       stress,
@@ -194,5 +256,22 @@ export function generatePlan(input: GeneratePlanInput): GeneratedPlan {
     eventDay: eventOrder ? eventDayPlan(goal, eventOrder) : null,
     findings: profile.findings,
     tailoring,
+    cardio: (() => {
+      const plan = resolveCardioPlan(
+        constraints.cardioModalities ?? [],
+        constraints.crossTrainOk ?? false,
+        modalityForEvent(goal.enduranceEventKey)
+      );
+      return {
+        modalities: plan.modalities,
+        primary: plan.primary,
+        qualityModality: plan.qualityModality,
+        crossTrain: plan.crossTrain,
+        suppressRunningDiagnostics: !plan.modalities.includes("run"),
+        benchmark: enduranceBenchmark(
+          modalityFitness[plan.primary] ?? emptyModalityFitness(plan.primary)
+        ),
+      };
+    })(),
   };
 }

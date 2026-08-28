@@ -35,7 +35,8 @@
 import {
   DEFAULT_PLANNING_HORIZON_WEEKS,
   MAX_HORIZON_WEEKS,
-  MIN_HORIZON_WEEKS, MIN_HEALTHY_BMI, type TrainingAge, type TrainingSplit } from "./constants";
+  MIN_HORIZON_WEEKS, MIN_HEALTHY_BMI, type SplitDay, type TrainingAge, type TrainingSplit } from "./constants";
+import type { CardioModality } from "./modality";
 
 // ---------------------------------------------------------------------------
 // Section A — safety and eligibility
@@ -271,8 +272,47 @@ export interface Constraints {
    * different structures, so it is asked rather than inferred.
    */
   trainingSplit: TrainingSplit | null;
+  /**
+   * The athlete's own day structure, when they wanted one the five stock
+   * splits do not describe. Overrides `trainingSplit` when non-empty.
+   *
+   * Kept as data on the constraints rather than as a sixth entry in
+   * `TRAINING_SPLITS` because it is not a split the engine knows about — it is
+   * this athlete's week, and there is exactly one of it.
+   */
+  customSplitDays?: SplitDay[];
+  /**
+   * Exercises the athlete picked for a given day label ("Push", "Legs"), from
+   * the exercises they have ACTUALLY logged.
+   *
+   * Empty means the engine chooses, exactly as it did before the question
+   * existed — selection is an enhancement, never a requirement. Where a day
+   * has picks, they replace the accessory rotation for that day; the primary
+   * lift, the load and the rep scheme still come from the diagnostic, because
+   * choosing which exercises to do is a preference and choosing how hard to do
+   * them is not.
+   */
+  exercisesByDay?: Record<string, string[]>;
   gymAccessDays: string[];
   equipment: string[];
+  /**
+   * Which cardio modalities the athlete is willing to train in. A WHITELIST:
+   * nothing outside it is ever prescribed.
+   *
+   * Empty means running, which is what this engine did before the question
+   * existed — the default has to be something, and silently switching every
+   * existing athlete's plan to a different sport would be a worse surprise
+   * than the question itself.
+   */
+  cardioModalities?: CardioModality[];
+  /**
+   * Whether the athlete wants the plan to mix modalities at all.
+   *
+   * Off with a single modality chosen means every endurance session is that
+   * modality — the "otherwise only provide a plan with their given cardio
+   * choice(s)" half of the question, which is the half that is easy to ignore.
+   */
+  crossTrainOk?: boolean;
 }
 
 // ---------------------------------------------------------------------------

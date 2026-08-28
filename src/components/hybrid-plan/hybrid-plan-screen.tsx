@@ -103,6 +103,21 @@ interface PlanResponse {
     isProvisional: boolean;
   } | null;
   constantsVersion?: string;
+  /**
+   * Which cardio modalities the plan is written in. Drives whether the
+   * diagnostic report shows a predicted 5k at all — see the `cardio` prop on
+   * `DiagnosticReport`.
+   */
+  cardio?: {
+    suppressRunningDiagnostics: boolean;
+    benchmark: {
+      label: string;
+      seconds: number | null;
+      source: string;
+      unmeasured: string;
+      thresholdPace: string | null;
+    };
+  } | null;
 }
 
 type Tab = "plan" | "diagnostic" | "event";
@@ -357,7 +372,7 @@ export function HybridPlanScreen() {
           )}
         </Card>
 
-        {profile && <DiagnosticReport profile={profile} assumptions={data.assumptions} />}
+        {profile && <DiagnosticReport profile={profile} assumptions={data.assumptions} cardio={data.cardio ?? null} />}
       </div>
     );
   }
@@ -513,7 +528,7 @@ export function HybridPlanScreen() {
       </div>
 
       {tab === "plan" && profile && <PlanView weeks={weeks} profile={profile} planStart={planStart} />}
-      {tab === "diagnostic" && profile && <DiagnosticReport profile={profile} assumptions={data.assumptions} />}
+      {tab === "diagnostic" && profile && <DiagnosticReport profile={profile} assumptions={data.assumptions} cardio={data.cardio ?? null} />}
       {tab === "event" && (
         <div className="space-y-5">
           {data.eventOrder && (

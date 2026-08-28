@@ -52,6 +52,7 @@ import {
   MAINTENANCE_SETS,
   DEFAULT_TRAINING_SPLIT,
   TRAINING_SPLITS,
+  type SplitDay,
   type TrainingSplit,
   NO_GYM_REP_RANGE,
   NO_GYM_SUBSTITUTIONS,
@@ -76,7 +77,22 @@ import {
   type EmphasisKey,
   type Phase,
 } from "./constants";
-import { prescribeEndurance, prescribeLift, type EnduranceKind, type Prescription } from "./prescription";
+import {
+  prescribeEndurance,
+  prescribeLift,
+  prescribeModalityEndurance,
+  type EnduranceKind,
+  type EndurancePrescriptionOptions,
+  type Prescription,
+} from "./prescription";
+import {
+  emptyModalityFitness,
+  modalityForEvent,
+  modalitySessionLabel,
+  resolveCardioPlan,
+  type CardioModality,
+  type ModalityFitness,
+} from "./modality";
 import type { DomainMode } from "./feasibility";
 import type { MacrocycleWeek } from "./macrocycle";
 import type { Constraints, Goal } from "./intake";
@@ -105,6 +121,17 @@ export interface PlannedSession {
   isHeavyLower: boolean;
   isDeadlift: boolean;
   lift?: string;
+  /**
+   * Which cardio modality an endurance session is performed in.
+   *
+   * `kind` stays running-flavoured ("easy_run", "interval_run") because it is
+   * the engine's classification and everything downstream — stress tables,
+   * spacing rules, the ACWR pass — is keyed on it, and a rowing threshold
+   * session genuinely costs what a running one costs. What changes is the
+   * PRESCRIPTION, which is written in the modality's own units, and the
+   * `label`, which is the only part the athlete reads.
+   */
+  modality?: CardioModality;
   prescription: Prescription;
   /** Which emphasis dimension bought this slot. */
   emphasisKey: EmphasisKey;
@@ -198,6 +225,12 @@ export interface SessionSetInput {
    * the plan — see the note on `safetyScreen`.
    */
   intensityCeiling?: number;
+  /**
+   * Per-modality fitness, for the modalities the athlete chose. Absent means
+   * the caller had no activity rows to build it from, which is a normal state
+   * — the modality prescription then falls back to effort and says so.
+   */
+  modalityFitness?: Partial<Record<CardioModality, ModalityFitness>>;
 }
 
 export interface SessionSet {
@@ -223,7 +256,7 @@ function makeSession(
   emphasisKey: EmphasisKey,
   findingId: FindingId,
   prescription: Prescription,
-  opts: { intensity: number; isQuality: boolean; minutes?: number; isHeavyLower?: boolean; isDeadlift?: boolean; lift?: string; label?: string }
+  opts: { intensity: number; isQuality: boolean; minutes?: number; isHeavyLower?: boolean; isDeadlift?: boolean; lift?: string; label?: string; modality?: CardioModality }
 ): PlannedSession {
   const minutes =
     opts.minutes ??
@@ -240,6 +273,7 @@ function makeSession(
     isDeadlift: opts.isDeadlift ?? false,
     lift: opts.lift,
     label: opts.label,
+    modality: opts.modality,
     prescription,
     emphasisKey,
     findingId,
@@ -330,6 +364,46 @@ function accessoriesForDay(
 }
 
 /**
+ * The exercises the athlete picked for this day, if they picked any.
+ *
+ * Matched on the day's label, case- and space-insensitively, because the label
+ * is what they were shown when they chose ("Push", "Legs", "Full body"). A day
+ * they did not answer for returns null and falls through to the engine's own
+ * rotation, which is the whole contract of this feature: selection is an
+ * enhancement, never a requirement, and choosing nothing has to keep working
+ * exactly as it did.
+ */
+function chosenExercisesFor(
+  dayLabel: string,
+  exercisesByDay: Record<string, string[]> | undefined
+): string[] | null {
+  if (!exercisesByDay) return null;
+  const key = dayLabel.trim().toLowerCase();
+  for (const [label, picks] of Object.entries(exercisesByDay)) {
+    if (label.trim().toLowerCase() === key && picks.length > 0) return picks;
+  }
+  return null;
+}
+
+/**
+ * A chosen exercise, given a set and rep scheme so it reads like the rest of
+ * the session.
+ *
+ * The athlete chose WHAT to do; the engine still says how much. A picked
+ * accessory that arrived as a bare name would be the only line in the session
+ * without a prescription attached, and "Lat pulldown" on its own is a
+ * suggestion rather than a session.
+ */
+function asAccessoryLine(name: string): string {
+  const trimmed = name.trim();
+  // Already carries its own scheme (they typed "Lat pulldown 4x10") — leave it.
+  return /\d\s*x\s*\d/i.test(trimmed) ? trimmed : `${trimmed} ${ACCESSORY_DEFAULT_SCHEME}`;
+}
+
+/** [EST] The scheme a chosen accessory gets when the athlete gave only a name. Matches the pool's own accessory range. */
+const ACCESSORY_DEFAULT_SCHEME = "3x8-12";
+
+/**
  * The exercise that leads the session.
  *
  * An athlete peaking a total must keep meeting the competition lift, because
@@ -393,14 +467,93 @@ function qualityKindForSlot(
   return pool[week % pool.length];
 }
 
+/**
+ * One endurance session, prescribed in whichever modality this slot belongs
+ * to.
+ *
+ * Running keeps the existing path EXACTLY — `prescribeEndurance`, the
+ * three-anchor easy band, the athlete's own HR-vs-pace regression, the
+ * progression overrides. Nothing about a running athlete's plan changes.
+ * Anything else goes through `prescribeModalityEndurance`, which quotes pace
+ * in that sport's own units and never borrows a running number.
+ *
+ * The label is what the athlete reads, so it is the label that carries the
+ * modality: "Easy row", "Threshold ride". The `kind` stays `easy_run` because
+ * the scheduler, the stress table and the ACWR pass are all keyed on it.
+ */
+function buildEnduranceSession(args: {
+  profile: AthleteProfile;
+  modality: CardioModality;
+  fitness: ModalityFitness | undefined;
+  kind: EnduranceKind;
+  emphasisKey: EmphasisKey;
+  findingId: FindingId;
+  minutes: number;
+  intensity: number;
+  isQuality: boolean;
+  suppressHeartRate: boolean;
+  extra?: string;
+  progression?: Omit<EndurancePrescriptionOptions, "minutes">;
+}): PlannedSession {
+  const { profile, modality, fitness, kind, emphasisKey, findingId, minutes } = args;
+
+  if (modality === "run") {
+    const prescription = prescribeEndurance(profile, kind, findingId, {
+      minutes,
+      suppressHeartRate: args.suppressHeartRate,
+      extra: args.extra,
+      ...(args.progression ?? {}),
+    });
+    return makeSession(kind, "endurance", emphasisKey, findingId, prescription, {
+      intensity: args.intensity,
+      isQuality: args.isQuality,
+      minutes,
+      modality,
+    });
+  }
+
+  const resolved = fitness ?? emptyModalityFitness(modality);
+  const prescription = prescribeModalityEndurance(profile, resolved, kind, findingId, {
+    minutes,
+    suppressHeartRate: args.suppressHeartRate,
+    extra: args.extra,
+  });
+  return makeSession(kind, "endurance", emphasisKey, findingId, prescription, {
+    intensity: args.intensity,
+    isQuality: args.isQuality,
+    minutes,
+    modality,
+    label: modalitySessionLabel(modality, kind),
+  });
+}
+
 export function buildSessionSet(input: SessionSetInput): SessionSet {
   const {
     profile, week, mode, goal, constraints,
     suppressHeartRate = false, autoregMultiplier = 1, intensityCeiling = 1,
+    modalityFitness = {},
   } = input;
   const { phase, deload } = week;
   const notes: string[] = [];
   const sessions: PlannedSession[] = [];
+
+  // ---- which sport is each endurance session in? --------------------------
+  // The athlete's whitelist, resolved once for the week. Quality lands in the
+  // modality their goal is contested in where they named one, so a 2k rower's
+  // intervals are rowing intervals rather than the running intervals that used
+  // to be the only kind this engine could produce.
+  const cardio = resolveCardioPlan(
+    constraints.cardioModalities ?? [],
+    constraints.crossTrainOk ?? false,
+    modalityForEvent(goal.enduranceEventKey)
+  );
+  for (const note of cardio.notes) notes.push(note);
+  // Easy volume walks the rotation so a two-modality athlete alternates rather
+  // than doing all of one and none of the other. Offset by the week index so
+  // the alternation does not put the same sport in the same slot every week.
+  let easyRotationCursor = week.week;
+  const nextEasyModality = (): CardioModality =>
+    cardio.rotation[easyRotationCursor++ % cardio.rotation.length];
   const totalMinutes = Math.max(0, week.enduranceMin * autoregMultiplier);
   if (autoregMultiplier < 1) {
     notes.push(
@@ -705,35 +858,54 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
     const findingId = attributeFinding(emphasisKey, profile.findings) ?? "hybrid-baseline";
     const progression = qualityProgressionFor(kind, week, profile, goal);
     const minutes = Math.max(MIN_QUALITY_SESSION_MIN, qualityMinutes);
-    const prescription = prescribeEndurance(profile, kind, findingId, {
-      minutes,
-      suppressHeartRate,
-      ...progression,
-    });
     sessions.push(
-      makeSession(kind, "endurance", emphasisKey, findingId, prescription, {
+      buildEnduranceSession({
+        profile,
+        // Quality goes to one modality for the whole block, not to whichever
+        // sport the rotation happens to land on. Interval paces progress across
+        // the block toward a target, and a target you chase on the erg one week
+        // and in the pool the next is not a progression.
+        modality: cardio.qualityModality,
+        fitness: modalityFitness[cardio.qualityModality],
+        kind,
+        emphasisKey,
+        findingId,
+        minutes,
         intensity: kind === "interval_run" ? 0.95 : kind === "rep_run" ? 0.9 : 0.8,
         isQuality: true,
-        minutes,
+        suppressHeartRate,
+        progression,
       })
     );
   }
 
   if (wantsLongRun) {
     const findingId = attributeFinding("aerobic_base", profile.findings) ?? "hybrid-baseline";
-    const prescription = prescribeEndurance(profile, "long_run", findingId, {
-      minutes: longMinutes,
-      suppressHeartRate,
-      // F13: strides close the long run. Cheap neuromuscular exposure that
-      // costs nothing aerobically and was absent from Rev A entirely.
-      extra: "Finish with 6x20s strides, walking back to full recovery between.",
-    });
+    // The long session belongs to the primary modality — it is the week's
+    // anchor session, and rotating it would leave a rower's longest effort
+    // happening in a pool.
     sessions.push(
-      makeSession("long_run", "endurance", "aerobic_base", findingId, prescription, {
+      buildEnduranceSession({
+        profile,
+        modality: cardio.primary,
+        fitness: modalityFitness[cardio.primary],
+        kind: "long_run",
+        emphasisKey: "aerobic_base",
+        findingId,
+        minutes: longMinutes,
         intensity: 0.45,
         // F10 — a long run past 75 minutes is quality for spacing purposes.
         isQuality: longRunCountsAsQuality,
-        minutes: longMinutes,
+        suppressHeartRate,
+        // F13: strides close the long run. Cheap neuromuscular exposure that
+        // costs nothing aerobically and was absent from Rev A entirely.
+        // Strides are a RUNNING drill — there is no such thing as a stride on
+        // an erg or in a pool, and appending one there would be the running
+        // plan leaking through the label again.
+        extra:
+          cardio.primary === "run"
+            ? "Finish with 6x20s strides, walking back to full recovery between."
+            : undefined,
       })
     );
   }
@@ -759,20 +931,28 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
   for (let i = 0; i < easySlots; i++) {
     const findingId = attributeFinding("aerobic_base", profile.findings) ?? "hybrid-baseline";
     const kind: EnduranceKind = phase === "taper" ? "recovery_run" : "easy_run";
+    // Easy volume is the only thing that rotates across modalities. It is the
+    // part of the week where the sport matters least physiologically and most
+    // to whether the athlete actually does it.
+    const easyModality = nextEasyModality();
     // Strides are how neuromuscular work is delivered outside the specific
     // and peak phases — the dimension's weight bought this, and it is spent
-    // here rather than silently dropped.
-    const stridesHere = !repSessionsAllowed && phase !== "taper" && i < 2;
-    const prescription = prescribeEndurance(profile, kind, findingId, {
-      minutes: easyMinutes,
-      suppressHeartRate,
-      extra: stridesHere ? "Finish with 6x20s strides, walking back to full recovery between." : undefined,
-    });
+    // here rather than silently dropped. Running only: there is no stride on
+    // a rowing machine.
+    const stridesHere = !repSessionsAllowed && phase !== "taper" && i < 2 && easyModality === "run";
     sessions.push(
-      makeSession(kind, "endurance", "aerobic_base", findingId, prescription, {
+      buildEnduranceSession({
+        profile,
+        modality: easyModality,
+        fitness: modalityFitness[easyModality],
+        kind,
+        emphasisKey: "aerobic_base",
+        findingId,
+        minutes: easyMinutes,
         intensity: kind === "recovery_run" ? 0.3 : 0.35,
         isQuality: false,
-        minutes: easyMinutes,
+        suppressHeartRate,
+        extra: stridesHere ? "Finish with 6x20s strides, walking back to full recovery between." : undefined,
       })
     );
   }
@@ -788,7 +968,33 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
   // it. Handing someone a "bench day" when they train push/pull/legs reads as
   // a fragment of a session rather than a session.
   const split = TRAINING_SPLITS[constraints.trainingSplit ?? DEFAULT_TRAINING_SPLIT];
-  const splitDays = split.days;
+  // The athlete's OWN day structure wins over all five stock splits.
+  //
+  // Someone who trains chest/back/arms/legs, or who wants a dedicated
+  // shoulders day, was previously told to pick the closest of five and live
+  // with it. Their week is data, not a fixed option, so it is carried on the
+  // constraints and used here directly. An empty list means they did not
+  // define one, which is the ordinary case and behaves exactly as before.
+  const customDays = constraints.customSplitDays ?? [];
+  const splitDays: readonly SplitDay[] = customDays.length > 0 ? customDays : split.days;
+  if (customDays.length > 0) {
+    notes.push(
+      `Your gym week runs on your own day structure — ${customDays.map((d) => d.label).join(", ")} — rather than ` +
+        `one of the stock splits.`
+    );
+  }
+  // A peaking block cannot hand the lead over. Said once, here, rather than
+  // silently overriding a choice the athlete made and can see was ignored.
+  const peakingATotalForSplit =
+    goal.targetTotalKg != null || goal.targetSquatKg != null ||
+    goal.targetBenchKg != null || goal.targetDeadliftKg != null;
+  if (peakingATotalForSplit && Object.keys(constraints.exercisesByDay ?? {}).length > 0) {
+    notes.push(
+      "Your chosen exercises are in, but the competition lift still leads each day — you have set a numeric lift " +
+        "target, and specificity is the whole reason a peaking block exists. Clear the target and your own pick " +
+        "leads instead."
+    );
+  }
   // The split governs in BOTH modes. Maintenance previously hardcoded
   // squat+bench and ignored the athlete's choice entirely, so someone who
   // asked for push/pull/legs got a bench day and a squat day.
@@ -835,7 +1041,14 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
         rir: [2, 3],
         // A maintenance session is still a session. Prescribing one lift and
         // nothing else is not a gym visit anybody would make.
-        accessories: accessoriesForDay(maintDay, lift, week.week),
+        //
+        // Their own picks for this day beat the engine's rotation. A
+        // maintenance block is exactly where an athlete's preferences should
+        // win: the dose is what matters and the exercise selection is not
+        // carrying any diagnostic weight.
+        accessories:
+          chosenExercisesFor(maintDay.label, constraints.exercisesByDay)?.map(asAccessoryLine) ??
+          accessoriesForDay(maintDay, lift, week.week),
       });
       sessions.push(
         makeSession("strength_maintenance", "strength", "maximal_strength", findingId, prescription, {
@@ -890,7 +1103,20 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
     // "Push" day is a push session rather than a bench press with two
     // afterthoughts attached.
     const splitDay = splitDays[dayIndexFor(i)];
-    const accessories = accessoriesForDay(splitDay, lift, week.week);
+    // What the athlete picked for this day, from the exercises they have
+    // actually logged. Null when they picked nothing, which is the ordinary
+    // case and leaves the engine's own rotation in charge.
+    const picks = chosenExercisesFor(splitDay.label, constraints.exercisesByDay);
+    // Their first pick LEADS the session — unless they are peaking a total, in
+    // which case the competition lift has to, because specificity is the whole
+    // reason a peaking block exists. Leading with a chosen exercise reuses the
+    // `variant` path, which prescribes by effort rather than by %1RM: the 1RM
+    // on file belongs to the competition lift, and printing 80% of a bench 1RM
+    // beside a chosen incline press would prescribe a weight nobody can press.
+    const chosenLead = picks && !peakingATotal && hasBarbell ? picks[0] : undefined;
+    const accessories = picks
+      ? picks.slice(chosenLead ? 1 : 0).map(asAccessoryLine)
+      : accessoriesForDay(splitDay, lift, week.week);
     const prescription = prescribeLift(profile, findingId, {
       lift,
       // No barbell: substitute the pattern and say plainly it is a
@@ -899,7 +1125,7 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
       // Peaking a total means meeting the competition lift every week. Anyone
       // else gets the pattern led by a rotating variation instead, which is
       // the same training with less monotony.
-      variant: hasBarbell ? primaryExerciseFor(lift, week.week, peakingATotal) : undefined,
+      variant: hasBarbell ? (chosenLead ?? primaryExerciseFor(lift, week.week, peakingATotal)) : undefined,
       sets,
       reps: hasBarbell ? reps : NO_GYM_REP_RANGE,
       intensity,
