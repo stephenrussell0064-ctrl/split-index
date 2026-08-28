@@ -400,6 +400,53 @@ const ACCESSORY_MAP: Record<string, LiftAnchor> = {
   calfRaise: { anchorRatio: 1.0462, category: "legs", bodyPart: "lowerBody" },
   hipAdduction: { anchorRatio: 0.816, category: "legs", bodyPart: "lowerBody" },
   legCurl: { anchorRatio: 0.6372, category: "legs", bodyPart: "lowerBody" },
+
+  // -------------------------------------------------------------------------
+  // Iso-Lateral (Hammer Strength) plate-loaded machines — their OWN anchors.
+  //
+  // These used to alias onto the nearest free-weight/cable sibling (high row
+  // -> dbRow, shoulder press -> dbShoulderPress, ...). That was wrong twice
+  // over, and both errors pushed the score the same way — up:
+  //
+  //  1. CONVENTION. An iso-lateral machine is loaded PER ARM; a dumbbell-row
+  //     anchor is defined on the TOTAL of both dumbbells. dbRow's anchor is
+  //     0.4524, i.e. a ~37.6kg total 1RM at the 83kg reference — around 19kg
+  //     per hand. Judging a plate-loaded machine carrying 100kg PER SIDE
+  //     against that is not a calibration error, it's a category error.
+  //     Fixed on the input side too: EXERCISE_LOAD_CONFIG (weight-entry.ts)
+  //     now defaults these to per-hand entry with a Total option, the same
+  //     convention machinery the carries use, and these anchors are all
+  //     defined on TOTAL load so the two agree.
+  //  2. EQUIPMENT. A fixed machine on rails supports the load, fixes the
+  //     path and removes every stabiliser demand a dumbbell row imposes, so
+  //     the same athlete moves far more weight on it. Sharing the dumbbell's
+  //     anchor credited that extra weight as extra strength.
+  //
+  //  Reported symptom: Iso-Lateral High Row 100kg x 8 scored 999/1000 —
+  //  literally the top of the scale, out-scoring the athlete's own barbell
+  //  squat and deadlift, for an ordinary working set.
+  //
+  // Separate anchor keys (rather than more aliases) also fix a third defect
+  // for free: EXERCISE_ATTACHMENTS in strength/attachments.ts is keyed by
+  // resolved anchor key, so aliasing to dbRow/latPulldown made these fixed
+  // machines offer cable attachments (v-bar / wide bar / single handle) they
+  // physically do not have. No attachment entry exists for these keys, so
+  // the picker correctly disappears.
+  //
+  // Anchor values: anchorRatio x 83kg = the TOTAL-load 1RM scoring 500. Set
+  // from typical plate-loaded machine loading (20kg plates per side), and
+  // cross-checked so that no machine out-scores a comparable barbell lift at
+  // the same relative effort. Engineering judgment, not population data —
+  // there is no Strength Level table for Hammer Strength machines — so treat
+  // them the same way as this file's other documented estimates and refine
+  // as real logged data accumulates.
+  isoLateralRow: { anchorRatio: 1.59, category: "back", bodyPart: "pull" },
+  isoLateralPulldown: { anchorRatio: 1.325, category: "back", bodyPart: "pull" },
+  isoLateralChestPress: { anchorRatio: 1.205, category: "chest", bodyPart: "upperBody" },
+  isoLateralShoulderPress: { anchorRatio: 0.771, category: "shoulders", bodyPart: "upperBody" },
+  isoLateralLegPress: { anchorRatio: 2.41, category: "legs", bodyPart: "lowerBody" },
+  isoLateralLegExtension: { anchorRatio: 0.964, category: "legs", bodyPart: "lowerBody" },
+  isoLateralLegCurl: { anchorRatio: 0.771, category: "legs", bodyPart: "lowerBody" },
 };
 
 /**
@@ -433,25 +480,31 @@ const LIFT_ALIASES: Record<string, string> = {
   "incline dumbbell press": "inclineDbPress", "decline dumbbell press": "inclineDbPress",
   "dumbbell bench press": "flatDbPress",
   "machine chest press": "machineChestPress", "chest press machine": "machineChestPress", "smith machine squat": "machineChestPress",
-  // Iso-Lateral (Hammer Strength) machines — user feedback: "please fix to
-  // make all the iso lateral machine exercises comparable." Without these,
-  // every one of them fell through to DEFAULT_GENERIC_ANCHOR (0.35) — lower
-  // than any of their real machine equivalents' anchors below, which
-  // inflates the score (see scoreFromRatio: a lower anchor means a higher
-  // ratio/anchor for the same lift, i.e. a higher score for identical
-  // performance). Mapped to the same anchor as their closest calibrated
-  // machine sibling.
-  "iso-lateral chest press": "machineChestPress",
-  "iso-lateral incline press": "machineChestPress",
-  "iso-lateral decline press": "machineChestPress",
-  "iso-lateral shoulder press": "dbShoulderPress",
-  "iso-lateral row": "dbRow",
-  "iso-lateral high row": "dbRow",
-  "iso-lateral low row": "dbRow",
-  "iso-lateral wide pulldown": "latPulldown",
-  "iso-lateral front pulldown": "latPulldown",
-  "iso-lateral leg extension": "legExtension",
-  "iso-lateral leg curl": "legCurl",
+  // Iso-Lateral (Hammer Strength) machines. These used to alias onto the
+  // nearest free-weight/cable sibling (dbRow, dbShoulderPress, ...), which
+  // both mismatched the per-arm loading convention and credited a supported
+  // machine as if it were a dumbbell — see the ISO-LATERAL block in
+  // PRIMARY/ACCESSORY_MAP above for the full reasoning. They now resolve to
+  // their own anchors, calibrated on total load, with no attachment options.
+  "iso-lateral chest press": "isoLateralChestPress",
+  "iso-lateral incline press": "isoLateralChestPress",
+  "iso-lateral decline press": "isoLateralChestPress",
+  "iso-lateral shoulder press": "isoLateralShoulderPress",
+  "iso-lateral row": "isoLateralRow",
+  "iso-lateral high row": "isoLateralRow",
+  "iso-lateral low row": "isoLateralRow",
+  // Same machine family, catalogued under the manufacturer's name rather
+  // than the "Iso-Lateral" range name — it was falling through to
+  // DEFAULT_GENERIC_ANCHOR entirely.
+  "hammer strength row": "isoLateralRow",
+  "iso-lateral wide pulldown": "isoLateralPulldown",
+  "iso-lateral front pulldown": "isoLateralPulldown",
+  // Was the one member of the family with no alias at all, so it landed on
+  // DEFAULT_GENERIC_ANCHOR (0.35) — a barbell-shaped anchor for a machine
+  // that moves several hundred kg.
+  "iso-lateral leg press": "isoLateralLegPress",
+  "iso-lateral leg extension": "isoLateralLegExtension",
+  "iso-lateral leg curl": "isoLateralLegCurl",
   "cable fly": "cableFly", "low-to-high cable fly": "cableFly", "high-to-low cable fly": "cableFly",
   "dumbbell fly": "cableFly", "incline dumbbell fly": "cableFly",
   "pec deck": "pecDeck",
@@ -562,6 +615,18 @@ export const EXERCISE_CLASS: Record<string, ExerciseClass> = {
   hipAdduction: "accessory",
   legCurl: "accessory",
   dbRow: "accessory",
+  // Iso-Lateral machines: "accessory" matches their calibrated machine
+  // siblings (machineChestPress, dbRow, legExtension) rather than the
+  // "compound" class the barbell lifts use — the rep-to-1RM curve on a
+  // supported, fixed-path machine is closer to a machine press than to a
+  // free-standing squat.
+  isoLateralRow: "accessory",
+  isoLateralPulldown: "accessory",
+  isoLateralChestPress: "accessory",
+  isoLateralShoulderPress: "accessory",
+  isoLateralLegPress: "accessory",
+  isoLateralLegExtension: "accessory",
+  isoLateralLegCurl: "accessory",
   tricepPushdown: "isolation",
   tricepPushdownSingleArm: "isolation",
   dbCurl: "isolation",

@@ -25,6 +25,43 @@ export interface ResolvedScoringWeight {
   convention: LoadConvention;
 }
 
+/**
+ * Iso-Lateral (Hammer Strength) plate-loaded machines. Every one of these
+ * has two independent arms, each with its own weight horn, so the athlete
+ * naturally reads and reports the load PER SIDE ("100 for 8 on each arm") —
+ * exactly the ambiguity the carries hit before farmersCarry got an entry
+ * here, and with the same consequence: without a config these fell through
+ * to the "total, no picker" default, so the 100 the athlete had on EACH
+ * side was scored as 100kg in total, half the real load.
+ *
+ * Per hand is therefore the default, with Total available for anyone who
+ * prefers to add the sides up. The anchors in split-strength-engine.ts are
+ * defined on TOTAL load, so `anchorConvention` normalizes per-side entry by
+ * doubling it — same shape as farmersCarry.
+ *
+ * These share one config because the answer is identical for all of them;
+ * they still resolve to distinct scoring anchors.
+ */
+const ISO_LATERAL_CONFIG_KEYS = [
+  "isoLateralRow",
+  "isoLateralPulldown",
+  "isoLateralChestPress",
+  "isoLateralShoulderPress",
+  "isoLateralLegPress",
+  "isoLateralLegExtension",
+  "isoLateralLegCurl",
+] as const;
+
+function isoLateralConfigs(): Record<string, ExerciseConfig> {
+  const config: ExerciseConfig = {
+    defaultConvention: "perHand",
+    allowedConventions: ["perHand", "total"],
+    anchorConvention: "total",
+    conventionNote: "Per hand = the load on ONE side's horn. Total = both sides combined.",
+  };
+  return Object.fromEntries(ISO_LATERAL_CONFIG_KEYS.map((k) => [k, config]));
+}
+
 /** Named, editable load-convention config per exercise (Part C). */
 export const EXERCISE_LOAD_CONFIG: Record<string, ExerciseConfig> = {
   bench: {
@@ -223,6 +260,7 @@ export const EXERCISE_LOAD_CONFIG: Record<string, ExerciseConfig> = {
     anchorConvention: "total",
     conventionNote: "Total load on the sled (plates; the sled's own frame weight isn't counted).",
   },
+  ...isoLateralConfigs(),
 };
 
 /** Exercise name → canonical config key (subset of strength-engine aliases). */
@@ -301,6 +339,23 @@ const NAME_TO_CONFIG_KEY: Record<string, string> = {
   "prowler push": "sledPush",
   "sled pull": "sledPull",
   "sled drag": "sledPull",
+  // Iso-Lateral (Hammer Strength) machines — per-side loading, see
+  // isoLateralConfigs() above. Kept in step with the LIFT_ALIASES block in
+  // split-strength-engine.ts: an exercise missing from EITHER map silently
+  // reverts to a default that disagrees with its anchor.
+  "iso-lateral row": "isoLateralRow",
+  "iso-lateral high row": "isoLateralRow",
+  "iso-lateral low row": "isoLateralRow",
+  "hammer strength row": "isoLateralRow",
+  "iso-lateral wide pulldown": "isoLateralPulldown",
+  "iso-lateral front pulldown": "isoLateralPulldown",
+  "iso-lateral chest press": "isoLateralChestPress",
+  "iso-lateral incline press": "isoLateralChestPress",
+  "iso-lateral decline press": "isoLateralChestPress",
+  "iso-lateral shoulder press": "isoLateralShoulderPress",
+  "iso-lateral leg press": "isoLateralLegPress",
+  "iso-lateral leg extension": "isoLateralLegExtension",
+  "iso-lateral leg curl": "isoLateralLegCurl",
 };
 
 export function conventionToMode(convention: LoadConvention): WeightEntryMode {

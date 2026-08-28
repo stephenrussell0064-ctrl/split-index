@@ -17,10 +17,31 @@ export type ExerciseClass = keyof typeof EPLEY_K;
 export const ISOLATION_MULT_CAP = 1.8;
 
 /**
- * Weighted calisthenics 1RM blend: 0 = added-only (too low), 1 = total-load (too high).
+ * Weighted calisthenics 1RM blend: 1 = total-load, 0 = added-only.
  * Applies to weighted pull-ups, chin-ups, dips, muscle-ups.
+ *
+ * 0.5 -> 1.0 (user feedback: "Pull up score needs recalibrating — 30 x 8
+ * scores 72.9, this should be almost 80"). The added-only half of the old
+ * 50/50 blend was never an estimate of this movement's 1RM: it applies a
+ * rep formula to a load the athlete never lifted on its own. An athlete
+ * doing pull-ups at +30kg is moving bodyweight + 30kg on every rep, so
+ * treating 30kg as if it were the whole lift understates the set badly —
+ * and the understatement grows as bodyweight grows relative to the added
+ * load, which is backwards.
+ *
+ * This is the same defect already fixed for the addedKg <= 0 case in
+ * weightedCalisthenic1RM() below (where the added-only term is not merely
+ * biased but identically zero); that fix stopped at the boundary instead of
+ * following the reasoning through to added-weight sets. The correct
+ * estimate on both sides of the boundary is the total-load one: resolve the
+ * 1RM of (bodyweight + added), then subtract bodyweight back out to express
+ * it the way it was logged.
+ *
+ * Kept as a named constant rather than deleting the blend: if real logged
+ * near-max weighted sets later show total-load Epley/Brzycki over-reading
+ * at very high added loads, this is the dial to turn back down.
  */
-export const CALISTHENIC_BLEND = 0.5;
+export const CALISTHENIC_BLEND = 1.0;
 
 /** Flag when stated 1RM differs from formula estimate by more than this fraction (Part B4). */
 export const ONE_RM_VARIANCE_THRESHOLD = 0.4;

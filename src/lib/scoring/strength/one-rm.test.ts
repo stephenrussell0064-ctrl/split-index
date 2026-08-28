@@ -47,16 +47,42 @@ describe("weightedCalisthenic1RM — bodyweight-only (addedKg = 0)", () => {
   });
 });
 
-describe("weightedCalisthenic1RM — added weight (addedKg > 0) is unchanged by the fix", () => {
+/**
+ * DELIBERATE BEHAVIOUR CHANGE (user feedback: "Pull up score needs
+ * recalibrating — 30 x 8 scores 72.9, this should be almost 80").
+ *
+ * This block previously asserted the 50/50 blend of totalLoad1RM and
+ * addedOnly1RM for added-weight sets, under the heading "unchanged by the
+ * fix" — that assertion is now inverted on purpose, not incidentally broken.
+ * CALISTHENIC_BLEND moved 0.5 -> 1.0: the added-only term applies a rep
+ * formula to a load the athlete never lifted on its own, so an athlete doing
+ * pull-ups at +30kg (moving bodyweight + 30kg every rep) was being scored as
+ * though 30kg were the whole lift. See the constant's doc comment in
+ * one-rm.ts.
+ */
+describe("weightedCalisthenic1RM — added weight (addedKg > 0) is credited on top of bodyweight", () => {
   const BODYWEIGHT_KG = 83;
 
-  it("still blends totalLoad1RM and addedOnly1RM 50/50 when weight is actually added", () => {
+  it("uses the total-load estimate, not a 50/50 blend with the degenerate added-only term", () => {
     const addedKg = 20;
     const reps = 5;
     const totalLoad1RM = expectedBlendedRepFormula(BODYWEIGHT_KG + addedKg, reps) - BODYWEIGHT_KG;
-    const addedOnly1RM = expectedBlendedRepFormula(addedKg, reps);
-    const expected = 0.5 * totalLoad1RM + 0.5 * addedOnly1RM;
-    expect(weightedCalisthenic1RM(addedKg, reps, BODYWEIGHT_KG, "compound")).toBeCloseTo(expected, 5);
+    expect(weightedCalisthenic1RM(addedKg, reps, BODYWEIGHT_KG, "compound")).toBeCloseTo(totalLoad1RM, 5);
+  });
+
+  it("credits added load ON TOP of bodyweight — a +30kg set implies far more than a 30kg lift", () => {
+    // The old 50/50 blend dragged this halfway towards treating 30kg as the
+    // entire load, which is what produced the reported shortfall.
+    const addedOnlyIfTreatedAsTotalLoad = expectedBlendedRepFormula(30, 8);
+    expect(weightedCalisthenic1RM(30, 8, BODYWEIGHT_KG, "compound")).toBeGreaterThan(
+      addedOnlyIfTreatedAsTotalLoad * 1.4
+    );
+  });
+
+  it("is continuous across the addedKg = 0 boundary (no jump between the two branches)", () => {
+    const atZero = weightedCalisthenic1RM(0, 8, BODYWEIGHT_KG, "compound");
+    const justAbove = weightedCalisthenic1RM(0.001, 8, BODYWEIGHT_KG, "compound");
+    expect(justAbove).toBeCloseTo(atZero, 2);
   });
 
   it("more added weight for the same reps scores a higher oneRM (monotonic)", () => {
