@@ -2,12 +2,31 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { SportType } from "@/types";
 
 /**
- * Friend activity feed (Slice 1) — user feedback: "a feed of activities...
+ * Activity feed (Slice 1) — user feedback: "a feed of activities...
  * which other users who are friends with you are able to see... other
  * users are able to interact with their activities... by scoring their run
  * out of 10 and able to leave comments on them, similar to stravas concept.
  * The data displayed on these public posts should include all data
  * possible for this exercise."
+ *
+ * ...and then: "You should also be able to see your own activities on the
+ * social feed page." So the feed is the viewer plus their accepted friends,
+ * interleaved by time — which is what every athlete already expects from the
+ * Strava comparison the original request made. It used to be friends-only,
+ * on the reasoning that "this is a friend feed, not a logbook"; that reads
+ * as a missing feature, not as a principle, when your own run is the one
+ * thing you actually want to see land.
+ *
+ * PRIVACY GOVERNS WHO CAN SEE *YOU*, NEVER WHAT *YOU* CAN SEE
+ * -----------------------------------------------------------
+ * A private athlete still sees their own activities here. Their own rows are
+ * readable under "Users manage own activities" (migration 001,
+ * `FOR ALL USING (auth.uid() = user_id)`), and activity_is_visible_to()
+ * short-circuits on `a.user_id = viewer_id` before it ever consults the
+ * sharing flag (migration 049). Nothing in this module filters on the
+ * VIEWER's own `share_activities_with_friends`, and nothing ever should:
+ * "Private account" means other people cannot see you, not that you are
+ * hidden from yourself.
  *
  * Security lives in RLS (see migration 031's activity_is_visible_to()) —
  * this module's job is just building a nice paginated view over what the
@@ -42,6 +61,12 @@ export interface FeedActivity {
   rpe: number | null;
   notes: string | null;
   author: FeedAuthor;
+  /**
+   * The viewer's own activity. Computed here rather than left to the UI to
+   * compare ids, so "is this mine?" has exactly one answer for the API, the
+   * panel and any future consumer.
+   */
+  isOwn: boolean;
   sportIndex: number | null;
   loadScore: number | null;
   /** Curated slice of score_breakdown — vo2max/DOTS/GL/per-lift, the "all data possible" fields worth showing a friend, not the full internal debug object. */
@@ -60,6 +85,11 @@ export interface FeedActivity {
  * those collapse into one honest "nothing to show yet" case.
  *
  * A failed query is NOT one of those cases and must never be reported as one.
+ *
+ * `no_friends` now means "no friends AND nothing of your own to show" — with
+ * the viewer included in the feed, an athlete with activities but no friends
+ * gets a populated feed rather than the "Add a friend to start your feed"
+ * card, so that copy only ever appears when the feed really is empty.
  */
 export type FeedEmptyReason = "no_friends" | "no_visible_activities";
 
@@ -153,7 +183,7 @@ function extractExtra(breakdown: Record<string, unknown> | null): Record<string,
   return Object.keys(extra).length > 0 ? extra : null;
 }
 
-export async function fetchFriendFeed(
+export async function fetchActivityFeed(
   supabase: SupabaseClient,
   userId: string,
   options: { offset?: number } = {}
@@ -167,21 +197,30 @@ export async function fetchFriendFeed(
       error: describeFailure("reading your friends list", friendsError),
     };
   }
-  if (friendIds.length === 0) {
-    return { activities: [], hasMore: false, emptyReason: "no_friends" };
-  }
 
-  // Never include the viewer's own user_id: their own activities are visible
-  // to them under the "Users manage own activities" policy, and this is a
-  // friend feed, not a logbook.
-  const authorScope = friendIds.filter((id) => id !== userId);
-  if (authorScope.length === 0) {
-    return { activities: [], hasMore: false, emptyReason: "no_friends" };
-  }
+  // The viewer FIRST, then their accepted friends. Including the viewer is the
+  // whole of the change: "You should also be able to see your own activities
+  // on the social feed page." Their own rows were always readable — "Users
+  // manage own activities" (001) — so nothing about RLS had to move; this
+  // query was simply filtering them back out again.
+  //
+  // Deduped, because a self-referencing `friends` row would otherwise put the
+  // viewer in the scope twice, and `.in()` with a repeated id is a needless
+  // widening of the predicate.
+  //
+  // Note there is no early return for "no friends" any more. An athlete with
+  // no friends still has a feed — their own — and skipping the activities
+  // query would hand them the "Add a friend to start your feed" card while
+  // sitting on a month of runs. Whether the feed is genuinely empty is now
+  // decided by the rows that come back, which is the only thing that can
+  // actually answer it.
+  const authorScope = [...new Set([userId, ...friendIds])];
 
   // The sharing/friendship check is enforced by RLS (activity_is_visible_to),
   // not here — rows belonging to a friend who has gone private simply never
-  // come back from this query.
+  // come back from this query. The viewer's OWN rows are unaffected by their
+  // own privacy setting: the predicate short-circuits on ownership, so a
+  // private athlete's feed still contains everything they logged.
   const { data: activityRows, error: activitiesError } = await supabase
     .from("activities")
     .select(
@@ -190,6 +229,12 @@ export async function fetchFriendFeed(
     .in("user_id", authorScope)
     .eq("is_draft", false)
     .order("started_at", { ascending: false })
+    // Tiebreak on id so the sort is a total order. `range()` pagination over a
+    // non-unique sort key can show the same row on two pages and skip another
+    // entirely, and merging the viewer's own activities into the same stream
+    // makes exact `started_at` collisions likelier — logging a lift and a run
+    // that both start on the hour is an ordinary thing to do.
+    .order("id", { ascending: false })
     .range(offset, offset + FEED_PAGE_SIZE); // fetch one extra to detect hasMore
 
   // An RLS-filtered empty result and a failed query both arrive as no rows.
@@ -198,7 +243,7 @@ export async function fetchFriendFeed(
     return {
       activities: [],
       hasMore: false,
-      error: describeFailure("reading your friends' activities", activitiesError),
+      error: describeFailure("reading your feed's activities", activitiesError),
     };
   }
 
@@ -206,7 +251,15 @@ export async function fetchFriendFeed(
   const hasMore = rows.length > FEED_PAGE_SIZE;
   const pageRows = hasMore ? rows.slice(0, FEED_PAGE_SIZE) : rows;
   if (pageRows.length === 0) {
-    return { activities: [], hasMore: false, emptyReason: "no_visible_activities" };
+    // "You have no friends yet" and "nobody, you included, has logged anything
+    // visible" are different sentences and want different copy. With the
+    // viewer in scope, the first is only true when they also have nothing of
+    // their own — otherwise this branch isn't reached at all.
+    return {
+      activities: [],
+      hasMore: false,
+      emptyReason: friendIds.length === 0 ? "no_friends" : "no_visible_activities",
+    };
   }
 
   const activityIds = pageRows.map((r) => r.id as string);
@@ -274,6 +327,7 @@ export async function fetchFriendFeed(
         displayName: (author?.display_name as string | null) ?? null,
         avatarUrl: (author?.avatar_url as string | null) ?? null,
       },
+      isOwn: row.user_id === userId,
       sportIndex: (score?.sport_index as number | null) ?? null,
       loadScore: (score?.load_score as number | null) ?? null,
       extra: extractExtra((score?.score_breakdown as Record<string, unknown> | null) ?? null),

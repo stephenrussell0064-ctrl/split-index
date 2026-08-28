@@ -1,17 +1,21 @@
 import { describe, expect, it } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { fetchFriendFeed } from "./feed";
+import { fetchActivityFeed } from "./feed";
 
 /**
- * Visibility rules for the friend feed.
+ * Visibility rules for the activity feed — the viewer plus their accepted
+ * friends.
  *
  * The authoritative gate is RLS (activity_is_visible_to(), migrations 031 and
- * 046) — these tests cover the query layer that sits on top of it, and in
- * particular the two ways this module could betray an athlete:
- *   1. widening the author scope beyond accepted friends, and
+ * 049) — these tests cover the query layer that sits on top of it, and in
+ * particular the three ways this module could betray an athlete:
+ *   1. widening the author scope beyond the viewer and their accepted friends,
  *   2. selecting columns that carry data a friend was never meant to get
  *      (notably activities.metadata, which holds the GPS route polyline and
- *      therefore the athlete's front door).
+ *      therefore the athlete's front door), and
+ *   3. narrowing it so the viewer loses sight of their OWN activities —
+ *      including when they have gone private, which is a rule about who can
+ *      see them, not about what they can see.
  */
 
 interface RecordedQuery {
@@ -101,19 +105,38 @@ function activityRow(userId: string, id: string) {
   };
 }
 
-describe("fetchFriendFeed — who can see what", () => {
-  it("returns nothing and never touches activities when the viewer has no accepted friends", async () => {
-    const { supabase, queries } = makeSupabase({ friends: [] });
+describe("fetchActivityFeed — who can see what", () => {
+  it("still asks for activities when the viewer has no accepted friends — their own feed is not empty", async () => {
+    // Used to short-circuit here and report "no_friends" without ever
+    // querying activities, which handed an athlete with a month of logged
+    // runs the "add a friend to start your feed" card.
+    const { supabase, queries } = makeSupabase({
+      friends: [],
+      activities: [activityRow(ME, "mine")],
+      workout_scores: [],
+      profiles: [{ user_id: ME, username: "me", display_name: "Me", avatar_url: null }],
+      activity_reactions: [],
+      activity_comments: [],
+    });
 
-    const page = await fetchFriendFeed(supabase, ME);
+    const page = await fetchActivityFeed(supabase, ME);
+
+    expect(queries.some((q) => q.table === "activities")).toBe(true);
+    expect(page.activities.map((a) => a.id)).toEqual(["mine"]);
+    expect(page.emptyReason).toBeUndefined();
+  });
+
+  it("reports no_friends only when the viewer has neither friends nor activities of their own", async () => {
+    const { supabase } = makeSupabase({ friends: [], activities: [] });
+
+    const page = await fetchActivityFeed(supabase, ME);
 
     expect(page.activities).toEqual([]);
     expect(page.hasMore).toBe(false);
     expect(page.emptyReason).toBe("no_friends");
-    expect(queries.some((q) => q.table === "activities")).toBe(false);
   });
 
-  it("scopes the activity query to accepted friends only — a non-friend is never asked for", async () => {
+  it("scopes the activity query to the viewer and their accepted friends — a non-friend is never asked for", async () => {
     // The stranger shares by default (the new model) and has activities, but
     // has no accepted friendship with the viewer.
     const { supabase, queries } = makeSupabase({
@@ -125,29 +148,73 @@ describe("fetchFriendFeed — who can see what", () => {
       activity_comments: [],
     });
 
-    const page = await fetchFriendFeed(supabase, ME);
+    const page = await fetchActivityFeed(supabase, ME);
 
     const friendsQuery = queries.find((q) => q.table === "friends")!;
     expect(friendsQuery.eq).toContainEqual(["status", "accepted"]);
 
     const activityQuery = queries.find((q) => q.table === "activities")!;
     const authorScope = activityQuery.in.find(([col]) => col === "user_id")![1];
-    expect(authorScope).toEqual([FRIEND]);
+    expect(authorScope).toEqual([ME, FRIEND]);
     expect(authorScope).not.toContain(STRANGER);
 
     expect(page.activities.map((a) => a.author.userId)).toEqual([FRIEND]);
   });
 
-  it("excludes the viewer's own activities — this is a friend feed, not a logbook", async () => {
-    // A self-referencing friend row must not put the viewer in their own feed.
-    const { supabase, queries } = makeSupabase({
-      friends: [{ user_id: ME, friend_id: ME }],
+  it("includes the viewer's own activities, flagged as their own", async () => {
+    // "You should also be able to see your own activities on the social feed
+    // page." The rows were always readable under "Users manage own
+    // activities"; only this query excluded them.
+    const { supabase } = makeSupabase({
+      friends: [{ user_id: ME, friend_id: FRIEND }],
+      activities: [activityRow(FRIEND, "theirs"), activityRow(ME, "mine")],
+      workout_scores: [],
+      profiles: [],
+      activity_reactions: [],
+      activity_comments: [],
     });
 
-    const page = await fetchFriendFeed(supabase, ME);
+    const page = await fetchActivityFeed(supabase, ME);
 
-    expect(page.emptyReason).toBe("no_friends");
-    expect(queries.some((q) => q.table === "activities")).toBe(false);
+    expect(page.activities.map((a) => a.id)).toEqual(["theirs", "mine"]);
+    expect(page.activities.find((a) => a.id === "mine")!.isOwn).toBe(true);
+    expect(page.activities.find((a) => a.id === "theirs")!.isOwn).toBe(false);
+  });
+
+  it("does not put the viewer in the author scope twice for a self-referencing friend row", async () => {
+    const { supabase, queries } = makeSupabase({
+      friends: [{ user_id: ME, friend_id: ME }],
+      activities: [],
+    });
+
+    await fetchActivityFeed(supabase, ME);
+
+    const activityQuery = queries.find((q) => q.table === "activities")!;
+    expect(activityQuery.in.find(([col]) => col === "user_id")![1]).toEqual([ME]);
+  });
+
+  it("shows a private athlete their own activities — privacy governs who sees YOU, not what you see", async () => {
+    // The regression this guards is someone "fixing" the feed by filtering on
+    // the viewer's own share_activities_with_friends, which would blank the
+    // feed of every athlete who turned on Private account. RLS agrees:
+    // activity_is_visible_to() short-circuits on `a.user_id = viewer_id`
+    // before it ever reads the sharing flag (migration 049).
+    const { supabase, queries } = makeSupabase({
+      friends: [],
+      activities: [activityRow(ME, "mine")],
+      workout_scores: [],
+      profiles: [{ user_id: ME, username: null, display_name: null, avatar_url: null }],
+      activity_reactions: [],
+      activity_comments: [],
+    });
+
+    const page = await fetchActivityFeed(supabase, ME);
+
+    expect(page.activities.map((a) => a.id)).toEqual(["mine"]);
+    const sharingFilter = queries.some((q) =>
+      q.eq.some(([column]) => column === "share_activities_with_friends")
+    );
+    expect(sharingFilter).toBe(false);
   });
 
   it("only requests non-draft activities", async () => {
@@ -156,7 +223,7 @@ describe("fetchFriendFeed — who can see what", () => {
       activities: [],
     });
 
-    await fetchFriendFeed(supabase, ME);
+    await fetchActivityFeed(supabase, ME);
 
     const activityQuery = queries.find((q) => q.table === "activities")!;
     expect(activityQuery.eq).toContainEqual(["is_draft", false]);
@@ -170,7 +237,7 @@ describe("fetchFriendFeed — who can see what", () => {
       activities: [],
     });
 
-    const page = await fetchFriendFeed(supabase, ME);
+    const page = await fetchActivityFeed(supabase, ME);
 
     expect(page.activities).toEqual([]);
     expect(page.emptyReason).toBe("no_visible_activities");
@@ -191,7 +258,7 @@ describe("fetchFriendFeed — who can see what", () => {
       activity_comments: [],
     });
 
-    const page = await fetchFriendFeed(supabase, ME);
+    const page = await fetchActivityFeed(supabase, ME);
 
     const sharingPreFilter = queries.some((q) =>
       q.eq.some(([column]) => column === "share_activities_with_friends")
@@ -215,7 +282,7 @@ describe("fetchFriendFeed — who can see what", () => {
       { activities: { message: 'relation "activity_is_visible_to" does not exist', code: "42P01" } }
     );
 
-    const page = await fetchFriendFeed(supabase, ME);
+    const page = await fetchActivityFeed(supabase, ME);
 
     expect(page.error).toBeTruthy();
     expect(page.emptyReason).toBeUndefined();
@@ -228,7 +295,7 @@ describe("fetchFriendFeed — who can see what", () => {
       { friends: { message: "connection terminated unexpectedly" } }
     );
 
-    const page = await fetchFriendFeed(supabase, ME);
+    const page = await fetchActivityFeed(supabase, ME);
 
     expect(page.error).toBeTruthy();
     expect(page.emptyReason).not.toBe("no_friends");
@@ -250,7 +317,7 @@ describe("fetchFriendFeed — who can see what", () => {
       }
     );
 
-    const page = await fetchFriendFeed(supabase, ME);
+    const page = await fetchActivityFeed(supabase, ME);
 
     expect(page.error).toBeUndefined();
     expect(page.activities).toHaveLength(1);
@@ -268,7 +335,7 @@ describe("fetchFriendFeed — who can see what", () => {
       activity_comments: [],
     });
 
-    await fetchFriendFeed(supabase, ME);
+    await fetchActivityFeed(supabase, ME);
 
     const activityQuery = queries.find((q) => q.table === "activities")!;
     expect(activityQuery.columns).not.toMatch(/metadata/);

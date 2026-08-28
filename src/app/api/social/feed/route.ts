@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { fetchFriendFeed } from "@/lib/social/feed";
+import { fetchActivityFeed } from "@/lib/social/feed";
 
 export async function GET(request: Request) {
   const supabase = await createClient();
@@ -15,7 +15,7 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const offset = Math.max(0, Number(searchParams.get("offset")) || 0);
 
-  const page = await fetchFriendFeed(supabase, user.id, { offset });
+  const page = await fetchActivityFeed(supabase, user.id, { offset });
 
   // A feed that could not be read is not an empty feed. Returning 200 here
   // makes FeedPanel render the "no activities yet" empty state over a broken

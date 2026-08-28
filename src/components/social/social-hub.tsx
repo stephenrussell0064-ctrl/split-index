@@ -26,8 +26,9 @@ import { cn } from "@/lib/utils/cn";
 type SocialTab = "feed" | "squads" | "duels" | "friends" | "challenges" | "leaderboards" | "achievements";
 
 // Feed leads (Slice 1: "integrate this into the social part of the app") —
-// friends' shared activities are the most Strava-like, immediately-relevant
-// surface here, ahead of even Squads/Duels. Squads and Duels come next —
+// the athlete's own activities interleaved with their friends' shared ones
+// are the most Strava-like, immediately-relevant surface here, ahead of even
+// Squads/Duels. Squads and Duels come next —
 // real training partners you know, not anonymous bracket peers.
 // Leaderboards are demoted (kept, not removed) per the interference-brief
 // Part 4 social layer rework.

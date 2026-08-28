@@ -26,6 +26,30 @@ const nextConfig: NextConfig = {
     dangerouslyAllowSVG: true,
     contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;",
   },
+  async redirects() {
+    return [
+      {
+        // The Training Plan wizard is gone (user feedback: "Remove the
+        // training plan page as this is not as good as hybrid plan and may
+        // cause confusion to the user (only keep hybrid plan)"). Deleting the
+        // route alone would 404 anyone holding a bookmark, a home-screen
+        // shortcut, or an open tab — the athletes most invested in the
+        // feature would be the ones who hit the error. 308 rather than a hard
+        // removal sends them to the plan that is still maintained.
+        //
+        // Permanent (308, not 307) because this is not coming back, and 308
+        // preserves the request method rather than silently rewriting it to
+        // GET the way a legacy 301 would.
+        //
+        // Note the deliberate absence of `/training-plan/:path*`: the route
+        // had no child pages, so a wildcard would only invent redirects for
+        // URLs that never existed.
+        source: "/training-plan",
+        destination: "/hybrid-plan",
+        permanent: true,
+      },
+    ];
+  },
   async headers() {
     return [
       {

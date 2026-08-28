@@ -14,7 +14,6 @@ import {
   PlusCircle,
   MoreHorizontal,
   Radar,
-  Target,
   CalendarRange,
   X,
 } from "lucide-react";
@@ -39,13 +38,17 @@ const secondaryNav = [
   // brief Part 5) — deliberately not a sub-tab under Analytics, since it's
   // the app's USP and needs to read as one everywhere in the product.
   { href: "/interference", label: "Interference", icon: Radar },
-  // First-class nav item too (user feedback: "Training plan in interference
-  // tab. I want its own tab for training plan as this is a huge thing") —
-  // same treatment Interference itself got above, not nested under it.
-  { href: "/training-plan", label: "Training Plan", icon: Target },
-  // Hybrid Plan Engine (WP9). Distinct from Training Plan above: that one
-  // balances this week across the athlete's goals, this one builds a whole
-  // block back from an event date off the WP0 diagnostic.
+  // Hybrid Plan Engine (WP9) — the app's only planning surface.
+  //
+  // There used to be a second one, "/training-plan", sitting directly above
+  // this entry: an older wizard that balanced the coming week across the
+  // athlete's goals. Two adjacent nav items both offering to plan your
+  // training, with no way to tell from the labels which one you wanted, is a
+  // choice nobody can make correctly — and the older one was the weaker
+  // answer. It has been removed (user feedback: "Remove the training plan
+  // page as this is not as good as hybrid plan and may cause confusion to
+  // the user"). /training-plan now 308s here from next.config.ts, so anyone
+  // holding a bookmark lands on the plan that is still maintained.
   { href: "/hybrid-plan", label: "Hybrid Plan", icon: CalendarRange },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/social", label: "Social", icon: Users },

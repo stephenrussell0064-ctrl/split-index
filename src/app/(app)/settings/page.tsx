@@ -22,23 +22,23 @@ import { startStripeCheckout } from "@/lib/stripe/start-checkout";
 import { FREE_TIER_FEATURES } from "@/lib/retention/tiers";
 import { getTrialDaysRemaining, isPremiumUser } from "@/lib/retention/trial";
 import { SplitIndexSettings } from "@/components/settings/split-index-settings";
-import { ActivityPrivacySettings } from "@/components/settings/activity-privacy-settings";
+import {
+  ActivityPrivacySettings,
+  type PrivacyState,
+} from "@/components/settings/activity-privacy-settings";
 import { WidgetStatus } from "@/components/settings/widget-status";
 import { PremiumBadge } from "@/components/retention/premium-badge";
 import { createClient } from "@/lib/supabase/client";
 import type { SubscriptionStatus, SubscriptionTier } from "@/types";
 
-/**
+/*
  * The privacy switch loads independently of the rest of the profile, so the
- * three outcomes are tracked separately: it worked, the column isn't there
- * (the database is behind on migrations — reloading cannot help), or the read
- * failed for some other reason (it might).
+ * four outcomes are tracked separately: still loading, it worked, the column
+ * isn't there (the database is behind on migrations — reloading cannot help),
+ * or the read failed for some other reason (it might). `PrivacyState` is
+ * declared alongside the control itself and imported here, so the page cannot
+ * drift from the shape the control actually understands.
  */
-type PrivacyState =
-  | { status: "loading" }
-  | { status: "loaded"; shareActivitiesWithFriends: boolean }
-  | { status: "missing_column" }
-  | { status: "read_failed" };
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -261,14 +261,18 @@ export default function SettingsPage() {
         and that is what the original report ("this option is not available
         there") actually described.
       */}
-      {authUserId && privacy.status !== "loading" && (
-        <ActivityPrivacySettings
-          initialShareActivities={
-            privacy.status === "loaded" ? privacy.shareActivitiesWithFriends : true
-          }
-          userId={authUserId}
-          unavailable={privacy.status === "loaded" ? null : privacy.status}
-        />
+      {/*
+        Rendered while the privacy read is still in flight, not just after it
+        lands. The card previously waited for `privacy.status !== "loading"`,
+        which meant it appeared late and pushed the rest of Settings down; and
+        because the failure branches passed `initialShareActivities={true}`,
+        a read that failed still drew a switch sitting in the "not private"
+        position. A privacy control must never render a state it did not read.
+        It now owns all four states and shows an indeterminate switch for the
+        three where the stored value is unknown.
+      */}
+      {authUserId && (
+        <ActivityPrivacySettings state={privacy} userId={authUserId} />
       )}
 
       {/*

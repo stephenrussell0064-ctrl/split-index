@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Target, ArrowRight } from "lucide-react";
+import { CalendarRange, ArrowRight } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card } from "@/components/ui/card";
@@ -33,22 +33,23 @@ export default async function InterferencePage() {
         subtitle="Is your lifting hurting your running? Is your running hurting your squat? Mined from your own paired history — not a population average dressed up as personal advice."
       />
       <InterferenceDetail report={report} />
-      {/* Training Plan moved to its own page (user feedback: "Training plan
-          in interference tab. I want its own tab for training plan as this
-          is a huge thing") — a teaser here keeps the natural connection
-          (one explains how training interacts, the other says what to
-          actually do about it) without re-embedding the whole feature. */}
-      <Link href="/training-plan">
+      {/* A teaser for the planning surface keeps the natural connection here
+          (one page explains how training interacts, the other says what to
+          actually do about it) without re-embedding the whole feature.
+          Repointed from the retired /training-plan wizard to the Hybrid Plan
+          Engine — the link is the reason this needed touching at all, since a
+          deleted route behind a live card is a 404 in production. */}
+      <Link href="/hybrid-plan">
         <Card interactive className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent/15">
-              <Target className="h-5 w-5 text-accent" />
+              <CalendarRange className="h-5 w-5 text-accent" />
             </div>
             <div>
-              <p className="text-sm font-semibold">Training Plan</p>
+              <p className="text-sm font-semibold">Hybrid Plan</p>
               <p className="text-xs text-muted">
-                Set goals across any sport or lift — get a weekly plan that prioritizes what
-                you&apos;re furthest from.
+                Build a training block back from your event date — balanced across running and
+                lifting from your own diagnostic.
               </p>
             </div>
           </div>

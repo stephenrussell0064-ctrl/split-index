@@ -29,6 +29,8 @@ interface FeedActivity {
   rpe: number | null;
   notes: string | null;
   author: { userId: string; username: string | null; displayName: string | null; avatarUrl: string | null };
+  /** Set by the feed query for the viewer's own activities — see src/lib/social/feed.ts. */
+  isOwn: boolean;
   sportIndex: number | null;
   loadScore: number | null;
   extra: Record<string, unknown> | null;
@@ -50,8 +52,16 @@ function sportMeta(sport: string) {
   return SPORTS.find((s) => s.id === sport);
 }
 
-function authorName(author: FeedActivity["author"]): string {
+/** The athlete's actual name — used for the avatar, which should still show your own initials. */
+function realName(author: FeedActivity["author"]): string {
   return author.displayName ?? author.username ?? "Athlete";
+}
+
+function authorName(activity: Pick<FeedActivity, "author" | "isOwn">): string {
+  // Your own post is bylined "You", not your display name. Reading your own
+  // name in the third person in your own feed is the small uncanny detail
+  // that makes a feed feel like someone else's product.
+  return activity.isOwn ? "You" : realName(activity.author);
 }
 
 /** A stat only renders when the data actually exists — "all data possible for this exercise," not a grid of blank placeholders for whatever this particular sport/session didn't record. */
@@ -248,11 +258,27 @@ function FeedPost({ activity }: { activity: FeedActivity }) {
     | undefined;
 
   return (
-    <Card padding="sm">
+    /*
+      Your own posts sit in the same chronological stream as everyone else's —
+      that is the point of putting them here — so they need to be tellable
+      apart at a glance without being pulled out of the timeline. A tinted
+      left edge and a "You" chip do that; a separate section would not.
+    */
+    <Card
+      padding="sm"
+      className={cn(activity.isOwn && "border-l-2 border-l-accent/50 bg-accent/[0.02]")}
+    >
       <div className="flex items-center gap-3">
-        <UserAvatar name={authorName(activity.author)} avatarUrl={activity.author.avatarUrl} />
+        <UserAvatar name={realName(activity.author)} avatarUrl={activity.author.avatarUrl} />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold">{authorName(activity.author)}</p>
+          <div className="flex items-center gap-1.5">
+            <p className="truncate text-sm font-semibold">{authorName(activity)}</p>
+            {activity.isOwn && (
+              <span className="shrink-0 rounded-full bg-accent/15 px-1.5 py-px text-[9px] font-semibold uppercase tracking-wider text-accent">
+                You
+              </span>
+            )}
+          </div>
           <p className="text-xs text-muted">
             {formatDistanceToNow(new Date(activity.startedAt), { addSuffix: true })} ·{" "}
             {format(new Date(activity.startedAt), "MMM d, HH:mm")}
@@ -330,13 +356,28 @@ function FeedPost({ activity }: { activity: FeedActivity }) {
       )}
 
       <div className="mt-3 flex items-center justify-between border-t border-white/5 pt-2.5">
-        <ScorePicker
-          activityId={activity.id}
-          myReaction={reaction.myReaction}
-          reactionAverage={reaction.reactionAverage}
-          reactionCount={reaction.reactionCount}
-          onChange={setReaction}
-        />
+        {activity.isOwn ? (
+          /*
+            No star picker on your own workout. Scoring is a thing friends do
+            to each other; offering it to yourself invites padding your own
+            average, and the RLS predicate would happily accept the write
+            because you can always see your own activity. What you want here
+            is the read-only answer to "what did they make of it?".
+          */
+          <p className="text-xs tabular-nums text-muted">
+            {reaction.reactionAverage !== null
+              ? `Your friends scored this ${reaction.reactionAverage.toFixed(1)}/10 (${reaction.reactionCount})`
+              : "No scores from friends yet"}
+          </p>
+        ) : (
+          <ScorePicker
+            activityId={activity.id}
+            myReaction={reaction.myReaction}
+            reactionAverage={reaction.reactionAverage}
+            reactionCount={reaction.reactionCount}
+            onChange={setReaction}
+          />
+        )}
       </div>
 
       <CommentsSection activityId={activity.id} commentCount={activity.commentCount} />
@@ -401,30 +442,34 @@ export function FeedPanel() {
   }
 
   if (activities.length === 0) {
-    // Copy has to match reality: activities are visible to accepted friends
-    // by default, so "ask your friend to switch sharing on" (the old text,
-    // written when this was opt-in) sends people hunting Settings for a
-    // control that isn't the one they need.
+    // Copy has to match reality twice over. Activities are visible to accepted
+    // friends by default, so "ask your friend to switch sharing on" (the old
+    // text, written when this was opt-in) sends people hunting Settings for a
+    // control that isn't the one they need. And the feed now includes the
+    // viewer's OWN workouts, so neither of these can blame friends alone —
+    // reaching this card at all means the athlete has logged nothing visible
+    // either.
     return (
       <Card padding="lg">
         <div className="py-8 text-center">
           <p className="text-sm font-medium">
             {emptyReason === "no_friends"
-              ? "Add a friend to start your feed"
+              ? "Log a workout, or add a friend"
               : "No activities in your feed yet"}
           </p>
           <p className="mx-auto mt-1 max-w-sm text-xs text-muted">
             {emptyReason === "no_friends" ? (
               <>
-                Your feed shows workouts from athletes you&apos;ve added as friends. Head to the
-                Friends tab to send a request — once it&apos;s accepted, their activities show up
-                here automatically.
+                Your feed shows your own workouts alongside those of athletes you&apos;ve added as
+                friends. Anything you log turns up here straight away — and once a friend request
+                is accepted, so does theirs.
               </>
             ) : (
               <>
-                Your friends haven&apos;t logged anything you can see yet. New workouts appear here
-                automatically — nobody has to turn sharing on. (Anyone who&apos;d rather not share
-                can switch on Private account in Settings → Privacy.)
+                Nothing from you or your friends yet. New workouts appear here automatically —
+                nobody has to turn sharing on, and your own show up even if your account is
+                private. (Anyone who&apos;d rather not share with friends can switch on Private
+                account in Settings → Privacy.)
               </>
             )}
           </p>
