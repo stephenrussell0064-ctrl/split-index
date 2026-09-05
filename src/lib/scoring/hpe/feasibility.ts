@@ -138,6 +138,61 @@ export interface FeasibilityResult {
 }
 
 
+const LIFT_LABELS: Record<"squat" | "bench" | "deadlift", string> = {
+  squat: "squat",
+  bench: "bench",
+  deadlift: "deadlift",
+};
+
+/**
+ * What the target total should actually be measured against.
+ *
+ * TWO WAYS THIS WENT WRONG, both of them producing a number that looked
+ * authoritative and meant nothing.
+ *
+ * 1. DIFFERENT LIFT SETS. `targetTotalKg` is derived from whichever lifts the
+ *    athlete named (deriveTargetTotal), while the current total summed all
+ *    three. A bench-only target was therefore compared against squat + bench +
+ *    deadlift, which reads as a collapse; `classify` below already guarded
+ *    against this for the develop/maintain decision, but the projection and the
+ *    athlete-facing message never got the same treatment.
+ *
+ * 2. A MISSING 1RM COUNTED AS ZERO. A lift the athlete has a target for but has
+ *    never logged contributed 0 to "current", so the shortfall came out as very
+ *    nearly the whole target. Observed live: a 200kg squat + 135kg bench target
+ *    against a logged bench of 132kg and no squat at all produced "Total: 335kg
+ *    is ambitious... about 202kg short at best." The athlete is not 202kg short
+ *    of anything. The engine does not know their squat, which is a different
+ *    statement and the one worth making — the session prescription right beside
+ *    it already says "no logged 1RM yet — work to the RIR".
+ *
+ * So: compare over exactly the lifts the target names, and report which named
+ * lifts have no number rather than silently valuing them at nothing. A bare
+ * `targetTotalKg` with no per-lift breakdown keeps the old all-three behaviour,
+ * because there is no named subset to restrict to.
+ */
+export function strengthComparisonBasis(
+  state: Pick<AthleteState, "oneRms">,
+  goal: Pick<Goal, "targetSquatKg" | "targetBenchKg" | "targetDeadliftKg">
+): { currentKg: number; missingLifts: string[] } {
+  const named = (["squat", "bench", "deadlift"] as const).filter((lift) => {
+    const target =
+      lift === "squat" ? goal.targetSquatKg : lift === "bench" ? goal.targetBenchKg : goal.targetDeadliftKg;
+    return target != null && target > 0;
+  });
+
+  if (named.length === 0) return { currentKg: totalKg(state), missingLifts: [] };
+
+  let currentKg = 0;
+  const missingLifts: string[] = [];
+  for (const lift of named) {
+    const oneRm = state.oneRms[lift];
+    if (oneRm == null || oneRm <= 0) missingLifts.push(LIFT_LABELS[lift]);
+    else currentKg += oneRm;
+  }
+  return { currentKg, missingLifts };
+}
+
 /**
  * Training age inferred from performance, floored against what the athlete
  * said. An 18:25 5k is not a beginner's time however long they say they have
@@ -179,7 +234,8 @@ export function feasibilityScreen(state: AthleteState, goal: Goal): FeasibilityR
   // the one place concurrent training pays rather than costs.
   enduranceGain += RUNNING_ECONOMY_BONUS_PER_BLOCK * blocks;
 
-  const currentTotal = totalKg(state);
+  const strengthBasis = strengthComparisonBasis(state, goal);
+  const currentTotal = strengthBasis.currentKg;
   // Two caps, and the tighter one wins. The absolute cap is a backstop for the
   // novice rates, which are legitimately large. The relative cap holds a
   // trained athlete near their own rate, which is the case that went wrong.
@@ -223,17 +279,31 @@ export function feasibilityScreen(state: AthleteState, goal: Goal): FeasibilityR
   let strengthReachable: boolean | null = null;
   let strengthShortfallKg: number | null = null;
   if (goal.targetTotalKg != null) {
-    strengthReachable = projectedTotalKg >= goal.targetTotalKg;
-    strengthShortfallKg = goal.targetTotalKg - projectedTotalKg;
-    const band = `${projectedTotalRangeKg[0].toFixed(0)}-${projectedTotalRangeKg[1].toFixed(0)}kg`;
-    messages.push(
-      strengthReachable
-        ? `Total: ${goal.targetTotalKg}kg is reachable — ${goal.weeksOut} weeks puts you in the ${band} range, ` +
-          `with the top end assuming the block goes well.`
-        : `Total: ${goal.targetTotalKg}kg is ambitious. ${goal.weeksOut} weeks at your training age puts you in ` +
-          `the ${band} range — about ${strengthShortfallKg.toFixed(0)}kg short at best. The plan still chases ` +
-          `it; treat the top of the range as a stretch rather than a forecast.`
-    );
+    if (strengthBasis.missingLifts.length > 0) {
+      // Reachability is genuinely unknown, so it stays null rather than being
+      // reported as false: "we cannot tell yet" and "you will miss it" are
+      // different answers and the athlete deserves the one that is true. The
+      // shortfall is left null for the same reason — there is no honest number
+      // to put in it while a named lift has never been logged.
+      const missing = strengthBasis.missingLifts.join(" or ");
+      messages.push(
+        `Total: ${goal.targetTotalKg}kg — no projection yet, because you have a target for your ${missing} ` +
+          `but nothing logged for it. Log one working set and this becomes a real forecast; until then the plan ` +
+          `programmes that lift by effort rather than by percentage.`
+      );
+    } else {
+      strengthReachable = projectedTotalKg >= goal.targetTotalKg;
+      strengthShortfallKg = goal.targetTotalKg - projectedTotalKg;
+      const band = `${projectedTotalRangeKg[0].toFixed(0)}-${projectedTotalRangeKg[1].toFixed(0)}kg`;
+      messages.push(
+        strengthReachable
+          ? `Total: ${goal.targetTotalKg}kg is reachable — ${goal.weeksOut} weeks puts you in the ${band} range, ` +
+            `with the top end assuming the block goes well.`
+          : `Total: ${goal.targetTotalKg}kg is ambitious. ${goal.weeksOut} weeks at your training age puts you in ` +
+            `the ${band} range — about ${strengthShortfallKg.toFixed(0)}kg short at best. The plan still chases ` +
+            `it; treat the top of the range as a stretch rather than a forecast.`
+      );
+    }
   }
 
   let enduranceReachable: boolean | null = null;
@@ -321,18 +391,17 @@ export function classifyDomains(
   }
 
   if (strengthTarget != null) {
-    const current = Math.max(totalKg(state), 1);
-    // A partial target compares against the same lifts only, or a single
-    // bench goal would read as a collapse in the total.
-    const comparable =
-      goal.targetTotalKg != null
-        ? current
-        : Math.max(
-            1,
-            (goal.targetSquatKg != null ? (state.oneRms.squat ?? 0) : 0) +
-              (goal.targetBenchKg != null ? (state.oneRms.bench ?? 0) : 0) +
-              (goal.targetDeadliftKg != null ? (state.oneRms.deadlift ?? 0) : 0)
-          );
+    // A partial target compares against the same lifts only, or a single bench
+    // goal would read as a collapse in the total. This used to duplicate that
+    // rule inline AND skip it whenever targetTotalKg was set — which
+    // deriveTargetTotal now sets from the per-lift answers, so the guard was
+    // being bypassed in exactly the case it was written for. One shared basis
+    // with the projection above, so the classification and the message the
+    // athlete reads cannot disagree about which lifts are being compared.
+    const comparable = Math.max(strengthComparisonBasis(state, goal).currentKg, 1);
+    // A named lift with no logged 1RM leaves the gap wide, and that is the
+    // right way for it to err: an athlete targeting a lift they have never
+    // logged needs it programmed, not maintained.
     const gap = (strengthTarget - comparable) / comparable;
     const headroom = STRENGTH_GAIN_PER_BLOCK[state.strengthTrainingAge] * (goal.weeksOut / 12);
     out.strength = gap > DEVELOP_GAP_THRESHOLD * headroom ? "develop" : "maintain";

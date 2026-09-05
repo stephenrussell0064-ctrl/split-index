@@ -181,17 +181,35 @@ export async function GET(request: Request) {
    */
   const priority = (() => {
     if (intake.priorityUserSet) return intake.priority;
-    const strengthTargets = [
-      intake.targetSquatKg,
-      intake.targetBenchKg,
-      intake.targetDeadliftKg,
-    ].filter((kg) => kg != null && kg > 0).length;
-    const enduranceTargets = intake.target5kS != null && intake.target5kS > 0 ? 1 : 0;
-    const total = strengthTargets + enduranceTargets;
-    // No target on either side is not evidence of balance — it is no evidence
-    // at all, and 0.5 is what the engine already means by that.
-    if (total === 0) return 0.5;
-    return strengthTargets / total;
+
+    // DOMAINS, not targets. Counting individual answers is what the old
+    // training_goals version did (gymGoals/allGoals) and it is quietly wrong,
+    // because strength targets come in threes and endurance targets come in
+    // ones. An athlete with a squat, a bench AND a 5k target counted 3-1 and
+    // read as a 0.75 strength lean — measured on a real athlete, that put
+    // aerobic_base at 0.24 and named strength as the limiter for someone whose
+    // entered event is a 5k. On domains it is 0.5, aerobic_base 0.32, limiter
+    // endurance. Strength is one side of this athlete however many barbells it
+    // takes to describe it.
+    //
+    // This moves the EMPHASIS VECTOR, not the session count. How many runs a
+    // week the athlete gets is decided later, from their on-ramp volume anchor
+    // (session-set.ts, affordableBySessionLength) — priority only shifts one
+    // session between domains at the margin.
+    const hasStrengthGoal = [intake.targetSquatKg, intake.targetBenchKg, intake.targetDeadliftKg].some(
+      (kg) => kg != null && kg > 0
+    );
+    // A named race is an endurance goal with or without a target time — the
+    // same rule classifyGoalModes already applies to enduranceEventKm.
+    const hasEnduranceGoal =
+      (intake.target5kS != null && intake.target5kS > 0) || (intake.events?.length ?? 0) > 0;
+
+    if (hasStrengthGoal && hasEnduranceGoal) return 0.5;
+    if (hasStrengthGoal) return 1;
+    if (hasEnduranceGoal) return 0;
+    // No goal on either side is not evidence of balance — it is no evidence at
+    // all, and 0.5 is what the engine already means by that.
+    return 0.5;
   })();
 
   // No logged history no longer refuses. `loadAthleteProfile` returns null
