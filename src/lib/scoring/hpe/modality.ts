@@ -585,9 +585,16 @@ export function resolveCardioPlan(
 
   const rotation = crossTrain || resolved.length > 1 ? resolved : [primary];
   if (!crossTrain && resolved.length === 1) {
+    // The reassurance is "we will not make you run", which is the thing an
+    // athlete who picked rowing or the bike is actually worried about. It was
+    // appended unconditionally, so an athlete whose chosen modality IS running
+    // read: "Every endurance session here is running... Nothing in this plan
+    // will ask you to run." Two sentences contradicting each other, in the note
+    // whose whole job is to reassure.
+    const reassurance = primary === "run" ? "" : " Nothing in this plan will ask you to run.";
     notes.push(
       `Every endurance session here is ${MODALITY_SPEC[primary].label.toLowerCase()}, because that is what you ` +
-        `chose and you said no to cross-training. Nothing in this plan will ask you to run.`
+        `chose and you said no to cross-training.${reassurance}`
     );
   } else if (resolved.length > 1) {
     notes.push(

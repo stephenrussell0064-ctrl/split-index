@@ -224,6 +224,12 @@ export function generatePlan(input: GeneratePlanInput): GeneratedPlan {
   });
   for (const week of acwr.belowFloorWeeks) {
     const w = weeks.find((x) => x.week === week);
+    // A taper is below the ACWR floor BY DESIGN — that is what tapering is —
+    // so calling the last week of a block "your on-ramp" was telling an athlete
+    // three days from their event that they were at the start of it. The note
+    // exists for the genuinely quiet weeks at the beginning; the taper explains
+    // itself through its own phase label.
+    if (w?.phase === "taper") continue;
     w?.notes.push("This week is deliberately easy — it is your on-ramp, not an error.");
   }
 
