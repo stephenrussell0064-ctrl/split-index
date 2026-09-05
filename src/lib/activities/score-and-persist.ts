@@ -169,6 +169,50 @@ export async function scoreAndPersist(
     (h) => !excludeIds.has(h.activity_id as string)
   );
 
+  /**
+   * The athlete's other recent sessions, so the Split Index can be a SPLIT.
+   *
+   * Without these `scoreActivity` receives an empty third argument, the index
+   * engine sees exactly one activity, and the split collapses to whichever
+   * half that session happened to be — then that value is persisted as the
+   * athlete's current index and syncs to their profile, which is the pool
+   * everyone is ranked against. Measured on one athlete (gym ~870, running
+   * ~520): creating an activity persisted 701 and read "Top 23%", editing a
+   * gym session persisted 880 and read "Top 3%", editing a run persisted 520
+   * and read "Top 45%". Same athlete, same week, no training difference.
+   *
+   * POST /api/activities, recompute and onboarding-calibrate all pass these.
+   * This path — edit, merge, unmerge — was the only one that did not, which
+   * is why the number moved when an athlete edited rather than trained.
+   *
+   * `excludeIds` is applied for the same reason it is applied to
+   * `indexHistory` above: on an edit or a merge the rows being replaced are
+   * still in the table, and counting a session against its own replacement
+   * would double it.
+   */
+  const { data: recentActivitiesForIndex } = await supabase
+    .from("activities")
+    .select("id, sport, started_at, workout_scores(sport_index, score_breakdown)")
+    .eq("user_id", userId)
+    .eq("is_draft", false)
+    .order("started_at", { ascending: false })
+    .limit(20);
+
+  const recentActivityRows = (recentActivitiesForIndex ?? [])
+    .filter((row) => !excludeIds.has(row.id as string))
+    .flatMap((row) => {
+      const ws = Array.isArray(row.workout_scores) ? row.workout_scores[0] : row.workout_scores;
+      if (!ws?.sport_index) return [];
+      return [
+        {
+          sport: row.sport as string,
+          sport_index: ws.sport_index as number,
+          started_at: row.started_at as string,
+          score_breakdown: (ws.score_breakdown ?? null) as Record<string, unknown> | null,
+        },
+      ];
+    });
+
   const premium = isPremiumUser(profile.subscription_tier, profile.subscription_status);
   const exerciseHistory =
     body.sport === "gym" && body.exercises?.length
@@ -397,7 +441,8 @@ export async function scoreAndPersist(
       enduranceIndices,
       strengthIndices,
       splitIndices: indexHistory?.map((h) => h.split_index) ?? [],
-    }
+    },
+    recentActivityRows
   );
 
   const previousSplitIndex =
