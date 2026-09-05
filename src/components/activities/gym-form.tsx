@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AnimatePresence, motion, useMotionValue, useTransform, PanInfo } from "framer-motion";
+import { motion, useMotionValue, useTransform, PanInfo } from "framer-motion";
 import {
   Check,
   ChevronDown,
@@ -10,6 +10,7 @@ import {
   Plus,
   Search,
   Trash2,
+  X,
 } from "lucide-react";
 import {
   categoryToMuscleGroup,
@@ -225,22 +226,42 @@ export function GymExercises({
         <FieldError error={errors.bodyweight} />
       </div>
 
+      {/*
+        No AnimatePresence around this list, deliberately.
+        ---------------------------------------------------------------------
+        User-reported: "it only let me delete two exercises and then I couldn't
+        delete any more."
+        Driven in a browser: with five exercises, the first tap took state from
+        5 rows to 4 — and then it stuck at 4 forever while the DOM went on
+        showing five cards, five delete buttons and all.
+        The removed row was never unmounted. Its exit animation
+        (`exit={{ opacity: 0, height: 0, marginBottom: 0 }}` on a motion.div
+        that also carries `layout` and a drag `style`) never reached the end, so
+        framer-motion's `safeToRemove` was never called and AnimatePresence held
+        the corpse on screen indefinitely. Every card after that point was a
+        mixture of live rows and dead ones, and a dead card's `onRemove` still
+        closes over the id it had when it rendered — an id `rows.filter()` can
+        no longer find, so tapping it removed nothing at all. Hence "it stops
+        working after a couple", and hence the count you can see going wrong.
+        Deleting an exercise is not a place for an animation that can decide
+        not to finish. Rows now unmount the moment they leave state. The enter
+        animation is unaffected; only the exit is gone, and a 200ms shrink-out
+        is a bad trade for a delete button that stops working.
+      */}
       <div className="space-y-3">
-        <AnimatePresence initial={false}>
-          {rows.map((row, index) => (
-            <ExerciseRow
-              key={row.id}
-              row={row}
-              index={index}
-              bodyweight={bodyweight}
-              errors={errors}
-              canRemove={rows.length > 1}
-              profileScoringSex={profileScoringSex}
-              onUpdate={(patch) => updateRow(row.id, patch)}
-              onRemove={() => removeRow(row.id)}
-            />
-          ))}
-        </AnimatePresence>
+        {rows.map((row, index) => (
+          <ExerciseRow
+            key={row.id}
+            row={row}
+            index={index}
+            bodyweight={bodyweight}
+            errors={errors}
+            canRemove={rows.length > 1}
+            profileScoringSex={profileScoringSex}
+            onUpdate={(patch) => updateRow(row.id, patch)}
+            onRemove={() => removeRow(row.id)}
+          />
+        ))}
       </div>
 
       <FieldError error={errors.exercises} />
@@ -435,6 +456,27 @@ function ExerciseRow({
     onUpdate({ sets: [...row.sets, createSetRow()] });
   };
   /**
+   * Write a remembered load into the first set that has nothing in it, adding
+   * one if every set is already filled — so tapping "Last time 100kg × 8"
+   * three times logs three sets at that load, which is what a straight-sets
+   * session actually is. Never overwrites a number already typed.
+   *
+   * Only offered for rep-tracked, externally-loaded movements: the history
+   * endpoint reports weight × reps, which is meaningless for a plank (seconds)
+   * or a carry (metres) and misleading for a bodyweight-only pull-up.
+   */
+  const useHistorySet = (weightKg: number, reps: number) => {
+    const target = row.sets.find((s) => s.weight.trim() === "" && s.reps.trim() === "");
+    const filled = { weight: String(weightKg), reps: String(reps) };
+    if (target) {
+      onUpdate({
+        sets: row.sets.map((s) => (s.id === target.id ? { ...s, ...filled } : s)),
+      });
+      return;
+    }
+    onUpdate({ sets: [...row.sets, { ...createSetRow(), ...filled }] });
+  };
+  /**
    * "Adding the next set repeats the last set's shape" — but as an explicit
    * tap, not a silent prefill.
    *
@@ -534,8 +576,20 @@ function ExerciseRow({
     <div className="relative overflow-hidden rounded-2xl">
       {canRemove && (
         <motion.div
+          aria-hidden
           style={{ opacity: deleteOpacity }}
-          className="absolute inset-y-0 right-0 flex w-20 items-center justify-center bg-danger/90 text-white sm:hidden"
+          /*
+            pointer-events-none is load-bearing, not tidiness.
+            This backdrop is a positioned element painted over the right-hand
+            80px of the card, and at rest its opacity is 0 — but an element at
+            opacity 0 is still hit-tested. It was therefore swallowing taps
+            aimed at the exercise's own delete button, which sits in exactly
+            that strip, on exactly the phone widths where this backdrop renders
+            (it is `sm:hidden`, so it only exists below 640px). The drag gesture
+            that reveals it lives on the card itself, so it never needed to
+            receive events of its own.
+          */
+          className="pointer-events-none absolute inset-y-0 right-0 flex w-20 items-center justify-center bg-danger/90 text-white sm:hidden"
         >
           <Trash2 className="h-5 w-5" />
         </motion.div>
@@ -549,7 +603,6 @@ function ExerciseRow({
         onDragEnd={handleDragEnd}
         initial={{ opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, height: 0, marginBottom: 0 }}
         transition={{ duration: 0.2 }}
         className="rounded-2xl border border-gym-border/30 bg-gym-bg-elevated/70 p-3 sm:p-4 space-y-3"
       >
@@ -682,7 +735,12 @@ function ExerciseRow({
           />
         )}
 
-        <ExerciseHistoryHint history={history} exerciseName={row.name} unit={weightUnit} />
+        <ExerciseHistoryHint
+          history={history}
+          exerciseName={row.name}
+          unit={weightUnit}
+          onUse={tracking === "reps" && !isBodyweightOnly ? useHistorySet : undefined}
+        />
 
         <div className="space-y-2">
           {/* Column headers belong to the single-line sm layout only. The
@@ -917,15 +975,33 @@ function formatDaysAgo(iso: string): string {
   return `${Math.round(days / 30)} months ago`;
 }
 
-/** User feedback: "When logging exercises in the lab, it should inform you of your previous weight and reps on this exercise as well as your personal record on this exercise." */
+/**
+ * User feedback: "When logging exercises in the lab, it should inform you of
+ * your previous weight and reps on this exercise as well as your personal
+ * record on this exercise."
+ *
+ * Now also the fastest way to fill the row. User complaint: "too many taps —
+ * getting from 'I finished a workout' to 'it's saved' takes too long." The
+ * overwhelmingly common case is the same load as last time, or last time plus
+ * a bit; the numbers were already on screen but read-only, so the athlete
+ * copied them across by hand into two fields, per set, per exercise. Tapping
+ * them now writes them into the first empty set.
+ *
+ * This does NOT reintroduce the silent prefill createSetRow exists to prevent:
+ * the athlete asks for the number, so a number that appears is one they chose,
+ * and RPE/RIR are never touched. Same principle as the per-set Repeat button.
+ */
 function ExerciseHistoryHint({
   history,
   exerciseName,
   unit,
+  onUse,
 }: {
   history: ExerciseHistory | null;
   exerciseName: string;
   unit: string;
+  /** Fill the first empty set with this load and volume. Absent = read-only. */
+  onUse?: (weightKg: number, reps: number) => void;
 }) {
   if (!exerciseName.trim() || !history) return null;
   const { lastSet, personalRecord } = history;
@@ -937,30 +1013,58 @@ function ExerciseHistoryHint({
     personalRecord &&
     (!lastSet || personalRecord.weightKg !== lastSet.weightKg || personalRecord.reps !== lastSet.reps);
 
+  const chip =
+    "flex min-h-[36px] items-center gap-1.5 rounded-lg border px-2.5 text-[11px] transition-colors duration-150";
+
   return (
     /* Sits directly above the set rows, so the number to beat is on the same
        screen as the field you type it into — no navigating away. */
-    <p className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1 text-[11px] text-muted">
+    <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted">
       {lastSet && (
-        <span>
-          Last time:{" "}
-          <span className="font-medium text-foreground/90">
+        <button
+          type="button"
+          disabled={!onUse}
+          onClick={() => onUse?.(lastSet.weightKg, lastSet.reps)}
+          title={onUse ? "Fill the next empty set with this" : undefined}
+          className={cn(
+            chip,
+            "border-white/[0.08] bg-white/[0.02]",
+            onUse && "hover:border-gym-accent/40 hover:bg-gym-accent/10 active:bg-gym-accent/15"
+          )}
+        >
+          <span className="text-muted">Last time</span>
+          <span className="font-semibold tabular-nums text-foreground/90">
             {lastSet.weightKg}
             {unit} × {lastSet.reps}
           </span>
-          {lastSet.sets > 1 ? ` (${lastSet.sets} sets)` : ""} · {formatDaysAgo(lastSet.startedAt)}
-        </span>
+          {lastSet.sets > 1 && <span className="text-muted/70">({lastSet.sets} sets)</span>}
+          {onUse && <Plus className="h-3 w-3 text-gym-accent" aria-hidden />}
+        </button>
       )}
       {prDiffersFromLast && (
-        <span>
-          PR:{" "}
-          <span className="font-medium text-gym-accent">
+        <button
+          type="button"
+          disabled={!onUse}
+          onClick={() => onUse?.(personalRecord!.weightKg, personalRecord!.reps)}
+          title={onUse ? "Fill the next empty set with your PR" : undefined}
+          className={cn(
+            chip,
+            "border-gym-accent/25 bg-gym-accent/[0.07]",
+            onUse && "hover:border-gym-accent/50 hover:bg-gym-accent/15"
+          )}
+        >
+          <span className="text-muted">PR</span>
+          <span className="font-semibold tabular-nums text-gym-accent">
             {personalRecord!.weightKg}
             {unit} × {personalRecord!.reps}
           </span>
-        </span>
+          {onUse && <Plus className="h-3 w-3 text-gym-accent" aria-hidden />}
+        </button>
       )}
-    </p>
+      {lastSet && (
+        <span className="text-muted/60">{formatDaysAgo(lastSet.startedAt)}</span>
+      )}
+    </div>
   );
 }
 
@@ -1009,6 +1113,83 @@ function MuscleSelect({
   );
 }
 
+/**
+ * Exercises the athlete actually trains, newest and most repeated first.
+ *
+ * Module-level cache with a shared in-flight promise: a five-exercise workout
+ * mounts five of these pickers, and they must not fire five identical
+ * requests. Best-effort — a failure just means the catalog isn't reordered.
+ */
+let frequentCache: string[] | null = null;
+let frequentPromise: Promise<string[]> | null = null;
+
+function rankFrequent(workouts: Array<{ exerciseNames?: string[] }>): string[] {
+  const score = new Map<string, number>();
+  workouts.forEach((w, workoutIndex) => {
+    for (const raw of w.exerciseNames ?? []) {
+      const name = raw.trim();
+      if (!name) continue;
+      // Every appearance counts, but a recent one counts for more — the point
+      // is "what you are training at the moment", not "what you did most in
+      // your life".
+      score.set(name, (score.get(name) ?? 0) + 1 / (workoutIndex + 1));
+    }
+  });
+  return [...score.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([name]) => name);
+}
+
+function useFrequentExercises(): string[] {
+  const [names, setNames] = useState<string[]>(() => frequentCache ?? []);
+
+  useEffect(() => {
+    if (frequentCache) return;
+    if (!frequentPromise) {
+      frequentPromise = fetch("/api/activities/recent?sport=gym&limit=10")
+        .then((res) => (res.ok ? res.json() : { workouts: [] }))
+        .then((data) => rankFrequent(data.workouts ?? []))
+        .catch(() => []);
+    }
+    let cancelled = false;
+    void frequentPromise.then((list) => {
+      frequentCache = list;
+      if (!cancelled) setNames(list);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return names;
+}
+
+/**
+ * Pick an exercise.
+ *
+ * ── The bug this replaces ─────────────────────────────────────────────────
+ * User-reported: "when typing in an exercise and clicking on it from the
+ * dropdown, if this is the only available option then it will not select it
+ * properly."
+ *
+ * This was a native <select> driven by `value={knownExercise?.name ?? ""}`,
+ * with `onPick` hanging off its `onChange`. A change event only fires when the
+ * selection actually CHANGES — re-picking the option that is already selected
+ * is a no-op at the DOM level, so React never hears about it and `onPick`
+ * never runs: the picker stays open and nothing is applied. With a full list
+ * that almost never shows, because you are usually moving to a different
+ * exercise. It bites exactly when the search box has narrowed the list down to
+ * the one exercise that is already selected — reopen the picker via "Change",
+ * type the name you already have, tap the single remaining row, nothing
+ * happens. The narrower the filter, the more reliably it broke.
+ *
+ * A list of buttons has no "current value" and therefore no such thing as a
+ * selection that didn't change: every tap is an explicit call. It is also
+ * simply faster on a phone — one tap, instead of iOS's open-the-wheel,
+ * scroll, Done — and it can show your own recent exercises at the top, which
+ * a <select> of 100+ options could not.
+ */
 function ExerciseNameInput({
   value,
   invalid,
@@ -1036,19 +1217,35 @@ function ExerciseNameInput({
   // athlete last filtered — see the note there.
   const [muscleFilter, setMuscleFilter] = useState<MuscleGroupCategory>("all");
   const suggestedMuscle = categoryToMuscleGroup(muscleFilter);
+  const frequent = useFrequentExercises();
+
+  const query = search.trim().toLowerCase();
 
   const matches = useMemo(() => {
-    const query = search.trim().toLowerCase();
     return COMMON_EXERCISES.filter((ex) => {
       const matchesQuery =
         query === "" ||
         ex.name.toLowerCase().includes(query) ||
         ex.muscle.toLowerCase().includes(query);
-      const matchesFilter =
-        muscleFilter === "all" || ex.category === muscleFilter;
+      const matchesFilter = muscleFilter === "all" || ex.category === muscleFilter;
       return matchesQuery && matchesFilter;
     });
-  }, [search, muscleFilter]);
+  }, [query, muscleFilter]);
+
+  /**
+   * Your own exercises first, but only while browsing — once you start typing
+   * you are looking for something specific, and a "usual" section pinned above
+   * the thing you searched for is just one more list to read past.
+   */
+  const usual = useMemo(() => {
+    if (query !== "" || muscleFilter !== "all" || frequent.length === 0) return [];
+    return frequent
+      .map((name) => COMMON_EXERCISES.find((ex) => ex.name === name) ?? null)
+      .filter((ex): ex is (typeof COMMON_EXERCISES)[number] => ex !== null);
+  }, [frequent, query, muscleFilter]);
+
+  const usualNames = new Set(usual.map((ex) => ex.name));
+  const rest = usual.length > 0 ? matches.filter((ex) => !usualNames.has(ex.name)) : matches;
 
   const knownExercise = COMMON_EXERCISES.find(
     (ex) => ex.name.toLowerCase() === value.trim().toLowerCase()
@@ -1099,6 +1296,30 @@ function ExerciseNameInput({
     );
   }
 
+  const renderRow = (ex: (typeof COMMON_EXERCISES)[number]) => {
+    const selected = knownExercise?.name === ex.name;
+    return (
+      <button
+        key={ex.name}
+        type="button"
+        /* An explicit call, every time — including when this row is the one
+           already selected. That is the whole fix; see the doc comment. */
+        onClick={() => onPick(ex.name, ex.muscle)}
+        aria-pressed={selected}
+        className={cn(
+          "flex min-h-[44px] w-full items-center gap-2 rounded-lg px-2.5 text-left transition-colors duration-150",
+          selected
+            ? "bg-gym-accent/15 text-gym-accent"
+            : "text-gym-text hover:bg-white/[0.05] active:bg-white/[0.08]"
+        )}
+      >
+        <span className="min-w-0 flex-1 truncate text-sm font-medium">{ex.name}</span>
+        <span className="shrink-0 text-[11px] text-gym-muted">{ex.muscle}</span>
+        {selected && <Check className="h-3.5 w-3.5 shrink-0" aria-hidden />}
+      </button>
+    );
+  };
+
   return (
     <div className="space-y-2">
       <div
@@ -1128,55 +1349,67 @@ function ExerciseNameInput({
         <Search className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-gym-muted/60" />
         <GlassInput
           value={search}
-          placeholder="Filter exercises…"
-          aria-label="Filter exercises"
+          placeholder="Search exercises…"
+          aria-label="Search exercises"
           autoComplete="off"
-          className="pl-9 h-10"
+          enterKeyHint="search"
+          className="h-11 pl-9 pr-9"
           onChange={(e) => setSearch(e.target.value)}
         />
+        {search !== "" && (
+          <button
+            type="button"
+            onClick={() => setSearch("")}
+            aria-label="Clear search"
+            className="absolute right-1 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-lg text-gym-muted hover:text-gym-text"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
       </div>
 
-      <div className="relative">
-        <select
-          value={knownExercise?.name ?? ""}
-          aria-label="Select exercise"
-          onChange={(e) => {
-            const selected = e.target.value;
-            if (selected === "__custom__") {
-              setCustomMode(true);
-              onChange("", null);
-              return;
-            }
-            const ex = COMMON_EXERCISES.find((item) => item.name === selected);
-            if (ex) onPick(ex.name, ex.muscle);
-          }}
-          className={cn(
-            "w-full appearance-none rounded-xl border border-gym-border/50 bg-gym-bg-elevated pl-3 pr-9 py-3 text-base text-gym-text",
-            "cursor-pointer focus:border-gym-accent/60 focus:ring-1 focus:ring-gym-accent/30 outline-none min-h-[48px]",
-            invalid && "border-danger/50"
-          )}
-        >
-          <option value="" disabled className="bg-[#0c0f0c]">
-            Select exercise…
-          </option>
-          {matches.map((ex) => (
-            <option key={ex.name} value={ex.name} className="bg-[#0c0f0c]">
-              {ex.name} — {ex.muscle}
-            </option>
-          ))}
-          <option value="__custom__" className="bg-[#0c0f0c]">
-            + Custom exercise…
-          </option>
-        </select>
-        <ChevronDown
-          className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gym-muted/60"
-          aria-hidden
-        />
+      <div
+        className={cn(
+          "max-h-[248px] overflow-y-auto overscroll-contain rounded-xl border p-1",
+          invalid ? "border-danger/50" : "border-gym-border/40",
+          "bg-gym-bg-elevated/60"
+        )}
+        role="listbox"
+        aria-label="Exercises"
+      >
+        {usual.length > 0 && (
+          <>
+            <p className="px-2.5 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-wider text-gym-accent/70">
+              Your usual
+            </p>
+            {usual.map(renderRow)}
+            <div className="my-1 border-t border-gym-border/25" />
+          </>
+        )}
+
+        {rest.length === 0 && usual.length === 0 ? (
+          <p className="px-2.5 py-4 text-center text-xs text-gym-muted">
+            Nothing matches “{search.trim()}”. Add it as a custom exercise below.
+          </p>
+        ) : (
+          rest.map(renderRow)
+        )}
       </div>
 
-      {/* No "Selected: X" line — the card header above the picker already
-          shows the chosen exercise, in a larger type size, and keeps showing
-          it after the picker collapses. */}
+      <button
+        type="button"
+        onClick={() => {
+          setCustomMode(true);
+          // Seed the custom name from whatever was typed into the search box —
+          // an athlete who searched for a movement the catalog doesn't have has
+          // already typed its name once.
+          onChange(search.trim(), suggestedMuscle);
+        }}
+        className="flex min-h-[40px] w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-gym-border/50 text-xs font-semibold text-gym-accent transition-colors hover:border-gym-accent/50 hover:bg-gym-accent/5"
+      >
+        <Plus className="h-3.5 w-3.5" />
+        {search.trim() ? `Add “${search.trim()}” as custom` : "Custom exercise"}
+      </button>
     </div>
   );
 }

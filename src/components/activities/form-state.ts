@@ -43,6 +43,50 @@ export interface ExerciseRowState {
   attachment: string | null;
 }
 
+/**
+ * One rep's correction inside a block — the "edited per rep" escape hatch.
+ *
+ * Every field is sparse: blank means "exactly what the block said". That is
+ * what makes the common case cheap — a uniform block carries no overrides at
+ * all, and an athlete who missed the target on rep 3 of 6 types one number
+ * instead of re-entering six.
+ *
+ * Positional: entry `i` of `repOverrides` describes rep `i` of the block.
+ */
+export interface IntervalRepOverrideState {
+  id: string;
+  /** Blank = the block's `distanceMeters`. */
+  distanceMeters: string;
+  /** Blank = the block's `workSeconds`. */
+  workSeconds: string;
+  /** Blank = the block's `restSeconds`. Ignored on the session's final rep. */
+  restSeconds: string;
+}
+
+/**
+ * A repeated piece of an interval session: "4 × 400m @ 75s, 90s rest".
+ *
+ * A session is a list of these, so mixed sessions (4×400 then 2×800) are a
+ * first-class shape rather than something the athlete has to average by hand.
+ * The five flat `interval*` fields below remain the ONLY thing that reaches
+ * the database — see flattenIntervalBlocks for how a list of blocks collapses
+ * back onto them without changing a single stored column.
+ */
+export interface IntervalBlockState {
+  id: string;
+  reps: string;
+  /** Metres per rep. */
+  distanceMeters: string;
+  /** Target work time per rep, in seconds. */
+  workSeconds: string;
+  /** Rest taken after each rep of this block, in seconds. */
+  restSeconds: string;
+  /** Optional work-only average HR for this block. */
+  workHr: string;
+  /** Sparse, positional per-rep corrections. Empty = a uniform block. */
+  repOverrides: IntervalRepOverrideState[];
+}
+
 export interface WorkoutFormState {
   title: string;
   startedAt: string; // datetime-local value: yyyy-MM-ddTHH:mm
@@ -70,6 +114,17 @@ export interface WorkoutFormState {
   intervalWorkSeconds: string; // work time per rep
   intervalRestSeconds: string; // rest between reps
   intervalWorkHr: string; // optional, work-only avg HR
+  /**
+   * Multi-block interval structure, with optional per-rep corrections.
+   *
+   * Additive and empty by default. When empty, the five flat `interval*`
+   * fields above are used exactly as they always were — an activity logged or
+   * drafted before blocks existed submits down a byte-identical path. When
+   * non-empty, the blocks are flattened onto those same five fields at submit
+   * (flattenIntervalBlocks), so nothing downstream — schema, API, scorer,
+   * merge, recompute — has to know blocks exist.
+   */
+  intervalBlocks: IntervalBlockState[];
   /** Fartlek "on" (hard-effort) distance/time (session type "fartlek") — optional. */
   fartlekOnDistance: string; // meters
   fartlekOnSeconds: string;
@@ -105,8 +160,18 @@ export const SPORT_FIELDS: Record<SportType, SportFieldConfig> = {
     sessionType: true,
     rpe: true,
   },
-  walking: { distance: "km", elevation: true, rpe: true },
-  swimming: { distance: "m", stroke: true, sessionType: true, rpe: true },
+  // User-reported: "swimming cannot take heart rate." It couldn't — this
+  // config is the only thing that decides whether the field renders at all, so
+  // an omission here is indistinguishable from the feature not existing. The
+  // payload, the column (`avg_heart_rate`) and the scorer were always ready
+  // for it; there was simply no input on screen.
+  //
+  // Auditing the rest of the table for the same omission: walking was the only
+  // other endurance sport missing it. Everything else (running, rowing, ski
+  // erg, bike erg, indoor and outdoor cycling) already had it. Gym is
+  // deliberately empty — its effort is per-set RPE inside each exercise row.
+  walking: { distance: "km", elevation: true, avgHr: true, rpe: true },
+  swimming: { distance: "m", avgHr: true, stroke: true, sessionType: true, rpe: true },
   rowing: { distance: "m", split: true, derivableDistance: true, avgHr: true, sessionType: true, rpe: true },
   ski_erg: { distance: "m", split: true, derivableDistance: true, avgHr: true, sessionType: true, rpe: true },
   bike_erg: { distance: "m", power: true, avgHr: true, sessionType: true, rpe: true },
@@ -136,6 +201,201 @@ let setCounter = 0;
 export function nextSetId(): string {
   setCounter += 1;
   return `set-${Date.now()}-${setCounter}`;
+}
+
+let blockCounter = 0;
+function nextBlockId(prefix: string): string {
+  blockCounter += 1;
+  return `${prefix}-${Date.now()}-${blockCounter}`;
+}
+
+export function createIntervalRepOverride(): IntervalRepOverrideState {
+  return { id: nextBlockId("rep"), distanceMeters: "", workSeconds: "", restSeconds: "" };
+}
+
+export function createIntervalBlock(
+  seed?: Partial<Omit<IntervalBlockState, "id" | "repOverrides">>
+): IntervalBlockState {
+  return {
+    id: nextBlockId("blk"),
+    reps: seed?.reps ?? "",
+    distanceMeters: seed?.distanceMeters ?? "",
+    workSeconds: seed?.workSeconds ?? "",
+    restSeconds: seed?.restSeconds ?? "",
+    workHr: seed?.workHr ?? "",
+    repOverrides: [],
+  };
+}
+
+/** Does this block hold anything the athlete typed? */
+export function intervalBlockHasEntry(block: IntervalBlockState): boolean {
+  return (
+    block.reps.trim() !== "" ||
+    block.distanceMeters.trim() !== "" ||
+    block.workSeconds.trim() !== "" ||
+    block.restSeconds.trim() !== "" ||
+    block.workHr.trim() !== "" ||
+    block.repOverrides.some(
+      (r) =>
+        r.distanceMeters.trim() !== "" ||
+        r.workSeconds.trim() !== "" ||
+        r.restSeconds.trim() !== ""
+    )
+  );
+}
+
+/**
+ * The blocks to EDIT for a given state, without ever mutating it.
+ *
+ * An activity (or draft) saved before blocks existed carries its single
+ * uniform piece in the five flat `interval*` fields. Rather than migrating
+ * anything — in the database, in stored drafts, or during render — the editor
+ * simply reads that legacy piece as one block. The moment the athlete touches
+ * it, `intervalBlocks` is written and takes over; until then the state is
+ * untouched and submits down the old path unchanged.
+ */
+export function readIntervalBlocks(state: WorkoutFormState): IntervalBlockState[] {
+  if (state.intervalBlocks.length > 0) return state.intervalBlocks;
+  const legacyFilled =
+    state.intervalReps.trim() !== "" ||
+    state.intervalWorkDistance.trim() !== "" ||
+    state.intervalWorkSeconds.trim() !== "";
+  if (legacyFilled) {
+    return [
+      createIntervalBlock({
+        reps: state.intervalReps,
+        distanceMeters: state.intervalWorkDistance,
+        workSeconds: state.intervalWorkSeconds,
+        restSeconds: state.intervalRestSeconds,
+        workHr: state.intervalWorkHr,
+      }),
+    ];
+  }
+  return [createIntervalBlock()];
+}
+
+/** One rep, after its block's values and its own override have been merged. */
+export interface ResolvedIntervalRep {
+  distanceMeters: number;
+  workSeconds: number;
+  restSeconds: number;
+}
+
+/**
+ * Expand a block into its individual reps. Returns null when the block can't
+ * describe a rep at all (no count, or a rep left without a distance or a
+ * time) — the caller reports that as a field error rather than silently
+ * scoring a session off half a block.
+ */
+export function resolveIntervalBlock(block: IntervalBlockState): ResolvedIntervalRep[] | null {
+  const reps = parseNum(block.reps);
+  if (reps === null || !Number.isFinite(reps) || reps < 1 || reps > 100) return null;
+  const count = Math.round(reps);
+  const baseDistance = parseNum(block.distanceMeters);
+  const baseWork = parseSeconds(block.workSeconds);
+  const baseRest = parseSeconds(block.restSeconds) ?? 0;
+
+  const out: ResolvedIntervalRep[] = [];
+  for (let i = 0; i < count; i += 1) {
+    const override = block.repOverrides[i];
+    const distance = (override ? parseNum(override.distanceMeters) : null) ?? baseDistance;
+    const work = (override ? parseSeconds(override.workSeconds) : null) ?? baseWork;
+    const rest = (override ? parseSeconds(override.restSeconds) : null) ?? baseRest;
+    if (distance === null || distance <= 0 || work === null || work <= 0) return null;
+    out.push({ distanceMeters: distance, workSeconds: work, restSeconds: Math.max(0, rest) });
+  }
+  return out;
+}
+
+/**
+ * Collapse any number of blocks (and their per-rep corrections) onto the ONE
+ * uniform work piece the persisted schema and the scorer already understand.
+ *
+ * This is exact, not an approximation. cardio/interval-scoring.ts derives
+ * everything it needs from three aggregates:
+ *
+ *   work pace   = workSecondsPerRep / workDistanceMeters
+ *   total work  = reps × workSecondsPerRep
+ *   total rest  = (reps − 1) × restSeconds
+ *   total dist  = reps × workDistanceMeters
+ *
+ * Feeding it reps = N (every rep across every block), and the ARITHMETIC MEAN
+ * per rep for distance, work time and rest reproduces all four aggregates
+ * identically — N × (Σd/N) = Σd, and so on — so a two-block session scores off
+ * its true combined work pace and true rest ratio. No scoring file changes.
+ *
+ * Rest is counted for every rep except the session's final one, matching the
+ * (reps − 1) the scorer assumes: the recovery after the last rep of a block is
+ * the recovery before the first rep of the next, and after the very last rep
+ * there is no rest left to take.
+ */
+export interface FlattenedIntervalWork {
+  reps: number;
+  workDistanceMeters: number;
+  workSeconds: number;
+  restSeconds: number;
+  workHr: number | null;
+}
+
+export function flattenIntervalBlocks(
+  blocks: IntervalBlockState[]
+): FlattenedIntervalWork | null {
+  const resolved: Array<{ reps: ResolvedIntervalRep[]; workHr: number | null }> = [];
+  for (const block of blocks) {
+    if (!intervalBlockHasEntry(block)) continue;
+    const reps = resolveIntervalBlock(block);
+    if (!reps) return null;
+    resolved.push({ reps, workHr: parseNum(block.workHr) });
+  }
+  const allReps = resolved.flatMap((r) => r.reps);
+  if (allReps.length === 0) return null;
+
+  const totalDistance = allReps.reduce((s, r) => s + r.distanceMeters, 0);
+  const totalWork = allReps.reduce((s, r) => s + r.workSeconds, 0);
+  // Every rest interval actually taken: after each rep but the last of the
+  // whole session.
+  const totalRest = allReps
+    .slice(0, -1)
+    .reduce((s, r) => s + r.restSeconds, 0);
+  const n = allReps.length;
+
+  // Work-time-weighted, so a long block's HR isn't given equal say to a short
+  // one. Only blocks that reported an HR contribute.
+  let hrWeight = 0;
+  let hrSum = 0;
+  for (const block of resolved) {
+    if (block.workHr === null || block.workHr <= 0) continue;
+    const weight = block.reps.reduce((s, r) => s + r.workSeconds, 0);
+    hrWeight += weight;
+    hrSum += block.workHr * weight;
+  }
+
+  // One decimal place: interval_work_distance_meters / interval_work_seconds /
+  // interval_rest_seconds are NUMERIC(_,1) columns (migration 015), so any
+  // more precision would be rounded by Postgres anyway — do it here so what is
+  // scored is exactly what is stored.
+  const round1 = (v: number) => Math.round(v * 10) / 10;
+  return {
+    reps: n,
+    workDistanceMeters: round1(totalDistance / n),
+    workSeconds: round1(totalWork / n),
+    restSeconds: n > 1 ? round1(totalRest / (n - 1)) : 0,
+    workHr: hrWeight > 0 ? Math.round(hrSum / hrWeight) : null,
+  };
+}
+
+/** Total time the blocks account for — work plus the rest between reps. */
+export function intervalBlocksTotalSeconds(blocks: IntervalBlockState[]): number | null {
+  const flat = flattenIntervalBlocks(blocks);
+  if (!flat) return null;
+  return Math.round(flat.reps * flat.workSeconds + Math.max(0, flat.reps - 1) * flat.restSeconds);
+}
+
+/** Total distance covered in the work reps (excludes any warm-up or recovery jog). */
+export function intervalBlocksWorkDistanceMeters(blocks: IntervalBlockState[]): number | null {
+  const flat = flattenIntervalBlocks(blocks);
+  if (!flat) return null;
+  return Math.round(flat.reps * flat.workDistanceMeters);
 }
 
 /**
@@ -261,6 +521,7 @@ export function createDefaultState(
     intervalWorkSeconds: "",
     intervalRestSeconds: "",
     intervalWorkHr: "",
+    intervalBlocks: [],
     fartlekOnDistance: "",
     fartlekOnSeconds: "",
     fartlekOnHr: "",
@@ -375,6 +636,31 @@ export function restoreDraftState(
     intervalWorkSeconds: str(d.intervalWorkSeconds, base.intervalWorkSeconds),
     intervalRestSeconds: str(d.intervalRestSeconds, base.intervalRestSeconds),
     intervalWorkHr: str(d.intervalWorkHr, base.intervalWorkHr),
+    // Absent from every draft saved before blocks existed — an empty list is
+    // exactly right there, since readIntervalBlocks reads the flat fields
+    // above as one block instead.
+    intervalBlocks: Array.isArray(d.intervalBlocks)
+      ? (d.intervalBlocks as unknown[])
+          .filter((b): b is Record<string, unknown> => !!b && typeof b === "object")
+          .map((b) => ({
+            id: str(b.id, nextBlockId("blk")),
+            reps: str(b.reps, ""),
+            distanceMeters: str(b.distanceMeters, ""),
+            workSeconds: str(b.workSeconds, ""),
+            restSeconds: str(b.restSeconds, ""),
+            workHr: str(b.workHr, ""),
+            repOverrides: Array.isArray(b.repOverrides)
+              ? (b.repOverrides as unknown[])
+                  .filter((r): r is Record<string, unknown> => !!r && typeof r === "object")
+                  .map((r) => ({
+                    id: str(r.id, nextBlockId("rep")),
+                    distanceMeters: str(r.distanceMeters, ""),
+                    workSeconds: str(r.workSeconds, ""),
+                    restSeconds: str(r.restSeconds, ""),
+                  }))
+              : [],
+          }))
+      : base.intervalBlocks,
     fartlekOnDistance: str(d.fartlekOnDistance, base.fartlekOnDistance),
     fartlekOnSeconds: str(d.fartlekOnSeconds, base.fartlekOnSeconds),
     fartlekOnHr: str(d.fartlekOnHr, base.fartlekOnHr),
@@ -398,6 +684,7 @@ export function isStateDirty(state: WorkoutFormState): boolean {
     state.rpe !== "" ||
     state.notes !== "" ||
     state.intervalReps !== "" ||
+    state.intervalBlocks.some(intervalBlockHasEntry) ||
     state.fartlekOnDistance !== "";
   const exercisesTouched = state.exercises.some(
     (row) =>
@@ -434,6 +721,26 @@ export function parseNum(value: string): number | null {
   if (trimmed === "") return null;
   const n = Number(trimmed);
   return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Seconds from either a plain count ("75") or clock notation ("1:15",
+ * "2:40"). Athletes say "800s at 2:40", not "at 160 seconds" — refusing the
+ * form they actually think in is a small tax charged on every rep they log.
+ */
+export function parseSeconds(value: string): number | null {
+  const trimmed = value.trim();
+  if (trimmed === "") return null;
+  if (!trimmed.includes(":")) return parseNum(trimmed);
+  const parts = trimmed.split(":");
+  if (parts.length > 3) return null;
+  let total = 0;
+  for (const part of parts) {
+    const n = Number(part.trim().replace(",", "."));
+    if (!Number.isFinite(n) || n < 0) return null;
+    total = total * 60 + n;
+  }
+  return total;
 }
 
 export function totalDurationSeconds(state: WorkoutFormState): number {
@@ -528,6 +835,111 @@ export function exerciseScore(
 // ─── Validation ──────────────────────────────────────────────────────────────
 
 export type FormErrors = Record<string, string>;
+
+export interface ErrorSummaryItem {
+  key: string;
+  /** Where the problem is, in the words the form uses on screen. */
+  label: string;
+  message: string;
+}
+
+const TOP_LEVEL_ERROR_LABELS: Record<string, string> = {
+  startedAt: "Date & start time",
+  duration: "Duration",
+  distance: "Distance",
+  split: "Avg split / 500m",
+  elevation: "Elevation gain",
+  avgHr: "Avg heart rate",
+  avgPower: "Avg power",
+  temperature: "Temperature",
+  rpe: "RPE",
+  bodyweight: "Bodyweight",
+  exercises: "Exercises",
+  intervalReps: "Interval reps",
+  intervalWorkDistance: "Interval work distance",
+  intervalWorkSeconds: "Interval work time",
+  intervalRestSeconds: "Interval rest",
+  intervalWorkHr: "Interval work heart rate",
+  fartlekOnDistance: "Fartlek “on” distance",
+  fartlekOnSeconds: "Fartlek “on” time",
+  fartlekOnHr: "Fartlek “on” heart rate",
+  form: "Something needs a second look",
+};
+
+const SET_FIELD_LABELS: Record<string, string> = {
+  weight: "weight",
+  reps: "reps",
+  duration: "hold time",
+  distance: "distance",
+  rpe: "RPE",
+  rir: "RIR",
+};
+
+const BLOCK_FIELD_LABELS: Record<string, string> = {
+  reps: "reps",
+  distanceMeters: "distance",
+  workSeconds: "work time",
+  workHr: "work heart rate",
+};
+
+/**
+ * Turn the raw error map into something an athlete can act on.
+ *
+ * User-reported: a validation error blocks saving a gym session, and the only
+ * thing on screen is "A few fields need attention before we can score this."
+ * Which fields, and where? On a workout with eight exercises and thirty sets
+ * the offending one can be several screens away from the submit button that
+ * refused, and a red border you cannot see is the same as no message at all.
+ *
+ * This names each problem in the words the form itself uses ("Exercise 3, set
+ * 2 — reps"), so the summary beside the submit button is a list of places to
+ * go rather than an apology.
+ */
+export function summarizeErrors(
+  errors: FormErrors,
+  state: WorkoutFormState
+): ErrorSummaryItem[] {
+  const exerciseIndex = new Map(state.exercises.map((row, i) => [row.id, i + 1]));
+  const setIndex = new Map<string, number>();
+  for (const row of state.exercises) {
+    row.sets.forEach((s, i) => setIndex.set(`${row.id}:${s.id}`, i + 1));
+  }
+  const blockIndex = new Map(state.intervalBlocks.map((b, i) => [b.id, i + 1]));
+
+  const items: ErrorSummaryItem[] = [];
+  for (const [key, message] of Object.entries(errors)) {
+    if (!message) continue;
+
+    if (key.startsWith("ex.")) {
+      const parts = key.split(".");
+      const rowId = parts[1];
+      const n = exerciseIndex.get(rowId);
+      const where = n ? `Exercise ${n}` : "An exercise";
+      if (parts[2] === "set") {
+        const setId = parts[3];
+        const m = setIndex.get(`${rowId}:${setId}`);
+        const field = SET_FIELD_LABELS[parts[4]] ?? parts[4];
+        items.push({ key, label: `${where}, set ${m ?? "?"} — ${field}`, message });
+      } else {
+        const field =
+          parts[2] === "name" ? "name" : parts[2] === "muscle" ? "muscle group" : "sets";
+        items.push({ key, label: `${where} — ${field}`, message });
+      }
+      continue;
+    }
+
+    if (key.startsWith("ivl.")) {
+      const parts = key.split(".");
+      const n = blockIndex.get(parts[1]);
+      const field = BLOCK_FIELD_LABELS[parts[2]] ?? parts[2];
+      items.push({ key, label: `Block ${n ?? "?"} — ${field}`, message });
+      continue;
+    }
+
+    items.push({ key, label: TOP_LEVEL_ERROR_LABELS[key] ?? key, message });
+  }
+  return items;
+}
 
 /**
  * Has the athlete put anything in this set worth submitting?
@@ -719,7 +1131,62 @@ export function validateAndBuildPayload(
   let intervalWorkSeconds: number | undefined;
   let intervalRestSeconds: number | undefined;
   let intervalWorkHr: number | undefined;
-  if (fields.sessionType && state.sessionType === "interval" && state.intervalReps.trim() !== "") {
+  const filledBlocks =
+    fields.sessionType && state.sessionType === "interval"
+      ? state.intervalBlocks.filter(intervalBlockHasEntry)
+      : [];
+  if (filledBlocks.length > 0) {
+    // Blocks win when they exist. They collapse to the same five fields the
+    // uniform sub-form has always produced (see flattenIntervalBlocks) — the
+    // payload, the columns and the scorer are untouched by this feature.
+    for (const block of filledBlocks) {
+      const key = (field: string) => `ivl.${block.id}.${field}`;
+      const reps = requireNumber(key("reps"), block.reps, {
+        required: true,
+        min: 1,
+        max: 100,
+        label: "Reps",
+      });
+      // A rep whose own override supplies the missing number is fine, so the
+      // block-level fields are only required when some rep would be left
+      // without one — which is precisely what resolveIntervalBlock tests.
+      const resolvedReps = reps !== undefined ? resolveIntervalBlock(block) : null;
+      if (reps !== undefined && !resolvedReps) {
+        if (parseNum(block.distanceMeters) === null) {
+          errors[key("distanceMeters")] = "Distance is required";
+        }
+        if (parseSeconds(block.workSeconds) === null) {
+          errors[key("workSeconds")] = "Work time is required";
+        }
+        if (
+          parseNum(block.distanceMeters) !== null &&
+          parseSeconds(block.workSeconds) !== null
+        ) {
+          errors[key("reps")] = "Every rep needs a distance and a time";
+        }
+      }
+      if (block.workHr.trim() !== "") {
+        requireNumber(key("workHr"), block.workHr, {
+          min: 30,
+          max: 250,
+          label: "Work heart rate",
+        });
+      }
+    }
+
+    const flattened = flattenIntervalBlocks(filledBlocks);
+    if (flattened) {
+      intervalReps = flattened.reps;
+      intervalWorkDistance = flattened.workDistanceMeters;
+      intervalWorkSeconds = flattened.workSeconds;
+      intervalRestSeconds = flattened.restSeconds;
+      intervalWorkHr = flattened.workHr ?? undefined;
+    }
+  } else if (
+    fields.sessionType &&
+    state.sessionType === "interval" &&
+    state.intervalReps.trim() !== ""
+  ) {
     intervalReps = requireNumber("intervalReps", state.intervalReps, {
       required: true,
       min: 1,

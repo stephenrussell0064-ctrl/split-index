@@ -2,6 +2,7 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { cn } from "@/lib/utils/cn";
+import { parseSeconds } from "./form-state";
 
 /** Uppercase tracking-wider micro-label used across the logging forms. */
 export function MicroLabel({
@@ -79,6 +80,11 @@ export function GlassInput({
 }: React.InputHTMLAttributes<HTMLInputElement> & { invalid?: boolean }) {
   return (
     <input
+      // aria-invalid, not just a red border. Two reasons: a screen reader has
+      // no way to perceive the border, and the submit-time error summary finds
+      // the first bad field with `[aria-invalid="true"]` so it can take the
+      // athlete straight to it.
+      aria-invalid={invalid || undefined}
       className={cn(
         inputBase,
         invalid && "border-danger/50 focus:border-danger/50 focus:ring-danger/30",
@@ -115,6 +121,7 @@ export function UnitInput({
         type="text"
         inputMode="decimal"
         autoComplete="off"
+        aria-invalid={invalid || undefined}
         className={cn(
           inputBase,
           unit && "pr-9",
@@ -156,6 +163,7 @@ export function HeroInput({
         type="text"
         inputMode="decimal"
         autoComplete="off"
+        aria-invalid={invalid || undefined}
         className={cn(
           "h-16 w-full rounded-2xl glass px-4 text-3xl font-semibold tracking-tight text-foreground",
           "placeholder:text-muted/30 placeholder:font-normal border border-white/10",
@@ -321,6 +329,87 @@ export function SplitInput({
   );
 }
 
+/**
+ * Split a stored duration string ("75", "1:15", "2:40") into the two boxes
+ * ClockInput renders. Always normalises through total seconds so a legacy
+ * value typed as a raw count still reads as minutes and seconds.
+ */
+export function clockParts(value: string): { minutes: string; seconds: string } {
+  const trimmed = value.trim();
+  if (trimmed === "") return { minutes: "", seconds: "" };
+  const total = parseSeconds(trimmed);
+  if (total === null) return { minutes: "", seconds: trimmed };
+  if (total < 60) return { minutes: "", seconds: String(Math.round(total)) };
+  const m = Math.floor(total / 60);
+  const s = Math.round(total % 60);
+  return { minutes: String(m), seconds: String(s).padStart(2, "0") };
+}
+
+/** Rejoin the two boxes into the single string the form state stores. */
+export function joinClock(minutes: string, seconds: string): string {
+  const m = minutes.trim();
+  const s = seconds.trim();
+  if (m === "" && s === "") return "";
+  if (m === "") return s;
+  if (s === "") return `${m}:00`;
+  return `${m}:${s.length === 1 ? `0${s}` : s}`;
+}
+
+/**
+ * Minutes + seconds, as two numeric boxes.
+ *
+ * A single "1:15" field would need a text keyboard on mobile to reach the
+ * colon; two boxes keep the numeric keypad AND remove the ambiguity of a bare
+ * "215" (is that 215 seconds or 2:15?). Same shape as SplitInput, which
+ * already established this pattern for pace.
+ */
+export function ClockInput({
+  value,
+  onChange,
+  invalid,
+  minutesPlaceholder = "1",
+  secondsPlaceholder = "15",
+  ariaPrefix,
+  className,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  invalid?: boolean;
+  minutesPlaceholder?: string;
+  secondsPlaceholder?: string;
+  ariaPrefix: string;
+  className?: string;
+}) {
+  const { minutes, seconds } = clockParts(value);
+  return (
+    <div className={cn("flex min-w-0 items-center gap-1", className)}>
+      <UnitInput
+        aria-label={`${ariaPrefix} minutes`}
+        inputMode="numeric"
+        value={minutes}
+        placeholder={minutesPlaceholder}
+        invalid={invalid}
+        onChange={(e) => onChange(joinClock(e.target.value, seconds))}
+        wrapperClassName="min-w-0 flex-1"
+        className="h-11 px-2 text-center"
+      />
+      <span aria-hidden className="text-sm font-semibold text-muted/50">
+        :
+      </span>
+      <UnitInput
+        aria-label={`${ariaPrefix} seconds`}
+        inputMode="numeric"
+        value={seconds}
+        placeholder={secondsPlaceholder}
+        invalid={invalid}
+        onChange={(e) => onChange(joinClock(minutes, e.target.value))}
+        wrapperClassName="min-w-0 flex-1"
+        className="h-11 px-2 text-center"
+      />
+    </div>
+  );
+}
+
 /** Pill selector used for session type. */
 export function PillGroup({
   options,
@@ -343,7 +432,11 @@ export function PillGroup({
             type="button"
             onClick={() => onChange(opt.value)}
             className={cn(
-              "relative rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors",
+              // min-h-[40px], not the old ~30px: these are the first thing an
+              // athlete taps on the cardio form now, and a 30px pill fails the
+              // 44pt guidance badly enough to cause mis-taps between adjacent
+              // session types.
+              "relative flex min-h-[40px] items-center rounded-full px-3.5 text-[13px] font-medium transition-colors",
               active
                 ? "text-accent-foreground"
                 : "text-muted hover:text-foreground hover:bg-white/5"

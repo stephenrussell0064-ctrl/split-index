@@ -23,6 +23,7 @@ import {
   totalDurationSeconds,
   splitSecondsFromState,
   parseNum,
+  summarizeErrors,
   SPORT_FIELDS,
   type FormErrors,
   type WorkoutFormState,
@@ -32,6 +33,7 @@ import { CardioSportPicker } from "./cardio-sport-picker";
 import { SportForm, type UpdateField } from "./sport-form";
 import { SuccessScreen, type ScoreResultSummary } from "./success-screen";
 import { useDraftAutosave, type DraftStatus } from "./use-autosave";
+import { useKeyboardInset, useKeyboardSafeFocus } from "./use-keyboard";
 import { LogQuickActions } from "./log-quick-actions";
 import { submitActivityRequest } from "@/lib/activities/submit-activity";
 import type { CardioEnrichment } from "@/lib/scoring/cardio";
@@ -41,7 +43,15 @@ import { clearPersistedGymTimerState } from "./gym-workout-timer";
 
 type View = "picker" | "form" | "success";
 
-/** Which submit-time error key a state field maps to, for clearing on edit. */
+/**
+ * Which submit-time error key a state field maps to, for clearing on edit.
+ *
+ * Every field that can raise an error has to appear here, or its error outlives
+ * the fix: the athlete corrects the number, the red text stays, and the form
+ * looks broken. The whole interval and fartlek block was missing — those
+ * fields raise errors under their own names in validateAndBuildPayload, so
+ * "Reps is required" survived typing the reps.
+ */
 const ERROR_KEY_MAP: Partial<Record<keyof WorkoutFormState, string>> = {
   hours: "duration",
   minutes: "duration",
@@ -56,6 +66,14 @@ const ERROR_KEY_MAP: Partial<Record<keyof WorkoutFormState, string>> = {
   temperature: "temperature",
   rpe: "rpe",
   bodyweight: "bodyweight",
+  intervalReps: "intervalReps",
+  intervalWorkDistance: "intervalWorkDistance",
+  intervalWorkSeconds: "intervalWorkSeconds",
+  intervalRestSeconds: "intervalRestSeconds",
+  intervalWorkHr: "intervalWorkHr",
+  fartlekOnDistance: "fartlekOnDistance",
+  fartlekOnSeconds: "fartlekOnSeconds",
+  fartlekOnHr: "fartlekOnHr",
 };
 
 const sportIndexOf = (sport: SportType) => SPORTS.findIndex((s) => s.id === sport);
@@ -147,11 +165,20 @@ export function ActivityForm({
   }, [isEdit, editSport, initialEditState]);
 
   const currentState = sport ? stateMap[sport] ?? null : null;
-  const { status: draftStatus, flush } = useDraftAutosave(
-    sport,
-    currentState,
-    view === "form" && !isEdit
-  );
+  const {
+    status: draftStatus,
+    lastSavedAt,
+    flush,
+    retry: retryDraft,
+  } = useDraftAutosave(sport, currentState, view === "form" && !isEdit);
+
+  // User complaint: "loses my place... keyboard covering fields." See
+  // use-keyboard.ts — on iOS the keyboard shrinks only the visual viewport, so
+  // neither the sticky submit bar nor the browser's own scroll-into-view
+  // knows anything has happened.
+  const formRef = useRef<HTMLDivElement | null>(null);
+  const keyboardInset = useKeyboardInset();
+  useKeyboardSafeFocus(formRef);
 
   // User feedback: "if you click off the lab onto another tab within split
   // index when u are logging an exercise it stops the timer and resets all
@@ -307,6 +334,13 @@ export function ActivityForm({
         if (key === "exercises") {
           for (const k of Object.keys(next)) {
             if (k.startsWith("ex.") || k === "exercises") delete next[k];
+          }
+        } else if (key === "intervalBlocks") {
+          // Block errors are keyed by block id (`ivl.<id>.<field>`), so there
+          // is no single mapped name to delete — any edit to the structure
+          // clears them all and lets the next submit re-derive.
+          for (const k of Object.keys(next)) {
+            if (k.startsWith("ivl.")) delete next[k];
           }
         } else {
           const mapped = ERROR_KEY_MAP[key];
@@ -541,10 +575,17 @@ export function ActivityForm({
                     </h1>
                   </div>
                 <div className="flex flex-col items-end gap-1.5">
-                  <DraftIndicator
-                    status={draftStatus}
-                    restored={restoredSport === sport}
-                  />
+                  {/* The live save state lives in the sticky submit bar now
+                      (SaveState there) — pinned to the bottom of the screen,
+                      it stays visible while the athlete is thirty set rows
+                      down, which is exactly when "did that save?" gets asked.
+                      This header keeps only the one-off restore notice. */}
+                  {restoredSport === sport && (
+                    <span className="inline-flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-muted">
+                      <CloudUpload className="h-3.5 w-3.5 text-accent" />
+                      Draft restored
+                    </span>
+                  )}
                   {isStateDirty(currentState) && (
                     <button
                       type="button"
@@ -566,6 +607,7 @@ export function ActivityForm({
                 onApplyState={applyFormState}
                 onSaveTemplate={saveAsTemplate}
                 savingTemplate={savingTemplate}
+                dirty={isStateDirty(currentState)}
               />
             )}
 
@@ -601,7 +643,7 @@ export function ActivityForm({
             )}
 
             {/* Sport-specific form with directional transition */}
-            <div className="relative overflow-x-clip">
+            <div ref={formRef} className="relative overflow-x-clip">
               <AnimatePresence mode="popLayout" custom={direction} initial={false}>
                 <motion.div
                   key={sport}
@@ -623,8 +665,17 @@ export function ActivityForm({
               </AnimatePresence>
             </div>
 
-            {/* Submit — sticky on mobile */}
-            <div className="mode-surface-elevated sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom))] lg:bottom-4 z-20 -mx-1 mt-6 space-y-3 rounded-2xl border border-white/[0.08] p-4 backdrop-blur-md lg:static lg:mx-0 lg:border-0 lg:bg-transparent lg:p-0 lg:backdrop-blur-none">
+            {/* Submit — sticky on mobile, and it has to STAY reachable while
+                the keyboard is up. `bottom` is resolved against the layout
+                viewport, which iOS does not shrink for the keyboard, so the
+                class below would leave this bar buried underneath it. Lifting
+                it by the measured inset (0 on Android, where the layout
+                viewport already shrank) puts it just above the keys, where
+                "Score workout" and the save state are both still tappable and
+                readable mid-typing. */}
+            <div
+              style={keyboardInset > 0 ? { bottom: keyboardInset + 8 } : undefined}
+              className="mode-surface-elevated sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom))] lg:bottom-4 z-20 -mx-1 mt-6 space-y-3 rounded-2xl border border-white/[0.08] p-4 backdrop-blur-md lg:static lg:mx-0 lg:border-0 lg:bg-transparent lg:p-0 lg:backdrop-blur-none">
               <AnimatePresence initial={false}>
                 {submitError && (
                   <motion.div
@@ -633,9 +684,12 @@ export function ActivityForm({
                     exit={{ opacity: 0, y: 6, height: 0 }}
                     className="overflow-hidden"
                   >
-                    <div className="flex items-center gap-2.5 rounded-xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
-                      <AlertCircle className="h-4 w-4 shrink-0" />
-                      {submitError}
+                    <div className="rounded-xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
+                      <div className="flex items-center gap-2.5">
+                        <AlertCircle className="h-4 w-4 shrink-0" />
+                        {submitError}
+                      </div>
+                      <ErrorSummary errors={errors} state={currentState} />
                     </div>
                   </motion.div>
                 )}
@@ -649,6 +703,14 @@ export function ActivityForm({
                 <Zap className="h-4 w-4" />
                 {isEdit ? "Save changes" : "Score workout"}
               </Button>
+              {!isEdit && (
+                <SaveState
+                  status={draftStatus}
+                  lastSavedAt={lastSavedAt}
+                  dirty={isStateDirty(currentState)}
+                  onRetry={retryDraft}
+                />
+              )}
               {isEdit && activityId && (
                 <Button
                   type="button"
@@ -693,58 +755,155 @@ export function ActivityForm({
   );
 }
 
-function DraftIndicator({
+/**
+ * What is actually wrong, and where it is.
+ *
+ * User-reported: "a validation error blocks saving a gym activity" — with the
+ * only feedback being "A few fields need attention before we can score this."
+ * On a workout long enough to need scrolling, that sentence is unactionable:
+ * the field it means may be six screens up, and the red border marking it is
+ * off screen with it. This lists each problem by name, and tapping one takes
+ * the athlete to the field, focused and ready to type.
+ *
+ * Anchoring is generic on purpose — it finds the first `[aria-invalid="true"]`
+ * rather than needing every field in two zones to register an id — so a field
+ * added later is covered automatically as long as it marks itself invalid.
+ */
+function ErrorSummary({
+  errors,
+  state,
+}: {
+  errors: FormErrors;
+  state: WorkoutFormState;
+}) {
+  const items = summarizeErrors(errors, state);
+  if (items.length === 0) return null;
+
+  const goToFirstInvalid = () => {
+    const target = document.querySelector<HTMLElement>('[aria-invalid="true"]');
+    if (!target) return;
+    target.scrollIntoView({
+      block: "center",
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "auto"
+        : "smooth",
+    });
+    // Focus after the scroll settles, so the keyboard opening doesn't fight
+    // the scroll for the same screen.
+    setTimeout(() => target.focus({ preventScroll: true }), 320);
+  };
+
+  return (
+    <div className="mt-2 border-t border-danger/20 pt-2">
+      <ul className="space-y-0.5 text-[12px]">
+        {items.slice(0, 5).map((item) => (
+          <li key={item.key} className="flex flex-wrap gap-x-1.5">
+            <span className="font-semibold">{item.label}</span>
+            <span className="text-danger/80">{item.message}</span>
+          </li>
+        ))}
+        {items.length > 5 && (
+          <li className="text-danger/70">and {items.length - 5} more</li>
+        )}
+      </ul>
+      <button
+        type="button"
+        onClick={goToFirstInvalid}
+        className="mt-1.5 min-h-[36px] text-[12px] font-semibold underline underline-offset-2"
+      >
+        Take me to the first one
+      </button>
+    </div>
+  );
+}
+
+/**
+ * Whether the work on screen is safe, said continuously.
+ *
+ * User complaint: "unclear whether it saved." The old indicator lit up
+ * "Draft saved" for 2.2 seconds and then deleted itself, so the honest reading
+ * of the screen for the other 57 seconds of every minute was "nothing has been
+ * saved". It also lived in the page header, which is off screen the moment you
+ * scroll into the sets — precisely when the doubt arrives. This sits in the
+ * sticky bar and keeps counting ("Saved · 40s ago"), never blanks itself while
+ * there is something to report, and a failure offers a way back instead of
+ * quietly showing nothing.
+ */
+function SaveState({
   status,
-  restored,
+  lastSavedAt,
+  dirty,
+  onRetry,
 }: {
   status: DraftStatus;
-  restored: boolean;
+  lastSavedAt: number | null;
+  dirty: boolean;
+  onRetry: () => void;
 }) {
-  let content: React.ReactNode = null;
-  let key = "none";
+  // Re-render on a slow tick so "just now" becomes "1m ago" on its own rather
+  // than freezing at whatever it said when the last keystroke landed.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (status !== "saved") return;
+    const timer = setInterval(() => setTick((t) => t + 1), 15_000);
+    return () => clearInterval(timer);
+  }, [status]);
 
-  if (restored) {
-    key = "restored";
-    content = (
-      <>
-        <CloudUpload className="h-3.5 w-3.5 text-accent" />
-        <span>Draft restored</span>
-      </>
-    );
-  } else if (status === "saving") {
-    key = "saving";
-    content = (
-      <>
-        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
-        <span>Saving…</span>
-      </>
-    );
-  } else if (status === "saved") {
-    key = "saved";
-    content = (
-      <>
-        <Check className="h-3.5 w-3.5 text-success" />
-        <span>Draft saved</span>
-      </>
+  if (status === "error") {
+    return (
+      <div className="flex items-center justify-center gap-2 text-[11px] font-medium text-danger">
+        <AlertCircle className="h-3.5 w-3.5 shrink-0" aria-hidden />
+        <span>Couldn&apos;t save your draft</span>
+        <button
+          type="button"
+          onClick={onRetry}
+          className="min-h-[32px] rounded-md px-2 font-semibold underline underline-offset-2"
+        >
+          Retry
+        </button>
+      </div>
     );
   }
 
-  return (
-    <div className="flex h-6 items-center">
-      <AnimatePresence mode="wait">
-        {content && (
-          <motion.span
-            key={key}
-            initial={{ opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -4 }}
-            transition={{ duration: 0.2 }}
-            className="inline-flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-muted"
-          >
-            {content}
-          </motion.span>
-        )}
-      </AnimatePresence>
-    </div>
-  );
+  if (status === "saving") {
+    return (
+      <p
+        aria-live="polite"
+        className="flex items-center justify-center gap-1.5 text-[11px] font-medium text-muted"
+      >
+        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" aria-hidden />
+        Saving your draft…
+      </p>
+    );
+  }
+
+  if (status === "saved" && lastSavedAt) {
+    return (
+      <p
+        aria-live="polite"
+        className="flex items-center justify-center gap-1.5 text-[11px] font-medium text-muted"
+      >
+        <Check className="h-3.5 w-3.5 text-success" aria-hidden />
+        Draft saved {formatAgo(lastSavedAt)} — safe to close the app
+      </p>
+    );
+  }
+
+  if (dirty) {
+    return (
+      <p className="flex items-center justify-center gap-1.5 text-[11px] font-medium text-muted/70">
+        <CloudUpload className="h-3.5 w-3.5" aria-hidden />
+        Saving automatically as you type
+      </p>
+    );
+  }
+
+  return null;
+}
+
+function formatAgo(timestamp: number): string {
+  const seconds = Math.max(0, Math.round((Date.now() - timestamp) / 1000));
+  if (seconds < 20) return "just now";
+  if (seconds < 90) return `${seconds}s ago`;
+  return `${Math.round(seconds / 60)}m ago`;
 }

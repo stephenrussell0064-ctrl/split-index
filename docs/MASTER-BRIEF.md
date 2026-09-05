@@ -123,15 +123,17 @@ Each cardio activity keeps a **stored predicted benchmark time** per user, updat
 | 22:30 | 575 | | 44:00 | 170 |
 | 24:00 | 530 | | | |
 
-**Rowing (2k time) — Rowing Regimen, sex-specific, high confidence:**
+**Rowing (2k time) — sex-specific, rebased onto the general population:**
 | 2k (male) | Score (percentile) | | 2k (female) | Score (percentile) |
 |---|---|---|---|---|
-| 5:59.9 | 925 (99th) | | 6:52.2 | 925 (99th) |
-| 6:10.2 | 850 (95th) | | 7:03.9 | 850 (95th) |
-| 6:35.9 | 725 (80th) | | 7:44.0 | 725 (80th) |
-| 7:04.6 | 475 (50th) | | 8:30.2 | 475 (50th) |
-| 7:35.4 | 250 (20th) | | 9:21.0 | 250 (20th) |
-| 8:06.9 | 125 (5th) | | 10:14.2 | 125 (5th) |
+| 6:23.5 | 925 (99th) | | 7:19.2 | 925 (99th) |
+| 6:41.0 | 850 (95th) | | 7:39.1 | 850 (95th) |
+| 7:03.4 | 725 (80th) | | 8:16.3 | 725 (80th) |
+| 8:03.1 | 475 (50th) | | 9:40.5 | 475 (50th) |
+| 8:56.9 | 250 (20th) | | 11:01.4 | 250 (20th) |
+| 9:57.4 | 125 (5th) | | 12:33.6 | 125 (5th) |
+
+These were Rowing Regimen's Concept2-**logbook** percentiles (male 5:59.9 / 6:10.2 / 6:35.9 / 7:04.6 / 7:35.4 / 8:06.9). That became incomparable once running was rebased to the general population and rowing was not — one shared 0–1000 ruler measuring two different populations, on an app that gives each athlete a single cross-sport index. Bridging both tables through aerobic capacity (running via Daniels VDOT, rowing via Concept2 power at an 80 kg male reference) showed the logbook table demanding 9.7–14.0 mL/kg/min more at *every* anchor — a near-constant offset the whole length of the curve, which is a population difference rather than a bad anchor. Concretely, the logbook's median 2k needed the run table's 80th percentile. Each anchor above is now the 2k an athlete of the same aerobic capacity as the correspondingly-scored runner would pull. The sourced male:female ratio per anchor (1.145 rising to 1.261) is preserved. Reference mass is the free parameter and a gentle one: ±2 kg moves every anchor ~3 seconds.
 
 **Cycling (20k time) — Cycling Regimen, male only, female uses the 1.219 multiplier:**
 | 20k | Score (percentile) |

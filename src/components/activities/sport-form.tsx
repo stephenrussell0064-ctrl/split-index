@@ -16,6 +16,7 @@ import {
   PillGroup,
 } from "./fields";
 import { ExpandableSection } from "./expandable-section";
+import { IntervalBlocks } from "./interval-blocks";
 import {
   derivePacePer100m,
   derivePacePerKm,
@@ -29,6 +30,7 @@ import {
   totalDurationSeconds,
   SPORT_FIELDS,
   type FormErrors,
+  type IntervalBlockState,
   type WorkoutFormState,
 } from "./form-state";
 import { GymExercises } from "./gym-form";
@@ -44,6 +46,103 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
     <h2 className="text-xs font-semibold uppercase tracking-widest text-muted/80 mb-4">
       {children}
     </h2>
+  );
+}
+
+/**
+ * What each session type actually MEANS, and what choosing it changes.
+ *
+ * User complaint: "hard to know what to enter — unclear which fields matter,
+ * what is required, what the numbers mean." A row of nine unexplained words
+ * (Easy · Recovery · Tempo · Threshold · Interval · Fartlek · Race · Long ·
+ * Other) is the purest example of that on the whole form, and it now sits at
+ * the TOP of it, so the explanation has to travel with it rather than living
+ * in a coach's head.
+ */
+const SESSION_TYPE_MEANING: Record<SessionType, string> = {
+  easy: "Conversational pace. The baseline your aerobic efficiency is measured against.",
+  recovery: "Deliberately slow. Counted as training load, not judged as a hard effort.",
+  tempo: "Comfortably hard, held for a stretch.",
+  threshold: "The edge you could hold for about an hour.",
+  interval: "Hard reps with recovery between. Log the reps below and the session is scored on your rep pace, not the average with the jogs mixed in.",
+  fartlek: "Unstructured surges. Total up the hard bits below and they're scored on that pace instead of the session average.",
+  race: "Flat out against the clock. Feeds your benchmark times and race predictions.",
+  long: "The long one. Distance over pace.",
+  other: "Anything that doesn't fit the list.",
+};
+
+/**
+ * The first question the form asks (user request: "the selection for what kind
+ * of run it is should be at the top when logging an activity").
+ *
+ * It was previously most of the way down the page inside a collapsed
+ * "Session type" accordion — which was defensible when it was only a
+ * classifier with a sane default, but it isn't only that: it decides whether
+ * the form should be asking for rep blocks at all, and it changes how the
+ * session is scored. A field that determines what the rest of the form means
+ * cannot come after the rest of the form.
+ */
+function SessionKindCard({
+  sport,
+  state,
+  errors,
+  onUpdate,
+}: {
+  sport: SportType;
+  state: WorkoutFormState;
+  errors: FormErrors;
+  onUpdate: UpdateField;
+}) {
+  const fields = SPORT_FIELDS[sport];
+  const distanceUnit = fields.distance;
+
+  /** Fill the session's own distance + duration from what the blocks add up to. */
+  const useBlockTotals = (workDistanceMeters: number, totalSeconds: number) => {
+    if (distanceUnit === "km") {
+      onUpdate("distance", String(Math.round((workDistanceMeters / 1000) * 100) / 100));
+    } else if (distanceUnit === "m") {
+      onUpdate("distance", String(Math.round(workDistanceMeters)));
+    }
+    const h = Math.floor(totalSeconds / 3600);
+    const m = Math.floor((totalSeconds % 3600) / 60);
+    const s = Math.round(totalSeconds % 60);
+    onUpdate("hours", h > 0 ? String(h) : "");
+    onUpdate("minutes", String(m));
+    onUpdate("seconds", String(s));
+  };
+
+  return (
+    <section className="rounded-2xl border border-cardio-border/30 bg-cardio-bg-elevated/5 p-4 sm:p-6 space-y-3">
+      <div className="flex items-baseline justify-between gap-3">
+        <SectionLabel>What kind of session?</SectionLabel>
+      </div>
+      <PillGroup
+        options={SESSION_TYPES}
+        value={state.sessionType}
+        onChange={(value) => onUpdate("sessionType", value as SessionType)}
+        layoutIdPrefix={`session-${sport}`}
+      />
+      <p className="text-xs leading-relaxed text-muted">
+        {SESSION_TYPE_MEANING[state.sessionType]}
+      </p>
+
+      {state.sessionType === "interval" && (
+        <div className="pt-1">
+          <IntervalBlocks
+            state={state}
+            errors={errors}
+            onChange={(blocks: IntervalBlockState[]) => onUpdate("intervalBlocks", blocks)}
+            onUseTotals={distanceUnit ? useBlockTotals : undefined}
+          />
+        </div>
+      )}
+
+      {state.sessionType === "fartlek" && (
+        <div className="pt-1">
+          <FartlekSubForm state={state} errors={errors} onUpdate={onUpdate} />
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -196,6 +295,19 @@ export function SportForm({
         </>
       ) : (
         <>
+          {/* Session type FIRST — it decides what the rest of this form should
+              even be asking for (rep blocks? "on" totals?) and it changes how
+              the session is scored. See SessionKindCard. Sports without a
+              session type (walking) skip straight to the numbers. */}
+          {fields.sessionType && (
+            <SessionKindCard
+              sport={sport}
+              state={state}
+              errors={errors}
+              onUpdate={onUpdate}
+            />
+          )}
+
           {/* The session — the numbers the athlete opened the app to type,
               at the size that says so, and grouped together.
               Distance and duration used to live in different cards ("Metrics"
@@ -373,36 +485,11 @@ export function SportForm({
         </section>
       )}
 
-      {/* Session type — the intensity classifier, plus its optional
-          interval/fartlek rep breakdown. Gym has no equivalent: its
-          session_type taxonomy (Tempo/Threshold/Interval/Race) is
-          cardio-specific, and gym already tracks effort per-set via RPE
-          inside each exercise row.
-
-          Still collapsed by default (and now only rendered for sports that
-          actually have a session type — walking et al. previously opened
-          this to find only the RPE scale, which is inline above now):
-          session type already defaults to "easy", so a first-time casual
-          logger isn't presented with a classifier they feel obligated to
-          fill in (Slice D: "distance, time, done"). */}
-      {!isGym && fields.sessionType && (
-        <ExpandableSection title="Session type" hint="Defaults to Easy — optional" tone="cardio">
-          <Field label="Session type">
-            <PillGroup
-              options={SESSION_TYPES}
-              value={state.sessionType}
-              onChange={(value) => onUpdate("sessionType", value as SessionType)}
-              layoutIdPrefix={`session-${sport}`}
-            />
-          </Field>
-          {state.sessionType === "interval" && (
-            <IntervalSubForm state={state} errors={errors} onUpdate={onUpdate} />
-          )}
-          {state.sessionType === "fartlek" && (
-            <FartlekSubForm state={state} errors={errors} onUpdate={onUpdate} />
-          )}
-        </ExpandableSection>
-      )}
+      {/* Session type used to live down here, inside a collapsed accordion, at
+          the bottom of the form. It is now the FIRST card — see
+          SessionKindCard above and the user request quoted there. Its
+          interval/fartlek sub-forms moved with it, since the whole point is
+          that the choice shapes what gets asked next. */}
 
       {/* When it happened. Below the metrics rather than above them: it's a
           required field that already defaults to now, so for the common case
@@ -446,89 +533,6 @@ export function SportForm({
           />
         </Field>
       </ExpandableSection>
-    </div>
-  );
-}
-
-/**
- * Structured work-piece breakdown for an interval session — reps × work
- * distance/time + rest between reps. Entirely optional: leaving it blank
- * scores the session off the whole-session average, same as before this
- * existed. Filling it in scores off the work-piece pace instead, so the
- * hard reps aren't diluted by the recovery jogs in between (see
- * cardio/interval-scoring.ts).
- */
-function IntervalSubForm({
-  state,
-  errors,
-  onUpdate,
-}: {
-  state: WorkoutFormState;
-  errors: FormErrors;
-  onUpdate: UpdateField;
-}) {
-  return (
-    <div className="space-y-4 rounded-xl border border-white/[0.06] bg-white/[0.015] p-4">
-      <p className="text-xs text-muted/70">
-        Optional — add your rep breakdown to score off work-piece pace instead of the whole-session average (recovery jogs won&apos;t dilute the hard reps).
-      </p>
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <Field label="Reps" error={errors.intervalReps}>
-          <GlassInput
-            type="text"
-            inputMode="numeric"
-            placeholder="6"
-            value={state.intervalReps}
-            invalid={!!errors.intervalReps}
-            onChange={(e) => onUpdate("intervalReps", e.target.value)}
-            className="h-11"
-          />
-        </Field>
-        <Field label="Work distance" error={errors.intervalWorkDistance}>
-          <UnitInput
-            value={state.intervalWorkDistance}
-            unit="m"
-            placeholder="400"
-            invalid={!!errors.intervalWorkDistance}
-            onChange={(e) => onUpdate("intervalWorkDistance", e.target.value)}
-            className="h-11"
-          />
-        </Field>
-        <Field label="Work time /rep" error={errors.intervalWorkSeconds}>
-          <UnitInput
-            value={state.intervalWorkSeconds}
-            unit="sec"
-            placeholder="75"
-            invalid={!!errors.intervalWorkSeconds}
-            onChange={(e) => onUpdate("intervalWorkSeconds", e.target.value)}
-            className="h-11"
-          />
-        </Field>
-        <Field label="Rest between reps" error={errors.intervalRestSeconds}>
-          <UnitInput
-            value={state.intervalRestSeconds}
-            unit="sec"
-            placeholder="90"
-            invalid={!!errors.intervalRestSeconds}
-            onChange={(e) => onUpdate("intervalRestSeconds", e.target.value)}
-            className="h-11"
-          />
-        </Field>
-      </div>
-      <Field
-        label="Avg HR during reps"
-        error={errors.intervalWorkHr}
-        hint="Optional — work-only, not whole-session average"
-      >
-        <UnitInput
-          value={state.intervalWorkHr}
-          unit="bpm"
-          placeholder="172 — skip if not tracked"
-          invalid={!!errors.intervalWorkHr}
-          onChange={(e) => onUpdate("intervalWorkHr", e.target.value)}
-          className="h-11 max-w-[220px]"
-        />
-      </Field>
     </div>
   );
 }

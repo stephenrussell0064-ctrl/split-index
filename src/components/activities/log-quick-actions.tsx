@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { format } from "date-fns";
-import { Bookmark, History } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Bookmark, History, RotateCcw } from "lucide-react";
+import { SESSION_TYPES } from "@/lib/constants/sports";
+import { cn } from "@/lib/utils/cn";
 import type { SportType } from "@/types";
-import type { WorkoutFormState } from "./form-state";
+import { formatClock, SPORT_FIELDS, totalDurationSeconds, type WorkoutFormState } from "./form-state";
 
 interface TemplateRow {
   id: string;
@@ -22,161 +23,244 @@ interface PastWorkoutRow {
   formState: WorkoutFormState;
 }
 
+const sessionTypeLabel = (value: string) =>
+  SESSION_TYPES.find((t) => t.value === value)?.label ?? null;
+
+/**
+ * What a past session WAS, in the words the athlete would use — "10 km ·
+ * 48:20" or "Squat · Bench · Barbell Row". A row of identical dates tells you
+ * nothing about which one to repeat.
+ */
+function describeWorkout(
+  sport: SportType,
+  workout: PastWorkoutRow
+): { title: string; meta: string } {
+  const state = workout.formState;
+  const when = format(new Date(workout.startedAt), "EEE d MMM");
+
+  if (sport === "gym") {
+    const names = workout.exerciseNames.filter((n) => n.trim());
+    const sets = state.exercises?.reduce((sum, ex) => sum + (ex.sets?.length ?? 0), 0) ?? 0;
+    return {
+      title: names.slice(0, 3).join(" · ") || workout.title || "Gym session",
+      meta: [
+        names.length > 0 ? `${names.length} exercise${names.length === 1 ? "" : "s"}` : null,
+        sets > 0 ? `${sets} sets` : null,
+        when,
+      ]
+        .filter(Boolean)
+        .join(" · "),
+    };
+  }
+
+  const unit = SPORT_FIELDS[sport].distance;
+  const seconds = totalDurationSeconds(state);
+  const headline = [
+    state.distance && unit ? `${state.distance} ${unit}` : null,
+    seconds > 0 ? formatClock(seconds) : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  return {
+    title: headline || workout.title || "Session",
+    meta: [sessionTypeLabel(state.sessionType), when].filter(Boolean).join(" · "),
+  };
+}
+
+/**
+ * Start from something instead of from nothing.
+ *
+ * User complaint: "too many taps / too slow — getting from 'I finished a
+ * workout' to 'it's saved' takes too long."
+ *
+ * What was here before was three secondary buttons of identical weight
+ * ("Start from a past workout", "Templates", "Save as template"), none of
+ * which looked like the fast path, all of which needed a tap before they would
+ * even fetch anything, and two of which then needed a second tap to choose —
+ * three taps and two round trips before a single number was on screen. The
+ * past-workout list was also gated to gym, so an athlete logging their fourth
+ * identical 10k this month got no help at all.
+ *
+ * Now: the athlete's real recent sessions are fetched as soon as the sport is
+ * known and shown as cards that say what they contain, for every sport. One
+ * tap loads one.
+ *
+ * This is not silent prefill — the blank-start rule (see createSetRow) is
+ * about numbers appearing in a form nobody asked to be filled. Nothing here
+ * happens without a deliberate tap on a card that states exactly what it is
+ * about to put in the form.
+ */
 export function LogQuickActions({
   sport,
   onApplyState,
   onSaveTemplate,
   savingTemplate = false,
+  dirty = false,
 }: {
   sport: SportType | null;
   onApplyState: (state: WorkoutFormState) => void;
   onSaveTemplate?: (name: string) => void;
   savingTemplate?: boolean;
+  /**
+   * Has the athlete already typed something? Applying a past session replaces
+   * the whole form, so once there is work to lose the rail stands down rather
+   * than sitting there one mis-tap away from wiping it. "Start from" is a
+   * thing you do at the start.
+   */
+  dirty?: boolean;
 }) {
   const [templates, setTemplates] = useState<TemplateRow[]>([]);
-  const [templatesLoaded, setTemplatesLoaded] = useState(false);
   const [pastWorkouts, setPastWorkouts] = useState<PastWorkoutRow[]>([]);
-  const [loadingPastWorkouts, setLoadingPastWorkouts] = useState(false);
-  const [pastWorkoutsOpen, setPastWorkoutsOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  // Every list cached below is per-sport, but this component stays mounted
-  // across a sport change: activity-form.tsx renders it above the sport
-  // switcher strip, so switching from (say) Running to Rowing re-renders it
-  // with a new `sport` prop rather than remounting it. Without this reset the
-  // previous sport's templates stayed on screen AND `templatesLoaded` blocked
-  // the new sport's from ever being fetched — so the athlete was offered
-  // running templates while logging a row (their actual rowing templates
-  // unreachable), and tapping one applied a running form state into the
-  // rowing form: distance "8" read as 8 km on screen but 8 metres by the
-  // rowing field config, with no split, leaving a session that can't be
+  // Every list below is per-sport, but this component stays mounted across a
+  // sport change: activity-form.tsx renders it above the sport switcher strip,
+  // so switching from (say) Running to Rowing re-renders it with a new `sport`
+  // prop rather than remounting it. Without this reset the previous sport's
+  // sessions stayed on screen, and tapping one applied a running form state
+  // into the rowing form: distance "8" read as 8 km on screen but 8 metres by
+  // the rowing field config, with no split, leaving a session that can't be
   // submitted. Adjusted during render on a prop change rather than in an
   // effect — the pattern this project already prefers (see app-shell.tsx).
   const [cachedSport, setCachedSport] = useState<SportType | null>(sport);
   if (sport !== cachedSport) {
     setCachedSport(sport);
     setTemplates([]);
-    setTemplatesLoaded(false);
     setPastWorkouts([]);
-    setPastWorkoutsOpen(false);
+    // Set here rather than at the top of the effect below: this project lints
+    // setState-in-effect, and a render-time adjustment is also strictly more
+    // correct — it means there is never a frame that shows "no sessions" for
+    // the new sport before the fetch has started.
+    setLoading(true);
   }
 
-  const loadTemplates = async () => {
-    if (!sport || templatesLoaded) return;
-    const res = await fetch(`/api/session-templates?sport=${sport}`);
-    if (res.ok) {
-      const data = await res.json();
-      setTemplates(data.templates ?? []);
-    }
-    setTemplatesLoaded(true);
-  };
-
-  const loadPastWorkouts = async () => {
+  useEffect(() => {
     if (!sport) return;
-    if (pastWorkoutsOpen) {
-      setPastWorkoutsOpen(false);
-      return;
-    }
-    setPastWorkoutsOpen(true);
-    if (pastWorkouts.length > 0) return;
-    setLoadingPastWorkouts(true);
-    try {
-      const res = await fetch(`/api/activities/recent?sport=${sport}`);
-      if (res.ok) {
-        const data = await res.json();
-        setPastWorkouts(data.workouts ?? []);
-      }
-    } finally {
-      setLoadingPastWorkouts(false);
-    }
-  };
+    let cancelled = false;
+    // Best-effort and in parallel: a slow or failed history fetch must never
+    // stand between the athlete and a blank form they can already type into.
+    void Promise.all([
+      fetch(`/api/activities/recent?sport=${sport}&limit=6`)
+        .then((res) => (res.ok ? res.json() : { workouts: [] }))
+        .catch(() => ({ workouts: [] })),
+      fetch(`/api/session-templates?sport=${sport}`)
+        .then((res) => (res.ok ? res.json() : { templates: [] }))
+        .catch(() => ({ templates: [] })),
+    ]).then(([recent, tpl]) => {
+      if (cancelled) return;
+      setPastWorkouts(recent.workouts ?? []);
+      setTemplates(tpl.templates ?? []);
+      setLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [sport]);
 
   if (!sport) return null;
 
-  return (
-    <div className="mb-6">
-      <div className="flex flex-wrap gap-2">
-        {sport === "gym" && (
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            loading={loadingPastWorkouts}
-            onClick={() => void loadPastWorkouts()}
-          >
-            <History className="h-3.5 w-3.5" />
-            Start from a past workout
-          </Button>
-        )}
+  const isGym = sport === "gym";
+  const accentText = isGym ? "text-gym-accent" : "text-cardio-accent";
+  const cardBase =
+    "flex min-h-[74px] w-[190px] shrink-0 snap-start flex-col justify-center gap-0.5 rounded-2xl border px-3.5 py-2.5 text-left transition-colors duration-200";
 
-        <Button
+  // Nothing to offer, or the athlete is already mid-session — either way the
+  // rail is dead weight above the fields they came for.
+  if (dirty || (!loading && pastWorkouts.length === 0 && templates.length === 0)) {
+    return onSaveTemplate && dirty ? (
+      <div className="mb-5">
+        <button
           type="button"
-          variant="secondary"
-          size="sm"
-          onClick={() => void loadTemplates()}
+          disabled={savingTemplate}
+          onClick={() => {
+            const name = window.prompt("Template name");
+            if (name?.trim()) onSaveTemplate(name.trim());
+          }}
+          className="flex min-h-[36px] items-center gap-1.5 text-xs font-medium text-muted transition-colors hover:text-foreground disabled:opacity-50"
         >
-          Templates{templates.length > 0 ? ` (${templates.length})` : ""}
-        </Button>
+          <Bookmark className="h-3.5 w-3.5" />
+          {savingTemplate ? "Saving…" : "Save this as a template"}
+        </button>
+      </div>
+    ) : null;
+  }
 
-        {templates.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 items-center w-full sm:w-auto">
-            {templates.slice(0, 4).map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => onApplyState(t.template_data)}
-                className="rounded-lg border border-white/10 px-2.5 py-1.5 text-xs font-medium text-muted hover:text-foreground hover:border-accent/30 transition-colors min-h-[36px]"
-              >
-                {t.name}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {onSaveTemplate && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            loading={savingTemplate}
-            onClick={() => {
-              const name = window.prompt("Template name");
-              if (name?.trim()) onSaveTemplate(name.trim());
-            }}
-          >
-            <Bookmark className="h-3.5 w-3.5" />
-            Save as template
-          </Button>
-        )}
+  return (
+    <div className="mb-5">
+      <div className="mb-2 flex items-baseline gap-2">
+        <p className={cn("micro-label", accentText)}>Start from</p>
+        <p className="text-[11px] text-muted/70">One tap, then adjust</p>
       </div>
 
-      {sport === "gym" && pastWorkoutsOpen && (
-        <div className="mt-3 space-y-1.5 rounded-2xl border border-white/10 bg-white/[0.03] p-2">
-          {loadingPastWorkouts ? (
-            <p className="px-2 py-3 text-xs text-muted">Loading your recent workouts…</p>
-          ) : pastWorkouts.length === 0 ? (
-            <p className="px-2 py-3 text-xs text-muted">No past gym workouts logged yet.</p>
-          ) : (
-            pastWorkouts.map((w) => (
-              <button
-                key={w.activityId}
-                type="button"
-                onClick={() => {
-                  onApplyState(w.formState);
-                  setPastWorkoutsOpen(false);
-                }}
-                className="flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-white/5"
+      <div className="-mx-1 flex snap-x snap-mandatory gap-2 overflow-x-auto px-1 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {loading && pastWorkouts.length === 0 && (
+          <>
+            <div className={cn(cardBase, "shimmer border-white/[0.06]")} aria-hidden />
+            <div className={cn(cardBase, "shimmer border-white/[0.06]")} aria-hidden />
+          </>
+        )}
+
+        {pastWorkouts.map((workout, index) => {
+          const { title, meta } = describeWorkout(sport, workout);
+          const isLatest = index === 0;
+          return (
+            <button
+              key={workout.activityId}
+              type="button"
+              onClick={() => onApplyState(workout.formState)}
+              className={cn(
+                cardBase,
+                isLatest
+                  ? isGym
+                    ? "border-gym-accent/35 bg-gym-accent/[0.07] hover:bg-gym-accent/[0.12]"
+                    : "border-cardio-accent/35 bg-cardio-accent/[0.07] hover:bg-cardio-accent/[0.12]"
+                  : "border-white/[0.08] bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.04]"
+              )}
+            >
+              <span
+                className={cn(
+                  "flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider",
+                  isLatest ? accentText : "text-muted/60"
+                )}
               >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-foreground/90">
-                    {w.exerciseNames.length > 0 ? w.exerciseNames.slice(0, 3).join(", ") : w.title || "Gym session"}
-                  </p>
-                  <p className="text-xs text-muted">{format(new Date(w.startedAt), "EEE, MMM d")}</p>
-                </div>
-              </button>
-            ))
-          )}
-        </div>
-      )}
+                {isLatest ? (
+                  <>
+                    <RotateCcw className="h-3 w-3" aria-hidden />
+                    Repeat last
+                  </>
+                ) : (
+                  <>
+                    <History className="h-3 w-3" aria-hidden />
+                    Earlier
+                  </>
+                )}
+              </span>
+              <span className="truncate text-sm font-semibold text-foreground">{title}</span>
+              <span className="truncate text-[11px] text-muted">{meta}</span>
+            </button>
+          );
+        })}
+
+        {templates.map((template) => (
+          <button
+            key={template.id}
+            type="button"
+            onClick={() => onApplyState(template.template_data)}
+            className={cn(
+              cardBase,
+              "border-white/[0.08] bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.04]"
+            )}
+          >
+            <span className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-muted/60">
+              <Bookmark className="h-3 w-3" aria-hidden />
+              Template
+            </span>
+            <span className="truncate text-sm font-semibold text-foreground">{template.name}</span>
+            <span className="truncate text-[11px] text-muted">Saved session</span>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
