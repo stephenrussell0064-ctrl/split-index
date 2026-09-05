@@ -55,13 +55,59 @@ export const RIEGEL_K = 1.08;
  *    over 2k->5k and 2k->10k gives k = 1.060 and 1.059 respectively, i.e. the
  *    textbook exponent, NOT running's upward nudge. Ski inherits it: same
  *    machine family, already scored on the rowing curve.
- *  - swim 1.03 — Riegel's own published swimming exponent; swimming's
- *    endurance decay is much flatter than running's.
+ *  - swim 1.05 — see the swim note below; was 1.03.
  *  - cycle 1.05 — Riegel's cycling exponent. Barely matters in practice (a
  *    typical ride sits close to the 20km benchmark) but there is no reason to
  *    hand cycling a running exponent either.
  *  - walk — never reaches Riegel at all (walk is scored on per-km pace); the
  *    entry exists only so the record is total.
+ *
+ * SWIM 1.05 (was 1.03) — the same reference-population defect as the anchor
+ * tables, one layer up.
+ *
+ * 1.03 is Riegel's published swimming exponent, and it is an ELITE number.
+ * Fitting it against current world records directly: men's 400m->1500m
+ * freestyle (3:39.96 -> 14:30.67) gives k = 1.041, women's (3:54.18 ->
+ * 15:20.48) gives 1.036, and the 400->800 pairs give 1.040 and 1.023. So
+ * Riegel's 1.03 is a fair summary of how RECORD HOLDERS decay over distance.
+ *
+ * This codebase already knows not to trust that for running. Current running
+ * world records fit k = 1.031 (5k->10k) and 1.051 (5k->marathon), yet run
+ * sits at 1.08 — deliberately, because real recreational runners decay far
+ * faster over distance than record holders do (see RIEGEL_K above, nudged to
+ * 1.08 off real logged sessions). Swimming was simply never given the same
+ * treatment: it kept the elite exponent while SWIM_400M_ANCHORS was rebased
+ * onto the general population, so an ordinary swimmer was being projected
+ * with a record holder's fatigue curve.
+ *
+ * That under-credits distance, and the size of it is easy to see. At k=1.03 an
+ * untrained swimmer (3:20/100m) who holds that pace for 3800m instead of 400m
+ * gains 39 index points; a runner holding 6:00/km for 21km instead of 5km
+ * gains 99. Swimming beyond the 400m benchmark — which is what most people
+ * actually log — was worth almost nothing.
+ *
+ * WHY 1.05 AND NOT MORE. Not by transplanting running's nudge (1.08 - the
+ * elite gap would land near 1.085, which is not credible for swimming) but by
+ * preserving RIEGEL'S OWN offset between the two sports on a consistent
+ * basis. Riegel published run 1.06 / swim 1.03: swimming's decay is genuinely
+ * 0.03 flatter, and that part is real physics rather than a population
+ * artefact — drag rises with velocity squared, so easing off saves a swimmer
+ * disproportionately more than it saves a runner. Applying that same -0.03
+ * offset to this codebase's own empirically-nudged run value gives
+ * 1.08 - 0.03 = 1.05. It is a +0.02 move, the same size as the run nudge
+ * itself, and it keeps swim below row's 1.06 (Paul's Law) and below run.
+ *
+ * A side effect worth naming: RIEGEL_K_MIN is 1.03, so at the old value swim's
+ * default sat exactly ON the floor of the personalization band, and a
+ * personalized k could only ever move an athlete's swim exponent UP, never
+ * down. At 1.05 personalization works in both directions again.
+ *
+ * Confidence: MEDIUM, same as the swim anchor table it goes with. The
+ * direction is well-supported (an elite exponent on a general-population
+ * table is wrong the same way an elite anchor table was); the exact 0.02 is
+ * reasoned from Riegel's own cross-sport offset, not measured on
+ * general-population swim data, which does not exist in the form that would
+ * settle it.
  *
  * A personalized k (see personalizedRiegelK) still overrides this wherever
  * one is available — this only replaces the flat default.
@@ -71,7 +117,7 @@ export const BENCHMARK_RIEGEL_K: Record<BenchmarkSport, number> = {
   walk: RIEGEL_K,
   row: 1.06,
   ski: 1.06,
-  swim: 1.03,
+  swim: 1.05,
   cycle: 1.05,
 };
 
@@ -602,6 +648,13 @@ export function applyDecay(
   return storedSec;
 }
 
+function daysSinceOrInfinity(at: Date | string | null | undefined, nowMs: number): number {
+  if (!at) return Infinity;
+  const ms = typeof at === "string" ? new Date(at).getTime() : at.getTime();
+  if (!Number.isFinite(ms)) return Infinity;
+  return Math.max(0, (nowMs - ms) / 86_400_000);
+}
+
 /** Apply decay to a stored benchmark before using it for scoring. */
 export function effectiveStoredPrediction(
   storedSeconds: number,
@@ -610,17 +663,98 @@ export function effectiveStoredPrediction(
   now: Date = new Date()
 ): number {
   const nowMs = now.getTime();
-  const daysSince = (at: Date | string | null | undefined) => {
-    if (!at) return Infinity;
-    const ms = typeof at === "string" ? new Date(at).getTime() : at.getTime();
-    if (!Number.isFinite(ms)) return Infinity;
-    return Math.max(0, (nowMs - ms) / 86_400_000);
-  };
   return applyDecay(
     storedSeconds,
-    daysSince(lastRunAt),
-    daysSince(lastQualityAt)
+    daysSinceOrInfinity(lastRunAt, nowMs),
+    daysSinceOrInfinity(lastQualityAt, nowMs)
   );
+}
+
+/** Which decay rule moved a stored prediction, if any. */
+export type PredictionDecayReason = "none" | "inactivity" | "no-quality";
+
+export interface StoredPredictionDecay {
+  /** The decayed prediction — identical to `effectiveStoredPrediction`. */
+  seconds: number;
+  /** What was on file before decay. */
+  storedSeconds: number;
+  /** Seconds decay added (0 when none applied). Always >= 0: decay only ever slows a prediction. */
+  addedSeconds: number;
+  reason: PredictionDecayReason;
+  daysSinceRun: number;
+  daysSinceQuality: number;
+  /** True once the decay has hit its ceiling and will not grow further. */
+  atCap: boolean;
+  /**
+   * One plain sentence naming the cause, ready to render next to the
+   * prediction — or null when nothing was applied and there is nothing to say.
+   */
+  explanation: string | null;
+}
+
+/**
+ * `effectiveStoredPrediction`, but it also says WHY.
+ *
+ * Reported as a bug: an athlete's 5k prediction moved from 18:25 to 18:50 and
+ * they concluded the app was broken. It was not — they had a genuine gap in
+ * training and the decay above did exactly what it is designed to do. But
+ * nothing anywhere told them that, and the way the number surfaces makes the
+ * wrong explanation the obvious one: the dashboard renders the stored value
+ * UNDECAYED, and the decay is only realised when the next session is logged
+ * and the decayed prior is blended and written back. So from the athlete's
+ * side, they came back from a break, did a run, and their prediction got
+ * worse — the one reading that makes the feature look broken, and the one
+ * reading the UI currently invites.
+ *
+ * This is deliberately a pure reporting helper over the existing `applyDecay`
+ * rather than a second copy of the rule: the arithmetic stays in one place,
+ * and the numbers quoted in the sentence are the numbers actually applied.
+ * Nothing about the decay rate changes — see PREDICTION_DECAY, whose grace
+ * period and weekly rate are, if anything, conservative against the
+ * detraining literature.
+ */
+export function explainStoredPrediction(
+  storedSeconds: number,
+  lastRunAt: Date | string | null | undefined,
+  lastQualityAt: Date | string | null | undefined,
+  now: Date = new Date()
+): StoredPredictionDecay {
+  const nowMs = now.getTime();
+  const daysSinceRun = daysSinceOrInfinity(lastRunAt, nowMs);
+  const daysSinceQuality = daysSinceOrInfinity(lastQualityAt, nowMs);
+  const seconds = applyDecay(storedSeconds, daysSinceRun, daysSinceQuality);
+  const addedSeconds = Math.max(0, seconds - storedSeconds);
+
+  const base = {
+    seconds,
+    storedSeconds,
+    addedSeconds,
+    daysSinceRun,
+    daysSinceQuality,
+  };
+
+  if (addedSeconds <= 0 || !Number.isFinite(storedSeconds) || storedSeconds <= 0) {
+    return { ...base, reason: "none", atCap: false, explanation: null };
+  }
+
+  // Mirrors applyDecay's own precedence: inactivity is checked first and wins.
+  const inactive = daysSinceRun > PREDICTION_DECAY.graceDays;
+  const reason: PredictionDecayReason = inactive ? "inactivity" : "no-quality";
+  const days = Math.floor(inactive ? daysSinceRun : daysSinceQuality);
+  const rounded = Math.round(addedSeconds);
+
+  const atCap = inactive
+    ? PREDICTION_DECAY.ratePerWeekInactive * ((daysSinceRun - PREDICTION_DECAY.graceDays) / 7) >=
+      PREDICTION_DECAY.maxDecayInactive
+    : PREDICTION_DECAY.ratePerWeekNoQuality *
+        ((daysSinceQuality - PREDICTION_DECAY.qualityGraceDays) / 7) >=
+      PREDICTION_DECAY.maxDecayNoQuality;
+
+  const explanation = inactive
+    ? `Eased back ${rounded}s after ${days} days without a session${atCap ? "" : " — it recovers as you train again"}.`
+    : `Eased back ${rounded}s after ${days} days without a hard effort${atCap ? "" : " — a quality session brings it back"}.`;
+
+  return { ...base, reason, atCap, explanation };
 }
 
 /**

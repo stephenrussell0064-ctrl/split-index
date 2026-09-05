@@ -3,7 +3,7 @@ import { format } from "date-fns";
 import { Check } from "lucide-react";
 import { RouteMap } from "@/components/activities/route-map";
 import { cn } from "@/lib/utils/cn";
-import { formatIndex, formatDuration, formatDistance, formatPace, formatSpeed } from "@/lib/utils/format";
+import { formatIndex, formatDuration, formatDistance, formatSportPace } from "@/lib/utils/format";
 import { SPORTS, SESSION_TYPES } from "@/lib/constants/sports";
 import type { LogbookEntry } from "@/lib/activities/logbook-query";
 import {
@@ -31,35 +31,31 @@ import type { SportType } from "@/types";
  * edge is what made the old list feel like a wall of text.
  */
 
-/** Rowing and ski-erg think in split per 500m, a different stored column from pace per km — see RawStatsPanel, which owns the same distinction on the detail page. */
-const SPLIT_SPORTS = new Set<string>(["rowing", "ski_erg"]);
-
-function formatSplit(seconds: number): string {
-  const m = Math.floor(seconds / 60);
-  const s = Math.round(seconds % 60);
-  return `${m}:${String(s).padStart(2, "0")}/500m`;
-}
-
 /**
- * The session's speed, however this sport expresses it. Cycling reads as
- * km/h, rowing/ski-erg as a 500m split, everything else as min/km — the same
- * mapping the activity detail page uses, so a run's pace doesn't change units
- * between the list and the page it opens.
+ * The session's speed, however this sport expresses it — swimming per 100m,
+ * rowing/ski-erg per 500m, cycling as km/h, everything else per km.
+ *
+ * The per-sport unit mapping lives in `formatSportPace` (lib/utils/format)
+ * rather than here. It used to be a local SPLIT_SPORTS set plus a local
+ * formatSplit, one of three near-identical copies in the codebase, and the
+ * copies had already drifted apart on spacing ("2:04/500m" here vs
+ * "2:04 /500m" on the detail page). None of them handled swimming at all, so
+ * a swim was quoted per kilometre — the one unit no swimmer uses. Reusing the
+ * shared helper is what keeps a session's units from changing between this
+ * list and the page it opens.
  */
 function paceMetric(entry: LogbookEntry): string | null {
-  if (SPLIT_SPORTS.has(entry.sport) && entry.avgSplitSeconds !== null) {
-    return formatSplit(entry.avgSplitSeconds);
-  }
-  const secondsPerKm =
-    entry.avgPaceSecondsPerKm ??
-    // Manually logged sessions often store only distance and duration; a
-    // derived pace is still the number the athlete is scanning for, and it is
-    // the same arithmetic they'd do in their head.
-    (entry.distanceMeters && entry.distanceMeters > 0 && entry.durationSeconds
-      ? entry.durationSeconds / (entry.distanceMeters / 1000)
-      : null);
-  if (secondsPerKm === null || secondsPerKm <= 0) return null;
-  return entry.sport === "outdoor_cycling" ? formatSpeed(secondsPerKm) : formatPace(secondsPerKm);
+  return formatSportPace(entry.sport as SportType, {
+    avgSplitSeconds: entry.avgSplitSeconds,
+    avgPaceSecondsPerKm:
+      entry.avgPaceSecondsPerKm ??
+      // Manually logged sessions often store only distance and duration; a
+      // derived pace is still the number the athlete is scanning for, and it
+      // is the same arithmetic they'd do in their head.
+      (entry.distanceMeters && entry.distanceMeters > 0 && entry.durationSeconds
+        ? entry.durationSeconds / (entry.distanceMeters / 1000)
+        : null),
+  });
 }
 
 interface Metric {

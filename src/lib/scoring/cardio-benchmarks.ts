@@ -184,22 +184,73 @@ const WALK_PACE_ANCHORS: Anchor[] = [
 ];
 
 /**
- * Corrected against Swimming Regimen (swimmingregimen.com), age-25 male,
- * LCM, same sibling-site network and percentile convention as run/row/cycle.
- * Replaces the previous scaled-from-running/ASA-standards placeholder.
- * High confidence for the 5/20/50/80/95th percentile points; the 99th-
- * percentile anchor uses a separately-sourced WR estimate (~3:40) since that
- * page had no WR column of its own — flagged lower confidence for that one
- * point only. Female table not captured this pass — the existing female
- * cardio factor (1.073) is still applied on top of this male curve.
+ * Rebased onto the SAME REFERENCE POPULATION as the run and row tables above
+ * — the general population of people who swim, not the population of people
+ * who swim COMPETITIVELY.
+ *
+ * The previous table read its percentiles off Swimming Regimen
+ * (swimmingregimen.com), age-25 male, LCM. Those are pool-club percentiles,
+ * and the numbers say so out loud: they put the FIFTH percentile at 6:10.1
+ * for 400m, which is 1:32.5/100m. A very large share of adults who swim
+ * cannot hold 1:32/100m for 400m at all — it is a solid club-swimmer pace,
+ * not the pace 95% of swimmers beat. The whole table sat in that register:
+ * its median (5:17.1 = 1:19.3/100m) is a competitive age-grouper's 400m.
+ *
+ * That was internally consistent while every table came from the same
+ * sibling-site network. It stopped being consistent the moment run was
+ * rebased to the general population (RUN_5K_ANCHORS, median 30:00) and row
+ * followed it (ROW_2K_ANCHORS_MALE) — leaving one shared 0-1000 ruler
+ * measuring club swimmers against ordinary runners. An athlete gets ONE
+ * Split Index across sports, so a swim score and a run score have to mean
+ * the same thing.
+ *
+ * WHY THIS IS NOT DERIVED THE WAY ROW'S REBASE WAS. Row bridged to the run
+ * table through aerobic capacity (Daniels VDOT one side, Concept2 power the
+ * other) because on an erg, power and therefore pace really is close to a
+ * pure function of aerobic capacity at a given mass. Swimming is not like
+ * that and the same bridge would be a fabrication: swim speed is dominated
+ * by drag and technique, and two swimmers with identical VO2max routinely
+ * differ by more than a minute per 100m. A VO2max bridge would produce
+ * confident-looking numbers with nothing underneath them. Swimming has to
+ * be anchored on swimming-population evidence directly, which is sparser
+ * than either of the other two sports' — flagged honestly as MEDIUM
+ * confidence overall rather than dressed up as the measured bridge row got.
+ *
+ * The anchors below are set from the landmark paces that recur across
+ * adult/masters swimming and open-water/triathlon split data:
+ *   ~1:30/100m  — the commonly-cited threshold for a solid club-level
+ *                 swimmer, placed at the 95th percentile of this population;
+ *   ~1:50/100m  — a competent, technique-trained fitness swimmer (80th);
+ *   ~2:20/100m  — the median adult lap swimmer; mid-pack age-group
+ *                 triathletes sit a little faster than this (~2:00/100m),
+ *                 and that population is fitter and more self-selected than
+ *                 "everyone who logs a swim", so the median is placed
+ *                 modestly slower than theirs (50th);
+ *   ~3:10/100m  — swims continuously but untrained (20th);
+ *   ~4:00/100m  — beginner pace, typically with rests at the wall (5th).
+ *
+ * Note the SPREAD, which is the part that matters most for scoring. The old
+ * table packed 5th-to-99th percentile into 1.373x of time; running's spans
+ * 2.882x and rowing's 1.558x. Swimming's true spread is the WIDEST of the
+ * three, not the narrowest — an untrained adult runner is perhaps twice a
+ * good club runner's time, while an untrained adult swimmer is easily three
+ * times a good club swimmer's, because technique (not fitness) sets the
+ * floor in water. This table spans 3.0x. That single fact is why the
+ * reported defect happened: a table 1.373x wide has almost no room below its
+ * slowest anchor, so an ordinary swim fell off the bottom of it and
+ * extrapolated straight past zero.
+ *
+ * Female table not captured this pass — the existing female cardio factor
+ * (1.073, the narrowest sex gap of any sport here, which matches swimming's
+ * real male/female spread) is still applied on top of this male curve.
  */
 const SWIM_400M_ANCHORS: Anchor[] = [
-  [269.5, 925], // 4:29.5 — 99th percentile (30% of gap toward WR estimate 3:40.0)
-  [290.7, 850], // 4:50.7 — 95th percentile
-  [304, 725], // 5:04.0 — 80th percentile
-  [317.1, 475], // 5:17.1 — 50th percentile
-  [343.5, 250], // 5:43.5 — 20th percentile
-  [370.1, 125], // 6:10.1 — 5th percentile
+  [320, 925], // 5:20 — 1:20/100m — 99th percentile (was 4:29.5 on club percentiles)
+  [360, 850], // 6:00 — 1:30/100m — 95th percentile (was 4:50.7)
+  [440, 725], // 7:20 — 1:50/100m — 80th percentile (was 5:04.0)
+  [560, 475], // 9:20 — 2:20/100m — 50th percentile (was 5:17.1)
+  [760, 250], // 12:40 — 3:10/100m — 20th percentile (was 5:43.5)
+  [960, 125], // 16:00 — 4:00/100m — 5th percentile (was 6:10.1)
 ];
 
 /** Sports scored via a single male curve + FEMALE_CARDIO_FACTORS multiplier (no sex-specific source data captured for these) — row and, indirectly through row, ski are the exceptions (sex-specific tables). */
