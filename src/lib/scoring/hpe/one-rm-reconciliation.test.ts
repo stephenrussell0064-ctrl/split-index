@@ -75,7 +75,7 @@ describe("the promise and the programme use the same numbers", () => {
 
   it("programmes the corrected squat, not the inferred one", () => {
     const rx = (oneRms: Record<string, number>) =>
-      prescribeLift(diagnose([], [], oneRms, HR), "S1", {
+      prescribeLift(diagnose([], [], oneRms, HR), "weak-lift", {
         lift: "squat",
         sets: 3,
         reps: [5, 5],

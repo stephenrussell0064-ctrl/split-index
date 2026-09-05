@@ -8,6 +8,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils/cn";
 import { DiagnosticReport } from "./diagnostic-report";
+import { GoalsPanel } from "./goals-panel";
 import { EventDayView } from "./event-day-view";
 import { EventOrderDecision } from "./event-order-decision";
 import { PlanView, type PlanWeekView } from "./plan-view";
@@ -120,10 +121,14 @@ interface PlanResponse {
   } | null;
 }
 
-type Tab = "plan" | "diagnostic" | "event";
+type Tab = "plan" | "goals" | "diagnostic" | "event";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "plan", label: "Plan" },
+  // Second, not last. The goals are what the block is built toward, so an
+  // athlete looking at a plan they disagree with should reach the thing to
+  // change before they reach the evidence for it.
+  { id: "goals", label: "Goals" },
   { id: "diagnostic", label: "Diagnostic" },
   { id: "event", label: "Event day" },
 ];
@@ -528,6 +533,10 @@ export function HybridPlanScreen() {
       </div>
 
       {tab === "plan" && profile && <PlanView weeks={weeks} profile={profile} planStart={planStart} />}
+      {/* `retry` is the existing refetch — saving a goal has to rebuild the
+          block, or the plan on the next tab would no longer follow from the
+          targets this one now shows. */}
+      {tab === "goals" && <GoalsPanel onSaved={retry} />}
       {tab === "diagnostic" && profile && <DiagnosticReport profile={profile} assumptions={data.assumptions} cardio={data.cardio ?? null} />}
       {tab === "event" && (
         <div className="space-y-5">

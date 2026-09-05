@@ -182,6 +182,124 @@ export const INTAKE_SECTIONS = [
 ] as const;
 export type IntakeSection = (typeof INTAKE_SECTIONS)[number];
 
+/**
+ * Only these keys are writable, and only within their own section. An unknown
+ * key is dropped rather than stored, so a name that does not appear here is not
+ * a validation error — it is a silent no-op, and the athlete gets a success
+ * message over an edit that never landed.
+ *
+ * It lives beside INTAKE_SECTIONS rather than in the route because it IS part
+ * of the intake contract, and because more than one screen writes through that
+ * route now: the wizard and the hybrid plan's goals panel. A test pins the
+ * panel's field names against this list for exactly the silent-no-op reason
+ * above.
+ */
+export const SECTION_FIELDS: Record<IntakeSection, string[]> = {
+  health: [
+    "parq_positive",
+    "chest_pain_on_exertion",
+    "current_injury_limiting",
+    "injury_last_12_weeks",
+    "injury_sites",
+    "surgery_last_6_months",
+    "pregnant_or_postpartum_12wk",
+    "medication_affecting_hr",
+  ],
+  fuelling: [
+    "lea_restricted_food",
+    // Collected as context for a dietitian; deliberately not scored.
+    "lea_trains_fasted",
+    "lea_unintended_weight_loss",
+    "lea_bone_stress_injury",
+    "lea_amenorrhoea",
+  ],
+  goal: [
+    "event_date",
+    // An event date is optional now; a block length is the alternative.
+    "plan_timeframe_weeks",
+    // Per-lift rather than a combined total — any subset is a usable answer.
+    "target_squat_kg",
+    "target_bench_kg",
+    "target_deadlift_kg",
+    "events",
+    "same_day",
+    "inter_event_gap_h",
+    "event_order_known",
+    "target_5k_s",
+    "target_total_kg",
+    // Which kinds of cardio the athlete actually wants, and whether the plan
+    // may mix them. A whitelist — nothing outside it is ever prescribed.
+    "cardio_modalities",
+    "cross_train_ok",
+    "priority",
+    "priority_user_set",
+    "weight_class_kg",
+    "intends_weight_cut",
+    "federation",
+  ],
+  history: [
+    "current_run_min_per_week",
+    "longest_recent_run_min",
+    "endurance_training_years",
+    // The biggest month of running they have ever held. This lived in
+    // "recovery and life load", which is where the athlete could not find it
+    // and where the save quietly rejected it after the field moved.
+    "previous_max_volume",
+    // Makes the stated figure authoritative — see reconcileCurrentVolume.
+    "trains_outside_app",
+    "current_strength_sessions_per_week",
+    "strength_training_years",
+  ],
+  body: [
+    "max_hr_known",
+    "hr_runs_high",
+    // Corrections over what the engine proposed. An adaptive 1RM is inferred
+    // from submaximal work and an estimated max HR is age arithmetic.
+    "max_hr_override",
+    "resting_hr_override",
+    "squat_1rm_override",
+    "bench_1rm_override",
+    "deadlift_1rm_override",
+  ],
+  training: [
+    // The primary question. Barbell availability is a detail inside this.
+    "has_gym_access",
+    // How the gym week is carved up — push/pull/legs, upper/lower, and so on.
+    "training_split",
+    // The athlete's own day structure, when none of the five stock splits
+    // describes their week, and the exercises they chose for each day.
+    "custom_split_days",
+    "exercises_by_day",
+    "lift_variants",
+    "primary_modality",
+    "substitution_ok",
+    "surface_access",
+    "disliked_exercises",
+  ],
+  availability: [
+    // Real clock times differ by day, and the 6h separation rule is computed
+    // from them.
+    "day_windows",
+    "availability_varies",
+    "days_available",
+    "two_a_days_possible",
+    "two_a_day_days",
+    "am_hour",
+    "pm_hour",
+    "max_sessions_per_week",
+    "max_hours_per_week",
+    "max_session_min",
+    "min_rest_days",
+    "gym_access_days",
+    "travel_weeks",
+    // Soft scheduling preferences belong with the scheduling questions.
+    "preferred_long_day",
+    "preferred_rest_day",
+    "notes",
+  ],
+  recovery: ["sleep_hours_typical", "shift_work", "job_physicality", "life_stress_now"],
+};
+
 /** Sections the athlete cannot skip. Everything else degrades with a stated consequence. */
 export const MANDATORY_SECTIONS: IntakeSection[] = ["health", "goal", "availability"];
 
