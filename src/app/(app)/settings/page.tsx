@@ -167,9 +167,17 @@ export default function SettingsPage() {
         setRecomputeResult(data.error ?? "Failed to recompute scores.");
         return;
       }
+      // `rebuildFailures` covers the per-athlete steps — the personal-record
+      // rebuild especially, which deletes every record before re-inserting. It
+      // is reported separately because the activity count can read "all of
+      // them" while that step failed and took the PR list with it.
+      const rebuildFailed: string[] = data.rebuildFailures ?? [];
       setRecomputeResult(
         `Recomputed ${data.recomputed} of ${data.total} activities` +
-          (data.failed > 0 ? ` (${data.failed} failed).` : ".")
+          (data.failed > 0 ? ` (${data.failed} failed).` : ".") +
+          (rebuildFailed.length > 0
+            ? " Your personal records or predictions could not be rebuilt — try again."
+            : "")
       );
     } catch {
       setRecomputeResult("Failed to recompute scores. Please try again.");

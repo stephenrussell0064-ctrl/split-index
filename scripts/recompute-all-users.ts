@@ -163,12 +163,18 @@ async function main() {
       const r = await recomputeUser(supabase, p.user_id);
       ok++;
       console.log(
-        `${r.recomputed}/${r.total} rebuilt${r.failed ? `, ${r.failed} activity failure(s)` : ""}`
+        `${r.recomputed}/${r.total} rebuilt` +
+          (r.failed ? `, ${r.failed} activity failure(s)` : "") +
+          // Printed alongside the tally rather than folded into it, because
+          // `recomputed` can read total-of-total while the athlete's whole PR
+          // list failed to come back — the count is per activity, this is not.
+          (r.rebuildFailures.length ? `, ${r.rebuildFailures.length} rebuild failure(s)` : "")
       );
       // Per-activity failures are reported but do not stop the run: one
       // athlete with one unscoreable session should not leave everyone after
       // them on the old ruler, which is the state this script exists to end.
       if (r.failed) console.log(`    ${JSON.stringify(r.failures).slice(0, 300)}`);
+      for (const f of r.rebuildFailures) console.log(`    ${f}`);
     } catch (err) {
       const reason = err instanceof RecomputeError ? err.message : String(err);
       failed.push({ user: label, reason });

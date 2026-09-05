@@ -70,6 +70,14 @@ export interface RecomputeResult {
   recomputed: number;
   failed: number;
   failures: unknown[];
+  /**
+   * Failures in the two rebuild steps that run once per athlete rather than
+   * once per activity — the predicted-benchmark upsert and the personal-record
+   * rebuild. Kept apart from `failures` because they cannot be attributed to a
+   * single session: `recomputed` can read total-of-total while the athlete's
+   * entire PR list failed to come back.
+   */
+  rebuildFailures: string[];
 }
 
 /**
@@ -424,8 +432,30 @@ export async function recomputeUser(
         exerciseHistory[key] = [...(exerciseHistory[key] ?? []), ...logged];
       }
 
-      await supabase.from("workout_scores").delete().eq("activity_id", activity.id);
-      await supabase.from("workout_scores").insert({
+      // Every write below DELETES before it inserts, so a failure does not
+      // leave the previous row standing — it leaves the activity with nothing.
+      // None of these results was read, so a rejected insert produced an
+      // activity with no score and a run that still reported it as "rebuilt".
+      // In a bulk pass that is the worst possible silence: the script prints a
+      // clean tally, the athlete's session quietly stops counting toward their
+      // Split Index, and nothing anywhere says which one.
+      const writeErrors: string[] = [];
+      const noteWrite = (what: string, error: { message: string } | null) => {
+        if (!error) return;
+        console.error(`[recompute] ${what} failed for activity`, activity.id, error.message);
+        writeErrors.push(`${what}: ${error.message}`);
+      };
+
+      // The delete is checked too. If it fails and the insert then succeeds,
+      // the activity ends up with TWO score rows, which double-counts it in
+      // every load and trend query that reads them.
+      const { error: scoreDeleteError } = await supabase
+        .from("workout_scores")
+        .delete()
+        .eq("activity_id", activity.id);
+      noteWrite("workout_scores delete", scoreDeleteError);
+
+      const { error: scoreInsertError } = await supabase.from("workout_scores").insert({
         activity_id: activity.id,
         user_id: user.id,
         sport: activity.sport,
@@ -451,9 +481,15 @@ export async function recomputeUser(
         // onto "now", breaking ACWR/injury-risk history windows.
         created_at: activity.started_at,
       });
+      noteWrite("workout_scores insert", scoreInsertError);
 
-      await supabase.from("split_index_history").delete().eq("activity_id", activity.id);
-      await supabase.from("split_index_history").insert({
+      const { error: historyDeleteError } = await supabase
+        .from("split_index_history")
+        .delete()
+        .eq("activity_id", activity.id);
+      noteWrite("split_index_history delete", historyDeleteError);
+
+      const { error: historyInsertError } = await supabase.from("split_index_history").insert({
         user_id: user.id,
         split_index: result.splitIndex,
         endurance_index: result.enduranceIndex,
@@ -470,6 +506,7 @@ export async function recomputeUser(
         // once analytics groups by day (collapseToLastPerDay).
         recorded_at: activity.started_at,
       });
+      noteWrite("split_index_history insert", historyInsertError);
 
       if (isEnduranceSport(activity.sport)) {
         trackPersonalRecords(
@@ -492,8 +529,16 @@ export async function recomputeUser(
             exercises: result.strengthScoreRows,
           })
         );
-        await supabase.from("strength_scores").delete().eq("activity_id", activity.id);
-        await supabase.from("strength_scores").insert(
+        const { error: strengthDeleteError } = await supabase
+          .from("strength_scores")
+          .delete()
+          .eq("activity_id", activity.id);
+        noteWrite("strength_scores delete", strengthDeleteError);
+
+        // These are the per-lift rows the strength breakdown is read from, so
+        // losing them shows as a scored session with no per-exercise detail —
+        // the shape of the "strength score is missing again" report.
+        const { error: strengthInsertError } = await supabase.from("strength_scores").insert(
           buildStrengthScoreInserts(
             user.id,
             activity.id,
@@ -501,6 +546,7 @@ export async function recomputeUser(
             result.strengthScoreRows
           )
         );
+        noteWrite("strength_scores insert", strengthInsertError);
       }
 
       recentActivityRows.unshift({
@@ -527,7 +573,16 @@ export async function recomputeUser(
         predictedBenchmarkLastActivityId[benchmarkSport] = activity.id as string;
       }
 
-      recomputed += 1;
+      // The in-memory context above is accumulated either way, deliberately.
+      // The score itself was computed correctly — only storing it failed — so
+      // the activities after this one should still be scored against it rather
+      // than against a gap, which would compound one storage failure into
+      // wrong numbers for everything that follows.
+      if (writeErrors.length > 0) {
+        failures.push({ id: activity.id as string, error: writeErrors.join("; ") });
+      } else {
+        recomputed += 1;
+      }
     } catch (err) {
       failures.push({
         id: activity.id,
@@ -546,16 +601,39 @@ export async function recomputeUser(
     riegel_k: predictedBenchmarkRiegelK[sport] ?? null,
     updated_at: new Date().toISOString(),
   }));
+  // These two rebuild the athlete's whole record rather than one session's, so
+  // they cannot be attributed to an activity — they get their own list. Both
+  // were unchecked, and the personal_records one is the most destructive write
+  // in this function: it deletes EVERY record first, so a rejected insert takes
+  // the athlete's entire PR history with it and still reports a clean run.
+  const rebuildFailures: string[] = [];
+  const noteRebuild = (what: string, error: { message: string } | null) => {
+    if (!error) return;
+    console.error(`[recompute] ${what} failed for user`, user.id, error.message);
+    rebuildFailures.push(`${what}: ${error.message}`);
+  };
+
   if (benchmarkRows.length > 0) {
-    await supabase.from("predicted_benchmarks").upsert(benchmarkRows, { onConflict: "user_id,sport" });
+    const { error: benchmarkError } = await supabase
+      .from("predicted_benchmarks")
+      .upsert(benchmarkRows, { onConflict: "user_id,sport" });
+    // An upsert, so a failure leaves the previous prediction standing rather
+    // than nothing — the least severe of these, but still a silent way for a
+    // recompute to leave a stale predicted 5k behind rebuilt scores.
+    noteRebuild("predicted_benchmarks upsert", benchmarkError);
   }
 
   // Full rebuild — recompute is the authoritative pass, so replace every
   // existing record rather than incrementally upserting (see
   // trackPersonalRecords above for why that's necessary here).
-  await supabase.from("personal_records").delete().eq("user_id", user.id);
+  const { error: recordsDeleteError } = await supabase
+    .from("personal_records")
+    .delete()
+    .eq("user_id", user.id);
+  noteRebuild("personal_records delete", recordsDeleteError);
+
   if (bestPersonalRecords.size > 0) {
-    await supabase.from("personal_records").insert(
+    const { error: recordsInsertError } = await supabase.from("personal_records").insert(
       Array.from(bestPersonalRecords.values()).map((c) => ({
         user_id: user.id,
         sport: c.sport,
@@ -566,6 +644,7 @@ export async function recomputeUser(
         achieved_at: c.achievedAt,
       }))
     );
+    noteRebuild("personal_records insert", recordsInsertError);
   }
 
   return {
@@ -573,6 +652,7 @@ export async function recomputeUser(
     recomputed,
     failed: failures.length,
     failures,
+    rebuildFailures,
   };
 }
 
