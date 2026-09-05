@@ -508,21 +508,25 @@ export default async function DashboardPage() {
         athlete's own score, so ranking the displayed number is now exactly
         right there.
       * The peer branch compares against `profiles.current_split_index`, a
-        column a database trigger fills from every `split_index_history`
-        INSERT. `lib/activities/score-and-persist.ts` — the edit, merge and
-        unmerge path — calls `scoreActivity` WITHOUT its third argument, so
-        `recentActivityRows` defaults to `[]` and `computeIndexes` sees a
-        single activity. `splitIndex` then collapses to `lab ?? engine`, i.e.
-        that one session's own score. Editing a gym session and editing a run
-        therefore write wildly different "current" indexes for the same
-        athlete. The create path (api/activities/route.ts) passes the rows and
-        is correct; the fix is to pass them here too, and it is not this
-        page's to make.
+        column a database trigger keeps in step with the athlete's newest
+        `split_index_history` row.
 
-    So the peer pool is built from a mixture of real combined indexes and
-    stray single-session scores. That is a write-path defect, not a display
-    one, and it is described in full in the handover rather than papered over
-    here.
+    Both of the write-path defects that used to make that peer pool untrustworthy
+    have since been fixed, and are recorded here because the shape of the bugs is
+    worth remembering:
+
+      * `lib/activities/score-and-persist.ts` — the edit, merge and unmerge path
+        — called `scoreActivity` WITHOUT its third argument, so
+        `recentActivityRows` defaulted to `[]`, `computeIndexes` saw a single
+        activity, and `splitIndex` collapsed to `lab ?? engine` — that one
+        session's own score. Editing a gym session and editing a run wrote
+        wildly different "current" indexes for the same athlete. It now passes
+        the rows, as the create path always did.
+      * The trigger itself copied whichever history row was written last onto
+        the profile, with no regard for its date — and `recorded_at` carries the
+        ACTIVITY's date, not insert time, so logging or editing a back-dated
+        session made that older session "current". It now recomputes from the
+        newest surviving row (migration 054).
   */
   const rankPercentile =
     hasActivities && hasIndexHistory
