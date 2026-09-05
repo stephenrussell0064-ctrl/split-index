@@ -18,8 +18,11 @@ export function ReadinessCard({ readiness, className }: { readiness: ReadinessRe
   const tone =
     readiness.readiness >= 70 ? "text-success" : readiness.readiness >= 40 ? "text-warning" : "text-danger";
 
+  // No glow: this now sits as the narrow rail beside the glowing "Today's
+  // session" card. Two lit cards in one row is decoration, not hierarchy —
+  // the session is the answer, readiness qualifies it.
   return (
-    <Card glow="accent" padding="lg" className={cn("relative overflow-hidden", className)}>
+    <Card padding="lg" className={cn("relative overflow-hidden", className)}>
       <motion.div
         initial={reducedMotion ? false : { opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}

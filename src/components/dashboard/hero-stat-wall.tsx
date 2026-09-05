@@ -70,6 +70,24 @@ function StatTile({
   );
 }
 
+/**
+ * "You outperform N% of the reference population" rendered as the "top X%" an
+ * athlete actually reads.
+ *
+ * Both ends are clamped because the raw subtraction produces sentences that
+ * are not true. `percentile` arrives already rounded to a whole number, so a
+ * 99.9th-percentile score rounds to 100 and renders "Top 0%" — nobody is in
+ * the top nothing. At the other end an athlete just starting out sits at the
+ * 0th percentile and rendered "Top 100%", which is not a rank at all.
+ *
+ * The clamp is presentation only. It does not make the underlying number more
+ * right, and it is deliberately not hiding a wrong one: see the note on
+ * `rankPercentile` in dashboard/page.tsx for which number is being ranked.
+ */
+export function topPercent(percentile: number): number {
+  return Math.min(99, Math.max(1, 100 - percentile));
+}
+
 export interface HeroStatWallProps {
   headlineLabel: string;
   headlineValue: number | null;
@@ -228,11 +246,11 @@ export function HeroStatWall({
             <StatTile
               icon={Trophy}
               label={rankPercentile.isPeerBased ? "Global rank" : "Standards rank"}
-              value={`Top ${Math.max(1, 100 - rankPercentile.percentile)}%`}
+              value={`Top ${topPercent(rankPercentile.percentile)}%`}
               detail={
                 rankPercentile.isPeerBased
                   ? `of ${rankPercentile.poolSize} athletes`
-                  : "vs published standard"
+                  : "vs training standards"
               }
               accent="warning"
             />

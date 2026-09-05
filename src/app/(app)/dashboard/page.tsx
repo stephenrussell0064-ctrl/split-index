@@ -5,15 +5,14 @@ import { format } from "date-fns";
 import { createClient } from "@/lib/supabase/server";
 import { EngineLabTrendCard } from "@/components/dashboard/engine-lab-trend-card";
 import { HeroStatWall } from "@/components/dashboard/hero-stat-wall";
-import { GymZonePanel, CardioZonePanel } from "@/components/dashboard/zone-panels";
 import { RecentWorkouts, AICoachCard } from "@/components/dashboard/workout-list";
-import { ActivityHeatmap, type HeatmapDay } from "@/components/dashboard/activity-heatmap";
-import { ConsistencyCard } from "@/components/dashboard/training-cards";
+import type { HeatmapDay } from "@/components/dashboard/activity-heatmap";
 import { WeekOverWeekCard } from "@/components/dashboard/week-over-week-card";
+import { TodaysSessionCard } from "@/components/dashboard/todays-session-card";
+import { loadTodaysSessionPayload } from "@/components/dashboard/todays-session-data";
 import { GoalsCard, type DashboardGoal } from "@/components/dashboard/goals-card";
 import { SplitTrendPanel, type TrendPoint } from "@/components/analytics/charts";
 import { SportComparisonGrid } from "@/components/dashboard/sport-comparison-grid";
-import { PremiumGate } from "@/components/analytics/premium-gate";
 import { PremiumTease } from "@/components/premium/premium-tease";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FocusWeekCard } from "@/components/retention/focus-week-card";
@@ -138,6 +137,12 @@ export default async function DashboardPage() {
     since: isoDaysAgo(INTERFERENCE_LOOKBACK_DAYS),
   });
   const predictedRunBenchmarkPromise = getPredictedBenchmark(supabase, user.id, "run");
+  /*
+    Today's prescribed session. Two selects against the plan the engine already
+    stored — deliberately NOT a call to /api/hpe/plan, which generates one and
+    would turn a dashboard load into a write. See todays-session-data.ts.
+  */
+  const todaysSessionPromise = loadTodaysSessionPayload(supabase, user.id);
 
   const [
     { data: latestIndex },
@@ -251,11 +256,13 @@ export default async function DashboardPage() {
     return data ?? [];
   })();
 
-  const [crossDomainSessions, predictedRunBenchmark, allTimeGymExercises] = await Promise.all([
-    crossDomainSessionsPromise,
-    predictedRunBenchmarkPromise,
-    allTimeGymExercisesPromise,
-  ]);
+  const [crossDomainSessions, predictedRunBenchmark, allTimeGymExercises, todaysSessionPayload] =
+    await Promise.all([
+      crossDomainSessionsPromise,
+      predictedRunBenchmarkPromise,
+      allTimeGymExercisesPromise,
+      todaysSessionPromise,
+    ]);
   const interferenceReport = computeInterferenceReport(crossDomainSessions);
   const readiness = computeReadiness(crossDomainSessions);
   const todayPlan = buildTodayPlan(readiness, interferenceReport, predictedRunBenchmark);
@@ -363,15 +370,6 @@ export default async function DashboardPage() {
         predicted_index_7d: 0,
       };
 
-  const rankPercentile = hasActivities && hasIndexHistory
-    ? await getGlobalRankPercentile(supabase, current.split_index)
-    : null;
-
-  const nextRankTarget =
-    premium && hasActivities && hasIndexHistory
-      ? await getNextRankTarget(supabase, current.split_index)
-      : null;
-
   const projection8Weeks = hasIndexHistory
     ? computeSplitIndexProjection(
         (fullHistory ?? []) as SplitIndexSnapshot[],
@@ -421,30 +419,6 @@ export default async function DashboardPage() {
     load: v.load,
     workouts: v.workouts,
   }));
-
-  const sportAgg = new Map<string, { sum: number; count: number }>();
-  for (const s of scores ?? []) {
-    const key = s.sport as string;
-    if (key === "gym") continue;
-    const agg = sportAgg.get(key) ?? { sum: 0, count: 0 };
-    agg.sum += s.sport_index as number;
-    agg.count += 1;
-    sportAgg.set(key, agg);
-  }
-  const cardioSportScores = Array.from(sportAgg, ([sport, agg]) => ({
-    sport,
-    avg: Math.round(agg.sum / agg.count),
-    count: agg.count,
-  })).sort((a, b) => b.count - a.count);
-
-  const recentGymScores = (scores ?? [])
-    .filter((s) => s.sport === "gym")
-    .slice(0, 8)
-    .map((s) => ({
-      date: s.created_at as string,
-      score: s.sport_index as number,
-    }))
-    .reverse();
 
   // Most-recent-first per sport (scores is already ordered by created_at
   // desc from the query above) — powers SportComparisonGrid's "latest vs
@@ -498,6 +472,49 @@ export default async function DashboardPage() {
   const headlineValue = liveIndexes?.headline ?? current.split_index;
   const displayEnduranceIndex = liveIndexes?.engineIndex ?? current.endurance_index;
   const displayStrengthIndex = liveIndexes?.labIndex ?? current.strength_index;
+  /*
+    RANK THE NUMBER THE PAGE ACTUALLY SHOWS.
+
+    These two used to be computed from `current.split_index` — the newest
+    `split_index_history` row — while the hero above rendered
+    `liveIndexes.headline`. Those are different numbers whenever anything was
+    freshly scored this request, so the hero could read 701 with a "Top 3%"
+    badge sitting beside it, computed from a value the athlete never sees.
+
+    Ranking `headlineValue` closes that specific contradiction. It does NOT
+    make the rank correct, and the remaining problem is worth writing down
+    rather than leaving for the next person to rediscover:
+
+      * The standards branch (`percentileForScore`) is a pure function of the
+        athlete's own score, so ranking the displayed number is now exactly
+        right there.
+      * The peer branch compares against `profiles.current_split_index`, a
+        column a database trigger fills from every `split_index_history`
+        INSERT. `lib/activities/score-and-persist.ts` — the edit, merge and
+        unmerge path — calls `scoreActivity` WITHOUT its third argument, so
+        `recentActivityRows` defaults to `[]` and `computeIndexes` sees a
+        single activity. `splitIndex` then collapses to `lab ?? engine`, i.e.
+        that one session's own score. Editing a gym session and editing a run
+        therefore write wildly different "current" indexes for the same
+        athlete. The create path (api/activities/route.ts) passes the rows and
+        is correct; the fix is to pass them here too, and it is not this
+        page's to make.
+
+    So the peer pool is built from a mixture of real combined indexes and
+    stray single-session scores. That is a write-path defect, not a display
+    one, and it is described in full in the handover rather than papered over
+    here.
+  */
+  const rankPercentile =
+    hasActivities && hasIndexHistory
+      ? await getGlobalRankPercentile(supabase, headlineValue)
+      : null;
+
+  const nextRankTarget =
+    premium && hasActivities && hasIndexHistory
+      ? await getNextRankTarget(supabase, headlineValue)
+      : null;
+
   const indexGap = current.endurance_index - current.strength_index;
   const weakerSide: "endurance" | "strength" | "balanced" =
     indexGap < -15 ? "endurance" : indexGap > 15 ? "strength" : "balanced";
@@ -531,12 +548,13 @@ export default async function DashboardPage() {
       {!hasActivities && <EmptyDashboardHero displayName={displayName} />}
 
       {/*
-        Redesign brief: the boldest, most "hook"-y content (headline index,
-        predictions, streak, rank) leads the page now — the first thing a
-        returning user sees, not something they scroll to find. Readiness /
-        today's plan / interference stay immediately after, still above the
-        fold, per the earlier dashboard IA overhaul (interference brief
-        Part 5) that moved them up from further down the page.
+        WHERE DO I STAND — the headline index, the two predictions an athlete
+        opens the app for, streak and rank. Stays first because it is the one
+        block that has to grab attention before anything is read, and because
+        `predicted5kSeconds` / `overallDotsGl` here are the SAME gated values
+        `RacePredictionsSync` above publishes to the iOS home-screen widget.
+        Neither the tile nor the payload was touched by this redesign, so the
+        phone and the app still cannot disagree about a predicted time.
       */}
       {hasActivities && (
         <HeroStatWall
@@ -557,12 +575,42 @@ export default async function DashboardPage() {
         />
       )}
 
-      {hasActivities && (
-        <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
-          <ReadinessCard readiness={readiness} className="lg:col-span-2" />
-          <TodayCard plan={todayPlan} className="lg:col-span-1" />
-        </div>
-      )}
+      {/*
+        WHAT DO I DO TODAY — the two rows an athlete opens the app for, moved
+        above everything retrospective.
+
+        The AI coach was the LAST content block on this page (bottom-right of
+        the final grid, below the heatmap and the goals list). The athlete's
+        report was blunt: "the AI coach on dashboard is key information and
+        this should be higher up". It is now second, full-weight, directly
+        under the index it is explaining.
+
+        Today's prescribed session was not on this page at all — the hybrid
+        plan shipped as its own route reachable only from the nav. It leads
+        this band because it is the most concrete answer the app has to "what
+        now", and it is rendered from the same payload builder the iOS widget
+        uses so the two surfaces cannot describe today differently.
+
+        Readiness and the intensity suggestion stay, but as the narrow rail
+        beside each — they qualify the session and the coaching, they are not
+        the answer on their own.
+      */}
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+        <TodaysSessionCard
+          payload={todaysSessionPayload}
+          className={hasActivities ? "lg:col-span-2" : "lg:col-span-3"}
+        />
+        {hasActivities && <ReadinessCard readiness={readiness} className="lg:col-span-1" />}
+      </div>
+
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+        <AICoachCard
+          feedback={aiFeedback ? gateAiFeedback(aiFeedback, premium) : aiFeedback}
+          isPremium={premium}
+          className={hasActivities ? "lg:col-span-2" : "lg:col-span-3"}
+        />
+        {hasActivities && <TodayCard plan={todayPlan} className="lg:col-span-1" />}
+      </div>
 
       {hasActivities && <InterferenceRadarCard report={interferenceReport} />}
 
@@ -640,16 +688,42 @@ export default async function DashboardPage() {
         )}
       </div>
 
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-        <GymZonePanel
-          strengthIndex={hasIndexHistory ? current.strength_index : null}
-          recentGymScores={recentGymScores}
-          hasHistory={hasActivities && recentGymScores.length > 0}
+      {/*
+        CUT FROM THE HOME PAGE — GymZonePanel and CardioZonePanel.
+
+        Both were a third rendering of two numbers this page already showed
+        twice: `current.strength_index` / `current.endurance_index` lead the
+        EngineLabTrendCard directly above with trend context attached, and the
+        per-sport averages underneath them are what SportComparisonGrid shows
+        below. A home page that says the same thing three times has not
+        prioritised anything. Neither panel is used anywhere else, so they
+        remain in the tree for whoever wants them on a Lab/Engine page.
+      */}
+
+      {/*
+        THE PUSH ROW — the three cards that ask for something rather than
+        report something. Grouped so they read as one prompt instead of being
+        scattered through the analysis tail as they were.
+      */}
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+        {premium ? (
+          <NextRankCard target={nextRankTarget} />
+        ) : (
+          <PremiumTease
+            title="Beat the next rank"
+            subtitle="Unlock Premium to see exactly how many points separate you from the athlete ahead."
+            showPreview={false}
+            className="h-full"
+          />
+        )}
+        <FocusWeekCard
+          weakerSide={weakerSide}
+          enduranceIndex={current.endurance_index}
+          strengthIndex={current.strength_index}
         />
-        <CardioZonePanel
-          enduranceIndex={hasIndexHistory ? current.endurance_index : null}
-          sportScores={cardioSportScores}
-          hasHistory={hasActivities && cardioSportScores.length > 0}
+        <GoalsCard
+          goals={(goals ?? []) as DashboardGoal[]}
+          currentIndex={hasIndexHistory ? current.split_index : 0}
         />
       </div>
 
@@ -676,66 +750,29 @@ export default async function DashboardPage() {
         </Link>
       </div>
 
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
-        <div className="lg:col-span-8">
-          <PremiumGate
-            locked={!premium && history.length > 7}
-            feature="90-day index history"
-          >
-            <SplitTrendPanel data={trendData} />
-          </PremiumGate>
-        </div>
-        <div className="lg:col-span-4">
+      {/*
+        CUT FROM THE HOME PAGE — the standalone SplitTrendPanel, the
+        ActivityHeatmap and the ConsistencyCard.
+
+        All three are retrospective analysis with a page of their own:
+        /analytics renders the same trend panel, the same heatmap component
+        and its own consistency score. The dashboard was rendering `trendData`
+        twice (once through EngineLabTrendCard, once raw) and a 112-day
+        heatmap that answers a question nobody opens the app at 6am to ask.
+        The "Full analytics" link above is the route to all of it.
+
+        WeekOverWeekCard survives because "did I do more or less than last
+        week" is a right-now question and it exists nowhere else. It keeps
+        `heatmapDays`, which is why that computation is still above.
+      */}
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+        <WeekOverWeekCard days={heatmapDays} className="lg:col-span-1" />
+        <div className="lg:col-span-2">
           <SportComparisonGrid scoresBySport={scoresBySport} />
         </div>
-
-        {/* Consistency and week-over-week are both derived from the same
-            heatmapDays source as the heatmap itself — stacked alongside it
-            in one row instead of each getting a full-width row of their own. */}
-        <div className="lg:col-span-8 overflow-x-auto">
-          <ActivityHeatmap days={heatmapDays} />
-        </div>
-        <div className="flex flex-col gap-5 lg:col-span-4">
-          <ConsistencyCard days={heatmapDays} className="flex-1" />
-          <WeekOverWeekCard days={heatmapDays} className="flex-1" />
-        </div>
-
-        <div className="lg:col-span-4">
-          {premium ? (
-            <NextRankCard target={nextRankTarget} />
-          ) : (
-            <PremiumTease
-              title="Beat the next rank"
-              subtitle="Unlock Premium to see exactly how many points separate you from the athlete ahead."
-              showPreview={false}
-              className="h-full"
-            />
-          )}
-        </div>
-        <div className="lg:col-span-4">
-          <FocusWeekCard
-            weakerSide={weakerSide}
-            enduranceIndex={current.endurance_index}
-            strengthIndex={current.strength_index}
-          />
-        </div>
-        <div className="lg:col-span-4">
-          <GoalsCard
-            goals={(goals ?? []) as DashboardGoal[]}
-            currentIndex={hasIndexHistory ? current.split_index : 0}
-          />
-        </div>
-
-        <div className="lg:col-span-7">
-          <RecentWorkouts activities={recentActivities ?? []} scores={scoreMap} />
-        </div>
-        <div className="lg:col-span-5">
-          <AICoachCard
-            feedback={aiFeedback ? gateAiFeedback(aiFeedback, premium) : aiFeedback}
-            isPremium={premium}
-          />
-        </div>
       </div>
+
+      <RecentWorkouts activities={recentActivities ?? []} scores={scoreMap} />
 
       <ScoreDisclaimer className="mt-2" />
     </div>

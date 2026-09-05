@@ -46,7 +46,18 @@ export function NextRankCard({ target, className }: NextRankCardProps) {
           <>
             <div className="flex items-end justify-between">
               <p className="text-3xl font-bold tabular-nums">
-                {target.pointsToClose}
+                {/*
+                  MUST be scaled. `pointsToClose` is a difference of two raw
+                  0–999 indexes, and every index this app shows an athlete goes
+                  through formatIndex (which divides by 10). Rendered raw, this
+                  card told someone reading "70.1" beside "71.5" that the gap
+                  between them was "14 pts" — a tenfold overstatement of the
+                  only number on the card that is supposed to be actionable,
+                  and the reason the tier target read as unreachable. The
+                  sibling `formatIndex(target.nextIndex)` below was already
+                  scaled, which is what made the mismatch visible.
+                */}
+                {formatIndex(target.pointsToClose)}
                 <span className="ml-1 text-lg font-normal text-muted">pts</span>
               </p>
               <p className="text-xs font-medium uppercase tracking-wider text-muted">
@@ -69,7 +80,16 @@ export function NextRankCard({ target, className }: NextRankCardProps) {
           <>
             <div className="flex items-end justify-between">
               <p className="text-3xl font-bold tabular-nums">
-                {target.pointsToClose}
+                {/*
+                  MUST be scaled. `pointsToClose` is a difference of two raw
+                  0–999 indexes, and every index this app shows an athlete goes
+                  through formatIndex (which divides by 10). `pointsToClose`
+                  here is `nextStandardsTierTarget`'s raw gap to the next tier
+                  boundary — Advanced sits at 725, so an athlete displayed as
+                  "70.1" was told they were "24 pts" away instead of 2.4, and
+                  the standards tier read as ten times further off than it is.
+                */}
+                {formatIndex(target.pointsToClose)}
                 <span className="ml-1 text-lg font-normal text-muted">pts</span>
               </p>
               <p className="text-xs font-medium uppercase tracking-wider text-muted">
