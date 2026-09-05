@@ -1,7 +1,17 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
+import { cn } from "@/lib/utils/cn";
 import type { AttemptSelection, EventDayStep, RacePacing, TaperDay } from "@/lib/scoring/hpe";
+import {
+  buildPacingPlan,
+  clockTime,
+  deltaLabel,
+  mmss,
+  PACING_STRATEGIES,
+  type PacingStrategy,
+} from "./race-pacing";
 
 /**
  * WP9 — the event-day view, closing assurance findings F12, F14 and F18.
@@ -28,11 +38,18 @@ export function EventDayView({
   eventDay,
   attempts,
   pacing,
+  raceDistanceKm = 5,
 }: {
   taper: TaperDay[];
   eventDay: EventDayStep[] | null;
   attempts: AttemptSelection[];
   pacing: RacePacing | null;
+  /**
+   * The race the splits are for. Five kilometres unless told otherwise, because
+   * `racePacing` derives its pace as `target5kS / 5` — the target the intake
+   * collects is a 5k target, and pacing a marathon off it would be fiction.
+   */
+  raceDistanceKm?: number;
 }) {
   return (
     <div className="space-y-5">
@@ -96,22 +113,120 @@ export function EventDayView({
         </Card>
       )}
 
-      {pacing && (
-        <Card>
-          <h2 className="text-lg font-semibold tracking-tight">Race pacing</h2>
-          <div className="mt-3 flex flex-wrap gap-6">
-            <div>
-              <p className="text-xs uppercase tracking-wider text-muted">Target</p>
-              <p className="mt-0.5 text-xl font-semibold tabular-nums">{fmtPace(pacing.targetPaceSPerKm)}</p>
-            </div>
-            <div>
-              <p className="text-xs uppercase tracking-wider text-muted">First kilometre</p>
-              <p className="mt-0.5 text-xl font-semibold tabular-nums">{fmtPace(pacing.firstKmPaceSPerKm)}</p>
-            </div>
-          </div>
-          <p className="mt-3 text-sm leading-relaxed text-muted">{pacing.note}</p>
-        </Card>
-      )}
+      {pacing && <RacePacingCard pacing={pacing} distanceKm={raceDistanceKm} />}
     </div>
+  );
+}
+
+/**
+ * The splits, under a strategy the athlete chooses.
+ *
+ * The engine hands over one number — target pace — and a sentence about the
+ * first kilometre. That is a pace, not a plan: nobody runs an average, they run
+ * kilometre one and then kilometre two, and the question on a start line is
+ * what the watch should say at each of them.
+ *
+ * Every strategy here is rendered from the SAME target time, and the splits
+ * always add up to it (`race-pacing.ts` guarantees that by construction, and
+ * the tests pin it). Choosing a shape changes how the time is distributed and
+ * nothing else — a control that quietly re-targeted the race would be
+ * answering a question the athlete did not ask.
+ */
+function RacePacingCard({ pacing, distanceKm }: { pacing: RacePacing; distanceKm: number }) {
+  const [strategy, setStrategy] = useState<PacingStrategy>("even");
+
+  // The target time is the target pace over the race, which is exactly how the
+  // engine derived the pace in the first place.
+  const totalS = Math.round(pacing.targetPaceSPerKm * distanceKm);
+  const plan = useMemo(() => buildPacingPlan(totalS, distanceKm, strategy), [totalS, distanceKm, strategy]);
+
+  // The engine slows the opening kilometre when the race follows a meet. A
+  // hard start is then directly against its advice — which is the athlete's
+  // call to make, but only if they are told, at the moment they make it.
+  const followsMeet = pacing.firstKmPaceSPerKm > pacing.targetPaceSPerKm + 0.5;
+  const meta = PACING_STRATEGIES.find((s) => s.id === strategy)!;
+
+  return (
+    <Card>
+      <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
+        <h2 className="text-lg font-semibold tracking-tight">Race pacing</h2>
+        <p className="text-sm text-muted">
+          <span className="font-semibold tabular-nums text-foreground">{clockTime(totalS)}</span> for {distanceKm}k ·{" "}
+          <span className="tabular-nums">{fmtPace(pacing.targetPaceSPerKm)}</span> average
+        </p>
+      </div>
+
+      <div className="mt-4 flex gap-1.5 rounded-2xl bg-white/[0.03] p-1.5" role="group" aria-label="Pacing strategy">
+        {PACING_STRATEGIES.map((s) => (
+          <button
+            key={s.id}
+            type="button"
+            onClick={() => setStrategy(s.id)}
+            aria-pressed={strategy === s.id}
+            className={cn(
+              "min-h-11 flex-1 rounded-xl px-2 py-2 text-xs font-medium leading-tight transition-colors",
+              strategy === s.id ? "bg-white/[0.08] text-foreground" : "text-muted hover:text-foreground"
+            )}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+
+      <p className="mt-3 text-sm leading-relaxed text-muted">{meta.summary}</p>
+
+      <div className="mt-4 overflow-x-auto">
+        <table className="w-full min-w-[20rem] text-sm">
+          <thead>
+            <tr className="border-b border-white/[0.06] text-left text-xs uppercase tracking-wider text-muted">
+              <th className="pb-2 font-medium">Split</th>
+              <th className="pb-2 text-right font-medium">Time</th>
+              <th className="pb-2 text-right font-medium">Pace</th>
+              <th className="pb-2 text-right font-medium">On the clock</th>
+            </tr>
+          </thead>
+          <tbody>
+            {plan.segments.map((seg) => (
+              <tr key={seg.label} className="border-b border-white/[0.04] last:border-0">
+                <td className="py-2.5 font-medium">{seg.label}</td>
+                <td className="py-2.5 text-right tabular-nums">{mmss(seg.splitS)}</td>
+                <td className="py-2.5 text-right">
+                  <span className="tabular-nums">{mmss(seg.paceSPerKm)}</span>{" "}
+                  <span
+                    className={cn(
+                      "text-xs tabular-nums",
+                      Math.round(seg.deltaSPerKm) === 0
+                        ? "text-muted/60"
+                        : seg.deltaSPerKm < 0
+                          ? "text-endurance"
+                          : "text-muted"
+                    )}
+                  >
+                    {deltaLabel(seg.deltaSPerKm)}
+                  </span>
+                </td>
+                <td className="py-2.5 text-right font-semibold tabular-nums">{clockTime(seg.cumulativeS)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <p className="mt-3 text-xs leading-relaxed text-muted/70">
+        These add up to {clockTime(totalS)} exactly. Run the &ldquo;on the clock&rdquo; column — it is the one your watch
+        shows, and it is the one that cannot drift.
+      </p>
+
+      {/* The engine's own advice, at the point where it is being overridden. */}
+      {followsMeet && strategy === "fast_start" && (
+        <p className="mt-3 rounded-xl border border-warning/25 bg-warning/[0.06] p-3 text-sm leading-relaxed text-warning/90">
+          You are racing the same day as your meet. Your plan asks for an opening kilometre {fmtPace(pacing.firstKmPaceSPerKm)}
+          {" "}— slower than target, not faster — because your expressed fitness is down after lifting. A hard start here
+          is the one this block least supports.
+        </p>
+      )}
+
+      <p className="mt-3 text-sm leading-relaxed text-muted">{pacing.note}</p>
+    </Card>
   );
 }
