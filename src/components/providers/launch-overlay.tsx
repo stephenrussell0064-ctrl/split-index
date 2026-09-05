@@ -39,7 +39,13 @@ export function LaunchOverlay() {
           initial={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.4, ease: "easeOut" }}
-          className="fixed inset-0 z-[999] flex items-center justify-center bg-background"
+          // #1B241D, not bg-background, to match the NATIVE splash this hands
+          // over from. The two run back to back — native splash, then this —
+          // and bg-background (#060606) against the splash ground read as a
+          // visible colour jump mid-launch. The fade-out then carries it down
+          // to the app's own background, where a change is invisible because
+          // the overlay is already dissolving.
+          className="fixed inset-0 z-[999] flex items-center justify-center bg-[#1B241D]"
         >
           <div className="relative flex items-center justify-center">
             {!reducedMotion && (
