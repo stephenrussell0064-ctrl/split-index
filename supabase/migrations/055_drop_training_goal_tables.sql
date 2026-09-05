@@ -1,0 +1,54 @@
+-- Drop the Training Plan's storage.
+--
+-- ---------------------------------------------------------------------------
+-- WHAT IS BEING REMOVED, AND WHY IT IS SAFE TO REMOVE
+-- ---------------------------------------------------------------------------
+-- `training_goals` (033, extended by 034/035/036) and `training_goal_progress`
+-- (038) existed for one product: the multi-goal weekly balancer whose page was
+-- removed at the athlete's request ("Remove the training plan page as this is
+-- not as good as hybrid plan and may cause confusion to the user") and whose
+-- API, /api/training-goals, was retired in e1c76e9.
+--
+-- After that commit NOTHING reads or writes either table. The last reader
+-- outside the route was /api/hpe/plan, which pre-set the diagnostic's
+-- endurance/strength priority from the goal mix; it now reads the athlete's own
+-- hybrid-plan targets instead, because a table nothing can write is not a
+-- source of anything.
+--
+-- ---------------------------------------------------------------------------
+-- THIS DESTROYS DATA AND CANNOT BE UNDONE
+-- ---------------------------------------------------------------------------
+-- Six goal rows and six progress snapshots, across two accounts, all of them
+-- the app owner's own. Checked before writing this, not assumed.
+--
+-- Almost everything in them already lives on in `hpe_intake`, which is where
+-- the Hybrid Plan keeps the same answers — the 18:00 5k target, the 140kg
+-- bench, the 200kg deadlift and the 30 Oct event date are all there.
+--
+-- WHAT IS NOT CARRIED OVER, stated plainly because dropping the table is the
+-- moment it stops being recoverable:
+--   * account 2d823404 has lift goals here that its hpe_intake row does not:
+--       Bench Press 135kg, Squat 200kg, Dumbbell Bench Press 60kg
+--     The first two can be re-entered in the Hybrid Plan's Goals tab. The third
+--     cannot: the Hybrid Plan holds targets for the three competition lifts
+--     only, and has no field for a dumbbell press.
+--   * the six progress snapshots (gap fraction and current value per day,
+--     11-15 Aug 2026). Nothing reads them and no screen plots them any more.
+--
+-- If you want any of that, take it BEFORE running this — or take a Supabase
+-- PITR restore point, and understand the snapshot then holds the rows.
+--
+-- ---------------------------------------------------------------------------
+-- ORDER
+-- ---------------------------------------------------------------------------
+-- The child first. training_goal_progress.goal_id REFERENCES training_goals(id)
+-- ON DELETE CASCADE, so dropping the parent first would need CASCADE and would
+-- take the child with it silently. Dropping them in dependency order means the
+-- statements say exactly what they remove.
+--
+-- Indexes (idx_training_goals_user, idx_training_goal_progress_goal_date) and
+-- the two RLS policies are owned by these tables and go with them; they need no
+-- statements of their own.
+
+DROP TABLE IF EXISTS training_goal_progress;
+DROP TABLE IF EXISTS training_goals;
