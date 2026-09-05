@@ -1,4 +1,24 @@
 -- ============================================================================
+-- SUPERSEDED — DO NOT RUN. Kept for the record only.
+-- ============================================================================
+--
+-- This was never executed. The backfill it describes was performed on
+-- 2026-09-05 by scripts/backfill-route-privacy-zone.ts, which does the same job
+-- by calling the REAL applyRoutePrivacyZone — the function the API calls and
+-- src/lib/scoring/gps-track.test.ts covers — instead of the plpgsql
+-- transliteration below, which by its own admission (see "Be aware" in HOW TO
+-- RUN IT) had never been run against a database. A hand-ported geometry routine
+-- is exactly the kind of thing that is subtly wrong in a way a row count will
+-- not show, and the cost of being wrong is unrecoverable.
+--
+-- Running this now would trim a further 200m off each end of every route that
+-- has already been trimmed. Trimming is not idempotent. The TypeScript script
+-- stamps each rewritten row with metadata.route_privacy_backfilled_at and skips
+-- stamped rows; this file has no such guard. Use the script.
+--
+-- Everything below is the original text, unchanged.
+--
+-- ============================================================================
 -- ONE-OFF BACKFILL — apply the route privacy zone to routes ALREADY STORED
 -- ============================================================================
 --
