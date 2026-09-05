@@ -95,6 +95,13 @@ export interface HeroStatWallProps {
   hasHistory: boolean;
   /** Predicted 5K time in seconds — null while still calibrating (fewer than TIER2_MIN_SAMPLES_TO_DISPLAY runs logged) or never logged. */
   predicted5kSeconds: number | null;
+  /**
+   * Why the 5k moved, when a training gap has eased it back — null when no
+   * decay applies, which is the common case. The tile shows the same number
+   * either way; this only replaces the subtitle, so a correct-but-surprising
+   * figure stops reading as a bug.
+   */
+  predictionDecayNote?: string | null;
   /** Best-ever SBD total in kg (squat+bench+deadlift) — null until at least one of the three has been logged. */
   sbdTotalKg: number | null;
   sbdLiftsLogged: number;
@@ -132,6 +139,7 @@ export function HeroStatWall({
   weeklyTrend,
   hasHistory,
   predicted5kSeconds,
+  predictionDecayNote = null,
   sbdTotalKg,
   sbdLiftsLogged,
   streak,
@@ -201,7 +209,7 @@ export function HeroStatWall({
               icon={Timer}
               label="5K Prediction"
               value={formatRiegelPrediction(predicted5kSeconds)}
-              detail="from your training"
+              detail={predictionDecayNote ?? "from your training"}
               accent="accent"
               href="/analytics"
             />

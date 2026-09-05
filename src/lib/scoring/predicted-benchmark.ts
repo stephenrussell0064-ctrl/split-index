@@ -5,6 +5,17 @@ export interface StoredPredictedBenchmark {
   benchmarkSeconds: number;
   sampleCount: number;
   riegelK: number | null;
+  /**
+   * When the prediction was last written — the "days since a session" clock.
+   *
+   * Optional because only the decay EXPLANATION needs it: the loader always
+   * supplies it, but the several callers that just want the number (today's
+   * plan, the hybrid report) should not have to carry timestamps through
+   * their fixtures to prove they don't use them.
+   */
+  updatedAt?: string | null;
+  /** When a quality effort last refreshed it. Decay has separate grace periods for the two. */
+  lastQualityAt?: string | null;
 }
 
 /**
@@ -23,7 +34,7 @@ export async function getPredictedBenchmark(
 ): Promise<StoredPredictedBenchmark | null> {
   const { data } = await supabase
     .from("predicted_benchmarks")
-    .select("benchmark_seconds, sample_count, riegel_k")
+    .select("benchmark_seconds, sample_count, riegel_k, updated_at, last_quality_at")
     .eq("user_id", userId)
     .eq("sport", benchmarkSport)
     .maybeSingle();
@@ -34,5 +45,12 @@ export async function getPredictedBenchmark(
     benchmarkSeconds: data.benchmark_seconds,
     sampleCount: data.sample_count,
     riegelK: data.riegel_k,
+    // Needed to explain the number, not to compute it. The stored value is
+    // undecayed — decay is only folded in when the next session is logged and
+    // the decayed prior is blended back — so a reader who has been away sees a
+    // figure that will drop the moment they train, with nothing saying why.
+    // These two let explainStoredPrediction say it out loud.
+    updatedAt: data.updated_at,
+    lastQualityAt: data.last_quality_at,
   };
 }

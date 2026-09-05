@@ -1,22 +1,6 @@
 import { Clock, MapPin, Gauge, Mountain, HeartPulse, Thermometer, Footprints } from "lucide-react";
-import { formatDuration, formatDistance, formatPace, formatSpeed } from "@/lib/utils/format";
+import { formatDuration, formatDistance, formatSportPace } from "@/lib/utils/format";
 import type { SportType } from "@/types";
-
-/** Cycling shows speed (km/h); every other endurance sport shows pace (min/km) — same stored avg_pace_seconds_per_km number either way. */
-function paceOrSpeed(sport: SportType, secondsPerKm: number): { label: string; value: string } {
-  return sport === "outdoor_cycling"
-    ? { label: "Speed", value: formatSpeed(secondsPerKm) }
-    : { label: "Pace", value: formatPace(secondsPerKm) };
-}
-
-/** Rowing/ski-erg sports think in split (min:sec per 500m), a distinct stored column from avg_pace_seconds_per_km — the latter is never populated for these sports at all. */
-const SPLIT_SPORTS = new Set<SportType>(["rowing", "ski_erg"]);
-
-function formatSplit(seconds: number): string {
-  const m = Math.floor(seconds / 60);
-  const s = Math.round(seconds % 60);
-  return `${m}:${String(s).padStart(2, "0")} /500m`;
-}
 
 interface RawStatsPanelProps {
   sport: SportType;
@@ -55,21 +39,27 @@ export function RawStatsPanel({
   avgCadence,
   temperatureCelsius,
 }: RawStatsPanelProps) {
-  const pace = avgPaceSecondsPerKm !== null ? paceOrSpeed(sport, avgPaceSecondsPerKm) : null;
-  const split = SPLIT_SPORTS.has(sport) && avgSplitSeconds !== null ? formatSplit(avgSplitSeconds) : null;
-  // Split (row/ski-erg) takes priority when both happen to be present —
-  // pace-per-km is never actually populated for those sports (see
-  // SPLIT_SPORTS's doc comment), but stay defensive rather than assume.
-  // Everything pace-based (running, walking, swimming, bike/ski erg) is
-  // labeled "Avg split" too, not "Avg pace" — user feedback asked for
-  // "average split" as the headline metric for activities in general, and
-  // runners commonly call their per-km time a "split" regardless of sport.
-  // Only true speed-based sports (outdoor cycling) keep "Avg speed".
-  const hero = split
-    ? { label: "Avg split", value: split }
-    : pace
-      ? { label: pace.label === "Speed" ? "Avg speed" : "Avg split", value: pace.value }
-      : null;
+  // One formatter, shared with the logbook. This panel used to carry its own
+  // pair — a per-km `formatPace` and a per-500m `formatSplit` for the ergs —
+  // which is why a swim read "/km" here and in the list: neither copy knew
+  // swimming is conventionally per 100m, and the two had already drifted on
+  // spacing ("2:04/500m" against "2:04 /500m"). formatSportPace picks the
+  // unit from the sport and prefers the ergs' own stored split column, so the
+  // list and this page cannot disagree again.
+  const paceValue = formatSportPace(sport, {
+    avgPaceSecondsPerKm,
+    avgSplitSeconds,
+  });
+  // "Avg split" for everything pace-based, not "Avg pace" — user feedback
+  // asked for split as the headline metric generally, and runners call their
+  // per-km time a split regardless of sport. Only genuinely speed-based
+  // sports (outdoor cycling) keep "Avg speed".
+  const hero = paceValue
+    ? {
+        label: sport === "outdoor_cycling" ? "Avg speed" : "Avg split",
+        value: paceValue,
+      }
+    : null;
   /** Cadence only means anything on foot — cycling cadence is pedal RPM, a different sensor entirely. */
   const showCadence = avgCadence !== null && sport !== "outdoor_cycling";
 

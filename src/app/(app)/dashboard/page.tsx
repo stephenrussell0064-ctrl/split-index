@@ -41,6 +41,7 @@ import { computeIndexes } from "@/lib/scoring/index-engine";
 import type { IndexResult } from "@/lib/scoring/index-engine";
 import { calculateOverallDotsGl } from "@/lib/scoring/strength/overall-dots-gl";
 import { tier2IsCalibrating, TIER2_MIN_SAMPLES_TO_DISPLAY } from "@/lib/scoring/cardio/race-prediction";
+import { explainStoredPrediction } from "@/lib/scoring/cardio-predictions";
 import { riegelPredictions } from "@/lib/scoring/cardio-activity";
 import { formatPredictionLabel } from "@/lib/scoring/presentation";
 import { RacePredictionsSync } from "@/lib/native/race-predictions-sync";
@@ -273,6 +274,24 @@ export default async function DashboardPage() {
   const predicted5kSeconds =
     predictedRunBenchmark && !tier2IsCalibrating(predictedRunBenchmark.sampleCount)
       ? predictedRunBenchmark.benchmarkSeconds
+      : null;
+  // Why the number is what it is, when a training gap has eased it back.
+  //
+  // The stored value is UNDECAYED: decay is only folded in when the next
+  // session is logged and the decayed prior is blended back. So an athlete
+  // returning from a break sees their old time, trains, and watches the
+  // prediction get WORSE — which reads as the app breaking rather than as
+  // detraining being counted. It was reported exactly that way.
+  //
+  // Deliberately explanatory only: `predicted5kSeconds` above is untouched, so
+  // the tile, the widget and every scoring path still agree on the figure.
+  const predictionDecay =
+    predicted5kSeconds !== null && predictedRunBenchmark
+      ? explainStoredPrediction(
+          predictedRunBenchmark.benchmarkSeconds,
+          predictedRunBenchmark.updatedAt,
+          predictedRunBenchmark.lastQualityAt
+        )
       : null;
   const overallDotsGl =
     profile.weight_kg && profile.weight_kg > 0
@@ -563,6 +582,7 @@ export default async function DashboardPage() {
           weeklyTrend={weeklyTrend}
           hasHistory={hasIndexHistory}
           predicted5kSeconds={predicted5kSeconds}
+          predictionDecayNote={predictionDecay?.explanation ?? null}
           sbdTotalKg={overallDotsGl && overallDotsGl.sbdTotalKg > 0 ? overallDotsGl.sbdTotalKg : null}
           sbdLiftsLogged={overallDotsGl?.liftsLogged ?? 0}
           streak={streakMetrics.streak}

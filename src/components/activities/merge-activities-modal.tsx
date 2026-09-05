@@ -6,8 +6,9 @@ import { AlertTriangle, ArrowRight, Merge } from "lucide-react";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils/cn";
-import { formatDistance, formatDuration, formatPace, formatSpeed } from "@/lib/utils/format";
+import { formatDistance, formatDuration, formatSportPace } from "@/lib/utils/format";
 import type { LogbookEntry } from "@/lib/activities/logbook-query";
+import type { SportType } from "@/types";
 
 /**
  * "Are you sure" is not enough for an operation that deletes scored training.
@@ -35,7 +36,11 @@ interface MergePreview {
     gapBeforeSeconds: number;
   }>;
   merged: {
-    sport: string;
+    // SportType, not string: the merge endpoint refuses legs of differing
+    // sports, so this is always one of the catalogue's own values — and
+    // formatSportPace needs it to pick /100m, /500m or /km. Typing it loosely
+    // here is what let the hard-coded units below go unnoticed.
+    sport: SportType;
     duration_seconds: number;
     distance_meters: number | null;
     elevation_meters: number | null;
@@ -49,16 +54,17 @@ interface MergePreview {
   warnings: string[];
 }
 
+/**
+ * The third copy of this logic, now deleted like the other two. It hard-coded
+ * /500m and per-km and so showed a merged swim in /km — and this dialog is
+ * where the athlete APPROVES the merge, so a wrong unit here is worse than a
+ * wrong unit on a card: they are agreeing to a number they are reading.
+ */
 function paceLine(merged: MergePreview["merged"]): string | null {
-  if (merged.avg_split_seconds != null) {
-    const m = Math.floor(merged.avg_split_seconds / 60);
-    const s = Math.round(merged.avg_split_seconds % 60);
-    return `${m}:${String(s).padStart(2, "0")}/500m`;
-  }
-  if (merged.avg_pace_seconds_per_km == null) return null;
-  return merged.sport === "outdoor_cycling"
-    ? formatSpeed(merged.avg_pace_seconds_per_km)
-    : formatPace(merged.avg_pace_seconds_per_km);
+  return formatSportPace(merged.sport, {
+    avgPaceSecondsPerKm: merged.avg_pace_seconds_per_km,
+    avgSplitSeconds: merged.avg_split_seconds,
+  });
 }
 
 function gapLabel(seconds: number): string {
