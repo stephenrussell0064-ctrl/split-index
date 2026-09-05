@@ -8,6 +8,7 @@ import { calculateOverallDotsGl } from "@/lib/scoring/strength/overall-dots-gl";
 import { computeRaceRecords } from "@/lib/scoring/race-records";
 import type { AnalyticsPayload, PredictedBenchmark, StrengthEstimate } from "@/components/analytics/types";
 import { normalizeName } from "@/lib/scoring/split-strength-engine";
+import { fetchAllTimeLiftRows, bestOneRmByKey } from "@/lib/activities/all-time-one-rm";
 import type { ScoreStrengthResult } from "@/lib/scoring/split-strength-engine";
 import type { PersonalRecord } from "@/types";
 
@@ -54,7 +55,7 @@ export default async function AnalyticsPage() {
     { data: strengthScoresRaw },
     { data: hrvReadingsRaw },
     { data: raceRecordActivities },
-    { data: allGymActivities },
+    allTimeExercises,
   ] = await Promise.all([
     supabase
       .from("split_index_history")
@@ -120,13 +121,10 @@ export default async function AnalyticsPage() {
       .limit(2000),
     // Same all-time-best-lift pattern as the Lab page's own DOTS/GL card
     // (gym/page.tsx) — deliberately not the latest-per-lift RPC above, which
-    // would understate a lift not touched in the most recent session.
-    supabase
-      .from("activities")
-      .select("id")
-      .eq("user_id", user.id)
-      .eq("sport", "gym")
-      .eq("is_draft", false),
+    // would understate a lift not touched in the most recent session. Reads
+    // strength_scores directly, so it no longer needs the athlete's gym
+    // activity ids first.
+    fetchAllTimeLiftRows(supabase, user.id),
   ]);
 
   // Most recent reading is "today"; the rolling baseline averages the rest
@@ -154,34 +152,22 @@ export default async function AnalyticsPage() {
   // dashboard/per-workout number as "wrong" relative to a reference DOTS/GL
   // calculator before that page-level fix; reusing the same function here
   // avoids reintroducing that mismatch in a second place).
-  const allGymActivityIds = (allGymActivities ?? []).map((a) => a.id as string);
-  const { data: allTimeExercises } =
-    allGymActivityIds.length > 0
-      ? await supabase
-          .from("gym_exercises")
-          .select("exercise_name, estimated_1rm_kg")
-          .in("activity_id", allGymActivityIds)
-      : { data: [] as { exercise_name: string; estimated_1rm_kg: number | null }[] };
-
+  // allTimeExercises comes from strength_scores, not gym_exercises — see
+  // lib/activities/all-time-one-rm.ts for why the two columns are not two
+  // estimates of the same number.
   const overallDotsGl =
     profile.weight_kg && profile.weight_kg > 0
-      ? calculateOverallDotsGl(allTimeExercises ?? [], profile.weight_kg, resolveScoringSex(profile))
+      ? calculateOverallDotsGl(allTimeExercises, profile.weight_kg, resolveScoringSex(profile))
       : null;
 
-  // All-time best per lift, mined from every gym_exercises row ever logged
-  // rather than read off the latest scoring pass. The engine only ever sees
-  // the most recent 200 sessions (fetchExerciseHistory), and a high-water
-  // mark that quietly forgets anything older is not a high-water mark. These
-  // are the same rows the DOTS/GL card above already needs, so it costs no
-  // extra query. Names are normalized because the same lift can have been
-  // typed with different casing across sessions.
-  const allTime1RmByLift = new Map<string, number>();
-  for (const row of allTimeExercises ?? []) {
-    const value = (row.estimated_1rm_kg as number | null) ?? 0;
-    if (value <= 0) continue;
-    const key = normalizeName(row.exercise_name as string);
-    allTime1RmByLift.set(key, Math.max(allTime1RmByLift.get(key) ?? 0, value));
-  }
+  // All-time best per lift, mined from every scored lift ever logged rather
+  // than read off the latest scoring pass. The engine only ever sees the most
+  // recent 200 sessions (fetchExerciseHistory), and a high-water mark that
+  // quietly forgets anything older is not a high-water mark. These are the same
+  // rows the DOTS/GL card above already needs, so it costs no extra query.
+  // Names are normalized because the same lift can have been typed with
+  // different casing across sessions.
+  const allTime1RmByLift = bestOneRmByKey(allTimeExercises, normalizeName);
 
   // latest_strength_scores() already returns one row per exercise — this
   // dedup is just a defensive no-op if that ever changes.
@@ -198,7 +184,9 @@ export default async function AnalyticsPage() {
       // Highest of every source that could hold the real best — a row scored
       // before the split existed has no allTimeOneRM at all, so falling back
       // to the stored per-session figure keeps the number honest instead of
-      // reporting a zero.
+      // reporting a zero. All three are the engine's own figure now, so this
+      // compares like with like; it used to reach across two different rulers,
+      // where it could only ever pick the more generous of the two.
       allTime1RmKg: Math.max(
         allTime1RmByLift.get(normalizeName(name)) ?? 0,
         result?.allTimeOneRM ?? 0,

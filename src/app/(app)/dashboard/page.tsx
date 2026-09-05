@@ -40,6 +40,7 @@ import {
 import { computeIndexes } from "@/lib/scoring/index-engine";
 import type { IndexResult } from "@/lib/scoring/index-engine";
 import { calculateOverallDotsGl } from "@/lib/scoring/strength/overall-dots-gl";
+import { fetchAllTimeLiftRows } from "@/lib/activities/all-time-one-rm";
 import { tier2IsCalibrating, TIER2_MIN_SAMPLES_TO_DISPLAY } from "@/lib/scoring/cardio/race-prediction";
 import { explainStoredPrediction } from "@/lib/scoring/cardio-predictions";
 import { riegelPredictions } from "@/lib/scoring/cardio-activity";
@@ -239,23 +240,10 @@ export default async function DashboardPage() {
   // Best-ever SBD total for the hero wall's "SBD Prediction" tile (Slice 7)
   // — same all-time-best-lift source as the Lab page's own DOTS/GL card
   // (gym/page.tsx) and Analytics' new DOTS/GL panel, so all three agree.
-  const allTimeGymExercisesPromise = (async () => {
-    const { data: gymActivityRows } = await supabase
-      .from("activities")
-      .select("id")
-      .eq("user_id", user.id)
-      .eq("sport", "gym")
-      .eq("is_draft", false);
-    const gymActivityIds = (gymActivityRows ?? []).map((a) => a.id as string);
-    if (gymActivityIds.length === 0) {
-      return [] as { exercise_name: string; estimated_1rm_kg: number | null }[];
-    }
-    const { data } = await supabase
-      .from("gym_exercises")
-      .select("exercise_name, estimated_1rm_kg")
-      .in("activity_id", gymActivityIds);
-    return data ?? [];
-  })();
+  // strength_scores, not gym_exercises: the two columns hold different numbers
+  // for the same lift, and this tile has to agree with the Lab and Analytics
+  // cards showing the same DOTS/GL. See lib/activities/all-time-one-rm.ts.
+  const allTimeGymExercisesPromise = fetchAllTimeLiftRows(supabase, user.id);
 
   const [crossDomainSessions, predictedRunBenchmark, allTimeGymExercises, todaysSessionPayload] =
     await Promise.all([

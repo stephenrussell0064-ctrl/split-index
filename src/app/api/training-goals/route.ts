@@ -18,6 +18,7 @@ import {
 import { daysUntilDate } from "@/lib/utils/date";
 import { bestEstimate1RM, estimateWeightForReps, type ExerciseClass } from "@/lib/scoring/strength/one-rm";
 import { COMMON_EXERCISES } from "@/lib/constants/sports";
+import { fetchAllTimeLiftRows, bestOneRmByKey } from "@/lib/activities/all-time-one-rm";
 import {
   startOfWeek,
   computeWeekProgress,
@@ -137,7 +138,7 @@ export async function GET(request: Request) {
   const weekStartISO = startOfWeek(new Date()).toISOString();
   const progressCutoff = new Date(Date.now() - PROGRESS_HISTORY_WINDOW_DAYS * 86400000).toISOString().slice(0, 10);
 
-  const [{ data: goalRows }, { data: benchmarks }, { data: gymActivities }, { data: weekActivities }, { data: progressRows }] =
+  const [{ data: goalRows }, { data: benchmarks }, allTimeLifts, { data: weekActivities }, { data: progressRows }] =
     await Promise.all([
       supabase
         .from("training_goals")
@@ -148,16 +149,11 @@ export async function GET(request: Request) {
         .from("predicted_benchmarks")
         .select("sport, benchmark_seconds, riegel_k")
         .eq("user_id", user.id),
-      supabase
-        .from("activities")
-        .select("id")
-        .eq("user_id", user.id)
-        .eq("sport", "gym")
-        .eq("is_draft", false),
+      fetchAllTimeLiftRows(supabase, user.id),
       // Scoped to this week only (user feedback: "each activity the user
       // logs, say in the training plan tab what percentage of the day or
-      // session they have met") — separate from gymActivities above,
-      // which stays all-time because it feeds the athlete's all-time-best
+      // session they have met") — separate from the all-time lift rows above,
+      // which stay all-time because they feed the athlete's all-time-best
       // 1RM ("current value"), a genuinely different question.
       supabase
         .from("activities")
@@ -207,21 +203,12 @@ export async function GET(request: Request) {
     (benchmarks ?? []).map((b) => [b.sport as string, (b.riegel_k as number | null) ?? null])
   );
 
-  const gymActivityIds = (gymActivities ?? []).map((a) => a.id as string);
-  const { data: gymExercises } =
-    gymActivityIds.length > 0
-      ? await supabase
-          .from("gym_exercises")
-          .select("exercise_name, estimated_1rm_kg")
-          .in("activity_id", gymActivityIds)
-      : { data: [] as { exercise_name: string; estimated_1rm_kg: number | null }[] };
-
-  const bestByExercise = new Map<string, number>();
-  for (const ex of gymExercises ?? []) {
-    const name = ex.exercise_name as string;
-    const value = (ex.estimated_1rm_kg as number | null) ?? 0;
-    if (value > (bestByExercise.get(name) ?? 0)) bestByExercise.set(name, value);
-  }
+  // strength_scores, not gym_exercises. A strength goal's "current" figure has
+  // to be on the same ruler as the score the athlete is chasing, or a goal can
+  // read as already met purely because the flat column over-reads the lift —
+  // and for a single-arm or per-hand movement it over-reads it by a factor, not
+  // a few percent. See lib/activities/all-time-one-rm.ts.
+  const bestByExercise = bestOneRmByKey(allTimeLifts, (name) => name);
 
   function cardioCurrentValue(sport: BenchmarkSport, distanceMeters: number): number | null {
     const canonicalSeconds = benchmarkBySport.get(sport);

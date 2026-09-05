@@ -19,6 +19,7 @@ import {
 import { resolveScoringSex } from "@/lib/scoring/adapters";
 import { calculateOverallDotsGl } from "@/lib/scoring/strength/overall-dots-gl";
 import { resolveAnchorKey } from "@/lib/scoring/split-strength-engine";
+import { fetchAllTimeLiftRows, bestOneRmByKey } from "@/lib/activities/all-time-one-rm";
 import type { ExRxTier } from "@/lib/scoring/strength/ratio-tiers";
 import type { ScoreBreakdown } from "@/types";
 
@@ -87,25 +88,17 @@ export default async function GymPage() {
   // so it's unambiguous which is which: user feedback flagged the dashboard
   // DOTS/GL as "wrong" against a reference calculator when it was really
   // just reflecting a single session that didn't touch all three lifts.
-  const { data: allGymActivities } = await supabase
-    .from("activities")
-    .select("id")
-    .eq("user_id", user.id)
-    .eq("sport", "gym")
-    .eq("is_draft", false);
-  const allGymActivityIds = (allGymActivities ?? []).map((a) => a.id as string);
-  const { data: allTimeExercises } =
-    allGymActivityIds.length > 0
-      ? await supabase
-          .from("gym_exercises")
-          .select("exercise_name, estimated_1rm_kg")
-          .in("activity_id", allGymActivityIds)
-      : { data: [] as { exercise_name: string; estimated_1rm_kg: number | null }[] };
+  // From strength_scores, not gym_exercises — the two hold DIFFERENT numbers
+  // for the same lift (a per-hand dumbbell press, a single-arm cable, a
+  // weighted pull-up all mean something else on the flat column), and mixing
+  // them is what let a corrected score be quietly out-read by a stale one. See
+  // lib/activities/all-time-one-rm.ts.
+  const allTimeExercises = await fetchAllTimeLiftRows(supabase, user.id);
 
   const overallDotsGl =
     profile?.weight_kg && profile.weight_kg > 0
       ? calculateOverallDotsGl(
-          allTimeExercises ?? [],
+          allTimeExercises,
           profile.weight_kg,
           resolveScoringSex(profile)
         )
@@ -116,13 +109,7 @@ export default async function GymPage() {
   // all-time DOTS/GL pair above. Keyed by resolved anchor key so the free-text
   // names athletes actually type ("Bench Press", "Sumo Deadlift") line up with
   // the canonical per_lift keys below.
-  const allTime1RmByLift = new Map<string, number>();
-  for (const row of allTimeExercises ?? []) {
-    const value = (row.estimated_1rm_kg as number | null) ?? 0;
-    if (value <= 0) continue;
-    const key = resolveAnchorKey(row.exercise_name as string);
-    allTime1RmByLift.set(key, Math.max(allTime1RmByLift.get(key) ?? 0, value));
-  }
+  const allTime1RmByLift = bestOneRmByKey(allTimeExercises, resolveAnchorKey);
 
   // per_lift and strength_activities come from the same scoring pass over the
   // same session, so a lift present in one is present in the other — the
@@ -147,6 +134,10 @@ export default async function GymPage() {
         name: key.charAt(0).toUpperCase() + key.slice(1),
         estimated1RM: val.estimated1RM,
         currentOneRM: result?.currentOneRM,
+        // All three are the engine's own figure now, so this max compares like
+        // with like: the stored history, whatever the engine remembers of it,
+        // and this session. It used to reach across two different rulers, where
+        // it could only ever pick the more generous of the two.
         allTimeOneRM: Math.max(
           allTime1RmByLift.get(key) ?? 0,
           result?.allTimeOneRM ?? 0,
