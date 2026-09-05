@@ -454,6 +454,26 @@ function trainingAgeFromYears(years: number): TrainingAge {
   return "elite";
 }
 
+/**
+ * The athlete's typed 1RMs applied as a FLOOR under what their logs say.
+ *
+ * See the note at the call site. `Math.max` rather than a replacement is the
+ * whole fix: a tested single still beats a lower inference, and a later logged
+ * lift that beats the typed number takes over instead of being ignored for the
+ * life of the intake record.
+ */
+export function overriddenOneRms(
+  logged: Record<string, number>,
+  overrides: Record<string, number | null>
+): Record<string, number> {
+  const out = { ...logged };
+  for (const [lift, override] of Object.entries(overrides)) {
+    if (override == null || !Number.isFinite(override) || override <= 0) continue;
+    out[lift] = Math.max(out[lift] ?? 0, override);
+  }
+  return out;
+}
+
 export interface PrefilledFromSplitIndex {
   age: number;
   sex: "male" | "female" | "other";
@@ -618,15 +638,28 @@ export function resolveIntakeInputs(
     heightCm: prefilled.heightCm ?? 0,
     age: prefilled.age,
     sex: prefilled.sex,
-    // The athlete's own numbers win. An adaptive 1RM is inferred from
-    // submaximal work and is an estimate; someone who has actually tested a
-    // single knows better than the inference does.
-    oneRms: {
-      ...prefilled.oneRms,
-      ...(record.squat1rmOverride != null ? { squat: record.squat1rmOverride } : {}),
-      ...(record.bench1rmOverride != null ? { bench: record.bench1rmOverride } : {}),
-      ...(record.deadlift1rmOverride != null ? { deadlift: record.deadlift1rmOverride } : {}),
-    },
+    // The athlete's own numbers win — but a number they typed once does not
+    // win FOREVER.
+    //
+    // A typed override is a tested single, and an adaptive 1RM inferred from
+    // submaximal work will read below it, so the override is right to beat
+    // the inference at the moment it is entered. Replacing outright made it
+    // permanent: an athlete who typed a 120kg bench at intake and then
+    // benched 140 in a logged session was still carried at 120, and asked
+    // "why does my strength profile not update with my new bench from logging
+    // the session in hybrid plan?". Nothing they could log would ever move it
+    // short of re-opening the intake.
+    //
+    // A floor rather than a replacement keeps both halves true: the tested
+    // single still beats a lower inference, and a logged lift that beats the
+    // typed number is newer evidence of the same kind and takes over. It can
+    // only ever raise a lift, so no athlete is silently downgraded by an
+    // estimate either.
+    oneRms: overriddenOneRms(prefilled.oneRms, {
+      squat: record.squat1rmOverride,
+      bench: record.bench1rmOverride,
+      deadlift: record.deadlift1rmOverride,
+    }),
     predicted5kS: prefilled.predicted5kS,
     strengthTrainingAge: trainingAgeFromYears(strengthYears),
     enduranceTrainingAge: trainingAgeFromYears(enduranceYears),

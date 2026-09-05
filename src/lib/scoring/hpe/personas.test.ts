@@ -435,8 +435,27 @@ describe("gym training splits", () => {
   });
 
   it("gives an upper/lower athlete upper and lower days", () => {
-    const text = weekFor("upper_lower").map((s) => s.prescription.text).join(" | ");
-    expect(text).toMatch(/overhead press|row|pulldown/i);
+    // Asserted per DAY rather than across the joined week. The joined form
+    // passed for the wrong reason: the Lower day's `pull` pattern was drawing
+    // from the upper-body pool, so "Seated cable row" on a leg day was what
+    // satisfied a regex meant to be checking the Upper day. Splitting the
+    // assertion is what makes it test the thing it names.
+    const sessions = weekFor("upper_lower");
+    const textFor = (label: string) =>
+      sessions
+        .filter((s) => (s.label ?? "").toLowerCase() === label)
+        .map((s) => s.prescription.text)
+        .join(" | ");
+
+    const upper = textFor("upper");
+    expect(upper).not.toBe("");
+    // Pressing and pulling both, which is what "Upper" means.
+    expect(upper).toMatch(/press|pushdown|fly|lateral raise/i);
+    expect(upper).toMatch(/row|pulldown|pull-up|face pull|curl|rear-delt/i);
+
+    const lower = textFor("lower");
+    expect(lower).not.toBe("");
+    expect(lower).not.toMatch(/pull-up|lat pulldown|cable row|barbell row|dumbbell row|face pull|rear-delt/i);
   });
 
   it("gives a full-body athlete sessions spanning several patterns", () => {

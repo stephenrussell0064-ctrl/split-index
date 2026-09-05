@@ -494,22 +494,68 @@ export function liftRatios(oneRms: Record<string, number>): Record<string, numbe
 export function strengthAssessability(
   oneRms: Record<string, number>,
   sets: LiftSet[]
-): { ratiosAssessed: boolean; weakLiftAssessed: boolean; stallAssessed: boolean } {
+): {
+  ratiosAssessed: boolean;
+  weakLiftAssessed: boolean;
+  stallAssessed: boolean;
+  stallShortfall: string | null;
+} {
   const hasSquat = (oneRms.squat ?? 0) > 0;
   const otherLifts = Object.keys(oneRms).filter((l) => l !== "squat" && (oneRms[l] ?? 0) > 0);
   // Stalling needs enough sets of one lift, spanning enough weeks, to have a
   // trend at all — the same bar `stalledLifts` itself applies.
-  const stallAssessed = Object.keys(LIFT_RATIO_NORM).some((lift) => {
+  const coverage = Object.keys(LIFT_RATIO_NORM).map((lift) => {
     const pts = sets.filter((x) => x.lift === lift);
-    if (pts.length < STALL_MIN_SETS) return false;
     const dates = pts.map((x) => x.dateIdx);
-    return (Math.max(...dates) - Math.min(...dates)) / 7 >= STALL_MIN_SPAN_WEEKS;
+    const spanWeeks = pts.length > 0 ? (Math.max(...dates) - Math.min(...dates)) / 7 : 0;
+    return { lift, sets: pts.length, spanWeeks };
   });
+  const stallAssessed = coverage.some(
+    (c) => c.sets >= STALL_MIN_SETS && c.spanWeeks >= STALL_MIN_SPAN_WEEKS
+  );
+
   return {
     ratiosAssessed: hasSquat && otherLifts.length > 0,
     weakLiftAssessed: hasSquat && otherLifts.length > 0,
     stallAssessed,
+    stallShortfall: stallAssessed ? null : stallShortfallText(coverage),
   };
+}
+
+/**
+ * What is actually missing before stalling can be assessed, in the athlete's
+ * own numbers.
+ *
+ * The report's slot said "needs 6+ sets of a lift across 4+ weeks" — the rule,
+ * restated. An athlete reading a labelled row that never carries a value about
+ * them asked us to either remove it or put something in it, and they are
+ * right: a slot that only ever recites its own precondition is furniture.
+ *
+ * The row keeps its place and says how far off THEY are, which turns it from a
+ * definition into a measurement and gives it somewhere to go.
+ */
+function stallShortfallText(
+  coverage: { lift: string; sets: number; spanWeeks: number }[]
+): string {
+  const logged = coverage.filter((c) => c.sets > 0);
+  if (logged.length === 0) {
+    return `no squat, bench or deadlift sets logged yet — ${STALL_MIN_SETS} of one lift over ${STALL_MIN_SPAN_WEEKS} weeks starts this`;
+  }
+  // The lift closest to the bar is the one worth naming: it is the shortest
+  // path to a real verdict, and telling someone about their best-covered lift
+  // is more useful than telling them about their worst.
+  const best = logged.reduce((a, b) => {
+    const score = (c: typeof a) =>
+      Math.min(1, c.sets / STALL_MIN_SETS) + Math.min(1, c.spanWeeks / STALL_MIN_SPAN_WEEKS);
+    return score(b) > score(a) ? b : a;
+  });
+  const missingSets = Math.max(0, STALL_MIN_SETS - best.sets);
+  const missingWeeks = Math.max(0, STALL_MIN_SPAN_WEEKS - Math.floor(best.spanWeeks));
+  const parts: string[] = [];
+  if (missingSets > 0) parts.push(`${missingSets} more set${missingSets === 1 ? "" : "s"}`);
+  if (missingWeeks > 0) parts.push(`${missingWeeks} more week${missingWeeks === 1 ? "" : "s"} of history`);
+  if (parts.length === 0) return `not enough of a trend on your ${best.lift} yet`;
+  return `${best.lift} is your closest — ${parts.join(" and ")} and this becomes a verdict`;
 }
 
 export function findWeakLift(ratios: Record<string, number>): string | null {
@@ -1294,6 +1340,7 @@ export function diagnose(
     liftRatiosAssessed: assessability.ratiosAssessed,
     weakLiftAssessed: assessability.weakLiftAssessed,
     stallAssessed: assessability.stallAssessed,
+    stallShortfall: assessability.stallShortfall,
     limiter: enduranceScore > 0.5 ? "endurance" : "strength",
     emphasis,
     findings,

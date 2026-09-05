@@ -2,6 +2,7 @@
 
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils/cn";
+import { LIFT_RATIO_NORM } from "@/lib/scoring/hpe";
 import type { AthleteProfile, EmphasisKey } from "@/lib/scoring/hpe";
 
 /**
@@ -242,8 +243,23 @@ export function DiagnosticReport({
               unmeasured={cardio.benchmark.unmeasured}
             />
           ) : (
+            /*
+              The label changes with the source, because the sources are not
+              all the same QUANTITY and one of them is not a prediction at all.
+
+              `sustained_pace_bound` is a ceiling: the engine had no maximal
+              effort, and pulled an implausible fallback back to the fastest
+              pace the athlete has actually held past 5km. That is a bound on
+              the answer, not the answer. Shown under the same "Predicted 5k"
+              heading with no verdict beside it, it read as a race prediction
+              and disagreed with the number the rest of the app shows — an
+              athlete saw 17:30 here and something else on their dashboard and
+              could not tell which one the app believed. Two different
+              quantities under one label is the defect; naming them apart is
+              the fix, and the one that IS the app's prediction now says so.
+            */
             <Metric
-              label="Predicted 5k"
+              label={profile.predicted5kSource === "sustained_pace_bound" ? "5k ceiling" : "Predicted 5k"}
               value={profile.predicted5kSource === "unknown" ? null : mmss(profile.predicted5kS)}
               verdict={
                 profile.predicted5kSource === "maximal_effort"
@@ -251,11 +267,20 @@ export function DiagnosticReport({
                     ? "from your own maximal effort, using your own k"
                     : "from your own maximal effort"
                   : profile.predicted5kSource === "prediction_engine"
-                    ? "from your logged sessions, not a race"
-                    : undefined
+                    ? "from your logged sessions, not a race — the same prediction the rest of the app shows"
+                    : profile.predicted5kSource === "sustained_pace_bound"
+                      ? "the fastest pace you have held past 5km, so you are at least this quick — a ceiling, not a prediction"
+                      : undefined
               }
               unmeasured="log a race or time trial"
             />
+          )}
+          {profile.predicted5kSource === "sustained_pace_bound" && (
+            <p className="pt-2 text-xs leading-relaxed text-muted">
+              You have not logged a maximal effort near 5k, so there is no prediction to make. Every pace band below is
+              built from this ceiling, which means they are conservative by design — race one and they tighten to your
+              real number.
+            </p>
           )}
           {cardio?.suppressRunningDiagnostics && cardio.benchmark.thresholdPace && (
             <Metric
@@ -290,6 +315,21 @@ export function DiagnosticReport({
 
       <Card>
         <h2 className="text-lg font-semibold tracking-tight">Strength profile</h2>
+        {Object.entries(profile.oneRms).length > 0 && (
+          /*
+            An athlete read "Bench 100kg · 0.72× squat" and asked "why is my
+            deadlift and bench logged as a multiple of my squat?" — a fair
+            reading of a bare "0.72× squat" sitting where a derivation would
+            sit. Nothing here is derived: each kg figure is that lift's own
+            best logged estimate, and the ratio is a comparison drawn AFTER the
+            fact against the balance norm. Saying so is cheaper than being
+            misread, and the norm gives the ratio something to mean.
+          */
+          <p className="mt-1 text-sm leading-relaxed text-muted">
+            Each weight is that lift&apos;s own best estimate from your logged sets. The ratio beside it compares the
+            lift to your squat against the usual balance — it is a comparison, not how the weight was worked out.
+          </p>
+        )}
         <div className="mt-3">
           {Object.entries(profile.oneRms).length > 0 ? (
             Object.entries(profile.oneRms).map(([lift, kg]) => (
@@ -301,9 +341,11 @@ export function DiagnosticReport({
                 // be a ratio of. Shown otherwise, it was arithmetic on a
                 // number that did not exist.
                 verdict={
-                  profile.liftRatiosAssessed && profile.liftRatios[lift]
-                    ? `${profile.liftRatios[lift].toFixed(2)}× squat`
-                    : undefined
+                  profile.liftRatiosAssessed && profile.liftRatios[lift] && LIFT_RATIO_NORM[lift] != null
+                    ? `${profile.liftRatios[lift].toFixed(2)}× your squat (typical ${LIFT_RATIO_NORM[lift]!.toFixed(2)}×)`
+                    : profile.liftRatiosAssessed && profile.liftRatios[lift]
+                      ? `${profile.liftRatios[lift].toFixed(2)}× your squat`
+                      : undefined
                 }
               />
             ))
@@ -324,10 +366,17 @@ export function DiagnosticReport({
             value={profile.weakLiftAssessed ? (profile.weakLift ?? "none — your lifts are in proportion") : null}
             unmeasured="needs a squat plus one other lift"
           />
+          {/* "Get rid of stalled lifts or ensure there is a value here."
+              Kept, because a stall is the one strength finding that changes
+              what the plan prescribes — a stalled lift gets a variation block
+              in place of the competition lift. What it shows when it cannot
+              reach a verdict is now how far off THIS athlete is rather than a
+              restatement of its own threshold, so the row always carries
+              something about the person reading it. */}
           <Metric
             label="Stalled lifts"
             value={profile.stallAssessed ? (profile.stalledLifts.join(", ") || "none — everything is still moving") : null}
-            unmeasured="needs 6+ sets of a lift across 4+ weeks"
+            unmeasured={profile.stallShortfall ?? "needs 6+ sets of a lift across 4+ weeks"}
           />
         </div>
       </Card>

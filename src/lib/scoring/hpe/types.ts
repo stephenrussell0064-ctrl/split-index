@@ -175,6 +175,23 @@ export interface AthleteProfile {
 
   // --- strength ---
   oneRms: Record<string, number>;
+  /**
+   * Best logged 1RM estimate for EVERY exercise the athlete has trained, keyed
+   * by lower-cased exercise name — not just the three competition lifts.
+   *
+   * `oneRms` collapses a whole gym history onto squat/bench/deadlift, which is
+   * all the strength diagnostic reasons about and nowhere near enough to write
+   * a session with. A plan led by an incline dumbbell press said "a load you
+   * can hold for the reps" to an athlete who had logged that exact exercise
+   * thirty times, and every accessory line was a bare set-and-rep scheme with
+   * no weight at all — the app knew what they lift and did not say.
+   *
+   * Optional, and absent means absent: a lookup that misses falls back to the
+   * qualitative prescription. Nothing here is ever interpolated from a
+   * different exercise, because a number the athlete cannot trace to their own
+   * log is worse than no number.
+   */
+  exerciseOneRms?: Record<string, number>;
   repProfileGap: number | null;
   repProfileVerdict: string;
   weakLift: string | null;
@@ -188,6 +205,16 @@ export interface AthleteProfile {
   liftRatiosAssessed: boolean;
   weakLiftAssessed: boolean;
   stallAssessed: boolean;
+  /**
+   * What stands between this athlete and a stall verdict, in their own
+   * numbers, or null once there is one.
+   *
+   * The report's "Stalled lifts" row could only ever recite the rule it was
+   * waiting on — "needs 6+ sets of a lift across 4+ weeks" — which is a
+   * labelled slot that never says anything about the person reading it.
+   * Optional so a profile deserialised from an older row still renders.
+   */
+  stallShortfall?: string | null;
 
   // --- synthesis ---
   limiter: "endurance" | "strength";

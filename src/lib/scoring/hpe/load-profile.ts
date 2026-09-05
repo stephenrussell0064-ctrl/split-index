@@ -138,10 +138,17 @@ export async function loadAthleteProfile(
   // Best logged estimated 1RM per competition lift — the SRI engine's own
   // number, consumed through this adapter rather than recomputed here.
   const oneRms: Record<string, number> = {};
+  // Every exercise, not just the three the diagnostic reasons about. This is
+  // what lets a session prescribe a real weight for a chosen or rotated
+  // exercise instead of "a load you can hold for the reps" — see
+  // `AthleteProfile.exerciseOneRms`. Same source, same adapter, wider key.
+  const exerciseOneRms: Record<string, number> = {};
   for (const row of exerciseRows ?? []) {
     const r = row as Record<string, unknown>;
     const estimate = r.estimated_1rm_kg != null ? Number(r.estimated_1rm_kg) : 0;
     if (estimate <= 0) continue;
+    const name = (r.exercise_name as string | null)?.trim().toLowerCase();
+    if (name) exerciseOneRms[name] = Math.max(exerciseOneRms[name] ?? 0, estimate);
     const lift = normaliseForOneRm(r.exercise_name as string);
     if (!lift) continue;
     oneRms[lift] = Math.max(oneRms[lift] ?? 0, estimate);
@@ -232,7 +239,11 @@ export async function loadAthleteProfile(
   }
 
   return {
-    profile,
+    // Attached after `diagnose` rather than passed into it: the diagnostic is
+    // a pure function over the three competition lifts and has no business
+    // reasoning about a cable row. This is prescription data travelling on the
+    // profile, not a new input to the diagnosis.
+    profile: { ...profile, exerciseOneRms },
     loggedWeeklyRunMinutes: loggedWeeklyRunMinutes(activities),
     assumptions,
     profileId,

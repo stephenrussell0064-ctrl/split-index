@@ -32,6 +32,9 @@
  */
 
 import {
+  ACCESSORY_RIR_LOAD_HAIRCUT,
+  COMPETITION_LIFT_DISPLAY_NAME,
+  EPLEY_DIVISOR,
   INTERVAL_RECOVERY_S,
   INTERVAL_REPS_MAX,
   INTERVAL_REPS_MIN,
@@ -485,6 +488,85 @@ export interface LiftPrescriptionOptions {
 }
 
 /**
+ * The best logged 1RM estimate for a named exercise, or null.
+ *
+ * Names are matched lower-cased and whitespace-collapsed against
+ * `profile.exerciseOneRms`, which is keyed the same way. Several pool lines
+ * offer a choice — "Pull-up or lat pulldown", "Cable fly or pec deck" — so
+ * each alternative is tried in turn and the athlete's own logged one wins.
+ *
+ * Returns null rather than a guess. Nothing in here interpolates from a
+ * related exercise: an incline press is not a bench press scaled by a
+ * constant, and a number the athlete cannot trace to their own log is worse
+ * than no number at all.
+ */
+function loggedOneRmFor(profile: AthleteProfile, name: string): number | null {
+  const history = profile.exerciseOneRms;
+  if (!history) return null;
+  const key = name.trim().toLowerCase().replace(/\s+/g, " ");
+  if (!key) return null;
+  const direct = history[key];
+  if (direct != null && direct > 0) return direct;
+  for (const alternative of key.split(/\s+or\s+/)) {
+    const value = history[alternative.trim()];
+    if (value != null && value > 0) return value;
+  }
+  return null;
+}
+
+/** Inverse Epley — the load a set of `reps` represents against a known 1RM. */
+function loadForReps(oneRm: number, reps: number): number {
+  return oneRm / (1 + reps / EPLEY_DIVISOR);
+}
+
+/**
+ * A kg band for a rep range, from the athlete's own estimate for that exercise.
+ *
+ * Accessories are taken near failure but not to it, so the Epley load for a
+ * maximal set of that many reps is shaded by `ACCESSORY_RIR_LOAD_HAIRCUT`.
+ * Prescribing the maximal load for the top of a 3x12 would be prescribing a
+ * set they cannot repeat twice.
+ */
+function loadBandText(oneRm: number, repLo: number, repHi: number): string {
+  const heavy = roundToPlate(loadForReps(oneRm, repLo) * ACCESSORY_RIR_LOAD_HAIRCUT);
+  const light = roundToPlate(loadForReps(oneRm, repHi) * ACCESSORY_RIR_LOAD_HAIRCUT);
+  const lo = Math.min(heavy, light);
+  const hi = Math.max(heavy, light);
+  if (lo <= 0) return "";
+  return lo === hi ? `${lo.toFixed(0)}kg` : `${lo.toFixed(0)}-${hi.toFixed(0)}kg`;
+}
+
+/** Splits "Leg press 3x10-15" into its name and its rep range. Duration work ("3x45s") has no rep range and returns null. */
+function parseAccessoryLine(line: string): { name: string; repLo: number; repHi: number } | null {
+  const match = /^(.*?)\s(\d+)\s*x\s*(\d+)(?:\s*-\s*(\d+))?(?![\d\s]*s\b)/i.exec(line.trim());
+  if (!match) return null;
+  const name = match[1].trim();
+  const repLo = Number(match[3]);
+  const repHi = match[4] != null ? Number(match[4]) : repLo;
+  if (!name || !Number.isFinite(repLo) || repLo <= 0) return null;
+  return { name, repLo, repHi };
+}
+
+/**
+ * An accessory line with the athlete's own working weight appended, where
+ * their log supports one.
+ *
+ * Every accessory used to be a bare set-and-rep scheme. "Leg press 3x10-15" is
+ * a suggestion; "Leg press 3x10-15 @ 145-165kg" is a prescription, and the app
+ * already held every number needed to write the second one. Lines with no
+ * logged history are returned untouched — an invented weight is the one
+ * outcome worse than an absent one.
+ */
+export function withLoggedLoad(profile: AthleteProfile, line: string): string {
+  const parsed = parseAccessoryLine(line);
+  if (!parsed) return line;
+  const oneRm = loggedOneRmFor(profile, parsed.name);
+  if (oneRm == null) return line;
+  const band = loadBandText(oneRm, parsed.repLo, parsed.repHi);
+  return band ? `${line} @ ${band}` : line;
+}
+
+/**
  * A lift prescription in kg AND %1RM. The kg number is what the athlete
  * loads; the percentage is what tells them whether the kg number still makes
  * sense as their 1RM moves. A stalled lift gets its variation named — the
@@ -500,13 +582,45 @@ export function prescribeLift(
   const stalled = profile.stalledLifts.includes(lift);
   const variation = stalled ? STALL_VARIATIONS[lift] : null;
 
+  // The rotated variation is prescribed against ITS OWN logged 1RM where the
+  // athlete has one. The reason this used to be qualitative is sound — the
+  // competition lift's 1RM says nothing about an incline press, and 80% of a
+  // bench 1RM beside an incline dumbbell press is a weight nobody can press.
+  // But that argument only holds where the variation is UNKNOWN. An athlete
+  // who has logged the exercise thirty times was being told "a load you can
+  // hold for the reps" about a lift the app could name to the kilogram, which
+  // is the app declining to say what it knows.
+  //
+  // A STALL variation is deliberately left on the old path. It is the
+  // competition movement with one thing changed — a pause, a deficit — and
+  // anchoring it to the competition 1RM is the point of programming it. It
+  // also outranks the rotation for the exercise NAME below, and the load has
+  // to be quoted for the exercise actually printed: quoting the rotation's
+  // variant beside a name the stall variation won produced "Deficit Deadlift
+  // @ 65-75% of your logged Romanian deadlift", two different lifts in one
+  // line, which is the same defect the name precedence exists to prevent.
+  //
+  // A rotation slot that has come back round to the competition lift is not a
+  // variation at all — "Back squat" IS the squat — so it takes the ordinary
+  // %1RM path rather than being prescribed by effort against a 1RM sitting
+  // right there on the profile.
+  const namesTheCompetitionLift =
+    options.variant != null &&
+    options.variant.trim().toLowerCase() === COMPETITION_LIFT_DISPLAY_NAME[lift];
+  const rotationVariant = variation || namesTheCompetitionLift ? null : options.variant;
+  const variantOneRm = rotationVariant ? loggedOneRmFor(profile, rotationVariant) : null;
+  const percentOf = (kg: number, source: string) =>
+    `${roundToPlate(kg * intensity[0]).toFixed(0)}-${roundToPlate(kg * intensity[1]).toFixed(0)}kg ` +
+    `(${Math.round(intensity[0] * 100)}-${Math.round(intensity[1] * 100)}%${source})`;
+
   const loadText = options.substitution
     ? "bodyweight or whatever load you have, taken to the RIR below"
-    : options.variant
-      ? "a load you can hold for the reps"
+    : rotationVariant
+      ? variantOneRm != null
+        ? percentOf(variantOneRm, ` of your logged ${rotationVariant.toLowerCase()}`)
+        : "a load you can hold for the reps"
       : oneRm > 0
-      ? `${roundToPlate(oneRm * intensity[0]).toFixed(0)}-${roundToPlate(oneRm * intensity[1]).toFixed(0)}kg ` +
-        `(${Math.round(intensity[0] * 100)}-${Math.round(intensity[1] * 100)}% 1RM)`
+      ? percentOf(oneRm, " 1RM")
       : `${Math.round(intensity[0] * 100)}-${Math.round(intensity[1] * 100)}% 1RM (no logged 1RM yet — work to the RIR)`;
 
   // Precedence, most specific first. A stall variation beats the hypertrophy
@@ -536,14 +650,22 @@ export function prescribeLift(
       `${variation} replaces the competition ${lift} this block — your ${lift} has not moved in 12 weeks, and ` +
         `a variation block breaks that before you come back to the lift itself.`
     );
-  } else if (options.variant && options.variant.toLowerCase() !== lift) {
+  } else if (rotationVariant && rotationVariant.toLowerCase() !== lift) {
+    // `rotationVariant`, not `options.variant`. On the weeks the rotation
+    // comes back round to the competition lift the raw option is still set —
+    // to "Back squat" — and the note fired anyway, telling an athlete about to
+    // back squat that they were "leading with a back squat rather than the
+    // competition squat". The two names are the same lift; only a genuine
+    // variation earns the explanation.
     notes.push(
-      `Leading with a ${options.variant.toLowerCase()} rather than the competition ${lift}. It trains the same ` +
+      `Leading with a ${rotationVariant.toLowerCase()} rather than the competition ${lift}. It trains the same ` +
         `pattern with less joint cost, and your ${lift} improves anyway — you are not peaking a total, so there ` +
         `is nothing here that needs the bar every week.`
     );
   }
-  if (options.accessories?.length) exercises.push(...options.accessories);
+  if (options.accessories?.length) {
+    exercises.push(...options.accessories.map((line) => withLoggedLoad(profile, line)));
+  }
 
   return { text: exercises.join(" · "), notes, findingId, minutes: 0 };
 }

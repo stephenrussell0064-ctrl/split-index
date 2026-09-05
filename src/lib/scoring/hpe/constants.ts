@@ -451,6 +451,18 @@ export const REP_RUN_RECOVERY_S = 90;
 export const WEIGHT_ROUNDING_KG = 2.5;
 
 /**
+ * [EST] What an accessory's prescribed load is, as a fraction of the maximal
+ * load for that rep count.
+ *
+ * Inverse Epley gives the weight for a set of N reps taken to failure.
+ * Accessories are prescribed at RIR 2-3, so quoting the maximal load would be
+ * prescribing a set the athlete cannot repeat — the second and third sets of a
+ * 3x12 would both be misses. Roughly one rep in reserve per 3% of load is the
+ * usual working figure; two to three reps puts the multiplier here.
+ */
+export const ACCESSORY_RIR_LOAD_HAIRCUT = 0.93;
+
+/**
  * [DATA] Lift prescriptions per strength emphasis. `maximal_strength` is the
  * heavy low-rep end (>= 85% 1RM per brief §0d), `strength_endurance` the
  * 6-12 rep accumulation end, `weak_lift` the extra moderate-load exposure a
@@ -1187,6 +1199,36 @@ export const STRENGTH_ACCESSORY_POOL: Readonly<Record<string, readonly string[]>
 };
 
 /**
+ * [ASSURED] The pulling a LOWER-BODY day does.
+ *
+ * `patterns` carried one token, `pull`, for two unrelated things: the
+ * upper-body pull that a Pull day is built around, and the hip hinge that a
+ * Lower day pulls from the floor. `STRENGTH_ACCESSORY_POOL.pull` is upper-body
+ * throughout, so the `upper_lower` split's deadlift-led Lower day — patterns
+ * `["legs", "pull"]` — was filled with pull-ups and cable rows, and an athlete
+ * was handed "Deficit Deadlift · Bulgarian split squat · Pull-up or lat
+ * pulldown · Leg press · Seated cable row · Walking lunge" and correctly said
+ * it was not a lower session.
+ *
+ * The pattern was never wrong; the pool behind it was the only one that
+ * existed. On a lower-body day `pull` now resolves here instead — the same
+ * movement pattern, trained by the muscles the day is for. Nothing about a
+ * Pull day changes: a row and a pull-up are exactly what belongs there.
+ *
+ * `Romanian deadlift` deliberately appears in the legs pool as well. The
+ * round-robin de-duplicates by line, so a day drawing from both meets it once.
+ */
+export const POSTERIOR_CHAIN_ACCESSORY_POOL: readonly string[] = [
+  "Romanian deadlift 3x8-12",
+  "Hip thrust 3x8-12",
+  "Back extension 3x12-15",
+  "Glute-ham raise or Nordic curl 3x6-10",
+  "Single-leg Romanian deadlift 3x10 each",
+  "Good morning 3x8-12",
+  "Cable pull-through 3x12-15",
+];
+
+/**
  * [ASSURED] How many exercises a strength session should contain.
  *
  * The engine prescribed three — a primary and two accessories — which an
@@ -1217,6 +1259,27 @@ export const TARGET_EXERCISES_PER_STRENGTH_SESSION = 6;
  * competition lift when there is one, because specificity is the whole point
  * of a peaking block.
  */
+/**
+ * [ASSURED] What the competition lift is CALLED when the rotation lands back
+ * on it.
+ *
+ * The rotation in `PRIMARY_LIFT_VARIANTS` alternates a variation with the
+ * lift itself, so half the weeks lead with "Back squat" — which is the squat,
+ * under a display name. Prescribing that by effort because the string did not
+ * literally equal "squat" told an athlete with a 140kg squat on file to use "a
+ * load you can hold for the reps", which is the app declining to say a number
+ * it holds.
+ *
+ * Only the lift's own name belongs here. A front squat is NOT a back squat at
+ * a different name, and quoting 65-75% of a back-squat 1RM beside one would
+ * overshoot by about the difference between the two lifts.
+ */
+export const COMPETITION_LIFT_DISPLAY_NAME: Readonly<Record<string, string>> = {
+  squat: "back squat",
+  bench: "bench press",
+  deadlift: "deadlift",
+};
+
 export const PRIMARY_LIFT_VARIANTS: Readonly<Record<string, readonly string[]>> = {
   squat: ["Back squat", "Front squat", "Back squat", "Hack squat or pendulum squat"],
   bench: ["Bench press", "Incline dumbbell press", "Bench press", "Close-grip bench press"],

@@ -46,6 +46,7 @@ import {
   STRENGTH_MIN_PER_EXERCISE,
   MIN_EXERCISES_PER_STRENGTH_SESSION,
   TARGET_EXERCISES_PER_STRENGTH_SESSION,
+  POSTERIOR_CHAIN_ACCESSORY_POOL,
   STRENGTH_ACCESSORY_POOL,
   PRIMARY_LIFT_VARIANTS,
   MAINTENANCE_REPS,
@@ -325,12 +326,53 @@ export function shiftPhaseSpec(phase: Phase, emphasisKey: EmphasisKey) {
  * pool by week index, so the patterns stay constant while the exercises that
  * train them change.
  */
+/**
+ * Whether this day is a lower-body day, and so must not draw upper-body pulls.
+ *
+ * The `pull` pattern means two different things depending on the day it is on.
+ * On a Pull day it is the row and the pull-up. On the `upper_lower` split's
+ * deadlift-led Lower day — patterns `["legs", "pull"]` — it means the hinge,
+ * and drawing it from the upper-body pool produced the session an athlete
+ * reported: a lower day prescribing cable rows and pull-ups beside Bulgarian
+ * split squats and deadlifts.
+ *
+ * Deliberately conservative, because the labels on custom days are typed by
+ * the athlete and the cost of guessing wrong in the other direction is a Pull
+ * day with no pulling in it. Three conditions must all hold, and each one can
+ * only ever REMOVE a day from the lower-body set:
+ *
+ *  - any pressing on the day means it is not a lower day;
+ *  - no leg work on the day means it is not a lower day either;
+ *  - a day that says "full" in its own name is a full-body day whatever its
+ *    patterns say — `full_body`'s third day is `["pull", "legs", "core"]` and
+ *    is meant to have a row in it.
+ *
+ * Past those, a day is lower-body if it says so in its name, or if it carries
+ * no pull pattern at all (in which case this changes nothing anyway). A
+ * lift-specific Deadlift day is left alone on purpose: rows and pull-ups
+ * beside a deadlift are conventional and nobody has complained about them.
+ */
+function isLowerBodyDay(day: (typeof TRAINING_SPLITS)[TrainingSplit]["days"][number]): boolean {
+  const patterns = day.patterns;
+  if (patterns.includes("push")) return false;
+  if (!patterns.includes("legs")) return false;
+  const label = day.label.trim().toLowerCase();
+  if (/\bfull\b/.test(label)) return false;
+  return /lower|leg|squat|quad|hamstring|glute|posterior/.test(label) || !patterns.includes("pull");
+}
+
 function accessoriesForDay(
   day: (typeof TRAINING_SPLITS)[TrainingSplit]["days"][number],
   primaryLift: string,
   week: number
 ): string[] {
   const patterns = day.patterns.length > 0 ? day.patterns : ["push"];
+  // On a lower-body day the `pull` pattern is the hinge, not the row.
+  const lowerBody = isLowerBodyDay(day);
+  const poolFor = (pattern: string): readonly string[] =>
+    lowerBody && pattern === "pull"
+      ? POSTERIOR_CHAIN_ACCESSORY_POOL
+      : STRENGTH_ACCESSORY_POOL[pattern] ?? [];
   // The primary already covers one slot, so the accessories fill the rest.
   const wanted = Math.max(MIN_EXERCISES_PER_STRENGTH_SESSION, TARGET_EXERCISES_PER_STRENGTH_SESSION) - 1;
   const out: string[] = [];
@@ -344,7 +386,7 @@ function accessoriesForDay(
   for (let depth = 0; out.length < wanted; depth += 1) {
     let addedThisPass = false;
     for (const pattern of patterns) {
-      const pool = STRENGTH_ACCESSORY_POOL[pattern] ?? [];
+      const pool = poolFor(pattern);
       if (pool.length === 0) continue;
       if (pattern === "core" && (takenPerPattern.core ?? 0) >= CORE_ACCESSORY_CAP) continue;
       // Rotating the offset by week is what stops eleven identical sessions.
