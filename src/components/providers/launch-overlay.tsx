@@ -5,17 +5,33 @@ import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { SplashScreen } from "@capacitor/splash-screen";
 import { isNativePlatform } from "@/lib/native/platform";
 import { BrandMark } from "@/components/brand/brand-mark";
+import { whenRouteRestoreSettled } from "@/components/providers/route-restore";
 
 const MIN_VISIBLE_MS = 700;
 
 /**
+ * Upper bound on how long the splash will wait for RouteRestore. It exists so
+ * a slow network, or a document where RouteRestore never mounts at all, can
+ * only ever cost the launch a beat — never leave the splash stuck on screen.
+ * The native splash's own dead-man's-switch (capacitor.config.ts
+ * launchShowDuration) sits well beyond this.
+ */
+const MAX_RESTORE_WAIT_MS = 2500;
+
+/**
  * Bridges the gap between the native static splash (hidden the instant this
- * mounts — capacitor.config.ts sets SplashScreen.launchAutoHide: false so it
- * doesn't hide itself on a fixed timer regardless of load state) and the
- * real app content, which on server.url mode is still being fetched over
- * the network at this point. Without something here, that gap reads as a
- * blank black screen; a branded animated screen instead makes the wait feel
- * intentional rather than broken.
+ * mounts — capacitor.config.ts hands over to this explicit hide() on any
+ * normal load, its launchAutoHide timer being only a fallback for when the
+ * app's JS never loads at all) and the real app content, which on server.url
+ * mode is still being fetched over the network at this point. Without
+ * something here, that gap reads as a blank black screen; a branded animated
+ * screen instead makes the wait feel intentional rather than broken.
+ *
+ * It also covers the route restore. A cold launch always lands on server.url
+ * (/login, redirected to /dashboard for a signed-in athlete) and RouteRestore
+ * then sends them back where they actually were — so the splash holds until
+ * that has landed, and the dashboard they are merely passing through is never
+ * on screen. See src/lib/native/last-route.ts.
  */
 export function LaunchOverlay() {
   const [visible, setVisible] = useState(() => isNativePlatform());
@@ -27,9 +43,22 @@ export function LaunchOverlay() {
     const start = Date.now();
     SplashScreen.hide().catch(() => {});
 
-    const remaining = Math.max(0, MIN_VISIBLE_MS - (Date.now() - start));
-    const timer = setTimeout(() => setVisible(false), remaining);
-    return () => clearTimeout(timer);
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    void whenRouteRestoreSettled(MAX_RESTORE_WAIT_MS).then(() => {
+      if (cancelled) return;
+      // The minimum is measured from the start, not from here, so waiting for
+      // the restore doesn't add to it — a launch with nothing to restore is
+      // exactly as long as it was before.
+      const remaining = Math.max(0, MIN_VISIBLE_MS - (Date.now() - start));
+      timer = setTimeout(() => setVisible(false), remaining);
+    });
+
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
   }, []);
 
   return (

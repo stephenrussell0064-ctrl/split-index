@@ -3,6 +3,7 @@ import { Geist, Geist_Mono, Space_Grotesk, Unbounded } from "next/font/google";
 import "./globals.css";
 import { ClientBootstrap } from "@/components/providers/client-bootstrap";
 import { LaunchOverlay } from "@/components/providers/launch-overlay";
+import { RouteRestore } from "@/components/providers/route-restore";
 import { getAppUrl } from "@/lib/app-url";
 
 const geistSans = Geist({
@@ -87,6 +88,7 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
         />
         <ClientBootstrap />
+        <RouteRestore />
         <LaunchOverlay />
         {children}
       </body>
