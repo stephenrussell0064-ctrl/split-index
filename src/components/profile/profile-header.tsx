@@ -4,6 +4,8 @@ import { motion, useReducedMotion } from "framer-motion";
 import { format } from "date-fns";
 import { Calendar, Crown } from "lucide-react";
 import { formatIndex } from "@/lib/utils/format";
+import { InjuryStatusBadge } from "@/components/social/injury-status-badge";
+import type { InjuryStatus } from "@/lib/social/injury-status";
 import type { Profile } from "@/types";
 
 interface ProfileHeaderProps {
@@ -14,6 +16,11 @@ interface ProfileHeaderProps {
   strengthIndex: number | null;
   activityCount: number;
   prCount: number;
+  /**
+   * Shown here so the athlete sees their own status in the same place other
+   * people see it. A status you cannot see is a status you forget you left on.
+   */
+  injuryStatus?: InjuryStatus | null;
 }
 
 function initials(name: string | null, email: string): string {
@@ -33,6 +40,7 @@ export function ProfileHeader({
   strengthIndex,
   activityCount,
   prCount,
+  injuryStatus = null,
 }: ProfileHeaderProps) {
   const reducedMotion = useReducedMotion();
   const isPremium = profile.subscription_tier === "premium";
@@ -89,6 +97,7 @@ export function ProfileHeader({
                   Premium
                 </span>
               )}
+              {injuryStatus && <InjuryStatusBadge status={injuryStatus} />}
             </div>
             <p className="text-sm text-muted truncate">
               {profile.username ? `@${profile.username}` : email}

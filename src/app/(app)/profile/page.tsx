@@ -3,6 +3,11 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { ProfileHeader } from "@/components/profile/profile-header";
 import { ProfileForm } from "@/components/profile/profile-form";
+import {
+  InjuryStatusCard,
+  type InjuryStatusAvailability,
+} from "@/components/profile/injury-status-card";
+import { parseInjuryStatus } from "@/lib/social/injury-status";
 import type { Profile } from "@/types";
 
 export const metadata: Metadata = {
@@ -45,6 +50,15 @@ export default async function ProfilePage() {
         .eq("user_id", user.id),
     ]);
 
+  // `select("*")` omits the key entirely for a column that does not exist, so
+  // this distinguishes "the athlete hasn't set a status" (null) from "migration
+  // 053 hasn't been applied" (no such key) — which otherwise look identical and
+  // would leave the card offering a save that can only ever fail.
+  const injuryStatus: InjuryStatusAvailability =
+    "injury_status" in profile
+      ? { status: "available", injuryStatus: parseInjuryStatus(profile.injury_status) }
+      : { status: "missing_column" };
+
   return (
     <div className="max-w-3xl space-y-6">
       <ProfileHeader
@@ -55,8 +69,17 @@ export default async function ProfilePage() {
         strengthIndex={latestIndex?.strength_index ?? null}
         activityCount={activityCount ?? 0}
         prCount={prCount ?? 0}
+        injuryStatus={
+          injuryStatus.status === "available" ? injuryStatus.injuryStatus : null
+        }
       />
       <ProfileForm profile={profile as Profile} />
+      {/*
+        Below the form, and saving on its own rather than through the form's
+        "Save Changes" button. Taking an injury status back down should not
+        require finding and submitting a large form of unrelated fields.
+      */}
+      <InjuryStatusCard availability={injuryStatus} userId={user.id} />
     </div>
   );
 }

@@ -8,6 +8,7 @@ import type {
   SquadSummary,
 } from "./types";
 import { aggregateDuelScores, duelWindowEndExclusive, pickLeader } from "./duels";
+import { parseInjuryStatus } from "./injury-status";
 
 function mapFriendProfile(row: {
   user_id: string;
@@ -15,6 +16,7 @@ function mapFriendProfile(row: {
   display_name: string | null;
   avatar_url: string | null;
   current_split_index: number | null;
+  injury_status?: unknown;
 }) {
   return {
     userId: row.user_id,
@@ -22,6 +24,10 @@ function mapFriendProfile(row: {
     displayName: row.display_name,
     avatarUrl: row.avatar_url,
     currentSplitIndex: row.current_split_index,
+    // Through parseInjuryStatus, never straight from the row: this string is
+    // rendered next to another athlete's name, so anything the app does not
+    // recognise has to become "say nothing" rather than be shown verbatim.
+    injuryStatus: parseInjuryStatus(row.injury_status),
   };
 }
 
@@ -47,13 +53,30 @@ export async function fetchFriendsData(
     r.user_id === userId ? r.friend_id : r.user_id
   );
 
-  const { data: profiles } = await supabase
-    .from("profiles")
-    .select("user_id, username, display_name, avatar_url, current_split_index")
-    .in("user_id", otherIds);
+  // Two reads, not one, and deliberately so — the same shape Settings uses for
+  // `share_activities_with_friends`. `injury_status` arrived in migration 053,
+  // and naming it in the SELECT above would make a database that has not taken
+  // 053 fail the WHOLE profile read with 42703, emptying the friends list of
+  // names, avatars and indexes over a decorative badge. A missing column must
+  // cost only the thing it holds.
+  //
+  // Not `select("*")` either: that would drag every other athlete's date of
+  // birth, weight, subscription and Stripe id into this process for a chip.
+  const [{ data: profiles }, { data: injuries }] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("user_id, username, display_name, avatar_url, current_split_index")
+      .in("user_id", otherIds),
+    supabase.from("profiles").select("user_id, injury_status").in("user_id", otherIds),
+  ]);
+
+  const injuryByUser = new Map((injuries ?? []).map((p) => [p.user_id, p.injury_status]));
 
   const profileMap = new Map(
-    (profiles ?? []).map((p) => [p.user_id, mapFriendProfile(p)])
+    (profiles ?? []).map((p) => [
+      p.user_id,
+      mapFriendProfile({ ...p, injury_status: injuryByUser.get(p.user_id) }),
+    ])
   );
 
   const toConnection = (row: (typeof rows)[0]): FriendConnection => {
@@ -70,6 +93,11 @@ export async function fetchFriendsData(
         displayName: null,
         avatarUrl: null,
         currentSplitIndex: null,
+        // Null, not a status: this branch is the "we could not read that
+        // athlete's profile row at all" fallback. Injury status is opt-in and
+        // self-set, so the honest value when we know nothing is "not told",
+        // which is exactly what null means everywhere else it is rendered.
+        injuryStatus: null,
       },
     };
   };
@@ -392,6 +420,10 @@ export async function fetchPublicProfile(
     currentSplitIndex: profile.current_split_index,
     currentEnduranceIndex: profile.current_endurance_index,
     currentStrengthIndex: profile.current_strength_index,
+    // Parsed rather than cast: the column is free-form text at the database
+    // level, and this value is rendered on a page other people can see, so an
+    // unrecognised string becomes null instead of reaching the badge.
+    injuryStatus: parseInjuryStatus(profile.injury_status),
     createdAt: profile.created_at,
     streak,
     recentActivityCount,

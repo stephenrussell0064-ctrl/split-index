@@ -1,5 +1,6 @@
 import type { FriendStatus, LeaderboardPeriod, SportType } from "@/types";
 import type { IndexMetric, LeaderboardScope } from "./constants";
+import type { InjuryStatus } from "./injury-status";
 
 export interface LeaderboardRow {
   rank: number;
@@ -66,6 +67,8 @@ export interface FriendProfile {
   displayName: string | null;
   avatarUrl: string | null;
   currentSplitIndex: number | null;
+  /** Opt-in, coarse, set only by that athlete themselves — see lib/social/injury-status.ts. */
+  injuryStatus: InjuryStatus | null;
 }
 
 export interface FriendConnection {
@@ -173,4 +176,6 @@ export interface PublicProfile {
   streak: number;
   recentActivityCount: number;
   recentAvgIndex: number | null;
+  /** Opt-in, coarse, set only by that athlete themselves — see lib/social/injury-status.ts. */
+  injuryStatus: InjuryStatus | null;
 }
