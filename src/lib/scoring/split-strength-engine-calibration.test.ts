@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { scoreStrength, type ScoreStrengthInput } from "./split-strength-engine";
+import { ageFactor, scoreStrength, type ScoreStrengthInput } from "./split-strength-engine";
 
 /**
  * Part G (scoring-calibration-rewrite): corrected bench/deadlift anchors,
  * sourced from Strength Level's general standards mapped through
- * percentile-framework.ts. These two lifts are scored via a real anchor
- * table now, not the single-anchorRatio log formula the other ~20 lifts
- * still use.
+ * percentile-framework.ts. These were the FIRST two lifts to get a real anchor
+ * table instead of the single-anchorRatio log formula; the rest of the
+ * catalogue followed in the junior-age/anchor-table pass further down this
+ * file, so "the other ~20 lifts still use the log formula" is no longer true
+ * and the fixtures here are simply the oldest of a now-uniform set.
  *
  * A single logged set at reps=1 gives an estimated 1RM exactly equal to the
  * weight lifted (both epley1RM and brzycki1RM special-case effective reps
@@ -83,19 +85,33 @@ describe("scoreStrength — bench/deadlift corrected anchors (Part G, re-anchore
     expect(result.nextTier!.kgNeeded).toBeGreaterThan(0);
   });
 
-  it("other lifts (no anchor table yet) are unaffected — still use the log formula", () => {
-    const result = scoreAtOneRM("squat", 150);
+  /**
+   * Squat had no table when this was written; it does now. Kept, but pointed
+   * at a lift that genuinely still uses the log formula — tricepPress, which
+   * has no Strength Level population data to build a table from — so the
+   * assertion keeps testing what its name says.
+   */
+  it("lifts with no anchor table still use the log formula and stay in range", () => {
+    const result = scoreAtOneRM("Tricep Press", 100);
     expect(result.score).toBeGreaterThan(0);
     expect(result.score).toBeLessThanOrEqual(999);
   });
 });
 
 /**
- * Dumbbell curl recalibration (user feedback: 20kg/hand x8 scored 669,
- * expected ~750; 12.5kg/hand x8 scored ~475, expected ~550). The two
- * reported points aren't perfectly consistent with a single anchor under
- * the shared SLOPE constant (not exercise-specific — not touched here), so
- * 0.20 is the best single-anchor fit rather than an exact match to both.
+ * Dumbbell curl. Originally a single-anchor fit to two remembered
+ * expectations (user feedback: 20kg/hand x8 scored 669, expected ~750;
+ * 12.5kg/hand x8 scored ~475, expected ~550), which no single anchor could
+ * satisfy at once under the shared SLOPE.
+ *
+ * Now on Strength Level's published dumbbell-curl standards, like every other
+ * tabled lift. THE UPPER BOUND HERE MOVED, 760 -> 830, and that is a
+ * deliberate change to an assertion, not an accident: the table puts a 20kg/
+ * hand x8 set at 808 where the hand-fitted anchor put it near 730. The
+ * athlete's own remembered target was ~750, so the table lands 58 points ABOVE
+ * what they asked for rather than below it — the direction of this whole
+ * brief. 12.5kg/hand is essentially unmoved, so the second fixture below is
+ * untouched and still pins the bottom of the curve.
  */
 describe("scoreStrength — dumbbell curl recalibration", () => {
   function scoreDbCurl(weightKg: number, reps: number) {
@@ -112,10 +128,10 @@ describe("scoreStrength — dumbbell curl recalibration", () => {
     });
   }
 
-  it("20kg/hand x8 now scores close to 750, not 669", () => {
+  it("20kg/hand x8 scores well above the old 669 — now off Strength Level's own curve, ~808", () => {
     const result = scoreDbCurl(20, 8);
     expect(result.score).toBeGreaterThan(700);
-    expect(result.score).toBeLessThan(760);
+    expect(result.score).toBeLessThan(830);
   });
 
   it("12.5kg/hand x8 now scores close to 550, not ~475", () => {
@@ -247,5 +263,197 @@ describe("scoreStrength — muscle-up bodyweight-relative recognition", () => {
       });
       expect(result.source).not.toBe("generic");
     }
+  });
+});
+
+/**
+ * Junior age coefficients (this pass). Reported symptom: "a 140kg bench press
+ * at 80kg bodyweight aged 19 scores 90.8 and this should be slightly higher…
+ * most scores in general need a small buff."
+ *
+ * The lift itself was NOT scoring low — 140x2 at 80kg puts the athlete at
+ * roughly Strength Level's 95th percentile and 907 is a fair reading of that.
+ * What was wrong is that the engine gave an athlete of 19 exactly the same
+ * standard as one of 30, while handing a 50-year-old an 11% easier one. The
+ * age curve only ever had its masters half.
+ *
+ * Source: USA Powerlifting's Foster age coefficients (age 19 = 1.04),
+ * corroborated by Strength Level's own by-age tables (20-24 male bench
+ * standards sit 2-2.5% under the 25-39 peak).
+ */
+describe("ageFactor — Foster junior coefficients", () => {
+  function bench140(age: number | null) {
+    return scoreStrength({
+      liftKey: "Bench Press",
+      exerciseName: "Bench Press",
+      history: [],
+      latestSet: { weightKg: 140, reps: 2 },
+      bodyweightKg: 80,
+      sex: "male",
+      age,
+      isPremium: false,
+    });
+  }
+
+  it("matches the published Foster table below 23 and is flat across the peak", () => {
+    expect(ageFactor(19)).toBeCloseTo(1.04, 5);
+    expect(ageFactor(18)).toBeCloseTo(1.06, 5);
+    expect(ageFactor(16)).toBeCloseTo(1.13, 5);
+    expect(ageFactor(22)).toBeCloseTo(1.01, 5);
+    expect(ageFactor(23)).toBe(1.0);
+    expect(ageFactor(30)).toBe(1.0);
+    expect(ageFactor(35)).toBe(1.0);
+  });
+
+  it("holds at the youngest tabulated age rather than extrapolating off the end of the data", () => {
+    expect(ageFactor(14)).toBeCloseTo(1.23, 5);
+    expect(ageFactor(11)).toBeCloseTo(1.23, 5);
+  });
+
+  it("still climbs for masters — the existing half of the curve is untouched", () => {
+    expect(ageFactor(40)).toBeCloseTo(1.02, 5);
+    expect(ageFactor(50)).toBeCloseTo(1.11, 5);
+  });
+
+  /**
+   * The engine used to gate on `age > 35`, which silently discarded every
+   * junior coefficient the curve returned. Gating on the factor, not the age,
+   * is the actual fix — pin it so the gate can't quietly revert to an age
+   * comparison.
+   */
+  it("APPLIES the junior credit — the reported lift moves 907 -> 923, and 'age-factor-beta' is flagged", () => {
+    const junior = bench140(19);
+    const peak = bench140(30);
+    expect(peak.score).toBe(907);
+    expect(junior.score).toBe(923);
+    expect(junior.flags).toContain("age-factor-beta");
+    expect(junior.appliedFactors.some((f) => f.startsWith("age:19"))).toBe(true);
+  });
+
+  it("leaves a peak-age athlete completely alone — no factor, no flag", () => {
+    const peak = bench140(30);
+    expect(peak.flags).not.toContain("age-factor-beta");
+    expect(peak.appliedFactors.some((f) => f.startsWith("age:"))).toBe(false);
+  });
+});
+
+/**
+ * Strength Level anchor tables for the lifts that never got Part G's
+ * treatment. Each fixture below is that lift's published 50th and 80th
+ * percentile at 80kg bodyweight, which must read 650 and 850 — the same
+ * percentile-to-score mapping bench and deadlift have used since Part G.
+ *
+ * These pin the CLAIM, not just the numbers: two lifts at the same percentile
+ * of the same population read as the same index score.
+ */
+describe("scoreStrength — Strength Level anchor tables (percentile parity)", () => {
+  function at1RM(liftKey: string, kg: number) {
+    return scoreStrength({
+      liftKey,
+      exerciseName: liftKey,
+      history: [],
+      latestSet: { weightKg: kg, reps: 1 },
+      bodyweightKg: 80,
+      sex: "male",
+      age: 30,
+      isPremium: false,
+    }).score;
+  }
+
+  const MEDIAN_AND_ADVANCED: Array<[string, number, number]> = [
+    // [lift, Strength Level 50th percentile @80kg, their 80th]
+    ["Squat", 132, 168],
+    ["Overhead Press", 62, 81],
+    ["Barbell Row", 88, 114],
+    ["Lat Pulldown", 85, 108],
+    ["Pec Deck", 89, 119],
+    ["Leg Extension", 103, 140],
+    ["Leg Curl", 66, 90],
+    ["Tricep Pushdown", 56, 80],
+    ["Leg Press", 230, 309],
+    ["Hack Squat", 152, 213],
+    ["Hip Thrust", 149, 213],
+    ["Barbell Curl", 46, 63],
+  ];
+
+  it.each(MEDIAN_AND_ADVANCED)(
+    "%s: the median lifter reads 650 and the 80th percentile reads 850",
+    (lift, median, advanced) => {
+      expect(at1RM(lift, median)).toBeCloseTo(650, -1);
+      expect(at1RM(lift, advanced)).toBeCloseTo(850, -1);
+    }
+  );
+
+  it("leg press no longer pins the scale at an ordinary working set — the 7.2x generic overshoot is gone", () => {
+    // 230kg is the MEDIAN leg press for this bodyweight. On
+    // DEFAULT_GENERIC_ANCHOR it scored 999; input-guards.ts meanwhile allows
+    // this lift up to 1000kg, so the guard layer and the scoring layer
+    // contradicted each other outright.
+    expect(at1RM("Leg Press", 230)).toBeCloseTo(650, -1);
+    expect(at1RM("Leg Press", 400)).toBeLessThan(999);
+  });
+
+  it("a variant never out-scores the lift it is a variant of, at the same load", () => {
+    expect(at1RM("Zercher Squat", 140)).toBe(at1RM("Squat", 140));
+    expect(at1RM("Floor Press", 100)).toBe(at1RM("Bench Press", 100));
+    expect(at1RM("Smith Machine Squat", 140)).toBe(at1RM("Squat", 140));
+    expect(at1RM("Deficit Deadlift", 180)).toBe(at1RM("Deadlift", 180));
+  });
+
+  it("the same movement scores the same however the athlete spells it", () => {
+    expect(at1RM("Single Arm Tricep Pushdown", 30)).toBe(at1RM("Single Arm Pushdown", 30));
+    expect(at1RM("One Arm Pushdown", 30)).toBe(at1RM("Single Arm Pushdown", 30));
+  });
+
+  it("every tabled lift is still monotonic in load", () => {
+    for (const [lift] of MEDIAN_AND_ADVANCED) {
+      const scores = [20, 50, 80, 120, 180, 260, 380].map((w) => at1RM(lift, w));
+      for (let i = 1; i < scores.length; i++) {
+        expect(scores[i], `${lift} @ index ${i}`).toBeGreaterThanOrEqual(scores[i - 1]);
+      }
+    }
+  });
+});
+
+/**
+ * The generic fallback. GENERIC_CATEGORY_ANCHORS described a per-movement-
+ * pattern fallback and was reachable only through genericAnchorForCategory(),
+ * which nothing in the codebase ever called — so in practice sixty-odd
+ * catalogue exercises shared one flat 0.35 anchor. Unknown names must still
+ * degrade gracefully; catalogue names must now degrade INTELLIGENTLY.
+ */
+describe("resolveLiftAnchor — generic fallback", () => {
+  function score(liftKey: string, kg: number) {
+    return scoreStrength({
+      liftKey,
+      exerciseName: liftKey,
+      history: [],
+      latestSet: { weightKg: kg, reps: 8 },
+      bodyweightKg: 80,
+      sex: "male",
+      age: 30,
+      isPremium: false,
+    });
+  }
+
+  it("a name that is in no table at all still degrades to a generic anchor rather than throwing", () => {
+    const result = score("Completely Made Up Machine", 50);
+    expect(result.source).toBe("generic");
+    expect(result.flags).toContain("estimated-generic-standard");
+    expect(result.score).toBeGreaterThan(0);
+  });
+
+  it("an un-anchored CATALOGUE exercise inherits its movement pattern, and stays honestly flagged as generic", () => {
+    const clean = score("Power Clean", 60);
+    expect(clean.source).toBe("generic");
+    expect(clean.flags).toContain("estimated-generic-standard");
+    // A legs compound, not a 0.35 upper-body-shaped guess: the same load on
+    // the flat generic read 925.
+    expect(clean.score).toBeLessThan(700);
+  });
+
+  it("a loaded core movement no longer pins the scale at an ordinary working set", () => {
+    // 60kg on a cable crunch is a normal set, not a world record.
+    expect(score("Cable Crunch", 60).score).toBeLessThan(950);
   });
 });

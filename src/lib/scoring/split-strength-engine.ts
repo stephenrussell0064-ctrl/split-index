@@ -69,6 +69,7 @@ import {
   type WeightEntryMode,
 } from "@/lib/scoring/weight-entry";
 import { resolveAttachmentMultiplierByKey } from "@/lib/scoring/strength/attachments";
+import { COMMON_EXERCISES } from "@/lib/constants/sports";
 
 export type Sex = "male" | "female";
 
@@ -333,6 +334,80 @@ type WeightAnchor = [ratio: number, score: number];
  * 850 ("Elite" tier boundary) and 950 ("World Class" territory) instead of
  * 725/850, so a genuinely rare lift among actual gym-goers reads as one.
  */
+/**
+ * The percentile -> index-score mapping every anchor table uses. Fixed by the
+ * three bench/deadlift re-anchoring passes above and NOT re-litigated here:
+ * whatever else changes, "Strength Level's 50th percentile" means 650 and
+ * "their 95th" means 950 for every lift in the catalogue, so two lifts at the
+ * same percentile of the same population read as the same number.
+ */
+const PERCENTILE_SCORES = [150, 400, 650, 850, 950] as const;
+
+/**
+ * Bodyweight the SL rows below were read off. Strength Level publishes its
+ * standards indexed by bodyweight; the 80 kg male row is the one used
+ * throughout, converted into this engine's ratio units by the same allometric
+ * function the athlete's own lift goes through — so the table and the athlete
+ * are measured with one ruler. (bench/deadlift predate this helper and were
+ * read off the 83 kg row, hence their raw `/ REFERENCE_BODYWEIGHT_KG` form;
+ * the two conventions agree to within ~1%, and those two are left
+ * byte-identical so their pinned fixtures do not move.)
+ */
+const SL_ROW_BODYWEIGHT_KG = 80;
+
+/**
+ * Strength Level's five published standards for one lift, at
+ * SL_ROW_BODYWEIGHT_KG, mapped onto PERCENTILE_SCORES. Order: beginner (5th),
+ * novice (20th), intermediate (50th), advanced (80th), elite (95th) —
+ * Strength Level's own labels for those percentiles.
+ */
+function slTable(kgAtRowBodyweight: readonly [number, number, number, number, number]): WeightAnchor[] {
+  return kgAtRowBodyweight.map(
+    (kg, i) => [relativeStrengthRatio(kg, SL_ROW_BODYWEIGHT_KG), PERCENTILE_SCORES[i]] as WeightAnchor
+  );
+}
+
+/**
+ * FINISHING THE TABLE MIGRATION (this pass).
+ *
+ * The block above promised the remaining ~20 lifts the same treatment,
+ * "mechanical, repeatable". Until now they never got it, and that gap — not a
+ * global calibration error — is what the athlete was feeling when they said
+ * "most scores in general are scoring too low for the average gym goer".
+ *
+ * A single `anchorRatio` plus the shared SLOPE describes a log-linear curve.
+ * A real strength distribution is not log-linear: it is wide at the bottom and
+ * compressed at the top. Fitting one anchor to a five-point distribution
+ * therefore mis-reads BOTH ends, and which way it errs depends on where that
+ * lift's single anchor happened to be pinned — which, for most of these, was
+ * one athlete's remark about one set. Measured against this file's OWN
+ * percentile mapping the errors ran in both directions, and were large:
+ *
+ *   Pec Deck at Strength Level's 80th percentile scored 704; it should be 850.
+ *   Tricep Pushdown at their 50th scored 800; it should be 650 — and any
+ *     ordinary working set (60 kg x 10) pinned the scale at 999.
+ *
+ * So this is not a buff. It is the same percentile scale applied to the lifts
+ * that never received it. Some scores rise, some fall, and every one of them
+ * now says the same thing about the athlete's percentile that bench and
+ * deadlift have said since Part G.
+ *
+ * Values are Strength Level's published male standards at 80 kg bodyweight,
+ * read September 2026. Dumbbell figures there are PER dumbbell; anchors whose
+ * `anchorConvention` (weight-entry.ts) is "total" are doubled here and the
+ * per-hand ones are not — the comment on each group says which.
+ *
+ * Lifts deliberately left WITHOUT a table, so the next pass need not
+ * rediscover why:
+ *  - dbRow: its alias list is a mixed bag (dumbbell row, seated cable row,
+ *    machine row, inverted row, face pull). A face pull and a heavy cable row
+ *    are not the same movement, and a table sharp enough to be useful for one
+ *    would badly misread the other. Split the aliases first, then table them
+ *    separately.
+ *  - tricepPress, machineChestPress and the Iso-Lateral machine family: no
+ *    Strength Level population data exists for them, so there is nothing to
+ *    map. They keep their documented engineering-judgement anchors.
+ */
 const WEIGHT_RATIO_ANCHOR_TABLES: Partial<Record<string, WeightAnchor[]>> = {
   bench: [
     [47 / REFERENCE_BODYWEIGHT_KG, 150],
@@ -348,6 +423,55 @@ const WEIGHT_RATIO_ANCHOR_TABLES: Partial<Record<string, WeightAnchor[]>> = {
     [200 / REFERENCE_BODYWEIGHT_KG, 850],
     [250 / REFERENCE_BODYWEIGHT_KG, 950],
   ],
+
+  // --- barbell compounds (total load, bar included) -----------------------
+  squat: slTable([75, 101, 132, 168, 206]),
+  ohp: slTable([33, 46, 62, 81, 101]),
+  barbellRow: slTable([48, 66, 88, 114, 141]),
+  barbellCurl: slTable([22, 33, 46, 63, 80]),
+
+  // --- machines and cables (total load on the stack / sled) ---------------
+  latPulldown: slTable([47, 64, 85, 108, 133]),
+  pecDeck: slTable([42, 63, 89, 119, 152]),
+  legExtension: slTable([48, 72, 103, 140, 180]),
+  legCurl: slTable([30, 46, 66, 90, 116]),
+  calfRaise: slTable([49, 88, 141, 207, 282]),
+  tricepPushdown: slTable([22, 36, 56, 80, 107]),
+  /**
+   * Leg press — the 7.2x overshoot the iso-lateral pass documented and left.
+   * With no anchor and no alias it fell to DEFAULT_GENERIC_ANCHOR, so an
+   * ordinary 230 kg working set (Strength Level's MEDIAN) pinned the scale at
+   * 999, while input-guards.ts simultaneously knew leg presses run to
+   * 600-800 kg. The guard layer and the scoring layer now agree.
+   */
+  legPress: slTable([109, 162, 230, 309, 395]),
+  hackSquat: slTable([63, 102, 152, 213, 280]),
+  hipThrust: slTable([56, 96, 149, 213, 285]),
+
+  // --- dumbbells, DOUBLED: these anchors are calibrated on TOTAL load ------
+  flatDbPress: slTable([38, 56, 80, 106, 136]),
+  inclineDbPress: slTable([44, 58, 78, 100, 124]),
+  dbShoulderPress: slTable([30, 44, 62, 84, 108]),
+  dbShrug: slTable([34, 56, 88, 126, 168]),
+
+  // --- dumbbells, NOT doubled: anchorConvention is perHand -----------------
+  lateralRaise: slTable([5, 10, 16, 25, 34]),
+  dbCurl: slTable([8, 14, 22, 32, 42]),
+  hammerCurl: slTable([11, 16, 24, 33, 42]),
+  /**
+   * Single-arm pushdown. Strength Level publishes no single-arm table, so this
+   * is DERIVED: 55% of the two-arm pushdown standard per arm, the usual
+   * bilateral deficit for a cable isolation movement. Derived, not measured —
+   * flagged the same way as this file's other engineering estimates.
+   *
+   * It is a large NERF and it is deliberate. The old anchor put a 1RM of
+   * 12.7 kg per arm at the 500 mark, so an ordinary 20 kg x 10 set read 876
+   * ("Elite") and 35 kg x 8 pinned at 999. Nothing about a single-arm
+   * pushdown is elite at 20 kg. This is one of the three lifts the athlete
+   * asked to have RAISED and the population data says the opposite, so it is
+   * being reported rather than quietly obeyed.
+   */
+  tricepPushdownSingleArm: slTable([12, 20, 31, 44, 59]),
 };
 
 const ACCESSORY_MAP: Record<string, LiftAnchor> = {
@@ -383,7 +507,11 @@ const ACCESSORY_MAP: Record<string, LiftAnchor> = {
   hammerCurl: { anchorRatio: 0.202, category: "arms", bodyPart: "upperBody" },
   skullcrusher: { anchorRatio: 0.22, category: "arms", bodyPart: "upperBody" },
   cableCurl: { anchorRatio: 0.28, category: "arms", bodyPart: "upperBody" },
-  singleArmPushdown: { anchorRatio: 0.189, category: "arms", bodyPart: "upperBody" },
+  // (A duplicate `singleArmPushdown` anchor lived here, unreachable: the only
+  // name that could reach it, "single arm pushdown", is claimed by
+  // LIFT_ALIASES for tricepPushdownSingleArm, which wins over the derived
+  // alias. Two anchors for one movement can only drift apart, so the dead one
+  // is gone rather than left to be found and "fixed" later.)
   dbShoulderPress: { anchorRatio: 0.216, category: "shoulders", bodyPart: "upperBody" },
   // 0.1525 -> 0.145 (user feedback: "cable lat raise" scoring "slightly"
   // too low) — a ~4.9% easier anchor, roughly +2 points on the 0-99.9
@@ -400,6 +528,20 @@ const ACCESSORY_MAP: Record<string, LiftAnchor> = {
   calfRaise: { anchorRatio: 1.0462, category: "legs", bodyPart: "lowerBody" },
   hipAdduction: { anchorRatio: 0.816, category: "legs", bodyPart: "lowerBody" },
   legCurl: { anchorRatio: 0.6372, category: "legs", bodyPart: "lowerBody" },
+
+  // -------------------------------------------------------------------------
+  // Previously anchor-less. Each of these is a mainstream catalogue exercise
+  // (COMMON_EXERCISES in lib/constants/sports.ts) that had no anchor AND no
+  // alias, so every logged set fell to DEFAULT_GENERIC_ANCHOR — one
+  // barbell-shaped 0.35 shared by sixty-odd movements at once. `anchorRatio`
+  // here is the ratio that scores 500 on each lift's own anchor table, kept in
+  // step with it so the fallback and the table cannot disagree; the table is
+  // what actually scores them.
+  // -------------------------------------------------------------------------
+  legPress: { anchorRatio: 2.3348, category: "legs", bodyPart: "lowerBody" },
+  hackSquat: { anchorRatio: 1.5054, category: "legs", bodyPart: "lowerBody" },
+  hipThrust: { anchorRatio: 1.4460, category: "legs", bodyPart: "lowerBody" },
+  dbShrug: { anchorRatio: 0.8488, category: "back", bodyPart: "pull" },
 
   // -------------------------------------------------------------------------
   // Iso-Lateral (Hammer Strength) plate-loaded machines — their OWN anchors.
@@ -479,7 +621,22 @@ const LIFT_ALIASES: Record<string, string> = {
   // accessories
   "incline dumbbell press": "inclineDbPress", "decline dumbbell press": "inclineDbPress",
   "dumbbell bench press": "flatDbPress",
-  "machine chest press": "machineChestPress", "chest press machine": "machineChestPress", "smith machine squat": "machineChestPress",
+  "machine chest press": "machineChestPress", "chest press machine": "machineChestPress",
+  // Was aliased to "machineChestPress" — a barbell squat variant scored on a
+  // chest-press anchor. A Smith squat is a back squat on rails; the fixed bar
+  // path makes it marginally easier than free, nowhere near enough to justify
+  // a different movement's standard.
+  "smith machine squat": "squat",
+  // Plate-loaded squat/press machines. None of these had an alias at all, so
+  // all four shared DEFAULT_GENERIC_ANCHOR with the planks and the sit-ups.
+  // Pendulum and belt squat have no published standards of their own and take
+  // the hack squat's, the closest machine Strength Level does cover — an
+  // approximation, and a far smaller one than 0.35 was.
+  "leg press": "legPress",
+  "hack squat": "hackSquat", "hack squat machine": "hackSquat",
+  "pendulum squat": "hackSquat", "belt squat": "hackSquat",
+  "hip thrust": "hipThrust", "barbell glute bridge": "hipThrust",
+  "dumbbell shrug": "dbShrug",
   // Iso-Lateral (Hammer Strength) machines. These used to alias onto the
   // nearest free-weight/cable sibling (dbRow, dbShoulderPress, ...), which
   // both mismatched the per-arm loading convention and credited a supported
@@ -509,7 +666,17 @@ const LIFT_ALIASES: Record<string, string> = {
   "dumbbell fly": "cableFly", "incline dumbbell fly": "cableFly",
   "pec deck": "pecDeck",
   "rope pushdown": "tricepPushdown", "tricep pushdown": "tricepPushdown", "tricep extension": "tricepPushdown",
+  // The catalogue entry is "Single Arm Pushdown", but the athlete's own words
+  // for it were "single arm tricep pushdowns" — typed as a custom exercise,
+  // that spelling missed every alias and landed on DEFAULT_GENERIC_ANCHOR, so
+  // the same movement scored hundreds of points differently depending on how
+  // it was typed. Cover the obvious spellings.
   "single arm pushdown": "tricepPushdownSingleArm",
+  "single arm tricep pushdown": "tricepPushdownSingleArm",
+  "single arm tricep extension": "tricepPushdownSingleArm",
+  "single arm rope pushdown": "tricepPushdownSingleArm",
+  "one arm pushdown": "tricepPushdownSingleArm",
+  "one arm tricep pushdown": "tricepPushdownSingleArm",
   "skull crusher": "skullcrusher", "overhead tricep extension": "tricepPushdown",
   "cable overhead extension": "tricepPushdown", "dumbbell kickback": "tricepPushdown", "jm press": "tricepPushdown",
   "dumbbell shoulder press": "dbShoulderPress", "seated dumbbell press": "dbShoulderPress", "machine shoulder press": "dbShoulderPress", "arnold press": "dbShoulderPress",
@@ -526,6 +693,21 @@ const LIFT_ALIASES: Record<string, string> = {
   "leg press calf raise": "calfRaise",
   "hip adduction": "hipAdduction", "hip abduction": "hipAdduction",
   "seated leg curl": "legCurl", "leg curl": "legCurl",
+
+  // Variants of an already-calibrated barbell lift that had no alias, so they
+  // sat in the generic bucket and were scored on a different curve from the
+  // movement they ARE. With the primaries now on anchor tables that gap became
+  // absurd rather than merely sloppy — at 60 kg x 8 a Zercher Squat read 542
+  // against the Squat's 234, and a Floor Press 726 against the Bench Press's
+  // 542. A variant should never out-score its own parent lift at the same
+  // load; if anything each of these is marginally harder than the parent.
+  "zercher squat": "squat", "safety bar squat": "squat",
+  "spoto press": "bench", "floor press": "bench",
+  "pin press": "ohp",
+  "deficit deadlift": "deadlift", "block pull": "deadlift", "jefferson deadlift": "deadlift",
+  "landmine row": "barbellRow",
+  "incline dumbbell curl": "dbCurl",
+  "overhead cable extension": "tricepPushdown",
 };
 
 /**
@@ -558,20 +740,57 @@ const DERIVED_ALIASES: Record<string, string> = buildDerivedAliases();
  * press), just lower-confidence than a calibrated primary/accessory entry.
  */
 const GENERIC_CATEGORY_ANCHORS: Record<string, LiftAnchor> = {
-  "chest:compound": { anchorRatio: 0.6147, category: "chest", bodyPart: "upperBody" },
-  "chest:accessory": { anchorRatio: 0.2470, category: "chest", bodyPart: "upperBody" },
-  "back:compound": { anchorRatio: 0.6395, category: "back", bodyPart: "pull" },
+  // Compound categories are pinned to the 500-point of that pattern's own
+  // now-tabled reference lift, so a category fallback can never be softer
+  // than the calibrated movement it stands in for.
+  "chest:compound": { anchorRatio: 0.9783, category: "chest", bodyPart: "upperBody" }, // bench's 500-point
+  "chest:accessory": { anchorRatio: 0.3823, category: "chest", bodyPart: "upperBody" }, // cableFly — a pullover/Svend press is a fly-shaped movement
+  "back:compound": { anchorRatio: 0.9237, category: "back", bodyPart: "pull" }, // barbellRow's 500-point
   "back:accessory": { anchorRatio: 0.4524, category: "back", bodyPart: "pull" },
+  /**
+   * Legs compound is deliberately NOT squat's 1.4004 500-point. What is left
+   * in this bucket after the aliases above is single-leg work and the
+   * Olympic lifts — a power clean is ~60-65% of a back squat and a single-leg
+   * press is loaded per leg. Held at the squat's OLD single-anchor value,
+   * which lands about 70% of the new squat 500-point: the right neighbourhood
+   * for both, and honest about being a compromise across a mixed bucket.
+   */
   "legs:compound": { anchorRatio: 0.9984, category: "legs", bodyPart: "lowerBody" },
   "legs:accessory": { anchorRatio: 0.5, category: "legs", bodyPart: "lowerBody" },
-  "shoulders:compound": { anchorRatio: 0.4213, category: "shoulders", bodyPart: "upperBody" },
+  "shoulders:compound": { anchorRatio: 0.6471, category: "shoulders", bodyPart: "upperBody" }, // ohp's 500-point
   "shoulders:accessory": { anchorRatio: 0.1525, category: "shoulders", bodyPart: "upperBody" },
   "arms:compound": { anchorRatio: 0.6395, category: "arms", bodyPart: "upperBody" },
   "arms:accessory": { anchorRatio: 0.3197, category: "arms", bodyPart: "upperBody" },
-  "core:compound": { anchorRatio: 0.5, category: "core", bodyPart: "lowerBody" },
-  "core:accessory": { anchorRatio: 0.25, category: "core", bodyPart: "lowerBody" },
+  /**
+   * Core was the one category the flat 0.35 was too GENEROUS for, and routing
+   * it here at 0.25 would have made that worse, not better: a 60kg cable
+   * crunch — an ordinary working set — pinned the scale at 999 either way.
+   * 0.50 puts a 60kg loaded-core 1RM near 650 and a 20kg weighted sit-up
+   * near 230. Engineering judgement: Strength Level has no cable/machine
+   * crunch table, and this bucket mixes loaded crunches with bodyweight
+   * movements that log no weight at all (those already exit early through
+   * the no-valid-set path and are unaffected).
+   */
+  "core:compound": { anchorRatio: 0.75, category: "core", bodyPart: "lowerBody" },
+  "core:accessory": { anchorRatio: 0.50, category: "core", bodyPart: "lowerBody" },
 };
 const DEFAULT_GENERIC_ANCHOR: LiftAnchor = { anchorRatio: 0.35, category: "other", bodyPart: "upperBody" };
+
+/**
+ * Catalogue name -> its category/kind, so an exercise the athlete picked from
+ * the app's own list can inherit a movement-pattern anchor instead of the flat
+ * generic one. Built once at module load from the single source of truth
+ * (COMMON_EXERCISES) rather than duplicated here, so a new catalogue entry is
+ * scored sensibly the day it is added, not the day someone remembers to add a
+ * second list entry for it.
+ *
+ * `sports.ts` imports nothing from `scoring/`, so this direction of dependency
+ * adds no cycle.
+ */
+const CATALOGUE_CATEGORY_BY_NAME: Record<string, { category: string; kind: "compound" | "accessory" }> =
+  Object.fromEntries(
+    COMMON_EXERCISES.map((ex) => [normalizeName(ex.name), { category: ex.category, kind: ex.kind }])
+  );
 
 /**
  * Female standard as a fraction of the male anchor, by movement region (Part A).
@@ -615,6 +834,9 @@ export const EXERCISE_CLASS: Record<string, ExerciseClass> = {
   hipAdduction: "accessory",
   legCurl: "accessory",
   dbRow: "accessory",
+  hackSquat: "accessory",
+  hipThrust: "accessory",
+  dbShrug: "accessory",
   // Iso-Lateral machines: "accessory" matches their calibrated machine
   // siblings (machineChestPress, dbRow, legExtension) rather than the
   // "compound" class the barbell lifts use — the rep-to-1RM curve on a
@@ -637,7 +859,6 @@ export const EXERCISE_CLASS: Record<string, ExerciseClass> = {
   lateralRaise: "isolation",
   preacherCurl: "isolation",
   barbellCurl: "isolation",
-  singleArmPushdown: "isolation",
 };
 
 export function exerciseClassFor(resolvedKey: string): ExerciseClass {
@@ -645,15 +866,61 @@ export function exerciseClassFor(resolvedKey: string): ExerciseClass {
 }
 
 /**
- * Gentle Masters-style age curve, applied as a multiplier on the athlete's
- * ratio (equivalently: the anchor gets easier with age). Flat 20–35, barely
- * moving under 40, then a steadier climb. ESTIMATE derived from Legion's
- * strength-by-age chart — refine with published McCulloch/Masters
- * coefficients (see roadmap). Verified: a 50-year-old benching the same
- * 140kg as a 25-year-old scores ~11% higher on the ratio (890 vs 850, still
- * comfortably inside the same Elite band — "gentle," not tier-jumping).
+ * USA Powerlifting's Foster age coefficients for junior lifters — the
+ * published other half of an age curve this engine only ever had the top of.
+ *
+ * The curve below was flat at 1.0 for every age at or under 35, so a
+ * 19-year-old was scored against a 30-year-old's standard while a 50-year-old
+ * received 11% of credit. That asymmetry is not what the data says. Foster's
+ * premise is explicit and is the same one the masters half rests on: maximal
+ * strength peaks between roughly 23 and 40 and falls away on BOTH sides of
+ * that window. A junior is not merely untrained-for-their-age; they are
+ * pre-peak.
+ *
+ * Cross-checked against Strength Level's own by-age tables — the same dataset
+ * the anchors above come from — which put the 20-24 male bench standards about
+ * 2-2.5% under the 25-39 peak (intermediate 94 kg vs 96 kg, advanced 124 kg vs
+ * 127 kg). Foster says 1.03 at age 20. Two independent sources, one
+ * competitive and one observational, agreeing to within half a percent is as
+ * good as this file's evidence gets.
+ *
+ * The effect is deliberately small — 4% of ratio at 19, about +15 index points
+ * on a log-formula lift. "Slightly higher", which is what was asked for, and
+ * it moves nobody over 23.
+ */
+const JUNIOR_AGE_COEFFICIENTS: Record<number, number> = {
+  14: 1.23,
+  15: 1.18,
+  16: 1.13,
+  17: 1.08,
+  18: 1.06,
+  19: 1.04,
+  20: 1.03,
+  21: 1.02,
+  22: 1.01,
+};
+/** Foster's table starts at 14; anything younger is held there rather than extrapolated off the end of published data. */
+const YOUNGEST_TABULATED_AGE = 14;
+
+/**
+ * Age curve, applied as a multiplier on the athlete's ratio (equivalently: the
+ * anchor gets easier). Foster junior coefficients below 23, flat through the
+ * 23-35 peak, then the gentle masters climb.
+ *
+ * The masters half is unchanged: an ESTIMATE derived from Legion's
+ * strength-by-age chart — refine with published McCulloch/Masters coefficients
+ * (see roadmap). Verified: a 50-year-old benching the same 140kg as a
+ * 25-year-old scores ~11% higher on the ratio (890 vs 850, still comfortably
+ * inside the same Elite band — "gentle," not tier-jumping).
+ *
+ * Note the two halves disagree slightly about where the peak ENDS: Foster (and
+ * McCulloch) put it at 40, this curve starts easing at 35. Left alone — moving
+ * it would LOWER the score of every athlete aged 36-40, which is a separate
+ * decision with its own evidence to gather, not a side effect of crediting
+ * juniors.
  */
 export function ageFactor(age: number): number {
+  if (age < 23) return JUNIOR_AGE_COEFFICIENTS[Math.max(Math.floor(age), YOUNGEST_TABULATED_AGE)] ?? 1.0;
   if (age <= 35) return 1.0;
   if (age <= 40) return 1.0 + (age - 35) * (0.02 / 5);
   return 1.02 + (age - 40) * ((1.11 - 1.02) / 10);
@@ -787,6 +1054,22 @@ function resolveLiftAnchor(liftKey: string): { anchor: LiftAnchor; source: Stren
     if (ACCESSORY_MAP[aliased]) return { anchor: ACCESSORY_MAP[aliased], source: "accessory", resolvedKey: aliased };
   }
 
+  // Catalogue exercise with no anchor of its own: inherit its movement
+  // pattern's anchor rather than the flat DEFAULT_GENERIC_ANCHOR. Still
+  // `source: "generic"` — a weaker claim than a calibrated anchor, and the
+  // "estimated-generic-standard" flag must keep saying so — but "a legs
+  // compound" is a far better guess about a Hip Thrust than "0.35".
+  const catalogued = CATALOGUE_CATEGORY_BY_NAME[key];
+  if (catalogued) {
+    return {
+      anchor: genericAnchorForCategory(catalogued.category, catalogued.kind),
+      source: "generic",
+      resolvedKey: key,
+    };
+  }
+
+  // Genuinely unknown name (a custom exercise the athlete typed). Degrades to
+  // the flat generic rather than throwing — pinned by test, and correct.
   return { anchor: DEFAULT_GENERIC_ANCHOR, source: "generic", resolvedKey: key };
 }
 
@@ -926,13 +1209,15 @@ function computeNextTierFromWeightAnchors(
   bodyweightKg: number,
   currentOneRM: number,
   effectiveSexFactor: number,
-  effectiveAgeFactor: number
+  effectiveAgeFactor: number,
+  attachmentMultiplier: number
 ): NextTierTarget | null {
   const currentIdx = TIER_THRESHOLDS.findIndex((t) => t.tier === tierForScore(score));
   if (currentIdx === -1 || currentIdx === TIER_THRESHOLDS.length - 1) return null;
   const next = TIER_THRESHOLDS[currentIdx + 1];
   const targetEffectiveRatio = inverseInterpolateWeightAnchors(table, next.min);
-  const targetRatio = (targetEffectiveRatio * effectiveSexFactor) / effectiveAgeFactor;
+  const targetRatio =
+    (targetEffectiveRatio * effectiveSexFactor * attachmentMultiplier) / effectiveAgeFactor;
   const targetOneRM = oneRMForRatio(targetRatio, bodyweightKg);
   const kgNeeded = Math.max(0, targetOneRM - currentOneRM);
   return { tier: next.tier, kgNeeded: round1(kgNeeded) };
@@ -1265,12 +1550,18 @@ export function scoreStrength(input: ScoreStrengthInput): ScoreStrengthResult {
     flags.push("female-strength-beta");
   }
 
-  if (age != null && age > 35) {
+  // Gated on the factor, not on `age > 35`. The old test asked whether the
+  // athlete was a MASTER; it therefore threw away every junior coefficient
+  // ageFactor() now returns, silently, with no flag to show for it. Ask the
+  // curve instead, and it credits both ends of it.
+  if (age != null && Number.isFinite(age)) {
     const factor = ageFactor(age);
-    effectiveAnchor /= factor;
-    effectiveAgeFactor = factor;
-    appliedFactors.push(`age:${age} ×${factor.toFixed(3)} standard (beta)`);
-    flags.push("age-factor-beta");
+    if (factor !== 1) {
+      effectiveAnchor /= factor;
+      effectiveAgeFactor = factor;
+      appliedFactors.push(`age:${age} ×${factor.toFixed(3)} standard (beta)`);
+      flags.push("age-factor-beta");
+    }
   }
 
   const ratio = relativeStrengthRatio(oneRM, bodyweightKg);
@@ -1283,7 +1574,14 @@ export function scoreStrength(input: ScoreStrengthInput): ScoreStrengthResult {
     // Bench/deadlift (Part G, scoring-calibration-rewrite): scored via
     // direct interpolation across Strength-Level-derived anchors rather
     // than the single-anchorRatio log formula — see WEIGHT_RATIO_ANCHOR_TABLES.
-    const effectiveRatio = (ratio / effectiveSexFactor) * effectiveAgeFactor;
+    // The attachment multiplier makes the ANCHOR harder in the log path; the
+    // table path has no single anchor to scale, so the equivalent is to
+    // deflate the athlete's ratio by it. Without this line the table path
+    // ignored attachments entirely — invisible while only bench and deadlift
+    // had tables (neither has attachments), a real defect the moment tricep
+    // pushdown and lat pulldown get one.
+    const effectiveRatio =
+      ((ratio / effectiveSexFactor) * effectiveAgeFactor) / attachmentMultiplier;
     score = clamp(
       Math.round(interpolateWeightAnchors(weightAnchorTable, effectiveRatio)),
       MIN_SCORE,
@@ -1295,7 +1593,8 @@ export function scoreStrength(input: ScoreStrengthInput): ScoreStrengthResult {
       bodyweightKg,
       oneRM,
       effectiveSexFactor,
-      effectiveAgeFactor
+      effectiveAgeFactor,
+      attachmentMultiplier
     );
   } else {
     score = scoreFromRatio(ratio, effectiveAnchor);

@@ -309,6 +309,7 @@ const NAME_TO_CONFIG_KEY: Record<string, string> = {
   "hammer curl": "hammerCurl",
   "cross body hammer curl": "hammerCurl",
   "concentration curl": "dbCurl",
+  "incline dumbbell curl": "dbCurl",
   "cable lateral raise": "cableLateralRaise",
   "lateral raise": "lateralRaise",
   "front raise": "lateralRaise",
@@ -323,6 +324,17 @@ const NAME_TO_CONFIG_KEY: Record<string, string> = {
   "bulgarian split squat": "bulgarianSplit",
   "walking lunges": "bulgarianSplit",
   lunges: "bulgarianSplit",
+  // Same movement family, same dumbbells, and they already share
+  // bulgarianSplit's scoring anchor — but they were missing HERE, so they fell
+  // to the "total, no picker" default while their siblings defaulted to per
+  // hand. The athlete entering "20" for reverse lunges was scored on 20 kg
+  // total where the identical entry for walking lunges scored 40 kg: the same
+  // set, logged under a different name in the same catalogue, read hundreds of
+  // points lower. Exactly the split-list defect the iso-lateral note warned
+  // about — an exercise missing from EITHER map silently reverts to a default
+  // that disagrees with its anchor.
+  "reverse lunges": "bulgarianSplit",
+  "step up": "bulgarianSplit",
   "dumbbell fly": "dbFly",
   "incline dumbbell fly": "dbFly",
   "dumbbell shrug": "dbShrug",

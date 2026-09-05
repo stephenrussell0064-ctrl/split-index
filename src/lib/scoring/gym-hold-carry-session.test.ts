@@ -216,7 +216,15 @@ describe("rep-based sessions are untouched", () => {
       exercise("Bench Press", "Chest", [lift(100, 5)], 1),
       exercise("Barbell Row", "Back", [lift(80, 8)], 2),
     ]);
-    expect(result.sportIndex).toBe(787);
+    // 787 -> 828 in the Strength-Level anchor-table pass. This assertion is
+    // what it says on the describe block — a guard that the HOLD/CARRY work
+    // leaves rep-based sessions alone — and that still holds: nothing in the
+    // hold/carry path moved it. The number itself is a calibration snapshot,
+    // and Squat and Barbell Row both moved onto real anchor tables in that
+    // pass, so the fixture is re-taken rather than defended. Bench Press is
+    // unchanged, and this athlete is 30 so no age coefficient applies either:
+    // the whole delta is Squat and Barbell Row moving onto their own tables.
+    expect(result.sportIndex).toBe(828);
     expect(result.strengthActivities).toHaveLength(3);
     expect(result.strengthActivities?.every((r) => r.oneRM > 0)).toBe(true);
   });
