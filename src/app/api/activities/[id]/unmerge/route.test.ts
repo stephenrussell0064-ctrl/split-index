@@ -251,4 +251,57 @@ describe("POST /api/activities/[id]/unmerge", () => {
     expect(response.status).toBe(500);
     expect(body.error).toMatch(/check your logbook/i);
   });
+
+  it("reports legs that came back unscored instead of claiming success", async () => {
+    // The scoreAndPersist return value used to be discarded outright, so every
+    // leg reported success whatever happened to its score rows. An unscored
+    // session contributes nothing to the Split Index while looking entirely
+    // normal in the logbook — silent by construction.
+    const { response, body } = await unmergeWith({
+      ...baseResults(),
+      "workout_scores:insert": { data: null, error: { message: "insert blocked" } },
+    });
+
+    expect(response.status).toBe(500);
+    expect(body.error).toMatch(/could not score/i);
+    // The unmerge itself landed, and the answer has to say so — the sessions
+    // really are back, and the athlete is told where to find them.
+    expect(body.unmerged).toBe(true);
+    expect(body.restoredActivityIds).toEqual(["leg-a", "leg-b"]);
+    expect(body.unscoredActivityIds).toEqual(["leg-a", "leg-b"]);
+  });
+
+  it("keeps scoring the remaining legs when one of them cannot be scored", async () => {
+    // A leg whose stored body no longer passes the plausibility guards throws
+    // rather than returning an error. Uncaught, it abandoned every leg after it
+    // in the loop — unscored and unmentioned.
+    const impossibleLeg = {
+      ...SNAPSHOT_A,
+      // Below MIN_HEART_RATE_BPM, so assertScoringInput throws rather than
+      // returning an error the loop could read.
+      avg_heart_rate: 5,
+    };
+    const { response, body, calls } = await unmergeWith({
+      ...baseResults(),
+      "activities:select:single": {
+        data: {
+          ...MERGED_ROW,
+          metadata: {
+            ...MERGED_ROW.metadata,
+            merge: { ...MERGED_ROW.metadata.merge, sources: [impossibleLeg, SNAPSHOT_B] },
+          },
+        },
+        error: null,
+      },
+    });
+
+    expect(response.status).toBe(500);
+    expect(body.unscoredActivityIds).toEqual(["leg-a"]);
+    // leg-b came after the throw and still got its score.
+    expect(
+      find(calls, "workout_scores", "insert").map(
+        (c) => (c.payload as { activity_id: string }).activity_id
+      )
+    ).toEqual(["leg-b"]);
+  });
 });

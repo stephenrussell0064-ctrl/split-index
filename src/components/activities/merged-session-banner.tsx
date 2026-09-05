@@ -46,7 +46,18 @@ export function MergedSessionBanner({
     try {
       const res = await fetch(`/api/activities/${activityId}/unmerge`, { method: "POST" });
       const data = await res.json();
-      if (!res.ok) throw new Error(data?.error ?? "Could not undo this merge.");
+      if (!res.ok) {
+        // The route can now fail AFTER the unmerge itself landed — the legs are
+        // back but one of them could not be scored. Leaving the athlete on this
+        // page would show them a merged-session banner for a session that no
+        // longer exists, so send them to the logbook where the restored
+        // sessions actually are, and carry the message with them.
+        if (data?.unmerged === true) {
+          router.push("/activities");
+          router.refresh();
+        }
+        throw new Error(data?.error ?? "Could not undo this merge.");
+      }
       router.push("/activities");
       router.refresh();
     } catch (err) {

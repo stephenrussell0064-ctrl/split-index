@@ -246,6 +246,36 @@ export async function POST(request: Request) {
     }
   );
 
+  // Scoring REPLACES the survivor's score rather than updating it, so a failed
+  // insert here does not leave the old score standing — it leaves the merged
+  // session with none at all. Read as `scored.workoutScore` only, that arrived
+  // as null and this answered 200 anyway, with `sportIndex` and `splitIndex`
+  // taken from the in-memory `result` the athlete's database never received: a
+  // success screen quoting a score that does not exist, and a logbook entry
+  // that has lost one.
+  //
+  // No rollback. By this point the absorbed sessions are deleted and the
+  // survivor carries the merged columns, and the entire undo is already sitting
+  // in its metadata.merge.sources — the athlete can unmerge, which is a better
+  // recovery than a route silently re-inserting rows in a failure path that has
+  // no test covering it. Retrying the merge is safe too: the absorbed ids no
+  // longer resolve, so a second POST is rejected with 404 before it can touch
+  // anything.
+  if (scored.workoutScoreError || !scored.workoutScore) {
+    console.error(
+      "[activities/merge] workout_scores insert failed for survivor",
+      plan.survivorId,
+      scored.workoutScoreError?.message
+    );
+    return NextResponse.json(
+      {
+        error:
+          "We merged these sessions but could not score the result. The merged session is in your logbook — open it and undo the merge, or edit it to try again.",
+      },
+      { status: 500 }
+    );
+  }
+
   const { data: activity } = await supabase
     .from("activities")
     .select("*")

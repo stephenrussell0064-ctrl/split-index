@@ -308,6 +308,25 @@ describe("POST /api/activities/merge", () => {
     expect(metadata.merge.sources.find((s) => s.id === "leg-b")!.duration_seconds).toBe(600);
   });
 
+  it("does not report a merge as scored when the score never landed", async () => {
+    // Scoring DELETES the survivor's score before rewriting it, so a failed
+    // insert leaves the merged session with none at all. This used to answer
+    // 200 with score: null and a splitIndex read from the in-memory result —
+    // a success screen quoting a number the database never received.
+    const { response, body } = await mergeWith({
+      ...baseResults(),
+      "workout_scores:insert": { data: null, error: { message: "insert blocked" } },
+    });
+
+    expect(response.status).toBe(500);
+    expect(body.error).toMatch(/could not score/i);
+    // The merge itself did happen, so the message must not claim otherwise —
+    // it points at the undo that is sitting in the session's own metadata.
+    expect(body.error).toMatch(/undo the merge|logbook/i);
+    expect(body.splitIndex).toBeUndefined();
+    expect(body.score).toBeUndefined();
+  });
+
   it("writes nothing at all on a dry run", async () => {
     const { response, body, calls } = await mergeWith(baseResults(), {
       activityIds: ["leg-a", "leg-b"],

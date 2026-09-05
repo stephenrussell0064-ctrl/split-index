@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { scoreAndPersist } from "@/lib/activities/score-and-persist";
+import { ScoringInputError } from "@/lib/scoring/service";
 import { readMergeRecord, type MergeSourceActivity } from "@/lib/activities/merge";
 import type { ActivityFormData, SessionType, SportType } from "@/types";
 
@@ -169,18 +170,78 @@ export async function POST(
   );
 
   const restoredIds: string[] = [];
+  // Legs that came back but could not be scored. Each one is a session sitting
+  // in the logbook with no score — the result of a failed insert into
+  // workout_scores, which scoring DELETES before it rewrites, so there is no
+  // previous score left underneath.
+  const unscoredIds: string[] = [];
+
   for (const [index, snapshot] of ordered.entries()) {
-    await scoreAndPersist(supabase, user.id, profile, bodyOf(snapshot), snapshot.id, {
-      excludeActivityIds: [snapshot.id],
-      existingMetadata: (snapshot.metadata ?? null) as Record<string, unknown> | null,
-      // The stored race prediction still carries the merged session's
-      // evidence, and the merged session no longer exists. Only the first
-      // leg has to rebuild the base from the athlete's other sessions;
-      // after that the stored row points at a leg that genuinely precedes
-      // the next one, so it is real memory again.
-      predictionBaseIsStale: index === 0,
-    });
+    try {
+      const scored = await scoreAndPersist(
+        supabase,
+        user.id,
+        profile,
+        bodyOf(snapshot),
+        snapshot.id,
+        {
+          excludeActivityIds: [snapshot.id],
+          existingMetadata: (snapshot.metadata ?? null) as Record<string, unknown> | null,
+          // The stored race prediction still carries the merged session's
+          // evidence, and the merged session no longer exists. Only the first
+          // leg has to rebuild the base from the athlete's other sessions;
+          // after that the stored row points at a leg that genuinely precedes
+          // the next one, so it is real memory again.
+          predictionBaseIsStale: index === 0,
+        }
+      );
+      // The return value used to be discarded outright — not even destructured
+      // — so every leg reported success whatever happened to its score rows.
+      if (scored.workoutScoreError || !scored.workoutScore) {
+        console.error(
+          "[activities/unmerge] workout_scores insert failed for restored leg",
+          snapshot.id,
+          scored.workoutScoreError?.message
+        );
+        unscoredIds.push(snapshot.id);
+      }
+    } catch (err) {
+      // A leg whose stored body no longer passes the plausibility checks throws
+      // rather than returning an error. Uncaught, that abandoned every leg
+      // after it in the loop, unscored and unmentioned. Record it and keep
+      // going: the sessions are already back, and the remaining ones are
+      // scoreable independently of this one.
+      if (!(err instanceof ScoringInputError)) throw err;
+      console.error(
+        "[activities/unmerge] restored leg could not be scored",
+        snapshot.id,
+        err.message
+      );
+      unscoredIds.push(snapshot.id);
+    }
     restoredIds.push(snapshot.id);
+  }
+
+  // The unmerge itself landed — the merged session is gone and every leg is
+  // back in the logbook — so this is not a "nothing happened" failure and must
+  // not read like one. It is reported rather than swallowed because an unscored
+  // session contributes nothing to the Split Index while looking entirely
+  // normal, which is exactly the silence that made the missing-strength-score
+  // report keep coming back.
+  if (unscoredIds.length > 0) {
+    return NextResponse.json(
+      {
+        error:
+          unscoredIds.length === restoredIds.length
+            ? "We separated these sessions but could not score them. They are back in your logbook — open one and save it to score it again."
+            : `We separated these sessions but could not score ${unscoredIds.length} of ${restoredIds.length}. They are back in your logbook — open the unscored ones and save them to score them again.`,
+        unmerged: true,
+        restoredActivityIds: restoredIds,
+        unscoredActivityIds: unscoredIds,
+        survivorActivityId: id,
+      },
+      { status: 500 }
+    );
   }
 
   return NextResponse.json({
