@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { computeExercise1RM, ScoringInputError } from "@/lib/scoring/service";
+import { ScoringInputError } from "@/lib/scoring/service";
 import { assertScoringInput } from "@/lib/scoring/input-guards";
 import { SPORT_INDEX_LABELS } from "@/lib/constants/sports";
 import { enrichCardioScore } from "@/lib/scoring/cardio";
@@ -11,7 +11,7 @@ import { isPremiumUser } from "@/lib/retention/trial";
 import { serializeScoreBreakdown } from "@/lib/scoring/presentation";
 import type { WeightEntryMode } from "@/lib/scoring/weight-entry";
 import { defaultWeightEntryMode } from "@/lib/scoring/weight-entry";
-import { bestSet, summarizeSets } from "@/lib/activities/gym-sets";
+import { buildGymExerciseRows, insertGymExercises } from "@/lib/activities/gym-exercise-rows";
 import {
   scoreAndPersist,
   type ScoreAndPersistBody,
@@ -212,27 +212,54 @@ export async function PATCH(
     );
   }
 
+  // An edit replaces the exercise list wholesale, so the old rows are read
+  // BEFORE they are deleted: if the replacement insert fails, this is the only
+  // copy of what the athlete had logged, and putting it back is the difference
+  // between a rejected edit and a session that silently lost every exercise.
+  //
+  // The delete stays UNCONDITIONAL, as it has always been: an edit that
+  // changes a gym session into a run sends no exercises at all, and those rows
+  // have to go with it rather than being left behind attached to a cardio
+  // session.
+  const { data: previousExerciseRows } = await supabase
+    .from("gym_exercises")
+    .select("*")
+    .eq("activity_id", id)
+    .order("order_index");
+
   await supabase.from("gym_exercises").delete().eq("activity_id", id);
 
   if (body.exercises && body.exercises.length > 0) {
-    const exerciseRows = body.exercises.map((ex, i) => {
-      const summary = summarizeSets(ex.sets);
-      const top = bestSet(ex.sets);
-      return {
-        activity_id: id,
-        exercise_name: ex.exercise_name,
-        muscle_group: ex.muscle_group,
-        weight_kg: summary.weight_kg,
-        sets: summary.sets,
-        reps: summary.reps,
-        rpe: summary.rpe,
-        set_details: ex.sets,
-        estimated_1rm_kg: top ? computeExercise1RM(top.weight_kg, top.reps) : 0,
-        order_index: i,
-        attachment: ex.attachment ?? null,
-      };
-    });
-    await supabase.from("gym_exercises").insert(exerciseRows);
+    const { error: exercisesError, droppedColumns } = await insertGymExercises(
+      supabase,
+      buildGymExerciseRows(id, body.exercises)
+    );
+    if (droppedColumns.length > 0) {
+      console.error(
+        "[activities] gym_exercises is missing column(s), saved without them:",
+        droppedColumns.join(", ")
+      );
+    }
+    // Previously this insert's error was not read at all. Because the delete
+    // above had already run, a failure here left the activity with NO
+    // exercises behind a success response — the session kept its old score
+    // until anything recomputed it, and then had nothing to score. That is the
+    // "gym exercise logged but no strength score" report. The edit is now
+    // rejected and the athlete's original exercises are put back.
+    if (exercisesError) {
+      console.error("[activities] gym_exercises replace failed:", exercisesError.message);
+      const restored = previousExerciseRows?.length
+        ? !(await supabase.from("gym_exercises").insert(previousExerciseRows)).error
+        : true;
+      return NextResponse.json(
+        {
+          error: restored
+            ? "We could not save these changes. The session is unchanged — please try again."
+            : "We could not save these changes, and could not restore the original exercises either. Check your logbook before trying again.",
+        },
+        { status: 500 }
+      );
+    }
   }
 
   if (body.bodyweight_kg && body.sport === "gym") {
@@ -259,6 +286,7 @@ export async function PATCH(
 
   const {
     workoutScore,
+    workoutScoreError,
     result,
     previousSplitIndex,
     sportComparison,
@@ -267,6 +295,21 @@ export async function PATCH(
     tier1Prediction,
     predictedBenchmarkAfterSession,
   } = scored;
+
+  // Rescoring replaces the score rather than updating them, so a failed insert
+  // leaves the session UNSCORED. Answering 200 here is what put a workout in
+  // the logbook with its strength score missing and nothing anywhere saying
+  // why. The edit's other changes did land, so this deliberately does not
+  // claim nothing happened — it says the score did not.
+  if (workoutScoreError || !workoutScore) {
+    return NextResponse.json(
+      {
+        error:
+          "We saved your changes but could not rescore the session. Open it again to retry before logging anything else.",
+      },
+      { status: 500 }
+    );
+  }
 
   const premium = isPremiumUser(
     profile.subscription_tier,

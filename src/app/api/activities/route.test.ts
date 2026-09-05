@@ -14,7 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const USER_ID = "user-1";
 const ACTIVITY_ID = "activity-1";
 
-type QueryResult = { data: unknown; error: { message: string } | null };
+type QueryResult = { data: unknown; error: { message: string; code?: string } | null };
 
 interface RecordedCall {
   table: string;
@@ -27,13 +27,50 @@ interface RecordedCall {
 const OK: QueryResult = { data: null, error: null };
 
 /**
+ * Columns a table actually has, for tests that need to model a database which
+ * is BEHIND the migrations — the failure mode that motivated these tests. An
+ * entry here makes the fake reject a write mentioning any other column, with
+ * the error PostgREST really returns for one.
+ */
+type TableColumns = Record<string, readonly string[]>;
+
+/** Every column `gym_exercises` has once every migration has been applied. */
+const GYM_EXERCISE_COLUMNS = [
+  "activity_id",
+  "exercise_name",
+  "muscle_group",
+  "weight_kg",
+  "sets",
+  "reps",
+  "rpe",
+  "set_details",
+  "estimated_1rm_kg",
+  "order_index",
+  "attachment",
+] as const;
+
+/**
+ * PostgREST's own answer to a write naming a column the table does not have:
+ * the statement is rejected whole, so one unknown column loses every row.
+ */
+function unknownColumnError(table: string, column: string): QueryResult {
+  return {
+    data: null,
+    error: {
+      code: "PGRST204",
+      message: `Could not find the '${column}' column of '${table}' in the schema cache`,
+    },
+  };
+}
+
+/**
  * Minimal stand-in for the Supabase query builder: every filter/modifier
  * returns the same chain, and awaiting it resolves whatever `results` holds
  * for `${table}:${op}`. Enough to drive the route end to end without a
  * database, and it records each terminated query so tests can assert that the
  * rollback actually ran.
  */
-function createFakeSupabase(results: Record<string, QueryResult>) {
+function createFakeSupabase(results: Record<string, QueryResult>, columns: TableColumns = {}) {
   const calls: RecordedCall[] = [];
 
   function chainFor(table: string) {
@@ -43,6 +80,16 @@ function createFakeSupabase(results: Record<string, QueryResult>) {
 
     const result = (): QueryResult => {
       calls.push({ table, op: op ?? "select", terminal, payload });
+      // Schema check first: a real database rejects an unknown column before
+      // any configured happy-path result could apply.
+      const known = columns[table];
+      if (known && (op === "insert" || op === "upsert" || op === "update")) {
+        const rows = (Array.isArray(payload) ? payload : [payload]) as Record<string, unknown>[];
+        for (const row of rows) {
+          const absent = Object.keys(row ?? {}).find((c) => !known.includes(c));
+          if (absent) return unknownColumnError(table, absent);
+        }
+      }
       const override = results[`${table}:${op ?? "select"}`];
       if (override) return override;
       // Unconfigured reads look like "no rows"; list reads read as empty.
@@ -126,7 +173,21 @@ function happyPathResults(): Record<string, QueryResult> {
   };
 }
 
-function gymSessionBody() {
+function gymSessionBody(): {
+  sport: string;
+  title: string;
+  started_at: string;
+  duration_seconds: number;
+  rpe: number;
+  bodyweight_kg: number;
+  exercises: Array<{
+    exercise_name: string;
+    muscle_group: string;
+    order_index: number;
+    attachment?: string | null;
+    sets: Array<{ weight_kg: number; reps: number; rpe: number }>;
+  }>;
+} {
   return {
     sport: "gym",
     title: "Push day",
@@ -161,8 +222,12 @@ vi.mock("@/lib/supabase/server", () => ({
   createClient: () => createClientMock(),
 }));
 
-async function postWith(results: Record<string, QueryResult>, payload?: unknown) {
-  const { client, calls } = createFakeSupabase(results);
+async function postWith(
+  results: Record<string, QueryResult>,
+  payload?: unknown,
+  columns: TableColumns = {}
+) {
+  const { client, calls } = createFakeSupabase(results, columns);
   createClientMock.mockResolvedValue(client);
   const { POST } = await import("./route");
   const response = await POST(postRequest(payload));
@@ -267,6 +332,99 @@ describe("POST /api/activities — dependent write failures", () => {
       "[activities] strength_scores insert failed:",
       "transient"
     );
+  });
+
+  /**
+   * The defect these pin, in full.
+   *
+   * `gym_exercises.attachment` is added by migration 028, which describes
+   * itself as "additive/nullable — existing rows and any code not yet updated
+   * keep working". The live database had never had that migration applied. The
+   * create path sent `attachment` on EVERY exercise row regardless, PostgREST
+   * rejected the whole statement for the unknown column, and because the
+   * exercise rows are a primary write the compensating delete ran and the
+   * athlete was told — accurately — that nothing was recorded.
+   *
+   * So one unapplied additive migration meant not one degraded feature but
+   * zero gym workouts loggable, for everyone, on every attempt. The mechanism
+   * is that an optional feature column sat inside a mandatory insert with no
+   * way to fall back; these tests pin the fallback rather than the symptom.
+   */
+  describe("when the database is behind on an additive migration", () => {
+    /** The live schema before migration 028: everything except `attachment`. */
+    const WITHOUT_ATTACHMENT = {
+      gym_exercises: GYM_EXERCISE_COLUMNS.filter((c) => c !== "attachment"),
+    };
+
+    it("saves the workout anyway when gym_exercises has no attachment column", async () => {
+      const { response, body, calls } = await postWith(
+        happyPathResults(),
+        gymSessionBody(),
+        WITHOUT_ATTACHMENT
+      );
+
+      expect(response.status).toBe(200);
+      expect(body.score).toEqual(WORKOUT_SCORE_ROW);
+      expect(typeof body.sportIndex).toBe("number");
+      // The whole point: no ghost session, and no session binned either.
+      expect(deletedActivity(calls)).toBe(false);
+    });
+
+    it("persists the exercises, minus only the column the database lacks", async () => {
+      const { calls } = await postWith(happyPathResults(), gymSessionBody(), WITHOUT_ATTACHMENT);
+
+      const inserts = calls.filter((c) => c.table === "gym_exercises" && c.op === "insert");
+      // First attempt carries `attachment` and is rejected; the retry drops it.
+      expect(inserts).toHaveLength(2);
+      const persisted = (inserts[1].payload as Record<string, unknown>[])[0];
+      expect(persisted).not.toHaveProperty("attachment");
+      // Everything that makes the exercise an exercise still lands.
+      expect(persisted.exercise_name).toBe("Bench Press");
+      expect(persisted.muscle_group).toBe("Chest");
+      expect(persisted.weight_kg).toBe(100);
+      expect(persisted.reps).toBe(5);
+      expect(persisted.sets).toBe(2);
+      expect(persisted.set_details).toHaveLength(2);
+    });
+
+    it("says loudly which column the database is missing", async () => {
+      // The workout saving is not the end of it — the migration still has to be
+      // applied, and this log is the only thing that says so.
+      await postWith(happyPathResults(), gymSessionBody(), WITHOUT_ATTACHMENT);
+
+      expect(console.error).toHaveBeenCalledWith(
+        "[activities] gym_exercises is missing column(s), saved without them:",
+        "attachment"
+      );
+    });
+
+    it("keeps the athlete's chosen attachment when the column does exist", async () => {
+      // The degradation must not become the normal path: a database with the
+      // migration applied stores the attachment on the first attempt.
+      const body = gymSessionBody();
+      body.exercises[0].attachment = "rope";
+      const { response, calls } = await postWith(happyPathResults(), body, {
+        gym_exercises: GYM_EXERCISE_COLUMNS,
+      });
+
+      expect(response.status).toBe(200);
+      const inserts = calls.filter((c) => c.table === "gym_exercises" && c.op === "insert");
+      expect(inserts).toHaveLength(1);
+      expect((inserts[0].payload as Record<string, unknown>[])[0].attachment).toBe("rope");
+    });
+
+    it("still unwinds when a column the session cannot do without is missing", async () => {
+      // Only columns whose loss costs a refinement are droppable. set_details
+      // carries a plank's hold time — a database without it must fail loudly,
+      // not silently score every timed hold as a 0 kg single rep.
+      const { response, body, calls } = await postWith(happyPathResults(), gymSessionBody(), {
+        gym_exercises: GYM_EXERCISE_COLUMNS.filter((c) => c !== "set_details"),
+      });
+
+      expect(response.status).toBe(500);
+      expect(body.error).toMatch(/could not save this workout/i);
+      expect(deletedActivity(calls)).toBe(true);
+    });
   });
 
   it("still rejects an impossible lift before anything is written", async () => {

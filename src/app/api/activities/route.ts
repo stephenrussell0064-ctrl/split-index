@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { ROUTE_CONFIG, applyRoutePrivacyZone, parseRoutePolyline } from "@/lib/scoring/gps-track";
 import { createClient } from "@/lib/supabase/server";
-import { scoreActivity, computeRecentLoads, computeExercise1RM, buildStrengthScoreInserts, ScoringInputError } from "@/lib/scoring/service";
+import { scoreActivity, computeRecentLoads, buildStrengthScoreInserts, ScoringInputError } from "@/lib/scoring/service";
 import { assertScoringInput } from "@/lib/scoring/input-guards";
 import { generateCoachFeedback, generateRulesBasedSnippet, type IndexHistoryEntry } from "@/lib/openai/coach";
 import { computeSportComparison } from "@/lib/utils/sport-comparison";
@@ -42,7 +42,7 @@ import {
   resolveScoringBodyweightKg,
   resolveEffectiveMaxHr,
 } from "@/lib/activities/bodyweight";
-import { bestSet, summarizeSets } from "@/lib/activities/gym-sets";
+import { buildGymExerciseRows, insertGymExercises } from "@/lib/activities/gym-exercise-rows";
 import {
   upsertPersonalRecordsIfBetter,
   enduranceRecordCandidates,
@@ -350,25 +350,19 @@ export async function POST(request: Request) {
   }
 
   if (body.exercises && body.exercises.length > 0) {
-    const exerciseRows = body.exercises.map((ex, i) => {
-      const summary = summarizeSets(ex.sets);
-      const top = bestSet(ex.sets);
-      return {
-        activity_id: activity.id,
-        exercise_name: ex.exercise_name,
-        muscle_group: ex.muscle_group,
-        weight_kg: summary.weight_kg,
-        sets: summary.sets,
-        reps: summary.reps,
-        rpe: summary.rpe,
-        set_details: ex.sets,
-        estimated_1rm_kg: top ? computeExercise1RM(top.weight_kg, top.reps) : 0,
-        order_index: i,
-        attachment: ex.attachment ?? null,
-      };
-    });
-
-    const { error: exercisesError } = await supabase.from("gym_exercises").insert(exerciseRows);
+    const { error: exercisesError, droppedColumns } = await insertGymExercises(
+      supabase,
+      buildGymExerciseRows(activity.id, body.exercises)
+    );
+    // The database is behind on an additive migration. The session saved
+    // without that column's feature rather than being binned for it — see
+    // insertGymExercises. Loud, because the fix is to apply the migration.
+    if (droppedColumns.length > 0) {
+      console.error(
+        "[activities] gym_exercises is missing column(s), saved without them:",
+        droppedColumns.join(", ")
+      );
+    }
     if (exercisesError) {
       return failAndRollback(supabase, activity.id, "gym_exercises", exercisesError.message);
     }

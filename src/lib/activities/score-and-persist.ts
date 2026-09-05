@@ -451,7 +451,7 @@ export async function scoreAndPersist(
   await supabase.from("workout_scores").delete().eq("activity_id", activityId);
   await supabase.from("split_index_history").delete().eq("activity_id", activityId);
 
-  const { data: workoutScore } = await supabase
+  const { data: workoutScore, error: workoutScoreError } = await supabase
     .from("workout_scores")
     .insert({
       activity_id: activityId,
@@ -480,7 +480,23 @@ export async function scoreAndPersist(
     .select()
     .single();
 
-  await supabase.from("split_index_history").insert({
+  // Rescoring DELETES the old score before writing the new one, so a failure
+  // here does not leave the previous score standing — it leaves the session
+  // with NO score at all. Read as `data` only, this returned null and every
+  // caller answered 200 with a null score: the athlete's session reappeared in
+  // the logbook with its strength score simply gone, no error anywhere. That
+  // is the "logged a gym exercise and the strength score is missing again"
+  // report, and it is silent by construction, which is why it kept coming
+  // back. The error is now surfaced to the caller and logged here.
+  if (workoutScoreError || !workoutScore) {
+    console.error(
+      "[score-and-persist] workout_scores insert failed for activity",
+      activityId,
+      workoutScoreError?.message
+    );
+  }
+
+  const { error: indexHistoryError } = await supabase.from("split_index_history").insert({
     user_id: userId,
     split_index: result.splitIndex,
     endurance_index: result.enduranceIndex,
@@ -494,9 +510,17 @@ export async function scoreAndPersist(
     recorded_at: body.started_at,
   });
 
+  if (indexHistoryError) {
+    console.error(
+      "[score-and-persist] split_index_history insert failed for activity",
+      activityId,
+      indexHistoryError.message
+    );
+  }
+
   if (body.sport === "gym" && result.strengthScoreRows?.length) {
     await supabase.from("strength_scores").delete().eq("activity_id", activityId);
-    await supabase.from("strength_scores").insert(
+    const { error: strengthScoresError } = await supabase.from("strength_scores").insert(
       buildStrengthScoreInserts(
         userId,
         activityId,
@@ -504,6 +528,16 @@ export async function scoreAndPersist(
         result.strengthScoreRows
       )
     );
+    // Same delete-then-insert shape, same silence: these are the per-lift rows
+    // the strength breakdown is read from, so losing them shows up to the
+    // athlete as a scored session with no per-exercise strength detail.
+    if (strengthScoresError) {
+      console.error(
+        "[score-and-persist] strength_scores insert failed for activity",
+        activityId,
+        strengthScoresError.message
+      );
+    }
   }
 
   if (benchmarkSport && newPredictedBenchmarkSeconds !== null) {
@@ -546,6 +580,13 @@ export async function scoreAndPersist(
 
   return {
     workoutScore,
+    /**
+     * Set when the session ended up with no score row. Callers must not answer
+     * with a success payload built from `result` when this is set — the score
+     * it describes was never persisted, and the old one has already been
+     * deleted.
+     */
+    workoutScoreError: workoutScoreError ?? (workoutScore ? null : { message: "no score row" }),
     result,
     previousSplitIndex,
     sportComparison,
