@@ -216,15 +216,21 @@ describe("rep-based sessions are untouched", () => {
       exercise("Bench Press", "Chest", [lift(100, 5)], 1),
       exercise("Barbell Row", "Back", [lift(80, 8)], 2),
     ]);
-    // 787 -> 828 in the Strength-Level anchor-table pass. This assertion is
-    // what it says on the describe block — a guard that the HOLD/CARRY work
-    // leaves rep-based sessions alone — and that still holds: nothing in the
-    // hold/carry path moved it. The number itself is a calibration snapshot,
-    // and Squat and Barbell Row both moved onto real anchor tables in that
-    // pass, so the fixture is re-taken rather than defended. Bench Press is
-    // unchanged, and this athlete is 30 so no age coefficient applies either:
-    // the whole delta is Squat and Barbell Row moving onto their own tables.
-    expect(result.sportIndex).toBe(828);
+    // 787 -> 828 in the Strength-Level anchor-table pass, and 828 -> 759 in
+    // the estimator pass. This assertion is what it says on the describe
+    // block — a guard that the HOLD/CARRY work leaves rep-based sessions
+    // alone — and that still holds: nothing in the hold/carry path moved it
+    // either time. The number itself is a calibration snapshot, re-taken
+    // rather than defended.
+    //
+    // The 828 -> 759 delta is the whole session taking the 1RM-estimator
+    // correction (strength/one-rm.ts): the anchor tables are population
+    // percentiles of a TRUE 1RM and the engine was feeding them an estimate
+    // that over-read by 6-28% depending on reps and exercise class. All three
+    // of these lifts are five-to-eight-rep barbell sets, so all three drop:
+    // Squat 140x5 and Bench 100x5 lose the 1.1667x/1.06 stack for Strength
+    // Level's own 1.1236x, Barbell Row 80x8 loses 1.2667x/1.06 for 1.2346x.
+    expect(result.sportIndex).toBe(759);
     expect(result.strengthActivities).toHaveLength(3);
     expect(result.strengthActivities?.every((r) => r.oneRM > 0)).toBe(true);
   });

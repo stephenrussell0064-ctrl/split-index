@@ -3,7 +3,7 @@
  *   npx tsx src/lib/scoring/split-strength-engine-check.ts
  */
 import { scoreStrength, ageFactor, SEX_FACTORS, type LoggedSet } from "./split-strength-engine";
-import { weightedCalisthenic1RM, epley1RM } from "./strength/one-rm";
+import { weightedCalisthenic1RM, bestEstimate1RM } from "./strength/one-rm";
 import { scoreCardioActivity } from "./cardio-activity";
 import { buildCardioInput } from "./adapters";
 import { FEMALE_CARDIO_FACTORS } from "./cardio-benchmarks";
@@ -133,12 +133,22 @@ if (femaleRun.score === maleRun.score) {
 }
 
 console.log("\n— Part B1 weighted calisthenics —");
+// 48 -> 56.5. TWO deliberate changes, and the first of them was already
+// unrecorded here: CALISTHENIC_BLEND went 0.5 -> 1.0 in the pull-up pass
+// (f0ac754), which alone moved this to ~60 while this line still claimed 48 —
+// a stale expectation in a script nothing runs automatically, so nothing
+// caught it. The second is this pass: (83+30) x SL's 8-rep multiplier 1.2346
+// = 139.5, minus 83 bodyweight = 56.5.
 const wc1rm = weightedCalisthenic1RM(30, 8, 83);
-assertNear("30kg×8 weighted pull-up 1RM @83kg BW", wc1rm, 48, 2);
+assertNear("30kg×8 weighted pull-up 1RM @83kg BW", wc1rm, 56.5, 1);
 
-console.log("\n— Part D isolation 1RM —");
-const iso1rm = epley1RM(13, 8, "isolation");
-assertNear("13kg×8 isolation pushdown 1RM", iso1rm, 19.9, 0.5);
+console.log("\n— sub-max 1RM estimate (single curve, all classes) —");
+// Was `epley1RM(13, 8, "isolation")` expecting 19.9 — an assertion on the
+// class-varying Epley k (k=15) this pass removes as unsupported. The scoring
+// estimate now runs Strength Level's own rep table for every class:
+// 13 x 1.2346 = 16.05. Deliberate, and a ~19% reduction on this set.
+const iso1rm = bestEstimate1RM(13, 8, "isolation");
+assertNear("13kg×8 pushdown 1RM", iso1rm, 16.05, 0.2);
 
 const saPush = scoreStrength({
   liftKey: "Single Arm Pushdown",

@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { weightedCalisthenic1RM, epley1RM, brzycki1RM, estimateWeightForReps } from "./one-rm";
+import {
+  weightedCalisthenic1RM,
+  epley1RM,
+  brzycki1RM,
+  bestEstimate1RM,
+  estimateWeightForReps,
+  repMaxMultiplier,
+} from "./one-rm";
 
-/** Mirrors the private blendedRepFormula() in one-rm.ts (max of Epley/Brzycki) so tests can independently derive the expected value without reaching into module internals. */
-function expectedBlendedRepFormula(weightKg: number, reps: number): number {
-  return Math.max(epley1RM(weightKg, reps, "compound"), brzycki1RM(weightKg, reps));
+/** Mirrors the private scoringRepFormula() in one-rm.ts so tests can independently derive the expected value without reaching into module internals. */
+function expectedScoringRepFormula(weightKg: number, reps: number): number {
+  return weightKg * repMaxMultiplier(reps);
 }
 
 /**
@@ -22,7 +29,9 @@ describe("weightedCalisthenic1RM — bodyweight-only (addedKg = 0)", () => {
 
   it("bodyweight-only reps rely on the full totalLoad1RM estimate, not a halved blend", () => {
     const oneRM = weightedCalisthenic1RM(0, 10, BODYWEIGHT_KG, "compound");
-    // totalLoad1RM = epley/brzycki(83, 10) - 83 ≈ 110.67 - 83 ≈ 27.67
+    // totalLoad1RM = 83 / 0.75 - 83 ≈ 110.67 - 83 ≈ 27.67. Unmoved by the
+    // estimator change: at exactly ten reps Strength Level's table (75%),
+    // Epley and Brzycki all agree on the same multiplier of 1.3333.
     expect(oneRM).toBeGreaterThan(27);
     expect(oneRM).toBeLessThan(28);
   });
@@ -66,14 +75,14 @@ describe("weightedCalisthenic1RM — added weight (addedKg > 0) is credited on t
   it("uses the total-load estimate, not a 50/50 blend with the degenerate added-only term", () => {
     const addedKg = 20;
     const reps = 5;
-    const totalLoad1RM = expectedBlendedRepFormula(BODYWEIGHT_KG + addedKg, reps) - BODYWEIGHT_KG;
+    const totalLoad1RM = expectedScoringRepFormula(BODYWEIGHT_KG + addedKg, reps) - BODYWEIGHT_KG;
     expect(weightedCalisthenic1RM(addedKg, reps, BODYWEIGHT_KG, "compound")).toBeCloseTo(totalLoad1RM, 5);
   });
 
   it("credits added load ON TOP of bodyweight — a +30kg set implies far more than a 30kg lift", () => {
     // The old 50/50 blend dragged this halfway towards treating 30kg as the
     // entire load, which is what produced the reported shortfall.
-    const addedOnlyIfTreatedAsTotalLoad = expectedBlendedRepFormula(30, 8);
+    const addedOnlyIfTreatedAsTotalLoad = expectedScoringRepFormula(30, 8);
     expect(weightedCalisthenic1RM(30, 8, BODYWEIGHT_KG, "compound")).toBeGreaterThan(
       addedOnlyIfTreatedAsTotalLoad * 1.4
     );
@@ -92,10 +101,34 @@ describe("weightedCalisthenic1RM — added weight (addedKg > 0) is credited on t
   });
 });
 
-describe("estimateWeightForReps — inverse of epley1RM, for rep-based Training Plan goals", () => {
-  it("round-trips exactly back through epley1RM for the same reps/class", () => {
-    const oneRM = epley1RM(100, 5, "compound");
-    expect(estimateWeightForReps(oneRM, 5, "compound")).toBeCloseTo(100, 5);
+/**
+ * TWO ASSERTIONS IN THIS BLOCK ARE DELIBERATELY INVERTED, not incidentally
+ * broken — flagged here rather than quietly rewritten.
+ *
+ * This suite used to pin `estimateWeightForReps` as the inverse of `epley1RM`
+ * and, below, to require that it "differs by exercise class the same way the
+ * forward formula does" — i.e. it defended the class-varying Epley k (30 /
+ * 22 / 15) that turned out to be the largest term in a 6-28% over-read of
+ * every logged set. See the header of one-rm.ts for the measurement and the
+ * sources. Nothing published supports those k values; Hoeger et al. (1990),
+ * the one study that measured reps at a known %1RM, points the other way.
+ *
+ * The invariant that actually matters is unchanged and is now pinned
+ * directly: this function must invert whatever `bestEstimate1RM` does, or the
+ * training-goals route's "current: ~82kg x5 / goal: 100kg x5" pairing
+ * compares two numbers produced by disagreeing conversions.
+ */
+describe("estimateWeightForReps — inverse of the scoring estimator, for rep-based Training Plan goals", () => {
+  it("round-trips exactly back through bestEstimate1RM for the same reps", () => {
+    const oneRM = bestEstimate1RM(100, 5);
+    expect(estimateWeightForReps(oneRM, 5)).toBeCloseTo(100, 5);
+  });
+
+  it("round-trips at every rep count the rep table covers, and past its end", () => {
+    for (const reps of [1, 2, 3, 5, 8, 10, 12, 15, 20, 30, 40]) {
+      const oneRM = bestEstimate1RM(100, reps);
+      expect(estimateWeightForReps(oneRM, reps)).toBeCloseTo(100, 5);
+    }
   });
 
   it("returns the 1RM itself unchanged at reps=1", () => {
@@ -115,12 +148,71 @@ describe("estimateWeightForReps — inverse of epley1RM, for rep-based Training 
     expect(estimateWeightForReps(100, 0, "compound")).toBe(0);
   });
 
-  it("differs by exercise class the same way the forward formula does", () => {
+  // INVERTED ON PURPOSE. Previously: "differs by exercise class the same way
+  // the forward formula does", asserting isolation < compound at the same rep
+  // count because isolation's Epley k was 15. That k had no published basis
+  // and produced a 1.80x multiplier at twelve reps, against ~1.41x from
+  // Strength Level's own table and ~1.25x measured by Hoeger for an arm curl
+  // at eleven. One curve now, for every class, and the parameter is inert.
+  it("does NOT vary by exercise class — one published curve for every lift", () => {
     const oneRM = 100;
     const compound = estimateWeightForReps(oneRM, 8, "compound");
+    const accessory = estimateWeightForReps(oneRM, 8, "accessory");
     const isolation = estimateWeightForReps(oneRM, 8, "isolation");
-    // Isolation's k is smaller (steeper implied dropoff per rep), so the
-    // estimated weight at the same rep count should be lower.
-    expect(isolation).toBeLessThan(compound);
+    expect(accessory).toBe(compound);
+    expect(isolation).toBe(compound);
+  });
+});
+
+/**
+ * The rep table itself. It is the ruler the anchor tables in
+ * split-strength-engine.ts are read against, so its published values matter
+ * more than any behaviour derived from them.
+ */
+describe("repMaxMultiplier — Strength Level's published rep → %1RM table", () => {
+  it("returns the published multipliers at the reps athletes actually log", () => {
+    expect(repMaxMultiplier(1)).toBeCloseTo(1, 6); // 100%
+    expect(repMaxMultiplier(3)).toBeCloseTo(100 / 94, 6);
+    expect(repMaxMultiplier(5)).toBeCloseTo(100 / 89, 6);
+    expect(repMaxMultiplier(8)).toBeCloseTo(100 / 81, 6);
+    expect(repMaxMultiplier(10)).toBeCloseTo(100 / 75, 6);
+    expect(repMaxMultiplier(12)).toBeCloseTo(100 / 71, 6);
+    expect(repMaxMultiplier(15)).toBeCloseTo(100 / 67, 6);
+  });
+
+  it("agrees with the independent published formulas it has to live alongside", () => {
+    // Sanity, not identity: the whole argument for adopting Strength Level's
+    // table is that it sits inside the band every named formula occupies. If
+    // a future edit ever moves it outside that band, this fails loudly.
+    for (const reps of [3, 5, 8, 10]) {
+      const mine = repMaxMultiplier(reps);
+      expect(mine).toBeGreaterThan(brzycki1RM(100, reps) / 100 - 0.05);
+      expect(mine).toBeLessThan(epley1RM(100, reps) / 100 + 0.05);
+    }
+  });
+
+  it("is monotonic and never claims a set below one rep is worth more", () => {
+    let previous = 0;
+    for (let reps = 1; reps <= 30; reps += 1) {
+      const m = repMaxMultiplier(reps);
+      expect(m).toBeGreaterThan(previous);
+      previous = m;
+    }
+    expect(repMaxMultiplier(0)).toBe(1);
+    expect(repMaxMultiplier(-3)).toBe(1);
+  });
+
+  it("holds flat past the end of the published table rather than extrapolating off it", () => {
+    const atThirty = repMaxMultiplier(30);
+    expect(repMaxMultiplier(45)).toBe(atThirty);
+    expect(repMaxMultiplier(200)).toBe(atThirty);
+  });
+
+  it("interpolates between whole reps so a fractional RIR doesn't step", () => {
+    const at8 = repMaxMultiplier(8);
+    const at9 = repMaxMultiplier(9);
+    const mid = repMaxMultiplier(8.5);
+    expect(mid).toBeGreaterThan(at8);
+    expect(mid).toBeLessThan(at9);
   });
 });

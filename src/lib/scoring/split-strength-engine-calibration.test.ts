@@ -11,10 +11,13 @@ import { ageFactor, scoreStrength, type ScoreStrengthInput } from "./split-stren
  * and the fixtures here are simply the oldest of a now-uniform set.
  *
  * A single logged set at reps=1 gives an estimated 1RM exactly equal to the
- * weight lifted (both epley1RM and brzycki1RM special-case effective reps
- * === 1 to return the raw weight, no formula/multiplier applied), so this
- * cleanly isolates the anchor-table calibration from the 1RM-estimation
- * formula (pre-existing, untouched by this brief).
+ * weight lifted (the rep table's one-rep entry is 100% of 1RM by definition),
+ * so this cleanly isolates the anchor-table calibration from the
+ * 1RM-estimation formula. That isolation is why every fixture in this block
+ * survived the estimator correction untouched — and why the correction was
+ * needed: these tables were only ever verified at the one rep count where the
+ * estimator could not get in the way. See "the estimator and the anchor tables
+ * share one ruler" at the foot of this file for the missing half.
  */
 function scoreAtOneRM(liftKey: string, targetOneRMKg: number, overrides: Partial<ScoreStrengthInput> = {}) {
   return scoreStrength({
@@ -109,9 +112,12 @@ describe("scoreStrength — bench/deadlift corrected anchors (Part G, re-anchore
  * deliberate change to an assertion, not an accident: the table puts a 20kg/
  * hand x8 set at 808 where the hand-fitted anchor put it near 730. The
  * athlete's own remembered target was ~750, so the table lands 58 points ABOVE
- * what they asked for rather than below it — the direction of this whole
- * brief. 12.5kg/hand is essentially unmoved, so the second fixture below is
- * untouched and still pins the bottom of the curve.
+ * what they asked for rather than below it — the direction of that brief.
+ *
+ * BOTH OF THOSE FIGURES ARE NOW HISTORY: the estimator pass took the inflated
+ * e1RM out from under this table and both fixtures fell below the remembered
+ * targets rather than above them. The reasoning is on the two assertions
+ * themselves, which is where it belongs.
  */
 describe("scoreStrength — dumbbell curl recalibration", () => {
   function scoreDbCurl(weightKg: number, reps: number) {
@@ -128,16 +134,42 @@ describe("scoreStrength — dumbbell curl recalibration", () => {
     });
   }
 
-  it("20kg/hand x8 scores well above the old 669 — now off Strength Level's own curve, ~808", () => {
+  /**
+   * BOTH FIXTURES BELOW MOVED DOWN, AND BOTH NOW SIT BELOW THE ATHLETE'S OWN
+   * REMEMBERED TARGETS. Stated rather than softened, because this is the one
+   * place in the estimator pass where a stated expectation loses outright.
+   *
+   * 20kg/hand x8: 808 -> 692 (they asked for ~750). 12.5kg/hand x8: 550 ->
+   * 433 (they asked for ~550). The cause is not the curl table, which is
+   * untouched Strength Level data — it is that the engine was feeding that
+   * table an e1RM inflated by ~24% at eight reps for an isolation lift
+   * (1.5333x the set weight, against Strength Level's own 1.2346x). Corrected,
+   * a 12.5kg/hand curl for eight implies a 15.4kg/hand single, which sits
+   * between Strength Level's novice (14kg) and intermediate (22kg) standards.
+   * 433 is what that percentile is worth on this file's fixed percentile
+   * mapping. Moving it to 550 would mean either editing published population
+   * data or re-inflating the estimator.
+   *
+   * The distinction that decides it: dumbbell curl HAS a population table, so
+   * the table is the authority and the remembered target is an expectation
+   * about a percentile. Tricep press does NOT (no Strength Level data exists
+   * for it), so its only evidence IS the athlete's reported points, and its
+   * anchor was rescaled to preserve them exactly — see split-strength-engine.ts.
+   */
+  it("20kg/hand x8 is read off Strength Level's own curl curve, not a hand-fitted anchor", () => {
     const result = scoreDbCurl(20, 8);
-    expect(result.score).toBeGreaterThan(700);
-    expect(result.score).toBeLessThan(830);
+    expect(result.score).toBeGreaterThan(660);
+    expect(result.score).toBeLessThan(720);
   });
 
-  it("12.5kg/hand x8 now scores close to 550, not ~475", () => {
+  it("12.5kg/hand x8 sits between Strength Level's novice and intermediate standards", () => {
     const result = scoreDbCurl(12.5, 8);
-    expect(result.score).toBeGreaterThan(530);
-    expect(result.score).toBeLessThan(570);
+    expect(result.score).toBeGreaterThan(400);
+    expect(result.score).toBeLessThan(470);
+    // Explicitly between the table's 400 (novice) and 650 (intermediate)
+    // points — the claim the number is actually making.
+    expect(result.score).toBeGreaterThan(400);
+    expect(result.score).toBeLessThan(650);
   });
 
   it("heavier weight for the same reps never scores lower (monotonic)", () => {
@@ -210,6 +242,17 @@ describe("scoreStrength — muscle-up bodyweight-relative recognition", () => {
     expect(result.source).not.toBe("generic");
   });
 
+  // Threshold 400 -> 290 (measured 317), stated. The defect this defends is
+  // the degenerate 50/50 blend that scored bodyweight-only work as low as 237
+  // "Beginner"; 317 is still clear of it, and the case that actually produced
+  // that report — 10 bodyweight pull-ups — does not move at all under the
+  // estimator change (at exactly ten reps Strength Level's table, Epley and
+  // Brzycki all give 1.3333x). What moved is this five-rep muscle-up, and it
+  // moved hard for a documented reason: bodyweight-relative lifts subtract
+  // bodyweight back out, so a 3.7% correction on 83kg of total load becomes a
+  // 26% correction on the ~14kg added-equivalent residual. The anchor itself
+  // is derived from a ONE-rep standard (bodyweight+20%), where the estimator
+  // is the identity, so the anchor is unaffected and is not touched here.
   it("a bodyweight-only set (0kg added) scores meaningfully above zero", () => {
     const result = scoreStrength({
       liftKey: "muscle up",
@@ -221,7 +264,7 @@ describe("scoreStrength — muscle-up bodyweight-relative recognition", () => {
       isPremium: false,
       isBodyweightRelative: true,
     });
-    expect(result.score).toBeGreaterThan(400);
+    expect(result.score).toBeGreaterThan(290);
   });
 
   it("added weight scores higher than bodyweight-only for the same reps", () => {
@@ -321,11 +364,21 @@ describe("ageFactor — Foster junior coefficients", () => {
    * is the actual fix — pin it so the gate can't quietly revert to an age
    * comparison.
    */
-  it("APPLIES the junior credit — the reported lift moves 907 -> 923, and 'age-factor-beta' is flagged", () => {
+  // 907/923 -> 893/909. The reported bench (140x2 @ 80kg) takes the estimator
+  // correction like everything else: 140x2 implied a 149.3kg 1RM off Epley's
+  // 1.0667x and now implies 144.3kg off Strength Level's own 2-rep figure
+  // (97%, 1.0309x). Two reps is the LEAST-affected part of the whole change —
+  // the removed +6% sub-max correction never applied at three reps or fewer,
+  // so this lift loses only the Epley-vs-Strength-Level gap. What this test
+  // is actually about is unchanged and is the reason both numbers are pinned:
+  // the junior credit is still worth exactly +16, so the gate is still on the
+  // factor rather than on `age > 35`.
+  it("APPLIES the junior credit — the reported lift moves 893 -> 909, and 'age-factor-beta' is flagged", () => {
     const junior = bench140(19);
     const peak = bench140(30);
-    expect(peak.score).toBe(907);
-    expect(junior.score).toBe(923);
+    expect(peak.score).toBe(893);
+    expect(junior.score).toBe(909);
+    expect(junior.score - peak.score).toBe(16);
     expect(junior.flags).toContain("age-factor-beta");
     expect(junior.appliedFactors.some((f) => f.startsWith("age:19"))).toBe(true);
   });
@@ -455,5 +508,123 @@ describe("resolveLiftAnchor — generic fallback", () => {
   it("a loaded core movement no longer pins the scale at an ordinary working set", () => {
     // 60kg on a cable crunch is a normal set, not a world record.
     expect(score("Cable Crunch", 60).score).toBeLessThan(950);
+  });
+});
+
+/**
+ * THE RULER TEST. The single property the 1RM-estimator pass exists to
+ * establish, and the one this file could not previously state.
+ *
+ * Every anchor table above maps a ONE-REP MAX to a percentile of Strength
+ * Level's population. The engine does not receive a one-rep max; it receives a
+ * set, and converts. If that conversion is not the conversion Strength Level
+ * itself publishes and applied to build those standards, then the same athlete
+ * scores differently depending only on how many reps they happened to do, and
+ * the percentile the score claims is fiction.
+ *
+ * That was measurably the case: the same true 1RM logged as a set of eight
+ * read 6-24% stronger than logged as a single, depending on exercise class.
+ * These tests fail loudly if any future pass reintroduces a per-class k, a
+ * blanket sub-max correction, or a rep formula that is not the table's own.
+ */
+describe("scoreStrength — the estimator and the anchor tables share one ruler", () => {
+  const SL_REP_PERCENT: Record<number, number> = {
+    1: 100, 2: 97, 3: 94, 5: 89, 8: 81, 10: 75, 12: 71, 15: 67,
+  };
+
+  function scoreSet(liftKey: string, weightKg: number, reps: number) {
+    return scoreStrength({
+      liftKey,
+      exerciseName: liftKey,
+      history: [],
+      latestSet: { weightKg, reps },
+      bodyweightKg: 83,
+      sex: "male",
+      age: 30,
+      isPremium: false,
+    }).score;
+  }
+
+  // One from each exercise class, and one that is table-scored on each path.
+  const LIFTS: Array<[string, number]> = [
+    ["bench", 120], // compound, table
+    ["squat", 150], // compound, table
+    ["latPulldown", 90], // accessory, table
+    ["dumbbell curl", 40], // isolation, table (total load: 20/hand)
+    ["tricepPushdown", 60], // isolation, table
+    ["Machine Chest Press", 100], // accessory, log-formula path
+  ];
+
+  it("scores a given true 1RM identically however many reps it was logged at", () => {
+    for (const [lift, trueOneRM] of LIFTS) {
+      const asSingle = scoreSet(lift, trueOneRM, 1);
+      for (const reps of [2, 3, 5, 8, 10, 12, 15]) {
+        // The set weight that implies exactly `trueOneRM` on the published table.
+        const setWeight = (trueOneRM * SL_REP_PERCENT[reps]) / 100;
+        expect(
+          Math.abs(scoreSet(lift, setWeight, reps) - asSingle),
+          `${lift} at ${reps} reps`
+        ).toBeLessThanOrEqual(1); // rounding only
+      }
+    }
+  });
+
+  it("does not vary the conversion by exercise class", () => {
+    // Same numbers, three classes: if any of them ever gets its own k again,
+    // the ratio of the eight-rep score to the one-rep score diverges.
+    const gap = (lift: string, oneRM: number) =>
+      scoreSet(lift, oneRM, 1) - scoreSet(lift, oneRM * 0.81, 8);
+    expect(Math.abs(gap("bench", 120))).toBeLessThanOrEqual(1);
+    expect(Math.abs(gap("latPulldown", 90))).toBeLessThanOrEqual(1);
+    expect(Math.abs(gap("tricepPushdown", 60))).toBeLessThanOrEqual(1);
+  });
+});
+
+/**
+ * The two lifts whose calibration was DELIBERATELY held still through the
+ * estimator correction, because their only evidence is the athlete's own
+ * reported numbers rather than population data. Both anchors were rescaled by
+ * the estimator's own change factor so the reported points survive; these pin
+ * that, so a later pass cannot undo the rescale without noticing.
+ */
+describe("scoreStrength — calibration points held across the estimator correction", () => {
+  function score(liftKey: string, weightKg: number, reps: number) {
+    return scoreStrength({
+      liftKey,
+      exerciseName: liftKey,
+      history: [],
+      latestSet: { weightKg, reps },
+      bodyweightKg: 83,
+      sex: "male",
+      age: 30,
+      isPremium: false,
+    }).score;
+  }
+
+  it("tricep press still lands on the athlete's two reported points — it has no Strength Level table to take a correction against", () => {
+    expect(score("Tricep Press", 95, 8)).toBe(736);
+    expect(score("Tricep Press", 125, 8)).toBe(840);
+  });
+
+  it("single-arm pushdown keeps the front-loaded curve the athlete dictated", () => {
+    // "15 x 12 still scores fairly highly at 65-70, but then the score
+    // increases up slowly as the weight gets heavier."
+    const curve = [
+      [15, 12],
+      [20, 10],
+      [25, 10],
+      [30, 8],
+      [35, 8],
+      [45, 6],
+    ].map(([w, r]) => score("Single Arm Pushdown", w, r));
+
+    expect(curve[0]).toBeGreaterThanOrEqual(650);
+    expect(curve[0]).toBeLessThanOrEqual(700);
+    // Monotonic, and compressing: each step up earns less than the last.
+    for (let i = 1; i < curve.length; i++) {
+      expect(curve[i]).toBeGreaterThan(curve[i - 1]);
+    }
+    expect(curve[1] - curve[0]).toBeGreaterThan(curve[5] - curve[4]);
+    expect(curve[5]).toBeLessThan(999);
   });
 });

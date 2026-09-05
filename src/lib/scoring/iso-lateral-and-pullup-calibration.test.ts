@@ -34,10 +34,21 @@ const ISO_LATERAL_EXERCISES = COMMON_EXERCISES.map((e) => e.name).filter((n) =>
 );
 
 describe("Iso-Lateral High Row — the reported 100kg x 8 = 99.9 case", () => {
-  it("no longer pins the top of the scale: 100/side x 8 scores ~81, not 999", () => {
+  // BAND LOWERED, 780-850 -> 720-800 (measured 754). Stated rather than
+  // quietly widened: the estimator correction (strength/one-rm.ts) took ~15%
+  // off every accessory-class eight-rep set, this machine included. The
+  // anchor itself is untouched, and deliberately so — the iso-lateral family
+  // has no Strength Level population data, so its anchors were set by a
+  // RELATIVE constraint ("no machine out-scores a comparable barbell lift at
+  // the same relative effort") rather than an absolute target. That
+  // constraint is preserved exactly, because the barbell lifts moved by the
+  // same correction — see the test immediately below, which is the one that
+  // actually pins it and which still passes unchanged. The absolute band was
+  // only ever a snapshot of where that relative placement landed.
+  it("no longer pins the top of the scale: 100/side x 8 scores ~75, not 999", () => {
     const result = scoreLogged("Iso-Lateral High Row", 100, 8);
-    expect(result.score).toBeGreaterThan(780);
-    expect(result.score).toBeLessThan(850);
+    expect(result.score).toBeGreaterThan(720);
+    expect(result.score).toBeLessThan(800);
     // The specific symptom: an ordinary working set reading as world-class.
     expect(result.score).toBeLessThan(900);
     expect(result.flags).not.toContain("near-record");
@@ -131,9 +142,16 @@ describe("Iso-Lateral family — configuration", () => {
 });
 
 describe("Pull Up — the reported +30kg x 8 = 72.9 case", () => {
-  it("scores ~80, not 72.9: added load is credited on top of bodyweight", () => {
+  // 796 -> 780 with the estimator correction, which lands exactly on the old
+  // lower bound and so tripped a strict `toBeGreaterThan(780)`. Bound moved
+  // to 770 rather than the assertion inverted: the athlete's stated target
+  // was "almost 80" against a reported 72.9, and 78.0 still meets it. The
+  // move here is small because bodyweight-relative lifts subtract bodyweight
+  // back out — the correction applies to the ~108kg total load, not to the
+  // 30kg the athlete logged.
+  it("scores ~78, not 72.9: added load is credited on top of bodyweight", () => {
     const result = scoreLogged("Pull Up", 30, 8);
-    expect(result.score).toBeGreaterThan(780);
+    expect(result.score).toBeGreaterThan(770);
     expect(result.score).toBeLessThan(830);
   });
 

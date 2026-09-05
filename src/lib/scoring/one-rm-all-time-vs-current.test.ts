@@ -76,7 +76,12 @@ describe("all-time vs current 1RM", () => {
     const result = bench(history, { weightKg: 100, reps: 5 }, daysAgo(0));
 
     // 140x3 is still the best ever hit, so it still is the all-time number.
-    expect(result.allTimeOneRM!).toBeGreaterThan(150);
+    // 154 -> 148.9 with the estimator correction: 140 x Strength Level's own
+    // 3-rep multiplier (100/94 = 1.0638) rather than Epley's 1.10. The
+    // threshold moves with it — what this test is actually about is that the
+    // 300-day-old PR survives a detrained block, not the exact figure.
+    expect(result.allTimeOneRM!).toBeGreaterThan(145);
+    expect(result.allTimeOneRM!).toBeCloseTo(140 * (100 / 94), 1);
     expect(result.currentOneRM!).toBeLessThan(result.allTimeOneRM! * 0.85);
   });
 

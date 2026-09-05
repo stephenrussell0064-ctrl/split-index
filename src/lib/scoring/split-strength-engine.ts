@@ -15,15 +15,13 @@
  * rather than inflating the athlete's own number.
  *
  * History awareness: pass the FULL logged history for the lift, not just
- * the latest set — a single sub-maximal set under-reads true 1RM by ~3–14%,
- * and only a longer history lets the adaptive model express a trend and
- * blend against a real achieved peak. Both the single-set fallback and the
- * adaptive history model apply the same sub-max bias correction
- * (`subMaxBiasCorrection`) and the same blended Epley/Brzycki estimator
- * (`bestEstimate1RM`) — free tier just doesn't get the extra trend/band/
- * multi-session blending premium does. Gate premium fields at the
- * serializer (`serializeStrengthResult`), not by computing and hiding them
- * on the client.
+ * the latest set — only a longer history lets the adaptive model express a
+ * trend and blend against a real achieved peak. Both the single-set fallback
+ * and the adaptive history model run the same estimator (`bestEstimate1RM`,
+ * Strength Level's published rep table) — free tier just doesn't get the
+ * extra trend/band/multi-session blending premium does. Gate premium fields
+ * at the serializer (`serializeStrengthResult`), not by computing and hiding
+ * them on the client.
  *
  * Three 1RM numbers, deliberately, because "my 1RM" means two different
  * things to an athlete and a single figure cannot be both:
@@ -53,9 +51,14 @@
  *    data yet — mark as "beta" until real data lands (see appliedFactors).
  *  - Accessory/inherited lifts (source: "generic") carry lower confidence
  *    than the calibrated primary/accessory sets.
- *  - The sub-max bias correction (+6%) and bodyweight-relative handling are
- *    both engineering estimates, not lab-calibrated — validate against real
+ *  - The bodyweight-relative handling (total-load-then-subtract) is an
+ *    engineering estimate, not lab-calibrated — validate against real
  *    near-max attempts as they get logged (see `nextTier`/`suggestion`).
+ *  - The rep→1RM conversion is Strength Level's own published table, chosen
+ *    so the athlete and the population the anchor tables describe are
+ *    measured with one ruler. It is not claimed to be the physiologically
+ *    best conversion (see strength/one-rm.ts); it is the RIGHT one for this
+ *    comparison, and it moves if the tables' source population ever does.
  */
 
 import {
@@ -483,8 +486,28 @@ const WEIGHT_RATIO_ANCHOR_TABLES: Partial<Record<string, WeightAnchor[]>> = {
    * athlete's standing against a real population. That is confined to one
    * accessory exercise and does not touch any compound, but it is the reason
    * every other entry here stays honest to its source table.
+   *
+   * [9, 15, 23, 38, 68] -> the values below, every one scaled by 0.80, WHEN
+   * THE ESTIMATOR WAS FIXED (strength/one-rm.ts). Precisely because this
+   * table is not a percentile mapping, it cannot take the estimator
+   * correction the way the honest tables do: its numbers exist only to
+   * reproduce the athlete's dictated (weight x reps -> score) curve, and a
+   * ~20% smaller 1RM from the same set would have silently walked all six
+   * points down. 0.80 is the estimator's own change factor for this class
+   * across the rep counts those points sit at — exact at 10 reps (0.800),
+   * within 0.7% at 8 (0.805), 2.2% at 12 (0.783) and 3.7% at 6 (0.831). A
+   * single scalar cannot be exact at every rep count because the correction
+   * is not flat in reps; 10 is the middle of the dictated cluster.
+   *
+   * Measured at 83 kg / age 30 (stated, because the six numbers in the
+   * paragraph above are not reproducible at any bodyweight and age tried —
+   * whoever recorded them did not record the athlete they used):
+   *   before  69.5 / 77.7 / 85.9 / 87.3 / 89.8 / 92.8
+   *   after   68.7 / 77.7 / 85.9 / 87.4 / 89.9 / 93.6
+   * for 15x12, 20x10, 25x10, 30x8, 35x8, 45x6. The front-loaded, then
+   * compressed curve the athlete asked for is intact.
    */
-  tricepPushdownSingleArm: slTable([9, 15, 23, 38, 68]),
+  tricepPushdownSingleArm: slTable([7.2, 12.0, 18.4, 30.4, 54.4]),
 };
 
 const ACCESSORY_MAP: Record<string, LiftAnchor> = {
@@ -501,11 +524,21 @@ const ACCESSORY_MAP: Record<string, LiftAnchor> = {
   pecDeck: { anchorRatio: 0.8583, category: "chest", bodyPart: "upperBody" },
   // Calibrated (user feedback: 95kg x8 should score ~700, 125kg x8 should
   // score ~875 — "Tricep Press" had no anchor at all before this, so it was
-  // silently falling through to the generic accessory fallback). 0.89 is
+  // silently falling through to the generic accessory fallback). 0.89 was
   // the closest single-anchor fit for both reported points under the
   // shared SLOPE constant (95x8 -> 735, 125x8 -> 840) — same "can't hit
   // both exactly, split the difference" methodology as dbCurl below.
-  tricepPress: { anchorRatio: 0.89, category: "arms", bodyPart: "upperBody" },
+  //
+  // 0.89 -> 0.7601 (x 0.8541) IN ORDER TO CHANGE NOTHING. This lift has no
+  // Strength Level table — its only calibration evidence is the athlete's two
+  // reported (weight x reps -> score) points, and those points were fitted
+  // through the old, inflated estimator. Re-fixing the estimator without
+  // moving the anchor would answer a question that was already settled, using
+  // a set the athlete never re-reported on. 0.8541 is exactly the estimator's
+  // own change factor at 8 reps for this class (1.2346 / 1.4455), so both
+  // reported points hold. The lifts that DO have population tables take the
+  // correction; this one has nothing to take it against.
+  tricepPress: { anchorRatio: 0.7601, category: "arms", bodyPart: "upperBody" },
   tricepPushdown: { anchorRatio: 0.3138, category: "arms", bodyPart: "upperBody" },
   tricepPushdownSingleArm: { anchorRatio: 0.153, category: "arms", bodyPart: "upperBody" },
   // Recalibrated (user feedback: 20kg/hand x8 scored 669, expected ~750;
@@ -816,7 +849,20 @@ export const SEX_FACTORS: Record<BodyPart, number> = {
   pull: 0.73,
 };
 
-/** Exercise class for 1RM coefficient selection (Part D). */
+/**
+ * Movement taxonomy (Part D). It is still threaded through the scoring path
+ * and still classifies every anchored lift correctly, but READ THIS BEFORE
+ * ASSUMING IT DOES ANYTHING: it no longer selects a 1RM coefficient, because
+ * there is only one rep→1RM curve now. See strength/one-rm.ts — the per-class
+ * Epley k values it used to pick (22 for accessory, 15 for isolation) had no
+ * published basis and were the largest term in a 6-28% over-read of every
+ * logged set.
+ *
+ * Kept rather than deleted: the classification itself is sound and is the
+ * obvious place to hang a per-class curve if one is ever earned from real
+ * data. Hoeger et al. (1990) is evidence that per-exercise curves DO exist —
+ * it just measured them running the opposite way from these k values.
+ */
 export const EXERCISE_CLASS: Record<string, ExerciseClass> = {
   bench: "compound",
   squat: "compound",
@@ -1012,29 +1058,25 @@ function estimate1RMFromSet(
   return bestEstimate1RM(weightKg, reps, exerciseClass, repsInReserve);
 }
 
-/** Sub-maximal sets (no low-rep/near-max data) read ~3-14% low on formula-based 1RM estimates; this is the midpoint correction, shared by both the adaptive and single-set paths. */
-const SUB_MAX_BIAS_CORRECTION = 1.06;
-
 /**
- * Skipped for bodyweight-relative lifts: their own total-load-then-subtract
- * correction (see BODYWEIGHT_RELATIVE_LIFTS) already moves the estimate
- * substantially, and because bodyweight is usually the majority of the
- * total load, a small percentage correction on the total gets amplified
- * into a much larger swing on the comparatively small added-weight result
- * once bodyweight is subtracted back out (e.g. correcting a ~110kg total
- * load by 6% can move a ~30kg added-weight answer by 15%+). Stacking both
- * corrections overshoots past what either was individually validated
- * against — see BRIEF-3-strength-1rm-calibration.md §1.
+ * THE +6% SUB-MAX BIAS CORRECTION IS GONE. It used to multiply every
+ * formula-derived 1RM from a set of four reps or more (bodyweight-relative
+ * and isolation lifts excepted) on the premise that a sub-maximal set reads
+ * ~3-14% low against a truly tested max.
+ *
+ * The premise is not wrong about physiology. It is wrong about what is being
+ * compared. Every anchor table below is Strength Level's published standards,
+ * and those standards are built from the ordinary logged sets of Strength
+ * Level's own users, converted by Strength Level's own rep table. Whatever
+ * under-reading affects a set logged here affects the population it is being
+ * ranked against, identically, and cancels. Applying the correction to one
+ * side of that comparison and not the other was a flat 6% handout on top of
+ * the estimator over-read documented in strength/one-rm.ts — the two stacked.
+ *
+ * Near-max evidence (`hasLowRepData`) still matters, and still does what it
+ * always did: it raises `oneRMConfidence` and widens or narrows the reported
+ * band. It just no longer moves the estimate itself.
  */
-function subMaxBiasCorrection(
-  hasLowRepData: boolean,
-  isBodyweightRelative: boolean,
-  exerciseClass: ExerciseClass = "compound"
-): number {
-  if (isBodyweightRelative) return 1.0;
-  if (exerciseClass === "isolation") return 1.0;
-  return hasLowRepData ? 1.0 : SUB_MAX_BIAS_CORRECTION;
-}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1314,15 +1356,16 @@ function hasLowRepData(series: DatedEstimate[]): boolean {
 
 /**
  * Blends the heaviest e1RM ever logged (a real achieved data point) with a
- * recency- and intensity-weighted average across the full history, then
- * corrects for the known low bias of sub-maximal-set formulas when there's
- * no low-rep (near-max) data to anchor against. Constants here are
- * engineering judgment calls, not lab-derived — the point is a materially
- * better estimate than a single set, not a precise one.
+ * recency- and intensity-weighted average across the full history. Constants
+ * here are engineering judgment calls, not lab-derived — the point is a
+ * materially better estimate than a single set, not a precise one.
+ *
+ * `nearMaxEvidence` used to also scale the estimate up when absent (the +6%
+ * sub-max correction, removed — see its note above). It now only feeds
+ * confidence, and through confidence the reported band.
  */
 function adaptiveOneRM(
   series: DatedEstimate[],
-  biasCorrection: number,
   nearMaxEvidence: boolean
 ): AdaptiveEstimate {
   const weighted = series.map((s) => {
@@ -1335,7 +1378,7 @@ function adaptiveOneRM(
   const weightedAvg = weighted.reduce((sum, w) => sum + w.e1rm * w.weight, 0) / totalWeight;
   const maxE1rm = Math.max(...weighted.map((w) => w.e1rm));
 
-  const oneRM = (maxE1rm * 0.6 + weightedAvg * 0.4) * biasCorrection;
+  const oneRM = maxE1rm * 0.6 + weightedAvg * 0.4;
 
   const confidence = clamp(
     0.5 + Math.min(weighted.length, 10) * 0.03 + (nearMaxEvidence ? 0.15 : 0),
@@ -1390,7 +1433,7 @@ const CURRENT_ONE_RM_HALF_LIFE_DAYS = 21;
  * a session below the running estimate necessarily drags it down — that
  * property is the whole reason this number exists.
  */
-function splitOneRM(series: DatedEstimate[], biasCorrection: number): OneRMSplit {
+function splitOneRM(series: DatedEstimate[]): OneRMSplit {
   const bestPerSession = new Map<string, DatedEstimate>();
   for (const s of series) {
     const previous = bestPerSession.get(s.performedAt);
@@ -1399,7 +1442,7 @@ function splitOneRM(series: DatedEstimate[], biasCorrection: number): OneRMSplit
   const sessions = [...bestPerSession.values()];
   if (sessions.length === 0) return { allTimeOneRM: 0, currentOneRM: 0 };
 
-  const allTimeOneRM = Math.max(...sessions.map((s) => s.e1rm)) * biasCorrection;
+  const allTimeOneRM = Math.max(...sessions.map((s) => s.e1rm));
 
   let weightedSum = 0;
   let totalWeight = 0;
@@ -1411,8 +1454,7 @@ function splitOneRM(series: DatedEstimate[], biasCorrection: number): OneRMSplit
 
   // Every session old enough for its decay weight to underflow to zero (~60
   // years): report the high-water mark rather than dividing by nothing.
-  const currentOneRM =
-    totalWeight > 0 ? (weightedSum / totalWeight) * biasCorrection : allTimeOneRM;
+  const currentOneRM = totalWeight > 0 ? weightedSum / totalWeight : allTimeOneRM;
 
   return { allTimeOneRM, currentOneRM };
 }
@@ -1465,10 +1507,7 @@ export function scoreStrength(input: ScoreStrengthInput): ScoreStrengthResult {
     performedAt: input.latestSetPerformedAt ?? new Date(now).toISOString(),
   };
   const fullSeries = [...historySeries, latestEstimate];
-  const split = splitOneRM(
-    fullSeries,
-    subMaxBiasCorrection(hasLowRepData(fullSeries), isBodyweightRelative, exerciseClass)
-  );
+  const split = splitOneRM(fullSeries);
 
   let oneRM: number;
   let oneRMConfidence: number;
@@ -1477,22 +1516,13 @@ export function scoreStrength(input: ScoreStrengthInput): ScoreStrengthResult {
 
   if (isPremium && history.length > 0) {
     const nearMaxEvidence = hasLowRepData(historySeries);
-    const adaptive = adaptiveOneRM(
-      historySeries,
-      subMaxBiasCorrection(nearMaxEvidence, isBodyweightRelative, exerciseClass),
-      nearMaxEvidence
-    );
+    const adaptive = adaptiveOneRM(historySeries, nearMaxEvidence);
     oneRM = adaptive.oneRM;
     oneRMConfidence = adaptive.confidence;
     trend = adaptive.trend;
     oneRMBandKg = adaptive.band;
   } else {
     oneRM = latestEstimate.e1rm;
-    oneRM *= subMaxBiasCorrection(
-      latestSet.reps + (latestSet.repsInReserve ?? 0) <= 3,
-      isBodyweightRelative,
-      exerciseClass
-    );
     const effectiveRepsTotal =
       latestSet.reps + (latestSet.repsInReserve ?? 0);
     oneRMConfidence =
