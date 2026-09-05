@@ -459,19 +459,32 @@ const WEIGHT_RATIO_ANCHOR_TABLES: Partial<Record<string, WeightAnchor[]>> = {
   dbCurl: slTable([8, 14, 22, 32, 42]),
   hammerCurl: slTable([11, 16, 24, 33, 42]),
   /**
-   * Single-arm pushdown. Strength Level publishes no single-arm table, so this
-   * is DERIVED: 55% of the two-arm pushdown standard per arm, the usual
-   * bilateral deficit for a cable isolation movement. Derived, not measured —
-   * flagged the same way as this file's other engineering estimates.
+   * Single-arm pushdown — the one table in this file that is deliberately NOT
+   * a percentile mapping, at the athlete's explicit direction. Read the
+   * trade-off before changing it.
    *
-   * It is a large NERF and it is deliberate. The old anchor put a 1RM of
-   * 12.7 kg per arm at the 500 mark, so an ordinary 20 kg x 10 set read 876
-   * ("Elite") and 35 kg x 8 pinned at 999. Nothing about a single-arm
-   * pushdown is elite at 20 kg. This is one of the three lifts the athlete
-   * asked to have RAISED and the population data says the opposite, so it is
-   * being reported rather than quietly obeyed.
+   * History. The original anchor put a 1RM of 12.7 kg per arm at the 500
+   * mark, so an ordinary 20 kg x 10 read 876 ("Elite") and 35 kg x 8 pinned
+   * at 999 — a perfect score for a light isolation movement. That was a real
+   * defect. Replacing it with a derived percentile table (55% of the two-arm
+   * standard) fixed the pin but took a 15 kg x 12 working set down to ~50.
+   *
+   * The athlete's instruction: "change the way this is scored, e.g. 15 x 12
+   * still scores fairly highly at 65-70 but then the score increases up
+   * slowly as the weight gets heavier." So the curve is intentionally
+   * front-loaded and then compressed: a real working set is credited
+   * properly, and getting from there to a heavy single earns progressively
+   * less. Measured through the engine: 15x12 -> 67, 20x10 -> 75, 25x10 -> 85,
+   * 30x8 -> 87, 35x8 -> 89, 45x6 -> 93. The 999 pin stays gone.
+   *
+   * THE COST, stated plainly because nothing else in this file pays it: the
+   * numbers below are no longer percentile boundaries, so any tier label
+   * derived from a score on THIS movement (Advanced, Elite) overstates the
+   * athlete's standing against a real population. That is confined to one
+   * accessory exercise and does not touch any compound, but it is the reason
+   * every other entry here stays honest to its source table.
    */
-  tricepPushdownSingleArm: slTable([12, 20, 31, 44, 59]),
+  tricepPushdownSingleArm: slTable([9, 15, 23, 38, 68]),
 };
 
 const ACCESSORY_MAP: Record<string, LiftAnchor> = {
