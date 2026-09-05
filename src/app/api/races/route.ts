@@ -127,6 +127,53 @@ async function computeCrowdDifficulty(
   return { averageDeltaPct, sampleCount: deltas.length };
 }
 
+/**
+ * Postgres check-constraint violation. Supabase surfaces the raw SQLSTATE,
+ * which is the only reliable way to tell "the athlete typed something
+ * impossible" apart from "this database is a migration behind".
+ */
+const CHECK_VIOLATION = "23514";
+
+interface PlannedRaceInsert {
+  user_id: string;
+  event_name: string;
+  location_name: string;
+  latitude: number | null;
+  longitude: number | null;
+  race_date: string;
+  distance_meters: number;
+  elevation_gain_meters: number | null;
+  elevation_source: "manual" | "gpx" | "known" | null;
+  notes: string | null;
+}
+
+interface InsertFailure {
+  code?: string;
+  message?: string;
+  details?: string | null;
+}
+
+/**
+ * Migration 037 widened planned_races.elevation_source to allow 'known'
+ * (elevation taken from the curated known-race dropdown). A database that
+ * hasn't had 037 applied yet still only allows ('manual','gpx') and rejects
+ * the insert outright — which silently killed *every* race saved through
+ * that dropdown, the first and most prominent control in the Add-race form.
+ */
+function isElevationSourceCheckViolation(error: InsertFailure | null): boolean {
+  if (!error || error.code !== CHECK_VIOLATION) return false;
+  const text = `${error.message ?? ""} ${error.details ?? ""}`;
+  return text.includes("elevation_source");
+}
+
+async function insertPlannedRace(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  row: PlannedRaceInsert
+) {
+  const { data, error } = await supabase.from("planned_races").insert(row).select().single();
+  return { race: data, error: error as InsertFailure | null };
+}
+
 export async function POST(request: Request) {
   const supabase = await createClient();
   const {
@@ -173,28 +220,55 @@ export async function POST(request: Request) {
   // it just won't get a weather-based adjustment later (see GET below).
   const geocoded = locationName ? await geocodeLocation(locationName) : null;
 
-  const { data: race, error } = await supabase
-    .from("planned_races")
-    .insert({
-      user_id: user.id,
-      event_name: eventName,
-      location_name: locationName || geocoded?.resolvedName || "Unknown location",
-      latitude: geocoded?.latitude ?? null,
-      longitude: geocoded?.longitude ?? null,
-      race_date: raceDate,
-      distance_meters: Math.round(distanceMeters),
-      elevation_gain_meters: elevationGainMeters != null ? Math.round(elevationGainMeters) : null,
-      elevation_source: elevationGainMeters != null ? (elevationSource ?? "manual") : null,
-      notes,
-    })
-    .select()
-    .single();
+  const row: PlannedRaceInsert = {
+    user_id: user.id,
+    event_name: eventName,
+    location_name: locationName || geocoded?.resolvedName || "Unknown location",
+    latitude: geocoded?.latitude ?? null,
+    longitude: geocoded?.longitude ?? null,
+    race_date: raceDate,
+    distance_meters: Math.round(distanceMeters),
+    elevation_gain_meters: elevationGainMeters != null ? Math.round(elevationGainMeters) : null,
+    elevation_source: elevationGainMeters != null ? (elevationSource ?? "manual") : null,
+    notes,
+  };
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  let { race, error } = await insertPlannedRace(supabase, row);
+
+  // The elevation figure itself is real whichever database this lands in —
+  // only the label describing where it came from is unknown to a pre-037
+  // schema. Losing the athlete's whole race entry over a provenance label
+  // is the worse outcome, so downgrade the label, keep the race, and say so
+  // in the response. Self-heals the moment migration 037 is applied.
+  let elevationSourceDegraded = false;
+  if (isElevationSourceCheckViolation(error) && row.elevation_source === "known") {
+    console.warn(
+      "[api/races] planned_races.elevation_source rejected 'known' — migration 037 " +
+        "is not applied to this database. Saving with 'manual' instead."
+    );
+    ({ race, error } = await insertPlannedRace(supabase, { ...row, elevation_source: "manual" }));
+    elevationSourceDegraded = !error;
   }
 
-  return NextResponse.json({ race, geocodeFailed: !!locationName && !geocoded });
+  if (error || !race) {
+    // Never hand a raw Postgres sentence to an athlete, but never swallow it
+    // either — `detail` is what turns "it just doesn't work" into something
+    // anyone can act on.
+    console.error("[api/races] planned_races insert failed", error);
+    return NextResponse.json(
+      {
+        error: "Could not save this race. Nothing was saved — please try again.",
+        detail: error?.message ?? "The database accepted the request but returned no race.",
+      },
+      { status: 500 }
+    );
+  }
+
+  return NextResponse.json({
+    race,
+    geocodeFailed: !!locationName && !geocoded,
+    elevationSourceDegraded,
+  });
 }
 
 export async function GET() {

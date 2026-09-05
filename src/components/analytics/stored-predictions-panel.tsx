@@ -1,13 +1,11 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { TrendingUp, TrendingDown, Minus, Target } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { PremiumTease } from "@/components/premium/premium-tease";
 import { ScoringExplainerNote } from "@/components/scoring/scoring-explainer-note";
-import { isBodyweightOnlyExercise } from "@/lib/scoring/weight-entry";
 import { cn } from "@/lib/utils/cn";
-import { formatWeight } from "@/lib/utils/format";
+import { AdaptiveOneRmList } from "./adaptive-1rm-list";
 import {
   formatPredictionLabel,
   formatRiegelPrediction,
@@ -63,12 +61,6 @@ function formatBenchmarkValue(benchmark: PredictedBenchmark): string {
     return `${formatRiegelPrediction(benchmark.benchmarkSeconds)} /km`;
   }
   return formatRiegelPrediction(benchmark.benchmarkSeconds);
-}
-
-function TrendIcon({ trend }: { trend?: "up" | "down" | "flat" }) {
-  if (trend === "up") return <TrendingUp className="h-3.5 w-3.5 text-success" />;
-  if (trend === "down") return <TrendingDown className="h-3.5 w-3.5 text-danger" />;
-  return <Minus className="h-3.5 w-3.5 text-muted" />;
 }
 
 function PredictionsContent({
@@ -158,54 +150,7 @@ function PredictionsContent({
         </div>
       ))}
 
-      {strengthEstimates.length > 0 && (
-        <div>
-          <p className="micro-label text-muted mb-2 flex items-center gap-1.5">
-            <Target className="h-3 w-3" /> Adaptive 1RM · every lift logged
-          </p>
-          <ScoringExplainerNote href="/how-scoring-works#one-rm" className="mb-2 mt-0">
-            Two numbers per lift, because they answer different questions.{" "}
-            <strong className="text-foreground/90">Now</strong> is what your recent training says
-            you could lift today — it falls when your sessions do.{" "}
-            <strong className="text-foreground/90">Best</strong> is the heaviest you have ever hit;
-            nothing but beating it can move it.
-          </ScoringExplainerNote>
-          {strengthEstimates.some((est) => isBodyweightOnlyExercise(est.exerciseName)) && (
-            <ScoringExplainerNote className="mb-2 mt-0">
-              For bodyweight-only lifts (Pull Up, Push Up, Dip, Muscle Up), these are the added
-              weight a weighted version would need to be equally hard for one rep — not your
-              bodyweight itself.
-            </ScoringExplainerNote>
-          )}
-          <ul className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
-            {strengthEstimates.map((est) => (
-              <li
-                key={est.exerciseName}
-                className="glass rounded-lg px-3 py-2 text-sm"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-foreground/90">{est.exerciseName}</span>
-                  <span className="flex items-center gap-2 tabular-nums">
-                    <TrendIcon trend={est.trend} />
-                    <span className="font-medium">{formatWeight(est.current1RmKg)}</span>
-                    <span className="text-[10px] uppercase tracking-wider text-muted">now</span>
-                  </span>
-                </div>
-                <div className="mt-1 flex items-center justify-between gap-2 text-[10px] text-muted">
-                  <span className="uppercase tracking-wider">
-                    Best {formatWeight(est.allTime1RmKg)}
-                  </span>
-                  {showConfidence && est.bandKg && (
-                    <span className="tabular-nums">
-                      {formatWeight(est.bandKg[0])}–{formatWeight(est.bandKg[1])}
-                    </span>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      <AdaptiveOneRmList strengthEstimates={strengthEstimates} showConfidence={showConfidence} />
     </div>
   );
 }

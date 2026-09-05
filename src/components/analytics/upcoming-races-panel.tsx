@@ -146,6 +146,8 @@ export function UpcomingRacesPanel() {
   const [formOpen, setFormOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  /** The underlying database/network reason, shown small under the plain-English one — a save that fails silently is indistinguishable from a save that never fired. */
+  const [submitDetail, setSubmitDetail] = useState<string | null>(null);
 
   const [eventName, setEventName] = useState("");
   const [locationName, setLocationName] = useState("");
@@ -236,6 +238,7 @@ export function UpcomingRacesPanel() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitError(null);
+    setSubmitDetail(null);
     if (!eventName.trim() || !raceDate) {
       setSubmitError("Event name and date are required");
       return;
@@ -254,8 +257,15 @@ export function UpcomingRacesPanel() {
           elevationSource,
         }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Could not save race");
+      // A 500 that never reaches the route handler answers with an HTML error
+      // page, and letting res.json() throw here turned a save failure into a
+      // raw "Unexpected token <" in front of the athlete.
+      const data = await res.json().catch(() => ({}) as { error?: string; detail?: string });
+      if (!res.ok) {
+        setSubmitDetail(data.detail ?? null);
+        throw new Error(data.error ?? `Could not save race (${res.status})`);
+      }
+      setSubmitDetail(null);
       setEventName("");
       setLocationName("");
       setRaceDate("");
@@ -404,7 +414,12 @@ export function UpcomingRacesPanel() {
                 publish one. Falls back to whatever you type in if you don&apos;t have one.
               </p>
             </div>
-            {submitError && <p className="text-xs text-danger">{submitError}</p>}
+            {submitError && (
+              <div role="alert" className="rounded-lg border border-danger/30 bg-danger/10 px-3 py-2">
+                <p className="text-xs font-medium text-danger">{submitError}</p>
+                {submitDetail && <p className="mt-1 break-words text-[11px] text-danger/70">{submitDetail}</p>}
+              </div>
+            )}
             <Button type="submit" loading={submitting} className="w-full">
               Save race
             </Button>
