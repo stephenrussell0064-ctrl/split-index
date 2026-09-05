@@ -258,19 +258,21 @@ export function bestSet1RM(
 
 /**
  * Exact inverse of `bestEstimate1RM` — the weight this athlete could likely
- * lift for `reps` today, given a known/estimated 1RM. Used by the Training
- * Plan (user feedback: "Allow target in training plan to be a weight for reps
- * as well not just a 1rm") to show a rep-based goal's "current" figure in
- * the SAME units as the goal itself (e.g. "current: ~82kg x5" next to
- * "goal: 100kg x5"), rather than forcing a comparison between a 1RM number
- * and a rep-based target that aren't directly comparable at a glance.
+ * lift for `reps` today, given a known/estimated 1RM.
  *
- * It inverts the SCORING conversion, not Epley — the two used to be the same
- * function and are not any more. This is the load-bearing property: the
- * training-goals route converts a "100kg × 5" goal to a 1RM with
- * bestEstimate1RM and converts the athlete's current 1RM back with this, and
- * a goal must not appear already-met (or unreachable) purely because the two
- * directions disagree.
+ * NO PRODUCTION CALLER at present. It was written for the Training Plan's
+ * rep-based goals (user feedback: "Allow target in training plan to be a weight
+ * for reps as well not just a 1rm"), which showed a goal's "current" figure in
+ * the goal's OWN units — "current: ~82kg x5" beside "goal: 100kg x5" — rather
+ * than making the athlete compare a 1RM against a rep target. That product is
+ * retired.
+ *
+ * Kept, deliberately, because its tests pin a property of a function that is
+ * very much alive: it inverts the SCORING conversion, not Epley — the two used
+ * to be the same function and are not any more — so `bestEstimate1RM` and this
+ * must round-trip. Any future feature that converts between a rep target and a
+ * 1RM needs exactly that, and a goal appearing already-met purely because the
+ * two directions disagree is the bug those tests exist to prevent.
  */
 export function estimateWeightForReps(
   oneRM: number,

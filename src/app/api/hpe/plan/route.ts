@@ -146,21 +146,11 @@ export async function GET(request: Request) {
   // Profile fields are read by loadPrefilledIntake rather than here — one
   // reader, so the numbers confirmed on the intake form are exactly the ones
   // the plan is built from.
-  const [{ data: goalRows }, { data: intakeRow }] = await Promise.all([
-    supabase
-      .from("training_goals")
-      .select("goal_type, target_key, target_value, target_date")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: true }),
-    supabase.from("hpe_intake").select("*").eq("user_id", user.id).maybeSingle(),
-  ]);
-
-  const goals = goalRows ?? [];
-  const gymGoals = goals.filter((g) => g.goal_type === "gym");
-  // Priority pre-set from the goal mix, per the intake spec's open decision
-  // D2: "a slider that is pre-set from the goal gap and can be moved — it
-  // anchors the athlete on the honest answer while leaving them agency."
-  const priority = goals.length > 0 ? gymGoals.length / goals.length : 0.5;
+  const { data: intakeRow } = await supabase
+    .from("hpe_intake")
+    .select("*")
+    .eq("user_id", user.id)
+    .maybeSingle();
 
   // ---- WP2: the intake now answers what this route used to assume --------
   // Parsed BEFORE the diagnostic, because the diagnostic needs the athlete's
@@ -171,6 +161,38 @@ export async function GET(request: Request) {
   // 160 their logs showed — and meet attempts picked off 160 as well. One
   // number now, floored the same way in both places.
   const intake = parseIntakeRow(intakeRow as Record<string, unknown> | null);
+
+  /**
+   * Which side of the athlete the DIAGNOSTIC leans toward, per the intake
+   * spec's open decision D2: "a slider that is pre-set from the goal gap and
+   * can be moved — it anchors the athlete on the honest answer while leaving
+   * them agency."
+   *
+   * Read from this athlete's own hybrid-plan goals. It used to be read from the
+   * `training_goals` table — the removed Training Plan's storage — as
+   * gymGoals/allGoals. That product's API is retired and nothing could write
+   * that table any more, so the ratio was computed from rows no athlete could
+   * create, see or change: every new athlete got a flat 0.5 whatever they were
+   * training for, and anyone with rows left over from before the page was
+   * removed got a split from goals they had no way to revise.
+   *
+   * The slider wins outright once the athlete has touched it — an explicit
+   * answer is not something to average against an inference.
+   */
+  const priority = (() => {
+    if (intake.priorityUserSet) return intake.priority;
+    const strengthTargets = [
+      intake.targetSquatKg,
+      intake.targetBenchKg,
+      intake.targetDeadliftKg,
+    ].filter((kg) => kg != null && kg > 0).length;
+    const enduranceTargets = intake.target5kS != null && intake.target5kS > 0 ? 1 : 0;
+    const total = strengthTargets + enduranceTargets;
+    // No target on either side is not evidence of balance — it is no evidence
+    // at all, and 0.5 is what the engine already means by that.
+    if (total === 0) return 0.5;
+    return strengthTargets / total;
+  })();
 
   // No logged history no longer refuses. `loadAthleteProfile` returns null
   // when there is nothing to diagnose from; the engine then runs on a

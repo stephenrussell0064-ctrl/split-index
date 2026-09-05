@@ -1,47 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { splitGoalsByPremiumLimit, canAccess, canAccessLeaderboardScope } from "./features";
+import { canAccess, canAccessLeaderboardScope } from "./features";
 
-describe("splitGoalsByPremiumLimit", () => {
-  it("includes everything and locks nothing for a premium account, regardless of count", () => {
-    const rows = ["a", "b", "c", "d", "e"];
-    const { included, locked } = splitGoalsByPremiumLimit(rows, true, 1);
-    expect(included).toEqual(rows);
-    expect(locked).toEqual([]);
-  });
-
-  it("caps a free account at maxFreeGoals, locking the rest rather than dropping them", () => {
-    const rows = ["a", "b", "c"];
-    const { included, locked } = splitGoalsByPremiumLimit(rows, false, 1);
-    expect(included).toEqual(["a"]);
-    expect(locked).toEqual(["b", "c"]);
-    // Nothing lost — every row is accounted for exactly once.
-    expect([...included, ...locked]).toEqual(rows);
-  });
-
-  it("locks nothing when a free account is under the cap", () => {
-    const rows = ["a"];
-    const { included, locked } = splitGoalsByPremiumLimit(rows, false, 1);
-    expect(included).toEqual(["a"]);
-    expect(locked).toEqual([]);
-  });
-
-  it("handles zero goals for both tiers without throwing", () => {
-    expect(splitGoalsByPremiumLimit([], true, 1)).toEqual({ included: [], locked: [] });
-    expect(splitGoalsByPremiumLimit([], false, 1)).toEqual({ included: [], locked: [] });
-  });
-
-  it("preserves row order within each bucket", () => {
-    const rows = [1, 2, 3, 4, 5];
-    const { included, locked } = splitGoalsByPremiumLimit(rows, false, 2);
-    expect(included).toEqual([1, 2]);
-    expect(locked).toEqual([3, 4, 5]);
-  });
-});
-
-describe("canAccess / canAccessLeaderboardScope (existing gating, sanity-checked alongside the new function)", () => {
-  it("training_plan_multi_goal is premium-only", () => {
-    expect(canAccess("training_plan_multi_goal", "free", null)).toBe(false);
-    expect(canAccess("training_plan_multi_goal", "premium", "active")).toBe(true);
+describe("canAccess / canAccessLeaderboardScope", () => {
+  it("keeps a paid feature paid and a free one free", () => {
+    // Replaces a case that gated "training_plan_multi_goal" — a feature key
+    // removed with the Training Plan itself, so a test asserting it was
+    // premium-only was asserting the price of nothing.
+    expect(canAccess("strength_dots_gl", "free", null)).toBe(false);
+    expect(canAccess("strength_dots_gl", "premium", "active")).toBe(true);
+    expect(canAccess("full_logging", "free", null)).toBe(true);
   });
 
   it("country and bracket leaderboard scopes stay free regardless of tier", () => {

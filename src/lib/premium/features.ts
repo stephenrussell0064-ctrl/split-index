@@ -19,8 +19,7 @@ export type PremiumFeature =
   | "oauth_sync"
   | "global_rank"
   | "csv_import"
-  | "manual_logging"
-  | "training_plan_multi_goal";
+  | "manual_logging";
 
 type TierAccess = { free: boolean; premium: boolean };
 
@@ -44,22 +43,18 @@ export const PREMIUM_FEATURES: Record<PremiumFeature, TierAccess> = {
   data_export: { free: false, premium: true },
   oauth_sync: { free: false, premium: true },
   global_rank: { free: false, premium: true },
-  training_plan_multi_goal: { free: false, premium: true },
 };
 
-/**
- * Training Plan (user feedback: "Make this part of the premium feature and
- * they can get a small training plan trial but they won't benefit properly
- * unless they have premium.") Free users can still run the whole goal-
- * setup wizard and see it work — just capped to one goal and a narrower
- * weekly-session range, so the plan can never actually balance across
- * multiple competing goals (the entire point of the feature) without
- * Premium. Centralized here rather than duplicated between the API route
- * and the wizard UI.
+/*
+ * The Training Plan's per-tier caps used to live here — MAX_FREE_TRAINING_GOALS,
+ * MAX_FREE_WEEKLY_CAPACITY, MAX_PREMIUM_WEEKLY_CAPACITY — centralized so the
+ * API route and the wizard UI could not disagree about them. Both are gone with
+ * the product (the page removed at the athlete's request, the API retired
+ * after), and a cap on a feature nobody can reach is not a cap.
+ *
+ * The Hybrid Plan does not replace them. It is not sold by the goal: it builds
+ * ONE block toward one event, and there is nothing to meter.
  */
-export const MAX_FREE_TRAINING_GOALS = 1;
-export const MAX_FREE_WEEKLY_CAPACITY = 4;
-export const MAX_PREMIUM_WEEKLY_CAPACITY = 14;
 
 export const FREE_TIER_FEATURES = [
   "Full workout logging (all paths)",
@@ -68,7 +63,6 @@ export const FREE_TIER_FEATURES = [
   "Rules-based training snippet",
   "Manual entry + CSV import",
   "Country leaderboard preview",
-  "Training plan (1 goal)",
 ] as const;
 
 export const PREMIUM_TIER_FEATURES = [
@@ -81,7 +75,20 @@ export const PREMIUM_TIER_FEATURES = [
   "8-week Split Index projections",
   "Global leaderboards & rank percentile",
   "Data export (CSV / JSON)",
-  "Multi-goal hybrid training plan across every sport",
+  /*
+   * "Multi-goal hybrid training plan across every sport" was here, and it is
+   * removed rather than reworded because it named the multi-goal weekly
+   * balancer specifically — the product whose page was removed and whose API is
+   * now retired. Billing and the marketing pricing panel both render this list
+   * verbatim, so leaving it would have gone on selling a removed feature to
+   * paying subscribers.
+   *
+   * It is NOT repointed at the Hybrid Plan, tempting as that is. The Hybrid
+   * Plan is gated by a rollout flag (hpe/rollout.ts), not by subscription, so
+   * naming it here would claim as paid something every free account can already
+   * open. If it should become the paid hook, it needs a premium gate first —
+   * that is a pricing decision, not a copy edit.
+   */
 ] as const;
 
 export interface PremiumProfile {
@@ -114,22 +121,3 @@ export function canAccessLeaderboardScope(
   return canAccessProfile("global_leaderboards", profile);
 }
 
-/**
- * Splits an athlete's goal rows (any order, already sorted oldest-first by
- * the caller) into the ones that actually feed the balanced weekly plan
- * vs. the ones locked behind Premium. Extracted out of the API route so
- * this gating rule — the one piece of Training Plan behavior with real
- * money attached to it — has its own test coverage instead of only being
- * exercised implicitly through a full request. Premium: everything is
- * included, nothing is locked. Free: first `maxFreeGoals` (by whatever
- * order the caller already sorted, e.g. creation order) are included, the
- * rest are locked — never dropped.
- */
-export function splitGoalsByPremiumLimit<T>(
-  rows: T[],
-  premium: boolean,
-  maxFreeGoals: number
-): { included: T[]; locked: T[] } {
-  if (premium) return { included: rows, locked: [] };
-  return { included: rows.slice(0, maxFreeGoals), locked: rows.slice(maxFreeGoals) };
-}

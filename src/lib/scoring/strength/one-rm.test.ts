@@ -114,11 +114,13 @@ describe("weightedCalisthenic1RM — added weight (addedKg > 0) is credited on t
  * the one study that measured reps at a known %1RM, points the other way.
  *
  * The invariant that actually matters is unchanged and is now pinned
- * directly: this function must invert whatever `bestEstimate1RM` does, or the
- * training-goals route's "current: ~82kg x5 / goal: 100kg x5" pairing
- * compares two numbers produced by disagreeing conversions.
+ * directly: this function must invert whatever `bestEstimate1RM` does, or any
+ * "current: ~82kg x5 / goal: 100kg x5" pairing compares two numbers produced
+ * by disagreeing conversions. The Training Plan that needed that pairing is
+ * retired; the invariant outlives it, which is why these tests remain the only
+ * caller — see the note on estimateWeightForReps itself.
  */
-describe("estimateWeightForReps — inverse of the scoring estimator, for rep-based Training Plan goals", () => {
+describe("estimateWeightForReps — inverse of the scoring estimator", () => {
   it("round-trips exactly back through bestEstimate1RM for the same reps", () => {
     const oneRM = bestEstimate1RM(100, 5);
     expect(estimateWeightForReps(oneRM, 5)).toBeCloseTo(100, 5);

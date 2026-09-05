@@ -35,11 +35,12 @@ import { overriddenOneRms } from "@/lib/scoring/hpe/intake";
  * ---------------------------------------------------------------------------
  * WHAT IT DELIBERATELY DOES NOT DO
  * ---------------------------------------------------------------------------
- * It does not offer the multi-goal weekly-balancing model from the old
- * Training Plan (`/api/training-goals`). That is a different product answering
- * "balance my goals across this week"; this one answers "build me a block that
- * arrives at an event date", and the note on the hybrid-plan route is explicit
- * that merging them would make both worse.
+ * It does not offer the multi-goal weekly-balancing model the old Training Plan
+ * had. That was a different product answering "balance my goals across this
+ * week"; this one answers "build me a block that arrives at an event date", and
+ * merging them would have made both worse. Its page was removed at the
+ * athlete's request and its API (`/api/training-goals`) has since been retired,
+ * so this is now the only place a training goal is set anywhere in the app.
  */
 
 interface IntakeGoalFields {
