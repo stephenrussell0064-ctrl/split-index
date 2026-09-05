@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#FFFFFF</color>
+    <!-- The brand's dark half, not white. The adaptive foreground is the split
+         mark itself, whose left side is #070908 — on the stock white plate the
+         mark's dark half vanished into a bright square. -->
+    <color name="ic_launcher_background">#070908</color>
 </resources>
