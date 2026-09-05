@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion, useMotionValue, useTransform, PanInfo } from "framer-motion";
 import {
   Check,
@@ -36,7 +36,7 @@ import {
   weightEntryLabel,
 } from "@/lib/scoring/weight-entry";
 import type { Gender } from "@/types";
-import { DerivedChip, FieldError, GlassInput, UnitInput } from "./fields";
+import { FieldError, GlassInput, UnitInput } from "./fields";
 import {
   bestSetRow,
   createExerciseRow,
@@ -50,6 +50,66 @@ import {
   type WorkoutFormState,
 } from "./form-state";
 import type { UpdateField } from "./sport-form";
+
+/**
+ * A derived number that is ALWAYS on screen, at a fixed size, whether or not
+ * it has a value yet.
+ *
+ * ── Why this replaces DerivedChip here ────────────────────────────────────
+ * User-reported: "I want the logging dynamics when typing in your set to be
+ * easier as currently everything moves about when you start typing and it
+ * isn't very visually appealing."
+ *
+ * Driven in a browser at 375×812, that is measurable and it was mostly this.
+ * DerivedChip renders NOTHING while its value is null and springs itself in
+ * (AnimatePresence + `layout`) the moment one arrives. So the instant the reps
+ * box became parseable, three chips appeared inside the exercise card and two
+ * more inside the session bar, both rows wrapped onto a second line, and:
+ *
+ *   session bar   62px → 146px
+ *   card footer   50px → 76px
+ *   the weight/reps row you are typing in moved DOWN 83px
+ *   the page grew 136px
+ *
+ * — all on one keystroke, mid-set, with the caret in the field.
+ *
+ * A value arriving should change a number, never a layout. So the slot is
+ * always rendered, always the same height, and shows an em dash until there is
+ * something to put in it. No presence animation, no `layout`, nothing that can
+ * reflow a row that someone is typing into.
+ */
+function StatCell({
+  label,
+  value,
+  emphasis = false,
+  className,
+}: {
+  label: string;
+  value: string | null;
+  /** The exercise's own index — the one number the athlete is chasing. */
+  emphasis?: boolean;
+  className?: string;
+}) {
+  return (
+    <div className={cn("flex min-w-0 flex-col justify-center", className)}>
+      <span className="truncate text-[9px] font-semibold uppercase tracking-wider text-muted/60">
+        {label}
+      </span>
+      <span
+        className={cn(
+          "truncate text-xs font-semibold leading-tight tabular-nums",
+          value
+            ? emphasis
+              ? "text-gym-accent"
+              : "text-foreground/90"
+            : "text-muted/35"
+        )}
+      >
+        {value ?? "—"}
+      </span>
+    </div>
+  );
+}
 
 interface ExerciseHistorySet {
   weightKg: number;
@@ -76,9 +136,23 @@ interface ExerciseHistory {
  * set, so failures are silently swallowed rather than surfaced as an
  * error.
  */
-function useExerciseHistory(exerciseName: string): ExerciseHistory | null {
+function useExerciseHistory(exerciseName: string): {
+  history: ExerciseHistory | null;
+  /**
+   * True from the moment a name exists until that name's lookup has answered.
+   *
+   * Only exists so the hint can hold its own height open while the answer is in
+   * flight. This row lands ~300ms after an exercise is picked — comfortably
+   * inside the window where the athlete has already tapped into the weight box
+   * — and it pushed everything below it down 70px when it did, measured at
+   * 375px. Reserving the space means the chips fill a gap that was already
+   * there instead of making one.
+   */
+  pending: boolean;
+} {
   const trimmed = exerciseName.trim();
   const [history, setHistory] = useState<ExerciseHistory | null>(null);
+  const [resolvedFor, setResolvedFor] = useState<string | null>(null);
 
   useEffect(() => {
     // Nothing to fetch when the name is cleared — no need to reset
@@ -97,6 +171,11 @@ function useExerciseHistory(exerciseName: string): ExerciseHistory | null {
         if (!cancelled) setHistory(data);
       } catch {
         // Best-effort — see doc comment above.
+      } finally {
+        // Marked resolved either way: a failed lookup has still answered, and
+        // the reserved row must not stay open forever waiting on a request
+        // that is never coming back.
+        if (!cancelled) setResolvedFor(trimmed);
       }
     }, 300);
     return () => {
@@ -105,7 +184,7 @@ function useExerciseHistory(exerciseName: string): ExerciseHistory | null {
     };
   }, [trimmed]);
 
-  return history;
+  return { history, pending: trimmed !== "" && resolvedFor !== trimmed };
 }
 
 /**
@@ -193,36 +272,47 @@ export function GymExercises({
   return (
     <div className="space-y-3">
       {/* Session bar — bodyweight (needed for every × bodyweight score) and
-          the running totals, on one line instead of a full labelled field
-          block competing with exercise 1 for the first screen. */}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl border border-gym-border/40 bg-gym-bg-elevated/60 px-3 py-2.5">
-        <label
-          htmlFor="gym-bodyweight"
-          className="text-[10px] font-semibold uppercase tracking-wider text-muted/70"
-        >
-          Bodyweight
-        </label>
-        <UnitInput
-          id="gym-bodyweight"
-          value={state.bodyweight}
-          unit="kg"
-          placeholder="75"
-          aria-label="Current bodyweight in kilograms"
-          invalid={!!errors.bodyweight}
-          wrapperClassName="w-[104px]"
-          className="h-10 px-3"
-          onChange={(e) => onUpdate("bodyweight", e.target.value)}
-        />
-        <div className="ml-auto flex flex-wrap gap-2">
-          {topRelative && (
-            <DerivedChip
-              label="Top lift"
-              value={`${topRelative.name} ${formatRelativeStrength(topRelative.ratio, true)}`}
-              tone="strength"
-            />
-          )}
-          <DerivedChip label="Volume" value={totalVolume} tone="strength" />
+          the running totals.
+
+          Two rows, both a fixed height, both always present. It used to be one
+          wrapping flex row whose chips only existed once their values were
+          parseable, so it grew from 62px to 146px on the keystroke that
+          completed the first set and shoved the entire exercise list 84px down
+          the page. See StatCell. */}
+      <div className="rounded-2xl border border-gym-border/40 bg-gym-bg-elevated/60 px-3 py-2">
+        <div className="flex items-center gap-2">
+          <label
+            htmlFor="gym-bodyweight"
+            className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-muted/70"
+          >
+            Bodyweight
+          </label>
+          <UnitInput
+            id="gym-bodyweight"
+            value={state.bodyweight}
+            unit="kg"
+            placeholder="75"
+            aria-label="Current bodyweight in kilograms"
+            invalid={!!errors.bodyweight}
+            wrapperClassName="w-[92px] shrink-0"
+            className="h-9 px-2.5"
+            onChange={(e) => onUpdate("bodyweight", e.target.value)}
+          />
+          <StatCell
+            label="Session volume"
+            value={totalVolume}
+            className="ml-auto min-w-0 flex-1 items-end text-right"
+          />
         </div>
+        <StatCell
+          label="Top lift"
+          value={
+            topRelative
+              ? `${topRelative.name} ${formatRelativeStrength(topRelative.ratio, true)}`
+              : null
+          }
+          className="mt-1"
+        />
         <FieldError error={errors.bodyweight} />
       </div>
 
@@ -298,7 +388,99 @@ const SM_COL = [
   "sm:col-start-4",
   "sm:col-start-5",
   "sm:col-start-6",
+  "sm:col-start-7",
 ] as const;
+
+/**
+ * RPE and RIR as pickers rather than free-text boxes.
+ *
+ * User request: "Make the fields RIR and RPE as dropdowns which you have the
+ * option to enter rather than main fields."
+ *
+ * Both are small bounded integers — the validator accepts RPE 1–10 and RIR
+ * 0–10 — so a keyboard was never the right instrument, and as full input cells
+ * they were competing with weight and reps for width on a 375px phone. A
+ * native <select> gets iOS's own wheel, needs no width to speak of, and cannot
+ * produce a value that fails validation.
+ *
+ * They stay OPTIONAL (the first option is a real "not recorded" choice, and
+ * nothing downstream requires them) and they stay VISIBLE — always-on effort
+ * fields were themselves a fix for an earlier complaint, so these are not
+ * going behind a disclosure.
+ */
+const RPE_OPTIONS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"] as const;
+const RIR_OPTIONS = ["0", "1", "2", "3", "4", "5", "6"] as const;
+
+/**
+ * The picker itself. The chosen value reads back WITH its name ("RPE 8", not a
+ * bare "8"), because on the phone layout these two sit side by side with no
+ * column headers above them, and two unlabelled single digits next to each
+ * other tell you nothing about which is which.
+ *
+ * `extraValue` keeps a restored draft honest: a value saved before this was a
+ * dropdown (or from any other source) that isn't in the option list would
+ * otherwise render as an empty select while the state still held it — the
+ * control would be lying about what is about to be submitted. Anything
+ * unrecognised is offered as its own option instead, selected, so the athlete
+ * sees exactly what they have and can change it.
+ */
+function EffortSelect({
+  name,
+  value,
+  options,
+  ariaLabel,
+  invalid,
+  onChange,
+  className,
+}: {
+  name: string;
+  value: string;
+  options: readonly string[];
+  ariaLabel: string;
+  invalid?: boolean;
+  onChange: (value: string) => void;
+  className?: string;
+}) {
+  const trimmed = value.trim();
+  const isKnown = trimmed === "" || options.includes(trimmed);
+  return (
+    <div className={cn("relative min-w-0", className)}>
+      <select
+        value={trimmed}
+        aria-label={ariaLabel}
+        aria-invalid={invalid || undefined}
+        onChange={(e) => onChange(e.target.value)}
+        className={cn(
+          // text-base, like every other input on this form: iOS zooms into a
+          // sub-16px control and never zooms back out on a route change.
+          "h-10 w-full cursor-pointer appearance-none rounded-xl glass pl-2.5 pr-6 text-base tabular-nums",
+          "border border-white/10 outline-none transition-colors duration-200",
+          "focus:border-accent/50 focus:ring-1 focus:ring-accent/30",
+          invalid && "border-danger/50 focus:border-danger/50 focus:ring-danger/30",
+          trimmed === "" ? "text-muted/50" : "text-foreground"
+        )}
+      >
+        <option value="" className="bg-slate-900">
+          {name}
+        </option>
+        {options.map((option) => (
+          <option key={option} value={option} className="bg-slate-900">
+            {name} {option}
+          </option>
+        ))}
+        {!isKnown && (
+          <option value={trimmed} className="bg-slate-900">
+            {name} {trimmed}
+          </option>
+        )}
+      </select>
+      <ChevronDown
+        className="pointer-events-none absolute right-1.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted/60"
+        aria-hidden
+      />
+    </div>
+  );
+}
 
 function ExerciseRow({
   row,
@@ -323,7 +505,7 @@ function ExerciseRow({
   const attachmentOptions = row.name.trim()
     ? getAttachmentOptionsByKey(resolveAnchorKey(row.name))
     : null;
-  const history = useExerciseHistory(row.name);
+  const { history, pending: historyPending } = useExerciseHistory(row.name);
   /**
    * The exercise picker (muscle-filter chips + search box + select) is ~150px
    * of chrome that used to stay on screen for the life of the row, so a
@@ -358,87 +540,108 @@ function ExerciseRow({
   const showConventionPicker =
     loadConfig != null && loadConfig.allowedConventions.length > 1;
   const topSet = bestSetRow(row.sets);
-  const weightKgRaw = topSet ? parseNum(topSet.weight) : null;
-  // Bodyweight-only sets (pull-ups, dips, push-ups with no added load) leave
-  // the weight field blank — that's a valid "0kg added" entry, not a missing
-  // one, so it must still score off reps-at-bodyweight rather than silently
-  // producing no score.
-  const weightKg = isBodyweightOnly
-    ? 0
-    : (weightKgRaw ?? (row.weightEntryMode === "added" ? 0 : null));
-  const reps = topSet ? parseNum(topSet.reps) : null;
-  const rir = topSet?.repsInReserve.trim() ? parseNum(topSet.repsInReserve) : null;
-  const resolved =
-    weightKg !== null && row.name.trim()
-      ? resolveScoringWeight(weightKg, row.name, row.weightEntryMode)
-      : null;
   const scoringSex =
     profileScoringSex === "female" || profileScoringSex === "male" ? profileScoringSex : null;
-  // This IS the same function activity-scorer.ts's scoreGymSession() calls
-  // per-exercise to compute the real, saved score (split-strength-engine's
-  // scoreStrength) — see that file's own comment: calculateStrengthIndexV2
-  // is a "legacy" call kept only for DOTS/GL/loadScore, explicitly "no
-  // longer used for per-exercise scoring". Live and saved already agree by
-  // construction here; don't change this to call a different function.
-  // Holds and carries never fill `reps` — the rep-based branch below would
-  // return null and show nothing, so live and saved would silently disagree,
-  // contrary to the promise made in the comment above. Route them to the same
-  // scorers scoreGymSession uses.
-  const holdSeconds = topSet ? parseNum(topSet.durationSeconds ?? "") : null;
-  const carryMeters = topSet ? parseNum(topSet.distanceMeters ?? "") : null;
-  const accessoryScore =
-    bodyweight && scoringSex && row.name.trim() && tracking !== "reps"
-      ? (tracking === "time"
-          ? holdSeconds
-            ? scoreTimedHold({
-                liftKey: row.name,
-                sets: [
-                  {
-                    weightKg: resolved?.scoringWeightKg ?? 0,
-                    durationSeconds: holdSeconds,
-                  },
-                ],
-                bodyweightKg: bodyweight,
-                sex: scoringSex,
-                age: 28,
-              }).score
-            : null
-          : carryMeters && resolved
-            ? scoreLoadedCarry({
-                liftKey: row.name,
-                sets: [
-                  {
-                    weightKg: resolved.scoringWeightKg,
-                    distanceMeters: carryMeters,
-                  },
-                ],
-                bodyweightKg: bodyweight,
-                sex: scoringSex,
-                age: 28,
-              }).score
-            : null) ?? null
-      : null;
-  const engineScore =
-    accessoryScore ??
-    (resolved && reps && bodyweight && scoringSex
-      ? scoreStrength({
-          liftKey: row.name,
-          history: [],
-          latestSet: {
-            weightKg: resolved.scoringWeightKg,
-            reps,
-            repsInReserve: rir,
-          },
-          bodyweightKg: bodyweight,
-          sex: scoringSex,
-          age: 28,
-          isPremium: false,
-          isBodyweightRelative: resolved.isBodyweightRelative,
-          weightEntryMode: resolved.mode,
-          exerciseName: row.name,
-          attachment: row.attachment,
-        }).score
-      : null);
+
+  /**
+   * Score ONE set, exactly the way the saved score does.
+   *
+   * These ARE the same functions activity-scorer.ts's scoreGymSession() calls
+   * to compute the real, saved score (split-strength-engine's scoreStrength,
+   * and scoreTimedHold/scoreLoadedCarry for holds and carries — see that
+   * file's own comment: calculateStrengthIndexV2 is a "legacy" call kept only
+   * for DOTS/GL/loadScore, explicitly "no longer used for per-exercise
+   * scoring"). Live and saved agree by construction; don't change this to call
+   * a different function.
+   *
+   * Pulled out of the exercise-level calculation it used to be so a single set
+   * can be scored on its own — user request: "I want scores for each
+   * individual set in the lab." The exercise's own figure is this same
+   * function applied to its best set, so a set's number and the exercise's
+   * number can never disagree about the same set.
+   */
+  const scoreSet = useCallback(
+    (set: SetRowState): number | null => {
+      const name = row.name.trim();
+      if (!name || !bodyweight || !scoringSex) return null;
+      // Bodyweight-only sets (pull-ups, dips, push-ups with no added load)
+      // leave the weight field blank — that's a valid "0kg added" entry, not a
+      // missing one, so it must still score off reps-at-bodyweight rather than
+      // silently producing no score.
+      const rawWeight = parseNum(set.weight);
+      const weightKg = isBodyweightOnly
+        ? 0
+        : (rawWeight ?? (row.weightEntryMode === "added" ? 0 : null));
+      const resolved =
+        weightKg !== null ? resolveScoringWeight(weightKg, name, row.weightEntryMode) : null;
+
+      if (tracking === "time") {
+        const holdSeconds = parseNum(set.durationSeconds ?? "");
+        if (!holdSeconds) return null;
+        return (
+          scoreTimedHold({
+            liftKey: name,
+            sets: [{ weightKg: resolved?.scoringWeightKg ?? 0, durationSeconds: holdSeconds }],
+            bodyweightKg: bodyweight,
+            sex: scoringSex,
+            age: 28,
+          }).score ?? null
+        );
+      }
+
+      if (tracking === "distance") {
+        const carryMeters = parseNum(set.distanceMeters ?? "");
+        if (!carryMeters || !resolved) return null;
+        return (
+          scoreLoadedCarry({
+            liftKey: name,
+            sets: [{ weightKg: resolved.scoringWeightKg, distanceMeters: carryMeters }],
+            bodyweightKg: bodyweight,
+            sex: scoringSex,
+            age: 28,
+          }).score ?? null
+        );
+      }
+
+      const setReps = parseNum(set.reps);
+      if (!resolved || !setReps) return null;
+      return scoreStrength({
+        liftKey: name,
+        history: [],
+        latestSet: {
+          weightKg: resolved.scoringWeightKg,
+          reps: setReps,
+          repsInReserve: set.repsInReserve.trim() ? parseNum(set.repsInReserve) : null,
+        },
+        bodyweightKg: bodyweight,
+        sex: scoringSex,
+        age: 28,
+        isPremium: false,
+        isBodyweightRelative: resolved.isBodyweightRelative,
+        weightEntryMode: resolved.mode,
+        exerciseName: name,
+        attachment: row.attachment,
+      }).score;
+    },
+    [
+      row.name,
+      row.weightEntryMode,
+      row.attachment,
+      bodyweight,
+      scoringSex,
+      tracking,
+      isBodyweightOnly,
+    ]
+  );
+
+  /**
+   * Memoised because this is now N scorer calls per exercise instead of one,
+   * and it runs on every keystroke in every set of every exercise on screen.
+   * Keyed on the sets themselves plus everything scoreSet closes over, so a
+   * keystroke in exercise 3 does not rescore exercises 1 and 2.
+   */
+  const setScores = useMemo(() => row.sets.map(scoreSet), [row.sets, scoreSet]);
+  const engineScore = topSet ? scoreSet(topSet) : null;
   const oneRm = topSet ? epley1RM(parseNum(topSet.weight), parseNum(topSet.reps)) : null;
   const relativeBw =
     oneRm && bodyweight && bodyweight > 0
@@ -564,13 +767,13 @@ function ExerciseRow({
     dragX.set(0);
   };
 
-  // Single-line `sm:` grid: index, [weight], count, RIR, RPE, delete.
+  // Single-line `sm:` grid: index, [weight], count, RIR, RPE, score, delete.
   const smGridTemplate = isBodyweightOnly
-    ? "sm:grid-cols-[28px_1fr_0.7fr_0.7fr_40px]"
-    : "sm:grid-cols-[28px_1fr_1fr_0.7fr_0.7fr_40px]";
+    ? "sm:grid-cols-[24px_1fr_84px_84px_44px_36px]"
+    : "sm:grid-cols-[24px_1fr_1fr_84px_84px_44px_36px]";
   const col = isBodyweightOnly
-    ? { idx: 1, weight: 0, count: 2, rir: 3, rpe: 4, del: 5 }
-    : { idx: 1, weight: 2, count: 3, rir: 4, rpe: 5, del: 6 };
+    ? { idx: 1, weight: 0, count: 2, rir: 3, rpe: 4, score: 5, del: 6 }
+    : { idx: 1, weight: 2, count: 3, rir: 4, rpe: 5, score: 6, del: 7 };
 
   return (
     <div className="relative overflow-hidden rounded-2xl">
@@ -595,7 +798,26 @@ function ExerciseRow({
         </motion.div>
       )}
       <motion.div
-        layout
+        /*
+          No `layout`, deliberately.
+          -------------------------------------------------------------------
+          User-reported: "everything moves about when you start typing and it
+          isn't very visually appealing."
+
+          `layout` makes framer-motion animate every size change of this card
+          by scaling it and counter-scaling its children, so while any of that
+          is in flight the whole card — the exercise name, the number you are
+          typing, its label — is drawn stretched. Driven in a browser it was
+          measurable: a 48px-tall weight input rendering at 84px mid-animation.
+          The card changes size for entirely routine reasons (the picker
+          collapsing, a set being added, a derived value arriving), so this was
+          firing constantly during normal logging.
+
+          The chips that used to trigger it now reserve their own space (see
+          StatCell), so most of those size changes are gone anyway — and the
+          ones that remain should just happen, not perform. The enter animation
+          below is unaffected, and so is the drag-to-delete gesture.
+        */
         drag={canRemove ? "x" : false}
         dragConstraints={{ left: -100, right: 0 }}
         dragElastic={0.1}
@@ -735,12 +957,20 @@ function ExerciseRow({
           />
         )}
 
-        <ExerciseHistoryHint
-          history={history}
-          exerciseName={row.name}
-          unit={weightUnit}
-          onUse={tracking === "reps" && !isBodyweightOnly ? useHistorySet : undefined}
-        />
+        {/* min-h holds this row's height open while the lookup is in flight,
+            so the chips land in a gap that already existed instead of shoving
+            the set rows 70px down the page a third of a second after the
+            exercise was picked — which is exactly when the athlete has already
+            tapped into the weight box. Collapses to nothing once we know there
+            is no history to show. See useExerciseHistory's `pending`. */}
+        <div className={cn(historyPending && "min-h-[36px]")}>
+          <ExerciseHistoryHint
+            history={history}
+            exerciseName={row.name}
+            unit={weightUnit}
+            onUse={tracking === "reps" && !isBodyweightOnly ? useHistorySet : undefined}
+          />
+        </div>
 
         <div className="space-y-2">
           {/* Column headers belong to the single-line sm layout only. The
@@ -754,18 +984,25 @@ function ExerciseRow({
             <span>Set</span>
             {!isBodyweightOnly && <span>{weightUnit}</span>}
             <span>{countLabel}</span>
-            <span>RIR</span>
-            <span>RPE</span>
+            {/* RIR and RPE label themselves inside their own pickers now
+                ("RPE 8", not a bare "8"), so repeating them here would just be
+                the same word twice in a column 84px wide. */}
+            <span />
+            <span />
+            <span className="text-right">Score</span>
             <span />
           </div>
-          {/* One set = one tap target group. On mobile the row splits in two:
-              the numbers you came to type (weight, reps) get the full width,
-              and the effort ratings sit on a slim second line — still on
-              screen, never behind a disclosure, just no longer squeezing four
-              inputs into 223px. That old five-column grid gave RIR and RPE
-              ~24px of usable text width each at 375px, which clips a
-              two-digit number. At `sm` the wrappers become `display: contents`
-              and every cell rejoins the original single-line grid. */}
+          {/* One set = one tap target group. On mobile the row is two lines,
+              ALWAYS two lines: the numbers you came to type (weight, reps) on
+              the first, the effort pickers and this set's own score on the
+              second. Still on screen, never behind a disclosure — and, unlike
+              the free-text boxes they replace, RIR and RPE are now pickers
+              narrow enough that nothing has to be squeezed to fit them. At
+              `sm` the wrappers become `display: contents` and every cell
+              rejoins one single-line grid.
+
+              Nothing in this row appears or disappears as values are typed.
+              That is the point of it. */}
           {row.sets.map((set, setIndex) => {
             const countInput =
               tracking === "time" ? (
@@ -851,96 +1088,137 @@ function ExerciseRow({
                     <Trash2 className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
                   </button>
                 </div>
-                <div className="mt-2 flex items-center gap-2 pl-8 sm:mt-0 sm:contents">
-                  <div
+                <div className="mt-1.5 flex items-center gap-2 pl-8 sm:mt-0 sm:contents">
+                  <EffortSelect
+                    name="RIR"
+                    ariaLabel={`Set ${setIndex + 1} reps in reserve — optional`}
+                    value={set.repsInReserve}
+                    options={RIR_OPTIONS}
+                    invalid={!!errors[`ex.${row.id}.set.${set.id}.rir`]}
+                    onChange={(v) => updateSet(set.id, { repsInReserve: v })}
+                    className={cn("min-w-0 flex-1 sm:row-start-1", SM_COL[col.rir])}
+                  />
+                  <EffortSelect
+                    name="RPE"
+                    ariaLabel={`Set ${setIndex + 1} RPE — optional`}
+                    value={set.rpe}
+                    options={RPE_OPTIONS}
+                    invalid={!!errors[`ex.${row.id}.set.${set.id}.rpe`]}
+                    onChange={(v) => updateSet(set.id, { rpe: v })}
+                    className={cn("min-w-0 flex-1 sm:row-start-1", SM_COL[col.rpe])}
+                  />
+                  {/*
+                    This set's own score. User request: "I want scores for each
+                    individual set in the lab."
+
+                    Same scorer as the saved score, applied to this one set —
+                    see scoreSet. It is NOT a component of a total: the
+                    exercise's figure below is its best set and the session
+                    index is built the same way, so these numbers are never
+                    summed or averaged anywhere. The caption under this list
+                    says so in words; the exercise footer's own label ("Best
+                    set") says it again where the two sit closest together.
+
+                    Always rendered, showing an em dash until the set is
+                    complete enough to score, so a number arriving mid-set
+                    changes a character and not the height of the row.
+                  */}
+                  <span
+                    aria-label={`Set ${setIndex + 1} score`}
+                    title="This set on its own. The exercise is scored from your heaviest set, not from a total or an average of these."
                     className={cn(
-                      "flex min-w-0 flex-1 items-center gap-1.5 sm:row-start-1 sm:block",
-                      SM_COL[col.rir]
+                      "shrink-0 text-right text-xs font-bold tabular-nums sm:row-start-1",
+                      setScores[setIndex] !== null ? "text-gym-accent" : "text-muted/35",
+                      "w-11",
+                      SM_COL[col.score]
                     )}
                   >
-                    <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-muted/60 sm:hidden">
-                      RIR
-                    </span>
-                    <UnitInput
-                      aria-label={`Set ${setIndex + 1} reps in reserve`}
-                      value={set.repsInReserve}
-                      placeholder="0"
-                      invalid={!!errors[`ex.${row.id}.set.${set.id}.rir`]}
-                      onChange={(e) => updateSet(set.id, { repsInReserve: e.target.value })}
-                      wrapperClassName="flex-1"
-                      className="h-10 px-3 sm:h-10 sm:px-4"
-                    />
-                  </div>
-                  <div
-                    className={cn(
-                      "flex min-w-0 flex-1 items-center gap-1.5 sm:row-start-1 sm:block",
-                      SM_COL[col.rpe]
-                    )}
-                  >
-                    <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-muted/60 sm:hidden">
-                      RPE
-                    </span>
-                    <UnitInput
-                      aria-label={`Set ${setIndex + 1} RPE`}
-                      value={set.rpe}
-                      placeholder="8"
-                      invalid={!!errors[`ex.${row.id}.set.${set.id}.rpe`]}
-                      onChange={(e) => updateSet(set.id, { rpe: e.target.value })}
-                      wrapperClassName="flex-1"
-                      className="h-10 px-3 sm:h-10 sm:px-4"
-                    />
-                  </div>
+                    {setScores[setIndex] !== null ? formatIndex(setScores[setIndex]!) : "—"}
+                  </span>
                 </div>
               </div>
             );
           })}
+          {/* Said once per exercise, right under the numbers it is about, so
+              nobody reads the column as something that adds up — and so nobody
+              expects the exercise's figure to be the largest of them either.
+              It is the score of the HEAVIEST set (highest estimated 1RM, which
+              is how bestSet picks it at save time too), and on a set of 3 at a
+              near-max load that can quite legitimately score lower than a set
+              of 8 further down the card. */}
+          <p className="px-1 text-[10px] leading-tight text-muted/50">
+            Each set is scored on its own. The exercise is scored from your
+            heaviest set — never a total or an average of these.
+          </p>
           <FieldError error={errors[`ex.${row.id}.sets`]} />
-          <div className="flex gap-2">
+          {/* Fixed two-column grid, not a flex row that reflows. "Repeat" only
+              means anything once there is a filled set to copy, and it used to
+              appear at that moment — shrinking "Add set" from 325px to 225px
+              under the athlete's thumb on the keystroke that completed set 1.
+              Its column is always there now; only its contents arrive. */}
+          <div className="grid grid-cols-[1fr_auto] gap-2">
             <button
               type="button"
               onClick={addSet}
-              className="flex min-h-[44px] flex-1 items-center justify-center gap-1.5 rounded-xl border border-dashed border-gym-border/50 text-sm font-semibold text-gym-accent transition-colors hover:border-gym-accent/50 hover:bg-gym-accent/5"
+              className="flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl border border-dashed border-gym-border/50 text-sm font-semibold text-gym-accent transition-colors hover:border-gym-accent/50 hover:bg-gym-accent/5"
             >
               <Plus className="h-4 w-4" />
               Add set
             </button>
-            {lastFilledSet && (
-              <button
-                type="button"
-                onClick={repeatLastSet}
-                title="Add a set with the same load and volume as the last one"
-                className="flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-xl border border-white/[0.08] px-3 text-sm font-medium text-muted transition-colors hover:text-foreground"
-              >
-                <Copy className="h-3.5 w-3.5" />
-                Repeat
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={repeatLastSet}
+              title="Add a set with the same load and volume as the last one"
+              // Hidden rather than unmounted: the column keeps its width, so
+              // nothing beside it moves when the first set gets filled in.
+              aria-hidden={!lastFilledSet}
+              tabIndex={lastFilledSet ? undefined : -1}
+              className={cn(
+                "flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-xl border border-white/[0.08] px-3 text-sm font-medium text-muted transition-colors hover:text-foreground",
+                !lastFilledSet && "invisible pointer-events-none"
+              )}
+            >
+              <Copy className="h-3.5 w-3.5" />
+              Repeat
+            </button>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <DerivedChip label="Est. 1RM" value={oneRm ? `${oneRm} kg` : null} tone="strength" />
-          <DerivedChip
+        {/* The exercise's derived numbers. One fixed-height row of four slots
+            that are always present — this used to be three chips that did not
+            exist until their values did, growing the row from 50px to 76px
+            mid-set. See StatCell. */}
+        <div className="grid grid-cols-4 gap-2 rounded-xl bg-white/[0.02] px-2.5 py-1.5">
+          <StatCell label="Est. 1RM" value={oneRm ? `${oneRm} kg` : null} />
+          <StatCell
             label="× BW"
             value={relativeBw ? formatRelativeStrength(relativeBw, true) : null}
-            tone="strength"
           />
-          <DerivedChip label="Volume" value={volume > 0 ? `${Math.round(volume)} kg` : null} tone="strength" />
-          {/* User feedback: "why is the scoring system in the lab when
-              logging exercises still out of 999 not 99.9" — engineScore
-              is the same internal 0-999 scale as every other score in the
-              app; every other surface (dashboard, success screen, etc.)
-              runs it through formatIndex() before display, this one
-              didn't, so it showed the raw internal number instead of the
-              app-wide 0-99.9 display scale. */}
-          <span
-            className={cn(
-              "ml-auto inline-flex items-center rounded-md px-2 py-0.5 text-sm font-bold tabular-nums",
-              engineScore ? "text-gym-accent bg-gym-accent/10" : "text-gym-muted/50"
-            )}
-          >
-            {engineScore !== null ? formatIndex(engineScore) : "—"}
-          </span>
+          <StatCell label="Volume" value={volume > 0 ? `${Math.round(volume)} kg` : null} />
+          {/* Labelled "Top set", not left as a bare number: with a score now
+              sitting on every set row above, an unlabelled figure down here
+              reads as their total.
+
+              "Top set" and not "best set" — this is the score of the set with
+              the highest estimated 1RM, which is the set bestSet() hands the
+              engine when the workout is saved. That is not always the
+              highest-scoring set on the card, so calling it "best" would make
+              a correct number look like a bug the first time a heavy triple
+              scores under a moderate set of eight.
+
+              User feedback: "why is the scoring system in the lab when logging
+              exercises still out of 999 not 99.9" — engineScore is the same
+              internal 0-999 scale as every other score in the app; every other
+              surface (dashboard, success screen, etc.) runs it through
+              formatIndex() before display, this one didn't, so it showed the
+              raw internal number instead of the app-wide 0-99.9 display
+              scale. */}
+          <StatCell
+            label="Top set"
+            emphasis
+            value={engineScore !== null ? formatIndex(engineScore) : null}
+            className="items-end text-right"
+          />
         </div>
 
         {noteOpen || row.notes ? (

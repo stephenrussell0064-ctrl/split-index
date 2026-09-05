@@ -494,48 +494,13 @@ export function RpeScale({
   );
 }
 
-/** Live derived metric chip (pace / split / speed / 1RM). */
-export function DerivedChip({
-  label,
-  value,
-  tone = "accent",
-}: {
-  label: string;
-  value: string | null;
-  tone?: "accent" | "endurance" | "strength";
-}) {
-  return (
-    <AnimatePresence initial={false} mode="popLayout">
-      {value && (
-        <motion.div
-          key={label}
-          layout
-          initial={{ opacity: 0, scale: 0.92, y: 4 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.92, y: 4 }}
-          transition={{ type: "spring", bounce: 0.3, duration: 0.4 }}
-          className={cn(
-            "inline-flex items-baseline gap-2 rounded-full border px-3.5 py-1.5",
-            tone === "accent" && "border-accent/25 bg-accent/10",
-            tone === "endurance" && "border-endurance/25 bg-endurance/10",
-            tone === "strength" && "border-strength/25 bg-strength/10"
-          )}
-        >
-          <span className="text-[10px] font-medium uppercase tracking-wider text-muted">
-            {label}
-          </span>
-          <span
-            className={cn(
-              "text-sm font-semibold tabular-nums",
-              tone === "accent" && "text-accent",
-              tone === "endurance" && "text-endurance",
-              tone === "strength" && "text-strength"
-            )}
-          >
-            {value}
-          </span>
-        </motion.div>
-      )}
-    </AnimatePresence>
-  );
-}
+/*
+ * DerivedChip used to live here: a rounded chip that rendered NOTHING until
+ * its value was parseable and then sprang itself in (AnimatePresence +
+ * `layout`). Its only caller was the gym form, where that behaviour was the
+ * main cause of "everything moves about when you start typing" — five of them
+ * appearing on one keystroke grew the page 136px and moved the row being typed
+ * into down 83px, measured at 375px. gym-form.tsx's StatCell replaced it with
+ * an always-present, fixed-height slot that shows an em dash until there is a
+ * value, so nothing removed it here — it simply has no callers left.
+ */

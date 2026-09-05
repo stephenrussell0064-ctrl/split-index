@@ -22,6 +22,7 @@ import {
   validateAndBuildPayload,
   totalDurationSeconds,
   splitSecondsFromState,
+  formatClock,
   parseNum,
   summarizeErrors,
   SPORT_FIELDS,
@@ -77,6 +78,52 @@ const ERROR_KEY_MAP: Partial<Record<keyof WorkoutFormState, string>> = {
 };
 
 const sportIndexOf = (sport: SportType) => SPORTS.findIndex((s) => s.id === sport);
+
+const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
+
+/**
+ * What clearing this form actually throws away, in the athlete's own units.
+ *
+ * "Are you sure?" is not a warning — it asks a question the athlete cannot
+ * answer without remembering what they typed. Naming the contents ("3
+ * exercises and 11 sets") is, and it is the shape the GPS run's discard
+ * already uses ("2.31km and 12:04 will be lost").
+ *
+ * Built as whole strings rather than interleaved JSX so a space can't be
+ * stripped at a text-node boundary — the GPS warning shipped as
+ * "02:21will be lost" on device for exactly that reason.
+ */
+function describeWorkoutContents(
+  sport: SportType | null,
+  state: WorkoutFormState
+): string {
+  if (sport === "gym") {
+    const exercises = state.exercises.filter((row) => row.name.trim() !== "");
+    const sets = state.exercises.reduce(
+      (total, row) =>
+        total +
+        row.sets.filter(
+          (s) =>
+            s.weight.trim() !== "" ||
+            s.reps.trim() !== "" ||
+            (s.durationSeconds ?? "").trim() !== "" ||
+            (s.distanceMeters ?? "").trim() !== ""
+        ).length,
+      0
+    );
+    if (exercises.length === 0 && sets === 0) return "Everything you have typed here";
+    if (sets === 0) return plural(exercises.length, "exercise");
+    if (exercises.length === 0) return plural(sets, "logged set");
+    return `${plural(exercises.length, "exercise")} and ${plural(sets, "logged set")}`;
+  }
+
+  const seconds = totalDurationSeconds(state);
+  const parts = [
+    state.distance.trim() !== "" ? `${state.distance.trim()} ${SPORT_FIELDS[sport ?? "running"].distance ?? ""}`.trim() : null,
+    seconds > 0 ? formatClock(seconds) : null,
+  ].filter((part): part is string => part !== null);
+  return parts.length > 0 ? parts.join(" and ") : "Everything you have typed here";
+}
 
 function distanceMetersFromState(state: WorkoutFormState, sport: SportType): number | null {
   const raw = parseNum(state.distance);
@@ -154,6 +201,12 @@ export function ActivityForm({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [result, setResult] = useState<ScoreResultSummary | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  /**
+   * Two-tap guard on the header's clear control — see the button itself.
+   * Reset whenever the sport changes so a confirmation opened on one sport
+   * can't be completed against another.
+   */
+  const [confirmingReset, setConfirmingReset] = useState(false);
   const [savingTemplate, setSavingTemplate] = useState(false);
   const initialSportApplied = useRef(false);
   const editStateApplied = useRef(false);
@@ -217,6 +270,7 @@ export function ActivityForm({
       }
       setErrors({});
       setSubmitError(null);
+      setConfirmingReset(false);
       setSport(next);
       setView("form");
     },
@@ -443,6 +497,7 @@ export function ActivityForm({
 
   const resetForm = () => {
     if (!sport) return;
+    setConfirmingReset(false);
     setStateMap((prev) => ({
       ...prev,
       [sport]: createDefaultState(sport, profileWeightKg),
@@ -512,12 +567,12 @@ export function ActivityForm({
             transition={{ duration: 0.25 }}
           >
             {/* Header */}
-            <div className="mb-6">
+            <div className="mb-3">
               {!isEdit && zoneMode === "generic" ? (
                 <button
                   type="button"
                   onClick={backToPicker}
-                  className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-foreground min-h-[44px]"
+                  className="mb-2 inline-flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-foreground min-h-[40px]"
                 >
                   <ArrowLeft className="h-4 w-4" />
                   All sports
@@ -526,7 +581,7 @@ export function ActivityForm({
                 <button
                   type="button"
                   onClick={backToPicker}
-                  className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-foreground min-h-[44px]"
+                  className="mb-2 inline-flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-foreground min-h-[40px]"
                 >
                   <ArrowLeft className="h-4 w-4" />
                   Change sport
@@ -534,7 +589,7 @@ export function ActivityForm({
               ) : !isEdit ? (
                 <Link
                   href={zoneMode === "gym" ? "/gym" : "/cardio"}
-                  className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-foreground min-h-[44px]"
+                  className="mb-2 inline-flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-foreground min-h-[40px]"
                 >
                   <ArrowLeft className="h-4 w-4" />
                   Back to {zoneMode === "gym" ? "The Lab" : "The Engine"}
@@ -542,16 +597,21 @@ export function ActivityForm({
               ) : (
                 <Link
                   href={activityId ? `/activities/${activityId}` : "/activities"}
-                  className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-foreground min-h-[44px]"
+                  className="mb-2 inline-flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-foreground min-h-[40px]"
                 >
                   <ArrowLeft className="h-4 w-4" />
                   Back to activity
                 </Link>
               )}
 
+              {/* p-3/mb-3, not p-4/mb-4, and one type step smaller on the
+                  title. Part of the same complaint as the timer and save bars:
+                  at 375×812 the header, the timer and the date card together
+                  pushed the first exercise to y=790 — below the fold, on a
+                  screen whose entire job is the exercise list. */}
               <div
                 className={cn(
-                  "rounded-2xl p-4 mb-4",
+                  "rounded-2xl p-3 mb-3",
                   activeSportMeta?.category === "strength"
                     ? "bg-gym-zone/40 border border-gym-border"
                     : "bg-cardio-zone/20 border border-cardio-border"
@@ -569,7 +629,7 @@ export function ActivityForm({
                     >
                       {activeSportMeta?.category === "strength" ? "The Lab" : "The Engine"}
                     </p>
-                    <h1 className="headline-tight text-2xl font-bold tracking-tight sm:text-3xl">
+                    <h1 className="headline-tight text-xl font-bold tracking-tight sm:text-2xl">
                       {activeSportMeta?.icon}{" "}
                       <span className="ml-1">{activeSportMeta?.name}</span>
                     </h1>
@@ -586,16 +646,62 @@ export function ActivityForm({
                       Draft restored
                     </span>
                   )}
-                  {isStateDirty(currentState) && (
-                    <button
-                      type="button"
-                      onClick={resetForm}
-                      className="inline-flex items-center gap-1 text-[11px] font-medium uppercase tracking-wider text-muted/70 transition-colors hover:text-foreground"
-                    >
-                      <RotateCcw className="h-3 w-3" />
-                      Reset
-                    </button>
-                  )}
+                  {/*
+                    User feedback: "The reset button at the top of the lab to
+                    reset the exercises selected should be clearer as to what
+                    it is resetting and more clear to the user to click."
+
+                    Two things were wrong. It said "Reset", which names no
+                    object at all — and the only other reset on the screen was
+                    the timer's, so the two were readable as the same control.
+                    And it fired immediately: one tap on a 11px word threw away
+                    every exercise, set, weight and rep on the page with no
+                    warning and nothing to undo it.
+
+                    It now says what it destroys, and it counts what is about
+                    to be lost before doing it — the same shape as the GPS
+                    run's discard, which names the distance and time it is
+                    about to delete rather than asking an abstract "are you
+                    sure?".
+                  */}
+                  {isStateDirty(currentState) &&
+                    (confirmingReset ? (
+                      <div className="flex flex-col items-end gap-1.5 rounded-lg border border-danger/30 bg-danger/10 px-2.5 py-2">
+                        <p className="max-w-[190px] text-right text-[11px] leading-snug text-danger">
+                          {`Clear this workout? ${describeWorkoutContents(sport, currentState)} will be lost.`}
+                        </p>
+                        <div className="flex gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setConfirmingReset(false)}
+                            className="min-h-[32px] rounded-md border border-white/15 px-2.5 text-[11px] font-semibold text-foreground"
+                          >
+                            Keep it
+                          </button>
+                          <button
+                            type="button"
+                            onClick={resetForm}
+                            className="min-h-[32px] rounded-md bg-danger px-2.5 text-[11px] font-semibold text-white"
+                          >
+                            Clear
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setConfirmingReset(true)}
+                        title={
+                          sport === "gym"
+                            ? "Empty this workout — every exercise and set you have logged here"
+                            : "Empty this form and start over"
+                        }
+                        className="inline-flex min-h-[32px] items-center gap-1 rounded-md border border-white/10 px-2 text-[11px] font-semibold uppercase tracking-wider text-muted/80 transition-colors hover:border-danger/40 hover:text-danger"
+                      >
+                        <RotateCcw className="h-3 w-3" aria-hidden />
+                        {sport === "gym" ? "Clear workout" : "Clear form"}
+                      </button>
+                    ))}
                 </div>
                 </div>
               </div>
@@ -675,7 +781,15 @@ export function ActivityForm({
                 readable mid-typing. */}
             <div
               style={keyboardInset > 0 ? { bottom: keyboardInset + 8 } : undefined}
-              className="mode-surface-elevated sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom))] lg:bottom-4 z-20 -mx-1 mt-6 space-y-3 rounded-2xl border border-white/[0.08] p-4 backdrop-blur-md lg:static lg:mx-0 lg:border-0 lg:bg-transparent lg:p-0 lg:backdrop-blur-none">
+              /* User feedback: "I want ... the save workout banners at the
+                 bottom to be much smaller as currently they take up way too
+                 much of the screen and this disrupts the dynamic when logging
+                 activities." Measured at 375×812 this bar was 107px — 13% of
+                 the phone, permanently, on top of the timer's 22% at the other
+                 end. Tighter padding, a 46px button instead of 52px, and a
+                 draft line at 10px bring it to ~76px without removing
+                 anything from it. */
+              className="mode-surface-elevated sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom))] lg:bottom-4 z-20 -mx-1 mt-4 space-y-1.5 rounded-2xl border border-white/[0.08] p-2 backdrop-blur-md lg:static lg:mx-0 lg:border-0 lg:bg-transparent lg:p-0 lg:backdrop-blur-none">
               <AnimatePresence initial={false}>
                 {submitError && (
                   <motion.div
@@ -684,32 +798,42 @@ export function ActivityForm({
                     exit={{ opacity: 0, y: 6, height: 0 }}
                     className="overflow-hidden"
                   >
-                    <div className="rounded-xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
-                      <div className="flex items-center gap-2.5">
-                        <AlertCircle className="h-4 w-4 shrink-0" />
-                        {submitError}
+                    <div className="rounded-lg border border-danger/30 bg-danger/10 px-2.5 py-1.5 text-[12px] leading-snug text-danger">
+                      <div className="flex items-start gap-2">
+                        <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                        <span>{submitError}</span>
                       </div>
                       <ErrorSummary errors={errors} state={currentState} />
                     </div>
                   </motion.div>
                 )}
               </AnimatePresence>
+              {/* size="sm" is h-11 — 44px, still a full tap target, where
+                  size="lg" was a fixed h-14. A 56px button is right when it is
+                  the only thing on the screen; this one is pinned over the
+                  exercise list for the whole session. */}
               <Button
-                className="w-full min-h-[52px] text-base"
-                size="lg"
+                className="w-full text-[15px]"
+                size="sm"
                 loading={submitting}
                 onClick={handleSubmit}
               >
                 <Zap className="h-4 w-4" />
                 {isEdit ? "Save changes" : "Score workout"}
               </Button>
+              {/* Fixed height, so the draft line moving between "Saving…",
+                  "Draft saved 40s ago" and nothing at all doesn't resize the
+                  bar — which, being sticky, would move the whole page under
+                  the athlete's thumb while they type. */}
               {!isEdit && (
-                <SaveState
-                  status={draftStatus}
-                  lastSavedAt={lastSavedAt}
-                  dirty={isStateDirty(currentState)}
-                  onRetry={retryDraft}
-                />
+                <div className="flex min-h-[16px] items-center justify-center">
+                  <SaveState
+                    status={draftStatus}
+                    lastSavedAt={lastSavedAt}
+                    dirty={isStateDirty(currentState)}
+                    onRetry={retryDraft}
+                  />
+                </div>
               )}
               {isEdit && activityId && (
                 <Button
@@ -794,22 +918,26 @@ function ErrorSummary({
   };
 
   return (
-    <div className="mt-2 border-t border-danger/20 pt-2">
-      <ul className="space-y-0.5 text-[12px]">
-        {items.slice(0, 5).map((item) => (
+    /* Three, not five. This block sits inside the sticky bar, so every line it
+       adds is a line of the workout the athlete can no longer see while
+       fixing it — and "Take me to the first one" walks them through the rest
+       anyway. */
+    <div className="mt-1.5 border-t border-danger/20 pt-1.5">
+      <ul className="space-y-0.5 text-[11px] leading-snug">
+        {items.slice(0, 3).map((item) => (
           <li key={item.key} className="flex flex-wrap gap-x-1.5">
             <span className="font-semibold">{item.label}</span>
             <span className="text-danger/80">{item.message}</span>
           </li>
         ))}
-        {items.length > 5 && (
-          <li className="text-danger/70">and {items.length - 5} more</li>
+        {items.length > 3 && (
+          <li className="text-danger/70">and {items.length - 3} more</li>
         )}
       </ul>
       <button
         type="button"
         onClick={goToFirstInvalid}
-        className="mt-1.5 min-h-[36px] text-[12px] font-semibold underline underline-offset-2"
+        className="mt-1 min-h-[28px] text-[11px] font-semibold underline underline-offset-2"
       >
         Take me to the first one
       </button>
@@ -851,7 +979,7 @@ function SaveState({
 
   if (status === "error") {
     return (
-      <div className="flex items-center justify-center gap-2 text-[11px] font-medium text-danger">
+      <div className="flex items-center justify-center gap-2 text-[10px] font-medium text-danger">
         <AlertCircle className="h-3.5 w-3.5 shrink-0" aria-hidden />
         <span>Couldn&apos;t save your draft</span>
         <button
@@ -869,7 +997,7 @@ function SaveState({
     return (
       <p
         aria-live="polite"
-        className="flex items-center justify-center gap-1.5 text-[11px] font-medium text-muted"
+        className="flex items-center justify-center gap-1.5 text-[10px] font-medium text-muted"
       >
         <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" aria-hidden />
         Saving your draft…
@@ -881,9 +1009,9 @@ function SaveState({
     return (
       <p
         aria-live="polite"
-        className="flex items-center justify-center gap-1.5 text-[11px] font-medium text-muted"
+        className="flex items-center justify-center gap-1.5 text-[10px] font-medium text-muted"
       >
-        <Check className="h-3.5 w-3.5 text-success" aria-hidden />
+        <Check className="h-3 w-3 text-success" aria-hidden />
         Draft saved {formatAgo(lastSavedAt)} — safe to close the app
       </p>
     );
@@ -891,8 +1019,8 @@ function SaveState({
 
   if (dirty) {
     return (
-      <p className="flex items-center justify-center gap-1.5 text-[11px] font-medium text-muted/70">
-        <CloudUpload className="h-3.5 w-3.5" aria-hidden />
+      <p className="flex items-center justify-center gap-1.5 text-[10px] font-medium text-muted/70">
+        <CloudUpload className="h-3 w-3" aria-hidden />
         Saving automatically as you type
       </p>
     );

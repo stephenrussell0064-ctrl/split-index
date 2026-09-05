@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Play, Pause, RotateCcw, Timer as TimerIcon } from "lucide-react";
+import { ArrowDownToLine, Play, Pause, RotateCcw, Timer as TimerIcon, X } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 import {
   isLiveActivitySupported,
@@ -143,6 +143,18 @@ export function GymWorkoutTimer({
   /** Absolute epoch ms the rest countdown ends at; null when no rest is active. */
   const [restEndMs, setRestEndMs] = useState<number | null>(() => loadPersistedState()?.restEndMs ?? null);
   const [customRestInput, setCustomRestInput] = useState("");
+  /**
+   * The custom-rest field is opened on demand and takes the presets' place on
+   * the same line, rather than sitting there permanently as a third row.
+   *
+   * User feedback: "I want the timer banner at the top ... to be much smaller
+   * as currently [it takes] up way too much of the screen and this disrupts
+   * the dynamic when logging activities." A labelled input and a Go button,
+   * always on screen, was the single biggest piece of that banner and the one
+   * used least often. It is still one tap away and still on screen — the "+"
+   * pill sits at the end of the preset row — not buried in a menu.
+   */
+  const [customRestOpen, setCustomRestOpen] = useState(false);
   const liveActivityStartedRef = useRef(loadPersistedState()?.hasLiveActivity ?? false);
   const alertFiredRef = useRef(false);
   /** Bumped once a second purely to force a re-render while something is ticking — the actual numbers are always recomputed fresh from Date.now(), never accumulated from this. */
@@ -345,6 +357,7 @@ export function GymWorkoutTimer({
     }
     startRest(seconds);
     setCustomRestInput("");
+    setCustomRestOpen(false);
   }
 
   function dismissRest() {
@@ -361,113 +374,180 @@ export function GymWorkoutTimer({
     }
   }
 
+  /**
+   * Two fixed rows, ~88px, down from 181px — 22% of a 375×812 phone, measured.
+   *
+   * User feedback: "I want the timer banner at the top ... to be much smaller
+   * as currently [it takes] up way too much of the screen and this disrupts
+   * the dynamic when logging activities."
+   *
+   * What went, and where it went instead — nothing is behind a menu:
+   *  · The 14×14 play button and the 3xl clock are now a 9×9 button and an xl
+   *    clock on ONE line with the reset control, instead of a 56px-tall block
+   *    of their own.
+   *  · The rest presets keep their own line but it is a single non-wrapping
+   *    scroll strip, so it costs a constant 32px whatever is in it.
+   *  · The custom-rest input and its Go button now open on demand from the
+   *    "Custom" pill at the end of that strip, in the strip's own place.
+   *  · "Use as duration" takes over the slot holding the word "Workout" the
+   *    moment there is time to hand over, so it costs no height at all and the
+   *    timer does not change size when the clock passes 0:00.
+   *
+   * The second row swaps between presets and the live rest countdown; both are
+   * h-8, so a rest starting or ending never moves the exercise list under it.
+   */
   return (
-    <div className="space-y-3 rounded-2xl border border-gym-border/40 bg-gym-bg/70 p-3.5 shadow-lg backdrop-blur-md">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={toggleRunning}
-            aria-label={running ? "Pause workout timer" : "Start workout timer"}
-            className={cn(
-              "flex h-14 w-14 shrink-0 items-center justify-center rounded-full transition-all",
-              running
-                ? "bg-warning/20 text-warning shadow-[0_0_0_3px_rgba(234,179,8,0.15)]"
-                : "bg-gym-accent/20 text-gym-accent shadow-[0_0_0_3px_rgba(0,230,95,0.12)]"
-            )}
-          >
-            {running ? (
-              <Pause className="h-5.5 w-5.5" />
-            ) : (
-              <Play className="h-5.5 w-5.5" fill="currentColor" />
-            )}
-          </button>
-          <div>
-            <p className="micro-label text-gym-muted">Workout time</p>
-            <p className="index-display text-3xl font-bold tabular-nums leading-tight text-gym-text">
-              {formatElapsed(elapsed)}
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          {elapsed > 0 && (
-            <button
-              type="button"
-              onClick={() => onUseDuration(elapsed)}
-              className="rounded-full border border-gym-accent/30 px-3.5 py-2 text-xs font-semibold text-gym-accent transition-colors hover:bg-gym-accent/10"
-            >
-              Use as duration
-            </button>
+    <div className="rounded-2xl border border-gym-border/40 bg-gym-bg/80 px-2.5 py-2 shadow-lg backdrop-blur-md">
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={toggleRunning}
+          aria-label={running ? "Pause workout timer" : "Start workout timer"}
+          className={cn(
+            "flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-all",
+            running
+              ? "bg-warning/20 text-warning shadow-[0_0_0_2px_rgba(234,179,8,0.15)]"
+              : "bg-gym-accent/20 text-gym-accent shadow-[0_0_0_2px_rgba(0,230,95,0.12)]"
           )}
+        >
+          {running ? (
+            <Pause className="h-4 w-4" />
+          ) : (
+            <Play className="h-4 w-4" fill="currentColor" />
+          )}
+        </button>
+        <p className="index-display text-xl font-bold leading-none tabular-nums text-gym-text">
+          {formatElapsed(elapsed)}
+        </p>
+        {/* One slot, two occupants, same row height either way: the word that
+            says what the clock is, until there is time on it worth handing to
+            the duration field.
+
+            "Use as duration" was tried in the rest strip below — it fits, but
+            that strip scrolls horizontally, and behind five rest pills the
+            button was off the right-hand edge and effectively gone. It belongs
+            next to the number it is offering. */}
+        {elapsed > 0 ? (
           <button
             type="button"
-            onClick={resetStopwatch}
-            aria-label="Reset workout timer"
-            className="flex h-10 w-10 items-center justify-center rounded-full text-gym-muted transition-colors hover:bg-white/5 hover:text-gym-text"
+            onClick={() => onUseDuration(elapsed)}
+            title="Fill this workout's total duration from the timer"
+            className="flex min-h-[32px] shrink-0 items-center gap-1 rounded-full border border-gym-accent/30 px-2 text-[11px] font-semibold text-gym-accent transition-colors hover:bg-gym-accent/10"
           >
-            <RotateCcw className="h-4.5 w-4.5" />
+            <ArrowDownToLine className="h-3 w-3" aria-hidden />
+            Use as duration
           </button>
-        </div>
+        ) : (
+          <span className="micro-label text-gym-muted/70">Workout</span>
+        )}
+        {/*
+          User feedback: "The reset button at the top of the lab to reset the
+          exercises selected should be clearer as to what it is resetting and
+          more clear to the user to click."
+
+          It resets the TIMER — not the exercises — and it said so nowhere: a
+          bare circular arrow, sat next to the clock, which is exactly what an
+          athlete reads as "reset something about this workout". It now carries
+          the word "Timer" beside the icon, so the only unlabelled reset on the
+          screen is gone. The control that really does clear the exercises is
+          in the page header and now says "Clear workout" (see
+          activity-form.tsx), so the two can no longer be confused for each
+          other.
+        */}
+        <button
+          type="button"
+          onClick={resetStopwatch}
+          aria-label="Reset the workout timer — this does not clear your exercises"
+          title="Reset the workout timer. Your logged exercises are not affected."
+          className="ml-auto flex min-h-[36px] shrink-0 items-center gap-1 rounded-full border border-gym-border/50 px-2.5 text-[11px] font-semibold text-gym-muted transition-colors hover:bg-white/5 hover:text-gym-text"
+        >
+          <RotateCcw className="h-3.5 w-3.5" aria-hidden />
+          Reset timer
+        </button>
       </div>
 
-      <div className="border-t border-gym-border/20 pt-3">
+      <div className="mt-1.5 flex h-8 items-center gap-1.5 overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {restActive ? (
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <TimerIcon className={cn("h-4.5 w-4.5", restDone ? "text-danger" : "text-gym-accent")} />
-              <p
-                className={cn(
-                  "index-display text-2xl font-bold tabular-nums",
-                  restDone ? "text-danger" : "text-gym-text"
-                )}
-              >
-                {restDone ? "Rest over!" : formatMMSS(restRemaining ?? 0)}
-              </p>
-            </div>
+          <>
+            <TimerIcon
+              className={cn("h-4 w-4 shrink-0", restDone ? "text-danger" : "text-gym-accent")}
+              aria-hidden
+            />
+            <p
+              className={cn(
+                "index-display shrink-0 text-base font-bold tabular-nums",
+                restDone ? "text-danger" : "text-gym-text"
+              )}
+            >
+              {restDone ? "Rest over!" : formatMMSS(restRemaining ?? 0)}
+            </p>
             <button
               type="button"
               onClick={dismissRest}
-              className="rounded-full border border-white/10 px-3.5 py-1.5 text-xs font-medium text-gym-muted transition-colors hover:text-gym-text"
+              className="ml-auto shrink-0 rounded-full border border-white/10 px-3 py-1 text-[11px] font-medium text-gym-muted transition-colors hover:text-gym-text"
             >
               Dismiss
             </button>
-          </div>
+          </>
+        ) : customRestOpen ? (
+          <>
+            {/* User feedback: "allow for custom time of rest on timer in the lab" */}
+            <input
+              type="number"
+              inputMode="numeric"
+              autoFocus
+              aria-label="Custom rest in seconds"
+              min={MIN_CUSTOM_REST_SECONDS}
+              max={MAX_CUSTOM_REST_SECONDS}
+              placeholder="Seconds"
+              value={customRestInput}
+              onChange={(e) => setCustomRestInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && startCustomRest()}
+              className="h-7 w-24 shrink-0 rounded-full border border-gym-border/50 bg-white/[0.02] px-3 text-xs text-gym-text placeholder:text-gym-muted/60 focus:border-gym-accent/40 focus:outline-none"
+            />
+            <button
+              type="button"
+              onClick={startCustomRest}
+              disabled={!customRestInput}
+              className="shrink-0 rounded-full border border-gym-accent/30 px-3 py-1 text-[11px] font-semibold text-gym-accent transition-colors hover:bg-gym-accent/10 disabled:opacity-40"
+            >
+              Start rest
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setCustomRestOpen(false);
+                setCustomRestInput("");
+              }}
+              aria-label="Back to the rest presets"
+              className="shrink-0 rounded-full p-1.5 text-gym-muted transition-colors hover:text-gym-text"
+            >
+              <X className="h-3.5 w-3.5" aria-hidden />
+            </button>
+          </>
         ) : (
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="micro-label mr-1 text-gym-muted">Rest:</p>
+          <>
+            <span className="micro-label shrink-0 text-gym-muted/70">Rest</span>
             {REST_PRESETS_SECONDS.map((s) => (
               <button
                 key={s}
                 type="button"
                 onClick={() => startRest(s)}
-                className="rounded-full border border-gym-border/50 bg-white/[0.02] px-3.5 py-1.5 text-xs font-semibold text-gym-text/90 transition-colors hover:border-gym-accent/40 hover:text-gym-accent"
+                className="shrink-0 rounded-full border border-gym-border/50 bg-white/[0.02] px-2.5 py-1 text-[11px] font-semibold text-gym-text/90 transition-colors hover:border-gym-accent/40 hover:text-gym-accent"
               >
                 {s}s
               </button>
             ))}
-            {/* User feedback: "allow for custom time of rest on timer in the lab" */}
-            <div className="flex items-center gap-1.5">
-              <input
-                type="number"
-                inputMode="numeric"
-                min={MIN_CUSTOM_REST_SECONDS}
-                max={MAX_CUSTOM_REST_SECONDS}
-                placeholder="Custom (s)"
-                value={customRestInput}
-                onChange={(e) => setCustomRestInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && startCustomRest()}
-                className="h-8 w-24 rounded-full border border-gym-border/50 bg-white/[0.02] px-3 text-xs text-gym-text placeholder:text-gym-muted/60 focus:border-gym-accent/40 focus:outline-none"
-              />
-              <button
-                type="button"
-                onClick={startCustomRest}
-                disabled={!customRestInput}
-                className="rounded-full border border-gym-accent/30 px-3 py-1.5 text-xs font-semibold text-gym-accent transition-colors hover:bg-gym-accent/10 disabled:opacity-40"
-              >
-                Go
-              </button>
-            </div>
-          </div>
+            <button
+              type="button"
+              onClick={() => setCustomRestOpen(true)}
+              aria-label="Custom rest time"
+              title="Custom rest time"
+              className="shrink-0 rounded-full border border-gym-border/50 bg-white/[0.02] px-2.5 py-1 text-[11px] font-semibold text-gym-text/90 transition-colors hover:border-gym-accent/40 hover:text-gym-accent"
+            >
+              Custom
+            </button>
+          </>
         )}
       </div>
     </div>
