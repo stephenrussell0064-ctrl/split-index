@@ -150,6 +150,35 @@ export function totalKg(state: Pick<AthleteState, "oneRms">): number {
   return ["squat", "bench", "deadlift"].reduce((s, l) => s + (state.oneRms[l] ?? 0), 0);
 }
 
+/**
+ * The athlete's typed 1RMs applied as a FLOOR under what their logs say.
+ *
+ * `Math.max` rather than a replacement is the whole point: a tested single
+ * still beats a lower inference, and a later logged lift that beats the typed
+ * number takes over instead of being ignored for the life of the intake record.
+ *
+ * It lives HERE, next to AthleteState, rather than in the intake parser,
+ * because two things now have to agree about an athlete's 1RMs and only one of
+ * them is the intake. `AthleteState.oneRms` — what the plan is promised
+ * against — and `AthleteProfile.oneRms` — what the plan is programmed from —
+ * were built by different code from different sources, and diverged by exactly
+ * the athlete's own typed correction: the plan judged a meet total feasible
+ * from a 180kg squat and then wrote every session at percentages of the 160kg
+ * the logs showed, and picked meet attempts off 160 too. Both now run through
+ * this function, so there is one number.
+ */
+export function overriddenOneRms(
+  logged: Record<string, number>,
+  overrides: Record<string, number | null>
+): Record<string, number> {
+  const out = { ...logged };
+  for (const [lift, override] of Object.entries(overrides)) {
+    if (override == null || !Number.isFinite(override) || override <= 0) continue;
+    out[lift] = Math.max(out[lift] ?? 0, override);
+  }
+  return out;
+}
+
 export function bmi(state: Pick<AthleteState, "bodyweightKg" | "heightCm">): number {
   return state.bodyweightKg / (state.heightCm / 100) ** 2;
 }

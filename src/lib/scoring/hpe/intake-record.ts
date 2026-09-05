@@ -28,6 +28,7 @@ import { isCardioModality, type CardioModality } from "./modality";
 import {
   DEFAULT_SAFETY_FLAGS,
   estimatedMaxHr,
+  overriddenOneRms,
   reconcileCurrentVolume,
   scoreLeaScreen,
   type AthleteState,
@@ -452,26 +453,6 @@ function trainingAgeFromYears(years: number): TrainingAge {
   if (years < 3) return "intermediate";
   if (years < 8) return "advanced";
   return "elite";
-}
-
-/**
- * The athlete's typed 1RMs applied as a FLOOR under what their logs say.
- *
- * See the note at the call site. `Math.max` rather than a replacement is the
- * whole fix: a tested single still beats a lower inference, and a later logged
- * lift that beats the typed number takes over instead of being ignored for the
- * life of the intake record.
- */
-export function overriddenOneRms(
-  logged: Record<string, number>,
-  overrides: Record<string, number | null>
-): Record<string, number> {
-  const out = { ...logged };
-  for (const [lift, override] of Object.entries(overrides)) {
-    if (override == null || !Number.isFinite(override) || override <= 0) continue;
-    out[lift] = Math.max(out[lift] ?? 0, override);
-  }
-  return out;
 }
 
 export interface PrefilledFromSplitIndex {

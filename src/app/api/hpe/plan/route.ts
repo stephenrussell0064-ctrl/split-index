@@ -162,14 +162,29 @@ export async function GET(request: Request) {
   // anchors the athlete on the honest answer while leaving them agency."
   const priority = goals.length > 0 ? gymGoals.length / goals.length : 0.5;
 
+  // ---- WP2: the intake now answers what this route used to assume --------
+  // Parsed BEFORE the diagnostic, because the diagnostic needs the athlete's
+  // typed 1RMs. `state.oneRms` (what the plan is promised against) applied them
+  // and `profile.oneRms` (what the plan is programmed from) did not, so an
+  // athlete who corrected their squat to a tested 180 was told the meet total
+  // was reachable from 180 and then given every session at percentages of the
+  // 160 their logs showed — and meet attempts picked off 160 as well. One
+  // number now, floored the same way in both places.
+  const intake = parseIntakeRow(intakeRow as Record<string, unknown> | null);
+
   // No logged history no longer refuses. `loadAthleteProfile` returns null
   // when there is nothing to diagnose from; the engine then runs on a
   // tier-0 profile, produces a deliberately conservative plan, and says
   // plainly that it is provisional. See the note on `assessTailoring`.
-  const diagnostic = await loadAthleteProfile(supabase, user.id, { priority });
+  const diagnostic = await loadAthleteProfile(supabase, user.id, {
+    priority,
+    oneRmOverrides: {
+      squat: intake.squat1rmOverride,
+      bench: intake.bench1rmOverride,
+      deadlift: intake.deadlift1rmOverride,
+    },
+  });
 
-  // ---- WP2: the intake now answers what this route used to assume --------
-  const intake = parseIntakeRow(intakeRow as Record<string, unknown> | null);
   const prefilled = await loadPrefilledIntake(supabase, user.id);
   const resolved = resolveIntakeInputs(intake, prefilled);
 
@@ -178,7 +193,12 @@ export async function GET(request: Request) {
   // population defaults and labelled provisional, rather than refused.
   const profile =
     diagnostic?.profile ??
-    diagnose([], [], {}, {
+    // The typed 1RMs go in here too. This is the branch for an athlete with NO
+    // logged history, which is precisely when their typed numbers are the only
+    // strength evidence that exists — dropping them here would leave the plan
+    // promised against three lifts it then programmed as if it had never heard
+    // of them.
+    diagnose([], [], resolved.state.oneRms, {
       hrMax: prefilled.maxHr ?? estimatedMaxHr(prefilled.age),
       hrRest: prefilled.restingHr ?? ASSUMED_RESTING_HR,
       hrMaxSource: prefilled.maxHr != null ? "measured" : "estimated",

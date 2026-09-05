@@ -23,7 +23,7 @@
 import { describe, expect, it } from "vitest";
 import { diagnose, strengthAssessability } from "./diagnostics";
 import { generatePlan } from "./engine";
-import { overriddenOneRms } from "./intake-record";
+import { overriddenOneRms } from "./intake";
 import { DEFAULT_SAFETY_FLAGS, type AthleteState, type Constraints, type Goal } from "./intake";
 import type { AthleteProfile, LiftSet, RunLog } from "./types";
 

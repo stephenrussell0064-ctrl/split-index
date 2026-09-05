@@ -17,6 +17,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { ageFromDateOfBirth } from "@/lib/utils/age";
 import { diagnose } from "./diagnostics";
+import { overriddenOneRms } from "./intake";
 import {
   ingestCrossTraining,
   ingestLiftSets,
@@ -63,7 +64,22 @@ export interface LoadedProfile {
 export async function loadAthleteProfile(
   supabase: SupabaseClient,
   userId: string,
-  options: { priority?: number; persist?: boolean } = {}
+  options: {
+    priority?: number;
+    persist?: boolean;
+    /**
+     * The athlete's own typed 1RMs, from the intake. Applied as a FLOOR under
+     * the logged estimates BEFORE `diagnose` runs — see the call to
+     * `overriddenOneRms` below for why "before" is the load-bearing word.
+     *
+     * Omitted by callers who deliberately want the logs alone: the intake
+     * form's own prefill (load-intake.ts) shows the athlete what Split Index
+     * knows from their training, which is the thing they are being asked to
+     * confirm or correct. Feeding their correction back into that display
+     * would show them their own answer as if it were evidence.
+     */
+    oneRmOverrides?: Record<string, number | null>;
+  } = {}
 ): Promise<LoadedProfile | null> {
   const since = new Date(Date.now() - HISTORY_WEEKS * 7 * 86_400_000).toISOString();
 
@@ -193,7 +209,26 @@ export async function loadAthleteProfile(
     );
   }
 
-  const profile = diagnose(runs, sets, oneRms, {
+  /**
+   * The athlete's typed 1RMs folded in BEFORE diagnosing, not after.
+   *
+   * After would only fix the number on display. `diagnose` derives liftRatios,
+   * weakLift and the rep-profile verdict FROM these, so overriding the field on
+   * the way out would leave every one of those verdicts computed against a
+   * squat the athlete has already told us is wrong — the same divergence, moved
+   * one layer down and harder to see.
+   *
+   * Only the three competition lifts are ever overridden, and only upward
+   * (overriddenOneRms is a floor), so nothing an athlete typed can lower what
+   * their own log proved. `exerciseOneRms` is untouched: there is no intake
+   * field for an incline dumbbell press, and inventing one from a squat
+   * correction is exactly the interpolation that field's contract forbids.
+   */
+  const declaredOneRms = options.oneRmOverrides
+    ? overriddenOneRms(oneRms, options.oneRmOverrides)
+    : oneRms;
+
+  const profile = diagnose(runs, sets, declaredOneRms, {
     priority: options.priority,
     hrMax,
     hrRest,
