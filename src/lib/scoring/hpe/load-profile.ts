@@ -19,6 +19,7 @@ import { ageFromDateOfBirth } from "@/lib/utils/age";
 import { diagnose } from "./diagnostics";
 import { overriddenOneRms } from "./intake";
 import {
+  firstRunStartedAtMs,
   ingestCrossTraining,
   ingestLiftSets,
   ingestRuns,
@@ -151,6 +152,28 @@ export async function loadAthleteProfile(
   // all.
   if (runs.length === 0 && sets.length === 0 && crossTraining.sessionCount === 0) return null;
 
+  /**
+   * The denominator for weekly volume: first logged run to NOW, in weeks.
+   *
+   * Capped at HISTORY_WEEKS because that is all the data there is — anything
+   * before the window was never read, so dividing by a longer period would
+   * report a volume the rows cannot support. Floored at 1 so a single week of
+   * history cannot multiply itself into a huge weekly figure.
+   *
+   * `diagnose` has no clock of its own, deliberately, so the window is computed
+   * here. See the note at its `spanWk` for what dividing by the run-to-run span
+   * did to an athlete who has stopped running.
+   */
+  const observationWeeks = (() => {
+    // The first READABLE run, from ingest's own definition rather than a second
+    // opinion about which activities count — every RunLog.dateIdx is measured
+    // from this instant, so it is the only anchor that lines up with them.
+    const firstRunMs = firstRunStartedAtMs(activities);
+    if (firstRunMs == null) return undefined;
+    const weeks = (Date.now() - firstRunMs) / (7 * 86_400_000);
+    return Math.min(HISTORY_WEEKS, Math.max(1, weeks));
+  })();
+
   // Best logged estimated 1RM per competition lift — the SRI engine's own
   // number, consumed through this adapter rather than recomputed here.
   const oneRms: Record<string, number> = {};
@@ -230,6 +253,7 @@ export async function loadAthleteProfile(
 
   const profile = diagnose(runs, sets, declaredOneRms, {
     priority: options.priority,
+    observationWeeks,
     hrMax,
     hrRest,
     hrMaxSource,

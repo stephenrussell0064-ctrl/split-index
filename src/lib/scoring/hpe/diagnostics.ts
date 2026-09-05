@@ -1063,6 +1063,13 @@ export interface DiagnoseOptions {
   /** Session count, so a tier-0 athlete who cross-trains is not told they have "no logged history at all". */
   crossTrainingSessions?: number;
   /**
+   * The calendar window the runs were drawn from, in weeks, ending NOW — the
+   * denominator for weekly volume. Supplied by the caller because this function
+   * is pure and has no clock; see the note at the `spanWk` computation for why
+   * the alternative (first run to last run) cannot see a training gap.
+   */
+  observationWeeks?: number;
+  /**
    * The athlete's 5k as the rest of Split Index already knows it, from the
    * two-tier race-prediction engine (`predicted_benchmarks`).
    *
@@ -1112,8 +1119,37 @@ export function diagnose(
   );
   const confidence = TIER_CONFIDENCE[tier];
 
+  /**
+   * WEEKLY VOLUME DIVIDES BY A WINDOW THAT ENDS TODAY, not at the last run.
+   *
+   * `dateIdx` counts days from the athlete's FIRST logged run, so
+   * `max - min` is first-run-to-last-run — a span that cannot see a gap at the
+   * end of it. An athlete who ran four times in a week and then stopped six
+   * weeks ago had every one of those minutes divided by one week.
+   *
+   * Observed live: a profile reporting 125min/week and 55min/week of running,
+   * beside an intake anchor of 4.7min/week computed over the calendar window
+   * from the same activity rows. The athlete would have read three-digit weekly
+   * volume on the Diagnostic tab and been prescribed a five-minute run on the
+   * Plan tab. Both numbers were arithmetically right and they were measuring
+   * different things.
+   *
+   * `observationWeeks` is that calendar window, passed by the caller because
+   * this function is pure and has no clock. It runs from the first logged run
+   * (or the start of the history window, whichever is later) to NOW, so:
+   *   - an athlete three weeks into using the app is divided by three, not by
+   *     the full window, and is not understated four-fold; and
+   *   - an athlete who has stopped is divided by a window that includes the
+   *     weeks they did nothing, which is the whole point.
+   *
+   * The old span is kept as the fallback for callers that cannot supply a
+   * window — every one of them is a test or a synthetic profile, where "now" is
+   * not a meaningful concept.
+   */
   const dates = runs.map((r) => r.dateIdx);
-  const spanWk = Math.max(1, dates.length > 0 ? (Math.max(...dates) - Math.min(...dates)) / 7 : 0);
+  const spanWk =
+    options.observationWeeks ??
+    Math.max(1, dates.length > 0 ? (Math.max(...dates) - Math.min(...dates)) / 7 : 0);
   const runningVolumeKm = runs.reduce((s, r) => s + r.distanceKm, 0) / spanWk;
   const runningVolumeMin = runs.reduce((s, r) => s + r.durationS, 0) / 60 / spanWk;
   // Cross-training counts toward the aerobic total. See DiagnoseOptions.

@@ -94,14 +94,34 @@ function dayIndex(iso: string, epochMs: number): number {
  * exactly the "confidently wrong" failure this codebase has already fixed
  * once.
  */
-export function ingestRuns(rows: ActivityRow[]): RunLog[] {
-  const usable = rows.filter(
+/** The one definition of "a run this diagnostic can read". */
+function usableRuns(rows: ActivityRow[]): ActivityRow[] {
+  return rows.filter(
     (r) =>
       DIAGNOSABLE_SPORTS.has(r.sport) &&
       !r.is_partial_track &&
       r.duration_seconds > 0 &&
       (r.distance_meters ?? 0) > 0
   );
+}
+
+/**
+ * When the athlete's first readable run was, in epoch ms — null when there is
+ * no such run.
+ *
+ * Exists so a caller can work out how long the observation window has actually
+ * been open (see `DiagnoseOptions.observationWeeks`) without re-deciding which
+ * activities count as runs. Every `RunLog.dateIdx` is measured from this
+ * instant, so it is the only anchor that lines up with them.
+ */
+export function firstRunStartedAtMs(rows: ActivityRow[]): number | null {
+  const usable = usableRuns(rows);
+  if (usable.length === 0) return null;
+  return Math.min(...usable.map((r) => new Date(r.started_at).getTime()));
+}
+
+export function ingestRuns(rows: ActivityRow[]): RunLog[] {
+  const usable = usableRuns(rows);
   if (usable.length === 0) return [];
 
   const epochMs = Math.min(...usable.map((r) => new Date(r.started_at).getTime()));
