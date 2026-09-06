@@ -345,14 +345,21 @@ export function AnalyticsClient({ data }: { data: AnalyticsPayload }) {
           add/delete flow. */}
       <UpcomingRacesPanel />
 
-      <div id="recovery" className="scroll-mt-6">
-        <InjuryRiskPanel
-          scores={data.scores}
-          isPremium={data.isPremium}
-          hrvToday={data.hrvToday}
-          hrvBaseline={data.hrvBaseline}
-        />
-      </div>
+      {/* The injury Risk Index is special category processing — it states a
+          conclusion about the athlete's physical condition — so it is behind
+          Article 9 consent, not behind the paywall. Nothing is rendered when
+          consent is absent: not a blurred panel, not a locked card with the
+          number in the DOM. The alternative to consent here is absence. */}
+      {data.article9Consent && (
+        <div id="recovery" className="scroll-mt-6">
+          <InjuryRiskPanel
+            scores={data.scores}
+            isPremium={data.isPremium}
+            hrvToday={data.hrvToday}
+            hrvBaseline={data.hrvBaseline}
+          />
+        </div>
+      )}
 
       <PremiumGate locked={!data.isPremium} feature="ACWR trend analysis">
         <AcwrTrendChart data={acwrTrend} />
