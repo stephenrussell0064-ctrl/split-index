@@ -43,6 +43,7 @@ import {
   resolveEffectiveMaxHr,
 } from "@/lib/activities/bodyweight";
 import { buildGymExerciseRows, insertGymExercises } from "@/lib/activities/gym-exercise-rows";
+import { clearProvisionalIndexHistory } from "@/lib/activities/provisional-index";
 import {
   upsertPersonalRecordsIfBetter,
   enduranceRecordCandidates,
@@ -717,6 +718,10 @@ export async function POST(request: Request) {
     // into whatever else was logged today, breaking every time-series chart.
     recorded_at: body.started_at,
   });
+
+  // The signup estimate has been replaced by something real. See
+  // clearProvisionalIndexHistory for why it cannot clear itself.
+  await clearProvisionalIndexHistory(supabase, user.id);
 
   // Every Split Index trend, projection and moving average reads this table.
   // A session that scored but never entered the index history would show the

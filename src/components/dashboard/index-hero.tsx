@@ -45,6 +45,18 @@ export interface IndexHeroProps {
   streakAtRisk: boolean;
   weeklySessions: number;
   weeklyTarget?: number;
+  /**
+   * True when this index came from the onboarding questions rather than from
+   * logged training.
+   *
+   * Shown, and labelled. The estimate used to be computed, stored, and then
+   * hidden — the hero was gated on having activities, which calibration does
+   * not create, so an athlete was given a number on the last onboarding screen
+   * and then told on the next one that their index was unwritten. Showing it
+   * silently would be the opposite error: a signup guess presented as measured
+   * ability.
+   */
+  provisional?: boolean;
 }
 
 function SubIndex({
@@ -80,6 +92,7 @@ export function IndexHero({
   streakAtRisk,
   weeklySessions,
   weeklyTarget = 4,
+  provisional = false,
 }: IndexHeroProps) {
   const reducedMotion = useReducedMotion();
   const showScore = hasHistory && headlineValue !== null;
@@ -107,16 +120,22 @@ export function IndexHero({
                 <p className="mt-1.5 text-[11px] leading-tight text-muted">
                   Strength + endurance, out of 100
                 </p>
-                <p
-                  className={cn(
-                    "mt-0.5 text-[11px] font-medium tabular-nums",
-                    weeklyTrend > 0 ? "text-success" : weeklyTrend < 0 ? "text-danger" : "text-muted"
-                  )}
-                >
-                  {weeklyTrend === 0
-                    ? "No change over the last 7 days"
-                    : `${formatTrend(weeklyTrend)} over the last 7 days`}
-                </p>
+                {provisional ? (
+                  <p className="mt-0.5 text-[11px] font-medium leading-tight text-warning">
+                    Estimated from your answers — log a session to make it real
+                  </p>
+                ) : (
+                  <p
+                    className={cn(
+                      "mt-0.5 text-[11px] font-medium tabular-nums",
+                      weeklyTrend > 0 ? "text-success" : weeklyTrend < 0 ? "text-danger" : "text-muted"
+                    )}
+                  >
+                    {weeklyTrend === 0
+                      ? "No change over the last 7 days"
+                      : `${formatTrend(weeklyTrend)} over the last 7 days`}
+                  </p>
+                )}
               </>
             ) : (
               <>

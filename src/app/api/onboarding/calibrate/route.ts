@@ -264,6 +264,25 @@ export async function POST(request: Request) {
 
   await upsertPersonalRecordsIfBetter(supabase, user.id, recordCandidates);
 
+  /*
+    ONE estimate per athlete, and it is marked as one.
+
+    Re-running calibration used to stack another undeletable row on top of the
+    last, because nothing in the app could find either of them: every other
+    writer of this table deletes by activity_id, and these rows have none.
+
+    `is_provisional` (migration 059) is what makes them findable and what keeps
+    them from outranking real training. Without it this row — stamped with
+    signup time, while every real session carries its own back-dated date —
+    stayed the newest row the athlete would ever have, so the profile's public
+    index was pinned to a number typed into a form and could never be moved.
+  */
+  await supabase
+    .from("split_index_history")
+    .delete()
+    .eq("user_id", user.id)
+    .eq("is_provisional", true);
+
   const { error: historyError } = await supabase.from("split_index_history").insert({
     user_id: user.id,
     split_index: lastResult.splitIndex,
@@ -273,6 +292,7 @@ export async function POST(request: Request) {
     recovery_score: 100,
     predicted_index_7d: lastResult.predictedIndex,
     activity_id: null,
+    is_provisional: true,
   });
 
   if (historyError) {

@@ -1,3 +1,4 @@
+import { clearProvisionalIndexHistory } from "@/lib/activities/provisional-index";
 import type { createClient } from "@/lib/supabase/server";
 import {
   scoreActivity,
@@ -509,6 +510,8 @@ export async function scoreAndPersist(
     // matching comment in the create route.
     recorded_at: body.started_at,
   });
+
+  await clearProvisionalIndexHistory(supabase, userId);
 
   if (indexHistoryError) {
     console.error(

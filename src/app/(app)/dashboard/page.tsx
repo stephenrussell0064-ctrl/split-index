@@ -400,6 +400,22 @@ export default async function DashboardPage() {
 
   const hasActivities = (recentActivities?.length ?? 0) > 0;
   const hasIndexHistory = !!latestIndex;
+  /*
+    The onboarding estimate, shown rather than thrown away.
+
+    Calibration computes an index from the athlete's self-reported bests
+    specifically so a new user sees a number — and then the hero was gated on
+    `hasActivities`, which calibration deliberately does not create. So they
+    answered the questions, were shown "62.4 · Intermediate", tapped twice, and
+    landed on a home screen headed "your index is unwritten". The number they
+    had just been given existed, in the database, on the row this page reads.
+
+    It is shown, and it is labelled as an estimate — see IndexHero's
+    `provisional` prop. Both halves matter: showing it unmarked would be the
+    opposite mistake, presenting a signup guess as measured training.
+  */
+  const indexIsProvisional = hasIndexHistory && latestIndex!.is_provisional === true;
+  const showIndexHero = hasActivities || hasIndexHistory;
   const sessionCount = allActivityDates?.length ?? 0;
   const showActivationPaywall =
     !premium && sessionCount >= ACTIVATION_EVENT_SESSION_COUNT;
@@ -641,7 +657,7 @@ export default async function DashboardPage() {
         </p>
       </div>
 
-      {!hasActivities && <EmptyDashboardHero displayName={displayName} />}
+      {!hasActivities && !hasIndexHistory && <EmptyDashboardHero displayName={displayName} />}
 
       {/*
         WHERE DO I STAND. Stays first because it is the one block that has to
@@ -652,7 +668,7 @@ export default async function DashboardPage() {
         `raceLadder` both are built from — so the phone's home-screen widget
         and the app cannot disagree about a predicted time.
       */}
-      {hasActivities && (
+      {showIndexHero && (
         <IndexHero
           headlineLabel={headlineLabel}
           headlineValue={hasIndexHistory ? headlineValue : null}
@@ -663,6 +679,7 @@ export default async function DashboardPage() {
           streak={streakMetrics.streak}
           streakAtRisk={streakMetrics.atRisk}
           weeklySessions={streakMetrics.weeklySessions}
+          provisional={indexIsProvisional}
         />
       )}
 
