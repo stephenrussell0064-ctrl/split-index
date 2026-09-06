@@ -64,6 +64,37 @@ export function localDateKeyInTz(iso: string | Date, timeZone: string): string {
   return `${year}-${month}-${day}`;
 }
 
+/**
+ * Move a `YYYY-MM-DD` key by whole calendar days.
+ *
+ * PURE CALENDAR ARITHMETIC, no instants involved — which is the entire point.
+ * Every day-walking loop in this codebase used to do
+ * `new Date(reference.getTime() - i * 86400000)` and then read the local
+ * calendar day off the result, and subtracting a fixed 86 400 000 ms is only
+ * "one day" when the day happens to be 24 hours long. It is 23 on the morning
+ * the clocks go forward and 25 when they go back, so the walk skipped a day in
+ * spring and repeated one in autumn.
+ *
+ * Measured before this existed, with five consecutive training days logged:
+ * an athlete in London opening the app at 00:30 on 31 March 2025 was told
+ * their streak was 4 — and `seedRetentionNotifications` fires the "streak at
+ * risk" push off exactly that number, so the app broke their streak and then
+ * told them about it. In October the same athlete was credited with a day they
+ * had not trained. Santiago, whose transition happens at midnight, was wrong
+ * for a whole day.
+ *
+ * `Date.UTC` is used purely as a calendar calculator here: no zone is
+ * consulted, no instant is interpreted, so no DST rule can apply.
+ */
+export function shiftDateKey(dateKey: string, deltaDays: number): string {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  const shifted = new Date(Date.UTC(year!, month! - 1, day! + deltaDays));
+  const y = shifted.getUTCFullYear();
+  const m = String(shifted.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(shifted.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
 /** Midnight (local) for a calendar day in the given timezone, as UTC instant. */
 export function startOfLocalDayInTz(dateKey: string, timeZone: string): Date {
   // Noon UTC avoids DST edge when resolving the calendar day in `timeZone`.

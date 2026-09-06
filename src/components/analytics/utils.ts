@@ -34,7 +34,7 @@ import type {
 import type { SplitIndexSnapshot } from "@/types";
 
 import { forecastSplitIndexFromHistory } from "@/lib/premium/projection";
-import { localDateKeyInTz, resolveTimezone } from "@/lib/utils/timezone";
+import { localDateKeyInTz, resolveTimezone, shiftDateKey } from "@/lib/utils/timezone";
 import {
   estimateLactateThreshold,
   estimateRaceEffortVo2Max,
@@ -523,10 +523,12 @@ export function computeStreak(heatmapDays: HeatmapDay[], timeZone?: string | nul
   const loadByDate = new Map(heatmapDays.map((d) => [d.date, d]));
   const today = new Date();
 
+  // Calendar days, not fixed millisecond steps — a 23-hour day skipped one and
+  // a 25-hour day repeated one. See shiftDateKey.
+  const todayKey = localDateKeyInTz(today, tz);
   let streak = 0;
   for (let i = 0; ; i++) {
-    const key = localDateKeyInTz(new Date(today.getTime() - i * DAY_MS), tz);
-    const entry = loadByDate.get(key);
+    const entry = loadByDate.get(shiftDateKey(todayKey, -i));
     if (entry && entry.workouts > 0) streak++;
     else if (i === 0) continue;
     else break;
@@ -544,13 +546,13 @@ export function computeHitRate(
   const byDate = new Map(heatmapDays.map((d) => [d.date, d]));
   const today = new Date();
 
+  const todayKey = localDateKeyInTz(today, tz);
   let hitWeeks = 0;
   let completed = 0;
   for (let w = 1; w <= weeks; w++) {
     let sessions = 0;
     for (let d = 0; d < 7; d++) {
-      const probe = new Date(today.getTime() - (w * 7 + d) * DAY_MS);
-      const entry = byDate.get(localDateKeyInTz(probe, tz));
+      const entry = byDate.get(shiftDateKey(todayKey, -(w * 7 + d)));
       if (entry && entry.workouts > 0) sessions++;
     }
     completed++;

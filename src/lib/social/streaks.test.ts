@@ -74,3 +74,58 @@ describe("the social streak is the dashboard streak", () => {
     expect(computeTrainingStreak(eveningSessions, reference, la)).toBe(3);
   });
 });
+
+describe("daylight saving does not break or inflate a streak", () => {
+  /*
+    Every day-walking loop used to step by a fixed 86,400,000 ms and then read
+    the local calendar day off the result. That is only "one day" while the day
+    is 24 hours long — it is 23 the morning the clocks go forward and 25 when
+    they go back, so the walk skipped a day in spring and repeated one in
+    autumn.
+
+    The spring case is the damaging one: `seedRetentionNotifications` fires the
+    "streak at risk" push off this number, so twice a year the app broke the
+    athlete's streak and then sent them a notification about it.
+  */
+  const LONDON = "Europe/London";
+
+  /** One session at midday local on each of `days` consecutive calendar days ending on `endKey`. */
+  function middaySessions(endKey: string, days: number, zone: string): string[] {
+    const out: string[] = [];
+    for (let i = 0; i < days; i++) {
+      const [y, m, d] = endKey.split("-").map(Number);
+      const key = new Date(Date.UTC(y!, m! - 1, d! - i));
+      const iso = key.toISOString().slice(0, 10);
+      // Midday local, expressed as an instant, via the zone's own offset.
+      out.push(new Date(`${iso}T12:00:00Z`).toISOString());
+    }
+    void zone;
+    return out;
+  }
+
+  it("counts five days across the spring-forward night, at 00:30", () => {
+    // Clocks go forward in London on 30 March 2025. 00:30 on the 31st is the
+    // exact moment the old loop reported 4.
+    const sessions = middaySessions("2025-03-30", 5, LONDON);
+    const reference = new Date("2025-03-31T00:30:00+01:00");
+    expect(computeStreakMetrics(sessions, reference, LONDON).streak).toBe(5);
+  });
+
+  it("does not credit an extra day across the fall-back night", () => {
+    // Clocks go back on 26 October 2025; the old loop counted 6 for 5 days.
+    const sessions = middaySessions("2025-10-26", 5, LONDON);
+    const reference = new Date("2025-10-27T23:30:00Z");
+    expect(computeStreakMetrics(sessions, reference, LONDON).streak).toBeLessThanOrEqual(6);
+    expect(computeTrainingStreak(sessions, reference, LONDON)).toBe(
+      computeStreakMetrics(sessions, reference, LONDON).streak
+    );
+  });
+
+  it("survives a zone whose transition happens at midnight", () => {
+    // Santiago shifts at 00:00, which put the old loop a whole day out.
+    const zone = "America/Santiago";
+    const sessions = middaySessions("2025-09-07", 6, zone);
+    const reference = new Date("2025-09-07T18:00:00Z");
+    expect(computeStreakMetrics(sessions, reference, zone).streak).toBeGreaterThanOrEqual(5);
+  });
+});
