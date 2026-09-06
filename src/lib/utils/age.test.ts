@@ -41,7 +41,38 @@ describe("date-input bound helpers", () => {
   });
 
   it("minDobForMaxAge is the earliest DOB that still satisfies the maximum age", () => {
-    const min = minDobForMaxAge(120, now);
-    expect(ageFromDateOfBirth(min, now)).toBe(120);
+    // 100, not 120: ages above 110 are no longer accepted at all — see below.
+    const min = minDobForMaxAge(100, now);
+    expect(ageFromDateOfBirth(min, now)).toBe(100);
+  });
+});
+
+describe("an implausible date of birth is rejected rather than scored", () => {
+  const now = new Date("2026-07-24T12:00:00Z");
+
+  /*
+    Age is not a label — it divides the benchmark-equivalent time through
+    `enduranceAgeGradeFactor`, so it moves the score directly. The same 5 km in
+    25:00 scored 627 at age 30 and 988 at age 80, and `date_of_birth` is an
+    ordinary editable profile field while the leaderboards read `sport_index`.
+
+    The old ceiling was 150, so `1900-01-01` resolved to 126 and was accepted
+    everywhere. This does not stop anyone claiming to be 85 — age-grading a
+    masters athlete is legitimate and standard — it stops a number no living
+    person has, which the app had no reason to accept and no way to tell apart
+    from a typo.
+  */
+  it("accepts the oldest plausible athlete", () => {
+    expect(ageFromDateOfBirth("1930-01-01", now)).toBe(96);
+    expect(ageFromDateOfBirth(minDobForMaxAge(110, now), now)).toBe(110);
+  });
+
+  it("rejects an age no living person has", () => {
+    expect(ageFromDateOfBirth("1900-01-01", now)).toBeNull();
+    expect(ageFromDateOfBirth("1850-06-01", now)).toBeNull();
+  });
+
+  it("still rejects a date in the future", () => {
+    expect(ageFromDateOfBirth("2030-01-01", now)).toBeNull();
   });
 });
