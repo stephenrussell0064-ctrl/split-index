@@ -71,11 +71,25 @@ function resolveMode(pathname: string): AppMode {
   return "neutral";
 }
 
-function logHrefForMode(mode: AppMode): string {
-  if (mode === "gym") return "/gym/log";
-  if (mode === "cardio") return "/cardio/log";
-  return "/activities/new";
-}
+/**
+ * Where the + button goes: the launcher, always, from every tab.
+ *
+ * This used to resolve by mode — /gym/log from The Lab, /cardio/log from The
+ * Engine, the launcher only from Home. The idea was that a tab already says
+ * which half you are in, so the picker is a step you can skip. In practice it
+ * made one control mean three different things depending on where you had
+ * been, and the two zone-specific destinations are each half an app: tapping +
+ * on The Engine could not reach a gym session, and tapping it on The Lab could
+ * not start a GPS run. User report: "if you are on the engine and then click
+ * the plus it should take you to [the launcher] rather than a cardio only log
+ * screen."
+ *
+ * The launcher costs one tap and can reach everything — both halves of the
+ * product and live GPS — so + is now the same promise everywhere.
+ * /gym/log and /cardio/log are untouched and still reachable from The Lab and
+ * The Engine's own buttons, which is where a zone-specific shortcut belongs.
+ */
+const LOG_LAUNCHER_HREF = "/activities/new";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
@@ -103,7 +117,7 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
   const mode = pathnameMode !== "neutral" ? pathnameMode : (modeOverride ?? "neutral");
   const showTopBar = pathname !== "/onboarding";
   const showBackButton = !TOP_LEVEL_ROUTES.has(pathname);
-  const logHref = logHrefForMode(mode);
+  const logHref = LOG_LAUNCHER_HREF;
   const [moreOpen, setMoreOpen] = useState(false);
   const [lastPathname, setLastPathname] = useState(pathname);
   // User feedback: "when clicking off the lab onto the dashboard or engine

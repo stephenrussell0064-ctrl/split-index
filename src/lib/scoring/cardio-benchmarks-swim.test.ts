@@ -100,10 +100,20 @@ describe("timeToScore — swim (general-population 400m anchors)", () => {
     expect(timeToScore("swim", 1140, "male")).toBeGreaterThan(0);
   });
 
-  it("still applies the female multiplier (1.073) on top (no sex-specific swim data captured)", () => {
+  it("scores women on their own curve, which narrows toward the elite end", () => {
+    // Was a flat 1.073 multiplier. Swimming really does have the narrowest sex
+    // gap of any sport in this file, but flat was still an assertion nobody had
+    // checked — the world-record ratio is 1.065 and the middle of the adult
+    // population sits nearer 1.14. See SWIM_400M_ANCHORS_FEMALE, including why
+    // the bottom of the table is held flat rather than extrapolated.
     const male = timeToScore("swim", 320, "male");
-    const female = timeToScore("swim", 320, "female");
-    expect(female).toBeGreaterThan(male);
+    expect(timeToScore("swim", 320, "female")).toBeGreaterThan(male);
+    // 1.065 at the fast anchor, ~1.14 at the median: the gap is NOT constant.
+    expect(Math.abs(timeToScore("swim", 320 * 1.065, "female") - male)).toBeLessThanOrEqual(2);
+    const medianMale = timeToScore("swim", 560, "male");
+    expect(
+      Math.abs(timeToScore("swim", 560 * 1.14, "female") - medianMale)
+    ).toBeLessThanOrEqual(2);
   });
 
   it("999 is reserved for the actual 400m freestyle world record (user feedback: never achieved unless it's a world record for age/gender)", () => {

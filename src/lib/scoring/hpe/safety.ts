@@ -51,6 +51,23 @@ export interface SafetyResult {
   offerGeneralPreparationInstead: boolean;
   /** F16/intake spec: beta blockers and similar mean every prescription drops HR and uses pace and RPE. */
   suppressHeartRatePrescription: boolean;
+  /**
+   * The one thing on this form that is not a training question.
+   *
+   * Structured rather than left as a string inside `advisories`, because it has
+   * to be rendered on its own and everything else in that array must not be.
+   * The plan screen used to show `advisories`, `warnings` and `referrals` as
+   * two full cards above the block, and they were removed at the owner's
+   * request: for most athletes both fired on answers nobody had given (the
+   * injury and surgery flags resolve to true until answered), so a plan opened
+   * with a wall of caveats about nothing.
+   *
+   * Removing the cards also removed the only place this reached a human, which
+   * was not the intent and is not defensible — the engine went on computing a
+   * cardiac referral and showing it to nobody. So it comes back alone: one
+   * banner, this flag only, nothing about injuries or fuelling.
+   */
+  medicalRedFlag: { message: string; referral: string } | null;
   /** Ramp rate multiplier imposed by the screen (injury history, novice runner). Never above 1. */
   rampMultiplier: number;
   /**
@@ -95,6 +112,7 @@ export function safetyScreen(state: AthleteState, goal: Goal): SafetyResult {
   const s = state.safety;
   let offerGeneralPreparationInstead = false;
   let rampMultiplier = 1;
+  let medicalRedFlag: SafetyResult["medicalRedFlag"] = null;
 
   let intensityCeiling = 1;
 
@@ -123,6 +141,16 @@ export function safetyScreen(state: AthleteState, goal: Goal): SafetyResult {
     intensityCeiling = Math.min(intensityCeiling, MEDICAL_CLEARANCE_INTENSITY_CEILING);
     rampMultiplier = Math.min(rampMultiplier, 0.5);
     referrals.push("GP / sports physician");
+    // Same words the advisory carries, shortened to what fits a banner. Kept
+    // in both places deliberately: `advisories` is the machine-readable record
+    // of what the screen decided, and this is the one line that has to reach
+    // the athlete's eyes whatever the plan screen chooses to render.
+    medicalRedFlag = {
+      message:
+        "You have flagged chest pain on exertion, or a positive PAR-Q+. Please get this checked before you " +
+        "train hard. Until then this plan stays at easy, conversational effort and prescribes nothing maximal.",
+      referral: "GP / sports physician",
+    };
   }
 
   if (s.pregnantOrPostpartum12wk) {
@@ -275,6 +303,7 @@ export function safetyScreen(state: AthleteState, goal: Goal): SafetyResult {
     showBodyweightGuidance: mayShowBodyweightGuidance(state),
     offerGeneralPreparationInstead,
     suppressHeartRatePrescription: s.medicationAffectingHr,
+    medicalRedFlag,
     rampMultiplier,
     intensityCeiling,
   };

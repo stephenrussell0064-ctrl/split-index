@@ -18,9 +18,18 @@ describe("timeToScore — cycle (Cycling Regimen percentile anchors)", () => {
     expect(timeToScore("cycle", 3118, "male")).toBeCloseTo(125, 0); // 51:58, 5th
   });
 
-  it("still applies the female multiplier (1.219) on top (no sex-specific cycle data captured)", () => {
+  it("scores women on their own curve, at the 1.10 recreational sex ratio", () => {
+    // Was a flat 1.219 multiplier with no source recorded, which claimed women
+    // are 22% slower over 20km. The two figures that exist say 1.126 (UCI Hour
+    // Record, elite) and 1.098 (IRONMAN 70.3 90km bike, 823,459 records) — see
+    // CYCLE_20K_ANCHORS_FEMALE. Deliberately still FLAT: cycling's two sources
+    // disagree about which direction the gap moves with ability, so a shaped
+    // table would be picking a side the evidence contradicts.
     const male = timeToScore("cycle", 2400, "male");
     const female = timeToScore("cycle", 2400, "female");
     expect(female).toBeGreaterThan(male);
+    // A woman 10% slower over the distance scores the same as the man. Within
+    // a point either way: the female anchors are stored to a tenth of a second.
+    expect(Math.abs(timeToScore("cycle", 2400 * 1.1, "female") - male)).toBeLessThanOrEqual(2);
   });
 });

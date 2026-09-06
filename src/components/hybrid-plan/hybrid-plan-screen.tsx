@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { HeartPulse } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
@@ -41,6 +42,8 @@ interface PlanResponse {
     offerGeneralPreparationInstead: boolean;
     /** Below 1 when the health answers capped how hard the plan may be. */
     intensityCeiling: number;
+    /** Possible cardiac symptoms or a positive PAR-Q+, and nothing else — the one banner this screen still shows. See `SafetyResult.medicalRedFlag`. */
+    medicalRedFlag?: { message: string; referral: string } | null;
   };
   profile?: AthleteProfile;
   diagnostic?: AthleteProfile | null;
@@ -479,7 +482,32 @@ export function HybridPlanScreen() {
         plan and still does not. What changed is only that the caveats are no
         longer printed on top of it; `data.safety` is still returned by the API
         for whoever wants to render it somewhere calmer.
+
+        AND ONE THING CAME BACK: the banner directly below. Deleting the cards
+        also deleted the only render site for the cardiac / PAR-Q+ referral,
+        which meant an athlete who ticked "I get chest pain during exercise"
+        received a full training block and never saw a word about it — the
+        engine went on generating the referral and showing it to nobody. That
+        was not what the removal was for. It is one line, it fires on that
+        answer alone, and nothing about injuries or fuelling rides along with
+        it.
       */}
+      {data.safety?.medicalRedFlag && (
+        <Card className="border-danger/30 bg-danger/[0.06]">
+          <div className="flex items-start gap-3">
+            <HeartPulse className="mt-0.5 h-5 w-5 shrink-0 text-danger" aria-hidden />
+            <div>
+              <p className="text-sm font-semibold text-danger">Worth a GP appointment this week</p>
+              <p className="mt-1 text-sm leading-relaxed text-foreground/85">
+                {data.safety.medicalRedFlag.message}
+              </p>
+              <p className="mt-1.5 text-xs text-muted">
+                Who to see: {data.safety.medicalRedFlag.referral}
+              </p>
+            </div>
+          </div>
+        </Card>
+      )}
 
       {(data.feasibility?.messages.length ?? 0) > 0 && (
         <Card>
