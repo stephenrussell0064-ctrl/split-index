@@ -39,6 +39,23 @@ interface StoredSession {
    * pause existed are still out there waiting to be recovered.
    */
   pauses?: PauseInterval[];
+  /**
+   * When the athlete pressed Stop — set by `stopGpsSession`, absent while a run
+   * is live or was interrupted.
+   *
+   * THE RUN USED TO BE DELETED AT THIS EXACT MOMENT. `stopGpsSession` called
+   * `clearSession()` and returned the summary, after which the whole run — the
+   * points, the heart rate, the segments — existed only in React state, through
+   * the entire review screen and the save. A save that failed out of signal, on
+   * a phone iOS then reclaimed the WebView from, took a finished marathon with
+   * it and left no trace anywhere to recover from.
+   *
+   * The record now survives Stop and is cleared by `clearGpsSession()` once the
+   * activity has actually been written. This field is what tells recovery which
+   * of the two it found: a run the athlete finished and never got saved, or one
+   * the OS interrupted mid-stride.
+   */
+  finishedAt?: number;
 }
 
 async function readSession(): Promise<StoredSession | null> {
@@ -242,14 +259,31 @@ export async function resumeGpsSession(at: number = Date.now()): Promise<void> {
   });
 }
 
-/** Ends the session the user actually stopped themselves — the one path where `endedCleanly: true` is honest. */
+/**
+ * Ends the session the user actually stopped themselves — the one path where
+ * `endedCleanly: true` is honest.
+ *
+ * DOES NOT DELETE THE RUN. It stops the watcher and stamps the record as
+ * finished; the record stays on disk until `clearGpsSession()` is called, which
+ * the caller does only after the activity has been saved. Everything between
+ * Stop and a successful save — the review screen, a failed request, a retry —
+ * now happens with the run still recoverable underneath it.
+ */
 export async function stopGpsSession(): Promise<GpsTrackSummary> {
   await detachWatcher();
 
   const session = await withSessionLock(async () => {
     const current = await readSession();
-    await clearSession();
-    return current;
+    if (!current) return null;
+    const finished: StoredSession = {
+      ...current,
+      // Closed here as well as in the summary, so a recovery of this record
+      // reproduces the same moving/paused split the athlete was just shown.
+      pauses: closeOpenPauses(current.pauses ?? []),
+      finishedAt: Date.now(),
+    };
+    await writeSession(finished);
+    return finished;
   });
 
   if (!session) {
@@ -261,8 +295,20 @@ export async function stopGpsSession(): Promise<GpsTrackSummary> {
     permissionRevoked: session.permissionRevoked,
     // A run stopped while still paused leaves an open pause; closing it here
     // means those final standing-still seconds aren't billed as running.
-    pauses: closeOpenPauses(session.pauses ?? []),
+    pauses: session.pauses ?? [],
   });
+}
+
+/**
+ * Throw the stored run away. The ONLY thing that deletes a track.
+ *
+ * Call it after the activity has been written, or when the athlete explicitly
+ * discards. Anything else — closing the review screen, a failed save, the app
+ * being killed — must leave the record alone, because the record is the only
+ * copy.
+ */
+export async function clearGpsSession(): Promise<void> {
+  await withSessionLock(clearSession);
 }
 
 /** An open pause is closed at `at` so that summarizing never treats "still paused" as "paused until the end of time". */
@@ -325,6 +371,13 @@ export interface RecoveredGpsSession {
    * the athlete is offered the choice at all.
    */
   resumable: boolean;
+  /**
+   * True when the athlete pressed Stop and the run was never saved — as opposed
+   * to the OS interrupting a run still in progress. The two need different
+   * words: one is "this didn't save, try again", the other is "we found a run
+   * that didn't finish".
+   */
+  finished: boolean;
 }
 
 /**
@@ -337,6 +390,16 @@ export interface RecoveredGpsSession {
 const RESUMABLE_WITHIN_MS = 3 * 60 * 60 * 1000;
 
 /**
+ * How long an unsaved run is kept before the record is dropped on sight.
+ *
+ * This is what stops a session the app cannot handle from resurfacing on every
+ * single launch forever — the property the old delete-on-read had, kept without
+ * the cost of it. A week is far longer than anyone needs to notice a run failed
+ * to save, and far shorter than "forever".
+ */
+const RECOVERABLE_FOR_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
  * Call once on app launch (before offering to start a new run). If a
  * session was left running — the app got killed mid-run rather than the
  * user pressing stop, the WebView was reloaded underneath a live run, or it
@@ -345,10 +408,16 @@ const RESUMABLE_WITHIN_MS = 3 * 60 * 60 * 1000;
  * interrupted/offline run surfaces to the user with its actual map, right
  * away, instead of silently disappearing or showing only a number.
  *
- * The stored record is cleared here even when the session is resumable:
- * `rejoinGpsSession` writes it straight back from the points returned here, so
- * nothing is lost, and a session that somehow cannot be handled can never wedge
- * the app by surviving every launch.
+ * THE RECORD IS NO LONGER CLEARED HERE. It used to be, on the reasoning that
+ * `rejoinGpsSession` writes it straight back so nothing is lost — but that only
+ * covers the athlete who chooses to rejoin. Anyone who was shown the banner and
+ * then lost the WebView before answering it (which is the same memory pressure
+ * that produced the orphan in the first place) lost the run, because the only
+ * copy had already been deleted to show it to them.
+ *
+ * It is cleared by `clearGpsSession()` after the run is saved or explicitly
+ * discarded. The "cannot wedge the app" property is kept by RECOVERABLE_FOR_MS
+ * below rather than by deleting on read.
  */
 export async function recoverOrphanedSession(): Promise<RecoveredGpsSession | null> {
   if (!isNativePlatform()) return null;
@@ -359,16 +428,20 @@ export async function recoverOrphanedSession(): Promise<RecoveredGpsSession | nu
       // The watcher recorded against this session belongs to a JS context that
       // no longer exists, so it can never deliver another fix — but on iOS the
       // native half can outlive the WebView and keep the location subscription
-      // (and its battery cost) alive with nobody listening. Tear it down before
-      // its id goes with the cleared session.
+      // (and its battery cost) alive with nobody listening. Tear it down.
+      // (The session record itself stays; only the watcher goes.)
       await detachWatcher();
-      await clearSession();
     }
     return current;
   });
   if (!session) return null;
 
-  if (session.points.length === 0) return null;
+  if (session.points.length === 0) {
+    // Nothing worth offering, and nothing worth keeping — this is the one case
+    // where dropping the record loses nobody anything.
+    await withSessionLock(clearSession);
+    return null;
+  }
 
   const livePauses = session.pauses ?? [];
   // An app killed mid-pause leaves that pause open; for a run being SAVED it
@@ -385,9 +458,19 @@ export async function recoverOrphanedSession(): Promise<RecoveredGpsSession | nu
     ...livePauses.map((p) => p.endTime ?? p.startTime)
   );
 
+  if (Date.now() - lastActivityAt > RECOVERABLE_FOR_MS) {
+    await withSessionLock(clearSession);
+    return null;
+  }
+
+  const finished = typeof session.finishedAt === "number";
+
   return {
     summary: summarizeGpsTrack(session.points, {
-      endedCleanly: false,
+      // A run the athlete stopped themselves ended cleanly even though it never
+      // got saved — the interruption was in the SAVE, not in the tracking, and
+      // flagging it partial would mark a complete effort as incomplete.
+      endedCleanly: finished,
       permissionRevoked: session.permissionRevoked,
       pauses,
     }),
@@ -396,6 +479,10 @@ export async function recoverOrphanedSession(): Promise<RecoveredGpsSession | nu
     livePauses,
     startedAt: session.startedAt,
     wasPaused,
-    resumable: !session.permissionRevoked && Date.now() - lastActivityAt <= RESUMABLE_WITHIN_MS,
+    finished,
+    // A finished run is not resumable — it is waiting to be saved, not to be
+    // continued.
+    resumable:
+      !finished && !session.permissionRevoked && Date.now() - lastActivityAt <= RESUMABLE_WITHIN_MS,
   };
 }

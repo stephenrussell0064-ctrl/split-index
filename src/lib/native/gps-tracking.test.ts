@@ -64,6 +64,7 @@ import {
   recoverOrphanedSession,
   rejoinGpsSession,
   stopGpsSession,
+  clearGpsSession,
 } from "./gps-tracking";
 
 const SESSION_KEY = "gps-tracking-session";
@@ -227,7 +228,61 @@ describe("recovering a session the WebView lost", () => {
     // Its callback can never fire again, but on iOS the native subscription can
     // outlive the WebView and keep costing battery with nobody listening.
     expect(watcher.removed).toContain("stale-watcher");
+  });
+
+  it("keeps the run on disk after offering it, so the banner is not the only copy", async () => {
+    // This assertion used to be its exact opposite. Recovery cleared the record
+    // as it read it, on the reasoning that rejoining writes it straight back —
+    // which covers the athlete who answers the banner, and loses the run for
+    // the athlete who does not. The same memory pressure that orphaned the
+    // session in the first place is perfectly capable of taking the WebView
+    // again while the banner is still on screen.
+    const now = Date.now();
+    seedSession({ startedAt: now - 60_000, pointTimes: [now - 60_000, now - 30_000] });
+
+    await recoverOrphanedSession();
+    expect(store.has(SESSION_KEY)).toBe(true);
+
+    // And it is still there for a second look, which is what an athlete who
+    // backgrounded the app mid-decision comes back to.
+    const again = await recoverOrphanedSession();
+    expect(again).not.toBeNull();
+    expect(again!.points.length).toBe(2);
+  });
+
+  it("drops a record nothing can be done with, so it cannot wedge every launch", async () => {
+    // The one property the old delete-on-read had that was worth keeping.
+    const ancient = Date.now() - 8 * 24 * 60 * 60 * 1000;
+    seedSession({ startedAt: ancient, pointTimes: [ancient, ancient + 30_000] });
+
+    expect(await recoverOrphanedSession()).toBeNull();
     expect(store.has(SESSION_KEY)).toBe(false);
+  });
+
+  it("only forgets a finished run when it is explicitly cleared", async () => {
+    const now = Date.now();
+    seedSession({ startedAt: now - 60_000, pointTimes: [now - 60_000, now - 30_000] });
+
+    // Stopping ends the tracking and hands back the summary — but the record it
+    // was built from stays, because between here and a successful save it is
+    // still the only copy of the run.
+    const summary = await stopGpsSession();
+    expect(summary.distanceMeters).toBeGreaterThanOrEqual(0);
+    expect(store.has(SESSION_KEY)).toBe(true);
+
+    // A run the athlete stopped is offered back as finished, not as an
+    // interrupted fragment — the save failed, the run did not.
+    const recovered = await recoverOrphanedSession();
+    expect(recovered!.finished).toBe(true);
+    expect(recovered!.resumable).toBe(false);
+    // And crucially it is NOT stamped "ended without stopping" — the athlete
+    // did stop it. The interruption was in the save, and marking a complete
+    // effort partial would be the app misreporting its own failure as theirs.
+    expect(recovered!.summary.partialReason).not.toBe("ended_without_stopping");
+
+    await clearGpsSession();
+    expect(store.has(SESSION_KEY)).toBe(false);
+    expect(await recoverOrphanedSession()).toBeNull();
   });
 });
 

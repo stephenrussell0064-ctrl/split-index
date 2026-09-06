@@ -68,9 +68,29 @@ export async function POST(request: Request) {
   const admin = createAdminClient();
   const userId = event.app_user_id;
 
+  /*
+    A NON-UUID app_user_id is not a user.
+
+    RevenueCat generates anonymous ids of the form `$RCAnonymousID:...` for a
+    device that has not been identified yet, and those reach this endpoint. The
+    UPDATE below matched nothing, said so to nobody, and returned 200 — a
+    purchase that granted no entitlement, with no trace of why.
+  */
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!UUID.test(userId)) {
+    console.error(`[revenuecat/webhook] ${event.type} for a non-user app_user_id: ${userId}`);
+    return NextResponse.json({ error: "Unrecognised app_user_id" }, { status: 400 });
+  }
+
+  /*
+    The result of every write is read, and a failure returns 500 so RevenueCat
+    retries. This whole file used to discard the error object and answer 200
+    regardless — a purchase that failed to record looked identical to one that
+    worked, and the athlete had paid Apple for nothing.
+  */
   if (GRANT_EVENT_TYPES.has(event.type)) {
     const sku = event.product_id ? (PRODUCT_ID_TO_SKU[event.product_id] ?? null) : null;
-    await admin
+    const { data, error } = await admin
       .from("profiles")
       .update({
         subscription_tier: "premium",
@@ -78,12 +98,24 @@ export async function POST(request: Request) {
         subscription_sku: sku,
         subscription_source: "revenuecat",
       })
-      .eq("user_id", userId);
+      .eq("user_id", userId)
+      .select("user_id");
+
+    if (error) {
+      console.error(`[revenuecat/webhook] ${event.type} failed for ${userId}:`, error);
+      return NextResponse.json({ error: "Could not grant entitlement" }, { status: 500 });
+    }
+    if (!data || data.length === 0) {
+      // Matched no row: the id is a UUID but not one of ours. Retrying will not
+      // change that, so acknowledge and make it findable in the logs.
+      console.error(`[revenuecat/webhook] ${event.type}: no profile for ${userId}`);
+      return NextResponse.json({ received: true, matched: false });
+    }
   } else if (REVOKE_EVENT_TYPES.has(event.type)) {
     // Only downgrade if RevenueCat was actually the system that granted the
     // current entitlement — never let a native expiration clobber a
     // separately-active Stripe web subscription for the same user.
-    await admin
+    const { error } = await admin
       .from("profiles")
       .update({
         subscription_tier: "free",
@@ -93,6 +125,11 @@ export async function POST(request: Request) {
       })
       .eq("user_id", userId)
       .eq("subscription_source", "revenuecat");
+
+    if (error) {
+      console.error(`[revenuecat/webhook] ${event.type} failed for ${userId}:`, error);
+      return NextResponse.json({ error: "Could not revoke entitlement" }, { status: 500 });
+    }
   }
   // CANCELLATION, BILLING_ISSUE, SUBSCRIPTION_PAUSED, TRANSFER, etc. are
   // intentionally no-ops here — the store's own grace-period handling

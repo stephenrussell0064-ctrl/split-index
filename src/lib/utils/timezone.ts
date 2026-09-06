@@ -7,8 +7,34 @@ export function detectBrowserTimezone(): string {
 }
 
 /** Profile timezone when set; otherwise browser/local fallback. */
+/**
+ * Is this a time zone `Intl` will actually accept?
+ *
+ * `Intl.DateTimeFormat` THROWS a RangeError on an unknown zone, and this value
+ * comes from a request body. `{"timezone":"Not/AZone"}` was enough to make
+ * every subsequent dashboard and analytics render throw inside a server
+ * component — a permanent 500 on the athlete's own home page, from one POST,
+ * with no way back short of editing the database.
+ *
+ * It is also reachable without malice: `resolvedOptions().timeZone` on an
+ * unusual or outdated engine can return a name the server's own ICU build does
+ * not know.
+ */
+export function isValidTimezone(value: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-CA", { timeZone: value });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function resolveTimezone(profileTimezone?: string | null): string {
-  if (profileTimezone && profileTimezone.trim()) return profileTimezone.trim();
+  const stored = profileTimezone?.trim();
+  // Validated on the way OUT as well as on the way in: rows written before the
+  // API validated anything are still in the database, and a stored bad value
+  // must degrade to a sensible default rather than take the page down.
+  if (stored && isValidTimezone(stored)) return stored;
   return detectBrowserTimezone();
 }
 

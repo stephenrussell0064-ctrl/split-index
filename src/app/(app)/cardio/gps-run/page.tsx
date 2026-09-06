@@ -18,6 +18,7 @@ import { livePredictionLadder, type LivePredictionEntry } from "@/lib/scoring/ca
 import {
   startGpsSession,
   stopGpsSession,
+  clearGpsSession,
   pauseGpsSession,
   resumeGpsSession,
   recoverOrphanedSession,
@@ -49,6 +50,7 @@ import {
   type PauseInterval,
 } from "@/lib/scoring/gps-track";
 import { buildGpsActivityPayload } from "./submission";
+import { submitActivityRequest } from "@/lib/activities/submit-activity";
 import type { SessionType } from "@/types";
 
 // Leaflet touches `window` at import time — ssr: false keeps it out of the
@@ -172,6 +174,8 @@ function GpsRunScreen() {
   /** Discard is two-step on purpose: one mis-tap must never be able to destroy a recorded run. */
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
   const [error, setError] = useState("");
+  /** Set when a run was accepted into the offline queue rather than saved outright — a success with a caveat, not an error, so it gets its own state and its own colour. */
+  const [queuedMessage, setQueuedMessage] = useState("");
   const [overviewResult, setOverviewResult] = useState<ScoreResultSummary | null>(null);
   const [overviewIsPremium, setOverviewIsPremium] = useState(false);
   const [profile, setProfile] = useState<{
@@ -578,6 +582,10 @@ function GpsRunScreen() {
     setStopping(true);
     try {
       await stopGpsSession();
+      // Explicit, because Stop no longer deletes anything on its own. This is
+      // the athlete saying "bin it", which is one of the only two things that
+      // may remove a track.
+      await clearGpsSession();
       if (hrSource) await handleDisconnectHeartRate();
       if (isOnFootSport) await stopStepCadence().catch(() => {});
       await endLiveActivity();
@@ -587,11 +595,15 @@ function GpsRunScreen() {
     }
   }
 
-  function handleDiscardReview() {
+  async function handleDiscardReview() {
+    // Same reasoning as handleDiscardTracking: leaving the review screen used
+    // to be free because the record was already gone. Now it is a decision.
+    await clearGpsSession();
     resetToIdle();
   }
 
   function resetToIdle() {
+    setQueuedMessage("");
     setPhase("idle");
     setSummary(null);
     setLivePoints([]);
@@ -664,29 +676,61 @@ function GpsRunScreen() {
     setSaving(true);
     setError("");
     try {
-      const res = await fetch("/api/activities", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(
-          buildGpsActivityPayload({
-            sport,
-            sessionType,
-            startedAtIso,
-            summary: trackSummary,
-            points: sourcePoints,
-            pauses: sourcePauses,
-            hrReadings,
-            cadenceReadings,
-            segments,
-          })
-        ),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error ?? "Could not save this run. Please try again.");
+      /*
+        THROUGH THE OFFLINE QUEUE, like every other logged session.
+
+        This was a bare `fetch`. Every manually logged workout in the app goes
+        through `submitActivityRequest`, which queues the payload on this device
+        when the request fails for want of a network and flushes it on
+        reconnect — and the ONE kind of session most likely to finish out of
+        signal was the one path that skipped it. A run finished on a hill with
+        no bars got "Could not save this run", and that was the end of it.
+      */
+      const result = await submitActivityRequest(
+        "/api/activities",
+        "POST",
+        buildGpsActivityPayload({
+          sport,
+          sessionType,
+          startedAtIso,
+          summary: trackSummary,
+          points: sourcePoints,
+          pauses: sourcePauses,
+          hrReadings,
+          cadenceReadings,
+          segments,
+        })
+      );
+
+      if (!result.ok) {
+        setError(result.error ?? "Could not save this run. Please try again.");
         setSaving(false);
         return;
       }
+
+      /*
+        The stored track is deleted HERE and nowhere else — the run is now
+        either on the server or in the offline queue, so this is the first
+        moment there is a second copy of it. Everything before this point
+        (Stop, the review screen, a failed attempt) leaves the record on disk,
+        because until now it was the only copy.
+      */
+      await clearGpsSession();
+
+      if (result.queued) {
+        // Queued is a success with a caveat, not a failure. Say so plainly and
+        // stay on the review screen rather than showing an overview built from
+        // a server response that does not exist yet.
+        setError("");
+        setQueuedMessage(
+          result.message ??
+            "You're offline — this run is saved on your phone and will sync when you're back online."
+        );
+        setSaving(false);
+        return;
+      }
+
+      const data = (result.data ?? {}) as Record<string, unknown>;
       setOverviewIsPremium(!data.premium_required);
       setOverviewResult(buildOverviewResult(data));
       setPhase("overview");
@@ -1285,6 +1329,14 @@ function GpsRunScreen() {
           </p>
 
           {error && <p className="mb-3 text-sm text-danger">{error}</p>}
+          {queuedMessage && (
+            <div className="mb-3 rounded-xl border border-warning/30 bg-warning/[0.08] px-3 py-2.5">
+              <p className="text-sm text-warning">{queuedMessage}</p>
+              <p className="mt-1 text-xs text-muted">
+                You can close this screen — the run is on your phone and will upload on its own.
+              </p>
+            </div>
+          )}
 
           <div className="flex gap-3">
             <Button variant="destructive" onClick={handleDiscardReview} disabled={saving}>

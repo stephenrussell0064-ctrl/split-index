@@ -159,7 +159,39 @@ export async function POST(request: Request) {
   const body: ActivityFormData & {
     bodyweight_kg?: number;
     exercise_notes?: Record<string, string>;
+    client_request_id?: string;
   } = await request.json();
+
+  /*
+    IDEMPOTENCY, for the retry the client cannot tell apart from a first try.
+
+    A submit that reached the server and whose response was lost on the way back
+    is re-sent by the offline queue carrying the same `client_request_id`. If
+    that id is already on an activity of this athlete's, the work was done — so
+    answer with what already exists rather than writing it twice. Only queued
+    submits carry an id; an ordinary online save has none and skips this
+    entirely.
+  */
+  const clientRequestId =
+    typeof body.client_request_id === "string" && body.client_request_id.length <= 100
+      ? body.client_request_id
+      : null;
+
+  if (clientRequestId) {
+    const { data: alreadySaved } = await supabase
+      .from("activities")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("client_request_id", clientRequestId)
+      .maybeSingle();
+
+    if (alreadySaved) {
+      // 200, not an error: from the client's side this attempt succeeded, which
+      // is true — it succeeded the first time. Returning a failure here would
+      // send the queue round again forever over a workout that is safely saved.
+      return NextResponse.json({ activity_id: alreadySaved.id, deduplicated: true });
+    }
+  }
 
   const { data: profile } = await supabase
     .from("profiles")
@@ -286,6 +318,7 @@ export async function POST(request: Request) {
     .from("activities")
     .insert({
       user_id: user.id,
+      client_request_id: clientRequestId,
       sport: body.sport,
       title: body.title,
       started_at: body.started_at,

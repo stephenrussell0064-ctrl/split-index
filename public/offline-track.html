@@ -333,6 +333,32 @@
         }
 
         startBtn.disabled = true;
+
+        /*
+          NEVER OVERWRITE A RUN THAT IS ALREADY IN PROGRESS.
+
+          This wrote an empty points array to the shared session key
+          unconditionally. An athlete bounced onto this offline page part-way
+          through a run — which is exactly what losing signal does — and tapping
+          "Start tracking offline" destroyed the run they were already on,
+          instantly and with no warning. The key is the same one the main app's
+          tracker uses, so there was nothing to recover afterwards either.
+        */
+        try {
+          var existingRaw = (await Preferences.get({ key: SESSION_KEY })).value;
+          var existing = existingRaw ? JSON.parse(existingRaw) : null;
+          if (existing && Array.isArray(existing.points) && existing.points.length > 0) {
+            statusEl.textContent =
+              "There's already a run recorded on this phone that hasn't been saved yet. " +
+              "Open Split Index and save or discard it before starting another.";
+            startBtn.disabled = false;
+            return;
+          }
+        } catch (e) {
+          // A record we cannot read is not a record we should clobber either —
+          // but it is also not a run we can protect, so carry on.
+        }
+
         startedAt = Date.now();
         points = [];
         await persistSession();
