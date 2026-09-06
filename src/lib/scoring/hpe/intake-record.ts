@@ -523,7 +523,7 @@ export function resolveSafetyFlags(
       currentInjuryLimiting: record.currentInjuryLimiting ?? false,
       injuryLast12Weeks: conservative(
         record.injuryLast12Weeks,
-        "A recent injury is assumed until you answer otherwise, which halves your volume ramp.",
+        "A recent injury is assumed until you answer otherwise, which eases your volume ramp slightly.",
         true
       ),
       injurySites: record.injurySites,

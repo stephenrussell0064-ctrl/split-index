@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { sbdLiftForExercise, type SBDLift } from "@/lib/scoring/strength/strength-engine";
 
 /**
  * ONE RULER for "best ever" 1RM.
@@ -78,6 +79,73 @@ export async function fetchAllTimeLiftRows(
     .eq("user_id", userId);
 
   return (data ?? []) as AllTimeLiftRow[];
+}
+
+/** The heaviest set an athlete has actually put on the bar for one of the big three. */
+export interface BestLoggedSet {
+  weightKg: number;
+  reps: number;
+}
+
+/** How many gym sessions back the "heaviest set" scan reaches. A PR that has not been touched in 500 sessions is not the number to show beside a prediction. */
+const MAX_SESSIONS_SCANNED = 500;
+
+/**
+ * The heaviest squat, bench and deadlift the athlete has actually LIFTED.
+ *
+ * Deliberately a different number from `fetchAllTimeLiftRows` above, and
+ * deliberately from a different column. That one reads the scoring engine's
+ * estimated 1RM — a projection from working sets, which is what the dashboard
+ * shows as "predicted". This reads `gym_exercises.weight_kg`, the top set as
+ * logged, which is what the athlete remembers doing. Showing the two side by
+ * side is the whole point (user feedback: "give the actual lift predictions vs
+ * the best you've recorded"); collapsing them onto one column would be showing
+ * the same number twice.
+ *
+ * The warning on the file header — that `gym_exercises.estimated_1rm_kg` must
+ * not be used comparatively — does not apply to `weight_kg`. That column is not
+ * an estimate of anything; it is what was on the bar, and for the three barbell
+ * lifts this function is limited to there is no dumbbell/single-arm ambiguity
+ * for it to get wrong.
+ */
+export async function fetchBestLoggedSbdSets(
+  supabase: SupabaseClient,
+  userId: string
+): Promise<Partial<Record<SBDLift, BestLoggedSet>>> {
+  const { data: activities } = await supabase
+    .from("activities")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("sport", "gym")
+    .eq("is_draft", false)
+    .order("started_at", { ascending: false })
+    .limit(MAX_SESSIONS_SCANNED);
+
+  if (!activities || activities.length === 0) return {};
+
+  const { data: rows } = await supabase
+    .from("gym_exercises")
+    .select("exercise_name, weight_kg, reps")
+    .in(
+      "activity_id",
+      activities.map((a) => a.id)
+    );
+
+  const best: Partial<Record<SBDLift, BestLoggedSet>> = {};
+  for (const row of rows ?? []) {
+    const lift = sbdLiftForExercise(String(row.exercise_name ?? ""));
+    if (!lift) continue;
+    const weightKg = row.weight_kg != null ? Number(row.weight_kg) : 0;
+    const reps = row.reps != null ? Number(row.reps) : 0;
+    if (!(weightKg > 0) || !(reps > 0)) continue;
+    const current = best[lift];
+    // Heaviest bar wins; a tie goes to the higher rep count, which is the
+    // better set of the two by any reading.
+    if (!current || weightKg > current.weightKg || (weightKg === current.weightKg && reps > current.reps)) {
+      best[lift] = { weightKg, reps };
+    }
+  }
+  return best;
 }
 
 /**

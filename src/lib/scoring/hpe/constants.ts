@@ -615,14 +615,29 @@ export const FRONTIER_MAX_DELTA_FRACTION = 0.08;
  * answers set how hard the plan is allowed to be instead of whether it exists.
  *
  * Ordered by how much the engine should back off. Exertional chest pain and
- * pregnancy hold everything at genuinely submaximal loads; a current injury
- * sits just above; a healed one from the last twelve weeks barely bites and is
- * mostly carried by the halved ramp.
+ * pregnancy hold everything at genuinely submaximal loads; surgery sits above
+ * those; the two injury answers barely bite.
+ *
+ * THE INJURY CEILINGS WERE LOOSENED DELIBERATELY (0.75 → 0.88 current, 0.88 →
+ * 0.95 recent), alongside their ramp multipliers below. At 0.75 a current
+ * injury capped every prescribed lift at three-quarters of 1RM for the whole
+ * block, which is not "train around it" — it is a different training block,
+ * imposed on the strength of one yes/no answer that might refer to a sore
+ * shoulder on one exercise. And because `injuryLast12Weeks` resolves to TRUE
+ * until answered, an athlete who simply had not filled in the health section
+ * was silently getting a capped, half-ramped block and a warning telling them
+ * so. The answers still change the plan (the athlete asked for exactly that —
+ * "i want the recent injury to have an impact on the intensity of the plan
+ * minimalistically"); they no longer rewrite it.
  */
 export const MEDICAL_CLEARANCE_INTENSITY_CEILING = 0.65;
-export const CURRENT_INJURY_INTENSITY_CEILING = 0.75;
 export const RECENT_SURGERY_INTENSITY_CEILING = 0.8;
-export const RECENT_INJURY_INTENSITY_CEILING = 0.88;
+export const CURRENT_INJURY_INTENSITY_CEILING = 0.88;
+export const RECENT_INJURY_INTENSITY_CEILING = 0.95;
+
+/** [EST] Ramp multipliers for the two injury answers. Not 0.5: halving twelve weeks of progression for a niggle, or for an unanswered question, is the thing that made the plan feel like it had been taken away. */
+export const CURRENT_INJURY_RAMP_MULTIPLIER = 0.8;
+export const RECENT_INJURY_RAMP_MULTIPLIER = 0.9;
 /** [EST] Under-18s train for development, not for a maximal total. */
 export const YOUTH_INTENSITY_CEILING = 0.85;
 

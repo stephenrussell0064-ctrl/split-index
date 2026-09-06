@@ -69,7 +69,7 @@ export function AppTopBar({
     mode === "gym" ? "The Lab" : mode === "cardio" ? "The Engine" : null;
 
   return (
-    <div className="mb-6 flex items-center justify-between gap-2">
+    <div className="mb-4 flex items-center justify-between gap-2">
       <div className="flex items-center gap-1.5">
         {showBack && <BackButton />}
         {modeLabel && (

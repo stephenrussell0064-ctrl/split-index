@@ -5,11 +5,25 @@ import { Swords, Crown, Target } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { formatIndex } from "@/lib/utils/format";
 import { cn } from "@/lib/utils/cn";
-import type { NextRankTarget } from "@/lib/retention/rank";
+import { topPercent, type NextRankTarget } from "@/lib/retention/rank";
 
 interface NextRankCardProps {
   /** A real peer to overtake, a standards-based next-tier target when the pool is too small for peer rank to feel earned, or null when genuinely #1 in a real, sizable pool. */
   target: NextRankTarget | null;
+  /**
+   * Where the athlete stands right now, as a percentile. Null when there isn't
+   * enough data for one.
+   *
+   * This used to be a tile of its own on the home page's first screen, reading
+   * "STANDARDS RANK · Top 12%". It was cut from there because a percentile
+   * against a reference population is not a number athletes use about
+   * themselves (user feedback: "training rank is not a normal metric for
+   * lifters or athletes and so this data is not appealing to be on the front
+   * screen"). It is not deleted, because on THIS card it is the one useful
+   * thing — the card already exists to say how far the next rank is, and where
+   * you currently stand is the other half of that sentence.
+   */
+  currentPercentile?: number | null;
   className?: string;
 }
 
@@ -21,7 +35,7 @@ interface NextRankCardProps {
  * (Slice C) rather than a hollow "you're #1 of 3" claim when the real pool
  * of scored athletes is too small for peer rank to mean anything yet.
  */
-export function NextRankCard({ target, className }: NextRankCardProps) {
+export function NextRankCard({ target, currentPercentile = null, className }: NextRankCardProps) {
   const reducedMotion = useReducedMotion();
 
   const icon =
@@ -40,6 +54,11 @@ export function NextRankCard({ target, className }: NextRankCardProps) {
           <CardTitle>{target?.type === "standard" ? "Reach The Next Tier" : "Beat The Next Rank"}</CardTitle>
           {icon}
         </div>
+        {currentPercentile !== null && (
+          <p className="text-xs text-muted">
+            You are currently in the top {topPercent(currentPercentile)}% of ranked athletes.
+          </p>
+        )}
       </CardHeader>
       <CardContent className="flex min-h-0 flex-1 flex-col justify-center gap-3">
         {target?.type === "peer" ? (

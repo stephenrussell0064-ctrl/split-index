@@ -4,7 +4,13 @@ import { ChevronRight } from "lucide-react";
 import { format } from "date-fns";
 import { createClient } from "@/lib/supabase/server";
 import { EngineLabTrendCard } from "@/components/dashboard/engine-lab-trend-card";
-import { HeroStatWall } from "@/components/dashboard/hero-stat-wall";
+import { IndexHero } from "@/components/dashboard/index-hero";
+import {
+  LiftPredictionStrip,
+  RacePredictionStrip,
+  type LiftPrediction,
+  type RacePrediction,
+} from "@/components/dashboard/prediction-strips";
 import { RecentWorkouts, AICoachCard } from "@/components/dashboard/workout-list";
 import type { HeatmapDay } from "@/components/dashboard/activity-heatmap";
 import { WeekOverWeekCard } from "@/components/dashboard/week-over-week-card";
@@ -40,11 +46,11 @@ import {
 import { computeIndexes } from "@/lib/scoring/index-engine";
 import type { IndexResult } from "@/lib/scoring/index-engine";
 import { calculateOverallDotsGl } from "@/lib/scoring/strength/overall-dots-gl";
-import { fetchAllTimeLiftRows } from "@/lib/activities/all-time-one-rm";
+import { fetchAllTimeLiftRows, fetchBestLoggedSbdSets } from "@/lib/activities/all-time-one-rm";
 import { tier2IsCalibrating, TIER2_MIN_SAMPLES_TO_DISPLAY } from "@/lib/scoring/cardio/race-prediction";
 import { explainStoredPrediction } from "@/lib/scoring/cardio-predictions";
 import { riegelPredictions } from "@/lib/scoring/cardio-activity";
-import { formatPredictionLabel } from "@/lib/scoring/presentation";
+import { formatPredictionLabel, formatShortPredictionLabel } from "@/lib/scoring/presentation";
 import { RacePredictionsSync } from "@/lib/native/race-predictions-sync";
 import type { SplitIndexWidgetPayload } from "@/lib/native/race-predictions";
 import { computeStreakMetrics } from "@/lib/retention/streak-utils";
@@ -55,7 +61,7 @@ import { computeSplitIndexProjection } from "@/lib/premium/projection";
 import { gateAiFeedback } from "@/lib/scoring/gates";
 import { formatIndex, formatTrend } from "@/lib/utils/format";
 import { cn } from "@/lib/utils/cn";
-import type { PersonalRecord, SplitIndexSnapshot, SportType } from "@/types";
+import type { SplitIndexSnapshot, SportType } from "@/types";
 
 const DAY_MS = 86400000;
 const HEATMAP_DAYS = 112;
@@ -157,7 +163,6 @@ export default async function DashboardPage() {
     { data: aiFeedback },
     { data: goals },
     { data: indexActivities },
-    { data: latestPersonalRecord },
   ] = await Promise.all([
     supabase
       .from("split_index_history")
@@ -228,30 +233,34 @@ export default async function DashboardPage() {
       .eq("is_draft", false)
       .order("started_at", { ascending: false })
       .limit(20),
-    supabase
-      .from("personal_records")
-      .select("*")
-      .eq("user_id", user.id)
-      .order("achieved_at", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
   ]);
 
-  // Best-ever SBD total for the hero wall's "SBD Prediction" tile (Slice 7)
+  // Best-ever SBD total for the home page's lift strip (Slice 7)
   // — same all-time-best-lift source as the Lab page's own DOTS/GL card
   // (gym/page.tsx) and Analytics' new DOTS/GL panel, so all three agree.
   // strength_scores, not gym_exercises: the two columns hold different numbers
   // for the same lift, and this tile has to agree with the Lab and Analytics
   // cards showing the same DOTS/GL. See lib/activities/all-time-one-rm.ts.
   const allTimeGymExercisesPromise = fetchAllTimeLiftRows(supabase, user.id);
+  // What the athlete has actually had on the bar, to sit under what the
+  // engine predicts they could (user feedback: "give the actual lift
+  // predictions vs the best you've recorded"). A different column from the
+  // one above on purpose — see fetchBestLoggedSbdSets.
+  const bestLoggedSbdPromise = fetchBestLoggedSbdSets(supabase, user.id);
 
-  const [crossDomainSessions, predictedRunBenchmark, allTimeGymExercises, todaysSessionPayload] =
-    await Promise.all([
-      crossDomainSessionsPromise,
-      predictedRunBenchmarkPromise,
-      allTimeGymExercisesPromise,
-      todaysSessionPromise,
-    ]);
+  const [
+    crossDomainSessions,
+    predictedRunBenchmark,
+    allTimeGymExercises,
+    todaysSessionPayload,
+    bestLoggedSbd,
+  ] = await Promise.all([
+    crossDomainSessionsPromise,
+    predictedRunBenchmarkPromise,
+    allTimeGymExercisesPromise,
+    todaysSessionPromise,
+    bestLoggedSbdPromise,
+  ]);
   const interferenceReport = computeInterferenceReport(crossDomainSessions);
   const readiness = computeReadiness(crossDomainSessions);
   const todayPlan = buildTodayPlan(readiness, interferenceReport, predictedRunBenchmark);
@@ -316,6 +325,45 @@ export default async function DashboardPage() {
         }
       : { status: "noData" };
 
+  /*
+    Squat / bench / deadlift, predicted against performed.
+
+    `bestSbdKg` is the scoring engine's best-ever estimated 1RM per lift — a
+    projection. `bestLoggedSbd` is the heaviest set the athlete actually did.
+    Showing the pair is the point; showing either alone was the old SBD tile,
+    which reported a 457kg total and left an athlete no way to tell whether
+    that was three numbers they had hit or three the engine had inferred.
+  */
+  const liftPredictions: LiftPrediction[] = SBD_WIDGET_LIFTS.map(({ key, label }) => {
+    const logged = bestLoggedSbd[key];
+    return {
+      label,
+      predictedKg: overallDotsGl && overallDotsGl.bestSbdKg[key] > 0 ? overallDotsGl.bestSbdKg[key] : null,
+      bestKg: logged?.weightKg ?? null,
+      bestReps: logged?.reps ?? null,
+    };
+  });
+
+  /*
+    The full race ladder, computed once.
+
+    Two surfaces read it and they must not disagree: the home page's race strip
+    shows every rung (1500m through the marathon), the iOS widget shows two of
+    them. Building it twice from the same inputs would be two chances to pass a
+    different Riegel exponent.
+  */
+  const raceLadder: [string, number][] =
+    predicted5kSeconds !== null
+      ? Object.entries(
+          riegelPredictions(5000, predicted5kSeconds, "intermediate", predictedRunBenchmark?.riegelK) ?? {}
+        ).sort(([a], [b]) => Number(a) - Number(b))
+      : [];
+
+  const racePredictions: RacePrediction[] = raceLadder.map(([distance, seconds]) => ({
+    label: formatShortPredictionLabel(distance),
+    seconds,
+  }));
+
   const racePredictionPayload: SplitIndexWidgetPayload =
     predicted5kSeconds !== null
       ? {
@@ -323,11 +371,8 @@ export default async function DashboardPage() {
           headline: { label: "5K", seconds: predicted5kSeconds },
           // The longer rungs only — the 5K is already the headline, and
           // 1500m/marathon don't earn their space on a small widget.
-          ladder: Object.entries(
-            riegelPredictions(5000, predicted5kSeconds, "intermediate", predictedRunBenchmark?.riegelK) ?? {}
-          )
+          ladder: raceLadder
             .filter(([distance]) => LADDER_WIDGET_DISTANCES.includes(distance))
-            .sort(([a], [b]) => Number(a) - Number(b))
             .map(([distance, seconds]) => ({
               label: formatPredictionLabel(distance),
               seconds,
@@ -540,82 +585,113 @@ export default async function DashboardPage() {
   );
 
   return (
-    <div className="space-y-5">
+    /*
+      THE FIRST SCREEN IS THE PRODUCT.
+
+      space-y-3 rather than space-y-5, a one-line greeting rather than a
+      two-line one, and a deliberate order: everything an athlete opens the
+      app for now sits above the fold on a phone, and everything retrospective
+      sits below it (user feedback: "i dont want you to have to scroll very
+      much at all on the homepage as you should not need to in an app, all the
+      key information should be available on the screen you see").
+
+      The four blocks that make up that screen, in order:
+
+        1. Where I stand   — IndexHero: the Split Index with the words that say
+                             what it is, plus its Engine and Lab halves.
+        2. What I do today — the Hybrid Plan band, given the second slot
+                             because that is the strongest place on the page
+                             ("i also want the hybrid plan to be highlighted
+                             more greatly in the homepage").
+        3. What I could run — every race distance, not just the 5K.
+        4. What I could lift — all three lifts, predicted against performed.
+
+      Nothing was deleted to make room: readiness, the AI coach, interference,
+      trends, goals and the rest all still follow, in the same order they were
+      in, one scroll down.
+    */
+    <div className="space-y-2.5">
       {/*
         Renders nothing — pushes the predictions above into the iOS
         home-screen widget's shared container. No-op on web and Android.
       */}
       <RacePredictionsSync payload={racePredictionPayload} />
 
-      <div>
-        <h1 className="headline-tight text-2xl font-bold sm:text-3xl">
-          {displayName ? `Welcome back, ${displayName}` : "Welcome back"}
+      {/* One line, deliberately. Two lines of greeting is a tenth of a phone
+          screen spent on a name the athlete already knows. */}
+      <div className="flex items-baseline gap-x-2 overflow-hidden">
+        <h1 className="headline-tight shrink-0 text-sm font-bold">
+          {displayName ? `Hi, ${displayName}` : "Welcome back"}
         </h1>
-        <p className="mt-1 text-sm text-muted">
-          {format(new Date(), "EEEE, MMMM d")} · {sessionHint}
+        <p className="truncate text-xs text-muted">
+          {format(new Date(), "EEE d MMM")} · {sessionHint}
         </p>
       </div>
 
       {!hasActivities && <EmptyDashboardHero displayName={displayName} />}
 
       {/*
-        WHERE DO I STAND — the headline index, the two predictions an athlete
-        opens the app for, streak and rank. Stays first because it is the one
-        block that has to grab attention before anything is read, and because
-        `predicted5kSeconds` / `overallDotsGl` here are the SAME gated values
-        `RacePredictionsSync` above publishes to the iOS home-screen widget.
-        Neither the tile nor the payload was touched by this redesign, so the
-        phone and the app still cannot disagree about a predicted time.
+        WHERE DO I STAND. Stays first because it is the one block that has to
+        grab attention before anything is read.
+
+        `predicted5kSeconds` / `overallDotsGl` still feed BOTH the strips below
+        and the `RacePredictionsSync` payload above, through the one
+        `raceLadder` both are built from — so the phone's home-screen widget
+        and the app cannot disagree about a predicted time.
       */}
       {hasActivities && (
-        <HeroStatWall
+        <IndexHero
           headlineLabel={headlineLabel}
           headlineValue={hasIndexHistory ? headlineValue : null}
           weeklyTrend={weeklyTrend}
           hasHistory={hasIndexHistory}
-          predicted5kSeconds={predicted5kSeconds}
-          predictionDecayNote={predictionDecay?.explanation ?? null}
-          sbdTotalKg={overallDotsGl && overallDotsGl.sbdTotalKg > 0 ? overallDotsGl.sbdTotalKg : null}
-          sbdLiftsLogged={overallDotsGl?.liftsLogged ?? 0}
+          engineIndex={hasIndexHistory ? displayEnduranceIndex : null}
+          labIndex={hasIndexHistory ? displayStrengthIndex : null}
           streak={streakMetrics.streak}
           streakAtRisk={streakMetrics.atRisk}
-          trainedToday={streakMetrics.trainedToday}
           weeklySessions={streakMetrics.weeklySessions}
-          rankPercentile={rankPercentile}
-          isPremium={premium}
-          latestPr={(latestPersonalRecord as PersonalRecord | null) ?? null}
         />
       )}
 
       {/*
-        WHAT DO I DO TODAY — the two rows an athlete opens the app for, moved
-        above everything retrospective.
+        WHAT DO I DO TODAY. The plan band, full width and directly under the
+        index — the hybrid plan used to reach the home page as one third of a
+        three-column grid two blocks down, which is not what "the app's only
+        planning surface" should look like on the screen everyone lands on.
+      */}
+      <TodaysSessionCard payload={todaysSessionPayload} variant="band" />
 
+      {/*
+        WHAT COULD I DO. Five race distances and three lifts, in the footprint
+        the single 5K square and the single SBD square used to occupy between
+        them.
+      */}
+      {hasActivities && (
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+          <RacePredictionStrip
+            predictions={racePredictions}
+            note={predictionDecay?.explanation ?? null}
+          />
+          <LiftPredictionStrip
+            lifts={liftPredictions}
+            totalKg={overallDotsGl && overallDotsGl.sbdTotalKg > 0 ? overallDotsGl.sbdTotalKg : null}
+          />
+        </div>
+      )}
+
+      {/* ── Below the fold: how today is going, then what has happened ── */}
+
+      {hasActivities && <ReadinessCard readiness={readiness} />}
+
+      {/*
         The AI coach was the LAST content block on this page (bottom-right of
         the final grid, below the heatmap and the goals list). The athlete's
         report was blunt: "the AI coach on dashboard is key information and
-        this should be higher up". It is now second, full-weight, directly
-        under the index it is explaining.
-
-        Today's prescribed session was not on this page at all — the hybrid
-        plan shipped as its own route reachable only from the nav. It leads
-        this band because it is the most concrete answer the app has to "what
-        now", and it is rendered from the same payload builder the iOS widget
-        uses so the two surfaces cannot describe today differently.
-
-        Readiness and the intensity suggestion stay, but as the narrow rail
-        beside each — they qualify the session and the coaching, they are not
-        the answer on their own.
+        this should be higher up". It leads the below-the-fold content, with
+        the intensity suggestion as the rail beside it — that qualifies the
+        coaching, it is not the answer on its own.
       */}
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
-        <TodaysSessionCard
-          payload={todaysSessionPayload}
-          className={hasActivities ? "lg:col-span-2" : "lg:col-span-3"}
-        />
-        {hasActivities && <ReadinessCard readiness={readiness} className="lg:col-span-1" />}
-      </div>
-
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
         <AICoachCard
           feedback={aiFeedback ? gateAiFeedback(aiFeedback, premium) : aiFeedback}
           isPremium={premium}
@@ -637,7 +713,7 @@ export default async function DashboardPage() {
         </PremiumTease>
       )}
 
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
         <EngineLabTrendCard
           data={trendData}
           currentEndurance={displayEnduranceIndex}
@@ -717,9 +793,9 @@ export default async function DashboardPage() {
         report something. Grouped so they read as one prompt instead of being
         scattered through the analysis tail as they were.
       */}
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
         {premium ? (
-          <NextRankCard target={nextRankTarget} />
+          <NextRankCard target={nextRankTarget} currentPercentile={rankPercentile?.percentile ?? null} />
         ) : (
           <PremiumTease
             title="Beat the next rank"
@@ -777,7 +853,7 @@ export default async function DashboardPage() {
         week" is a right-now question and it exists nowhere else. It keeps
         `heatmapDays`, which is why that computation is still above.
       */}
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
         <WeekOverWeekCard days={heatmapDays} className="lg:col-span-1" />
         <div className="lg:col-span-2">
           <SportComparisonGrid scoresBySport={scoresBySport} />

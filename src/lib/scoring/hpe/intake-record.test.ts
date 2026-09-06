@@ -122,7 +122,7 @@ describe("WP2 — unanswered is not 'no'", () => {
   it("says out loud what it assumed", () => {
     const { assumed } = resolveSafetyFlags(parseIntakeRow(null), { age: 30, sex: "male" });
     expect(assumed.join(" ")).toMatch(/recent injury is assumed/i);
-    expect(assumed.join(" ")).toMatch(/halves your volume ramp/i);
+    expect(assumed.join(" ")).toMatch(/eases your volume ramp/i);
   });
 
   it("stops assuming once the athlete answers", () => {

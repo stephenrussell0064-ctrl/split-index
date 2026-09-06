@@ -432,6 +432,33 @@ describe("injury changes the plan without sending anyone to a clinic", () => {
     expect(plan.safety.referrals.join(" ")).not.toMatch(/physio/i);
     expect(plan.safety.advisories.join(" ")).not.toMatch(/physio/i);
   });
+
+  it("still writes a full, trainable block with every injury answer at its worst", () => {
+    // The owner's requirement, verbatim: "i want to make sure the plan will
+    // guaranteed work whether it thinks you should not train due to injury or
+    // not." Nothing in the safety screen may empty a week — the caps make the
+    // sessions easier, they do not remove them, and an athlete who answers yes
+    // to everything must still get something to do on every training day.
+    const s = state({
+      safety: {
+        ...DEFAULT_SAFETY_FLAGS,
+        currentInjuryLimiting: true,
+        injuryLast12Weeks: true,
+        surgeryLast6Months: true,
+      },
+    });
+    const profile = diagnose(runs(14, 8, 300, 148), [], s.oneRms, { priority: 0.5, hrMax: 190, hrRest: 52, hrMaxSource: "measured" });
+    const plan = generatePlan({ state: s, goal: goal(), constraints: constraints(), profile });
+
+    expect(plan.generated).toBe(true);
+    expect(plan.weeks.length).toBeGreaterThan(0);
+    for (const week of plan.weeks) {
+      expect(week.sessions.length).toBeGreaterThan(0);
+    }
+    // And the caps stay minimal rather than rewriting the block into rehab.
+    expect(plan.safety.intensityCeiling).toBeGreaterThanOrEqual(0.8);
+    expect(plan.safety.rampMultiplier).toBeGreaterThanOrEqual(0.5);
+  });
 });
 
 describe("the predicted 5k respects what the athlete has actually run", () => {
