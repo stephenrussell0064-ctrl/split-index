@@ -11,6 +11,7 @@ import { Select } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
 import { SuccessScreen, type ScoreResultSummary } from "@/components/activities/success-screen";
 import { SESSION_TYPES } from "@/lib/constants/sports";
+import { formatIndex } from "@/lib/utils/format";
 import { SPORT_INDEX_LABELS } from "@/lib/constants/sports";
 import { isNativePlatform } from "@/lib/native/platform";
 import { createClient } from "@/lib/supabase/client";
@@ -911,8 +912,13 @@ function GpsRunScreen() {
                       <p className="text-sm font-bold tabular-nums text-white">
                         {formatRaceTime(entry.seconds)}
                       </p>
+                      {/* formatIndex, not Math.round: `score` is on the internal
+                          0-1000 scale and every score the athlete has ever been
+                          shown is on the 0-100 one. Raw, this predicted 742
+                          mid-run and then saved as 74.2 — the same run, two
+                          numbers, one of them ten times the other. */}
                       <p className={`text-xs font-bold tabular-nums ${scoreAccentClass(entry.score)}`}>
-                        {Math.round(entry.score)}
+                        {formatIndex(entry.score)}
                       </p>
                     </div>
                   ))}
@@ -1297,8 +1303,9 @@ function GpsRunScreen() {
                   >
                     <p className="micro-label text-white/50">{entry.label}</p>
                     <p className="text-sm font-bold tabular-nums text-white">{formatRaceTime(entry.seconds)}</p>
+                    {/* See the live strip above — same scale, same reason. */}
                     <p className={`text-xs font-bold tabular-nums ${scoreAccentClass(entry.score)}`}>
-                      {Math.round(entry.score)}
+                      {formatIndex(entry.score)}
                     </p>
                   </div>
                 ))}

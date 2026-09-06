@@ -178,11 +178,20 @@ export default async function DashboardPage() {
       .gte("recorded_at", trendCutoff)
       .order("recorded_at", { ascending: true })
       .limit(180),
+    /*
+      The NEWEST 90 snapshots, then re-sorted ascending for the projection.
+
+      This was `ascending: true` with `limit(90)`, which is the OLDEST 90 — so
+      the moment an athlete passed 90 history rows, `computeSplitIndexProjection`
+      was fitting a trend line to data from months ago and had no knowledge of
+      anything since. A steadily improving athlete was shown a falling 8-week
+      forecast, in red, computed from a period they had already left behind.
+    */
     supabase
       .from("split_index_history")
       .select("*")
       .eq("user_id", user.id)
-      .order("recorded_at", { ascending: true })
+      .order("recorded_at", { ascending: false })
       .limit(90),
     supabase
       .from("activities")
@@ -424,7 +433,11 @@ export default async function DashboardPage() {
 
   const projection8Weeks = hasIndexHistory
     ? computeSplitIndexProjection(
-        (fullHistory ?? []) as SplitIndexSnapshot[],
+        // Back into chronological order — the query above asks for the newest
+        // rows, the projection wants them oldest-first to fit a line through.
+        [...((fullHistory ?? []) as SplitIndexSnapshot[])].sort(
+          (a, b) => new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime()
+        ),
         8
       )
     : null;

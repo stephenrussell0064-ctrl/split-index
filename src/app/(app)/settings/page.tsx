@@ -28,6 +28,8 @@ import {
 import { WidgetStatus } from "@/components/settings/widget-status";
 import { PremiumBadge } from "@/components/retention/premium-badge";
 import { createClient } from "@/lib/supabase/client";
+import { clearRacePredictions } from "@/lib/native/race-predictions";
+import { clearDailyTraining } from "@/lib/native/daily-training";
 import type { SubscriptionStatus, SubscriptionTier } from "@/types";
 
 /*
@@ -136,7 +138,19 @@ export default function SettingsPage() {
     : null;
 
 
+  /** Both widgets, best-effort — no-ops off device. */
+  const clearNativeWidgets = async () => {
+    await clearRacePredictions().catch(() => {});
+    await clearDailyTraining().catch(() => {});
+  };
+
   const handleSignOut = async () => {
+    // Same clearing the sidebar's sign-out does, and for the same reason: the
+    // home-screen widgets read an App Group container that outlives the
+    // webview, so without this the previous account's race times and named
+    // training block stay on the phone's home screen after they sign out.
+    // There were two sign-out buttons and only one of them did this.
+    await clearNativeWidgets();
     const supabase = createClient();
     await supabase.auth.signOut();
     router.push("/");
@@ -198,6 +212,10 @@ export default function SettingsPage() {
         setDeleteError(data.error ?? "Failed to delete account");
         return;
       }
+      // Deleting the account and leaving its predictions on the home screen is
+      // the worst version of this: the data is gone from the server and still
+      // being displayed by the phone, with no account left to clear it.
+      await clearNativeWidgets();
       const supabase = createClient();
       await supabase.auth.signOut();
       router.push("/");

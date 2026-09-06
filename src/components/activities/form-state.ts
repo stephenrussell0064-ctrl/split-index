@@ -716,9 +716,24 @@ const SESSION_TYPE_VALUES: SessionType[] = [
 
 // ─── Number parsing ──────────────────────────────────────────────────────────
 
+/**
+ * A decimal number as an athlete would write one, or null.
+ *
+ * `Number()` alone accepts a great deal that nobody types into a weight field:
+ * `Number("0x10")` is 16, `Number("0b101")` is 5, `Number("1e3")` is 1000, and
+ * `Number("Infinity")` is Infinity. These fields are `type="text"` (so a comma
+ * decimal and a clock time can be handled), so all of it reached the scoring
+ * engine and the database — a set logged as "0x10" was silently stored as 16kg.
+ *
+ * The pattern is what a person writes: an optional sign, digits, an optional
+ * decimal part. Nothing else.
+ */
+const DECIMAL_INPUT = /^[+-]?(\d+(\.\d*)?|\.\d+)$/;
+
 export function parseNum(value: string): number | null {
   const trimmed = value.trim().replace(",", ".");
   if (trimmed === "") return null;
+  if (!DECIMAL_INPUT.test(trimmed)) return null;
   const n = Number(trimmed);
   return Number.isFinite(n) ? n : null;
 }
@@ -1083,7 +1098,22 @@ export function validateAndBuildPayload(
     // Distance/split validation above already set their own errors if
     // missing — a resulting 0 here means the payload build fails downstream,
     // not a distinct "duration" error.
-    duration = avgSplit != null && distanceMeters != null ? (avgSplit / 500) * distanceMeters : 0;
+    /*
+      ROUNDED, because `duration_seconds` is an integer column and the zod
+      schema guarding it is `z.number().int()`.
+
+      (split / 500) * metres is a float for almost every real erg piece —
+      1234 m at a 1:52 split is 276.416 seconds — so the payload was rejected
+      before it reached the database, with the generic "Something looks off"
+      and no field highlighted, because the failure belonged to a value the
+      athlete never typed. Most distances on a rower or SkiErg were literally
+      unloggable in the default input mode, and there was no way to work out
+      why from the screen.
+    */
+    duration =
+      avgSplit != null && distanceMeters != null
+        ? Math.round((avgSplit / 500) * distanceMeters)
+        : 0;
   } else {
     duration = totalDurationSeconds(state);
     if (duration <= 0) {

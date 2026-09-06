@@ -8,7 +8,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils/cn";
-import { formatIndex } from "@/lib/utils/format";
+import { formatIndex, indexFromDisplay } from "@/lib/utils/format";
 
 /** Local shape for the `goals` table (types file is owned by another workstream) */
 export interface DashboardGoal {
@@ -89,8 +89,15 @@ function GoalEditForm({
 }) {
   const router = useRouter();
   const [title, setTitle] = useState(goal.title);
+  /*
+    Seeded on the DISPLAY scale, the same 0-100 number the card shows.
+
+    It used to be seeded raw — the card said "82.5" and opening the edit form
+    showed "825". Anyone who corrected that to the "85" they meant stored 85,
+    which renders as 8.5, and their goal quietly became a tenth of itself.
+  */
   const [target, setTarget] = useState(
-    goal.target_split_index != null ? String(goal.target_split_index) : ""
+    goal.target_split_index != null ? formatIndex(goal.target_split_index) : ""
   );
   const [deadline, setDeadline] = useState(goal.deadline ?? "");
   const [saving, setSaving] = useState(false);
@@ -107,7 +114,7 @@ function GoalEditForm({
         body: JSON.stringify({
           id: goal.id,
           title,
-          targetSplitIndex: target === "" ? null : Number(target),
+          targetSplitIndex: target === "" ? null : indexFromDisplay(target),
           deadline: deadline === "" ? null : deadline,
         }),
       });
@@ -206,7 +213,8 @@ function AddGoalForm({ currentIndex, onDone }: { currentIndex: number; onDone: (
   const router = useRouter();
   const suggested = Math.min(999, Math.ceil((currentIndex + 25) / 25) * 25);
   const [title, setTitle] = useState("");
-  const [target, setTarget] = useState(String(suggested));
+  // Display scale, like the edit form — see the note there.
+  const [target, setTarget] = useState(formatIndex(suggested));
   const [deadline, setDeadline] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -220,7 +228,7 @@ function AddGoalForm({ currentIndex, onDone }: { currentIndex: number; onDone: (
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title: title.trim() || undefined,
-          targetSplitIndex: Number(target),
+          targetSplitIndex: indexFromDisplay(target),
           deadline: deadline || undefined,
         }),
       });

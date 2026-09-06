@@ -405,7 +405,40 @@ export async function DELETE(
     return NextResponse.json({ error: "Activity not found" }, { status: 404 });
   }
 
+  /*
+    EVERYTHING THAT POINTS AT THIS SESSION, not just the index history.
+
+    Both of the tables below are `ON DELETE SET NULL`, so deleting the activity
+    does not delete them — it orphans them. The merge route already cleans up
+    exactly these two and explains why; delete was written first and never
+    caught up.
+
+    A personal record is the one that bites. Its row survives with a null
+    activity_id, still occupying the UNIQUE(user_id, sport, metric) slot, and
+    because records are upserted only when the new value is BETTER, nothing can
+    ever displace it. The athlete deletes a mistyped 4:02 mile and is congratulated
+    on it forever, with no session behind it to open.
+  */
   await supabase.from("split_index_history").delete().eq("activity_id", id);
+  await supabase
+    .from("personal_records")
+    .delete()
+    .eq("user_id", user.id)
+    .eq("activity_id", id);
+
+  /*
+    The stored race prediction is different: it is not deleted, it is
+    invalidated. `predicted_benchmarks.last_activity_id` is the marker saying
+    "the prediction already contains this session's evidence" — SET NULL erases
+    the marker while leaving the prediction, so the next run would be blended
+    into a base that silently still includes the deleted one. Clearing the base
+    makes the next scored session rebuild it honestly.
+  */
+  await supabase
+    .from("predicted_benchmarks")
+    .delete()
+    .eq("user_id", user.id)
+    .eq("last_activity_id", id);
 
   const { error } = await supabase.from("activities").delete().eq("id", id);
 
