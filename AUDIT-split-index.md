@@ -32,6 +32,7 @@ its current status inline; this table is the summary.
 | M3 PremiumGate exposes the value in the DOM | **CLOSED** | `5525455` |
 | M13 no accessibility statement, no skip link | **CLOSED** | `5525455` |
 | L1 muted-foreground fails text AA | **CLOSED** | `5525455` |
+| M4 no getEntitlements, no matrix test | **CLOSED** | `1d6976c` |
 | M7 session/refresh left at defaults | **PARTIAL** — values recorded and made an operator task; GoTrue behaviour still unverifiable from here | `76b9d6b` |
 | H2 no boundary validation | **PARTIAL** — 3 routes of ~40; **and materially corrected, see the finding** | `4f10902` |
 | M11 no central config / bounds | **PARTIAL** — module exists; a second set of bounds still lives in the scoring guard | `4f10902` |
@@ -610,6 +611,7 @@ was entitled to receive — that is the test, and it does not exist.
 ---
 
 #### M4 — Entitlement is centralised in a function, but there is no `getEntitlements` and no matrix test
+> **CLOSED `1d6976c`.** `getEntitlements` resolves plan, trial state, premium and admin once, from state only the payment webhooks write. The 21-case matrix (5 account states × 3 protected routes) **passes against the parent commit too** — the pre-existing gating was correct, and the finding was the absence of the test, not a defect. WP6.4's audit entry per admin access WAS missing and is the part with a real before/after. 17 call sites still resolve entitlement themselves; see N8.
 **WP6.2, WP6.5 · Evidence: [`src/lib/premium/features.ts`](src/lib/premium/features.ts)**
 
 Better than the brief assumes. `PREMIUM_FEATURES` is a single typed map, `canAccess` /
@@ -959,6 +961,18 @@ Closing H8 did not make the app conformant, and the published statement says
 
 The statement is only honest while this list is accurate. Update both together.
 
+#### N8 — Seventeen call sites still resolve entitlement themselves
+**WP6.2 · Low · Evidence: `grep -rln isPremiumUser src` — 21 sites, 4 migrated.**
+
+They are correct: the matrix says so, and it passes against the pre-migration
+code. The finding is duplication, not a defect. Each re-queries `profiles` for
+its own columns, which is how two entitlement concepts — `isPremiumUser` and the
+card-less `hasSoftTrialAccess` — came to coexist without either knowing about
+the other.
+
+Low because nothing is currently wrong, and worth doing because the next
+divergence will be silent in exactly the same way.
+
 ### Part D — activation and monetisation
 
 Reported as findings for completeness. None is a security or compliance matter, and D0's
@@ -1007,9 +1021,9 @@ including the four findings raised during remediation:
 |---|---|---|---|
 | Critical | **0** | 4 | All four were one defect in four places. |
 | High | 3 | 6 | H1, H3, H4, H5, H7, H8 closed; H2 corrected and partially closed. |
-| Medium | 11 | 4 | M1, M2, M3, M13 closed; M7 and M11 partially. N1, N5, N7 added. |
-| Low | 6 | 4 | L1, L3, L6, N4 closed; N2, N3, N6 added. |
-| **Total** | **20** | **19** | 39 findings raised in total. |
+| Medium | 10 | 5 | M1, M2, M3, M4, M13 closed; M7 and M11 partially. N1, N5, N7 added. |
+| Low | 7 | 4 | L1, L3, L6, N4 closed; N2, N3, N6, N8 added. |
+| **Total** | **20** | **20** | 40 findings raised in total. |
 
 All four Criticals are the same defect in four places: a policy written to enable a public
 leaderboard exposes the underlying user-owned table instead of a column-scoped projection.
@@ -1039,7 +1053,7 @@ Then:
 | 5 | ~~**WP5 error boundary**~~ **DONE `c467470`, `0dd3d55`** | M1, M2 (M14 **not** started) | Mechanical, 23 files, one house pattern (`auth-errors.ts`) already exists to copy. |
 | 6 | ~~**WP13 + WP4 auth hardening**~~ **DONE `76b9d6b`** | H3, H7; M7 partly (M6 **not** started) | Per-account and per-IP limits must be designed together, per WP13.5. Needs a shared store. |
 | 7 | ~~**WP12 contrast + gating**~~ **DONE `5525455`** | H8, M3, M13, L1 (N7 opened) | M3 satisfies WP6.3 and WP12.7 at once. Statement written last, after the fix, so it is honest. |
-| 8 | **WP6 entitlement matrix** | M4, M3 | The matrix test is the deliverable; `features.ts` mostly stands. |
+| 8 | ~~**WP6 entitlement matrix**~~ **DONE `1d6976c`** | M4 (M3 already closed by WP12); N8 opened | The matrix test is the deliverable; `features.ts` mostly stands. |
 | 9 | **WP7 logging** | H6 | Build the redaction rule in from the first line, not after. |
 | 10 | **WP14 headers, WP11 deletion test, WP8 plans** | M5, M8, M9, M12, L2, L4, L5 | Independent, parallelisable, none blocking. |
 | 11 | **H9 — DPIA + ICO** | H9 | Stephen's, not code. Should start now and run alongside; it does not block engineering. |
@@ -1092,10 +1106,13 @@ is different.
   someone's programme as a side effect of a privacy choice would punish the
   choice.
 
-**Next in the recommended order:** step 8, WP6 — the entitlement matrix. M3 is
-already closed by WP12, so what remains is a single `getEntitlements(userId)`
-and the five-role × every-protected-route matrix test, which is the deliverable
-rather than the code. `features.ts` mostly stands.
+**Next in the recommended order:** step 9, WP7 — security and audit logging.
+`admin_access_log` (migration 059) is the first structured log in the codebase
+and the pattern to extend: auth successes and failures, rate-limit trips,
+entitlement denials, payment webhook events and 5xx. Build the redaction rule in
+from the first line rather than retrofitting it — WP7's other half is that no
+log line may contain a value drawn from a health table, and `sanitiseDetail` in
+`lib/auth/admin-audit.ts` is the shape to reuse.
 
 **Four operator items outstanding:**
 
