@@ -22,13 +22,14 @@ its current status inline; this table is the summary.
 | L6 `challenge_participants` | **CLOSED** | `5e70dd8` |
 | H1 Article 9 consent absent | **CLOSED** | `604a095` |
 | H5 no CI | **CLOSED** | `2c4cefe` |
+| H4 no build-time key gate | **CLOSED** | `8d9096a` |
+| L3 no SECURITY.md | **CLOSED** | `8d9096a` |
 | H2 no boundary validation | **PARTIAL** — 3 routes of ~40; **and materially corrected, see the finding** | `4f10902` |
 | M11 no central config / bounds | **PARTIAL** — module exists; a second set of bounds still lives in the scoring guard | `4f10902` |
 | Everything else | **OPEN** | — |
 
-**Current open count: 2 Critical-adjacent (none), 7 High, 14 Medium, 5 Low, plus 4 new findings below.**
 Zero Critical findings remain open. The brief's gate for a growth push is WP1,
-WP2, WP6 and WP13 complete: **WP1 done, WP2 open, WP6 open, WP13 open.**
+WP2, WP6 and WP13 complete: **WP1 done, WP2 done, WP6 open, WP13 open.**
 
 ### Corrections to Phase 0 itself
 
@@ -398,6 +399,7 @@ test, not a change.
 ---
 
 #### H4 — No build-time gate stops a server key reaching the client bundle
+> **CLOSED `8d9096a`.** `npm run build` now runs a client-bundle scanner that exits non-zero on a service-role JWT, a Stripe/OpenAI secret or a `process.env.<SECRET>` read. Proven end to end by planting a fabricated key in a `"use client"` component: build exits 1, names the chunk, and exits 0 once removed. `import "server-only"` added to both elevated-credential modules, and the Stripe webhook's duplicate factory removed.
 **WP2 · Evidence: `grep -rn "server-only" src/` → no `import "server-only"` anywhere. No CI.**
 
 The good news first, because it is genuinely good:
@@ -819,7 +821,7 @@ username is taken". The two findings should be fixed together.
   static objects with no user input, so there is no injection path today. `JSON.stringify`
   does not escape `</script>`, so this becomes live the moment any user-controlled string
   enters either object.
-- **L3 — `SECURITY.md` absent** (WP2.6). Which key does what, where it lives, how to rotate it.
+- ~~**L3 — `SECURITY.md` absent**~~ **CLOSED `8d9096a`.** Keys, blast radius, per-key rotation steps, the eleven elevated call sites with justifications, and a Known Gaps section. Its security contact address is a placeholder that still needs creating.
 - **L4 — `Permissions-Policy` denies `geolocation=()`** (WP14). Correct today — GPS is
   Capacitor-native and `navigator.geolocation` is not used anywhere — but it will silently
   break a web GPS path if one ships. Worth a comment in `next.config.ts` so the next person
@@ -940,10 +942,10 @@ including the four findings raised during remediation:
 | Severity | Open | Closed | Note |
 |---|---|---|---|
 | Critical | **0** | 4 | All four were one defect in four places. |
-| High | 7 | 2 | H1 and H5 closed; H2 corrected and partially closed. |
+| High | 6 | 3 | H1, H4, H5 closed; H2 corrected and partially closed. |
 | Medium | 14 | 0 | M11 partially closed. N1 added. |
-| Low | 7 | 2 | L6 and N4 closed; N2 and N3 added. |
-| **Total** | **28** | **8** | 37 findings raised in total. |
+| Low | 6 | 3 | L3, L6, N4 closed; N2 and N3 added. |
+| **Total** | **26** | **10** | 36 findings raised in total. |
 
 All four Criticals are the same defect in four places: a policy written to enable a public
 leaderboard exposes the underlying user-owned table instead of a column-scoped projection.
@@ -969,7 +971,7 @@ Then:
 | 1 | ~~**WP1 — public projections**~~ **DONE `5e70dd8`** | C1, C2, C3, C4, L6 | Four Criticals, one fix. Bodyweight, readiness and Stripe IDs stop being world-readable. |
 | 2 | ~~**WP11 Article 9 consent**~~ **DONE `604a095`** | H1 | Special category data is being collected right now with no lawful basis we can evidence. Every day it runs adds records. |
 | 3 | **WP3 — validation at the boundary** — PARTIAL `4f10902` | H2 (corrected), M11 partly; M14 **not** started | Precondition for the WP3 fuzz sweep and for the §1 config module everything else references. |
-| 4 | **WP2 build gate + `server-only`** | H4, L3 | Small, and it stops the one mistake with no recovery short of rotation. Needs step 0. |
+| 4 | ~~**WP2 build gate + `server-only`**~~ **DONE `8d9096a`** | H4, L3 | Small, and it stops the one mistake with no recovery short of rotation. Needs step 0. |
 | 5 | **WP5 error boundary** | M1, M2, M14 | Mechanical, 23 files, one house pattern (`auth-errors.ts`) already exists to copy. |
 | 6 | **WP13 + WP4 auth hardening** | H3, H7, M6, M7 | Per-account and per-IP limits must be designed together, per WP13.5. Needs a shared store. |
 | 7 | **WP12 contrast + gating** | H8, M3, M13, L1 | M3 satisfies WP6.3 and WP12.7 at once. Statement written last, after the fix, so it is honest. |
@@ -1026,5 +1028,11 @@ is different.
   someone's programme as a side effect of a privacy choice would punish the
   choice.
 
-**Next in the recommended order:** step 4, WP2 — the build-time key gate,
-`server-only` on every elevated-credential module, and `SECURITY.md`.
+**Next in the recommended order:** step 5, WP5 — the error boundary. Roughly 23
+route files return raw Postgres error text to clients, carrying constraint and
+column names; `src/lib/supabase/auth-errors.ts` is the house pattern to
+generalise rather than invent.
+
+**One new operator item from WP2:** create the security contact address in
+SECURITY.md. It is a placeholder, and a bouncing vulnerability report is worse
+than no address at all.
