@@ -48,11 +48,27 @@ describe("what must fail the build", () => {
     expect(findSecrets(chunk, "chunk.js")).toHaveLength(1);
   });
 
+  /*
+   * Every fixture is ASSEMBLED, never written as a literal.
+   *
+   * The Stripe pair were literals carrying a real-looking account prefix, and
+   * GitHub's push protection read them as live keys and rejected every push to
+   * the branch. They were always fabricated; push protection scans
+   * commits rather than tips, so removing them meant rewriting history that had
+   * days of unrelated work on top.
+   *
+   * The other three were left as literals at the time because GitHub did not
+   * flag them. Our own scanner does, which is the more useful signal: the
+   * detector cannot tell a fabricated credential from a real one, and neither
+   * can the next version of anybody else's. So they are all built the same way
+   * now, and check-source-secrets.test.ts fails the build if a literal comes
+   * back.
+   */
   it.each([
     ["Stripe live secret", "sk_live_" + "0".repeat(24)],
     ["Stripe test secret", "sk_test_" + "0".repeat(24)],
-    ["Stripe webhook secret", "whsec_abcdefghijklmnopqrstuvwxyz012345"],
-    ["OpenAI key", "sk-proj-abcdefghijklmnopqrstuvwxyz0123456789"],
+    ["Stripe webhook secret", "whsec_" + "a".repeat(30)],
+    ["OpenAI key", "sk-" + "proj-" + "b".repeat(36)],
   ])("catches a %s", (_label, secret) => {
     expect(findSecrets(`x="${secret}"`, "chunk.js").length).toBeGreaterThan(0);
   });
@@ -69,9 +85,9 @@ describe("what must fail the build", () => {
   });
 
   it("catches a private key block", () => {
-    expect(
-      findSecrets("-----BEGIN PRIVATE KEY-----\\nMIIEv...", "chunk.js").length
-    ).toBeGreaterThan(0);
+    // Assembled for the same reason as the fixtures above.
+    const header = ["-----BEGIN", "PRIVATE", "KEY-----"].join(" ");
+    expect(findSecrets(`${header}\\nMIIEv...`, "chunk.js").length).toBeGreaterThan(0);
   });
 
   it("never prints the secret it found", () => {
