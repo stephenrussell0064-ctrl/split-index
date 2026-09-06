@@ -48,6 +48,11 @@ export function LandingPage() {
           <Link href="/terms" className="hover:text-white/80">
             Terms
           </Link>
+          {/* WP12.8 asks for the statement at a stable URL, linked from the
+              footer. A statement nobody can find is not published. */}
+          <Link href="/accessibility" className="hover:text-white/80">
+            Accessibility
+          </Link>
         </p>
       </footer>
     </div>
