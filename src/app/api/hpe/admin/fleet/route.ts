@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveAdminRole } from "@/lib/auth/admin-role";
+import { recordAdminAccess } from "@/lib/auth/admin-audit";
 import {
   buildMonitoringSnapshot,
   type FeedbackEvent,
@@ -62,6 +63,18 @@ export async function GET(request: Request) {
 
   const identity = await resolveAdminRole(user.id);
   if (!identity) {
+    /*
+     * The denial is recorded, not just returned. A non-admin reaching this
+     * route once is noise; the same account reaching it repeatedly is somebody
+     * probing, and a log of successes only cannot show an attempt that failed.
+     */
+    await recordAdminAccess({
+      userId: user.id,
+      role: null,
+      route: "/api/hpe/admin/fleet",
+      action: "read",
+      granted: false,
+    });
     // 404 rather than 403: an endpoint that answers "forbidden" confirms it
     // exists and is worth attacking. Nothing here needs to tell a
     // non-administrator that an administrator view is available.
@@ -70,6 +83,24 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const windowDays = Math.min(365, Math.max(7, Number(searchParams.get("days")) || DEFAULT_WINDOW_DAYS));
+
+  /*
+   * WP6.4 — one row per access to the fleet view.
+   *
+   * This is the only route in the app that runs a service-role query across
+   * every athlete's rows. "Who looked, and when" is the first question an
+   * incident asks, and migration 041 audits rollout CHANGES, which is a
+   * different event entirely. Only the window parameter is recorded; see
+   * admin-audit.ts for what must never be.
+   */
+  await recordAdminAccess({
+    userId: user.id,
+    role: identity.role,
+    route: "/api/hpe/admin/fleet",
+    action: "read",
+    granted: true,
+    detail: { windowDays },
+  });
   const since = new Date(Date.now() - windowDays * 86_400_000).toISOString();
   // Loading the view IS the review — a separate "I have reviewed this" button
   // would be a button people press without reading. Suppressible for polling

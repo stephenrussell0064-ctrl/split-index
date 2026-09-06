@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { databaseError } from "@/lib/api/errors";
 import { createClient } from "@/lib/supabase/server";
-import { canAccessProfile } from "@/lib/premium/features";
-import { isPremiumUser } from "@/lib/retention/trial";
+import { PREMIUM_REQUIRED, allows, getEntitlements } from "@/lib/premium/entitlements";
 
 function toCsv(rows: Record<string, unknown>[]): string {
   if (rows.length === 0) return "";
@@ -30,21 +29,16 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("subscription_tier, subscription_status")
-    .eq("user_id", user.id)
-    .single();
+  /*
+   * One resolver, not a per-route profile query. getEntitlements reads only
+   * state the payment webhooks write and fails closed on anything it cannot
+   * read — including the "no profile" case this route used to handle with its
+   * own 404, which was a different answer to the same question.
+   */
+  const entitlements = await getEntitlements(supabase, user.id);
 
-  if (!profile) {
-    return NextResponse.json({ error: "Profile not found" }, { status: 404 });
-  }
-
-  if (!canAccessProfile("data_export", profile)) {
-    return NextResponse.json(
-      { error: "Data export requires Premium", premium_required: true },
-      { status: 403 }
-    );
+  if (!allows(entitlements, "data_export")) {
+    return NextResponse.json(PREMIUM_REQUIRED, { status: 403 });
   }
 
   const { searchParams } = new URL(request.url);
@@ -103,12 +97,9 @@ export async function GET(request: Request) {
   return NextResponse.json({
     exported_at: new Date().toISOString(),
     count: exportRows.length,
-    tier: isPremiumUser(
-      profile.subscription_tier,
-      profile.subscription_status
-    )
-      ? "premium"
-      : "free",
+    // From the same resolver that authorised the export, so the tier reported
+    // in the file cannot disagree with the tier that allowed it.
+    tier: entitlements.plan,
     activities: exportRows,
   });
 }
