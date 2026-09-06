@@ -456,51 +456,30 @@ export function HybridPlanScreen() {
         </Card>
       )}
 
-      {(data.safety?.advisories.length ?? 0) > 0 && (
-        <Card>
-          <h2 className="text-base font-semibold tracking-tight">Read this first</h2>
-          <ul className="mt-2 space-y-2">
-            {data.safety!.advisories.map((a) => (
-              <li key={a} className="text-sm leading-relaxed text-foreground/90">
-                {a}
-              </li>
-            ))}
-          </ul>
-          {(data.safety?.referrals.length ?? 0) > 0 && (
-            <>
-              <h3 className="mt-5 text-sm font-semibold uppercase tracking-widest text-muted">Who to see</h3>
-              <ul className="mt-2 space-y-2">
-                {data.safety!.referrals.map((r) => (
-                  <li key={r} className="text-sm leading-relaxed text-foreground/85">
-                    {r}
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-          {(data.safety?.intensityCeiling ?? 1) < 1 && (
-            <p className="mt-4 text-xs leading-relaxed text-muted/80">
-              Because of the above, this block is capped at{" "}
-              {Math.round((data.safety?.intensityCeiling ?? 1) * 100)}% of your one-rep max and nothing in it is
-              near-maximal. The plan is still yours to train — it is just held where it should be until this is
-              sorted.
-            </p>
-          )}
-        </Card>
-      )}
+      {/*
+        REMOVED FROM THIS SCREEN — the "Read this first" and "Before you start"
+        cards.
 
-      {(data.safety?.warnings.length ?? 0) > 0 && (
-        <Card>
-          <h2 className="text-base font-semibold tracking-tight">Before you start</h2>
-          <ul className="mt-2 space-y-2">
-            {data.safety!.warnings.map((w) => (
-              <li key={w} className="text-sm leading-relaxed text-warning/90">
-                {w}
-              </li>
-            ))}
-          </ul>
-        </Card>
-      )}
+        Between them they put up to two full cards of caveat above the plan
+        itself, and for a great many athletes both fired on answers they had
+        never given: `injuryLast12Weeks` and `surgeryLast6Months` resolve to
+        true until answered, so an unfinished health section produced a screen
+        that opened with an injury warning and a capped-block footnote before
+        the athlete reached a single session. The owner's instruction was to
+        take both out ("i want the read this first section to be taken out as
+        well as the before you start section, and i want to make sure the plan
+        will guaranteed work whether it thinks you should not train due to
+        injury or not").
+
+        WHAT IS NOT REMOVED: the screen behind them. `safetyScreen` still runs
+        first and still shapes the block — `intensityCeiling` and
+        `rampMultiplier` are read by `buildSessionSet` and `buildMacrocycle`,
+        and `showBodyweightGuidance` is still suppressed unconditionally for
+        anyone the low-energy-availability screen flags. It never blocked a
+        plan and still does not. What changed is only that the caveats are no
+        longer printed on top of it; `data.safety` is still returned by the API
+        for whoever wants to render it somewhere calmer.
+      */}
 
       {(data.feasibility?.messages.length ?? 0) > 0 && (
         <Card>

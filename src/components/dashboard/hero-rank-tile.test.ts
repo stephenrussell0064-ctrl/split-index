@@ -1,16 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { topPercent } from "./hero-stat-wall";
+import { topPercent } from "./rank";
 import { percentileForScore } from "@/lib/scoring/percentile-framework";
 
 /**
- * The rank tile's render layer.
+ * The rank's render layer.
  *
  * `getGlobalRankPercentile` returns "% of the reference population you
- * outperform", already rounded to a whole number. The tile shows the athlete
- * the complement, and both ends of that subtraction used to produce sentences
- * that were not true.
+ * outperform", already rounded to a whole number. Every surface that shows a
+ * rank shows the athlete the complement, and both ends of that subtraction
+ * used to produce sentences that were not true.
  */
-describe("topPercent — what the Trophy tile actually says", () => {
+describe("topPercent — what a rank actually says", () => {
   it("never says 'Top 0%' — nobody is in the top nothing", () => {
     // percentileForScore caps at 99.9, which rounds to 100 for every score
     // from ~950 up. Raw, that rendered "Top 0%".

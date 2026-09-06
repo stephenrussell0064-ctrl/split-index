@@ -39,6 +39,30 @@ export async function getGlobalRankPercentile(
   return { percentile: Math.round(percentileForScore(userIndex)), isPeerBased: false, poolSize };
 }
 
+/**
+ * "You outperform N% of the reference population" rendered as the "top X%" an
+ * athlete actually reads.
+ *
+ * Both ends are clamped because the raw subtraction produces sentences that
+ * are not true. `percentile` arrives already rounded to a whole number, so a
+ * 99.9th-percentile score rounds to 100 and renders "Top 0%" — nobody is in
+ * the top nothing. At the other end an athlete just starting out sits at the
+ * 0th percentile and rendered "Top 100%", which is not a rank at all.
+ *
+ * The clamp is presentation only. It does not make the underlying number more
+ * right, and it is deliberately not hiding a wrong one: see the note on
+ * `rankPercentile` in dashboard/page.tsx for which number is being ranked.
+ *
+ * Lives here rather than beside a component because the component that used
+ * to own it is gone: the home page's hero no longer leads with a percentile
+ * (user feedback: "training rank is not a normal metric for lifters or
+ * athletes"). The rank itself is still shown further down that page and on
+ * the profile, so the formatting rule still has to live somewhere shared.
+ */
+export function topPercent(percentile: number): number {
+  return Math.min(99, Math.max(1, 100 - percentile));
+}
+
 export type NextRankTarget =
   | { type: "peer"; pointsToClose: number; nextIndex: number }
   | { type: "standard"; pointsToClose: number; tierLabel: string };

@@ -27,6 +27,7 @@ import {
   MIN_ENDURANCE_SESSION_MIN,
   MIN_HEALTHY_BMI,
   MIN_QUALITY_SESSION_MIN,
+  RECENT_INJURY_RAMP_MULTIPLIER,
 } from "./constants";
 import type { LiftSet, RunLog } from "./types";
 
@@ -260,12 +261,23 @@ describe("WP3 — safety screen blocks and is not bypassable", () => {
     expect(safetyScreen(state, calibrationGoal()).showBodyweightGuidance).toBe(false);
   });
 
-  it("halves the ramp for a novice runner and for a recent injury", () => {
+  it("halves the ramp for a novice runner, and only eases it for a recent injury", () => {
     expect(safetyScreen(calibrationState({ enduranceTrainingYears: 0.2 }), calibrationGoal()).rampMultiplier).toBe(0.5);
+    // A recent injury moves the ramp but no longer halves it. This branch
+    // also fires for every athlete who has not filled in the health section
+    // (unanswered resolves to true), so it must not be able to reshape a
+    // block on a question nobody was asked. Surgery is pinned off here for
+    // the same reason the assertion is worth having at all: it defaults to
+    // true and used to be the thing actually producing the 0.5 this test
+    // claimed to be measuring.
     expect(
-      safetyScreen(calibrationState({ safety: { ...DEFAULT_SAFETY_FLAGS, injuryLast12Weeks: true } }), calibrationGoal())
-        .rampMultiplier
-    ).toBe(0.5);
+      safetyScreen(
+        calibrationState({
+          safety: { ...DEFAULT_SAFETY_FLAGS, injuryLast12Weeks: true, surgeryLast6Months: false },
+        }),
+        calibrationGoal()
+      ).rampMultiplier
+    ).toBe(RECENT_INJURY_RAMP_MULTIPLIER);
   });
 
   it("switches to pace and RPE when medication affects heart rate", () => {

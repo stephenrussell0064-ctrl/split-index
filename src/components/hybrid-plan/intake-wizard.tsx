@@ -307,7 +307,7 @@ export function IntakeWizard() {
       return "Pregnant or within 12 weeks postpartum: a pelvic health physiotherapist is the right person to plan with. What follows is held well below maximal and is a starting point for that conversation.";
     }
     if (get("current_injury_limiting", intake.currentInjuryLimiting) === true) {
-      return "Currently limited by an injury: your block is capped below maximal and the ramp is halved. Rehabilitating the injury itself is a physiotherapist\u2019s job rather than this engine\u2019s.";
+      return "Currently limited by an injury: your block holds back from maximal work and eases the ramp slightly. Rehabilitating the injury itself is a physiotherapist\u2019s job rather than this engine\u2019s.";
     }
     if (leaCount >= 2) {
       return "Your fuelling answers suggest you may be training on less energy than you are using. No bodyweight guidance will be shown. A registered sports dietitian is the right next step, and the National Alliance for Eating Disorders helpline is there if you want support.";
@@ -386,7 +386,7 @@ export function IntakeWizard() {
               <Field label="Do you currently have an injury or pain that changes how you train?" why="Rehabilitation is a different job from performance programming, and doing the second on top of the first is how people get hurt." required>
                 <YesNo value={get("current_injury_limiting", intake.currentInjuryLimiting)} onChange={(v) => set("current_injury_limiting", v)} />
               </Field>
-              <Field label="Any injury in the last 12 weeks that stopped you training for more than a week?" why="A recent injury halves your volume ramp. Left unanswered we assume yes, so answering no is what unlocks the full ramp." required>
+              <Field label="Any injury in the last 12 weeks that stopped you training for more than a week?" why="A recent injury eases your volume ramp slightly. Left unanswered we assume yes, so answering no is what unlocks the full ramp." required>
                 <YesNo value={get("injury_last_12_weeks", intake.injuryLast12Weeks)} onChange={(v) => set("injury_last_12_weeks", v)} />
               </Field>
               <Field label="Any surgery in the last 6 months?" why="Adds a clearance prompt before loading. Assumed yes until answered." required>

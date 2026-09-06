@@ -67,3 +67,25 @@ const RACE_LABELS: Record<string, string> = {
 export function formatPredictionLabel(distanceMeters: string): string {
   return RACE_LABELS[distanceMeters] ?? `${distanceMeters} m`;
 }
+
+/**
+ * The same rungs, named for a column roughly 60px wide.
+ *
+ * The home page shows the whole ladder five-across on a phone (user feedback:
+ * "rather than showing 5km prediction as a large square, show 1500m, 5km,
+ * 10km, half and full predictions"), where "Marathon" and "1500 m" do not fit
+ * without wrapping. Kept separate from `formatPredictionLabel` rather than
+ * shortening that one, because the widget and the analytics ladder have the
+ * room and "Marathon" is the better word when there is room for it.
+ */
+const SHORT_RACE_LABELS: Record<string, string> = {
+  "1500": "1500m",
+  "5000": "5K",
+  "10000": "10K",
+  "21097.5": "Half",
+  "42195": "Full",
+};
+
+export function formatShortPredictionLabel(distanceMeters: string): string {
+  return SHORT_RACE_LABELS[distanceMeters] ?? `${distanceMeters}m`;
+}

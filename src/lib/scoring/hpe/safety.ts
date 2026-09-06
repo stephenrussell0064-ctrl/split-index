@@ -28,9 +28,11 @@
 
 import {
   CURRENT_INJURY_INTENSITY_CEILING,
+  CURRENT_INJURY_RAMP_MULTIPLIER,
   MEDICAL_CLEARANCE_INTENSITY_CEILING,
   MIN_HEALTHY_BMI,
   RECENT_INJURY_INTENSITY_CEILING,
+  RECENT_INJURY_RAMP_MULTIPLIER,
   RECENT_SURGERY_INTENSITY_CEILING,
   YOUTH_INTENSITY_CEILING,
 } from "./constants";
@@ -145,12 +147,12 @@ export function safetyScreen(state: AthleteState, goal: Goal): SafetyResult {
   // the plan did about it and stop there.
   if (s.currentInjuryLimiting) {
     advisories.push(
-      "You have said an injury is currently changing how you train, so this block is capped: nothing " +
-        "near-maximal, and the volume ramp is halved. Train around it rather than through it, and drop anything " +
-        "that provokes it."
+      "You have said an injury is currently changing how you train, so this block holds back from maximal work " +
+        "and eases the volume ramp slightly. Train around it rather than through it, and drop anything that " +
+        "provokes it."
     );
     intensityCeiling = Math.min(intensityCeiling, CURRENT_INJURY_INTENSITY_CEILING);
-    rampMultiplier = Math.min(rampMultiplier, 0.5);
+    rampMultiplier = Math.min(rampMultiplier, CURRENT_INJURY_RAMP_MULTIPLIER);
   }
 
   if (s.surgeryLast6Months) {
@@ -179,15 +181,18 @@ export function safetyScreen(state: AthleteState, goal: Goal): SafetyResult {
     rampMultiplier = Math.min(rampMultiplier, 0.5);
   }
 
-  // Intake spec: a recent injury that stopped training for over a week
-  // halves the ramp. Unanswered is assumed true (the conservative direction).
+  // A recent injury that stopped training for over a week eases the ramp.
+  // Unanswered still resolves to true (the conservative direction), which is
+  // precisely why the effect is now small: this branch fires for every athlete
+  // who has not filled in the health section, and it should not be able to
+  // reshape their block on a question they were never asked.
   if (s.injuryLast12Weeks) {
     intensityCeiling = Math.min(intensityCeiling, RECENT_INJURY_INTENSITY_CEILING);
     warnings.push(
-      "Injury in the last 12 weeks: the volume ramp is halved for this block. Build back to where you were before " +
-        "trying to go past it."
+      "Injury in the last 12 weeks: the volume ramp eases slightly for this block. Build back to where you were " +
+        "before trying to go past it."
     );
-    rampMultiplier = Math.min(rampMultiplier, 0.5);
+    rampMultiplier = Math.min(rampMultiplier, RECENT_INJURY_RAMP_MULTIPLIER);
   }
 
   // F2 — low energy availability.

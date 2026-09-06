@@ -101,7 +101,17 @@ export function SocialHub({
         subtitle="Compete, connect, and challenge"
       />
 
-      <div className="flex gap-2 overflow-x-auto pb-1">
+      {/*
+        A grid, not a scroller. Seven tabs in a `flex overflow-x-auto` row put
+        Leaderboards and Achievements past the right edge of a phone, so
+        reaching them meant swiping a strip whose scrollability nothing on
+        screen advertised (user feedback: "the leaderboards ... does not fit
+        the screen and you have to scroll side to side which is heavily
+        inconvenient"). Four columns of icon-over-label fit all seven on the
+        narrowest phone with every tab visible at once; on a wide screen they
+        return to a single row.
+      */}
+      <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-7">
         {TABS.map((t) => {
           const Icon = t.icon;
           return (
@@ -110,14 +120,14 @@ export function SocialHub({
               type="button"
               onClick={() => setTab(t.id)}
               className={cn(
-                "flex items-center gap-2 whitespace-nowrap rounded-xl border px-4 py-2.5 text-sm font-medium transition-all duration-200",
+                "flex min-w-0 flex-col items-center justify-center gap-1 rounded-xl border px-1.5 py-2 text-[11px] font-medium transition-all duration-200",
                 tab === t.id
                   ? "border-accent/30 bg-accent text-accent-foreground shadow-md shadow-accent/25"
                   : "border-white/[0.06] glass text-muted hover:border-white/10 hover:bg-white/[0.04] hover:text-foreground"
               )}
             >
-              <Icon className="h-4 w-4" strokeWidth={2} />
-              {t.label}
+              <Icon className="h-4 w-4 shrink-0" strokeWidth={2} />
+              <span className="w-full truncate text-center leading-tight">{t.label}</span>
             </button>
           );
         })}

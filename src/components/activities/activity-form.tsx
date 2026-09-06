@@ -29,7 +29,7 @@ import {
   type FormErrors,
   type WorkoutFormState,
 } from "./form-state";
-import { SportPicker } from "./sport-picker";
+import { LogLauncher } from "./log-launcher";
 import { CardioSportPicker } from "./cardio-sport-picker";
 import { SportForm, type UpdateField } from "./sport-form";
 import { SuccessScreen, type ScoreResultSummary } from "./success-screen";
@@ -553,7 +553,7 @@ export function ActivityForm({
             {enduranceOnly ? (
               <CardioSportPicker onSelect={selectSport} draftSports={draftSports} />
             ) : (
-              <SportPicker onSelect={selectSport} draftSports={draftSports} />
+              <LogLauncher onSelect={selectSport} draftSports={draftSports} />
             )}
           </motion.div>
         )}

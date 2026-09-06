@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import dynamic from "next/dynamic";
+import { useSearchParams } from "next/navigation";
 import { MapPin, Square, AlertTriangle, Gauge, Mountain, HeartPulse, Zap, Flag, Thermometer, Footprints, TrendingUp, Pause, Play, Trash2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -121,13 +122,34 @@ type Phase = "idle" | "tracking" | "reviewing" | "overview";
  * submitted through the exact same /api/activities pipeline every manually
  * logged run goes through — one more data source, not a separate system.
  */
+/**
+ * `useSearchParams` forces everything under it out of static prerendering
+ * unless it sits inside a Suspense boundary, so the boundary is the whole
+ * page and the tracking screen below is the child. Same shape as
+ * settings/billing, for the same build-time reason.
+ */
 export default function GpsRunPage() {
+  return (
+    <Suspense fallback={null}>
+      <GpsRunScreen />
+    </Suspense>
+  );
+}
+
+function GpsRunScreen() {
+  // Which sport the + button asked for. The launcher links straight to
+  // "record a run" / "record a ride" rather than to a generic tracker the
+  // athlete then has to configure, so an invalid or absent value simply
+  // falls back to the select below rather than erroring.
+  const requestedSport = useSearchParams().get("sport");
   const [phase, setPhase] = useState<Phase>("idle");
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [summary, setSummary] = useState<GpsTrackSummary | null>(null);
   const [orphaned, setOrphaned] = useState<RecoveredGpsSession | null>(null);
   const [livePoints, setLivePoints] = useState<GpsPoint[]>([]);
-  const [sport, setSport] = useState<GpsSport>("running");
+  const [sport, setSport] = useState<GpsSport>(
+    GPS_SPORTS.some((s) => s.value === requestedSport) ? (requestedSport as GpsSport) : "running"
+  );
   const [sessionType, setSessionType] = useState<SessionType>("easy");
   const [segments, setSegments] = useState<RunSegment[]>([]);
   const [segmentType, setSegmentType] = useState<"hard" | "easy">("easy");
