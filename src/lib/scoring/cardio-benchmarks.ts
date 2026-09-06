@@ -11,6 +11,8 @@
  * same tier.
  */
 
+import { MIN_INDEX } from "@/lib/scoring/constants";
+
 export type BenchmarkSport = "run" | "walk" | "row" | "swim" | "cycle" | "ski";
 
 /** Canonical benchmark distance in meters for each sport (walk is scored on pace, not projected distance). */
@@ -491,6 +493,55 @@ function clamp01(x: number): number {
   return Math.max(0, Math.min(1, x));
 }
 
+/**
+ * The slow end of the curve, which used to fall off a cliff into zero.
+ *
+ * Below the slowest anchor, `interpolateAnchors` continues the last segment's
+ * straight line — and a straight line through a 5th-percentile anchor crosses
+ * zero almost immediately, where `clampScore`'s `Math.max(0, …)` caught it. The
+ * consequence was not a cosmetic off-by-one: EVERY slow session in every sport
+ * scored exactly 0, so they all scored the SAME. Measured before this existed:
+ *
+ *   5 km in 60:00          0
+ *   5 km in 75:00          0
+ *   400 m swim in 25:00    0
+ *   2 km row in 20:00      0
+ *   20 km ride in 2 hours  0
+ *
+ * A beginner who took ten minutes off their 5k saw no change at all, which is
+ * precisely the athlete for whom the number needed to move. Zero also reads as
+ * "not scored" rather than "scored low", and the scale this app documents
+ * everywhere else starts at 1, not 0.
+ *
+ * So the slow end decays toward the floor instead of running into it — the
+ * mirror of `applyWorldRecordCeiling` at the fast end, which asymptotes toward
+ * 999 rather than extrapolating past it. Ordering is preserved all the way
+ * down: slower is always lower, and the floor is approached but never reached.
+ */
+function applyFloorDecay(
+  linearScore: number,
+  seconds: number,
+  slowestAnchorSeconds: number,
+  slowestAnchorScore: number
+): number {
+  if (seconds <= slowestAnchorSeconds) return linearScore;
+
+  // How much slower than the slowest anchor, as a ratio — scale-free, so the
+  // same constant works for a 400m swim and a 20km ride.
+  const over = seconds / slowestAnchorSeconds;
+  const decayed =
+    MIN_INDEX + (slowestAnchorScore - MIN_INDEX) * Math.exp(-(over - 1) * FLOOR_DECAY_RATE);
+  return decayed;
+}
+
+/** [EST] Tuned so that half again the slowest anchor's time scores roughly a third of its score, and twice its time roughly a seventh — steep enough to say "this is well off the scale", shallow enough that improvement is always visible. */
+const FLOOR_DECAY_RATE = 2;
+
+/** The [seconds, score] pair with the highest seconds (slowest time / lowest score) in an anchor table. */
+function slowestAnchorIn(anchors: Anchor[]): Anchor {
+  return anchors.reduce((a, b) => (a[0] > b[0] ? a : b));
+}
+
 /** The [seconds, score] pair with the lowest seconds (fastest time / highest score) in an anchor table. */
 function fastestAnchorIn(anchors: Anchor[]): Anchor {
   return anchors.reduce((a, b) => (a[0] < b[0] ? a : b));
@@ -556,7 +607,13 @@ export function timeToScore(sport: BenchmarkSport, seconds: number, sex: "male" 
 
   const factor = FEMALE_CARDIO_FACTORS[sport];
   const adjusted = sex === "female" ? seconds / factor : seconds;
-  const linear = interpolateAnchors(ANCHOR_TABLES[sport], adjusted);
+  const [slowSeconds, slowScore] = slowestAnchorIn(ANCHOR_TABLES[sport]);
+  const linear = applyFloorDecay(
+    interpolateAnchors(ANCHOR_TABLES[sport], adjusted),
+    adjusted,
+    slowSeconds,
+    slowScore
+  );
   const wr = WORLD_RECORD_SECONDS[sport];
   if (!wr) return clampScore(linear);
   // Checked against RAW seconds (this sex's own actual clock time), not the
@@ -585,7 +642,13 @@ function scoreOnSexTable(
   sex: "male" | "female"
 ): number {
   const table = SEX_SPECIFIC_ANCHORS[sport][sex];
-  const linear = interpolateAnchors(table, seconds);
+  const [slowSeconds, slowScore] = slowestAnchorIn(table);
+  const linear = applyFloorDecay(
+    interpolateAnchors(table, seconds),
+    seconds,
+    slowSeconds,
+    slowScore
+  );
   const wr = WORLD_RECORD_SECONDS[sport];
   if (!wr) return clampScore(linear);
   const [anchorSeconds, anchorScore] = fastestAnchorIn(table);

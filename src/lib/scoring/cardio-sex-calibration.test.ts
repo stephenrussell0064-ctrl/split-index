@@ -226,3 +226,49 @@ describe("cross-sport parity for the same-ability athlete", () => {
     }
   });
 });
+
+describe("the slow end of every curve keeps its gradient", () => {
+  /*
+    Below the slowest anchor the curve continued the last segment's straight
+    line, and a straight line through a 5th-percentile anchor crosses zero
+    almost at once — where the clamp caught it. So every slow session in every
+    sport scored exactly 0, and therefore scored the SAME:
+
+      5 km in 60:00   0        400 m swim in 25:00   0
+      5 km in 75:00   0        2 km row in 20:00     0
+      12-hour effort  0        20 km ride in 2 hours 0
+
+    A beginner taking ten minutes off their 5k saw the number not move, which
+    is precisely the athlete it needed to move for. Zero also reads as "not
+    scored" rather than "scored low".
+  */
+  const SLOW: { sport: BenchmarkSport; label: string; times: number[] }[] = [
+    { sport: "run", label: "5 km", times: [2940, 3300, 3600, 4500, 5400] },
+    { sport: "swim", label: "400 m", times: [960, 1200, 1500, 1800] },
+    { sport: "row", label: "2 km", times: [597.4, 800, 1200, 1500] },
+    { sport: "cycle", label: "20 km", times: [3118, 4500, 7200, 9000] },
+  ];
+
+  it.each(SLOW)("$label: slower always scores lower, and never zero", ({ sport, times }) => {
+    let previous = Infinity;
+    for (const seconds of times) {
+      const score = timeToScore(sport, seconds, "male");
+      expect(score, `${seconds}s`).toBeGreaterThan(0);
+      expect(score, `${seconds}s`).toBeLessThan(previous);
+      previous = score;
+    }
+  });
+
+  it("joins the anchor table continuously rather than stepping off it", () => {
+    // At the slowest anchor itself the decay must return the anchor's own
+    // score — a discontinuity here would show up as a session's score jumping
+    // when a time crossed the boundary by one second.
+    expect(timeToScore("run", 2940, "male")).toBe(125);
+    expect(Math.abs(timeToScore("run", 2941, "male") - 125)).toBeLessThanOrEqual(1);
+  });
+
+  it("still separates two efforts that used to be identical", () => {
+    // The reported case: these both scored 0.
+    expect(timeToScore("run", 3600, "male")).toBeGreaterThan(timeToScore("run", 4500, "male"));
+  });
+});
