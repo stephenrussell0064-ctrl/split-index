@@ -3,6 +3,7 @@ import { Geist, Geist_Mono, Space_Grotesk, Unbounded } from "next/font/google";
 import "./globals.css";
 import { ClientBootstrap } from "@/components/providers/client-bootstrap";
 import { LaunchOverlay } from "@/components/providers/launch-overlay";
+import { MotionProvider } from "@/components/providers/motion-provider";
 import { RouteRestore } from "@/components/providers/route-restore";
 import { getAppUrl } from "@/lib/app-url";
 
@@ -89,8 +90,11 @@ export default function RootLayout({
         />
         <ClientBootstrap />
         <RouteRestore />
-        <LaunchOverlay />
-        {children}
+        {/* LaunchOverlay animates too, so it sits inside the provider rather than beside it. */}
+        <MotionProvider>
+          <LaunchOverlay />
+          {children}
+        </MotionProvider>
       </body>
     </html>
   );
