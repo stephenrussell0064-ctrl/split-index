@@ -41,15 +41,88 @@
  */
 
 // ── Rate limiting ────────────────────────────────────────────────────────────
-// Consumed by src/proxy.ts today. The per-route and per-account limits the
-// brief specifies need a shared store to be meaningful on a serverless
-// deployment — the current limiter is an in-process Map, which is audit
-// finding H3 and belongs to WP4. These two are the ones that exist now.
+// Enforced by src/lib/security/rate-limit.ts against Upstash Redis, so the
+// count is shared across every serverless instance. Keyed by user id where the
+// request is authenticated and by IP where it is not.
+//
+// The in-memory burst guard below is kept as a first line: it costs nothing, it
+// runs before any network call, and it means a pathological flood is rejected
+// without a Redis round trip per request. It is not the limit — it is the
+// doorman before the limit.
+
 export const RATE_LIMIT_WINDOW_MS = 60_000;
-/** Generous: a logging session legitimately fires a burst of set writes. */
-export const RATE_LIMIT_REQUESTS_PER_WINDOW = 60;
-/** Signature verification is the control on a webhook; a limiter would only drop real events. */
-export const RATE_LIMIT_EXEMPT_PREFIXES = ["/api/stripe/webhook", "/api/cron"] as const;
+
+/** Per-instance burst ceiling. Deliberately loose; the real limits are below. */
+export const RATE_LIMIT_BURST_PER_WINDOW = 120;
+
+/**
+ * Writes: logging a session, saving a draft, editing an activity.
+ * Generous because a gym session legitimately fires a burst of set writes as
+ * the athlete works through it, and throttling that is throttling the product.
+ */
+export const RATE_LIMIT_WRITE_PER_MIN = 60;
+
+/** Reads: dashboard, analytics, logbook. Higher, because a page is several. */
+export const RATE_LIMIT_READ_PER_MIN = 120;
+
+/**
+ * Leaderboards. Lower than a normal read to make scraping the whole board
+ * tedious, high enough that an athlete flicking between brackets never sees it.
+ */
+export const RATE_LIMIT_LEADERBOARD_PER_MIN = 30;
+
+/**
+ * Expensive computed endpoints — a full recompute walks every activity an
+ * athlete has ever logged, and the Hybrid Plan generates a whole block.
+ * Nobody legitimately needs these more than a few times a minute.
+ */
+export const RATE_LIMIT_EXPENSIVE_PER_MIN = 10;
+
+/** Account deletion, profile creation. Rare by nature; a burst is not real use. */
+export const RATE_LIMIT_ACCOUNT_PER_HOUR = 10;
+
+/**
+ * Webhooks and cron are never limited. A webhook's control is its signature —
+ * throttling it only drops real events that the provider then retries, which
+ * turns a limiter into an outage. Cron is called by the platform with a secret.
+ *
+ * The brief states this as `RATE_LIMIT_WEBHOOK = null`; expressed here as the
+ * exemption list the code actually reads.
+ */
+export const RATE_LIMIT_EXEMPT_PREFIXES = ["/api/stripe/webhook", "/api/revenuecat/webhook", "/api/cron"] as const;
+
+/**
+ * AUTH LIMITS ARE NOT ENFORCED HERE, AND THAT IS DELIBERATE.
+ *
+ * Sign-in, sign-up, OTP request, OTP verify and password reset are called by
+ * `createBrowserClient` directly against `<project>.supabase.co/auth/v1/*`.
+ * Those requests never touch this origin, so this application cannot see them,
+ * cannot count them, and cannot limit them. No amount of middleware changes
+ * that — the packets do not come here.
+ *
+ * The mechanism that IS in the path is GoTrue's own rate limiting, configured
+ * in the Supabase dashboard. WP13.5 asks that the two be "coordinated so they
+ * cannot silently disagree", and the way to guarantee that is to have one
+ * mechanism rather than two: building a second limiter here that sees a
+ * fraction of the traffic would produce exactly the disagreement the brief
+ * warns about.
+ *
+ * So these are the values to set in Supabase → Authentication → Rate Limits.
+ * They are recorded here because a number that lives only in a dashboard is a
+ * number nobody reviews. SECURITY.md carries the same list as an operator task.
+ */
+export const SUPABASE_AUTH_RATE_LIMITS = {
+  /** Sign-in and sign-up attempts, per IP per hour. */
+  signInSignUpPerHourPerIp: 30,
+  /** OTP and magic-link sends, per hour. Per email address, not just per IP. */
+  otpSendPerHour: 3,
+  /** OTP verification attempts before the code is burned. */
+  otpVerifyAttempts: 5,
+  /** Password reset emails per hour, per address. */
+  passwordResetPerHour: 3,
+  /** Token refreshes per 5 minutes, per session. */
+  tokenRefreshPer5Min: 150,
+} as const;
 
 // ── Payload limits ───────────────────────────────────────────────────────────
 /** One session's worth of sets. Above this is an import, not a workout. */
