@@ -48,7 +48,22 @@ const SCANNED_EXTENSIONS = new Set([".js", ".mjs", ".cjs", ".map", ".json", ".cs
  * Stripe key and belongs in the bundle, and a loose `sk_` matches enough
  * minified identifiers to be useless.
  */
-const SECRET_PATTERNS = [
+const VALUE_PATTERNS = [
+  /*
+   * The account-prefix form, caught at a SHORTER length than the general
+   * patterns below.
+   *
+   * GitHub's push protection recognises a Stripe key by its `51` account
+   * prefix and does not wait for a full-length key. Ours required 16+
+   * characters, so a truncated example in a comment — the prefix plus a few
+   * characters and an ellipsis — passed here and was rejected there. That gap
+   * cost a blocked push and is what this pattern closes: the point of a local
+   * gate is to catch what the remote will refuse, before the refusal.
+   *
+   * Four characters after the prefix is enough to be distinctive and short
+   * enough to catch an abbreviation.
+   */
+  { name: "Stripe key with an account prefix", re: /\bsk_(?:live|test)_51[A-Za-z0-9]{4,}/ },
   { name: "Stripe live secret key", re: /\bsk_live_[A-Za-z0-9]{16,}/ },
   { name: "Stripe test secret key", re: /\bsk_test_[A-Za-z0-9]{16,}/ },
   { name: "Stripe restricted key", re: /\brk_live_[A-Za-z0-9]{16,}/ },
@@ -56,6 +71,18 @@ const SECRET_PATTERNS = [
   { name: "OpenAI API key", re: /\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}/ },
   { name: "Private key block", re: /-----BEGIN (?:RSA |EC )?PRIVATE KEY-----/ },
 ];
+
+/**
+ * Every pattern, for scanning built client output. The env-reference patterns
+ * are appended below.
+ *
+ * The split matters because the two kinds apply to different things. A CLIENT
+ * CHUNK reading `process.env.STRIPE_SECRET_KEY` has had a server module bundled
+ * into it. A SOURCE file reading the same thing is an ordinary server module
+ * doing its job. So a source scan must use the value patterns only, which is
+ * what `findSecrets(..., { valuesOnly: true })` exists for.
+ */
+const SECRET_PATTERNS = [...VALUE_PATTERNS];
 
 /**
  * Secret-bearing environment variables, matched only in their ACCESS form.
@@ -134,10 +161,11 @@ function walk(dir, out = []) {
  * Scan one string. Exported shape kept simple so the unit test can drive this
  * directly with fixtures rather than needing a real build.
  */
-export function findSecrets(content, label = "<string>") {
+export function findSecrets(content, label = "<string>", options = {}) {
   const findings = [];
+  const patterns = options.valuesOnly ? VALUE_PATTERNS : SECRET_PATTERNS;
 
-  for (const { name, re } of SECRET_PATTERNS) {
+  for (const { name, re } of patterns) {
     const match = content.match(re);
     if (match) {
       findings.push({
