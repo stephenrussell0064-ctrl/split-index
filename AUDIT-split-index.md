@@ -24,6 +24,8 @@ its current status inline; this table is the summary.
 | H5 no CI | **CLOSED** | `2c4cefe` |
 | H4 no build-time key gate | **CLOSED** | `8d9096a` |
 | L3 no SECURITY.md | **CLOSED** | `8d9096a` |
+| M1 database error text to clients | **CLOSED** | `c467470` |
+| M2 provider error text in a redirect URL | **CLOSED** | `0dd3d55` |
 | H2 no boundary validation | **PARTIAL** — 3 routes of ~40; **and materially corrected, see the finding** | `4f10902` |
 | M11 no central config / bounds | **PARTIAL** — module exists; a second set of bounds still lives in the scoring guard | `4f10902` |
 | Everything else | **OPEN** | — |
@@ -532,6 +534,7 @@ fee tier.
 ---
 
 #### M1 — Postgres error text is returned to clients in 23 route files
+> **CLOSED `c467470`.** 44 sites across 29 route files — the Phase 0 count of 23 was low, because `grep error.message` is case-sensitive and misses `fetchError.message` and its siblings. Replaced with `serverError()` / `databaseError()`: a sentence and a correlation id to the client, the detail to the log. Known unique violations map to real messages by constraint name and return 409.
 **WP5 · Evidence: `grep -rln 'error\.message' src/app/api` → 23 files, 41 sites.**
 
 The pattern throughout:
@@ -554,6 +557,7 @@ to safe human messages. That module is the pattern to generalise, not to invent.
 ---
 
 #### M2 — Raw auth provider error text is placed in a redirect URL
+> **CLOSED `0dd3d55`.** `detail` is now set only in development. The rendered message was already safe — `resolveAuthPageError` gated the render — but the value was in the URL regardless, and browser history, the `Referer` header and any proxy log do not read that guard.
 **WP5, WP13 · Evidence: [auth/callback/route.ts:26-27](src/app/auth/callback/route.ts#L26)**
 
 ```ts
@@ -943,9 +947,9 @@ including the four findings raised during remediation:
 |---|---|---|---|
 | Critical | **0** | 4 | All four were one defect in four places. |
 | High | 6 | 3 | H1, H4, H5 closed; H2 corrected and partially closed. |
-| Medium | 14 | 0 | M11 partially closed. N1 added. |
+| Medium | 12 | 2 | M1, M2 closed; M11 partially. N1 added. |
 | Low | 6 | 3 | L3, L6, N4 closed; N2 and N3 added. |
-| **Total** | **26** | **10** | 36 findings raised in total. |
+| **Total** | **24** | **12** | 36 findings raised in total. |
 
 All four Criticals are the same defect in four places: a policy written to enable a public
 leaderboard exposes the underlying user-owned table instead of a column-scoped projection.
@@ -972,7 +976,7 @@ Then:
 | 2 | ~~**WP11 Article 9 consent**~~ **DONE `604a095`** | H1 | Special category data is being collected right now with no lawful basis we can evidence. Every day it runs adds records. |
 | 3 | **WP3 — validation at the boundary** — PARTIAL `4f10902` | H2 (corrected), M11 partly; M14 **not** started | Precondition for the WP3 fuzz sweep and for the §1 config module everything else references. |
 | 4 | ~~**WP2 build gate + `server-only`**~~ **DONE `8d9096a`** | H4, L3 | Small, and it stops the one mistake with no recovery short of rotation. Needs step 0. |
-| 5 | **WP5 error boundary** | M1, M2, M14 | Mechanical, 23 files, one house pattern (`auth-errors.ts`) already exists to copy. |
+| 5 | ~~**WP5 error boundary**~~ **DONE `c467470`, `0dd3d55`** | M1, M2 (M14 **not** started) | Mechanical, 23 files, one house pattern (`auth-errors.ts`) already exists to copy. |
 | 6 | **WP13 + WP4 auth hardening** | H3, H7, M6, M7 | Per-account and per-IP limits must be designed together, per WP13.5. Needs a shared store. |
 | 7 | **WP12 contrast + gating** | H8, M3, M13, L1 | M3 satisfies WP6.3 and WP12.7 at once. Statement written last, after the fix, so it is honest. |
 | 8 | **WP6 entitlement matrix** | M4, M3 | The matrix test is the deliverable; `features.ts` mostly stands. |
@@ -1028,11 +1032,15 @@ is different.
   someone's programme as a side effect of a privacy choice would punish the
   choice.
 
-**Next in the recommended order:** step 5, WP5 — the error boundary. Roughly 23
-route files return raw Postgres error text to clients, carrying constraint and
-column names; `src/lib/supabase/auth-errors.ts` is the house pattern to
-generalise rather than invent.
+**Next in the recommended order:** step 6, WP13 + WP4 — auth hardening and rate
+limiting, which the brief requires to be designed together (WP13.5) and which
+need a shared store to mean anything on a serverless deployment. Closes H3, H7,
+M6 and M7. H7 needs the Supabase dashboard check above before it can be sized.
 
-**One new operator item from WP2:** create the security contact address in
-SECURITY.md. It is a placeholder, and a bouncing vulnerability report is worse
-than no address at all.
+**Two operator items outstanding:**
+
+1. Create the security contact address in SECURITY.md. It is a placeholder, and
+   a bouncing vulnerability report is worse than no address at all.
+2. Confirm Vercel's Preview environment does not carry production secrets. Not
+   visible from the repository, and the most common way a production key ends up
+   somewhere it should not be.
