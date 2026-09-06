@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { databaseError } from "@/lib/api/errors";
 import { createClient } from "@/lib/supabase/server";
 
 export async function PATCH(
@@ -47,7 +48,7 @@ export async function PATCH(
     .eq("id", id);
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return databaseError(error, { operation: "PATCH /api/duels/[id]" });
   }
 
   return NextResponse.json({ ok: true, status: nextStatus });

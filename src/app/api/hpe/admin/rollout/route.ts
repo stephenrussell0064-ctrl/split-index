@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { databaseError } from "@/lib/api/errors";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { canChangeRollout, resolveAdminRole } from "@/lib/auth/admin-role";
@@ -88,7 +89,7 @@ export async function POST(request: Request) {
     .eq("key", "hpe_generation");
 
   if (updateError) {
-    return NextResponse.json({ error: updateError.message }, { status: 500 });
+    return databaseError(updateError, { operation: "POST /api/hpe/admin/rollout" });
   }
 
   await admin.from("hpe_rollout_audit").insert({

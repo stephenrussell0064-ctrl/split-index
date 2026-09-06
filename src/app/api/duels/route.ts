@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { databaseError } from "@/lib/api/errors";
 import { createClient } from "@/lib/supabase/server";
 import { fetchDuels } from "@/lib/social/queries";
 import type { DuelMetric } from "@/lib/social/types";
@@ -102,7 +103,7 @@ export async function POST(request: Request) {
     .single();
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return databaseError(error, { operation: "POST /api/duels" });
   }
 
   return NextResponse.json({ duel });

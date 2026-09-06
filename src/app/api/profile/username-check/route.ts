@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { databaseError } from "@/lib/api/errors";
 import { createClient } from "@/lib/supabase/server";
 import { validateUsernameFormat } from "@/lib/utils/username";
 
@@ -27,7 +28,7 @@ export async function GET(request: Request) {
     .maybeSingle();
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return databaseError(error, { operation: "GET /api/profile/username-check" });
   }
 
   const takenByOther = !!data && data.user_id !== user.id;

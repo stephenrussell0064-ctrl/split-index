@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { databaseError, serverError } from "@/lib/api/errors";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -39,10 +40,17 @@ export async function DELETE() {
   for (const table of USER_TABLES) {
     const { error } = await admin.from(table).delete().eq("user_id", user.id);
     if (error && error.code !== "42P01") {
-      return NextResponse.json(
-        { error: `Failed to purge ${table}: ${error.message}` },
-        { status: 500 }
-      );
+      /*
+       * The table name went to the client here, alongside the Postgres
+       * message — a request that fails halfway through enumerated part of the
+       * schema to whoever made it. Which table failed is exactly what WE need
+       * and precisely what the caller does not, so it moves to the log.
+       */
+      return serverError({
+        operation: "DELETE /api/account/delete",
+        cause: error,
+        context: { table },
+      });
     }
   }
 
@@ -61,7 +69,7 @@ export async function DELETE() {
 
   const { error: authError } = await admin.auth.admin.deleteUser(user.id);
   if (authError) {
-    return NextResponse.json({ error: authError.message }, { status: 500 });
+    return databaseError(authError, { operation: "DELETE /api/account/delete" });
   }
 
   return NextResponse.json({ success: true });

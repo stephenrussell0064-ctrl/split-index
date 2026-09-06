@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { databaseError } from "@/lib/api/errors";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getPeriodStart } from "@/lib/social/constants";
 import type { LeaderboardPeriod } from "@/types";
@@ -38,7 +39,7 @@ export async function GET(request: Request) {
     .order("current_split_index", { ascending: false });
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return databaseError(error, { operation: "GET /api/cron/leaderboard" });
   }
 
   const eligible = (profiles ?? []).filter(
@@ -91,7 +92,7 @@ export async function GET(request: Request) {
       .upsert(rows, { onConflict: "period,period_start,user_id" });
 
     if (upsertError) {
-      return NextResponse.json({ error: upsertError.message }, { status: 500 });
+      return databaseError(upsertError, { operation: "GET /api/cron/leaderboard" });
     }
 
     upserted += rows.length;

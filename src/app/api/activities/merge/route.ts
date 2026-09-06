@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { databaseError } from "@/lib/api/errors";
 import { createClient } from "@/lib/supabase/server";
 import { ScoringInputError } from "@/lib/scoring/service";
 import { assertScoringInput } from "@/lib/scoring/input-guards";
@@ -104,7 +105,7 @@ export async function POST(request: Request) {
     .in("id", requestedIds);
 
   if (fetchError) {
-    return NextResponse.json({ error: fetchError.message }, { status: 500 });
+    return databaseError(fetchError, { operation: "POST /api/activities/merge" });
   }
   if (!rows || rows.length !== requestedIds.length) {
     return NextResponse.json(
@@ -205,7 +206,7 @@ export async function POST(request: Request) {
     .eq("user_id", user.id);
 
   if (updateError) {
-    return NextResponse.json({ error: updateError.message }, { status: 500 });
+    return databaseError(updateError, { operation: "POST /api/activities/merge" });
   }
 
   const deleteError = await deleteAbsorbed(supabase, user.id, plan.absorbedIds);

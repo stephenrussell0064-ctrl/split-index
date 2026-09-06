@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { databaseError } from "@/lib/api/errors";
 import { createClient } from "@/lib/supabase/server";
 import { scoreAndPersist } from "@/lib/activities/score-and-persist";
 import { ScoringInputError } from "@/lib/scoring/service";
@@ -138,7 +139,7 @@ export async function POST(
     .eq("user_id", user.id);
 
   if (restoreSurvivorError) {
-    return NextResponse.json({ error: restoreSurvivorError.message }, { status: 500 });
+    return databaseError(restoreSurvivorError, { operation: "POST /api/activities/[id]/unmerge" });
   }
 
   const { error: reinsertError } = await supabase

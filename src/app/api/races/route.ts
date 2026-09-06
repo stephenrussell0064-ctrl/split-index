@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { databaseError } from "@/lib/api/errors";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { geocodeLocation, fetchDailyForecast } from "@/lib/external/open-meteo";
@@ -299,7 +300,7 @@ export async function GET() {
   ]);
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return databaseError(error, { operation: "GET /api/races" });
   }
 
   const base5kSeconds = benchmark?.benchmark_seconds ?? null;

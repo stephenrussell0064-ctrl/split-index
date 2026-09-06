@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { databaseError } from "@/lib/api/errors";
 import { createClient } from "@/lib/supabase/server";
 import { fetchFriendsData } from "@/lib/social/queries";
 
@@ -77,7 +78,7 @@ export async function POST(request: Request) {
     .single();
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return databaseError(error, { operation: "POST /api/friends" });
   }
 
   return NextResponse.json({ request: requestRow });
@@ -121,7 +122,7 @@ export async function PATCH(request: Request) {
     .eq("id", id);
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return databaseError(error, { operation: "PATCH /api/friends" });
   }
 
   return NextResponse.json({ ok: true, status: "accepted" });

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { databaseError } from "@/lib/api/errors";
 import { createClient } from "@/lib/supabase/server";
 import { computeRecentLoads } from "@/lib/scoring/service";
 import { calculateACWR, calculateFatigueScore, calculateRecoveryScore } from "@/lib/scoring/engine";
@@ -69,7 +70,7 @@ export async function POST(request: Request) {
       .from("recovery_snapshots")
       .update({ hrv_ms: hrvMs, recovery_score: recoveryScore, fatigue_score: fatigueScore })
       .eq("id", existing.id);
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) return databaseError(error, { operation: "POST /api/recovery/hrv" });
   } else {
     const { error } = await supabase.from("recovery_snapshots").insert({
       user_id: user.id,
@@ -77,7 +78,7 @@ export async function POST(request: Request) {
       recovery_score: recoveryScore,
       fatigue_score: fatigueScore,
     });
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) return databaseError(error, { operation: "POST /api/recovery/hrv" });
   }
 
   return NextResponse.json({ hrvMs });

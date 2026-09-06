@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { databaseError } from "@/lib/api/errors";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isPremiumUser } from "@/lib/retention/trial";
 import { generateHybridReport, currentPeriodStart } from "@/lib/scoring/hybrid-report-data";
@@ -32,7 +33,7 @@ export async function GET(request: Request) {
     .select("user_id, subscription_tier, subscription_status");
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return databaseError(error, { operation: "GET /api/cron/hybrid-reports" });
   }
 
   const premiumUserIds = (profiles ?? [])
