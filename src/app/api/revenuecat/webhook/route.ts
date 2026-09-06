@@ -34,10 +34,40 @@ const GRANT_EVENT_TYPES = new Set([
 // active until the paid period actually runs out, which is EXPIRATION).
 const REVOKE_EVENT_TYPES = new Set(["EXPIRATION"]);
 
+/**
+ * The entitlement that means "premium" here. Must match PRO_ENTITLEMENT_ID in
+ * lib/native/billing.ts and the identifier configured in the RevenueCat
+ * dashboard — all three SKUs unlock this one entitlement.
+ */
+const PRO_ENTITLEMENT_ID = "split_index_pro";
+
 interface RevenueCatWebhookEvent {
   type: string;
   app_user_id: string;
   product_id?: string;
+  /** Which entitlements this event affects. Absent on some event types. */
+  entitlement_ids?: string[] | null;
+}
+
+/**
+ * Whether this event concerns premium access at all.
+ *
+ * The route used to grant premium for ANY purchase event reaching it, on the
+ * assumption that the RevenueCat project only ever sells premium. That holds
+ * today and stops holding the first time a second product is added — a one-off
+ * coaching add-on, a race entry, a cosmetic — at which point buying it would
+ * silently hand over AI Coach and the global leaderboards too.
+ *
+ * Deliberately permissive when `entitlement_ids` is missing or empty: some
+ * event types do not carry the field, and it is far worse to withhold premium
+ * from someone who has paid than to grant it for a product that does not exist
+ * yet. The check only bites when RevenueCat has positively told us which
+ * entitlements are involved and ours is not among them.
+ */
+function affectsPremium(event: RevenueCatWebhookEvent): boolean {
+  const ids = event.entitlement_ids;
+  if (!ids || ids.length === 0) return true;
+  return ids.includes(PRO_ENTITLEMENT_ID);
 }
 
 function verifySecret(request: Request): boolean {
@@ -63,6 +93,12 @@ export async function POST(request: Request) {
   // acknowledge without touching any real profile.
   if (event.type === "TEST") {
     return NextResponse.json({ received: true });
+  }
+
+  // A real event about a product that is not premium. Acknowledge it — a 4xx
+  // would make RevenueCat retry an event there is nothing to do about.
+  if (!affectsPremium(event)) {
+    return NextResponse.json({ received: true, ignored: "not_premium_entitlement" });
   }
 
   const admin = createAdminClient();

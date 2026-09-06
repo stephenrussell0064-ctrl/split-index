@@ -14,6 +14,7 @@ import { getTrialDaysRemaining, isPremiumUser } from "@/lib/retention/trial";
 import { createClient } from "@/lib/supabase/client";
 import { ScoreDisclaimer } from "@/components/legal/score-disclaimer";
 import { SkuPicker } from "@/components/pricing/sku-picker";
+import { ManageSubscription } from "@/components/pricing/manage-subscription";
 import type { SubscriptionStatus, SubscriptionTier } from "@/types";
 
 function BillingContent() {
@@ -146,9 +147,13 @@ function BillingContent() {
             </>
           )}
           {premium && (
-            <p className="text-sm text-muted">
-              You have full access to AI Coach, analytics, and leaderboards.
-            </p>
+            <>
+              <p className="text-sm text-muted">
+                You have full access to AI Coach, analytics, and leaderboards.
+              </p>
+              {/* Native only — see the component for why web renders nothing. */}
+              <ManageSubscription className="mt-4" />
+            </>
           )}
         </CardContent>
       </Card>
