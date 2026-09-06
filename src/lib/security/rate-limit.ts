@@ -1,5 +1,7 @@
 import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
+import { correlationId } from "@/lib/api/errors";
+import { logSecurityEvent } from "@/lib/observability/security-log";
 import {
   RATE_LIMIT_ACCOUNT_PER_HOUR,
   RATE_LIMIT_EXEMPT_PREFIXES,
@@ -192,6 +194,23 @@ export async function checkRateLimit(
 
   try {
     const { success, limit, remaining, reset } = await limiter.limit(identifier);
+
+    if (!success) {
+      /*
+       * WP7 — a rate-limit trip is an event worth grouping on. The identifier
+       * is logged because "which account is hitting the ceiling" is the whole
+       * question, and it is a user id or an IP, never an email.
+       */
+      logSecurityEvent({
+        type: "rate_limit.trip",
+        correlationId: correlationId(),
+        userId: identifier.startsWith("user:") ? identifier.slice(5) : null,
+        source: `rate-limit:${cls}`,
+        outcome: "denied",
+        detail: { cls, limit, keyedBy: identifier.startsWith("user:") ? "user" : "ip" },
+      });
+    }
+
     return {
       allowed: success,
       // `reset` is an epoch in ms. Always at least 1, because Retry-After: 0

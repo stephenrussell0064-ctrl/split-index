@@ -184,7 +184,8 @@ describe("fuzz — shape and structure", () => {
   });
 
   it("rejects a gym session with no exercises", () => {
-    const { exercises: _dropped, ...withoutExercises } = validGymActivity();
+    const withoutExercises: Record<string, unknown> = { ...validGymActivity() };
+    delete withoutExercises.exercises;
     expect(createActivitySchema.safeParse(withoutExercises).success).toBe(false);
   });
 

@@ -4,6 +4,8 @@ import type { SubscriptionStatus, SubscriptionTier } from "@/types";
 import { getTrialDaysRemaining, hasSoftTrialAccess, isPremiumUser } from "@/lib/retention/trial";
 import { PREMIUM_FEATURES, type PremiumFeature } from "@/lib/premium/features";
 import { resolveAdminRole, type AdminRole } from "@/lib/auth/admin-role";
+import { correlationId } from "@/lib/api/errors";
+import { logSecurityEvent } from "@/lib/observability/security-log";
 
 /**
  * WP6.2 — the single place that answers "what is this account allowed to do".
@@ -173,3 +175,35 @@ export const PREMIUM_REQUIRED = {
   error: "That feature is part of Premium.",
   premium_required: true,
 } as const;
+
+/**
+ * Record a refused premium request.
+ *
+ * WP7 names this specifically: "an alert path for repeated auth failure and for
+ * repeated entitlement denial from one account — the latter is the signature of
+ * someone probing the paywall."
+ *
+ * One denial is ordinary. A free account hitting export once a week is somebody
+ * discovering the feature exists. The same account hitting four gated routes in
+ * a minute is somebody mapping the paywall, and only a per-account record can
+ * tell those apart.
+ *
+ * The plan is logged; nothing about the athlete is.
+ */
+export function logEntitlementDenial(
+  entitlements: Entitlements,
+  feature: PremiumFeature | string,
+  source: string
+): void {
+  logSecurityEvent({
+    type: "entitlement.denied",
+    correlationId: correlationId(),
+    userId: entitlements.userId,
+    source,
+    outcome: "denied",
+    // Health-adjacent: this is a record about who tried to reach a Hybrid Plan
+    // or analytics surface, so it keeps the longer period.
+    retention: "audit",
+    detail: { feature: String(feature), plan: entitlements.plan, trial: entitlements.trial.kind },
+  });
+}

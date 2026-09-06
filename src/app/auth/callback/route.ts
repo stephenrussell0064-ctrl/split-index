@@ -3,6 +3,8 @@ import type { EmailOtpType } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { ensureProfileForUser } from "@/lib/supabase/ensure-profile";
 import { getPublicOrigin } from "@/lib/app-url";
+import { correlationId } from "@/lib/api/errors";
+import { logSecurityEvent } from "@/lib/observability/security-log";
 
 function failurePath(next: string, reason: string): string {
   if (next === "/reset-password") return "/reset-password";
@@ -19,6 +21,22 @@ function authFailureRedirect(
   next?: string
 ) {
   const origin = getPublicOrigin(request);
+
+  /*
+   * WP7 — auth failures, structured. The REASON CODE is logged and the provider
+   * detail is not: the reason is already mapped and safe to aggregate, and the
+   * detail is an unbounded provider string that has no business in a log
+   * aggregator. The console.error below keeps it for a person reading one
+   * incident.
+   */
+  logSecurityEvent({
+    type: "auth.failure",
+    correlationId: correlationId(),
+    source: "/auth/callback",
+    outcome: "denied",
+    detail: { reason, next: next ?? null },
+  });
+
   console.error("[auth/callback] Sign-in failed:", { reason, detail, next });
 
   const path = failurePath(next ?? "/dashboard", reason);
@@ -165,6 +183,15 @@ export async function GET(request: Request) {
           : next
         : "/onboarding";
   const origin = getPublicOrigin(request);
+
+  logSecurityEvent({
+    type: "auth.success",
+    correlationId: correlationId(),
+    userId: user.id,
+    source: "/auth/callback",
+    outcome: "allowed",
+    detail: { onboardingCompleted: !!profile?.onboarding_completed },
+  });
 
   console.log("[auth/callback] Sign-in succeeded:", {
     userId: user.id,

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { getStripe } from "@/lib/stripe/config";
+import { correlationId } from "@/lib/api/errors";
+import { logSecurityEvent } from "@/lib/observability/security-log";
 import Stripe from "stripe";
 // Was a second, inline copy of createAdminClient reading
 // SUPABASE_SERVICE_ROLE_KEY directly. A duplicated elevated-credential factory
@@ -26,8 +28,31 @@ export async function POST(request: Request) {
       process.env.STRIPE_WEBHOOK_SECRET!
     );
   } catch {
+    /*
+     * A webhook that fails signature verification is either a misconfiguration
+     * or somebody forging billing events. Both are worth a record, and this is
+     * the only signal either produces — the webhook is exempt from rate
+     * limiting precisely because the signature is its control.
+     */
+    logSecurityEvent({
+      type: "payment.webhook",
+      correlationId: correlationId(),
+      source: "/api/stripe/webhook",
+      outcome: "denied",
+      detail: { reason: "invalid_signature" },
+    });
     return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
   }
+
+  logSecurityEvent({
+    type: "payment.webhook",
+    correlationId: correlationId(),
+    source: "/api/stripe/webhook",
+    outcome: "allowed",
+    // The event type and nothing else. A Stripe event object carries the
+    // customer's email and card details.
+    detail: { stripeEvent: event.type },
+  });
 
   const supabaseAdmin = createAdminClient();
 

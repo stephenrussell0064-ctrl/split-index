@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { fetchLeaderboardDetail } from "@/lib/social/queries";
-import { PREMIUM_REQUIRED, getEntitlements } from "@/lib/premium/entitlements";
+import {
+  PREMIUM_REQUIRED,
+  getEntitlements,
+  logEntitlementDenial,
+} from "@/lib/premium/entitlements";
 
 /** Gated at the API, not compute-and-hide: free requesters never receive another user's derived scores. */
 export async function GET(request: Request) {
@@ -17,6 +21,7 @@ export async function GET(request: Request) {
   const entitlements = await getEntitlements(supabase, user.id);
 
   if (!entitlements.premium) {
+    logEntitlementDenial(entitlements, "global_leaderboards", "/api/social/leaderboard/detail");
     return NextResponse.json(PREMIUM_REQUIRED, { status: 403 });
   }
 
