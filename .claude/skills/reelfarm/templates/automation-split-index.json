@@ -1,0 +1,34 @@
+{
+  "title": "Split Index — hook rotation (draft mode)",
+  "tiktok_account_id": "<fill from: node scripts/rf.mjs accounts>",
+  "language": "English",
+  "style": "data-led, blunt, no hype. Short declarative sentences. Numbers on screen carry the claim.",
+  "schedule": [],
+  "slideshow_hooks": [],
+  "tiktok_post_settings": {
+    "caption": {
+      "mode": "prompt",
+      "prompt_text": "Write a TikTok caption under 89 characters for a hybrid-fitness analytics app called Split Index. It scores lifting and running on one 0-1000 scale from the user's own logged data. Blunt and specific, no emojis, no hashtag spam, at most one hashtag. Never make medical claims; frame injury risk as relative to the athlete's own baseline."
+    },
+    "description": {
+      "mode": "prompt",
+      "prompt_text": "One or two plain sentences expanding the hook for a hybrid athlete audience. State what the app measures and why the number is defensible. No hype, no medical claims."
+    },
+    "auto_post": false,
+    "post_mode": "MEDIA_UPLOAD",
+    "visibility": "SELF_ONLY",
+    "auto_music": true,
+    "allow_comments": true,
+    "allow_duet": true,
+    "allow_stitch": true
+  },
+  "image_settings": {
+    "aspect_ratio": "9:16",
+    "hook_grid_format": "single",
+    "auto_pull_images": false,
+    "is_bg_overlay_on_hook_image": true,
+    "background_opacity": 30,
+    "text_on_first_slide_only": false,
+    "all_slides": "<fill with a Split Index screenshot collection id from: node scripts/rf.mjs collections>"
+  }
+}
