@@ -1,15 +1,12 @@
 import { NextResponse } from "next/server";
 import { headers } from "next/headers";
-import { createClient } from "@supabase/supabase-js";
 import { getStripe } from "@/lib/stripe/config";
 import Stripe from "stripe";
-
-function createAdminClient() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  );
-}
+// Was a second, inline copy of createAdminClient reading
+// SUPABASE_SERVICE_ROLE_KEY directly. A duplicated elevated-credential factory
+// is one the `server-only` guard and the call-site inventory both miss, which
+// is exactly how the tenth call site gets added without anybody noticing.
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export async function POST(request: Request) {
   const body = await request.text();

@@ -42,6 +42,20 @@
 # `next build` here would double the minutes to learn the same thing. If the
 # Vercel connection is ever removed, add one.
 #
+# THAT MATTERS FOR WP2, SO BE CLEAR ABOUT WHERE THAT GATE LIVES. The
+# client-bundle secret scanner runs as part of `npm run build`, which means it
+# runs on Vercel — a deploy carrying a service-role key in a client chunk fails
+# there and never publishes. It cannot run here, because there is no bundle to
+# scan without a build.
+#
+# What CI covers instead is the scanner's own behaviour:
+# scripts/check-client-bundle.test.ts asserts what it catches AND what it must
+# not catch, and src/lib/supabase/admin-inventory.test.ts fails if a new
+# elevated-credential call site appears without being documented. Those are the
+# parts that rot silently. If the Vercel connection is removed, the build job
+# added above must run `npm run build` and not `next build`, or the gate goes
+# with it.
+#
 # NO SECRETS REQUIRED. Verified: the suite runs green in a checkout with no
 # .env file of any kind, which is exactly the condition a runner starts in. If
 # a future test needs a credential, that is a signal it is reaching a real
