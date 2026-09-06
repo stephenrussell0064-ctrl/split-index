@@ -1,7 +1,7 @@
 import { ImageResponse } from "next/og";
 import { createClient } from "@/lib/supabase/server";
 import { fetchLatestHybridReport } from "@/lib/scoring/hybrid-report-data";
-import { isPremiumUser } from "@/lib/retention/trial";
+import { getEntitlements } from "@/lib/premium/entitlements";
 import { formatIndex } from "@/lib/utils/format";
 import { shareableAthleteName } from "@/lib/social/shareable-name";
 
@@ -25,7 +25,8 @@ export async function GET() {
     .eq("user_id", user.id)
     .single();
 
-  if (!profile || !isPremiumUser(profile.subscription_tier, profile.subscription_status)) {
+  const entitlements = await getEntitlements(supabase, user.id);
+  if (!profile || !entitlements.premium) {
     return new Response("Premium required", { status: 403 });
   }
 

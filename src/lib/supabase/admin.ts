@@ -14,7 +14,7 @@ import { createClient } from "@supabase/supabase-js";
  *
  * WHERE THIS IS USED, AND WHY EACH ONE IS JUSTIFIED
  * ------------------------------------------------
- * Eleven call sites, all server-side, all needing to act outside one user's
+ * Twelve call sites, all server-side, all needing to act outside one user's
  * RLS scope. Kept here rather than scattered so the list can be read in one
  * place and audited without a grep — verify it with:
  *
@@ -45,8 +45,12 @@ import { createClient } from "@supabase/supabase-js";
  *   lib/auth/admin-role         Resolves the admin role itself — deliberately
  *                               not through the user's own client, so a mistake
  *                               in the admin_users policy cannot grant the role.
+ *   lib/auth/admin-audit        Writes admin_access_log, which has no RLS
+ *                               policies at all — an admin who could read or
+ *                               edit the log of their own accesses defeats the
+ *                               point of keeping one.
  *
- * Adding a twelfth means adding it to that list and to SECURITY.md. If the
+ * Adding a thirteenth means adding it to that list and to SECURITY.md. If the
  * reason is "it was easier", it is the wrong client.
  */
 export function createAdminClient() {

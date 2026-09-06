@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { fetchLeaderboardDetail } from "@/lib/social/queries";
-import { isPremiumUser } from "@/lib/retention/trial";
+import { PREMIUM_REQUIRED, getEntitlements } from "@/lib/premium/entitlements";
 
 /** Gated at the API, not compute-and-hide: free requesters never receive another user's derived scores. */
 export async function GET(request: Request) {
@@ -14,18 +14,10 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("subscription_tier, subscription_status")
-    .eq("user_id", user.id)
-    .single();
+  const entitlements = await getEntitlements(supabase, user.id);
 
-  const premium = profile
-    ? isPremiumUser(profile.subscription_tier, profile.subscription_status)
-    : false;
-
-  if (!premium) {
-    return NextResponse.json({ error: "Premium required" }, { status: 403 });
+  if (!entitlements.premium) {
+    return NextResponse.json(PREMIUM_REQUIRED, { status: 403 });
   }
 
   const { searchParams } = new URL(request.url);

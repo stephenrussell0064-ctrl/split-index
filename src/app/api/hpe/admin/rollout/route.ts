@@ -3,6 +3,7 @@ import { databaseError } from "@/lib/api/errors";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { canChangeRollout, resolveAdminRole } from "@/lib/auth/admin-role";
+import { recordAdminAccess } from "@/lib/auth/admin-audit";
 import { evaluateRolloutChange } from "@/lib/scoring/hpe/rollout";
 
 /**
@@ -27,8 +28,35 @@ export async function POST(request: Request) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const identity = await resolveAdminRole(user.id);
-  if (!identity) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!identity) {
+    await recordAdminAccess({
+      userId: user.id,
+      role: null,
+      route: "/api/hpe/admin/rollout",
+      action: "write",
+      granted: false,
+    });
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
   if (!canChangeRollout(identity)) {
+    /*
+     * A viewer attempting an operator action. Worth recording precisely
+     * because it is the least alarming denial: a real admin reaching past
+     * their role, which is either a mistake worth knowing about or an account
+     * being used by somebody it should not be.
+     *
+     * The successful change is already audited into hpe_rollout_audit with the
+     * from/to values and the reason — that record is richer and stays where it
+     * is. This table answers "who tried", that one answers "what changed".
+     */
+    await recordAdminAccess({
+      userId: user.id,
+      role: identity.role,
+      route: "/api/hpe/admin/rollout",
+      action: "write",
+      granted: false,
+      detail: { reason: "role_is_read_only" },
+    });
     return NextResponse.json(
       { error: "Your admin role is read-only. Changing the rollout needs the operator role." },
       { status: 403 }
