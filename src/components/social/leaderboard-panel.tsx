@@ -208,7 +208,12 @@ export function LeaderboardPanel({
   const [selectedMuscleGroup, setSelectedMuscleGroup] = useState(MUSCLE_GROUPS[0]);
   const [selectedActivity, setSelectedActivity] = useState<SportType>("running");
   const [dimensionRows, setDimensionRows] = useState<DimensionLeaderboardRow[]>([]);
-  const [dimensionLoading, setDimensionLoading] = useState(false);
+  /**
+   * Which selection `dimensionRows` currently holds, or null before the first
+   * load. Loading is DERIVED from this rather than stored — see the effect
+   * below for why that matters here.
+   */
+  const [loadedDimensionKey, setLoadedDimensionKey] = useState<string | null>(null);
 
   const toggleExpanded = useCallback(
     (userId: string) => {
@@ -258,22 +263,59 @@ export function LeaderboardPanel({
         ? selectedMuscleGroup
         : selectedActivity;
 
-  const fetchDimensionRows = useCallback(async () => {
-    if (viewMode === "index" || !dimensionValue) return;
-    setDimensionLoading(true);
-    try {
-      const params = new URLSearchParams({ type: viewMode, value: dimensionValue });
-      const res = await fetch(`/api/social/leaderboard/dimension?${params}`);
-      const data = await res.json();
-      if (res.ok) setDimensionRows(data.rows ?? []);
-    } finally {
-      setDimensionLoading(false);
-    }
-  }, [viewMode, dimensionValue]);
+  /**
+   * The selection this panel is currently meant to be showing — null whenever
+   * there is nothing to fetch (the Index tab, or no exercise chosen yet).
+   */
+  const dimensionKey =
+    viewMode === "index" || !dimensionValue ? null : `${viewMode}:${dimensionValue}`;
+
+  /*
+    Loading is DERIVED, not stored: we are loading exactly when the rows on
+    screen belong to a different selection from the one now chosen.
+
+    This replaces a `setDimensionLoading(true)` that ran synchronously in the
+    effect body, which is the pattern React's own lint rule flags — it triggers a
+    second render pass before the first has committed, on every selection change.
+    Deriving it removes the extra render and, more usefully, removes the state
+    that could disagree with reality: a `loading` boolean and a `rows` array are
+    two facts that have to be kept in step by hand, and this is one fact.
+  */
+  const dimensionLoading = dimensionKey !== null && dimensionKey !== loadedDimensionKey;
 
   useEffect(() => {
-    void fetchDimensionRows();
-  }, [fetchDimensionRows]);
+    if (dimensionKey === null) return;
+
+    /*
+      Cancellation is not optional here. Tapping through the exercise list fires
+      a request per selection, and without this the responses race: a slow reply
+      for "Back Squat" landing after a fast one for "Bench Press" used to
+      overwrite Bench's rankings with Squat's, under Bench's heading. The flag
+      makes the last selection win rather than the last response.
+    */
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const params = new URLSearchParams({ type: viewMode, value: dimensionValue });
+        const res = await fetch(`/api/social/leaderboard/dimension?${params}`);
+        const data = await res.json();
+        if (cancelled) return;
+        // Cleared rather than left alone when the request fails, so a failed
+        // load shows this selection's empty state instead of the PREVIOUS
+        // selection's rankings mislabelled as this one's.
+        setDimensionRows(res.ok ? (data.rows ?? []) : []);
+      } catch {
+        if (!cancelled) setDimensionRows([]);
+      } finally {
+        if (!cancelled) setLoadedDimensionKey(dimensionKey);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [dimensionKey, viewMode, dimensionValue]);
 
   return (
     <Card glow="accent">
