@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { databaseError } from "@/lib/api/errors";
 import { createClient } from "@/lib/supabase/server";
-import { PREMIUM_REQUIRED, allows, getEntitlements } from "@/lib/premium/entitlements";
+import {
+  PREMIUM_REQUIRED,
+  allows,
+  getEntitlements,
+  logEntitlementDenial,
+} from "@/lib/premium/entitlements";
 
 function toCsv(rows: Record<string, unknown>[]): string {
   if (rows.length === 0) return "";
@@ -38,6 +43,7 @@ export async function GET(request: Request) {
   const entitlements = await getEntitlements(supabase, user.id);
 
   if (!allows(entitlements, "data_export")) {
+    logEntitlementDenial(entitlements, "data_export", "/api/export/activities");
     return NextResponse.json(PREMIUM_REQUIRED, { status: 403 });
   }
 

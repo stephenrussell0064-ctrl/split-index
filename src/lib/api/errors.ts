@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logSecurityEvent } from "@/lib/observability/security-log";
 
 /**
  * WP5 — one place where a server-side failure becomes a response.
@@ -130,6 +131,26 @@ export function serverError({
   status = 500,
 }: FailOptions): NextResponse {
   const ref = correlationId();
+
+  /*
+   * WP7 — every 5xx is a security event, and the structured record is what an
+   * alert or a log drain can actually group on.
+   *
+   * The stack trace stays on a separate console.error rather than going into
+   * the structured record: a stack is unbounded free text and the one place a
+   * health value could realistically arrive in a log line is inside a message
+   * from a failed write to hpe_intake. The structured record carries the
+   * operation and the correlation id, which is what an alert needs; the stack
+   * carries the detail, which is what a person needs, and only one of those has
+   * to be safe to aggregate.
+   */
+  logSecurityEvent({
+    type: "server_error",
+    correlationId: ref,
+    source: operation,
+    outcome: "error",
+    detail: { status },
+  });
 
   console.error(`[api] ${operation} failed`, {
     ref,
