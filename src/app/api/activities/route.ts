@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { parseBody } from "@/lib/validation/boundary";
+import { createActivitySchema } from "@/lib/validation/schemas/activity";
 import { ROUTE_CONFIG, applyRoutePrivacyZone, parseRoutePolyline } from "@/lib/scoring/gps-track";
 import { createClient } from "@/lib/supabase/server";
 import { scoreActivity, computeRecentLoads, buildStrengthScoreInserts, ScoringInputError } from "@/lib/scoring/service";
@@ -154,12 +156,23 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // bodyweight_kg is an additive extension: the gym form submits the athlete's
-  // current bodyweight so relative-strength scoring uses today's weight.
-  const body: ActivityFormData & {
-    bodyweight_kg?: number;
-    exercise_notes?: Record<string, string>;
-  } = await request.json();
+  /*
+   * The boundary. Everything below this line has been proved to be the shape
+   * and the range it claims — see src/lib/validation/schemas/activity.ts.
+   *
+   * This used to be `await request.json()` with a type annotation, which is a
+   * statement about what the developer expected rather than a check on what
+   * arrived. The scoring engine downstream divides by bodyweight_kg and fits
+   * curves through the athlete's own history, so a 0, a 1e9 or a string
+   * reaching it does not throw — it stores a number that biases every later
+   * estimate for that account.
+   *
+   * bodyweight_kg is an additive extension: the gym form submits the athlete's
+   * current bodyweight so relative-strength scoring uses today's weight.
+   */
+  const parsed = await parseBody(request, createActivitySchema);
+  if (parsed.response) return parsed.response;
+  const body = parsed.data;
 
   const { data: profile } = await supabase
     .from("profiles")
