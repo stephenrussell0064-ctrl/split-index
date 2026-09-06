@@ -167,11 +167,16 @@ export async function POST(request: Request) {
     IDEMPOTENCY, for the retry the client cannot tell apart from a first try.
 
     A submit that reached the server and whose response was lost on the way back
-    is re-sent by the offline queue carrying the same `client_request_id`. If
-    that id is already on an activity of this athlete's, the work was done — so
-    answer with what already exists rather than writing it twice. Only queued
-    submits carry an id; an ordinary online save has none and skips this
-    entirely.
+    is re-sent carrying the same `client_request_id`. If that id is already on
+    an activity of this athlete's, the work was done — so answer with what
+    already exists rather than writing it twice.
+
+    EVERY save carries an id now, not only queued ones. `submitActivityRequest`
+    mints it before the first attempt and reuses it if that attempt has to be
+    queued, because the case this guards against is precisely a request that
+    arrived and could not say so: a twelve-second timeout on a connection that
+    was working just well enough. Without one key spanning both attempts, the
+    timeout that saves the workout is also what files it twice.
   */
   const clientRequestId =
     typeof body.client_request_id === "string" && body.client_request_id.length <= 100

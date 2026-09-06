@@ -79,10 +79,22 @@
 	     average HR that looks plausible and is wrong — the worst failure shape
 	     available. `location` and `workout-processing` were already declared;
 	     the BLE one was the gap. -->
+	<!--
+		Two modes, both of which this app actually uses: `location` for GPS
+		recording with the screen locked, `bluetooth-central` for a chest strap
+		or PM5 during that same session.
+
+		REMOVED: `workout-processing`. It is a watchOS key (WKBackgroundModes),
+		not an iOS one — there is no valid iOS UIBackgroundModes value by that
+		name and there is no watch target in this project, so it did nothing on
+		device except sit in the manifest. Guideline 2.5.4 rejects apps that
+		declare a background mode without the functionality requiring it, and a
+		mode the platform does not even recognise is the worst version of that:
+		it buys nothing and invites the question.
+	-->
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>location</string>
-		<string>workout-processing</string>
 		<string>bluetooth-central</string>
 	</array>
 	<key>NSBluetoothAlwaysUsageDescription</key>

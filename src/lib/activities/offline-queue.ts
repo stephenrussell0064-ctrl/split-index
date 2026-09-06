@@ -86,14 +86,27 @@ function newId(prefix: string): string {
   return `${prefix}-${random}`;
 }
 
+/** A fresh idempotency key. Exported so a direct submit can send the SAME key it will queue under — see `submitActivityRequest`. */
+export function newClientRequestId(): string {
+  return newId("cr");
+}
+
 export function enqueueActivitySubmit(
-  entry: Omit<QueuedActivitySubmit, "id" | "createdAt" | "clientRequestId">
+  entry: Omit<QueuedActivitySubmit, "id" | "createdAt" | "clientRequestId"> & {
+    /**
+     * Reuse the key the direct attempt already sent, instead of minting a new
+     * one. A request that timed out may well have reached the server, and a
+     * queued replay under a DIFFERENT key is a second run in the logbook —
+     * which is the exact duplicate this field exists to prevent.
+     */
+    clientRequestId?: string;
+  }
 ) {
   const queue = readQueue();
   const item: QueuedActivitySubmit = {
     ...entry,
     id: newId("q"),
-    clientRequestId: newId("cr"),
+    clientRequestId: entry.clientRequestId ?? newId("cr"),
     attempts: 0,
     createdAt: new Date().toISOString(),
   };
