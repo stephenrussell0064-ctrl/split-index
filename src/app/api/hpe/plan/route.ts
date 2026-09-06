@@ -323,11 +323,35 @@ export async function GET(request: Request) {
     });
   }
 
+  /*
+    WHEN THIS BLOCK STARTED — not when this request was served.
+
+    The screen anchors week 1 to `storedPlan.generatedAt`, and that was only
+    ever sent on the paused branch. On the normal path there was no
+    `storedPlan`, so the client fell back to `new Date()` and dated week 1 to
+    today on every single visit. Combined with a fresh plan row per page view
+    (see savePlan), an athlete eight weeks from a race sat in base week 1
+    permanently and was handed the same session over and over.
+
+    Now that savePlan reuses an unchanged block, this is the date it was really
+    created, and the athlete advances through it.
+  */
+  const planStartedAt = persisted?.planId
+    ? ((
+        await supabase
+          .from("hpe_plans")
+          .select("generated_at")
+          .eq("id", persisted.planId)
+          .maybeSingle()
+      ).data?.generated_at ?? null)
+    : null;
+
   return NextResponse.json({
     ...plan,
     assumptions,
     eventDate,
     persisted,
+    storedPlan: planStartedAt ? { generatedAt: planStartedAt } : null,
     rerun: diagnostic?.rerun ?? null,
     // F18 — attempt selection and race pacing, the two core coach
     // deliverables the assurance review flagged as absent.

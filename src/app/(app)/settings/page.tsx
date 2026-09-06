@@ -47,6 +47,11 @@ export default function SettingsPage() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [recomputeLoading, setRecomputeLoading] = useState(false);
   const [recomputeResult, setRecomputeResult] = useState<string | null>(null);
+  /**
+   * Non-null only for admins. The fleet page is `notFound()` for everyone else,
+   * so this is what it looks like for everyone else too — see /api/admin/me.
+   */
+  const [adminRole, setAdminRole] = useState<string | null>(null);
   const [profile, setProfile] = useState<{
     tier: SubscriptionTier;
     status: SubscriptionStatus | null;
@@ -63,6 +68,20 @@ export default function SettingsPage() {
   const [authUserId, setAuthUserId] = useState<string | null>(null);
   const [profileLoadFailed, setProfileLoadFailed] = useState(false);
   const [privacy, setPrivacy] = useState<PrivacyState>({ status: "loading" });
+
+  useEffect(() => {
+    /*
+      The Hybrid Plan Engine's rollout switch lives at /admin/hpe-fleet, and
+      that page was reachable only by typing its URL. The feature ships
+      DISABLED (migration 040 seeds the flag off at 0%), so the control that
+      makes the app's flagship feature visible to any athlete had no route into
+      it from inside the app. A 404 for non-admins, so this reveals nothing.
+    */
+    void fetch("/api/admin/me")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => setAdminRole(data?.role ?? null))
+      .catch(() => setAdminRole(null));
+  }, []);
 
   useEffect(() => {
     const supabase = createClient();
@@ -428,6 +447,14 @@ export default function SettingsPage() {
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
+          {adminRole && (
+            <Link href="/admin/hpe-fleet">
+              <Button variant="outline" className="w-full">
+                <Shield className="h-4 w-4" />
+                Hybrid Plan fleet &amp; rollout
+              </Button>
+            </Link>
+          )}
           <Button variant="destructive" className="w-full" onClick={handleSignOut}>
             <LogOut className="h-4 w-4" />
             Sign out

@@ -248,7 +248,60 @@ export async function savePlan(
     weeks: PlanWeek[];
     eventDate?: string | null;
   }
-): Promise<{ planId: string; storedSessions: number; droppedSessions: number } | null> {
+): Promise<{ planId: string; storedSessions: number; droppedSessions: number; reused?: boolean } | null> {
+  /*
+    REUSE THE CURRENT BLOCK RATHER THAN WRITING A NEW ONE.
+
+    `GET /api/hpe/plan` regenerates on every request, and this function used to
+    INSERT unconditionally — so simply opening the plan screen wrote a fresh
+    `hpe_plans` row plus every one of its sessions. Two costs, and the second is
+    the one athletes felt:
+
+      1. Unbounded growth. A row and a few dozen session rows per page view,
+         for a screen people check daily.
+      2. THE PLAN NEVER ADVANCED. Week 1 is anchored to the plan's
+         `generated_at`, so a new row every visit re-anchored week 1 to today,
+         for ever. Eight weeks out from a race, the athlete was in base week 1
+         — every visit, indefinitely — and the same interval session came round
+         again and again.
+
+    A plan is "the same plan" when it was built from the same diagnostic, the
+    same constants, and the same goal and constraints. When it is, the existing
+    row is returned untouched: its generated_at stays put, and the athlete moves
+    through the block instead of restarting it. Anything genuinely different —
+    a new diagnostic after the four-weekly re-run, a changed goal, a constants
+    bump — does not match, and a new plan is written exactly as before.
+  */
+  const { data: current } = await supabase
+    .from("hpe_plans")
+    .select("id, profile_id, constants_version, weeks_out, event_date, goal, constraints")
+    .eq("user_id", userId)
+    .is("superseded_at", null)
+    .order("generated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (
+    current &&
+    current.profile_id === args.profileId &&
+    current.constants_version === args.constantsVersion &&
+    current.weeks_out === args.goal.weeksOut &&
+    (current.event_date ?? null) === (args.eventDate ?? null) &&
+    JSON.stringify(current.goal ?? {}) === JSON.stringify(args.goal) &&
+    JSON.stringify(current.constraints ?? {}) === JSON.stringify(args.constraints)
+  ) {
+    const { count } = await supabase
+      .from("hpe_sessions")
+      .select("id", { count: "exact", head: true })
+      .eq("plan_id", current.id as string);
+    return {
+      planId: current.id as string,
+      storedSessions: count ?? 0,
+      droppedSessions: 0,
+      reused: true,
+    };
+  }
+
   const { data: plan, error } = await supabase
     .from("hpe_plans")
     .insert({

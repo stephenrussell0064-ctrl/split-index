@@ -96,7 +96,16 @@ interface PlanResponse {
   rerun?: { shouldRegenerate: boolean; explanations: string[] } | null;
   /** Generation is paused but a stored plan exists — the kill switch's defining asymmetry. */
   paused?: boolean;
-  storedPlan?: { generatedAt: string; constantsVersion: string } | null;
+  /**
+   * When the block the athlete is currently on was created.
+   *
+   * Sent on BOTH paths now. It always came back on the paused branch; on the
+   * generated one it did not, so `planStart` below fell back to today and week
+   * 1 was re-dated to the moment of every visit — the athlete never advanced
+   * past week 1. `constantsVersion` is only carried by the paused branch, which
+   * is the one place it is displayed.
+   */
+  storedPlan?: { generatedAt: string; constantsVersion?: string } | null;
   tailoring?: {
     level: string;
     confidence: number;
@@ -306,8 +315,11 @@ export function HybridPlanScreen() {
           <p className="mt-1 text-sm leading-relaxed text-muted">{data.refusal?.reason}</p>
           {data.storedPlan && (
             <p className="mt-2 text-xs text-muted/70">
-              Built {new Date(data.storedPlan.generatedAt).toLocaleDateString()} under constants v
-              {data.storedPlan.constantsVersion}. Nothing about it has changed.
+              Built {new Date(data.storedPlan.generatedAt).toLocaleDateString()}
+              {data.storedPlan.constantsVersion
+                ? ` under constants v${data.storedPlan.constantsVersion}`
+                : ""}
+              . Nothing about it has changed.
             </p>
           )}
         </Card>

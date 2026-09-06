@@ -393,7 +393,9 @@ export async function fetchPublicProfile(
     ownActivities && ownActivities.length > 0
       ? ownActivities.map((a) => a.started_at)
       : (recentHistory ?? []).map((h) => h.recorded_at);
-  const streak = computeTrainingStreak(streakSource);
+  // This athlete's own zone, not the server's — a streak is a count of THEIR
+  // days. See computeTrainingStreak.
+  const streak = computeTrainingStreak(streakSource, new Date(), profile.timezone);
 
   const recentActivityCount =
     (recentScores ?? []).length ||

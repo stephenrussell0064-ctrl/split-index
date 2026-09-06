@@ -23,7 +23,7 @@ export default async function SocialPage() {
   const { data: profile } = await supabase
     .from("profiles")
     .select(
-      "onboarding_completed, subscription_tier, subscription_status, country"
+      "onboarding_completed, subscription_tier, subscription_status, country, timezone"
     )
     .eq("user_id", user.id)
     .single();
@@ -68,8 +68,14 @@ export default async function SocialPage() {
       fetchSquads(supabase, user.id),
     ]);
 
+  // The athlete's own zone, so this streak matches the one on their dashboard.
+  // These two used to disagree every morning: the dashboard counted a rest day
+  // today as part of the streak and this did not, and the two bucketed days in
+  // different zones on top of that.
   const streak = computeTrainingStreak(
-    (activityDates ?? []).map((a) => a.started_at as string)
+    (activityDates ?? []).map((a) => a.started_at as string),
+    new Date(),
+    profile.timezone
   );
 
   return (
