@@ -33,6 +33,7 @@ its current status inline; this table is the summary.
 | M13 no accessibility statement, no skip link | **CLOSED** | `5525455` |
 | L1 muted-foreground fails text AA | **CLOSED** | `5525455` |
 | M4 no getEntitlements, no matrix test | **CLOSED** | `1d6976c` |
+| H6 no structured security logging | **CLOSED** | `4d55a69` |
 | M7 session/refresh left at defaults | **PARTIAL** — values recorded and made an operator task; GoTrue behaviour still unverifiable from here | `76b9d6b` |
 | H2 no boundary validation | **PARTIAL** — 3 routes of ~40; **and materially corrected, see the finding** | `4f10902` |
 | M11 no central config / bounds | **PARTIAL** — module exists; a second set of bounds still lives in the scoring guard | `4f10902` |
@@ -452,6 +453,9 @@ machine that happened to run it.
 ---
 
 #### H6 — No structured security or audit logging exists
+> **CLOSED `4d55a69`.** One typed event union, one JSON line per event, wired into 5xx, rate-limit trips, entitlement denials, Stripe webhook events and the auth callback. Migration 060 persists the alertable subset with §1's two retention periods enforced by `prune_security_events()`.
+> The finding's own warning — that the absence of a logger was the only thing keeping health values out of logs — is answered by coupling the redaction deny-list to `TIER2_INTAKE_FIELDS`, so a question added to the health screen becomes un-loggable the same day. Proven by removing deny-list entries and watching the Tier 2 assertion fail.
+> **Not covered, structurally:** client-side auth failures never reach this origin. Same limit as WP4's auth rate limiting.
 **WP7 · Evidence: no logging module in `src/lib`; `console.*` in 9 route files; one audit table.**
 
 There is no logger, no correlation ID, no structured event shape. What exists is bare
@@ -973,6 +977,19 @@ the other.
 Low because nothing is currently wrong, and worth doing because the next
 divergence will be silent in exactly the same way.
 
+#### N9 — `elevated_query` has an event type and ten missing call sites
+**WP7 · Low · Evidence: `createAdminClient` is called in 12 places; 2 record it.**
+
+The service-role client bypasses row level security entirely, and WP7 lists
+elevated-credential queries among the events to record. The two admin routes log
+their access; the other ten — both webhooks, both crons, account deletion, the
+races catalogue, squad join, profile creation, admin-role resolution and the
+audit writer itself — do not.
+
+Worth doing with the N8 entitlement migration rather than separately: both are
+the same sweep through overlapping call sites, and doing them together means
+reading each one once.
+
 ### Part D — activation and monetisation
 
 Reported as findings for completeness. None is a security or compliance matter, and D0's
@@ -1020,10 +1037,10 @@ including the four findings raised during remediation:
 | Severity | Open | Closed | Note |
 |---|---|---|---|
 | Critical | **0** | 4 | All four were one defect in four places. |
-| High | 3 | 6 | H1, H3, H4, H5, H7, H8 closed; H2 corrected and partially closed. |
+| High | 2 | 7 | H1, H3, H4, H5, H6, H7, H8 closed; H2 corrected and partially closed. |
 | Medium | 10 | 5 | M1, M2, M3, M4, M13 closed; M7 and M11 partially. N1, N5, N7 added. |
-| Low | 7 | 4 | L1, L3, L6, N4 closed; N2, N3, N6, N8 added. |
-| **Total** | **20** | **20** | 40 findings raised in total. |
+| Low | 8 | 4 | L1, L3, L6, N4 closed; N2, N3, N6, N8, N9 added. |
+| **Total** | **20** | **21** | 41 findings raised in total. |
 
 All four Criticals are the same defect in four places: a policy written to enable a public
 leaderboard exposes the underlying user-owned table instead of a column-scoped projection.
@@ -1054,7 +1071,7 @@ Then:
 | 6 | ~~**WP13 + WP4 auth hardening**~~ **DONE `76b9d6b`** | H3, H7; M7 partly (M6 **not** started) | Per-account and per-IP limits must be designed together, per WP13.5. Needs a shared store. |
 | 7 | ~~**WP12 contrast + gating**~~ **DONE `5525455`** | H8, M3, M13, L1 (N7 opened) | M3 satisfies WP6.3 and WP12.7 at once. Statement written last, after the fix, so it is honest. |
 | 8 | ~~**WP6 entitlement matrix**~~ **DONE `1d6976c`** | M4 (M3 already closed by WP12); N8 opened | The matrix test is the deliverable; `features.ts` mostly stands. |
-| 9 | **WP7 logging** | H6 | Build the redaction rule in from the first line, not after. |
+| 9 | ~~**WP7 logging**~~ **DONE `4d55a69`** | H6; N9 opened | Build the redaction rule in from the first line, not after. |
 | 10 | **WP14 headers, WP11 deletion test, WP8 plans** | M5, M8, M9, M12, L2, L4, L5 | Independent, parallelisable, none blocking. |
 | 11 | **H9 — DPIA + ICO** | H9 | Stephen's, not code. Should start now and run alongside; it does not block engineering. |
 | 12 | **Part D** | D1–D5 | After the brief's own gate: WP1, WP2, WP6 and WP13 complete before any growth push. |
@@ -1106,13 +1123,18 @@ is different.
   someone's programme as a side effect of a privacy choice would punish the
   choice.
 
-**Next in the recommended order:** step 9, WP7 — security and audit logging.
-`admin_access_log` (migration 059) is the first structured log in the codebase
-and the pattern to extend: auth successes and failures, rate-limit trips,
-entitlement denials, payment webhook events and 5xx. Build the redaction rule in
-from the first line rather than retrofitting it — WP7's other half is that no
-log line may contain a value drawn from a health table, and `sanitiseDetail` in
-`lib/auth/admin-audit.ts` is the shape to reuse.
+**Next in the recommended order:** step 10 — the parallelisable remainder.
+M5 (account deletion is non-atomic and untested), M8 (no HSTS), M9 (CSP allows
+`'unsafe-inline'`), M12 (index gaps, needs `EXPLAIN` against a real database),
+L2, L4, L5. None blocks another, and M8 is a two-line change.
+
+After that the open set is mostly things needing a live database (N5's GoTrue
+integration tests, M12's query plans), a decision from Stephen (H9's DPIA, the
+EU question), or a sweep through call sites (N1, N8, N9).
+
+**Two remaining High findings**, both partially addressed and neither closable
+from here alone: H2 (most routes still unparsed — N1) and M7/N5 (GoTrue session
+behaviour unverifiable without an integration environment).
 
 **Four operator items outstanding:**
 
