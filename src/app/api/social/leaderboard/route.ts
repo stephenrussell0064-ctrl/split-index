@@ -3,8 +3,8 @@ import { fetchBlockedUserIds, withoutBlocked } from "@/lib/social/moderation";
 import { createClient } from "@/lib/supabase/server";
 import { fetchLeaderboardWithBracket } from "@/lib/social/leaderboard";
 import { canAccessLeaderboardScope } from "@/lib/premium/features";
-import type { LeaderboardPeriod } from "@/types";
-import type { IndexMetric, LeaderboardScope } from "@/lib/social/constants";
+import { parseQuery } from "@/lib/validation/boundary";
+import { leaderboardQuerySchema } from "@/lib/validation/schemas/leaderboard";
 
 export async function GET(request: Request) {
   const supabase = await createClient();
@@ -28,13 +28,17 @@ export async function GET(request: Request) {
 
   const blocked = await fetchBlockedUserIds(supabase, user.id);
 
-  const { searchParams } = new URL(request.url);
-  const period = (searchParams.get("period") ?? "all_time") as LeaderboardPeriod;
-  const scope = (searchParams.get("scope") ?? "bracket") as LeaderboardScope;
-  const country = searchParams.get("country") ?? profile.country ?? undefined;
-  const ageBracket = searchParams.get("ageBracket") ?? undefined;
-  const weightClass = searchParams.get("weightClass") ?? undefined;
-  const metric = (searchParams.get("metric") ?? "split") as IndexMetric;
+  /*
+   * Parsed, not cast. These used to be `as LeaderboardPeriod` and friends —
+   * an assertion to the compiler about a value that came off the network,
+   * which is the one place an assertion cannot be trusted. `?metric=nonsense`
+   * fell through a switch with no default and returned the split index; a bad
+   * scope skipped every filter branch and returned an unfiltered board.
+   */
+  const query = parseQuery(request, leaderboardQuerySchema);
+  if (query.response) return query.response;
+  const { period, scope, metric, ageBracket, weightClass } = query.data;
+  const country = query.data.country ?? profile.country ?? undefined;
 
   if (!canAccessLeaderboardScope(scope, profile)) {
     const fallback = await fetchLeaderboardWithBracket(
