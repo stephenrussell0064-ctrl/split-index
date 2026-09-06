@@ -17,7 +17,7 @@ export async function getGlobalRankPercentile(
   userIndex: number
 ): Promise<RankPercentileResult> {
   const { count: total } = await supabase
-    .from("profiles")
+    .from("public_profiles")
     .select("*", { count: "exact", head: true })
     .not("current_split_index", "is", null);
 
@@ -25,7 +25,7 @@ export async function getGlobalRankPercentile(
 
   if (poolSize >= MIN_PEER_POOL) {
     const { count: below } = await supabase
-      .from("profiles")
+      .from("public_profiles")
       .select("*", { count: "exact", head: true })
       .lt("current_split_index", userIndex);
 
@@ -81,7 +81,7 @@ export async function getNextRankTarget(
   userIndex: number
 ): Promise<NextRankTarget | null> {
   const { data } = await supabase
-    .from("profiles")
+    .from("public_profiles")
     .select("current_split_index")
     .gt("current_split_index", userIndex)
     .order("current_split_index", { ascending: true })
@@ -98,7 +98,7 @@ export async function getNextRankTarget(
   // standards-based next-tier target (needs no peer data at all) is a more
   // honest hook than a hollow "you're #1 of 3" crown.
   const { count: poolSize } = await supabase
-    .from("profiles")
+    .from("public_profiles")
     .select("*", { count: "exact", head: true })
     .not("current_split_index", "is", null);
 
