@@ -15,7 +15,8 @@ export type LockedCardioFields =
   | "decouplingPct"
   | "predictions"
   | "confidence"
-  | "flags";
+  | "flags"
+  | "workPiece";
 
 export type LockedIndexFields =
   | "labIndex"
@@ -57,6 +58,7 @@ export function gateCardioResult(
       "predictions",
       "confidence",
       "flags",
+      "workPiece",
     ],
   };
 }

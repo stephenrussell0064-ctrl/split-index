@@ -120,8 +120,13 @@ function CardioPremiumStats({
     "hr-zone-data-missing",
     "hr-zone-resting-hr-estimated",
     "hr-zone-assumed-target",
+    // Rendered as a sentence with the actual paces below, rather than as the
+    // bare words "interval work piece scored".
+    "interval-work-piece-scored",
+    "fartlek-work-piece-scored",
   ]);
   const remainingFlags = result.flags.filter((f) => !hiddenFlags.has(f));
+  const workPiece = "workPiece" in result ? result.workPiece : null;
   const predictionVerb = (sport && PREDICTION_VERB[sport]) || "run";
 
   return (
@@ -157,6 +162,43 @@ function CardioPremiumStats({
           heartbeat, best read as a trend against your own history; decoupling is how much your
           heart rate drifted upward relative to pace.
         </ScoringExplainerNote>
+      )}
+      {workPiece && (
+        <div className="border-t border-white/5 pt-4">
+          <p className="text-[10px] uppercase tracking-wider text-muted mb-2">
+            Scored on your {workPiece.kind === "interval" ? "reps" : "hard efforts"}, not your
+            session average
+          </p>
+          <dl className="grid gap-1.5 text-xs sm:grid-cols-3">
+            <div>
+              <dt className="text-muted">
+                {workPiece.kind === "interval" ? "Rep pace" : "On pace"}
+              </dt>
+              <dd className="font-medium tabular-nums">
+                {formatRiegelPrediction(workPiece.workPaceSecPerKm)}/km
+              </dd>
+            </div>
+            <div>
+              <dt className="text-muted">Scored as</dt>
+              <dd className="font-medium tabular-nums">
+                {formatRiegelPrediction(workPiece.equivalentPaceSecPerKm)}/km
+              </dd>
+            </div>
+            {workPiece.sessionAvgPaceSecPerKm !== null && (
+              <div>
+                <dt className="text-muted">Session average</dt>
+                <dd className="font-medium tabular-nums line-through opacity-60">
+                  {formatRiegelPrediction(workPiece.sessionAvgPaceSecPerKm)}/km
+                </dd>
+              </div>
+            )}
+          </dl>
+          <ScoringExplainerNote>
+            Your {workPiece.kind === "interval" ? "rep" : "hard-effort"} pace is converted to a
+            race-equivalent using the rest you took — recovery makes a pace easier to hold, so the
+            scored figure sits behind the raw one. The standing around never counts.
+          </ScoringExplainerNote>
+        </div>
       )}
       {result.predictions && (
         <div className="border-t border-white/5 pt-4">
