@@ -138,11 +138,36 @@ export default function PrivacyPolicyPage() {
                   to comply with applicable law.
                 </li>
               </ul>
+              <h3 className="mt-6 font-medium">Training data and health data are not the same thing</h3>
               <p className="mt-3">
-                Health and fitness data may constitute special category data. Where
-                applicable, we process this data based on your explicit consent and/or
-                because it is necessary for the provision of our fitness analytics service
-                at your request.
+                We treat what you log and what you tell us about your health as two
+                separate categories, with two different legal bases.
+              </p>
+              <ul className="mt-3">
+                <li>
+                  <strong>Your training data — contract.</strong> Sets, reps, loads,
+                  distances, times, session heart rate, bodyweight entries, age and sex.
+                  These are the inputs you give us to get the service you signed up for;
+                  the scoring engine cannot work without them. On their own they record
+                  what you did, not what condition you are in, so we do not treat them as
+                  health data.
+                </li>
+                <li>
+                  <strong>Your health screening — explicit consent.</strong> The PAR-Q
+                  answers, injury history, recent surgery, pregnancy or postpartum status,
+                  medication affecting your heart rate, and the low-energy-availability
+                  questions, together with the injury Risk Index. These exist to work out
+                  whether something is safe for you, which makes them special category
+                  data under Article 9. We only process them if you explicitly agree, and
+                  we keep a record of exactly what you were shown when you did.
+                </li>
+              </ul>
+              <p className="mt-3">
+                You can refuse, and you can change your mind. Refusing switches off the
+                Hybrid Plan and the injury Risk Index and nothing else — logging, your
+                Split Index, predictions, the leaderboard, analytics and your subscription
+                all work either way. You can withdraw in one action from Settings, and
+                withdrawing deletes those answers rather than hiding them.
               </p>
             </section>
 

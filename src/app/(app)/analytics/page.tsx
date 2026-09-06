@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { AnalyticsClient } from "@/components/analytics/analytics-client";
 import { isPremiumUser } from "@/lib/retention/trial";
 import { canAccessProfile } from "@/lib/premium/features";
+import { hasArticle9Consent } from "@/lib/consent/article9";
 import { resolveScoringSex } from "@/lib/scoring/adapters";
 import { calculateOverallDotsGl } from "@/lib/scoring/strength/overall-dots-gl";
 import { computeRaceRecords } from "@/lib/scoring/race-records";
@@ -127,6 +128,23 @@ export default async function AnalyticsPage() {
     fetchAllTimeLiftRows(supabase, user.id),
   ]);
 
+  /*
+   * The injury Risk Index needs Article 9 consent, and the rest of this page
+   * does not.
+   *
+   * Everything else here reports numbers the athlete logged, or arithmetic on
+   * them: loads, paces, indexes, trends. The Risk Index is different in kind —
+   * it takes the same training data and states a conclusion about the
+   * athlete's physical condition ("Danger", "elevated injury risk"), which is
+   * processing to determine health status whatever the inputs were.
+   *
+   * Worth being precise about, because the input is Tier 1 and it would be
+   * easy to conclude the output must be too: the ACWR ratio itself is a
+   * training-load figure and stays; the risk framing built on top of it is
+   * what the consent covers.
+   */
+  const article9Consent = await hasArticle9Consent(supabase, user.id);
+
   // Most recent reading is "today"; the rolling baseline averages the rest
   // (MASTER-BRIEF.md §8) — optional, both null when nothing's been logged.
   const hrvReadings = (hrvReadingsRaw ?? []).map((r) => r.hrv_ms as number);
@@ -237,6 +255,7 @@ export default async function AnalyticsPage() {
     strengthEstimates: Array.from(strengthEstimateByLift.values()) as StrengthEstimate[],
     hrvToday,
     hrvBaseline,
+    article9Consent,
     raceRecords,
     overallDotsGl,
     showDotsGl,
