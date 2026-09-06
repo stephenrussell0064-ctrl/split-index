@@ -1,6 +1,19 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
+/**
+ * Internal header carrying the VERIFIED user id from here to the rate limiter.
+ *
+ * Declared in this module rather than in proxy.ts so the dependency runs one
+ * way: proxy.ts imports from here, and nothing here imports from proxy.ts.
+ *
+ * It never reaches the browser — proxy.ts deletes it once it has read the
+ * value. It exists so the limiter can key by user without making a second
+ * round trip to Supabase, and reading the id out of the cookie instead would
+ * mean a forged cookie could spend another athlete's allowance.
+ */
+export const USER_ID_HEADER = "x-si-user";
+
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
 
@@ -32,6 +45,8 @@ export async function updateSession(request: NextRequest) {
     const {
       data: { user },
     } = await supabase.auth.getUser();
+
+    if (user) supabaseResponse.headers.set(USER_ID_HEADER, user.id);
 
     const isAuthRoute =
       request.nextUrl.pathname.startsWith("/login") ||
