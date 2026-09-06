@@ -19,7 +19,7 @@ const cases = [
     ["slideshow: You added 20kg to your pull-up. Your app logged 20kg... #gym"],
     "gym-17",
   ],
-  ["case and punctuation drift", ["YOUR WATCH SAYS EASY  your heart rate says 31%!!"], "hyb-01"],
+  ["case and punctuation drift", ["BY PACE: 100% EASY.  by heart rate: 6%!!"], "hyb-01"],
   ["unrelated content stays unmatched", ["five tips for a bigger deadlift"], null],
   ["empty input stays unmatched", [null, undefined, ""], null],
 ];
