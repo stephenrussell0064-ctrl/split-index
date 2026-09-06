@@ -1,3 +1,6 @@
+"use client";
+
+import { useId } from "react";
 import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 
@@ -11,7 +14,20 @@ const labelClass =
   "text-[11px] font-medium uppercase tracking-[0.1em] text-muted";
 
 export function Input({ label, error, hint, className, id, ...props }: InputProps) {
-  const inputId = id ?? label?.toLowerCase().replace(/\s+/g, "-");
+  /*
+    A UNIQUE id per instance, not one derived from the label text.
+
+    `label?.toLowerCase().replace(/\s+/g, "-")` gives every "Weight" field on a
+    page the id `weight` — and the audit found 195 inputs sharing 29 ids that
+    way. Duplicate ids make `htmlFor` ambiguous, so a screen reader (and a
+    click on the label) reaches whichever one the browser saw first, which for
+    a repeated row is never the one the user is looking at.
+
+    An explicit `id` still wins, for the callers that genuinely need to name
+    their field for something else to point at.
+  */
+  const generatedId = useId();
+  const inputId = id ?? generatedId;
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -49,7 +65,9 @@ interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
 }
 
 export function Select({ label, error, options, className, id, ...props }: SelectProps) {
-  const selectId = id ?? label?.toLowerCase().replace(/\s+/g, "-");
+  // Same reasoning as Input above.
+  const generatedId = useId();
+  const selectId = id ?? generatedId;
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -102,7 +120,9 @@ interface TextareaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement
 }
 
 export function Textarea({ label, error, className, id, ...props }: TextareaProps) {
-  const textareaId = id ?? label?.toLowerCase().replace(/\s+/g, "-");
+  // Same reasoning as Input above.
+  const generatedId = useId();
+  const textareaId = id ?? generatedId;
 
   return (
     <div className="flex flex-col gap-1.5">

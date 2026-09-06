@@ -1,5 +1,6 @@
 "use client";
 
+import { createContext, useContext, useId } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { cn } from "@/lib/utils/cn";
 import { parseSeconds } from "./form-state";
@@ -54,14 +55,49 @@ interface FieldProps {
   className?: string;
 }
 
+/**
+ * The id this field's label points at, handed down to whichever input is inside
+ * it.
+ *
+ * `Field` has always accepted an `htmlFor`, and NONE of its 73 call sites
+ * passed one — so the label was a floating `<p>` next to an unnamed `<input>`,
+ * and VoiceOver announced every weight, rep and distance field in the app as
+ * "text field, blank". Requiring 73 hand-written ids to fix that is how it
+ * stayed broken; generating one here fixes all of them at once, and an explicit
+ * `htmlFor` still wins where a caller wants to name its own.
+ */
+const FieldIdContext = createContext<string | undefined>(undefined);
+
+/**
+ * Adopt the surrounding Field's id — unless this input already carries its own
+ * name.
+ *
+ * The `aria-label` check is what keeps the composites safe. DurationInput and
+ * SplitInput put THREE and TWO inputs inside one Field, each already labelled
+ * ("Duration hr", "Duration min"), and if all of them adopted the same id the
+ * document would carry duplicates — a worse defect than the one being fixed.
+ * An input that names itself does not need the field's id, so it does not take
+ * it.
+ */
+function useFieldId(props: { id?: string; "aria-label"?: string }): string | undefined {
+  const fieldId = useContext(FieldIdContext);
+  if (props.id) return props.id;
+  if (props["aria-label"]) return undefined;
+  return fieldId;
+}
+
 export function Field({ label, error, hint, htmlFor, children, className }: FieldProps) {
+  const generatedId = useId();
+  const id = htmlFor ?? generatedId;
   return (
-    <div className={cn("flex min-w-0 flex-col gap-1.5", className)}>
-      <MicroLabel htmlFor={htmlFor}>{label}</MicroLabel>
-      {children}
-      {hint && !error && <p className="text-xs text-muted/70">{hint}</p>}
-      <FieldError error={error} />
-    </div>
+    <FieldIdContext.Provider value={id}>
+      <div className={cn("flex min-w-0 flex-col gap-1.5", className)}>
+        <MicroLabel htmlFor={id}>{label}</MicroLabel>
+        {children}
+        {hint && !error && <p className="text-xs text-muted/70">{hint}</p>}
+        <FieldError error={error} />
+      </div>
+    </FieldIdContext.Provider>
   );
 }
 
@@ -78,8 +114,12 @@ export function GlassInput({
   invalid,
   ...props
 }: React.InputHTMLAttributes<HTMLInputElement> & { invalid?: boolean }) {
+  const id = useFieldId(props);
   return (
     <input
+      // The surrounding Field's label points here — see useFieldId. Without it
+      // every one of these was an unnamed text field to a screen reader.
+      id={id}
       // aria-invalid, not just a red border. Two reasons: a screen reader has
       // no way to perceive the border, and the submit-time error summary finds
       // the first bad field with `[aria-invalid="true"]` so it can take the
@@ -115,9 +155,11 @@ export function UnitInput({
   invalid?: boolean;
   wrapperClassName?: string;
 }) {
+  const id = useFieldId(props);
   return (
     <div className={cn("relative min-w-0", wrapperClassName)}>
       <input
+        id={id}
         type="text"
         inputMode="decimal"
         autoComplete="off"
@@ -157,9 +199,11 @@ export function HeroInput({
   invalid?: boolean;
   wrapperClassName?: string;
 }) {
+  const id = useFieldId(props);
   return (
     <div className={cn("relative min-w-0", wrapperClassName)}>
       <input
+        id={id}
         type="text"
         inputMode="decimal"
         autoComplete="off"
