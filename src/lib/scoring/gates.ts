@@ -15,7 +15,8 @@ export type LockedCardioFields =
   | "decouplingPct"
   | "predictions"
   | "confidence"
-  | "flags";
+  | "flags"
+  | "ageGradeFactor";
 
 export type LockedIndexFields =
   | "labIndex"
@@ -57,6 +58,11 @@ export function gateCardioResult(
       "predictions",
       "confidence",
       "flags",
+      // Premium, same as `flags` (which already carries `age-graded`) and
+      // same as strength's `appliedFactors`. The free pick above omits it,
+      // so it is never sent — this list only tells the client what is behind
+      // the gate.
+      "ageGradeFactor",
     ],
   };
 }

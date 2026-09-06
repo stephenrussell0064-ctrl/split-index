@@ -155,6 +155,19 @@ export interface CardioResult {
   predictions: Record<string, number> | null; // distance(m) -> seconds
   confidence: number;          // 0–1, how much HR data backed this score
   flags: string[];
+  /**
+   * The endurance age-grade factor actually used to score this session, so
+   * the UI can tell the athlete BY HOW MUCH their standard moved rather than
+   * only that it did (the `age-graded` flag alone carries no magnitude).
+   *
+   * Reports the value; does not change how it is computed or applied — the
+   * multiplication below is untouched.
+   *
+   * Optional, and null when no grading applied. Results persisted before this
+   * field existed genuinely do not have it, and readers must fall back to the
+   * flag rather than trust a missing value as "1.0".
+   */
+  ageGradeFactor?: number | null;
 }
 
 const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
@@ -1128,6 +1141,8 @@ export function scoreCardioActivity(input: CardioInput): CardioResult {
 
   let paceScore: number;
   let confidence: number;
+  /** Reported on the result so the UI can name the magnitude, not just the fact. Stays null when nothing was graded. */
+  let appliedAgeGradeFactor: number | null = null;
 
   if (anchorSeconds !== null) {
     // Age-grade the benchmark-equivalent before scoring: an older athlete's
@@ -1136,7 +1151,10 @@ export function scoreCardioActivity(input: CardioInput): CardioResult {
     // to the score only — stored predictions and displayed race times stay
     // as the athlete's real (un-graded) times.
     const ageFactor = enduranceAgeGradeFactor(input.age);
-    if (ageFactor !== 1) flags.push('age-graded');
+    if (ageFactor !== 1) {
+      flags.push('age-graded');
+      appliedAgeGradeFactor = ageFactor;
+    }
     // paceScore: pure, monotonic — Riegel/work-piece equivalent + age/sex
     // grading run through the calibrated anchor table. NOTHING is added on
     // top of this — see the file header for why.
@@ -1253,5 +1271,6 @@ export function scoreCardioActivity(input: CardioInput): CardioResult {
     })(),
     confidence: Math.round(confidence * 100) / 100,
     flags,
+    ageGradeFactor: appliedAgeGradeFactor,
   };
 }

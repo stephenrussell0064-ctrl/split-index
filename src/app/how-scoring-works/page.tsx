@@ -51,6 +51,7 @@ const TOC = [
   { id: "efficiency-factor", label: "Efficiency factor" },
   { id: "decoupling", label: "Decoupling" },
   { id: "dots-gl", label: "Strength Index: DOTS and IPF GL" },
+  { id: "age-grading", label: "Age grading" },
   { id: "race-predictions", label: "Race predictions" },
   { id: "injury-risk", label: "Injury risk (ACWR)" },
 ] as const;
@@ -390,6 +391,43 @@ export default async function HowScoringWorksPage() {
                 of either formula — they&apos;re scored instead against ExRx bodyweight-ratio tiers, a
                 separate published standard for judging relative strength on lifts DOTS/GL don&apos;t
                 cover.
+              </p>
+            </section>
+
+            <section id="age-grading">
+              <h2 className="text-lg font-semibold text-foreground">Age grading</h2>
+              <p className="mt-3">
+                A 50-year-old and a 25-year-old lifting the same weight, or running the same time,
+                have not done equally hard things. Age grading is how that gets accounted for, and
+                the mechanism matters: <strong className="text-foreground">your own numbers are
+                never touched</strong>. Your lift, your bodyweight ratio, your finish time and your
+                race predictions are exactly what you did. What moves is the standard you are
+                judged against.
+              </p>
+              <p className="mt-3">
+                <strong className="text-foreground">Endurance</strong> uses the established
+                age-grading approach: your benchmark-equivalent time is compared against an
+                age-adjusted standard rather than the open-class one, the same way published
+                age-graded tables work. Under 36 the factor is exactly 1.0 — nothing is applied,
+                and nothing is shown. Where it does apply, you are shown the exact figure: how
+                much more lenient your standard is, and the factor behind it. Your predicted race
+                times are never graded — those stay the real times you would have to run.
+              </p>
+              <p className="mt-3">
+                <strong className="text-foreground">Strength</strong> works the same way — the
+                anchor your ratio is measured against is eased by the age factor — and it covers
+                both ends of the curve: juniors from 14 up, flat through the 23–35 peak, then a
+                gentle masters climb. Where the factor is applied, the exact figure is shown to you
+                on the lift.
+              </p>
+              <p className="mt-3">
+                The strength curve is marked <strong className="text-foreground">beta</strong>, and
+                that label is meant literally. The junior half comes from published Foster
+                coefficients, but the masters half is our own estimate derived from a
+                strength-by-age chart rather than a calibration against population data, and the
+                two halves do not even agree on where the peak ends. We would rather show you the
+                adjustment and tell you it is provisional than apply it silently or claim an
+                accuracy it has not earned. Any lift carrying it is labelled beta.
               </p>
             </section>
 
