@@ -239,3 +239,27 @@ describe("auth failures do not enumerate accounts", () => {
     expect(message).not.toMatch(/no account|not found|does not exist|unknown email/);
   });
 });
+
+describe("the auth callback does not put provider error text in a URL", () => {
+  const CALLBACK = join(ROOT, "src/app/auth/callback/route.ts");
+
+  it("gates the detail parameter on development", () => {
+    const src = readFileSync(CALLBACK, "utf8");
+    /*
+     * The rendered message was already safe — resolveAuthPageError only shows
+     * `detail` in development. The value was in the URL regardless, which means
+     * browser history, the Referer header on the next outbound request, and any
+     * proxy or analytics log in between. A safe render over an unsafe URL is
+     * half a fix.
+     */
+    expect(src).toMatch(
+      /if \(detail && process\.env\.NODE_ENV === "development"\) \{\s*params\.set\("detail"/
+    );
+  });
+
+  it("never sets it unconditionally", () => {
+    const src = readFileSync(CALLBACK, "utf8");
+    const unconditional = /^\s*if \(detail\) params\.set\("detail"/m.test(src);
+    expect(unconditional, "detail is set without an environment guard").toBe(false);
+  });
+});

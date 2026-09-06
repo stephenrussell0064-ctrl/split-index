@@ -23,7 +23,22 @@ function authFailureRedirect(
 
   const path = failurePath(next ?? "/dashboard", reason);
   const params = new URLSearchParams({ error: "auth", reason });
-  if (detail) params.set("detail", detail.slice(0, 200));
+
+  /*
+   * `detail` is the raw provider error string, and it used to go into the query
+   * regardless of environment. resolveAuthPageError only RENDERS it in
+   * development, so the message an athlete saw was already safe — but the value
+   * was still in the URL, which means their browser history, the Referer header
+   * on the next outbound request, and any proxy or analytics log in between.
+   *
+   * It stays in development, where it is genuinely useful and the only reader
+   * is the person who caused it. In production the reason code — already
+   * mapped, already safe — is the whole of what travels, and the detail goes to
+   * the server log above.
+   */
+  if (detail && process.env.NODE_ENV === "development") {
+    params.set("detail", detail.slice(0, 200));
+  }
 
   return NextResponse.redirect(`${origin}${path}?${params.toString()}`);
 }
