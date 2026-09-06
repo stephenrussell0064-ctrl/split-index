@@ -6,6 +6,51 @@ Run date: 2026-09-06 · Branch: `hybrid-plan-engine` @ `adb35c5` · Auditor: Cla
 
 ---
 
+## Status — updated 2026-09-06
+
+Phase 0 ran on `adb35c5`. The findings below are the record of what was found
+then and are **not rewritten** as they are fixed — a standing audit is only
+re-runnable if you can still see what the last run said. Each finding carries
+its current status inline; this table is the summary.
+
+| Finding | Status | Closed by |
+|---|---|---|
+| C1 `profiles` full row to `anon` | **CLOSED** | `5e70dd8` |
+| C2 `strength_scores` bodyweight to `anon` | **CLOSED** | `5e70dd8` |
+| C3 readiness/fatigue to `anon` | **CLOSED** | `5e70dd8` |
+| C4 `workout_scores` blob to `anon` | **CLOSED** | `5e70dd8` |
+| L6 `challenge_participants` | **CLOSED** | `5e70dd8` |
+| H1 Article 9 consent absent | **CLOSED** | `604a095` |
+| H5 no CI | **CLOSED** | `2c4cefe` |
+| H2 no boundary validation | **PARTIAL** — 3 routes of ~40; **and materially corrected, see the finding** | `4f10902` |
+| M11 no central config / bounds | **PARTIAL** — module exists; a second set of bounds still lives in the scoring guard | `4f10902` |
+| Everything else | **OPEN** | — |
+
+**Current open count: 2 Critical-adjacent (none), 7 High, 14 Medium, 5 Low, plus 4 new findings below.**
+Zero Critical findings remain open. The brief's gate for a growth push is WP1,
+WP2, WP6 and WP13 complete: **WP1 done, WP2 open, WP6 open, WP13 open.**
+
+### Corrections to Phase 0 itself
+
+Two things the first run got wrong, recorded rather than quietly amended:
+
+1. **H2 overstated the gap.** "No server-side schema validation on any API
+   route" was true and remains true. But the finding read as "nothing is
+   validated", and that is wrong. `src/lib/scoring/input-guards.ts` is a real
+   guard layer with plausibility limits on duration, distance, load,
+   bodyweight, heart rate, power, pace and elevation, plus bodyweight-relative
+   checks that distinguish a 700kg leg press from a 700kg bench press. Several
+   routes validate ad hoc and validate well. Measured: of eight hostile
+   payloads fired at `POST /api/activities` on `adb35c5`, five were already
+   refused with a 4xx and no write. See H2 for what was actually missing.
+
+2. **The Phase 0 severity table counted 33 findings and four Criticals.** That
+   stands, but C1–C4 were one defect in four places sharing one fix, which the
+   triage said and the count did not. Worth remembering when reading the
+   headline number: severity counts measure exposure, not work.
+
+---
+
 ## How to read this document
 
 Every finding carries a severity, a work package, and evidence you can re-check
@@ -133,6 +178,7 @@ comment. See H5.
 ---
 
 #### C1 — Every column of `profiles` is readable by anyone holding the public anon key
+> **CLOSED `5e70dd8`.** Replaced by the `public_profiles` view — twelve columns, `anon`-readable. Bodyweight, height, age, sex and `stripe_customer_id` are no longer reachable.
 **WP1 · Evidence: [001_initial_schema.sql:338](supabase/migrations/001_initial_schema.sql#L338)**
 
 ```sql
@@ -165,6 +211,7 @@ the view.
 ---
 
 #### C2 — Per-set bodyweight history for every user is readable by `anon`
+> **CLOSED `5e70dd8`.** `public_strength_scores` drops `bodyweight_kg` **and** `relative_strength` — the ratio is 1RM/bodyweight, so keeping it beside `estimated_1rm_kg` would have let anyone recover the weight by division.
 **WP1 · Evidence: [012_public_read_strength_scores.sql:7](supabase/migrations/012_public_read_strength_scores.sql#L7)**
 
 ```sql
@@ -185,6 +232,7 @@ there. The leaderboard needs `exercise_name` and `strength_index`. It does not n
 ---
 
 #### C3 — Readiness and fatigue history is readable by `anon`
+> **CLOSED `5e70dd8`.** `public_index_history` carries the four index columns and the timestamp. `fatigue_score` and `recovery_score` are gone.
 **WP1, WP11 · Evidence: [001_initial_schema.sql:356](supabase/migrations/001_initial_schema.sql#L356)**
 
 ```sql
@@ -205,6 +253,7 @@ data.
 ---
 
 #### C4 — `workout_scores` including its free-form `score_breakdown` is readable by `anon`
+> **CLOSED `5e70dd8`.** `public_workout_scores` projects eight named JSON paths instead of the blob, so a future scoring change cannot leak through it.
 **WP1 · Evidence: [001_initial_schema.sql:352](supabase/migrations/001_initial_schema.sql#L352)**
 
 ```sql
@@ -228,6 +277,7 @@ challenge progress; it is Low, not Critical, and is listed at L6.
 ---
 
 #### H1 — Special category data is collected with no Article 9 consent, no record, and no withdrawal path
+> **CLOSED `604a095`.** Append-only consent log, server-side gate on every Tier 2 path, one-action withdrawal that deletes. The DPIA and ICO registration in H9 remain open and are **not** closed by it.
 **WP11 · Evidence: `grep -rn -i "consent" supabase/migrations/` → no consent table.
 `grep -n -i "consent" src/components/hybrid-plan/intake-wizard.tsx` → no matches.**
 
@@ -271,7 +321,31 @@ not a reason to bundle the consent.
 
 `zod` is a dependency and is used in exactly one place: `src/components/activities/form-state.ts`
 — a **client** component. That is the brief's opening line in WP3 made literal: client-side
-validation is a UX feature, not a security control, and here it is the only validation there is.
+validation is a UX feature, not a security control, and here it is the only *schema* validation there is.
+
+> **CORRECTED, and PARTIALLY CLOSED `4f10902`.** The sentence above is accurate;
+> the finding as originally written was not, because it read as "nothing is
+> validated". It is not.
+>
+> `src/lib/scoring/input-guards.ts` is a real guard layer with plausibility
+> limits on duration, distance, load, bodyweight, heart rate, power, pace and
+> elevation — plus bodyweight-relative checks that know a 700kg leg press is
+> ordinary and a 700kg bench press is not, which is a judgement no fixed bound
+> makes. Routes validate ad hoc too, and several validate well: the HRV
+> endpoint bounds rMSSD, reactions bound 1–10, comments cap length, the rollout
+> endpoint insists on a reason of at least eight characters.
+>
+> **Measured rather than asserted.** Eight hostile payloads fired at
+> `POST /api/activities` on `adb35c5`: five refused with a 4xx and no write.
+> The three that were not — bodyweight of zero, unknown sport, unknown key —
+> failed as **500s**. Nothing was written, which is the important half. But a
+> 500 is the engine throwing partway through a request that had already done
+> work: no field message for the athlete, a stack trace in the log, and no way
+> to tell a hostile payload from an outage.
+>
+> What was genuinely missing, and is now fixed for three routes: parsing at the
+> boundary rather than mid-handler, 4xx instead of 5xx, unknown-key rejection,
+> enum validation, and field-level messages. What remains is listed at N1.
 
 Two representative cases:
 
@@ -349,6 +423,7 @@ the wrong bundler configuration — as itself.
 ---
 
 #### H5 — There is no CI, so no acceptance criterion in this brief can be load-bearing
+> **CLOSED `2c4cefe`.** Tests and typecheck block on push and PR; lint runs non-blocking with its remaining count documented in the workflow.
 **Cross-cutting · Evidence: `find .github -type f` → prompt assets only, no `workflows/`.**
 
 1347 tests pass locally. Nothing runs them on push, on PR, or before deploy. Vercel builds
@@ -651,6 +726,7 @@ detail.
 ---
 
 #### M11 — No central configuration module; no plausibility bounds
+> **PARTIALLY CLOSED `4f10902`.** `src/lib/security/config.ts` exists with the bounds, reconciled against the shipped CHECK constraints. Still open: it coexists with the scoring guard's own limits — see N2.
 **§1, WP3.2 · Evidence: no `lib/security/config.ts`. Limits are inline literals.**
 
 `WINDOW_MS`/`MAX_REQUESTS_PER_WINDOW` live in `src/proxy.ts`; `HISTORY_DAYS`/`ACTIVITY_DAYS`
@@ -757,6 +833,66 @@ username is taken". The two findings should be fixed together.
 
 ---
 
+
+### New findings — raised during remediation, 2026-09-06
+
+These were not visible in Phase 0. Three came out of doing the work; one came
+out of a test that was wrong.
+
+#### N1 — Most routes still have no schema at the boundary
+**WP3 · Medium · Evidence: 3 of ~40 input-taking routes parse against a schema.**
+
+Schemas applied: `POST /api/activities`, `PATCH /api/hpe/intake`,
+`GET /api/social/leaderboard`. Not yet: roughly 17 body-taking routes (draft,
+merge, duels, friends, goals, races, squads, session-templates, comments,
+reactions, timezone, calibrate, hrv, rollout, checkout, join) and the query
+parameters on roughly 20 read routes. Most carry ad-hoc checks; none has a
+schema, so none produces field-level messages and none rejects unknown keys.
+
+Medium rather than High because the write paths that reach the scoring engine
+are covered and the scoring guard still backstops the rest — but the fuzz sweep
+cannot claim "every route" until this is finished, and the brief's acceptance
+criterion says every route.
+
+#### N2 — Two sets of plausibility bounds now coexist
+**WP3 · Low · Evidence: `src/lib/security/config.ts` and `src/lib/scoring/input-guards.ts`.**
+
+§1 says nothing from the constants list may be hard-coded elsewhere, and the
+scoring guard hard-codes overlapping limits. They were deliberately not merged:
+the config bounds answer "could an athlete have entered this" at the API
+boundary, and the guard's answer "can the engine make sense of this" relative
+to bodyweight and leverage. The guard's numbers were tuned against real
+sessions, so rewriting them to match would reject workouts that happened.
+
+The fix is to split the guard — flat bounds imported from config, relational
+checks kept — not to delete either. Low because both are correct today; it is a
+drift risk, not a hole.
+
+#### N3 — `ActivityFormData` does not describe what the client actually sends
+**WP3 · Low · Evidence: the GPS flow sends `route`; the handler reads it through a cast.**
+
+Found by `.strict()`: three route-privacy tests went red the moment unknown
+keys stopped being accepted, because `route` is absent from the type and the
+handler reaches it via `(body as { route?: unknown }).route`. The schema now
+declares it. The type still does not, so the next person writing against
+`ActivityFormData` has the same incomplete picture.
+
+Worth recording as a pattern, not just an instance: a type used as
+documentation, with a cast next to it, is a type that has stopped being true.
+
+#### N4 — The bracket engine had no test coverage before it was refactored
+**WP1 · Low · CLOSED `5e70dd8` · Evidence: only `leaderboard-brackets-check.ts`, a script nothing runs.**
+
+Raised because it nearly caused a silent product failure rather than because it
+still exists. `resolveBracket` and its widening logic — subtle, ordinal,
+boundary-sensitive — had no vitest coverage at the point migration 056 changed
+what it is fed. Sixteen tests were added alongside that change, half of them
+holding the SQL banding and the TypeScript banding to each other.
+
+The general finding: `*-check.ts` files in `src/lib` look like tests and are not
+run by `npm test`. There are several. Each is a piece of logic somebody
+considered worth verifying and nothing verifies.
+
 ### Part D — activation and monetisation
 
 Reported as findings for completeness. None is a security or compliance matter, and D0's
@@ -788,6 +924,8 @@ button.
 
 ## 4. Triage summary
 
+**As found in Phase 0 (`adb35c5`):**
+
 | Severity | Count |
 |---|---|
 | Critical | 4 |
@@ -795,6 +933,17 @@ button.
 | Medium | 14 |
 | Low | 6 |
 | **Total** | **33** |
+
+**Still open as of 2026-09-06**, after WP1, WP11, CI and part of WP3, and
+including the four findings raised during remediation:
+
+| Severity | Open | Closed | Note |
+|---|---|---|---|
+| Critical | **0** | 4 | All four were one defect in four places. |
+| High | 7 | 2 | H1 and H5 closed; H2 corrected and partially closed. |
+| Medium | 14 | 0 | M11 partially closed. N1 added. |
+| Low | 7 | 2 | L6 and N4 closed; N2 and N3 added. |
+| **Total** | **28** | **8** | 37 findings raised in total. |
 
 All four Criticals are the same defect in four places: a policy written to enable a public
 leaderboard exposes the underlying user-owned table instead of a column-scoped projection.
@@ -816,10 +965,10 @@ Then:
 
 | # | Work | Closes | Why here |
 |---|---|---|---|
-| 0 | **CI** — run vitest on push and PR | H5 | Every step below ends in a test. Without this, none of them is a gate. Cheapest item in the document. |
-| 1 | **WP1 — public projections** | C1, C2, C3, C4, L6 | Four Criticals, one fix. Bodyweight, readiness and Stripe IDs stop being world-readable. |
-| 2 | **WP11 Article 9 consent** | H1 | Special category data is being collected right now with no lawful basis we can evidence. Every day it runs adds records. |
-| 3 | **WP3 — validation at the boundary** | H2, M11, M14 | Precondition for the WP3 fuzz sweep and for the §1 config module everything else references. |
+| 0 | ~~**CI**~~ **DONE `2c4cefe`** — run vitest on push and PR | H5 | Every step below ends in a test. Without this, none of them is a gate. Cheapest item in the document. |
+| 1 | ~~**WP1 — public projections**~~ **DONE `5e70dd8`** | C1, C2, C3, C4, L6 | Four Criticals, one fix. Bodyweight, readiness and Stripe IDs stop being world-readable. |
+| 2 | ~~**WP11 Article 9 consent**~~ **DONE `604a095`** | H1 | Special category data is being collected right now with no lawful basis we can evidence. Every day it runs adds records. |
+| 3 | **WP3 — validation at the boundary** — PARTIAL `4f10902` | H2 (corrected), M11 partly; M14 **not** started | Precondition for the WP3 fuzz sweep and for the §1 config module everything else references. |
 | 4 | **WP2 build gate + `server-only`** | H4, L3 | Small, and it stops the one mistake with no recovery short of rotation. Needs step 0. |
 | 5 | **WP5 error boundary** | M1, M2, M14 | Mechanical, 23 files, one house pattern (`auth-errors.ts`) already exists to copy. |
 | 6 | **WP13 + WP4 auth hardening** | H3, H7, M6, M7 | Per-account and per-IP limits must be designed together, per WP13.5. Needs a shared store. |
@@ -830,21 +979,52 @@ Then:
 | 11 | **H9 — DPIA + ICO** | H9 | Stephen's, not code. Should start now and run alongside; it does not block engineering. |
 | 12 | **Part D** | D1–D5 | After the brief's own gate: WP1, WP2, WP6 and WP13 complete before any growth push. |
 
+**Still outstanding from the two blockers above:** the live `pg_policies`
+enumeration has still not been run, and the Supabase email-confirmation setting
+has still not been checked. Neither blocked the work done so far — WP1 fixed
+migration source, which is where the defect was — but C1–C4 cannot be called
+verifiably closed against production until the first is done, and H7 cannot be
+sized until the second is.
+
 ### What I am waiting on
 
-The brief says to stop and report when the Critical count is above zero and the fix is not
-obvious. It is four, and the fix **is** obvious in mechanism — replace four `USING (true)`-shaped
-policies with a column-scoped view — but not in scope, and that part is your call:
+The Phase 0 questions here — which columns the public projection should expose,
+and whether to deploy the fix before sign-off — were answered and acted on; the
+column set was agreed before migration 056 was written. What is outstanding now
+is different.
 
-- **Which columns should the public projection expose?** The leaderboard, the public profile
-  page at `/social/profile/[username]`, and the By Exercise / By Muscle Group boards each read
-  these tables today. A view that is too narrow breaks a shipped feature; too wide and I have
-  moved the leak rather than closed it. I can propose the minimal column set from the call
-  sites and show you the diff before applying it.
-- **Is the fix deployed before or after the audit is signed off?** These policies have been
-  live since migration 001 and 012. That is an argument for moving now, not for treating it as
-  routine sequencing.
+**Needs a database, not a decision:**
 
-Say the word on order and I will start at step 0, one work package per commit, each stating
-what was found, what changed, and which test proves it — and each with the test demonstrated
-failing first.
+- **Run `pg_policies` and `pg_tables` against production** and reconcile with
+  C1–C4 and migration 056. Everything in Part A is still read from migration
+  source. Migration 049 exists because source and production diverged in this
+  project before, so this is a demonstrated failure mode rather than a
+  hypothetical one.
+- **Apply migrations 056 and 057 before deploying the code that reads them.**
+  056's views do not exist until it runs, and the social and leaderboard pages
+  will 404 their queries without them. 057 fails closed, so the Hybrid Plan
+  switches itself off rather than misbehaving — safe, but degraded.
+- **Check the Supabase email-confirmation setting** (H7). It decides whether
+  that finding is "add an assertion" or "an open door".
+
+**Needs Stephen, not code:**
+
+- **The DPIA** (H9). Large-scale health-data processing with profiling makes one
+  effectively mandatory. Half the drafting now exists — the Tier 1 / Tier 2
+  reasoning is written into `src/lib/consent/article9.ts` and the privacy policy
+  — but the document does not.
+- **ICO registration and the data protection fee** (H9).
+- **The EU question** (WP11): whether to sell into the EU and take on EU GDPR
+  and the European Accessibility Act, or geo-block until it is worth handling.
+  The brief is explicit that this is a decision to flag, not to implement either
+  way.
+- **Two judgement calls made during WP11**, either of which is a one-line change
+  if read differently: the injury Risk Index is gated by consent despite reading
+  no intake data (it states a conclusion about physical condition from Tier 1
+  input), and withdrawal deletes health answers but **not** `hpe_plans` — a plan
+  prescribes sessions rather than characterising health, and deleting weeks of
+  someone's programme as a side effect of a privacy choice would punish the
+  choice.
+
+**Next in the recommended order:** step 4, WP2 — the build-time key gate,
+`server-only` on every elevated-credential module, and `SECURITY.md`.
