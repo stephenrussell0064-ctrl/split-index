@@ -406,7 +406,13 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
           </button>
         </nav>
 
-        <main className="lg:pl-64">
+        {/*
+          id and tabIndex={-1} together are what make the skip link work: the id
+          is the target, and without tabIndex the browser moves the viewport but
+          NOT focus, so the next Tab press continues from the nav the athlete
+          just skipped.
+        */}
+        <main id="main-content" tabIndex={-1} className="lg:pl-64 focus:outline-none">
           {/* calc(env(...) + gap) rather than a bare max() — the status bar height alone with no breathing room left the top bar sitting flush against the battery/signal icons; adding a fixed gap on top of the real inset (now resolvable at all thanks to viewport-fit: cover in layout.tsx) gives real clearance instead. A no-op on web where env() resolves to 0. */}
           {/*
             pb-28, not pb-24. The bottom nav measures ~101px on a phone with a

@@ -4,9 +4,23 @@
  */
 
 export const designTokens = {
-  /** Cardio / endurance accent — sky blue on white */
+  /** Cardio / endurance accent — sky blue. Display and decoration only; see below. */
   cardioAccent: "#3BA6FF",
   cardioAccentSoft: "#6BB8FF",
+  /**
+   * The Engine blue, tuned for the jobs WCAG has thresholds for.
+   *
+   * `cardioAccent` measures 2.50:1 against the cardio background, which fails
+   * the 4.5:1 text threshold AND the 3:1 non-text one — so it fails as an icon
+   * and a border as well as as a word. These are the same hue and saturation
+   * walked down in lightness until they clear, with headroom.
+   *
+   * Use `cardioAccentText` for anything read, `cardioAccentStrong` for anything
+   * that carries meaning without being read, and `cardioAccent` only where no
+   * threshold applies: large display numerals, fills, glows.
+   */
+  cardioAccentText: "#006AC2",
+  cardioAccentStrong: "#0086F6",
   /** Strength / gym accent — neon green on black */
   strengthAccent: "#3DFF6E",
   strengthAccentSoft: "#6BFF96",
