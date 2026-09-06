@@ -104,7 +104,7 @@ between the suspected exposure and the revocation.
 `SUPABASE_SERVICE_ROLE_KEY` bypasses row level security. Every use is a
 deliberate decision to step outside the policies, so every use is listed. The
 same table is in the header comment of `src/lib/supabase/admin.ts`, next to the
-code, because that is where somebody adding a twelfth will be looking.
+code, because that is where somebody adding a thirteenth will be looking.
 
 | Call site | Why it cannot use the user's own client |
 |---|---|
@@ -119,8 +119,9 @@ code, because that is where somebody adding a twelfth will be looking.
 | `api/squads/join` | Reads a squad by invite code before the joiner is a member, so RLS cannot see it |
 | `lib/supabase/ensure-profile` | Creates the profile row a brand-new user does not have yet |
 | `lib/auth/admin-role` | Resolves the admin role — deliberately not through the user's own client, so a mistake in the `admin_users` policy cannot grant the role |
+| `lib/auth/admin-audit` | Writes `admin_access_log`, which has no RLS policies at all — an admin able to read or edit the log of their own accesses defeats the point of keeping one |
 
-**Adding a twelfth means adding it here and in `admin.ts`.** If the reason is
+**Adding a thirteenth means adding it here and in `admin.ts`.** If the reason is
 "it was easier", it is the wrong client.
 
 ---
