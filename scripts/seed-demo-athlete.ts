@@ -85,8 +85,19 @@
  */
 
 import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { createClient } from "@supabase/supabase-js";
 import { recomputeUser, RecomputeError } from "../src/lib/activities/recompute-user";
+
+/**
+ * Repo root resolved from this file, not from process.cwd(). Reading
+ * ".env.local" relative to the working directory means the script only works
+ * when invoked from the repo root, and fails with a confusing "missing
+ * SUPABASE_SERVICE_ROLE_KEY" from anywhere else — which is not the actual
+ * problem and sends you looking in the wrong place.
+ */
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 const DEMO_EMAIL = "demo.athlete+splitindex@example.com";
 const DEMO_USERNAME = "demo_masters_hybrid";
@@ -96,7 +107,7 @@ const DEMO_DISPLAY_NAME = "Demo Athlete";
 function loadEnvLocal(): void {
   let raw: string;
   try {
-    raw = readFileSync(".env.local", "utf8");
+    raw = readFileSync(join(REPO_ROOT, ".env.local"), "utf8");
   } catch {
     return;
   }
