@@ -115,6 +115,10 @@ function selectHooks(flags) {
   let selected = hooks;
   if (flags.batch) selected = selected.filter((h) => h.batch === flags.batch);
   if (flags.cold) selected = selected.filter((h) => h.cold_reach === true);
+  if (flags.asset) {
+    const wanted = new Set(String(flags.asset).split(","));
+    selected = selected.filter((h) => wanted.has(h.asset_status));
+  }
   if (flags["hook-id"]) {
     const wanted = new Set(String(flags["hook-id"]).split(","));
     selected = selected.filter((h) => wanted.has(h.id));
@@ -191,10 +195,18 @@ function cmdHooks(flags) {
     console.log(`\n${h.id}  [${h.batch}${h.cold_reach ? "" : " · retarget only"}]`);
     console.log(`  ${h[field] ?? h.hook}`);
     console.log(`  frame : ${h.frame}`);
-    console.log(`  image : ${h.asset ? `asset — ${h.asset}` : `stock — "${h.image_query}"`}`);
+    console.log(`  shot  : [${h.asset_status}] ${h.asset ?? `stock — "${h.image_query}"`}`);
+    if (h.asset_note) console.log(`  note  : ${h.asset_note}`);
     console.log(`  beat  : ${h.next_beat}`);
   }
-  console.log(`\n${selected.length} hook(s).`);
+  const byStatus = selected.reduce((acc, h) => {
+    acc[h.asset_status] = (acc[h.asset_status] ?? 0) + 1;
+    return acc;
+  }, {});
+  const tally = Object.entries(byStatus)
+    .map(([k, v]) => `${v} ${k}`)
+    .join(" · ");
+  console.log(`\n${selected.length} hook(s) — ${tally}.`);
 }
 
 async function cmdAutomationCreate(payloadPath) {
@@ -392,6 +404,8 @@ const USAGE = `ReelFarm CLI — Split Index
 
   hooks [--batch gym|hybrid] [--cold]      print the local hook library (no API key needed)
         [--field short] [--json|--plain]   --json = slideshow_hooks[]; --plain = paste into dashboard
+        [--asset confirmed|needs_capture]  filter by shot status — needs_capture is your shot list
+        [--asset blocked|stock]
 
   automation:create <payload.json>
   automation:list
