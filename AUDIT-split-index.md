@@ -26,6 +26,9 @@ its current status inline; this table is the summary.
 | L3 no SECURITY.md | **CLOSED** | `8d9096a` |
 | M1 database error text to clients | **CLOSED** | `c467470` |
 | M2 provider error text in a redirect URL | **CLOSED** | `0dd3d55` |
+| H3 per-instance rate limiting | **CLOSED** | `76b9d6b` |
+| H7 email verification never enforced | **CLOSED** | `76b9d6b` |
+| M7 session/refresh left at defaults | **PARTIAL** — values recorded and made an operator task; GoTrue behaviour still unverifiable from here | `76b9d6b` |
 | H2 no boundary validation | **PARTIAL** — 3 routes of ~40; **and materially corrected, see the finding** | `4f10902` |
 | M11 no central config / bounds | **PARTIAL** — module exists; a second set of bounds still lives in the scoring guard | `4f10902` |
 | Everything else | **OPEN** | — |
@@ -368,6 +371,7 @@ as a 500 with a Postgres error string (see M1), not a 400 with a field message.
 ---
 
 #### H3 — Rate limiting is in-process, so it does not survive the deployment model
+> **CLOSED `76b9d6b`.** Upstash Redis, shared across instances, per-route-class ceilings, keyed by the verified user id. The in-memory guard survives as a first-layer burst doorman. Auth routes are explicitly out of scope and stay with GoTrue — see the finding's own note and SECURITY.md.
 **WP4 · Evidence: [src/proxy.ts:12](src/proxy.ts#L12)**
 
 ```ts
@@ -465,6 +469,7 @@ today and is the shape of the mistake to avoid.
 ---
 
 #### H7 — Email verification is never enforced anywhere in the application
+> **CLOSED `76b9d6b`.** Migration 058: a RESTRICTIVE INSERT policy on activities, gym_exercises and workout_scores requiring a confirmed address, and every public projection joined to `auth.users`. Enforced in RLS rather than the API, because the anon key is in the browser and a direct PostgREST insert would bypass a route check. **The impact query at the top of 058 must be run before it is applied.**
 **WP13.3 · Evidence: `grep -rn "email_confirmed_at\|confirmed_at" src/` → zero matches.**
 
 Nothing in the codebase reads the verification state. Supabase may be configured to require
@@ -662,6 +667,7 @@ Same pattern in `cron/hybrid-reports`.
 ---
 
 #### M7 — Session lifetime and refresh behaviour are Supabase defaults, not decisions
+> **PARTIALLY CLOSED `76b9d6b`.** The intended values are now recorded in `SUPABASE_AUTH_RATE_LIMITS` and `SESSION_MAX_AGE_S` and carried into SECURITY.md as an operator task, so they are reviewable rather than living only in a dashboard. Still open: nothing here can verify GoTrue actually applies them — see N5.
 **WP13.2 · Evidence: `grep` finds no session config; `src/lib/supabase/*.ts` uses `@supabase/ssr` defaults.**
 
 §1 specifies `SESSION_MAX_AGE_S`, `REFRESH_ROTATE`, `RESET_TOKEN_TTL_S`, `OTP_TTL_S` and
@@ -899,6 +905,32 @@ The general finding: `*-check.ts` files in `src/lib` look like tests and are not
 run by `npm test`. There are several. Each is a piece of logic somebody
 considered worth verifying and nothing verifies.
 
+#### N5 — The GoTrue half of WP13 cannot be tested from this repository
+**WP13 · Medium · Evidence: `createBrowserClient` calls Supabase directly; this app never sees the credential.**
+
+Expired session rejected, refresh rotation, logout revoking server-side, reset
+token single-use, OTP single-use. All five are GoTrue behaviours. Split Index
+implements none of them and never handles the token, so there is no code here to
+unit test — and a test that mocked Supabase and asserted the mock behaved would
+pass just as happily if the real settings were wrong.
+
+Closing this needs an integration test against a live project: sign in, wait out
+or force an expiry, assert rejection; use a reset token twice, assert the second
+fails. That is a test-infrastructure task, not a code change, and it is the last
+thing standing between WP13 and "complete".
+
+#### N6 — `.env.example` is not in the repository
+**WP2 · Low · Evidence: `.env*` in .gitignore; `git ls-files` has never listed it.**
+
+It exists on developer machines and drifts with nothing to catch it —
+`REVENUECAT_WEBHOOK_SECRET` and `DEMO_ACCOUNT_PASSWORD` were both in use and
+absent from it, and the two Upstash variables are new. SECURITY.md now carries
+the authoritative list.
+
+Fixable with a `!.env.example` negation, flagged rather than done: it makes a
+file that currently cannot be committed committable, and the value of that
+depends on trusting nobody ever pastes a real key into it.
+
 ### Part D — activation and monetisation
 
 Reported as findings for completeness. None is a security or compliance matter, and D0's
@@ -946,10 +978,10 @@ including the four findings raised during remediation:
 | Severity | Open | Closed | Note |
 |---|---|---|---|
 | Critical | **0** | 4 | All four were one defect in four places. |
-| High | 6 | 3 | H1, H4, H5 closed; H2 corrected and partially closed. |
-| Medium | 12 | 2 | M1, M2 closed; M11 partially. N1 added. |
-| Low | 6 | 3 | L3, L6, N4 closed; N2 and N3 added. |
-| **Total** | **24** | **12** | 36 findings raised in total. |
+| High | 4 | 5 | H1, H3, H4, H5, H7 closed; H2 corrected and partially closed. |
+| Medium | 12 | 2 | M1, M2 closed; M7 and M11 partially. N1, N5 added. |
+| Low | 7 | 3 | L3, L6, N4 closed; N2, N3, N6 added. |
+| **Total** | **23** | **14** | 38 findings raised in total. |
 
 All four Criticals are the same defect in four places: a policy written to enable a public
 leaderboard exposes the underlying user-owned table instead of a column-scoped projection.
@@ -977,7 +1009,7 @@ Then:
 | 3 | **WP3 — validation at the boundary** — PARTIAL `4f10902` | H2 (corrected), M11 partly; M14 **not** started | Precondition for the WP3 fuzz sweep and for the §1 config module everything else references. |
 | 4 | ~~**WP2 build gate + `server-only`**~~ **DONE `8d9096a`** | H4, L3 | Small, and it stops the one mistake with no recovery short of rotation. Needs step 0. |
 | 5 | ~~**WP5 error boundary**~~ **DONE `c467470`, `0dd3d55`** | M1, M2 (M14 **not** started) | Mechanical, 23 files, one house pattern (`auth-errors.ts`) already exists to copy. |
-| 6 | **WP13 + WP4 auth hardening** | H3, H7, M6, M7 | Per-account and per-IP limits must be designed together, per WP13.5. Needs a shared store. |
+| 6 | ~~**WP13 + WP4 auth hardening**~~ **DONE `76b9d6b`** | H3, H7; M7 partly (M6 **not** started) | Per-account and per-IP limits must be designed together, per WP13.5. Needs a shared store. |
 | 7 | **WP12 contrast + gating** | H8, M3, M13, L1 | M3 satisfies WP6.3 and WP12.7 at once. Statement written last, after the fix, so it is honest. |
 | 8 | **WP6 entitlement matrix** | M4, M3 | The matrix test is the deliverable; `features.ts` mostly stands. |
 | 9 | **WP7 logging** | H6 | Build the redaction rule in from the first line, not after. |
@@ -1032,15 +1064,21 @@ is different.
   someone's programme as a side effect of a privacy choice would punish the
   choice.
 
-**Next in the recommended order:** step 6, WP13 + WP4 — auth hardening and rate
-limiting, which the brief requires to be designed together (WP13.5) and which
-need a shared store to mean anything on a serverless deployment. Closes H3, H7,
-M6 and M7. H7 needs the Supabase dashboard check above before it can be sized.
+**Next in the recommended order:** step 7, WP12 — accessibility. The measured
+contrast failure (H8, 2.50:1 on the Engine palette) and the `PremiumGate`
+DOM-exposure problem (M3), which satisfies WP6.3 and WP12.7 at once. The
+accessibility statement is written last, after the fix, so it is honest.
 
-**Two operator items outstanding:**
+**Four operator items outstanding:**
 
 1. Create the security contact address in SECURITY.md. It is a placeholder, and
    a bouncing vulnerability report is worse than no address at all.
 2. Confirm Vercel's Preview environment does not carry production secrets. Not
    visible from the repository, and the most common way a production key ends up
    somewhere it should not be.
+3. Set `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` in Vercel, or the
+   per-user rate limits are advisory and only the per-instance burst guard
+   applies.
+4. Set the GoTrue rate limits and confirm email confirmation is enabled — the
+   table is in SECURITY.md. **Run the impact query at the top of migration 058
+   before applying it**; it can otherwise stop every athlete logging.
