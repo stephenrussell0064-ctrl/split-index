@@ -1,0 +1,116 @@
+# Continuous integration — the gate that makes every other check load-bearing.
+#
+# WHY THIS FILE EXISTS
+# --------------------
+# Before it, this repository had 1347 passing tests and nothing that ran them.
+# Tests pass on whichever machine happened to run them, which means a commit
+# that breaks the suite merges silently and the breakage is found later by a
+# person rather than sooner by a machine. Every hardening work package planned
+# for this repo ends in a test as its acceptance criterion — an RLS enumeration,
+# a fuzz sweep, an entitlement matrix — and a test nothing runs is a comment.
+# So this lands first, before the fixes it is meant to hold.
+#
+# WHAT IS AND IS NOT A GATE, AND WHY
+# ----------------------------------
+# `test` and `typecheck` block. Both are green on this commit — 1347/1347 and
+# zero tsc errors — so they gate from day one rather than starting red and
+# training everyone to ignore them.
+#
+# `lint` does NOT block, deliberately, and is expected to stay non-blocking
+# only until someone ratchets it. Two separate reasons, worth writing down so
+# the next person does not have to rediscover them:
+#
+#   1. `npx eslint` with no path argument reports 286 errors, and 285 of them
+#      are `@typescript-eslint/no-require-imports` inside nineteen vendored
+#      copies of the same agent-tooling skill pack (.claude/, .cursor/,
+#      .gemini/, .github/prompts/ and so on). That is third-party content we
+#      neither wrote nor ship. The fix is an eslint ignore entry, which is a
+#      config change and belongs in its own commit — so this job lints `src`
+#      only, which is the code that is actually ours.
+#   2. Scoped to `src`, HEAD reports 1 error and 10 warnings. The error is
+#      `react-hooks/set-state-in-effect` at
+#      src/components/social/leaderboard-panel.tsx:275 — a real finding about a
+#      real React pattern, not noise, and not a one-line fix. Making lint block
+#      before it is resolved would fail every PR on a pre-existing problem.
+#
+# So the honest state is: 1 error, 10 warnings, visible on every run, small
+# enough to act on. When that reaches zero, delete `continue-on-error` below
+# and lint becomes a gate too. Leaving it non-blocking forever would make this
+# job decorative.
+#
+# NO BUILD JOB, DELIBERATELY. Vercel builds every push already; duplicating
+# `next build` here would double the minutes to learn the same thing. If the
+# Vercel connection is ever removed, add one.
+#
+# NO SECRETS REQUIRED. Verified: the suite runs green in a checkout with no
+# .env file of any kind, which is exactly the condition a runner starts in. If
+# a future test needs a credential, that is a signal it is reaching a real
+# service and should be mocked instead.
+
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+# A second push to the same branch makes the first run irrelevant. Cancel it
+# rather than paying for both and reading the stale one.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Pinned to the version this project is developed against. `npm ci`
+          # honours package-lock.json exactly, so the only remaining source of
+          # drift between a laptop and a runner is the Node major.
+          node-version: "24"
+          cache: npm
+
+      # `npm ci` runs the postinstall patch (scripts/patch-capacitor-spm.mjs).
+      # That script is defensive — it skips silently when the plugin is absent
+      # and warns rather than throwing when upstream changes shape — so it
+      # cannot fail an install on a Linux runner that will never build for iOS.
+      - run: npm ci
+
+      - run: npm test
+
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      # --noEmit: we want the diagnostics, not the output. `next build` also
+      # type-checks, but it runs on Vercel after this would have caught it.
+      - run: npx tsc --noEmit
+
+  lint:
+    name: Lint (non-blocking)
+    runs-on: ubuntu-latest
+    # See the header comment. Remove this line — do not remove the job — once
+    # src/components/social/leaderboard-panel.tsx:275 is resolved.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - run: npx eslint src
