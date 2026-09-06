@@ -82,6 +82,12 @@ export interface AnalyticsPayload {
   /** Optional HRV (rMSSD, ms) — most recent reading and rolling baseline average of the preceding readings. Null when the user hasn't logged any. */
   hrvToday: number | null;
   hrvBaseline: number | null;
+  /**
+   * Article 9 explicit consent. Gates the injury Risk Index, which states a
+   * conclusion about the athlete's physical condition rather than reporting a
+   * number they logged — see src/lib/consent/article9.ts.
+   */
+  article9Consent: boolean;
   /** Best-ever time per standard race distance, mined from the athlete's own logged activities (race-records.ts) — not gated by premium, same as the rest of Personal Records. */
   raceRecords: RaceRecord[];
   /** Profile-wide best-ever SBD DOTS/GL (overall-dots-gl.ts) — null until bodyweight is set. Gated by `showDotsGl`, same premium feature as the Lab page's own DOTS/GL card. */

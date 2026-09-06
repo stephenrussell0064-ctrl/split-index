@@ -26,6 +26,7 @@ import {
   type PrivacyState,
 } from "@/components/settings/activity-privacy-settings";
 import { WidgetStatus } from "@/components/settings/widget-status";
+import { Article9ConsentCard } from "@/components/settings/article9-consent-card";
 import { PremiumBadge } from "@/components/retention/premium-badge";
 import { createClient } from "@/lib/supabase/client";
 import { clearRacePredictions } from "@/lib/native/race-predictions";
@@ -316,6 +317,14 @@ export default function SettingsPage() {
       {authUserId && (
         <ActivityPrivacySettings state={privacy} userId={authUserId} />
       )}
+
+      {/*
+        Article 9 consent, and the one-action withdrawal the law requires.
+        Placed with the other privacy controls rather than buried under the
+        Hybrid Plan: an athlete looking for "how do I take that back" looks in
+        Settings, not inside the feature they are trying to switch off.
+      */}
+      <Article9ConsentCard />
 
       {/*
         iOS only, and renders nothing at all unless there's a widget

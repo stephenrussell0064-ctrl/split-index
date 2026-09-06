@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { buildMonitoringSnapshot, type FeedbackEvent, type GenerationEvent, type InjuryReport, type ProfileSnapshot } from "@/lib/scoring/hpe/monitoring";
 import { EMPHASIS_DRIFT_REGENERATE_THRESHOLD } from "@/lib/scoring/hpe/constants";
 import { ROLLOUT_STAGES, nextRolloutStage } from "@/lib/scoring/hpe/rollout";
+import { hasArticle9Consent } from "@/lib/consent/article9";
 
 /**
  * WP10 monitoring endpoint.
@@ -24,6 +25,22 @@ export async function GET(request: Request) {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  /*
+   * Article 9 gate. This snapshot reads hpe_injury_reports, which is injury
+   * history in full — Tier 2 throughout. Withdrawal deletes those rows, so
+   * this would return an empty snapshot anyway; the gate is here so the reason
+   * is stated rather than inferred from a blank screen, and so a future column
+   * added to this query cannot quietly reintroduce a Tier 2 read.
+   */
+  if (!(await hasArticle9Consent(supabase, user.id))) {
+    return NextResponse.json({
+      consentRequired: true,
+      snapshot: null,
+      message:
+        "Plan monitoring reads your health screening, so it needs your explicit consent. You can give it — or take it back — in Settings.",
+    });
+  }
 
   const { searchParams } = new URL(request.url);
   const windowDays = Math.min(365, Math.max(7, Number(searchParams.get("days")) || DEFAULT_WINDOW_DAYS));

@@ -13,6 +13,7 @@ import { validateIntake } from "@/lib/scoring/hpe/intake";
 import { parseIntakeRow, resolveIntakeInputs } from "@/lib/scoring/hpe/intake-record";
 import { loadPrefilledIntake } from "@/lib/scoring/hpe/load-intake";
 import { evaluateAccess, type FeatureFlag } from "@/lib/scoring/hpe/rollout";
+import { hasArticle9Consent } from "@/lib/consent/article9";
 import { HPE_CONSTANTS_VERSION } from "@/lib/scoring/hpe/constants";
 import { ingestModalityFitness } from "@/lib/scoring/hpe/modality";
 import type { ActivityRow } from "@/lib/scoring/hpe/ingest";
@@ -107,6 +108,39 @@ export async function GET(request: Request) {
         updatedAt: (flagRow.updated_at as string | null) ?? null,
       }
     : null;
+
+  /*
+   * Article 9 gate, checked before the rollout dial and before anything is
+   * generated.
+   *
+   * The health screen inside generatePlan is not bypassable — that is the
+   * engine's own guarantee — which means generating a plan ALWAYS processes
+   * special category data. So without explicit consent there is nothing to
+   * decide: the engine cannot run at all.
+   *
+   * This mirrors the kill switch's shape rather than erroring, because the
+   * situations are the same shape: generation stops, an existing plan stays
+   * readable, and the athlete is told plainly why. An athlete three weeks into
+   * a block who withdraws consent has made a choice about their health data,
+   * not asked for their training schedule to be deleted — the withdrawal
+   * already removed the health answers themselves (migration 057).
+   */
+  if (!(await hasArticle9Consent(supabase, user.id))) {
+    await recordEvent(supabase, user.id, {
+      outcome: "feature_disabled",
+      reason_code: "article9_consent_missing",
+    });
+    const stored = await loadLatestStoredPlan(supabase, user.id).catch(() => null);
+    return NextResponse.json({
+      generated: false,
+      consentRequired: true,
+      paused: true,
+      storedPlan: stored,
+      weeks: stored?.weeks ?? [],
+      message:
+        "The Hybrid Plan screens your health before it programmes anything, so it needs your explicit consent to use that information. You can give it — or take it back — in Settings.",
+    });
+  }
 
   const access = evaluateAccess(flag, user.id);
   if (!access.canGenerate) {

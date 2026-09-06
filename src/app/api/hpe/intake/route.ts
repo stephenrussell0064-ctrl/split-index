@@ -7,6 +7,11 @@ import {
   type IntakeSection,
 } from "@/lib/scoring/hpe/intake-record";
 import { loadPrefilledIntake } from "@/lib/scoring/hpe/load-intake";
+import {
+  hasArticle9Consent,
+  isTier2Section,
+  stripTier2Fields,
+} from "@/lib/consent/article9";
 
 /**
  * WP2 — the intake endpoint.
@@ -56,6 +61,28 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Unknown intake section." }, { status: 400 });
   }
 
+  /*
+   * Article 9 gate. The health and fuelling sections are special category data
+   * and cannot be written without explicit consent on record — see
+   * src/lib/consent/article9.ts.
+   *
+   * Checked here rather than only in the UI because the UI is not a control.
+   * getArticle9Consent fails closed, so an unreachable consent table refuses
+   * the write rather than allowing it.
+   */
+  const consented = await hasArticle9Consent(supabase, user.id);
+
+  if (isTier2Section(section) && !consented) {
+    return NextResponse.json(
+      {
+        error:
+          "These questions need your explicit consent before we can store the answers.",
+        consentRequired: true,
+      },
+      { status: 403 }
+    );
+  }
+
   // Allowlisted per section: a PATCH claiming to be the preferences section
   // must not be able to rewrite the safety answers.
   const allowed = new Set(SECTION_FIELDS[section]);
@@ -63,6 +90,16 @@ export async function PATCH(request: Request) {
   for (const [key, value] of Object.entries(body?.values ?? {})) {
     if (allowed.has(key)) values[key] = value;
   }
+
+  /*
+   * Belt and braces, and not redundant. The per-section allowlist above stops
+   * a health field arriving inside the `training` section TODAY, because the
+   * two lists happen not to overlap. That is a property of the current field
+   * layout, not a guarantee — move one question between sections and the
+   * allowlist would happily let it through on a section that is not gated.
+   * This strips Tier 2 keys by name regardless of which door they came in.
+   */
+  const safeValues = consented ? values : stripTier2Fields(values);
 
   const { data: existing } = await supabase
     .from("hpe_intake")
@@ -76,7 +113,7 @@ export async function PATCH(request: Request) {
   const { error } = await supabase.from("hpe_intake").upsert(
     {
       user_id: user.id,
-      ...values,
+      ...safeValues,
       sections_completed: [...completed],
       updated_at: new Date().toISOString(),
     },
