@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { databaseError } from "@/lib/api/errors";
 import { createClient } from "@/lib/supabase/server";
 import { scoreActivity, computeExercise1RM, ScoringInputError } from "@/lib/scoring/service";
 import { computeBodyBenchmarkEquivalentSeconds, mapSportToBenchmarkSport } from "@/lib/scoring/adapters";
@@ -296,7 +297,7 @@ export async function POST(request: Request) {
   });
 
   if (historyError) {
-    return NextResponse.json({ error: historyError.message }, { status: 500 });
+    return databaseError(historyError, { operation: "POST /api/onboarding/calibrate" });
   }
 
   return NextResponse.json({

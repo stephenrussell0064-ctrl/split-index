@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { databaseError, serverError } from "@/lib/api/errors";
 import { createClient } from "@/lib/supabase/server";
 import { ScoringInputError } from "@/lib/scoring/service";
 import { assertScoringInput } from "@/lib/scoring/input-guards";
@@ -206,10 +207,10 @@ export async function PATCH(
     .single();
 
   if (updateError || !activity) {
-    return NextResponse.json(
-      { error: updateError?.message ?? "Failed to update activity" },
-      { status: 500 }
-    );
+    return serverError({
+      operation: "PATCH /api/activities/[id]",
+      cause: updateError,
+    });
   }
 
   // An edit replaces the exercise list wholesale, so the old rows are read
@@ -443,7 +444,7 @@ export async function DELETE(
   const { error } = await supabase.from("activities").delete().eq("id", id);
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return databaseError(error, { operation: "DELETE /api/activities/[id]" });
   }
 
   return NextResponse.json({ success: true });

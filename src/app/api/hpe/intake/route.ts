@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { databaseError } from "@/lib/api/errors";
 import { createClient } from "@/lib/supabase/server";
 import {
   INTAKE_SECTIONS,
@@ -127,7 +128,9 @@ export async function PATCH(request: Request) {
     { onConflict: "user_id" }
   );
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  // Never the raw message: this write is to the special-category health table,
+  // and a Postgres error naming a column here names a health question.
+  if (error) return databaseError(error, { operation: "PATCH /api/hpe/intake" });
 
   const { data: refreshed } = await supabase.from("hpe_intake").select("*").eq("user_id", user.id).maybeSingle();
   return NextResponse.json({ ok: true, intake: parseIntakeRow(refreshed as Record<string, unknown> | null) });

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { serverError } from "@/lib/api/errors";
 import { parseBody } from "@/lib/validation/boundary";
 import { createActivitySchema } from "@/lib/validation/schemas/activity";
 import { ROUTE_CONFIG, applyRoutePrivacyZone, parseRoutePolyline } from "@/lib/scoring/gps-track";
@@ -389,10 +390,10 @@ export async function POST(request: Request) {
     .single();
 
   if (activityError || !activity) {
-    return NextResponse.json(
-      { error: activityError?.message ?? "Failed to create activity" },
-      { status: 500 }
-    );
+    return serverError({
+      operation: "POST /api/activities",
+      cause: activityError,
+    });
   }
 
   if (body.exercises && body.exercises.length > 0) {

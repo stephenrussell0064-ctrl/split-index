@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { databaseError } from "@/lib/api/errors";
 import { createClient } from "@/lib/supabase/server";
 import { canAccessProfile } from "@/lib/premium/features";
 import { isPremiumUser } from "@/lib/retention/trial";
@@ -59,7 +60,7 @@ export async function GET(request: Request) {
     .order("started_at", { ascending: false });
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return databaseError(error, { operation: "GET /api/export/activities" });
   }
 
   const exportRows = (activities ?? []).map((a) => {

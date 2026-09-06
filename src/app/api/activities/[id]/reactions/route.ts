@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { databaseError } from "@/lib/api/errors";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -37,8 +38,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   if (error) {
     // RLS blocks this insert for an activity the requester can't see —
-    // surfaces as a Postgres permission error, not a generic 500.
-    return NextResponse.json({ error: error.message }, { status: 403 });
+    // surfaces as a Postgres permission error, not a generic 500. The status
+    // was already right; the body used to carry the policy and table name.
+    return NextResponse.json(
+      { error: "You can't score that activity." },
+      { status: 403 }
+    );
   }
 
   return NextResponse.json({ reaction });
@@ -62,7 +67,7 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
     .eq("user_id", user.id);
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return databaseError(error, { operation: "DELETE /api/activities/[id]/reactions" });
   }
 
   return NextResponse.json({ ok: true });

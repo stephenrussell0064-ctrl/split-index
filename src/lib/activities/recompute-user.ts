@@ -119,7 +119,18 @@ export async function recomputeUser(
     .order("started_at", { ascending: true });
 
   if (activitiesError) {
-    throw new RecomputeError(activitiesError.message, 500);
+    /*
+     * The Postgres message used to travel in here and straight out through
+     * the recompute route, which returns `err.message` to the caller for this
+     * error type. RecomputeError's other message is app-authored ("Profile not
+     * found"), so nothing about the type suggested one of its two messages was
+     * a raw driver string. Logged, not carried.
+     */
+    console.error("[recompute] reading activities failed", {
+      userId,
+      cause: activitiesError.message,
+    });
+    throw new RecomputeError("We could not read your activity history.", 500);
   }
 
   const activityIds = (activities ?? []).map((a) => a.id as string);
