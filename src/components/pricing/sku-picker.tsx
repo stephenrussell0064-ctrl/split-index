@@ -12,7 +12,20 @@ import {
   restoreNativePurchases,
   type NativeOfferingPackage,
 } from "@/lib/native/billing";
+import { presentProPaywall } from "@/lib/native/paywall";
 import type { SubscriptionSku } from "@/types";
+
+/**
+ * Whether the native checkout hands off to the RevenueCat dashboard paywall
+ * instead of the inline picker below.
+ *
+ * Behind a flag rather than always-on because presenting a paywall that has
+ * not been built in the dashboard yet returns an error and leaves the athlete
+ * with no way to pay at all. Turning this on is the last step of the paywall
+ * setup, after the Offering has a paywall attached — see
+ * docs/native-billing-setup.md.
+ */
+const USE_DASHBOARD_PAYWALL = process.env.NEXT_PUBLIC_REVENUECAT_USE_PAYWALL === "true";
 
 const SKUS: Array<{
   sku: SubscriptionSku;
@@ -72,11 +85,31 @@ export function SkuPicker({ ctaLabel, onError, className }: SkuPickerProps) {
     onError?.("");
 
     if (native) {
+      // The dashboard paywall runs the whole flow itself — selection, purchase,
+      // restore — so the SKU chosen above is only a fallback path's input.
+      if (USE_DASHBOARD_PAYWALL) {
+        const outcome = await presentProPaywall();
+        if (outcome.entitled) {
+          window.location.reload();
+          return;
+        }
+        // A dismissed paywall is not an error and gets no message; a genuinely
+        // failed one does, because otherwise the button just silently stops
+        // working and there is nothing on screen to explain it.
+        if (outcome.reason === "error") {
+          onError?.("Couldn't open checkout. Please try again.");
+        }
+        setLoading(false);
+        return;
+      }
+
       const result = await purchaseNativeSku(selected);
       if (result.ok) {
         window.location.reload();
         return;
       }
+      // `pending` is neither: the purchase is alive and awaiting approval, so
+      // the message is shown but it is not framed as a failure.
       if (!result.cancelled) onError?.(result.message);
       setLoading(false);
       return;
