@@ -272,6 +272,12 @@ export function LeaderboardPanel({
   }, [viewMode, dimensionValue]);
 
   useEffect(() => {
+    // fetchDimensionRows sets the loading flag synchronously, before its first
+    // await, and that is the point: without it the panel shows the previous
+    // dimension's rows with no loading state for a frame every time the filter
+    // changes. The cascading render the rule warns about is one extra render
+    // of a spinner.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void fetchDimensionRows();
   }, [fetchDimensionRows]);
 

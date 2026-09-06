@@ -61,6 +61,10 @@ export function Article9ConsentCard({
   }, []);
 
   useEffect(() => {
+    // load() writes state only after awaiting the fetch, so nothing here is
+    // synchronous. The rule traces into the callback and cannot tell the
+    // writes sit behind an await; this is a plain load-on-mount.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
   }, [load]);
 
