@@ -998,6 +998,17 @@ const MIN_SCORE = 1;
 const MAX_SCORE = 999;
 /** Only a genuinely exceptional (record-approaching) ratio should ever read this high. */
 const NEAR_RECORD_THRESHOLD = 970;
+
+/**
+ * [EST] Ceiling for a lift scored against a GENERIC anchor rather than a
+ * calibrated one.
+ *
+ * 724 is the top of the Semi-Pro band — the highest tier that does not claim
+ * the athlete is exceptional. An unrecognised movement can be scored as a good
+ * lift and cannot be scored as a world-class one, because nothing in the engine
+ * knows what the movement is.
+ */
+const GENERIC_ANCHOR_MAX_SCORE = 724;
 const MIN_RATIO = 0.01;
 
 /**
@@ -1642,6 +1653,33 @@ export function scoreStrength(input: ScoreStrengthInput): ScoreStrengthResult {
   } else {
     score = scoreFromRatio(ratio, effectiveAnchor);
     nextTier = computeNextTier(score, effectiveAnchor, bodyweightKg, oneRM);
+  }
+
+  /*
+    AN EXERCISE WE CANNOT IDENTIFY CANNOT EARN A WORLD-CLASS SCORE.
+
+    A free-text name that matches nothing in the catalogue falls through to
+    DEFAULT_GENERIC_ANCHOR — ratio 0.35, i.e. "0.35 x bodyweight scores 500".
+    That is a deliberately soft standard for an unknown movement, and combined
+    with an uncapped curve it meant ANY invented string scored 999 at an
+    ordinary load. Measured, 80 kg lifter, one exercise, 100 kg x 5:
+
+        "unknown 500-character name"   999   "World Class"
+        emoji name                     999   "World Class"
+        "squat\n\n\nDROP TABLE"          999   "World Class"
+
+    So the top of the strength scale was reachable by typing nonsense, and the
+    leaderboards read these numbers directly.
+
+    The cap is the honest reading of what a generic anchor supports: it is a
+    guess at a standard, so it can say "this is a solid lift" and must not say
+    "this is among the best in the world". Calibrated primary and accessory
+    lifts are untouched and can still reach 999. The flag saying the standard
+    was estimated was already there — this makes the score agree with it.
+  */
+  if (source === "generic" && score > GENERIC_ANCHOR_MAX_SCORE) {
+    score = GENERIC_ANCHOR_MAX_SCORE;
+    flags.push("capped-unrecognised-exercise");
   }
 
   const tier = tierForScore(score);
