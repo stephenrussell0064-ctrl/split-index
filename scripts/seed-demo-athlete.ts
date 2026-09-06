@@ -89,6 +89,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createClient } from "@supabase/supabase-js";
 import { recomputeUser, RecomputeError } from "../src/lib/activities/recompute-user";
+import { computeExercise1RM } from "../src/lib/scoring/service";
 
 /**
  * Repo root resolved from this file, not from process.cwd(). Reading
@@ -125,6 +126,20 @@ loadEnvLocal();
 const args = process.argv.slice(2);
 const APPLY = args.includes("--apply");
 const DELETE = args.includes("--delete");
+/**
+ * Seed an account that already exists instead of creating one. Create the user
+ * yourself (Supabase dashboard, or a prior run of this script) and pass its id.
+ * This path never touches auth, so it needs no DEMO_ACCOUNT_PASSWORD.
+ */
+const USER_ID = args.includes("--user") ? args[args.indexOf("--user") + 1] : undefined;
+/** Delete this user's existing activities before seeding, so a re-run replaces rather than doubles. */
+const RESET = args.includes("--reset");
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+if (args.includes("--user") && (!USER_ID || !UUID_RE.test(USER_ID))) {
+  console.error("--user needs a uuid, e.g. --user 055238a1-e6c0-4f9c-806d-26ed28f0b0dc");
+  process.exit(1);
+}
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -139,7 +154,7 @@ if (!url || !serviceKey) {
   process.exit(1);
 }
 
-if (APPLY && !DELETE && !demoPassword) {
+if (APPLY && !DELETE && !USER_ID && !demoPassword) {
   console.error(
     "Missing DEMO_ACCOUNT_PASSWORD.\n" +
       "Set it yourself, in your own shell or .env.local — this script deliberately\n" +
@@ -340,14 +355,34 @@ async function doSeed(): Promise<void> {
   console.log(`Spike week      : week ${SPIKE_WEEK} of ${WEEKS} — pushes ACWR out of optimal`);
   console.log("");
 
-  const existing = await findDemoUserId();
-  if (existing) {
+  // --user names the account explicitly, which is the whole point of that
+  // flag: the caller has already made the user and wants only the data.
+  const existing = USER_ID ?? (await findDemoUserId());
+  if (existing && !USER_ID) {
     console.log(
       `An account already exists for ${DEMO_EMAIL} (${existing}).\n` +
-        "Delete it first so the seed is reproducible rather than doubled:\n" +
+        "Either seed it directly, which needs no password:\n" +
+        `  npx tsx scripts/seed-demo-athlete.ts --user ${existing} --reset --apply\n` +
+        "or delete it and start clean:\n" +
         "  npx tsx scripts/seed-demo-athlete.ts --delete --apply"
     );
     return;
+  }
+
+  if (USER_ID) {
+    const { count } = await supabase
+      .from("activities")
+      .select("*", { count: "exact", head: true })
+      .eq("user_id", USER_ID);
+    console.log(`Existing activities for ${USER_ID}: ${count ?? 0}`);
+    if ((count ?? 0) > 0 && !RESET) {
+      console.log(
+        "That account already has activities. Seeding on top would double them and\n" +
+          "make every trend, ACWR and diagnostic meaningless. Re-run with --reset to\n" +
+          "replace them."
+      );
+      return;
+    }
   }
 
   if (!APPLY) {
@@ -365,16 +400,28 @@ async function doSeed(): Promise<void> {
     return;
   }
 
-  const { data: created, error: createError } = await supabase.auth.admin.createUser({
-    email: DEMO_EMAIL,
-    password: demoPassword,
-    email_confirm: true,
-  });
-  if (createError || !created?.user) {
-    throw new Error(`createUser failed: ${createError?.message ?? "no user returned"}`);
+  let userId: string;
+  if (USER_ID) {
+    userId = USER_ID;
+    if (RESET) {
+      // gym_exercises cascades on activity delete, so this is the whole set.
+      const { error: delError } = await supabase.from("activities").delete().eq("user_id", userId);
+      if (delError) throw new Error(`reset failed: ${delError.message}`);
+      console.log("Cleared existing activities.");
+    }
+    console.log(`Seeding existing user ${userId}.`);
+  } else {
+    const { data: created, error: createError } = await supabase.auth.admin.createUser({
+      email: DEMO_EMAIL,
+      password: demoPassword,
+      email_confirm: true,
+    });
+    if (createError || !created?.user) {
+      throw new Error(`createUser failed: ${createError?.message ?? "no user returned"}`);
+    }
+    userId = created.user.id;
+    console.log(`Created auth user ${userId}.`);
   }
-  const userId = created.user.id;
-  console.log(`Created auth user ${userId}.`);
 
   // 001's handle_new_user trigger inserts the profile row; fill in the rest.
   // Premium because every screen this account exists to photograph is gated.
@@ -427,6 +474,15 @@ async function doSeed(): Promise<void> {
           sets: e.sets,
           reps: e.reps,
           order_index: i,
+          // Must be written here. The first version of this script left it
+          // null and assumed recomputeUser would fill it in; it does not
+          // write this column, so all 54 rows stayed null and every
+          // downstream reader of it went quiet — calculateOverallDotsGl
+          // returned nothing, and the HPE diagnostic reported no weak lift
+          // and no stalled lift because it had no 1RMs to compare. The seed
+          // looked like it had worked. Same function the onboarding
+          // calibrate route uses, so the numbers are the engine's.
+          estimated_1rm_kg: computeExercise1RM(e.weight_kg, e.reps),
         }))
       );
       if (exError) throw new Error(`exercise insert failed: ${exError.message}`);
