@@ -140,6 +140,28 @@ export interface CardioInput {
   personalizedRiegelK?: number | null;
 }
 
+/**
+ * What a structured interval/fartlek session was actually scored on.
+ *
+ * The engine has always scored these off the work pieces rather than the
+ * whole-session average — that is the entire point of §5a — but it recorded
+ * only an `interval-work-piece-scored` flag, which reaches the UI as the bare
+ * words "interval work piece scored". An athlete had no way to see that their
+ * reps were judged rather than their session average, which is the one thing
+ * that makes a hard interval session score like a hard session.
+ *
+ * All three paces are seconds per kilometre.
+ */
+export interface WorkPieceScoring {
+  kind: 'interval' | 'fartlek';
+  /** The hard reps alone (or the fartlek "on" pieces). Not what was scored — see `equivalentPaceSecPerKm`. */
+  workPaceSecPerKm: number;
+  /** What the score actually used: work pace after the rest-ratio conversion, which is slower than the raw work pace because rest makes a given pace easier to hold. */
+  equivalentPaceSecPerKm: number;
+  /** The whole-session average — what a session-average scorer would have used instead. Null when distance or duration is missing. */
+  sessionAvgPaceSecPerKm: number | null;
+}
+
 export interface CardioResult {
   /** Pure, monotonic pace-performance score — Riegel/work-piece equivalent + age/sex grading run through the anchor table, nothing else touches it. A faster time for the same activity can never score lower here, by construction. This is "the score for this run" and what the rolling per-activity index rolls up from. Identical to `paceScore`. */
   score: number;
@@ -155,6 +177,8 @@ export interface CardioResult {
   predictions: Record<string, number> | null; // distance(m) -> seconds
   confidence: number;          // 0–1, how much HR data backed this score
   flags: string[];
+  /** Present only when a work/rest breakdown was supplied and the score came from the work pieces. Null for every ordinary session, including an interval logged without the optional breakdown, which falls back to session-average scoring exactly as before. */
+  workPiece: WorkPieceScoring | null;
 }
 
 const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
@@ -686,6 +710,13 @@ export function scoreCardioActivity(input: CardioInput): CardioResult {
   // default parameter) when absent, same as before this was threaded in.
   const riegelK = input.personalizedRiegelK ?? undefined;
   let sessionEquivalentSeconds: number | null;
+  // Recorded alongside the flag so the UI can say what was scored rather than
+  // leaving the athlete to infer it from a slug.
+  let workPiece: WorkPieceScoring | null = null;
+  const sessionAvgPaceSecPerKm =
+    input.distanceMeters > 0 && input.durationSeconds > 0
+      ? input.durationSeconds / (input.distanceMeters / 1000)
+      : null;
   if (isValidIntervalWorkPiece(input.structuredInterval)) {
     sessionEquivalentSeconds = computeIntervalBenchmarkEquivalentSeconds(
       input.benchmarkSport,
@@ -696,6 +727,13 @@ export function scoreCardioActivity(input: CardioInput): CardioResult {
       personalization
     );
     flags.push('interval-work-piece-scored');
+    workPiece = {
+      kind: 'interval',
+      workPaceSecPerKm:
+        (input.structuredInterval.workSecondsPerRep / input.structuredInterval.workDistanceMeters) * 1000,
+      equivalentPaceSecPerKm: intervalEquivalentPaceSecPerKm(input.structuredInterval),
+      sessionAvgPaceSecPerKm,
+    };
   } else if (isValidFartlekOnPiece(input.structuredFartlek)) {
     sessionEquivalentSeconds = computeIntervalBenchmarkEquivalentSeconds(
       input.benchmarkSport,
@@ -706,6 +744,13 @@ export function scoreCardioActivity(input: CardioInput): CardioResult {
       personalization
     );
     flags.push('fartlek-work-piece-scored');
+    workPiece = {
+      kind: 'fartlek',
+      workPaceSecPerKm:
+        (input.structuredFartlek.onSeconds / input.structuredFartlek.onDistanceMeters) * 1000,
+      equivalentPaceSecPerKm: fartlekEquivalentPaceSecPerKm(input.structuredFartlek),
+      sessionAvgPaceSecPerKm,
+    };
   } else {
     // Relative-effort scoring (user feedback): easy/recovery/long-tagged
     // sessions are DESIGNED to be run slow at low HR — judging them on the
@@ -1253,5 +1298,20 @@ export function scoreCardioActivity(input: CardioInput): CardioResult {
     })(),
     confidence: Math.round(confidence * 100) / 100,
     flags,
+    workPiece:
+      workPiece === null
+        ? null
+        : {
+            ...workPiece,
+            // Whole seconds per km — these are rendered as m:ss and compared
+            // against each other, so a fractional second would surface as a
+            // rounding wobble between two numbers meant to line up.
+            workPaceSecPerKm: Math.round(workPiece.workPaceSecPerKm),
+            equivalentPaceSecPerKm: Math.round(workPiece.equivalentPaceSecPerKm),
+            sessionAvgPaceSecPerKm:
+              workPiece.sessionAvgPaceSecPerKm === null
+                ? null
+                : Math.round(workPiece.sessionAvgPaceSecPerKm),
+          },
   };
 }
