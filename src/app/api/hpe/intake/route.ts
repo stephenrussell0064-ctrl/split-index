@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import {
   INTAKE_SECTIONS,
-  SECTION_FIELDS,
   parseIntakeRow,
   type IntakeSection,
 } from "@/lib/scoring/hpe/intake-record";
@@ -12,6 +11,8 @@ import {
   isTier2Section,
   stripTier2Fields,
 } from "@/lib/consent/article9";
+import { invalidRequest } from "@/lib/validation/boundary";
+import { validateIntakeValues } from "@/lib/validation/schemas/intake";
 
 /**
  * WP2 — the intake endpoint.
@@ -83,13 +84,19 @@ export async function PATCH(request: Request) {
     );
   }
 
-  // Allowlisted per section: a PATCH claiming to be the preferences section
-  // must not be able to rewrite the safety answers.
-  const allowed = new Set(SECTION_FIELDS[section]);
-  const values: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(body?.values ?? {})) {
-    if (allowed.has(key)) values[key] = value;
-  }
+  /*
+   * Allowlisted per section AND type-checked per field. The allowlist stops a
+   * PATCH claiming to be the preferences section from rewriting the safety
+   * answers; the field schemas stop `parq_positive: "no"` — a truthy string —
+   * being stored as an answer about chest pain.
+   *
+   * A field that fails is a 400, not a silent drop. Dropping it would tell the
+   * athlete their answer saved when it did not, which on the health screen is
+   * the worst outcome available.
+   */
+  const validated = validateIntakeValues(section, body?.values ?? {});
+  if (validated.errors.length > 0) return invalidRequest(validated.errors);
+  const values = validated.values;
 
   /*
    * Belt and braces, and not redundant. The per-section allowlist above stops
