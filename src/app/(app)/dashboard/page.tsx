@@ -654,17 +654,17 @@ export default async function DashboardPage() {
       )}
 
       {/*
-        WHAT DO I DO TODAY. The plan band, full width and directly under the
-        index — the hybrid plan used to reach the home page as one third of a
-        three-column grid two blocks down, which is not what "the app's only
-        planning surface" should look like on the screen everyone lands on.
-      */}
-      <TodaysSessionCard payload={todaysSessionPayload} variant="band" />
-
-      {/*
         WHAT COULD I DO. Five race distances and three lifts, in the footprint
         the single 5K square and the single SBD square used to occupy between
         them.
+
+        These two thin strips sit ABOVE the plan band rather than below it, and
+        the ordering was measured rather than chosen. The real window on a
+        390x844 phone is 620px (content starts at y123 under the safe-area
+        inset, the bottom nav is 101px). Hero 185 + these two at ~90 each =
+        ~400, which leaves the plan band its full ~180 and puts all four blocks
+        on one screen. With the band second, the lift strip fell under the nav —
+        the plan gained forty pixels of prominence by hiding a whole block.
       */}
       {hasActivities && (
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
@@ -678,6 +678,14 @@ export default async function DashboardPage() {
           />
         </div>
       )}
+
+      {/*
+        WHAT DO I DO TODAY. The plan band, full width, and the largest single
+        thing on the first screen — the hybrid plan used to reach the home page
+        as one third of a three-column grid, which is not what "the app's only
+        planning surface" should look like where everyone lands.
+      */}
+      <TodaysSessionCard payload={todaysSessionPayload} variant="band" />
 
       {/* ── Below the fold: how today is going, then what has happened ── */}
 

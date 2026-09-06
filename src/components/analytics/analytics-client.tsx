@@ -269,7 +269,11 @@ export function AnalyticsClient({ data }: { data: AnalyticsPayload }) {
         periodBLabel={rangeB.label}
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {/* grid-cols-2 from the smallest screen up, not from sm: — with no base
+          column count these four stat cards stacked into 396px of a 620px
+          phone window and pushed the stored-predictions panel, the most
+          actionable thing on this tab, entirely under the bottom nav. */}
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         {summaryStats.map((stat, i) => (
           <motion.a
             key={stat.label}

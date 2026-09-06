@@ -70,8 +70,21 @@ export function Select({ label, error, options, className, id, ...props }: Selec
           )}
           {...props}
         >
+          {/*
+            The option background has to follow the zone, not be pinned dark.
+            `bg-slate-900` was hardcoded here, and The Engine is a LIGHT theme
+            whose text token is near-black — so every dropdown on /cardio
+            rendered dark text on a dark list at about 1:1 contrast, i.e.
+            invisible. `mode-surface-elevated` is the existing escape hatch for
+            exactly this (dark by default, white under [data-mode="cardio"]),
+            and `text-foreground` follows it.
+          */}
           {options.map((opt) => (
-            <option key={opt.value} value={opt.value} className="bg-slate-900">
+            <option
+              key={opt.value}
+              value={opt.value}
+              className="mode-surface-elevated text-foreground"
+            >
               {opt.label}
             </option>
           ))}
