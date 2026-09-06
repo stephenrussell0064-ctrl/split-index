@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { HeartPulse } from "lucide-react";
+import { ChevronDown, HeartPulse } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
@@ -438,41 +438,6 @@ export function HybridPlanScreen() {
           without this, which left a provisional plan looking identical to a
           fully-diagnosed one — the refusal removed and nothing put in its
           place. */}
-      {data.tailoring && (
-        <Card glow={data.tailoring.isProvisional ? "none" : "accent"}>
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className="text-xs font-medium uppercase tracking-widest text-muted">How tailored this is</p>
-              <h2 className="mt-1 text-lg font-semibold tracking-tight">{data.tailoring.headline}</h2>
-            </div>
-            <span
-              className={cn(
-                "rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wider",
-                data.tailoring.isProvisional ? "bg-warning/15 text-warning" : "bg-endurance/15 text-endurance"
-              )}
-            >
-              {Math.round(data.tailoring.confidence * 100)}% confidence
-            </span>
-          </div>
-          <p className="mt-3 text-sm leading-relaxed text-foreground/85">{data.tailoring.explanation}</p>
-
-          {data.tailoring.unlocks.length > 0 && (
-            <div className="mt-4 rounded-2xl border border-accent/20 bg-accent/[0.06] p-4">
-              <p className="text-xs font-semibold uppercase tracking-widest text-accent">
-                What your next sessions unlock
-              </p>
-              <ul className="mt-2.5 space-y-3">
-                {data.tailoring.unlocks.slice(0, 3).map((u) => (
-                  <li key={u.action}>
-                    <p className="text-sm font-medium text-foreground/90">{u.action}</p>
-                    <p className="mt-0.5 text-sm leading-relaxed text-muted">{u.unlocks}</p>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </Card>
-      )}
 
       {/*
         REMOVED FROM THIS SCREEN — the "Read this first" and "Before you start"
@@ -545,17 +510,18 @@ export function HybridPlanScreen() {
         container and gave the whole PAGE a horizontal scrollbar. Four equal
         columns that can actually shrink cannot do that at any width.
 
-        Two rows below 360px, four across above it. Measured: a quarter of a
-        320px screen leaves a 48px content box, and "Diagnostic" is 86px at
-        text-sm — one word, so it cannot wrap, and truncating it to "Diagnos…"
-        makes a navigation label that no longer names anything. Two columns
-        give each tab 137px there, which fits with room to spare. Every phone
-        from an iPhone SE 2 upward still gets the single row.
+        Two rows on phones, four across from `sm` up. Measured: "Diagnostic"
+        is 86px at text-sm and one word, so it cannot wrap. A quarter of the
+        row leaves it a 66px content box at 390px and 48px at 320px — it
+        truncated to "Diagnos…" on both, and a navigation label that no longer
+        names anything is not a fix. Two columns give it 170px at 390px and
+        137px at 320px. The second row costs 56px, and the fold measurement
+        below has 221px to spare.
 
         `py-3` rather than `py-2.5` takes the tap target from 40px to 44,
         which is the minimum a finger should be asked to hit.
       */}
-      <div className="grid grid-cols-2 gap-1.5 rounded-2xl bg-white/[0.03] p-1.5 min-[360px]:grid-cols-4">
+      <div className="grid grid-cols-2 gap-1.5 rounded-2xl bg-white/[0.03] p-1.5 sm:grid-cols-4">
         {TABS.map((t) => (
           <button
             key={t.id}
@@ -594,6 +560,67 @@ export function HybridPlanScreen() {
             pacing={data.pacing ?? null}
           />
         </div>
+      )}
+
+      {/*
+        MOVED BELOW THE PLAN, AND FOLDED SHUT.
+
+        This was between the page header and the tabs: an eyebrow, a heading, a
+        confidence pill, an explanation paragraph and a three-item "what your
+        next sessions unlock" box — about 320px. With the header above it, the
+        first thing on this screen was 420px of preamble and `DayDetail`, whose
+        own comment calls it "first on screen, biggest thing on it", started
+        roughly 90px above the bottom nav. The screen that exists to answer
+        "what do I do today" made you scroll to find out.
+
+        It is context for the plan, not a gate in front of it, so it goes after
+        it and opens on request. A native `<details>` rather than state: it
+        needs no JavaScript, it is keyboard-operable and screen-reader-legible
+        for free, and it survives a re-render.
+      */}
+      {data.tailoring && (
+        <Card glow={data.tailoring.isProvisional ? "none" : "accent"}>
+          <details className="group">
+            <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
+              <div className="min-w-0">
+                <p className="text-xs font-medium uppercase tracking-widest text-muted">How tailored this is</p>
+                <h2 className="mt-1 text-base font-semibold tracking-tight">{data.tailoring.headline}</h2>
+              </div>
+              <span className="flex shrink-0 items-center gap-2">
+                <span
+                  className={cn(
+                    "rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wider",
+                    data.tailoring.isProvisional ? "bg-warning/15 text-warning" : "bg-endurance/15 text-endurance"
+                  )}
+                >
+                  {Math.round(data.tailoring.confidence * 100)}% confidence
+                </span>
+                <ChevronDown
+                  className="h-4 w-4 text-muted transition-transform group-open:rotate-180"
+                  aria-hidden
+                />
+              </span>
+            </summary>
+
+            <p className="mt-3 text-sm leading-relaxed text-foreground/85">{data.tailoring.explanation}</p>
+
+            {data.tailoring.unlocks.length > 0 && (
+              <div className="mt-4 rounded-2xl border border-accent/20 bg-accent/[0.06] p-4">
+                <p className="text-xs font-semibold uppercase tracking-widest text-accent">
+                  What your next sessions unlock
+                </p>
+                <ul className="mt-2.5 space-y-3">
+                  {data.tailoring.unlocks.slice(0, 3).map((u) => (
+                    <li key={u.action}>
+                      <p className="text-sm font-medium text-foreground/90">{u.action}</p>
+                      <p className="mt-0.5 text-sm leading-relaxed text-muted">{u.unlocks}</p>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </details>
+        </Card>
       )}
 
       <p className="px-1 text-xs text-muted/60">
