@@ -364,7 +364,7 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
               mode === "gym"
                 ? "bg-gym-accent text-gym-bg shadow-gym-accent/30"
                 : mode === "cardio"
-                  ? "bg-cardio-accent text-white shadow-cardio-accent/30"
+                  ? "bg-cardio-accent text-cardio-text shadow-cardio-accent/30"
                   : "bg-accent text-accent-foreground shadow-accent/30"
             )}
           >

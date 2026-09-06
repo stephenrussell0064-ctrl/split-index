@@ -96,7 +96,7 @@ export default async function CardioPage() {
                 </Button>
               </Link>
               <Link href="/cardio/gps-run">
-                <Button className="bg-cardio-accent hover:bg-cardio-accent/90 text-white border-0">
+                <Button className="bg-cardio-accent hover:bg-cardio-accent/90 text-cardio-text border-0">
                   <MapPin className="h-4 w-4" />
                   Start GPS tracking
                 </Button>

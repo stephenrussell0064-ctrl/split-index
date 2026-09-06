@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils/cn";
+import { useDialog } from "@/components/ui/use-dialog";
 
 export function DeleteActivityModal({
   activityTitle,
@@ -22,6 +23,11 @@ export function DeleteActivityModal({
   const router = useRouter();
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Escape to close, focus trapped inside, focus handed back on close — see
+  // useDialog. A confirmation nobody can dismiss from the keyboard is a bad
+  // confirmation to put in front of a destructive action.
+  const { dialogRef, dialogProps } = useDialog(onClose, { label: "Delete this activity?" });
 
   if (!open) return null;
 
@@ -51,6 +57,8 @@ export function DeleteActivityModal({
         onClick={onClose}
       />
       <div
+        ref={dialogRef}
+        {...dialogProps}
         className={cn(
           "relative w-full max-w-md rounded-2xl border border-white/10 bg-[#12121a] p-6 shadow-xl",
           "animate-in fade-in slide-in-from-bottom-4 duration-200"

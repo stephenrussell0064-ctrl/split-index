@@ -188,7 +188,7 @@ export function CardioZonePanel({
           <Link href="/cardio/log">
             <Button
               size="sm"
-              className="bg-cardio-accent hover:bg-cardio-accent/90 text-white border-0"
+              className="bg-cardio-accent hover:bg-cardio-accent/90 text-cardio-text border-0"
             >
               <PlusCircle className="h-4 w-4" />
               Log cardio session

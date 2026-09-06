@@ -55,6 +55,26 @@
   --cardio-rim: rgba(59, 166, 255, 0.08);
   --cardio-text: #0c1a24;
   --cardio-muted: #5b7284;
+  /*
+    The Engine's blue, dark enough to READ on the Engine's near-white ground.
+
+    #3ba6ff is the brand colour and it stays the brand colour — as a FILL, where
+    it is fine. As text on --cardio-bg it measures 2.50:1, which fails WCAG AA
+    for body text (4.5) and fails the 3:1 large-text floor as well, so the 6xl
+    Endurance Blend number on /cardio was below the bar even at 60px. This is
+    the same hue taken down to 5.30:1, used wherever the accent is ink rather
+    than paint. Computed against #f7fbff, not eyeballed.
+  */
+  --cardio-accent-text: #0b6bb8;
+  /*
+    Semantic colours, re-darkened for the light ground. The dark-theme values
+    are tuned for #060606 and are simply the wrong paint on white: danger 3.62,
+    warning 1.84, success 2.19. These are the same three meanings at 5.6, 5.7
+    and 5.1.
+  */
+  --cardio-danger: #c2261a;
+  --cardio-warning: #8a5a08;
+  --cardio-success: #1f7a4d;
 }
 
 @theme inline {
@@ -77,6 +97,7 @@
   --color-gym-border: var(--gym-border);
   --color-cardio-accent: var(--cardio-accent);
   --color-cardio-accent-soft: var(--cardio-accent-soft);
+  --color-cardio-accent-text: var(--cardio-accent-text);
   --color-cardio-bg: var(--cardio-bg);
   --color-cardio-bg-elevated: var(--cardio-bg-elevated);
   --color-cardio-text: var(--cardio-text);
@@ -281,12 +302,44 @@ body {
   /* Remap dark-theme tokens so shared components stay legible on white */
   --foreground: var(--cardio-text);
   --muted: var(--cardio-muted);
-  --muted-foreground: #7d94a5;
+  /* Was #7d94a5 — 3.04:1, below AA for the small print it is used on. */
+  --muted-foreground: var(--cardio-muted);
   --accent: var(--cardio-accent);
-  --accent-foreground: #ffffff;
+  /*
+    Dark text on the brand blue, not white.
+
+    White on #3ba6ff is 2.60:1 — every default Button in cardio mode, the
+    "Start GPS tracking" CTA, the three GPS buttons in the log launcher and the
+    raised + in the bottom nav. Swapping the LABEL rather than the fill takes it
+    to 6.80:1 and keeps the brand colour exactly where it was.
+  */
+  --accent-foreground: var(--cardio-text);
   --accent-glow: rgba(14, 165, 233, 0.2);
   --glass: rgba(14, 165, 233, 0.04);
   --glass-border: rgba(12, 26, 36, 0.12);
+  --danger: var(--cardio-danger);
+  --warning: var(--cardio-warning);
+  --success: var(--cardio-success);
+}
+
+/*
+  Accent as INK, on the Engine only.
+
+  The accent has two jobs and one token, and on a light ground they need
+  different values: as a fill #3ba6ff is correct and passes with dark text on
+  it; as text it is 2.50:1 and unreadable. Rather than darken the brand colour
+  everywhere, these two rules redirect only the TEXT uses — the same targeted
+  approach the [class*="text-white"] rule below already takes, and the reason
+  both live here rather than in every component.
+
+  The attribute selector deliberately catches the modifier forms too
+  (text-cardio-accent/80, text-cardio-accent-soft), because those measure 2.08
+  and 2.03 and are the captions under the numbers.
+*/
+[data-mode="cardio"] .mode-content .text-accent,
+[data-mode="cardio"] .mode-content [class*="text-cardio-accent"],
+.bg-cardio-zone [class*="text-cardio-accent"] {
+  color: var(--cardio-accent-text);
 }
 
 /* White-alpha utilities are invisible on the light cardio shell — remap them */

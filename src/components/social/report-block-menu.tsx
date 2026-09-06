@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Ban, Flag, MoreVertical, ShieldCheck, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils/cn";
+import { useDialog } from "@/components/ui/use-dialog";
 
 /**
  * Report and Block, on any surface that shows one athlete to another.
@@ -119,6 +120,8 @@ export function ReportBlockMenu({
     }
   }
 
+  const { dialogRef, dialogProps } = useDialog(close);
+
   return (
     <>
       {variant === "icon" ? (
@@ -148,12 +151,14 @@ export function ReportBlockMenu({
       {open && (
         <div
           className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-0 sm:items-center sm:p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-label={`Report or block ${displayName}`}
           onClick={close}
         >
+          {/* The dialog semantics live on the panel, not the backdrop — the
+              backdrop is a click target, not the thing being announced. */}
           <div
+            ref={dialogRef}
+            {...dialogProps}
+            aria-label={`Report or block ${displayName}`}
             className="mode-surface-elevated w-full max-w-md rounded-t-3xl border border-white/10 p-5 sm:rounded-3xl"
             onClick={(e) => e.stopPropagation()}
           >
