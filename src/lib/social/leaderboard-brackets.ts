@@ -71,11 +71,30 @@ export interface BracketResolution {
   showInvitePrompt: boolean;
 }
 
+/**
+ * A peer, as the leaderboard is allowed to see them.
+ *
+ * This used to carry `age`, `weightKg` and `gender` — the raw values — because
+ * banding happened here in TypeScript. That meant every athlete's exact
+ * bodyweight had to cross the wire to answer "how many peers are near me",
+ * and the policy that made it possible let anyone holding the anon key read
+ * the same columns directly (see migration 056).
+ *
+ * Peers now arrive pre-banded from the leaderboard_profiles view, so the
+ * numbers stay in the database. The labels here are the view's, and they must
+ * match AGE_BANDS and weightBandFor exactly — leaderboard-brackets.test.ts
+ * holds the SQL and this file to each other.
+ *
+ * Note this is only about OTHER people. The viewer's own age and bodyweight
+ * still reach resolveBracket() as numbers, read from their own profiles row,
+ * because knowing whether you sit in the upper or lower half of your own band
+ * is what decides which way the bracket widens.
+ */
 export interface BracketCandidate {
   userId: string;
-  age: number | null;
-  weightKg: number | null;
-  gender: string | null;
+  ageBand: string | null;
+  weightBand: string | null;
+  sex: string | null;
 }
 
 function sexLabel(sex: BracketSex): string {
@@ -154,14 +173,21 @@ function midWeight(band: WeightBand): number {
   return (band.min + band.max) / 2;
 }
 
-function matchesAgeBands(age: number | null, bands: AgeBand[]): boolean {
-  if (age == null || bands.length === 0) return bands.length === 0;
-  return bands.some((b) => age >= b.min && age <= b.max);
-}
-
-function matchesWeightBands(weightKg: number | null, bands: WeightBand[]): boolean {
-  if (weightKg == null || bands.length === 0) return bands.length === 0;
-  return bands.some((b) => weightKg >= b.min && weightKg < b.max);
+/**
+ * Band membership by label rather than by number.
+ *
+ * The comparison moved from `age >= b.min && age <= b.max` to a label match
+ * when peers stopped carrying raw values. It is the same predicate as long as
+ * the view's CASE expressions band identically to ageBandFor/weightBandFor,
+ * which is what leaderboard-brackets.test.ts exists to guarantee.
+ *
+ * The empty-bands case keeps its original meaning: no bands means no
+ * constraint, which is how the sex-only and global widen levels are expressed.
+ */
+function matchesBandLabel(label: string | null, bands: { label: string }[]): boolean {
+  if (bands.length === 0) return true;
+  if (label == null) return false;
+  return bands.some((b) => b.label === label);
 }
 
 export function matchesEffectiveBracket(
@@ -170,15 +196,13 @@ export function matchesEffectiveBracket(
 ): boolean {
   if (effective.widenLevel === "global") return true;
 
-  const sex = resolveBracketSex(candidate.gender);
+  const sex = resolveBracketSex(candidate.sex);
   if (effective.sex != null && sex !== effective.sex) return false;
 
   if (effective.widenLevel === "sex_only") return true;
 
-  if (!matchesAgeBands(candidate.age, effective.ageBands)) return false;
-  if (effective.weightBands.length > 0) {
-    if (!matchesWeightBands(candidate.weightKg, effective.weightBands)) return false;
-  }
+  if (!matchesBandLabel(candidate.ageBand, effective.ageBands)) return false;
+  if (!matchesBandLabel(candidate.weightBand, effective.weightBands)) return false;
   return true;
 }
 

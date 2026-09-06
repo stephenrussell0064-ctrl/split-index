@@ -32,7 +32,7 @@ async function joinProfiles(
   if (userIds.length === 0) return [];
 
   const { data: profiles } = await supabase
-    .from("profiles")
+    .from("public_profiles")
     .select("user_id, username, display_name, avatar_url, country")
     .in("user_id", userIds);
 
@@ -62,7 +62,7 @@ export async function fetchExerciseLeaderboard(
   exerciseName: string
 ): Promise<DimensionLeaderboardRow[]> {
   const { data } = await supabase
-    .from("strength_scores")
+    .from("public_strength_scores")
     .select("user_id, estimated_1rm_kg")
     .eq("exercise_name", exerciseName)
     .order("estimated_1rm_kg", { ascending: false })
@@ -83,7 +83,7 @@ export async function fetchMuscleGroupLeaderboard(
   muscleGroup: string
 ): Promise<DimensionLeaderboardRow[]> {
   const { data } = await supabase
-    .from("strength_scores")
+    .from("public_strength_scores")
     .select("user_id, strength_index")
     .eq("muscle_group", muscleGroup)
     .order("strength_index", { ascending: false })
@@ -104,7 +104,7 @@ export async function fetchActivityLeaderboard(
   sport: SportType
 ): Promise<DimensionLeaderboardRow[]> {
   const { data } = await supabase
-    .from("workout_scores")
+    .from("public_workout_scores")
     .select("user_id, sport_index")
     .eq("sport", sport)
     .order("sport_index", { ascending: false })

@@ -18,13 +18,24 @@ function assert(label: string, ok: boolean, detail?: string) {
   if (!ok) failed += 1;
 }
 
+/**
+ * Fixtures still read as an age and a bodyweight, because that is how a person
+ * thinks about a bracket. Banding them here is what the leaderboard_profiles
+ * view does in SQL (migration 056) — peers reach resolveBracket already banded,
+ * so this mirrors the real call path rather than the old one.
+ */
 function makeCandidate(
   id: string,
   age: number,
   weightKg: number,
-  gender: "male" | "female"
+  sex: "male" | "female"
 ): BracketCandidate {
-  return { userId: id, age, weightKg, gender };
+  return {
+    userId: id,
+    ageBand: ageBandFor(age).label,
+    weightBand: weightBandFor(weightKg).label,
+    sex,
+  };
 }
 
 console.log("leaderboard-brackets — fixtures\n");

@@ -2,8 +2,6 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { LeaderboardPeriod } from "@/types";
 import {
   getPeriodStart,
-  matchesAgeBracket,
-  matchesWeightClass,
   type IndexMetric,
   type LeaderboardScope,
 } from "./constants";
@@ -19,22 +17,41 @@ import type {
   LeaderboardRow,
 } from "./types";
 
+/**
+ * A peer row, as leaderboard_profiles hands it over (migration 056).
+ *
+ * This used to be a slice of `profiles` carrying `age`, `weight_kg` and
+ * `gender`. Every athlete's exact bodyweight travelled to the browser so that
+ * bracket matching could happen in TypeScript, and the RLS policy that allowed
+ * it let anyone with the anon key read the same columns directly. The view
+ * bands those three in SQL instead, so the leaderboard gets the segmentation
+ * without the values.
+ */
 interface ProfileRow {
   user_id: string;
   username: string | null;
   display_name: string | null;
   avatar_url: string | null;
   country: string | null;
-  age: number | null;
-  weight_kg: number | null;
-  gender: string | null;
+  age_bracket: string | null;
+  weight_class: string | null;
+  age_band: string | null;
+  weight_band: string | null;
+  sex: string | null;
   current_split_index: number | null;
   current_endurance_index: number | null;
   current_strength_index: number | null;
 }
 
 const PROFILE_SELECT =
-  "user_id, username, display_name, avatar_url, country, age, weight_kg, gender, current_split_index, current_endurance_index, current_strength_index";
+  "user_id, username, display_name, avatar_url, country, age_bracket, weight_class, age_band, weight_band, sex, current_split_index, current_endurance_index, current_strength_index";
+
+/** The viewer's own numbers, read from their own profiles row — see resolveBracket. */
+interface ViewerBracketInput {
+  age: number | null;
+  weightKg: number | null;
+  gender: string | null;
+}
 
 function indexValue(profile: ProfileRow, metric: IndexMetric): number | null {
   if (metric === "endurance") return profile.current_endurance_index;
@@ -45,9 +62,9 @@ function indexValue(profile: ProfileRow, metric: IndexMetric): number | null {
 function toCandidate(p: ProfileRow): BracketCandidate {
   return {
     userId: p.user_id,
-    age: p.age,
-    weightKg: p.weight_kg != null ? Number(p.weight_kg) : null,
-    gender: p.gender,
+    ageBand: p.age_band,
+    weightBand: p.weight_band,
+    sex: p.sex,
   };
 }
 
@@ -60,11 +77,14 @@ function filterProfiles(
     if (filters.scope === "country" && filters.country) {
       if (p.country?.toUpperCase() !== filters.country.toUpperCase()) return false;
     }
+    // The scope filters compare bands rather than re-deriving them from an age
+    // and a bodyweight, because the view has already done that in SQL. Same
+    // boundaries — AGE_BRACKETS and WEIGHT_CLASSES — decided one layer down.
     if (filters.scope === "age" && filters.ageBracket) {
-      if (!matchesAgeBracket(p.age, filters.ageBracket)) return false;
+      if (p.age_bracket !== filters.ageBracket) return false;
     }
     if (filters.scope === "weight" && filters.weightClass) {
-      if (!matchesWeightClass(Number(p.weight_kg), filters.weightClass)) return false;
+      if (p.weight_class !== filters.weightClass) return false;
     }
     return true;
   });
@@ -80,7 +100,10 @@ async function computeTrends(
 
   const cutoff = new Date(Date.now() - 7 * 86400000).toISOString();
   const { data: history } = await supabase
-    .from("split_index_history")
+    // public_index_history, not split_index_history: the same four index
+    // columns without fatigue_score and recovery_score, which are special
+    // category data and which nothing here has ever read.
+    .from("public_index_history")
     .select("user_id, split_index, endurance_index, strength_index, recorded_at")
     .in("user_id", userIds)
     .gte("recorded_at", cutoff)
@@ -164,34 +187,29 @@ async function loadScoredProfiles(
         : "current_split_index";
 
   const { data } = await supabase
-    .from("profiles")
+    .from("leaderboard_profiles")
     .select(PROFILE_SELECT)
     .not(profileMetricField, "is", null)
-    .not("username", "is", null)
     .order(profileMetricField, { ascending: false })
     .limit(500);
 
+  // The `.not("username", "is", null)` filter that used to sit here is now the
+  // view's WHERE clause, so it cannot be forgotten by a future caller.
   return (data ?? []) as ProfileRow[];
 }
 
 function buildBracketSummary(
-  viewer: ProfileRow | null,
+  viewerUserId: string,
+  viewerInput: ViewerBracketInput | null,
   allProfiles: ProfileRow[],
   metric: IndexMetric
 ): BracketSummary | null {
-  if (!viewer) return null;
+  if (!viewerInput) return null;
 
   const candidates = allProfiles.map(toCandidate);
-  const resolution = resolveBracket(
-    {
-      age: viewer.age,
-      weightKg: viewer.weight_kg != null ? Number(viewer.weight_kg) : null,
-      gender: viewer.gender,
-    },
-    candidates
-  );
+  const resolution = resolveBracket(viewerInput, candidates);
 
-  const global = rankAmong(allProfiles, viewer.user_id, metric);
+  const global = rankAmong(allProfiles, viewerUserId, metric);
 
   if (!resolution) {
     return {
@@ -210,7 +228,7 @@ function buildBracketSummary(
   const bracketPeers = allProfiles.filter((p) =>
     matchesEffectiveBracket(toCandidate(p), resolution.effective)
   );
-  const bracket = rankAmong(bracketPeers, viewer.user_id, metric);
+  const bracket = rankAmong(bracketPeers, viewerUserId, metric);
 
   return {
     exactLabel: resolution.exact.label,
@@ -234,38 +252,40 @@ export async function fetchLeaderboardWithBracket(
   viewerUserId: string
 ): Promise<LeaderboardResponse> {
   const allProfiles = await loadScoredProfiles(supabase, filters.metric);
-  const viewer =
-    allProfiles.find((p) => p.user_id === viewerUserId) ??
-    (
-      await supabase
-        .from("profiles")
-        .select(PROFILE_SELECT)
-        .eq("user_id", viewerUserId)
-        .maybeSingle()
-    ).data;
+
+  // The viewer's own age and bodyweight, read from their own profiles row
+  // rather than from the banded view. Deciding which way to widen a bracket
+  // depends on whether they sit in the upper or lower half of their own band,
+  // which a band label cannot answer — and an athlete reading their own
+  // bodyweight is exactly what the owner policy is for. Nobody else's numbers
+  // are fetched here.
+  const { data: viewerRow } = await supabase
+    .from("profiles")
+    .select("age, weight_kg, gender")
+    .eq("user_id", viewerUserId)
+    .maybeSingle();
+
+  const viewerInput: ViewerBracketInput | null = viewerRow
+    ? {
+        age: viewerRow.age,
+        weightKg: viewerRow.weight_kg != null ? Number(viewerRow.weight_kg) : null,
+        gender: viewerRow.gender,
+      }
+    : null;
 
   const bracket = buildBracketSummary(
-    viewer as ProfileRow | null,
+    viewerUserId,
+    viewerInput,
     allProfiles,
     filters.metric
   );
 
   if (filters.scope === "bracket") {
-    if (!viewer || !bracket || bracket.unavailableReason) {
+    if (!viewerInput || !bracket || bracket.unavailableReason) {
       return { rows: [], bracket };
     }
 
-    const resolution = resolveBracket(
-      {
-        age: (viewer as ProfileRow).age,
-        weightKg:
-          (viewer as ProfileRow).weight_kg != null
-            ? Number((viewer as ProfileRow).weight_kg)
-            : null,
-        gender: (viewer as ProfileRow).gender,
-      },
-      allProfiles.map(toCandidate)
-    );
+    const resolution = resolveBracket(viewerInput, allProfiles.map(toCandidate));
 
     if (!resolution) {
       return { rows: [], bracket };
@@ -283,7 +303,7 @@ export async function fetchLeaderboardWithBracket(
   const periodStart = getPeriodStart(filters.period);
 
   const { data: entries } = await supabase
-    .from("leaderboard_entries")
+    .from("public_leaderboard_entries")
     .select(
       "user_id, split_index, endurance_index, strength_index, rank, previous_rank"
     )
@@ -295,7 +315,7 @@ export async function fetchLeaderboardWithBracket(
   if (entries && entries.length > 0 && filters.metric === "split") {
     const userIds = entries.map((e) => e.user_id);
     const { data: profiles } = await supabase
-      .from("profiles")
+      .from("leaderboard_profiles")
       .select(PROFILE_SELECT)
       .in("user_id", userIds);
 
@@ -361,7 +381,7 @@ export async function fetchLeaderboard(
 
   const periodStart = getPeriodStart(filters.period);
   const { data: entries } = await supabase
-    .from("leaderboard_entries")
+    .from("public_leaderboard_entries")
     .select(
       "user_id, split_index, endurance_index, strength_index, rank, previous_rank"
     )
@@ -373,7 +393,7 @@ export async function fetchLeaderboard(
   if (entries && entries.length > 0) {
     const userIds = entries.map((e) => e.user_id);
     const { data: profiles } = await supabase
-      .from("profiles")
+      .from("leaderboard_profiles")
       .select(PROFILE_SELECT)
       .in("user_id", userIds);
 
