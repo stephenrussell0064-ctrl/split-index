@@ -89,3 +89,45 @@ const SHORT_RACE_LABELS: Record<string, string> = {
 export function formatShortPredictionLabel(distanceMeters: string): string {
   return SHORT_RACE_LABELS[distanceMeters] ?? `${distanceMeters}m`;
 }
+
+/**
+ * Reads the age entry the strength engine writes into `appliedFactors`
+ * (`age:38 ×1.020 standard (beta)`) so it can be shown to the athlete.
+ *
+ * The engine applies the factor as `effectiveAnchor /= factor` — it moves the
+ * *standard* being measured against, never the athlete's own lift or ratio.
+ * That is the only honest way to describe it, and it is why this returns an
+ * eased percentage rather than anything resembling an adjusted lift. A factor
+ * above 1 means an easier anchor, which is true at both ends of the curve
+ * (Foster junior coefficients below 23, Masters decline above 35).
+ *
+ * Returns null when there is no age entry, which covers three real cases and
+ * needs no distinction between them: a free-tier result (appliedFactors is
+ * premium-gated and absent entirely), an athlete inside the flat 23–35 band
+ * (the engine only records an entry when the factor is not exactly 1), and a
+ * profile with no date of birth.
+ *
+ * The factor is uncalibrated and flagged beta upstream — callers must present
+ * it as a moved standard, never as an accuracy claim.
+ */
+export function describeAgeStandard(
+  appliedFactors: string[] | undefined | null
+): { age: number; factor: number; easedPct: number } | null {
+  const entry = appliedFactors?.find((f) => f.startsWith("age:"));
+  if (!entry) return null;
+
+  // Both signs, deliberately: split-strength-engine.ts:1605 writes U+00D7
+  // (`×`) while strength/isometric-carry.ts:387,485 writes an ASCII `x`.
+  // Matching only the former renders nothing for every hold and carry.
+  const parsed = /^age:(\d+(?:\.\d+)?)\s*[×x](\d+(?:\.\d+)?)/.exec(entry);
+  if (!parsed) return null;
+
+  const age = Number(parsed[1]);
+  const factor = Number(parsed[2]);
+  if (!Number.isFinite(age) || !Number.isFinite(factor) || factor <= 0) return null;
+
+  // The anchor is divided by the factor, so the standard falls by 1 − 1/factor.
+  // Dividing (rather than multiplying by factor − 1) matters at the junior end,
+  // where 1.23 is an 18.7% easier standard and not a 23% one.
+  return { age, factor, easedPct: (1 - 1 / factor) * 100 };
+}

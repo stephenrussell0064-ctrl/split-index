@@ -6,6 +6,7 @@ import { isBodyweightOnlyExercise } from "@/lib/scoring/weight-entry";
 import { cn } from "@/lib/utils/cn";
 import { formatIndex, formatWeight } from "@/lib/utils/format";
 import {
+  describeAgeStandard,
   formatPredictionLabel,
   formatRiegelPrediction,
   type GatedCardioResult,
@@ -201,6 +202,11 @@ function StrengthRow({ result, liftName }: { result: ScoreStrengthResult; liftNa
   // blended figure — show it as both rather than a blank or a zero.
   const currentOneRM = result.currentOneRM ?? result.oneRM;
   const allTimeOneRM = result.allTimeOneRM ?? result.oneRM;
+  // The engine has always computed this and always carried it here; nothing
+  // rendered it, so an athlete whose score was age-adjusted had no way to see
+  // that it was. Null for free results (premium-gated) and for the flat 23–35
+  // band, so this line simply does not appear rather than reading "×1.000".
+  const ageStandard = describeAgeStandard(result.appliedFactors);
   return (
     <div className="rounded-lg border border-gym-border/20 bg-gym-bg/40 p-3">
       <div className="flex items-baseline justify-between gap-2">
@@ -223,6 +229,12 @@ function StrengthRow({ result, liftName }: { result: ScoreStrengthResult; liftNa
         {result.tier}
         {isBeta ? " (beta)" : ""} · {result.bodyweightRatio}× bodyweight
       </p>
+      {ageStandard && (
+        <p className="mt-1 text-xs text-gym-muted tabular-nums">
+          Age {ageStandard.age} · standard {ageStandard.easedPct.toFixed(1)}% easier · your lift is
+          not adjusted (beta)
+        </p>
+      )}
       {isBodyweightOnlyExercise(liftName) && (
         <ScoringExplainerNote className="text-gym-muted">
           Both 1RM figures here are the added weight a weighted {liftName.toLowerCase()} would need
