@@ -537,7 +537,25 @@ export function HybridPlanScreen() {
         </Card>
       )}
 
-      <div className="flex gap-1.5 rounded-2xl bg-white/[0.03] p-1.5">
+      {/*
+        A GRID, NOT A FLEX ROW. Flex items default to `min-width: auto`, so
+        these four never shrink below their own text: "Plan Goals Diagnostic
+        Event day" is about 320px of content plus 24px of gaps and padding.
+        At 390px that fits by roughly 13px; at 320px it overflowed the
+        container and gave the whole PAGE a horizontal scrollbar. Four equal
+        columns that can actually shrink cannot do that at any width.
+
+        Two rows below 360px, four across above it. Measured: a quarter of a
+        320px screen leaves a 48px content box, and "Diagnostic" is 86px at
+        text-sm — one word, so it cannot wrap, and truncating it to "Diagnos…"
+        makes a navigation label that no longer names anything. Two columns
+        give each tab 137px there, which fits with room to spare. Every phone
+        from an iPhone SE 2 upward still gets the single row.
+
+        `py-3` rather than `py-2.5` takes the tap target from 40px to 44,
+        which is the minimum a finger should be asked to hit.
+      */}
+      <div className="grid grid-cols-2 gap-1.5 rounded-2xl bg-white/[0.03] p-1.5 min-[360px]:grid-cols-4">
         {TABS.map((t) => (
           <button
             key={t.id}
@@ -545,7 +563,7 @@ export function HybridPlanScreen() {
             onClick={() => setTab(t.id)}
             aria-current={tab === t.id ? "page" : undefined}
             className={cn(
-              "flex-1 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
+              "min-w-0 truncate rounded-xl px-2 py-3 text-sm font-medium transition-colors",
               tab === t.id ? "bg-white/[0.08] text-foreground" : "text-muted hover:text-foreground"
             )}
           >

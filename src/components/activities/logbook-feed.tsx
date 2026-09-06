@@ -288,9 +288,17 @@ export function LogbookFeed({
 
       {mode === "full" && (
         <div className={cn("border-b px-4 py-3 sm:px-5", theme.border)}>
-          {/* Horizontally scrollable rather than wrapping: on a narrow phone a
-              wrapped chip row pushes the first session below the fold. */}
-          <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
+          {/*
+            The old note here said a wrapped chip row pushes the first session
+            below the fold, so the row scrolled sideways instead. It answered a
+            real problem with the one thing the app has a standing rule
+            against: a filter the athlete cannot see is a filter that does not
+            exist, and nothing on screen advertised that the strip moved.
+
+            A fixed 3-column grid answers the same problem honestly — a known
+            two rows rather than an unbounded wrap, and every zone visible.
+          */}
+          <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap">
             {zoneChips.map((chip) => (
               <button
                 key={chip.id}
@@ -299,7 +307,7 @@ export function LogbookFeed({
                 onClick={() => applyFilters({ zone: chip.id })}
                 aria-pressed={zone === chip.id}
                 className={cn(
-                  "logbook-filter-chip shrink-0 whitespace-nowrap disabled:opacity-60",
+                  "logbook-filter-chip min-w-0 truncate disabled:opacity-60",
                   zone === chip.id && zoneChipActiveClass(chip.id)
                 )}
               >

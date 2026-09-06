@@ -466,7 +466,14 @@ export function GymWorkoutTimer({
         </button>
       </div>
 
-      <div className="mt-1.5 flex h-8 items-center gap-1.5 overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      {/*
+        Wraps rather than scrolls. This is a live readout mid-set, not
+        navigation — an athlete resting between heavy squats is not going to
+        swipe a strip with a hidden scrollbar to find out how long is left, and
+        `h-8` clipped the second row when it did wrap. Two rows on a narrow
+        phone is fine; a rest timer you cannot read is not.
+      */}
+      <div className="mt-1.5 flex min-h-8 flex-wrap items-center gap-1.5">
         {restActive ? (
           <>
             <TimerIcon

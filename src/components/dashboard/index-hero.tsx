@@ -109,11 +109,17 @@ export function IndexHero({
             <p className="micro-label text-muted">{headlineLabel}</p>
             {showScore ? (
               <>
-                <div className="flex items-baseline gap-2">
+                {/*
+                  Wraps rather than clips. At 320px the score and the tier pill
+                  together wanted 184px in 164, and the Card's `overflow-hidden`
+                  cut "ADVANCED" off mid-word — the athlete's rank, missing, on
+                  the first thing they see. It drops to its own line instead.
+                */}
+                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                   <p className="index-display text-5xl font-bold leading-none tracking-tight sm:text-6xl">
                     <CountUp value={headlineValue} format={formatIndex} />
                   </p>
-                  <span className="rounded-full bg-white/[0.07] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-foreground/80">
+                  <span className="min-w-0 rounded-full bg-white/[0.07] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-foreground/80">
                     {tierForScore(headlineValue)}
                   </span>
                 </div>
