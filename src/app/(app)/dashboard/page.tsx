@@ -37,13 +37,7 @@ import { getPredictedBenchmark } from "@/lib/scoring/predicted-benchmark";
 import { ScoreDisclaimer } from "@/components/legal/score-disclaimer";
 import { calculateTrend } from "@/lib/scoring/service";
 import { localDateKeyInTz, resolveTimezone } from "@/lib/utils/timezone";
-import {
-  buildActivityScores,
-  deriveAthleteProfile,
-  labWeightFromProfile,
-  resolveScoringSex,
-} from "@/lib/scoring/adapters";
-import { computeIndexes } from "@/lib/scoring/index-engine";
+import { resolveScoringSex } from "@/lib/scoring/adapters";
 import type { IndexResult } from "@/lib/scoring/index-engine";
 import { calculateOverallDotsGl } from "@/lib/scoring/strength/overall-dots-gl";
 import { fetchAllTimeLiftRows, fetchBestLoggedSbdSets } from "@/lib/activities/all-time-one-rm";
@@ -162,12 +156,23 @@ export default async function DashboardPage() {
     { data: scores },
     { data: aiFeedback },
     { data: goals },
-    { data: indexActivities },
   ] = await Promise.all([
+    /*
+      The athlete's current index — ordered exactly as
+      `sync_profile_current_index()` orders it (migration 059), because this
+      page and `profiles.current_split_index` must never pick different rows.
+
+      `is_provisional` first: a scored session outranks the onboarding estimate
+      whatever their dates, and the estimate is chosen only when there is no
+      scored session at all. Without the matching term here, an athlete holding
+      both would see one number on this page and another everywhere the profile
+      cache is read.
+    */
     supabase
       .from("split_index_history")
       .select("*")
       .eq("user_id", user.id)
+      .order("is_provisional", { ascending: true })
       .order("recorded_at", { ascending: false })
       .limit(1)
       .single(),
@@ -235,13 +240,6 @@ export default async function DashboardPage() {
       .eq("user_id", user.id)
       .order("deadline", { ascending: true, nullsFirst: false })
       .limit(10),
-    supabase
-      .from("activities")
-      .select("sport, started_at, workout_scores(sport_index, score_breakdown)")
-      .eq("user_id", user.id)
-      .eq("is_draft", false)
-      .order("started_at", { ascending: false })
-      .limit(20),
   ]);
 
   // Best-ever SBD total for the home page's lift strip (Slice 7)
@@ -514,33 +512,32 @@ export default async function DashboardPage() {
     (scores ?? []).map((s) => [s.activity_id as string, s.sport_index as number])
   );
 
-  const athleteProfile = deriveAthleteProfile((profile.preferred_sports ?? []) as SportType[]);
-  const weightLab = labWeightFromProfile(
-    typeof profile.split_endurance_weight === "number"
-      ? profile.split_endurance_weight
-      : 0.5
-  );
 
-  const indexActivityRows = (indexActivities ?? [])
-    .flatMap((row) => {
-      const ws = Array.isArray(row.workout_scores)
-        ? row.workout_scores[0]
-        : row.workout_scores;
-      if (!ws?.sport_index) return [];
-      return [
-        {
-          sport: row.sport as string,
-          sport_index: ws.sport_index as number,
-          started_at: row.started_at as string,
-          score_breakdown: (ws.score_breakdown ?? null) as Record<string, unknown> | null,
-        },
-      ];
-    });
 
-  const liveIndexes: IndexResult | null =
-    indexActivityRows.length >= 1
-      ? computeIndexes(buildActivityScores(indexActivityRows), athleteProfile, weightLab)
-      : null;
+  /*
+    THE STORED INDEX, NOT A LIVE RECOMPUTE — because five other surfaces read
+    the stored one and this page is not entitled to a different answer.
+
+    This used to recompute `computeIndexes` over the athlete's 20 most recent
+    activities on every dashboard load. The stored value was computed over the
+    20 that existed WHEN THAT SESSION WAS SCORED; this recomputed over the 20
+    that exist NOW, and the two diverge the moment the activity set moves —
+    which the edit path guarantees, because it rewrites only the EDITED
+    session's history row and never the newest one.
+
+    Concretely: log a run on Friday, everything reads 70.0. On Saturday, open
+    last Tuesday's gym session and fix a typo in the weight. Tuesday's history
+    row is rewritten; the newest row is still Friday's, so the profile cache and
+    every surface reading it stay at 70.0 — while this page's live window now
+    contains the corrected gym score and renders 71.5. Same athlete, same
+    second: 71.5 on the home page and 70.0 on the Lab, the Engine, Analytics,
+    their own public profile, the leaderboard and their friends' lists.
+
+    The stored row is the one the 054/059 trigger keeps in agreement with the
+    table, and it is what the rest of the app quotes. Reading it here makes six
+    surfaces agree, and removes a 20-activity query plus a full index
+    computation from every load of the most-visited page in the app.
+  */
 
   // Headline is always the combined Split Index (user feedback: "Why is the
   // main score at the top of the dashboard not the combined score between
@@ -549,10 +546,10 @@ export default async function DashboardPage() {
   // already stores the combined value computed at log time (index-engine.ts),
   // so this fallback (used when nothing was freshly scored this request)
   // just reads it straight.
-  const headlineLabel: IndexResult["headlineLabel"] = liveIndexes?.headlineLabel ?? "Split Index";
-  const headlineValue = liveIndexes?.headline ?? current.split_index;
-  const displayEnduranceIndex = liveIndexes?.engineIndex ?? current.endurance_index;
-  const displayStrengthIndex = liveIndexes?.labIndex ?? current.strength_index;
+  const headlineLabel: IndexResult["headlineLabel"] = "Split Index";
+  const headlineValue = current.split_index;
+  const displayEnduranceIndex = current.endurance_index;
+  const displayStrengthIndex = current.strength_index;
   /*
     RANK THE NUMBER THE PAGE ACTUALLY SHOWS.
 

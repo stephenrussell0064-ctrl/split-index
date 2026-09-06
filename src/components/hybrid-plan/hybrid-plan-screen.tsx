@@ -58,6 +58,8 @@ interface PlanResponse {
     placements: {
       day: string;
       slot: string;
+      /** The stored `hpe_sessions` id, so the feedback control has something to post against. Null before the plan is persisted. */
+      sessionId?: string | null;
       session: {
         kind: string;
         domain: "endurance" | "strength";
@@ -156,6 +158,7 @@ function toPlanWeeks(raw: NonNullable<PlanResponse["weeks"]>): PlanWeekView[] {
     stressCapped: w.stressCapped,
     notes: w.notes,
     sessions: w.placements.map((p) => ({
+      sessionId: p.sessionId ?? null,
       kind: p.session.kind,
       domain: p.session.domain,
       day: p.day,

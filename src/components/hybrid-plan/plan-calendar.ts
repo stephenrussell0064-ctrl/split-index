@@ -27,6 +27,16 @@ import type { FindingId } from "@/lib/scoring/hpe";
  */
 
 export interface PlanSessionView {
+  /**
+   * The stored `hpe_sessions` id, when the plan has been persisted.
+   *
+   * The generated plan has no ids of its own — they exist only on the rows
+   * `savePlan` writes — so the API matches them back on (week, day, slot, kind)
+   * and sends them with the plan. Without it the feedback control has nothing
+   * to post against, which is the state the whole loop was in: a table with two
+   * readers and no writers.
+   */
+  sessionId?: string | null;
   kind: string;
   /** What the athlete calls it — "Push", "Legs". Falls back to the engine's kind. */
   label?: string;

@@ -1,5 +1,6 @@
 "use client";
 
+import { SessionFeedbackControl } from "./session-feedback-control";
 import { useState } from "react";
 import { format, isToday, isTomorrow, isYesterday } from "date-fns";
 import { cn } from "@/lib/utils/cn";
@@ -47,11 +48,14 @@ function SessionBlock({
   session,
   findingsById,
   defaultOpen,
+  offsetDays,
 }: {
   session: PlanSessionView;
   findingsById: Map<string, Finding>;
   /** The one session of the day opens its reasoning by default; a second one does not, or the card becomes a wall. */
   defaultOpen: boolean;
+  /** Days from today — negative in the past. Feedback is only offered once the day has arrived. */
+  offsetDays: number;
 }) {
   const [showWhy, setShowWhy] = useState(defaultOpen);
   const finding = findingsById.get(session.findingId);
@@ -160,6 +164,12 @@ function SessionBlock({
         </ul>
       )}
 
+      {/*
+        Only on a session whose day has arrived. Asking on Tuesday how Friday's
+        run went is noise, and a control that is mostly noise stops being read.
+      */}
+      {offsetDays <= 0 && <SessionFeedbackControl sessionId={session.sessionId ?? null} />}
+
       <button
         type="button"
         onClick={() => setShowWhy((v) => !v)}
@@ -249,6 +259,7 @@ export function DayDetail({
               session={session}
               findingsById={findingsById}
               defaultOpen={day.sessions.length === 1}
+              offsetDays={day.offsetDays}
             />
           ))
         )}

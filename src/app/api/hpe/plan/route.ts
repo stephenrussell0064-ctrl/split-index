@@ -8,7 +8,7 @@ import { estimatedMaxHr } from "@/lib/scoring/hpe/intake";
 /** The intake spec's documented default, flagged as assumed rather than silently applied. */
 const ASSUMED_RESTING_HR = 60;
 import { loadLatestStoredPlan, savePlan, supersedePlans } from "@/lib/scoring/hpe/persistence";
-import { selectAttempts, racePacing } from "@/lib/scoring/hpe/progression";
+import { selectAttempts, racePacing, type SessionFeedback } from "@/lib/scoring/hpe/progression";
 import { validateIntake } from "@/lib/scoring/hpe/intake";
 import { parseIntakeRow, resolveIntakeInputs } from "@/lib/scoring/hpe/intake-record";
 import { loadPrefilledIntake } from "@/lib/scoring/hpe/load-intake";
@@ -276,7 +276,30 @@ export async function GET(request: Request) {
     return ingestModalityFitness((rows ?? []) as unknown as ActivityRow[], chosen, MODALITY_HISTORY_WEEKS);
   })();
 
-  const plan = generatePlan({ state, goal, constraints, profile, overrideEventOrder, modalityFitness });
+  /*
+    HOW THE LAST BLOCK ACTUALLY WENT — the input `autoregulate` (F16) has been
+    waiting for since migration 040.
+
+    `hpe_session_feedback` had two readers and no writers, so this argument was
+    never passed, `autoregulate` returned a multiplier of 1 every time, and the
+    plan repeated the same week at an athlete who could not complete it. The
+    engine's entire adaptive half was built and unreachable.
+
+    Keyed by the WEEK the feedback's session belonged to, because that is what
+    `generatePlan` indexes it by: week N's plan is adjusted by what happened in
+    the weeks before it.
+  */
+  const feedbackByWeek = await loadFeedbackByWeek(supabase, user.id);
+
+  const plan = generatePlan({
+    state,
+    goal,
+    constraints,
+    profile,
+    overrideEventOrder,
+    modalityFitness,
+    feedbackByWeek,
+  });
 
   // The screen no longer refuses, so there is no un-generated plan to record.
   // What is worth recording is that it CONSTRAINED one — the fleet view reads
@@ -346,8 +369,36 @@ export async function GET(request: Request) {
       ).data?.generated_at ?? null)
     : null;
 
+  /*
+    The stored id for each prescribed session, so the athlete can tell the plan
+    how it went.
+
+    The generated `PlannedSession` carries no id — ids exist only on the
+    `hpe_sessions` rows that `savePlan` writes. Without handing them back, the
+    plan screen has nothing to post feedback against, and the feedback loop
+    stays exactly as dark as it was when the table had no writers at all.
+
+    Matched on (week, day, slot, kind), which is the tuple `savePlan` writes and
+    the scheduler's own natural key for a session within a block.
+  */
+  const sessionIds = persisted?.planId
+    ? await loadSessionIds(supabase, persisted.planId)
+    : {};
+
+  const weeksWithIds = plan.weeks.map((week) => ({
+    ...week,
+    placements: week.placements.map((placement) => ({
+      ...placement,
+      sessionId:
+        sessionIds[
+          `${week.week}|${placement.day ?? ""}|${placement.slot ?? ""}|${placement.session.kind}`
+        ] ?? null,
+    })),
+  }));
+
   return NextResponse.json({
     ...plan,
+    weeks: weeksWithIds,
     assumptions,
     eventDate,
     persisted,
@@ -358,4 +409,70 @@ export async function GET(request: Request) {
     attempts: Object.keys(profile.oneRms).length > 0 ? selectAttempts(profile.oneRms, goal.sameDay) : [],
     pacing: goal.target5kS != null ? racePacing(goal.target5kS, goal.sameDay) : null,
   });
+}
+
+/**
+ * The athlete's logged session feedback, grouped by plan week.
+ *
+ * Reads through `hpe_sessions` so each row carries the `kind` and `week` the
+ * engine needs — feedback on its own says how a session went but not what kind
+ * of session it was, and `autoregulate` compares reported RPE against the
+ * expected RPE FOR THAT KIND.
+ *
+ * Scoped to the athlete's current, un-superseded plan. Feedback from a block
+ * they have since moved on from describes training that is no longer being
+ * prescribed, and letting it damp the new block would be adapting to the past.
+ */
+async function loadFeedbackByWeek(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string
+): Promise<Record<number, SessionFeedback[]>> {
+  const { data: currentPlan } = await supabase
+    .from("hpe_plans")
+    .select("id")
+    .eq("user_id", userId)
+    .is("superseded_at", null)
+    .order("generated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!currentPlan) return {};
+
+  const { data: rows } = await supabase
+    .from("hpe_session_feedback")
+    .select("completed, session_rpe, met_prescription, logged_at, hpe_sessions!inner(week, kind, plan_id)")
+    .eq("user_id", userId)
+    .eq("hpe_sessions.plan_id", currentPlan.id as string)
+    .order("logged_at", { ascending: true });
+
+  const byWeek: Record<number, SessionFeedback[]> = {};
+  for (const row of rows ?? []) {
+    const session = (row as { hpe_sessions?: { week?: number; kind?: string } }).hpe_sessions;
+    if (!session || typeof session.week !== "number" || !session.kind) continue;
+    (byWeek[session.week] ??= []).push({
+      kind: session.kind,
+      completed: row.completed as boolean,
+      sessionRpe: row.session_rpe != null ? Number(row.session_rpe) : null,
+      metPrescription: row.met_prescription as boolean,
+      loggedAt: row.logged_at as string,
+    });
+  }
+  return byWeek;
+}
+
+/** Stored session ids for one plan, keyed `week|day|slot|kind` — the tuple savePlan writes. */
+async function loadSessionIds(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  planId: string
+): Promise<Record<string, string>> {
+  const { data } = await supabase
+    .from("hpe_sessions")
+    .select("id, week, day_of_week, slot, kind")
+    .eq("plan_id", planId);
+
+  const byKey: Record<string, string> = {};
+  for (const row of data ?? []) {
+    byKey[`${row.week}|${row.day_of_week ?? ""}|${row.slot ?? ""}|${row.kind}`] = row.id as string;
+  }
+  return byKey;
 }
