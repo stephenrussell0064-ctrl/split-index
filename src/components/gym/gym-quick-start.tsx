@@ -46,12 +46,14 @@ export function GymQuickStart() {
             All plans <ChevronRight className="h-3 w-3" />
           </Link>
         </div>
-        <div className="flex gap-3 overflow-x-auto pb-2 snap-x snap-mandatory">
+        {/* A grid, not a carousel. A row of 200px cards on a 358px phone shows
+            one and a half plans and hides the rest behind a sideways swipe. */}
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           {featuredPlans.map((plan) => (
             <Link
               key={plan.id}
               href={`/gym/log?plan=${plan.id}`}
-              className="snap-start shrink-0 w-[200px] glass-gym rounded-2xl border border-gym-border/40 p-4 transition-all hover:border-gym-accent/50 hover:shadow-[0_0_24px_-8px_var(--gym-glow)]"
+              className="glass-gym rounded-2xl border border-gym-border/40 p-4 transition-all hover:border-gym-accent/50 hover:shadow-[0_0_24px_-8px_var(--gym-glow)]"
             >
               <Dumbbell className="h-4 w-4 text-gym-accent mb-3" />
               <p className="font-semibold text-gym-text text-sm">{plan.name}</p>

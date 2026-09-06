@@ -857,11 +857,11 @@ function GpsRunScreen() {
                     Predicted at this pace &amp; effort
                   </p>
                 </div>
-                <div className="flex gap-2 overflow-x-auto pb-1">
+                <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
                   {livePrediction.map((entry) => (
                     <div
                       key={entry.label}
-                      className="flex min-w-[5.5rem] shrink-0 flex-col items-center rounded-xl border border-white/10 bg-white/[0.06] px-3 py-2 text-center"
+                      className="flex min-w-0 flex-col items-center rounded-xl border border-white/10 bg-white/[0.06] px-2 py-2 text-center"
                     >
                       <p className="micro-label text-white/50">{entry.label}</p>
                       <p className="text-sm font-bold tabular-nums text-white">
@@ -1245,11 +1245,11 @@ function GpsRunScreen() {
                 <TrendingUp className="h-3.5 w-3.5 text-cardio-accent-soft" />
                 <p className="micro-label text-white/60">Predicted at this pace &amp; effort</p>
               </div>
-              <div className="flex gap-2 overflow-x-auto pb-1">
+              <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
                 {reviewPrediction.map((entry) => (
                   <div
                     key={entry.label}
-                    className="flex min-w-[5.5rem] shrink-0 flex-col items-center rounded-xl border border-white/10 bg-white/[0.06] px-3 py-2 text-center"
+                    className="flex min-w-0 flex-col items-center rounded-xl border border-white/10 bg-white/[0.06] px-2 py-2 text-center"
                   >
                     <p className="micro-label text-white/50">{entry.label}</p>
                     <p className="text-sm font-bold tabular-nums text-white">{formatRaceTime(entry.seconds)}</p>

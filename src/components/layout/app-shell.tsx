@@ -394,7 +394,13 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
 
         <main className="lg:pl-64">
           {/* calc(env(...) + gap) rather than a bare max() — the status bar height alone with no breathing room left the top bar sitting flush against the battery/signal icons; adding a fixed gap on top of the real inset (now resolvable at all thanks to viewport-fit: cover in layout.tsx) gives real clearance instead. A no-op on web where env() resolves to 0. */}
-          <div className="mode-content mx-auto max-w-7xl px-4 pt-[max(1.5rem,calc(env(safe-area-inset-top)+0.75rem))] pb-24 lg:px-8 lg:pb-8 lg:pt-[max(2rem,calc(env(safe-area-inset-top)+0.75rem))]">
+          {/*
+            pb-28, not pb-24. The bottom nav measures ~101px on a phone with a
+            home indicator (6 top padding + 8 button padding + 24 icon + 4 gap +
+            12 label + 8 + 34 safe-area + border), and pb-24 is 96 — so the last
+            few pixels of every page sat underneath it. Measured, not guessed.
+          */}
+          <div className="mode-content mx-auto max-w-7xl px-4 pt-[max(1.5rem,calc(env(safe-area-inset-top)+0.75rem))] pb-28 lg:px-8 lg:pb-8 lg:pt-[max(2rem,calc(env(safe-area-inset-top)+0.75rem))]">
             {showTopBar && <AppTopBar mode={mode} showBack={showBackButton} />}
             {/*
               No `mode="wait"` here on purpose: it forces the outgoing page to

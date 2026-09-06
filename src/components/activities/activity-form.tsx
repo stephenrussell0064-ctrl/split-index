@@ -717,9 +717,17 @@ export function ActivityForm({
               />
             )}
 
-            {/* Sport switcher strip — generic create mode only */}
+            {/*
+              Sport switcher strip — generic create mode only.
+
+              A grid, not a scroller. Nine 44px targets plus gaps need 444px and
+              a phone gives this strip 358, so three sports lived off the right
+              edge behind a scrollbar that was explicitly hidden — nothing on
+              screen said they were there. Five across keeps every target at or
+              above 44px on the narrowest phone; nine across once there is room.
+            */}
             {!isEdit && zoneMode === "generic" && (
-            <div className="mb-6 flex gap-1.5 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div className="mb-6 grid grid-cols-5 gap-1.5 sm:grid-cols-9">
               {SPORTS.map((s) => {
                 const active = s.id === sport;
                 return (
@@ -730,7 +738,7 @@ export function ActivityForm({
                     aria-label={s.name}
                     title={s.name}
                     className={cn(
-                      "relative flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-lg transition-colors",
+                      "relative flex h-11 w-full items-center justify-center rounded-xl text-lg transition-colors",
                       active ? "" : "opacity-50 hover:opacity-90 hover:bg-white/5"
                     )}
                   >

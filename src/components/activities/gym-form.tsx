@@ -1600,8 +1600,11 @@ function ExerciseNameInput({
 
   return (
     <div className="space-y-2">
+      {/* Wraps rather than scrolls — seven short chips fit two rows on the
+          narrowest phone, and a filter you cannot see is a filter nobody
+          uses. */}
       <div
-        className="flex gap-1 overflow-x-auto pb-1"
+        className="flex flex-wrap gap-1"
         role="group"
         aria-label="Filter by muscle group"
       >
@@ -1612,7 +1615,7 @@ function ExerciseNameInput({
             aria-pressed={muscleFilter === cat.id}
             onClick={() => setMuscleFilter(cat.id)}
             className={cn(
-              "shrink-0 rounded-lg px-2.5 py-1.5 text-[10px] font-medium uppercase tracking-wider transition-colors duration-200 min-h-[32px]",
+              "rounded-lg px-2.5 py-1.5 text-[10px] font-medium uppercase tracking-wider transition-colors duration-200 min-h-[32px]",
               muscleFilter === cat.id
                 ? "bg-gym-accent/20 text-gym-accent"
                 : "text-gym-muted hover:text-gym-text border border-gym-border/40"
