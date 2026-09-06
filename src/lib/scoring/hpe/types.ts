@@ -134,6 +134,20 @@ export interface AthleteProfile {
   /** The running-only share. Everything pace-derived is fitted on this alone. */
   runningVolumeKm: number;
   runningVolumeMin: number;
+  /**
+   * Weekly running minutes across the athlete's ACTIVE span — first logged run
+   * to last, ignoring any gap since. `runningVolumeMin` above divides by a
+   * window ending today and is therefore the honest answer to "how much are
+   * they running now"; this one answers "how much do they run WHEN they run",
+   * which is a different question and the right basis for bringing somebody
+   * back after a layoff.
+   *
+   * Both are needed. Reporting the active figure as current volume is what told
+   * an athlete who had stopped six weeks ago that they were doing 55min/week;
+   * using the current figure as a return-to-training anchor is what pinned them
+   * at 4.7 and gave them one run a week for a 5k block.
+   */
+  activeRunningVolumeMin: number;
   longestRunKm: number;
   /** The athlete's OWN fitted Riegel exponent. Null when they have fewer than RIEGEL_MIN_EFFORTS maximal efforts — the population value is used downstream and labelled as such. */
   riegelK: number | null;

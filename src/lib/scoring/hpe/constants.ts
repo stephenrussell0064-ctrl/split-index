@@ -1041,6 +1041,26 @@ export const TAILORING_RAMP_MULTIPLIER: Readonly<Record<TailoringLevel, number>>
 
 /** [EST] Starting weekly running minutes when there is no logged history at all to anchor on. Deliberately low: the on-ramp exists to be climbed. */
 export const PROVISIONAL_START_RUN_MIN_PER_WEEK = 60;
+
+/**
+ * [EST] How much of an athlete's ESTABLISHED weekly running they are brought
+ * back to after a layoff, when their recent average has fallen below it.
+ *
+ * Returning to roughly half of previous volume and rebuilding is the ordinary
+ * coaching answer to a few weeks off, and it is bounded on both sides here: it
+ * can only ever RAISE the anchor toward what the athlete has actually held, and
+ * it can never exceed that figure.
+ *
+ * The case it exists for: an athlete averaging 55min/week whenever they train,
+ * six weeks idle, with a 5k eight weeks out. Their trailing-8-week average was
+ * 4.7min/week, so the multiplicative on-ramp started from 4.7 and — at
+ * MAX_WEEKLY_VOLUME_RAMP — could not reach anything in eight weeks. The engine
+ * was simultaneously willing to start a total stranger at
+ * PROVISIONAL_START_RUN_MIN_PER_WEEK, twelve times higher, on no evidence at
+ * all. Being more generous to an athlete you know nothing about than to one
+ * whose history you can read is not caution, it is an artefact.
+ */
+export const RETURNING_ATHLETE_VOLUME_SHARE = 0.5;
 /** [EST] Sessions per week assumed for a provisional plan before the athlete says otherwise. */
 export const PROVISIONAL_SESSIONS_PER_WEEK = 4;
 

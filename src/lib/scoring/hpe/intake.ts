@@ -494,6 +494,38 @@ export function deriveTargetTotal(
 }
 
 /**
+ * What the logs say the athlete is running, with a floor under it for someone
+ * coming back from a layoff.
+ *
+ * `trailing` is their recent average and is the right answer for an athlete who
+ * has simply been training less. It is the wrong answer for one who has
+ * STOPPED, because week 1 of the block is a multiple of this number and no
+ * multiple of something near zero reaches anything: an athlete holding
+ * 55min/week whenever they trained, six weeks idle, anchored at 4.7 and could
+ * not climb out of it inside an eight-week block. The macrocycle already
+ * applies this reasoning at exactly zero
+ * (PROVISIONAL_START_RUN_MIN_PER_WEEK, which would have started a total
+ * stranger twelve times higher on no evidence at all); this carries it the one
+ * step further it needed.
+ *
+ * `established` is what they hold when they are training
+ * (AthleteProfile.activeRunningVolumeMin), so a share of it is a
+ * return-to-training volume rather than a guess. Bounded on both sides: this
+ * can only ever RAISE the anchor, and never above what the athlete has actually
+ * held.
+ */
+export function onRampAnchorMinutes(
+  trailing: number | null,
+  established: number,
+  share: number
+): number | null {
+  if (trailing == null) return null;
+  const floor = Math.max(0, established) * share;
+  const ceiling = Math.max(established, trailing);
+  return Math.min(Math.max(trailing, floor), ceiling);
+}
+
+/**
  * The cross-check rule. Where the athlete's stated weekly volume contradicts
  * what their logs show, the LOWER value wins and the discrepancy is surfaced.
  * Optimistic self-report is the norm, and this number is the on-ramp anchor,

@@ -1147,11 +1147,15 @@ export function diagnose(
    * not a meaningful concept.
    */
   const dates = runs.map((r) => r.dateIdx);
-  const spanWk =
-    options.observationWeeks ??
-    Math.max(1, dates.length > 0 ? (Math.max(...dates) - Math.min(...dates)) / 7 : 0);
+  const activeSpanWk = Math.max(1, dates.length > 0 ? (Math.max(...dates) - Math.min(...dates)) / 7 : 0);
+  const spanWk = options.observationWeeks ?? activeSpanWk;
   const runningVolumeKm = runs.reduce((s, r) => s + r.distanceKm, 0) / spanWk;
   const runningVolumeMin = runs.reduce((s, r) => s + r.durationS, 0) / 60 / spanWk;
+  // What they run WHEN they run — the same total over the active span only. Not
+  // a current-volume figure and must never be displayed as one; it exists so a
+  // returning athlete can be brought back to a share of what they held rather
+  // than to the average of a gap. See AthleteProfile.activeRunningVolumeMin.
+  const activeRunningVolumeMin = runs.reduce((s, r) => s + r.durationS, 0) / 60 / activeSpanWk;
   // Cross-training counts toward the aerobic total. See DiagnoseOptions.
   const weeklyVolumeKm = runningVolumeKm + (options.crossTrainingKmPerWeek ?? 0);
   const weeklyVolumeMin = runningVolumeMin + (options.crossTrainingMinPerWeek ?? 0);
@@ -1315,6 +1319,7 @@ export function diagnose(
     weeklyVolumeMin,
     runningVolumeKm,
     runningVolumeMin,
+    activeRunningVolumeMin,
     longestRunKm,
     riegelK,
     riegelVerdict: verdict(

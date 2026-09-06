@@ -2,7 +2,9 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { ageFromDateOfBirth } from "@/lib/utils/age";
 import { loadAthleteProfile } from "./load-profile";
 import { loggedWeeklyRunMinutes, type ActivityRow } from "./ingest";
+import { RETURNING_ATHLETE_VOLUME_SHARE } from "./constants";
 import type { PrefilledFromSplitIndex } from "./intake-record";
+import { onRampAnchorMinutes } from "./intake";
 
 /**
  * WP2 — the pre-fill half of the intake, and the reason the flow is short
@@ -56,7 +58,26 @@ export async function loadPrefilledIntake(
   // that confirms the wrong thing.
   const diagnostic = await loadAthleteProfile(supabase, userId, { persist: false });
 
-  const weeklyMinutes = loggedWeeklyRunMinutes(activities, 8);
+  /**
+   * The on-ramp anchor: what the athlete has been running lately, with a floor
+   * under it for someone coming back.
+   *
+   * The trailing average alone is right for an athlete who has simply been
+   * training less, and wrong for one who has stopped and is now entering a
+   * race. Week 1 of the block is a MULTIPLE of this number, and no multiple of
+   * something near zero reaches anything — the same reasoning the macrocycle
+   * already applies at exactly zero (PROVISIONAL_START_RUN_MIN_PER_WEEK),
+   * carried the one step further it needed.
+   *
+   * `activeRunningVolumeMin` is what they hold when they are training, so half
+   * of it is a return-to-training volume rather than a guess. It can only raise
+   * the anchor, never lower it, and never above what they have actually held.
+   */
+  const weeklyMinutes = onRampAnchorMinutes(
+    loggedWeeklyRunMinutes(activities, 8),
+    diagnostic?.profile.activeRunningVolumeMin ?? 0,
+    RETURNING_ATHLETE_VOLUME_SHARE
+  );
 
   return {
     age,

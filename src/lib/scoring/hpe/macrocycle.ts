@@ -33,6 +33,7 @@
  */
 
 import {
+  MIN_ENDURANCE_SESSION_MIN,
   ACWR_BLOCK,
   ACWR_CHRONIC_WEEKS,
   ACWR_ENFORCEMENT_PASSES,
@@ -102,6 +103,25 @@ export function buildMacrocycle(state: AthleteState, goal: Goal, rampMultiplier 
   let ramp = MAX_WEEKLY_VOLUME_RAMP * rampMultiplier;
   if (state.enduranceTrainingYears < NOVICE_ENDURANCE_YEARS) ramp *= NOVICE_RAMP_MULTIPLIER;
 
+  /**
+   * A week's endurance budget, floored at one session that is worth doing.
+   *
+   * The budget decides how many endurance slots the week gets
+   * (session-set.ts, affordableBySessionLength) and is quoted back to the
+   * athlete in the week's notes. Below MIN_ENDURANCE_SESSION_MIN it can buy no
+   * session at all, so it stopped describing anything: a real block budgeted
+   * 5 minutes a week for eight weeks while the session generator — which
+   * applies its own floor — wrote 35, 41, 47 and 59-minute runs into those same
+   * weeks. The athlete's note read "5 minutes split any further would be
+   * sessions too short to be worth doing" beside a 35-minute run.
+   *
+   * Zero stays zero. An athlete with no endurance in their plan at all is a
+   * different case from one whose budget rounded below a session, and this must
+   * not conjure running for someone who is not doing any.
+   */
+  const viableWeeklyMinutes = (minutes: number): number =>
+    minutes <= 0 ? 0 : Math.max(MIN_ENDURANCE_SESSION_MIN, Math.round(minutes));
+
   const weeks: MacrocycleWeek[] = [];
   // F3: week 1 is exactly what the athlete is already doing.
   // An on-ramp is multiplicative, and no multiple of zero is anything but
@@ -133,7 +153,7 @@ export function buildMacrocycle(state: AthleteState, goal: Goal, rampMultiplier 
         week,
         phase,
         deload,
-        enduranceMin: Math.round(volume * (deload ? DELOAD_VOLUME_MULTIPLIER : 1)),
+        enduranceMin: viableWeeklyMinutes(volume * (deload ? DELOAD_VOLUME_MULTIPLIER : 1)),
         phaseProgress: phaseWeeks > 1 ? i / (phaseWeeks - 1) : 1,
       });
       week++;
@@ -145,7 +165,7 @@ export function buildMacrocycle(state: AthleteState, goal: Goal, rampMultiplier 
       week,
       phase: "taper",
       deload: false,
-      enduranceMin: Math.round(peakVolume * (1 - TAPER_ENDURANCE_VOLUME_REDUCTION)),
+      enduranceMin: viableWeeklyMinutes(peakVolume * (1 - TAPER_ENDURANCE_VOLUME_REDUCTION)),
       phaseProgress: taperWeeks > 1 ? i / (taperWeeks - 1) : 1,
     });
     week++;
