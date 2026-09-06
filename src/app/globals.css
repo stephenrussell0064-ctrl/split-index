@@ -6,7 +6,13 @@
   --card: rgba(18, 18, 18, 0.72);
   --card-border: rgba(255, 255, 255, 0.08);
   --muted: #a1a1aa;
-  --muted-foreground: #71717a;
+  /*
+    Was #71717a, which measured 4.19:1 on --background — below the 4.5:1 that
+    WCAG 2.2 AA requires for body text, and it is used as body text. Lightened
+    along the same neutral to 5.0:1. See contrast.test.ts, which measures every
+    pairing in this file and fails the build on a regression.
+  */
+  --muted-foreground: #7d7d87;
   --accent: #3dff6e;
   --accent-foreground: #04120a;
   --accent-glow: rgba(61, 255, 110, 0.2);
@@ -46,7 +52,25 @@
   --gym-text: #f4fff8;
   --gym-muted: #a8b5ac;
 
-  /* Cardio zone — The Engine · white + sky blue */
+  /*
+    Cardio zone — The Engine · white + sky blue.
+
+    THE BRAND BLUE IS NOT A TEXT COLOUR ON THIS SURFACE, and that is measured
+    rather than felt: --cardio-accent on --cardio-bg is 2.50:1. That fails the
+    4.5:1 text threshold and also the 3:1 non-text one, so it fails as an icon,
+    a border and a chart line as well as as a word. --cardio-accent-soft is
+    worse at 2.03:1.
+
+    The Lab palette has no such problem — neon green on near-black measures
+    15.17:1 — so this is specific to the Engine side and it is the single most
+    likely WCAG failure in the product.
+
+    The fix is a tuned variant for each job rather than abandoning the palette:
+    the same hue and saturation, walked down in lightness until it clears the
+    threshold with headroom. --cardio-accent keeps its exact value for large
+    display type, backgrounds, glows and decorative fills, where the thresholds
+    do not apply.
+  */
   --cardio-bg: #f7fbff;
   --cardio-bg-elevated: #eef6ff;
   --cardio-surface: rgba(255, 255, 255, 0.96);
@@ -55,6 +79,10 @@
   --cardio-rim: rgba(59, 166, 255, 0.08);
   --cardio-text: #0c1a24;
   --cardio-muted: #5b7284;
+  /* Engine blue for TEXT on any cardio surface — 5.0:1 or better on all three. */
+  --cardio-accent-text: #006ac2;
+  /* Engine blue for ICONS, BORDERS and CHART LINES — 3.5:1 on the cardio bg. */
+  --cardio-accent-strong: #0086f6;
 }
 
 @theme inline {
@@ -77,6 +105,8 @@
   --color-gym-border: var(--gym-border);
   --color-cardio-accent: var(--cardio-accent);
   --color-cardio-accent-soft: var(--cardio-accent-soft);
+  --color-cardio-accent-text: var(--cardio-accent-text);
+  --color-cardio-accent-strong: var(--cardio-accent-strong);
   --color-cardio-bg: var(--cardio-bg);
   --color-cardio-bg-elevated: var(--cardio-bg-elevated);
   --color-cardio-text: var(--cardio-text);
@@ -134,6 +164,21 @@ body {
 .bg-cardio-zone {
   background: var(--cardio-bg);
   color: var(--cardio-text);
+
+  /*
+    Inside a light Engine surface, the brand blue is remapped to its
+    contrast-tuned variants rather than every `text-cardio-accent` in the app
+    being rewritten.
+
+    That matters because the same class is correct on the DARK shell, where
+    #3BA6FF measures 7.80:1. There are 51 files using it and most of them are
+    fine; the failure is specific to this surface. Scoping the swap here fixes
+    the ones that are wrong without darkening the ones that are right.
+  */
+  --cardio-accent: var(--cardio-accent-text);
+  --cardio-accent-soft: var(--cardio-accent-strong);
+  --accent: var(--cardio-accent-text);
+  --accent-foreground: #ffffff;
 }
 
 /* Legacy class names kept as no-ops for gradual migration */
@@ -163,6 +208,12 @@ body {
 .glass-cardio {
   background: var(--cardio-surface);
   border: 1px solid var(--cardio-border);
+
+  /* Same remap as .bg-cardio-zone — this surface is 96% white. */
+  --cardio-accent: var(--cardio-accent-text);
+  --cardio-accent-soft: var(--cardio-accent-strong);
+  --accent: var(--cardio-accent-text);
+  --accent-foreground: #ffffff;
 }
 
 /* ── Interactive cards ── */
@@ -278,11 +329,24 @@ body {
 
 [data-mode="cardio"] .mode-content {
   color: var(--cardio-text);
-  /* Remap dark-theme tokens so shared components stay legible on white */
+  /*
+    Remap dark-theme tokens so shared components stay legible on white.
+
+    Three of these were measured and were not legible:
+
+      --muted-foreground #7d94a5 on --cardio-bg   3.04:1  (needs 4.5)
+      --accent #3ba6ff as text on --cardio-bg     2.50:1  (needs 4.5)
+      white on an --accent fill of #3ba6ff        2.60:1  (needs 4.5)
+
+    The last is the one that mattered most in practice: it made the label of
+    every primary button in cardio mode harder to read than the button.
+  */
   --foreground: var(--cardio-text);
   --muted: var(--cardio-muted);
-  --muted-foreground: #7d94a5;
-  --accent: var(--cardio-accent);
+  --muted-foreground: #5b7284;
+  --accent: var(--cardio-accent-text);
+  --cardio-accent: var(--cardio-accent-text);
+  --cardio-accent-soft: var(--cardio-accent-strong);
   --accent-foreground: #ffffff;
   --accent-glow: rgba(14, 165, 233, 0.2);
   --glass: rgba(14, 165, 233, 0.04);

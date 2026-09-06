@@ -366,7 +366,6 @@ export function LeaderboardPanel({
           <PremiumTease
             title="Global leaderboard rank"
             subtitle="See where you stand against athletes worldwide — unlock global, age, weight, and sport filters. Your personal bracket stays free."
-            showPreview={false}
             className="border border-white/[0.06]"
           />
         )}
