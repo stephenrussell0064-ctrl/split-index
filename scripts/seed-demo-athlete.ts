@@ -100,9 +100,27 @@ import { computeExercise1RM } from "../src/lib/scoring/service";
  */
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-const DEMO_EMAIL = "demo.athlete+splitindex@example.com";
-const DEMO_USERNAME = "demo_masters_hybrid";
-const DEMO_DISPLAY_NAME = "Demo Athlete";
+/**
+ * Two demo athletes, because the screens they exist to photograph need
+ * mutually exclusive histories. The overreached athlete is mid-spike with a
+ * red ACWR; the returning athlete has a four-month hole in their logbook.
+ * One account cannot be both, and faking either on a real account would put a
+ * false claim on camera.
+ */
+type Persona = "overreached" | "lapsed";
+
+const PERSONAS: Record<Persona, { email: string; username: string; displayName: string }> = {
+  overreached: {
+    email: "demo.athlete+splitindex@example.com",
+    username: "demo_masters_hybrid",
+    displayName: "Demo Athlete",
+  },
+  lapsed: {
+    email: "demo.returning+splitindex@example.com",
+    username: "demo_returning_lifter",
+    displayName: "Returning Athlete",
+  },
+};
 
 /** Read .env.local directly — same approach as scripts/recompute-all-users.ts. */
 function loadEnvLocal(): void {
@@ -134,6 +152,9 @@ const DELETE = args.includes("--delete");
 const USER_ID = args.includes("--user") ? args[args.indexOf("--user") + 1] : undefined;
 /** Delete this user's existing activities before seeding, so a re-run replaces rather than doubles. */
 const RESET = args.includes("--reset");
+/** Which demo athlete to build. See PERSONAS — the two histories are mutually exclusive. */
+const PERSONA: Persona = args.includes("--lapsed") ? "lapsed" : "overreached";
+const persona = PERSONAS[PERSONA];
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 if (args.includes("--user") && (!USER_ID || !UUID_RE.test(USER_ID))) {
@@ -220,7 +241,83 @@ function liftsForWeek(week: number): SeedActivity["exercises"] {
   ];
 }
 
+/**
+ * The returning athlete: a solid block, then four months of nothing, then a
+ * cautious restart.
+ *
+ * The gap is the asset. Hook gym-19 promises an app that measures a return
+ * rather than punishing it, and that claim needs a logbook with a real hole in
+ * it — which the founder's account does not have and cannot be given without
+ * deleting real training.
+ *
+ * The restart lifts are deliberately well below the old bests, so all-time and
+ * current 1RM diverge: all-time holds the pre-break number (a high-water mark
+ * only a new best moves), current drops to what the recent sessions actually
+ * support. Those two numbers sitting side by side ARE the hook.
+ */
+function buildLapsedActivities(): SeedActivity[] {
+  const out: SeedActivity[] = [];
+
+  // Ten weeks of the old block. The start offset is chosen so the resulting
+  // gap lands near 120 days — hook gym-19's line is "I took four months off",
+  // and a seed that produces five and a half would make the script a lie.
+  for (let week = 0; week < 10; week++) {
+    const monday = 198 - week * 7;
+    const strong = [
+      { exercise_name: "Squat", muscle_group: "legs", weight_kg: 140 + week, sets: 4, reps: 5 },
+      { exercise_name: "Bench Press", muscle_group: "chest", weight_kg: 100 + week * 0.5, sets: 4, reps: 5 },
+      { exercise_name: "Deadlift", muscle_group: "back", weight_kg: 175 + week, sets: 3, reps: 5 },
+    ];
+    out.push({
+      sport: "gym",
+      title: "Full body",
+      started_at: dayOffset(monday, 18),
+      duration_seconds: 70 * 60,
+      exercises: strong,
+    });
+    out.push({
+      sport: "running",
+      title: "Easy run",
+      started_at: dayOffset(monday - 3, 7),
+      duration_seconds: 45 * 60,
+      distance_meters: 9000,
+      avg_heart_rate: 148,
+      session_type: "easy",
+    });
+  }
+
+  // ~17 weeks of nothing at all. Nothing to insert; the absence is the point.
+
+  // The restart: three sessions in the last fortnight, noticeably lighter.
+  const restart = [
+    { exercise_name: "Squat", muscle_group: "legs", weight_kg: 100, sets: 3, reps: 5 },
+    { exercise_name: "Bench Press", muscle_group: "chest", weight_kg: 75, sets: 3, reps: 5 },
+    { exercise_name: "Deadlift", muscle_group: "back", weight_kg: 130, sets: 3, reps: 5 },
+  ];
+  for (const daysAgo of [12, 6, 2]) {
+    out.push({
+      sport: "gym",
+      title: "Back at it",
+      started_at: dayOffset(daysAgo, 18),
+      duration_seconds: 50 * 60,
+      exercises: restart,
+    });
+  }
+  out.push({
+    sport: "running",
+    title: "Easy run",
+    started_at: dayOffset(4, 7),
+    duration_seconds: 32 * 60,
+    distance_meters: 5000,
+    avg_heart_rate: 156,
+    session_type: "easy",
+  });
+
+  return out.sort((a, b) => a.started_at.localeCompare(b.started_at));
+}
+
 function buildActivities(): SeedActivity[] {
+  if (PERSONA === "lapsed") return buildLapsedActivities();
   const out: SeedActivity[] = [];
 
   for (let week = 1; week <= WEEKS; week++) {
@@ -312,7 +409,7 @@ async function findDemoUserId(): Promise<string | null> {
   for (let page = 1; page <= 10; page++) {
     const { data, error } = await supabase.auth.admin.listUsers({ page, perPage: 200 });
     if (error) throw new Error(`listUsers failed: ${error.message}`);
-    const hit = data.users.find((u) => u.email === DEMO_EMAIL);
+    const hit = data.users.find((u) => u.email === persona.email);
     if (hit) return hit.id;
     if (data.users.length < 200) break;
   }
@@ -322,7 +419,7 @@ async function findDemoUserId(): Promise<string | null> {
 async function doDelete(): Promise<void> {
   const userId = await findDemoUserId();
   if (!userId) {
-    console.log(`No account found for ${DEMO_EMAIL} — nothing to delete.`);
+    console.log(`No account found for ${persona.email} — nothing to delete.`);
     return;
   }
   console.log(`Found demo account ${userId}.`);
@@ -346,13 +443,29 @@ async function doSeed(): Promise<void> {
   );
 
   console.log(`Target Supabase : ${new URL(url!).host}`);
-  console.log(`Demo account    : ${DEMO_EMAIL} (@${DEMO_USERNAME})`);
+  console.log(`Demo account    : ${persona.email} (@${persona.username})`);
   console.log(`Athlete         : ${AGE}y, ${BODYWEIGHT_KG}kg, max HR ${MAX_HR}`);
   console.log(
-    `Plan            : ${activities.length} activities over ${WEEKS} weeks ` +
+    `Plan            : ${activities.length} activities ` +
       `(${gymCount} gym, ${runCount} runs, ${totalMinutes} min total)`
   );
-  console.log(`Spike week      : week ${SPIKE_WEEK} of ${WEEKS} — pushes ACWR out of optimal`);
+  if (PERSONA === "overreached") {
+    console.log(`Shape           : ${WEEKS} weeks, week ${SPIKE_WEEK} spikes — pushes ACWR out of optimal`);
+  } else {
+    // The gap is this persona's whole reason to exist, so state it as a
+    // measured number rather than describing the intent and hoping.
+    let widestGapDays = 0;
+    for (let i = 1; i < activities.length; i++) {
+      const gap =
+        (new Date(activities[i].started_at).getTime() -
+          new Date(activities[i - 1].started_at).getTime()) /
+        86400000;
+      if (gap > widestGapDays) widestGapDays = gap;
+    }
+    console.log(
+      `Shape           : an old block, then a ${Math.round(widestGapDays)}-day gap, then a lighter restart`
+    );
+  }
   console.log("");
 
   // --user names the account explicitly, which is the whole point of that
@@ -360,7 +473,7 @@ async function doSeed(): Promise<void> {
   const existing = USER_ID ?? (await findDemoUserId());
   if (existing && !USER_ID) {
     console.log(
-      `An account already exists for ${DEMO_EMAIL} (${existing}).\n` +
+      `An account already exists for ${persona.email} (${existing}).\n` +
         "Either seed it directly, which needs no password:\n" +
         `  npx tsx scripts/seed-demo-athlete.ts --user ${existing} --reset --apply\n` +
         "or delete it and start clean:\n" +
@@ -412,7 +525,7 @@ async function doSeed(): Promise<void> {
     console.log(`Seeding existing user ${userId}.`);
   } else {
     const { data: created, error: createError } = await supabase.auth.admin.createUser({
-      email: DEMO_EMAIL,
+      email: persona.email,
       password: demoPassword,
       email_confirm: true,
     });
@@ -428,8 +541,8 @@ async function doSeed(): Promise<void> {
   const { error: profileError } = await supabase
     .from("profiles")
     .update({
-      username: DEMO_USERNAME,
-      display_name: DEMO_DISPLAY_NAME,
+      username: persona.username,
+      display_name: persona.displayName,
       age: AGE,
       weight_kg: BODYWEIGHT_KG,
       max_hr: MAX_HR,
