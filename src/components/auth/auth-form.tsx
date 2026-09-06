@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { motion, useReducedMotion } from "framer-motion";
 import type { AuthError } from "@supabase/supabase-js";
 import { BrandMark } from "@/components/brand/brand-mark";
-import { GoogleIcon } from "@/components/auth/oauth-icons";
+import { AppleIcon, GoogleIcon } from "@/components/auth/oauth-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { createClient } from "@/lib/supabase/client";
@@ -164,8 +164,24 @@ export function AuthForm({
     setMessage("");
   };
 
-  const handleOAuth = async () => {
+  /*
+    Two providers, one handler.
+
+    APPLE IS NOT OPTIONAL. App Store Guideline 4.8 says that an app offering a
+    third-party social login to set up an account must also offer an equivalent
+    service that limits data collection to name and email, lets the user keep
+    their email private, and does not collect interactions for advertising.
+    Google is such a login; Sign in with Apple is the alternative that meets
+    those three properties. This is checked automatically and caught in seconds,
+    and email OTP does not satisfy it — the required alternative has to be a
+    login *service*, and a self-hosted email code is not one.
+
+    It is rendered ABOVE Google, at equal prominence, which is also what Apple's
+    own Human Interface Guidelines ask for.
+  */
+  const handleOAuth = async (provider: "google" | "apple") => {
     setError("");
+    const label = provider === "apple" ? "Apple" : "Google";
     try {
       const supabase = createClient();
       const native = isNativePlatform();
@@ -174,9 +190,10 @@ export function AuthForm({
       // the app's own main webview is — on native, the OAuth screens run in
       // a separate in-app browser instead (see lib/native/oauth.ts), and
       // skipBrowserRedirect keeps this call from navigating the main webview
-      // itself away from the app.
+      // itself away from the app. Apple's web flow has the same constraint, so
+      // both take the identical path.
       const { data, error } = await supabase.auth.signInWithOAuth({
-        provider: "google",
+        provider,
         options: native
           ? { redirectTo: nativeOAuthRedirectUrl(), skipBrowserRedirect: true }
           : // No `?next=` query param — Supabase's redirectTo allowlist match is
@@ -187,7 +204,7 @@ export function AuthForm({
       });
 
       if (error) {
-        setError(authErrorMessage(error, "Google sign-in failed. Please try again."));
+        setError(authErrorMessage(error, `${label} sign-in failed. Please try again.`));
         return;
       }
 
@@ -195,7 +212,7 @@ export function AuthForm({
         await openNativeOAuthUrl(data.url);
       }
     } catch (err) {
-      setError(authErrorMessage(err, "Google sign-in failed. Please try again."));
+      setError(authErrorMessage(err, `${label} sign-in failed. Please try again.`));
     }
   };
 
@@ -278,7 +295,15 @@ export function AuthForm({
               <Button
                 variant="secondary"
                 className="w-full gap-2"
-                onClick={handleOAuth}
+                onClick={() => handleOAuth("apple")}
+              >
+                <AppleIcon className="h-4 w-4" />
+                Continue with Apple
+              </Button>
+              <Button
+                variant="secondary"
+                className="w-full gap-2"
+                onClick={() => handleOAuth("google")}
               >
                 <GoogleIcon className="h-4 w-4" />
                 Continue with Google

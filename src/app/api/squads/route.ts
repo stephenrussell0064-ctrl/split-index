@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { validateDisplayText } from "@/lib/utils/username";
 import { createClient } from "@/lib/supabase/server";
 import { fetchSquads } from "@/lib/social/queries";
 import { generateInviteCode } from "@/lib/social/squads";
@@ -33,6 +34,17 @@ export async function POST(request: Request) {
   const name = String(body.name ?? "").trim().slice(0, MAX_NAME_LENGTH);
   if (!name) {
     return NextResponse.json({ error: "Squad name required" }, { status: 400 });
+  }
+  /*
+    A squad name is user-generated content every member and every invitee reads,
+    and it went through no filter at all — App Store Guideline 1.2 requires "a
+    method for filtering objectionable material from being posted to the app",
+    and the app's only filter ran on usernames. Server-side because a client
+    check is a suggestion.
+  */
+  const nameCheck = validateDisplayText(name, { label: "Squad name", maxLength: MAX_NAME_LENGTH });
+  if (!nameCheck.valid) {
+    return NextResponse.json({ error: nameCheck.reason }, { status: 400 });
   }
 
   let squad, error;

@@ -47,9 +47,12 @@
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
 	<string>Main</string>
+	<!-- arm64, not armv7. armv7 is the 32-bit capability, dropped by iOS 11 —
+	     Capacitor 8 targets far above that, so the old value described a device
+	     this app cannot run on. -->
 	<key>UIRequiredDeviceCapabilities</key>
 	<array>
-		<string>armv7</string>
+		<string>arm64</string>
 	</array>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
@@ -70,10 +73,17 @@
 	<string>Split Index uses your location to track distance and pace during a run.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>Split Index tracks your run in the background so tracking keeps going even with your phone locked.</string>
+	<!-- bluetooth-central is required for the heart-rate strap and the Concept2
+	     PM5 to keep delivering once the screen locks. Without it iOS silently
+	     stops the notifications mid-session, and the run is saved with an
+	     average HR that looks plausible and is wrong — the worst failure shape
+	     available. `location` and `workout-processing` were already declared;
+	     the BLE one was the gap. -->
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>location</string>
 		<string>workout-processing</string>
+		<string>bluetooth-central</string>
 	</array>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Split Index connects to your heart rate monitor or rowing machine (Garmin, Polar, Concept2, or other standard Bluetooth devices) during a session.</string>
@@ -85,6 +95,12 @@
 	<string>Split Index counts your steps during a run or walk to show your cadence.</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
+	<!-- Export compliance. The app's only cryptography is HTTPS through the OS,
+	     which is exempt under the standard categories, and declaring so here
+	     stops App Store Connect halting every build for the manual encryption
+	     questionnaire. Revisit if anything ever ships its own crypto. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

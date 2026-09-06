@@ -18,7 +18,6 @@ import {
   PREMIUM_PRICE_GBP,
   FREE_TRIAL_DAYS,
 } from "@/lib/stripe/config";
-import { startStripeCheckout } from "@/lib/stripe/start-checkout";
 import { FREE_TIER_FEATURES } from "@/lib/retention/tiers";
 import { getTrialDaysRemaining, isPremiumUser } from "@/lib/retention/trial";
 import { SplitIndexSettings } from "@/components/settings/split-index-settings";
@@ -42,8 +41,6 @@ import type { SubscriptionStatus, SubscriptionTier } from "@/types";
 
 export default function SettingsPage() {
   const router = useRouter();
-  const [loading, setLoading] = useState(false);
-  const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [recomputeLoading, setRecomputeLoading] = useState(false);
@@ -139,18 +136,6 @@ export default function SettingsPage() {
     : null;
 
 
-  const handleCheckout = async () => {
-    setLoading(true);
-    setCheckoutError(null);
-    const result = await startStripeCheckout();
-    if (result.ok) {
-      window.location.href = result.url;
-      return;
-    }
-    setCheckoutError(result.message);
-    setLoading(false);
-  };
-
   const handleSignOut = async () => {
     const supabase = createClient();
     await supabase.auth.signOut();
@@ -187,8 +172,20 @@ export default function SettingsPage() {
   };
 
   const handleDeleteAccount = async () => {
+    /*
+      The subscription sentence is not decoration. Deleting the account removes
+      the Split Index side of a subscription and nothing else — a recurring
+      charge lives with Apple, Google or Stripe, and an athlete who deletes their
+      account believing that cancelled the billing will be charged again. App
+      Store Guideline 5.1.1(v) asks that account deletion make the state of any
+      subscription clear rather than leaving someone to discover it.
+    */
     const confirmed = window.confirm(
-      "Delete your account permanently? All workouts, scores, and profile data will be removed. This cannot be undone."
+      "Delete your account permanently?\n\n" +
+        "All workouts, routes, scores, plans and profile data will be removed. This cannot be undone.\n\n" +
+        "This does NOT cancel a paid subscription. If you subscribed in the app, cancel it in your " +
+        "Apple or Google account settings; if you subscribed on the web, cancel it from Manage billing " +
+        "before deleting."
     );
     if (!confirmed) return;
 
@@ -319,6 +316,26 @@ export default function SettingsPage() {
             </div>
           ) : (
             <>
+              {/*
+                THIS CARD DOES NOT TAKE PAYMENT ANY MORE.
+
+                It used to call `startStripeCheckout()` straight from a "Start
+                14-Day Free Trial" button, with no platform check anywhere in
+                this file. On an iPhone that is App Store Guideline 3.1.1 in its
+                plainest form — and worse than it sounds, because
+                `checkout.stripe.com` is not in capacitor.config.ts's
+                `allowNavigation`, so Capacitor punts the whole thing out to
+                Safari. An external browser opening a card form is precisely the
+                steering Apple prohibits, and the UK storefront gets no benefit
+                from the US external-link carve-out in 3.1.1(a).
+
+                The comparison table below is fine — describing what Premium
+                includes is not a purchase mechanism. Only the CTA changed: it
+                now goes to /settings/billing, which renders `SkuPicker`, the
+                one component that knows whether it is on a phone or the web.
+                One paywall, one code path, one place to get the platform branch
+                right.
+              */}
               <div className="grid sm:grid-cols-2 gap-4 mb-6">
                 <div className="rounded-xl border border-white/5 p-4">
                   <p className="text-xs font-medium uppercase tracking-wider text-muted mb-2">
@@ -349,12 +366,9 @@ export default function SettingsPage() {
               <p className="text-xs text-muted mb-4">
                 {FREE_TRIAL_DAYS}-day free trial · cancel anytime
               </p>
-              {checkoutError && (
-                <p className="text-sm text-warning mb-4">{checkoutError}</p>
-              )}
-              <Button className="w-full" loading={loading} onClick={handleCheckout}>
-                Start {FREE_TRIAL_DAYS}-Day Free Trial
-              </Button>
+              <Link href="/settings/billing">
+                <Button className="w-full">Start {FREE_TRIAL_DAYS}-Day Free Trial</Button>
+              </Link>
             </>
           )}
         </CardContent>

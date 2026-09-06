@@ -6,6 +6,15 @@
 	<true/>
 	<key>com.apple.developer.healthkit.background-delivery</key>
 	<true/>
+	<!-- Sign in with Apple. Required by App Store Guideline 4.8 because the app
+	     also offers Google Sign-In, and required by the OS before the native
+	     flow will run at all. The matching Services ID and return URL still have
+	     to be registered in the Apple Developer portal and in Supabase's Apple
+	     auth provider — this entitlement is the device half only. -->
+	<key>com.apple.developer.applesignin</key>
+	<array>
+		<string>Default</string>
+	</array>
 	<key>com.apple.security.application-groups</key>
 	<array>
 		<string>group.co.uk.splitindex.app</string>

@@ -7,6 +7,7 @@ import { Check, User, Ruler, Dumbbell, Compass } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Select, Textarea } from "@/components/ui/input";
+import { validateDisplayText } from "@/lib/utils/username";
 import {
   EXPERIENCE_LEVELS,
   GENDERS,
@@ -82,6 +83,29 @@ export function ProfileForm({ profile }: ProfileFormProps) {
     e.preventDefault();
     setSaving(true);
     setError("");
+
+    /*
+      A display name is read by every other athlete — on the feed, on
+      leaderboards, in squads and duels — and it went through no content check
+      at all, while the username right beside it did. App Store Guideline 1.2
+      asks for a filter on objectionable material posted to the app, and half a
+      filter is the same as none when the unfiltered field is the one shown
+      largest.
+
+      Client-side here because this component writes to Supabase directly rather
+      than through an API route; the blocked-term list itself lives in
+      lib/utils/username.ts alongside the username check, so the two cannot
+      drift apart.
+    */
+    const displayName = form.display_name.trim();
+    if (displayName) {
+      const check = validateDisplayText(displayName, { label: "Display name" });
+      if (!check.valid) {
+        setError(check.reason ?? "That display name isn't available");
+        setSaving(false);
+        return;
+      }
+    }
 
     const supabase = createClient();
     const { error: updateError } = await supabase

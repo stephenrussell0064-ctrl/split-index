@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Privacy manifest for the home-screen widget extension.
+
+  Apple requires one per target, not one per app, and a missing manifest on an
+  embedded extension fails the same automated ITMS-91053 check as a missing one
+  on the app itself.
+
+  The widget collects NOTHING. It reads a small payload the app has already
+  written into the shared App Group container — predicted race times and
+  best-ever lifts, computed on the server and handed over by the dashboard —
+  and draws it. It has no network access, no sensors, and no store of its own,
+  which is why NSPrivacyCollectedDataTypes below is empty rather than a copy of
+  the app's list. Everything the widget shows is declared by the app target,
+  where it is actually collected.
+-->
+<plist version="1.0">
+<dict>
+	<key>NSPrivacyTracking</key>
+	<false/>
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array/>
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array>
+		<!-- The App Group UserDefaults the app writes the payload into. CA92.1:
+		     data written by this app, read inside this app's own container. -->
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>CA92.1</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

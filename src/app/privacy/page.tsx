@@ -8,7 +8,7 @@ export const metadata: Metadata = {
     "How Split Index collects, uses, and protects your personal and fitness data.",
 };
 
-const EFFECTIVE_DATE = "July 2026";
+const EFFECTIVE_DATE = "September 2026";
 const CONTACT_EMAIL = "privacy@splitindex.co.uk";
 
 export default function PrivacyPolicyPage() {
@@ -69,14 +69,39 @@ export default function PrivacyPolicyPage() {
                   experience level, training history, and preferred sports.
                 </li>
                 <li>
-                  <strong>Payment information:</strong> subscription status, billing
-                  history, and Stripe customer identifiers. Payment card details are
-                  collected and processed directly by Stripe; we do not store full card
-                  numbers.
+                  <strong>Precise location and route data:</strong> when you start a GPS
+                  session in the mobile app, we record your precise location repeatedly
+                  for the duration of that session and store the resulting route. With
+                  your permission this continues <strong>in the background, while your
+                  phone is locked and the app is not on screen</strong>, because that is
+                  what recording a run requires. We collect location only during a session
+                  you have started, never passively, and you can stop it at any time. You
+                  can also set a privacy zone so the start and end of routes near a chosen
+                  address are trimmed before storage.
                 </li>
                 <li>
-                  <strong>OAuth data:</strong> when you sign in with Google, we receive
-                  account identifiers authorised by you through that provider.
+                  <strong>Apple Health and connected sensors (mobile app):</strong> with
+                  your permission we read heart rate from Apple Health during a session —
+                  including from AirPods Pro — and start a HealthKit workout session so
+                  that sensor turns on. We also connect over Bluetooth to heart-rate straps
+                  and compatible equipment such as the Concept2 PM5, and read motion and
+                  step data to calculate your cadence. Each of these is optional, is asked
+                  for separately by iOS or Android, and can be revoked in your device
+                  settings without losing your account.
+                </li>
+                <li>
+                  <strong>Payment information:</strong> subscription status, billing
+                  history, and payment-processor identifiers. On the web, payment card
+                  details are collected and processed directly by Stripe. In the iOS and
+                  Android apps, purchases are made through Apple&apos;s In-App Purchase or
+                  Google Play Billing and are recorded for us by RevenueCat; we never see
+                  or store your card details in either case.
+                </li>
+                <li>
+                  <strong>OAuth data:</strong> when you sign in with Google or with
+                  Apple, we receive the account identifiers you authorise through that
+                  provider. Sign in with Apple lets you hide your real email address; if
+                  you do, we only ever hold Apple&apos;s relay address.
                 </li>
                 <li>
                   <strong>Social features:</strong> friend connections, leaderboard
@@ -167,13 +192,35 @@ export default function PrivacyPolicyPage() {
                   <strong>Google</strong> — OAuth sign-in (when you choose to use it);
                 </li>
                 <li>
+                  <strong>Apple</strong> — Sign in with Apple (when you choose it) and
+                  In-App Purchase for subscriptions bought in the iOS app;
+                </li>
+                <li>
+                  <strong>Google Play</strong> — billing for subscriptions bought in the
+                  Android app;
+                </li>
+                <li>
+                  <strong>RevenueCat</strong> — recording and validating mobile
+                  subscription receipts from Apple and Google;
+                </li>
+                <li>
                   <strong>OpenAI</strong> — AI-generated coaching feedback based on your
                   workout data.
                 </li>
               </ul>
               <p className="mt-3">
-                Each third party operates under its own privacy policy. We encourage you to
-                review their policies when connecting external accounts.
+                Your location and route data is <strong>not</strong> shared with any of
+                these providers beyond the hosting and database services that store it, and
+                is never sold, shared for advertising, or used to build a profile of your
+                movements outside the sessions you record.
+              </p>
+              <p className="mt-3">
+                Each third party operates under its own privacy policy, and each is bound
+                by a written agreement requiring them to protect your data to a standard at
+                least equivalent to the one described in this policy, to process it only on
+                our instructions, and to apply appropriate technical and organisational
+                security measures. We encourage you to review their policies when
+                connecting external accounts.
               </p>
             </section>
 
@@ -224,13 +271,36 @@ export default function PrivacyPolicyPage() {
             </section>
 
             <section>
-              <h2>9. Data retention</h2>
+              <h2>9. Data retention, deletion, and withdrawing consent</h2>
               <p className="mt-3">
                 We retain your data for as long as your account is active and as needed to
-                provide the service. If you delete your account, we will delete or
-                anonymise your personal data within a reasonable period, except where we
-                must retain information for legal, accounting, or fraud-prevention
-                purposes.
+                provide the service.
+              </p>
+              <p className="mt-3">
+                <strong>You can delete your account and all of its data from inside the
+                app</strong>, under Settings → Delete account. Deletion removes your
+                profile, every logged activity and route, your scores and index history,
+                your social connections, and your training plans. It takes effect
+                immediately and cannot be undone. We retain only what we are legally
+                required to keep for accounting and fraud-prevention purposes, which does
+                not include your training or location data. You can also request deletion
+                by emailing{" "}
+                <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>.
+              </p>
+              <p className="mt-3">
+                <strong>Withdrawing consent does not require deleting your account.</strong>{" "}
+                Location, Apple Health, Bluetooth and motion access are each granted
+                separately, and each can be revoked at any time in your device&apos;s
+                settings — on iOS under Settings → Split Index, on Android under App info →
+                Permissions. Revoking one stops that collection from then on and disables
+                only the features that depend on it; everything you have already logged
+                stays yours and remains available. Disconnecting a third-party integration
+                in Settings stops any further import from that provider.
+              </p>
+              <p className="mt-3">
+                Deleting the app from your device does <strong>not</strong> delete your
+                account, because your data is held on our servers rather than on the phone.
+                Use the in-app deletion above, or email us.
               </p>
             </section>
 

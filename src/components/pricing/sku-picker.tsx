@@ -51,21 +51,37 @@ interface SkuPickerProps {
 export function SkuPicker({ ctaLabel, onError, className }: SkuPickerProps) {
   const [selected, setSelected] = useState<SubscriptionSku>("annual");
   const [loading, setLoading] = useState(false);
-  const [native, setNative] = useState(false);
   const [nativeOfferings, setNativeOfferings] = useState<NativeOfferingPackage[]>([]);
+  const [offeringsLoaded, setOfferingsLoaded] = useState(false);
 
-  // Apple/Google both require in-app subscriptions to go through their own
-  // billing — Stripe cannot process a purchase inside the native app, so
-  // the whole checkout path branches here rather than deeper down.
+  /*
+    WHICH BILLING PATH THIS IS, DECIDED BY THE DEVICE — not by a network call.
+
+    `native` used to be state, initialised false and set true only once
+    RevenueCat's offerings resolved. That made "is this an iPhone?" the RESULT
+    OF A FETCH, and it opened a window between mount and resolution — long
+    enough on a cold SDK start, indefinitely long on a flaky connection — in
+    which the CTA below fell through to Stripe on a native device. That is App
+    Store Guideline 3.1.1, reachable by anyone who taps quickly.
+
+    `isNativePlatform()` is a synchronous property of the runtime, correct from
+    the very first render. The offerings fetch stays, but it now does the one
+    job it is actually for: fetching localised price strings. It cannot decide
+    which store takes the money.
+
+    This is a client component and `isNativePlatform()` reads Capacitor's
+    global, so it is evaluated per render rather than hoisted — on the server
+    pass it is false, which is correct there too.
+  */
+  const native = isNativePlatform();
+
   useEffect(() => {
-    if (!isNativePlatform()) return;
+    if (!native) return;
     fetchNativeOfferings()
-      .then((offerings) => {
-        setNative(true);
-        setNativeOfferings(offerings);
-      })
-      .catch(() => setNative(true));
-  }, []);
+      .then(setNativeOfferings)
+      .catch(() => setNativeOfferings([]))
+      .finally(() => setOfferingsLoaded(true));
+  }, [native]);
 
   const handleCheckout = async () => {
     setLoading(true);
@@ -82,6 +98,9 @@ export function SkuPicker({ ctaLabel, onError, className }: SkuPickerProps) {
       return;
     }
 
+    // Web only. Deliberately unreachable above: there is no fallback from the
+    // native path to this one, so a RevenueCat failure surfaces as an error the
+    // athlete can see rather than as a Stripe checkout Apple would reject.
     const result = await startStripeCheckout(selected);
     if (result.ok) {
       window.location.href = result.url;
@@ -140,7 +159,14 @@ export function SkuPicker({ ctaLabel, onError, className }: SkuPickerProps) {
         })}
       </div>
 
-      <Button className="w-full" loading={loading} onClick={handleCheckout}>
+      {/* Disabled until the store has answered, so a fast tap cannot buy a
+          package whose price this screen has not yet shown. */}
+      <Button
+        className="w-full"
+        loading={loading || (native && !offeringsLoaded)}
+        disabled={native && !offeringsLoaded}
+        onClick={handleCheckout}
+      >
         {(ctaLabel ?? defaultCta)(selected)}
       </Button>
 
