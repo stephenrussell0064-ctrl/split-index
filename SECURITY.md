@@ -58,6 +58,7 @@ WP1 in the audit.
 | `OPENAI_API_KEY` | OpenAI billing | Spend, and prompt/response access |
 | `CRON_SECRET` | Vercel cron endpoints | Leaderboard rebuilds and report generation triggered at will |
 | `DEMO_ACCOUNT_PASSWORD` | The seeded demo account | That account only |
+| `UPSTASH_REDIS_REST_TOKEN` | The rate-limiter's shared counters | Limits can be reset or read; no user data is stored there |
 
 `STRIPE_PRICE_ID*` and `REVENUECAT_*_PRODUCT_ID` are configuration, not
 secrets. They identify products; they authenticate nothing.
@@ -164,6 +165,15 @@ the evidence and does nothing about the copy somebody already has.
 ## Environment configuration
 
 - `.env*` is gitignored. No env file has ever been committed.
+- **That includes `.env.example`**, which is therefore NOT in the repository —
+  `git ls-files` has never listed it. It exists on developer machines and drifts
+  from reality with nothing to catch it: two variables in use
+  (`REVENUECAT_WEBHOOK_SECRET`, `DEMO_ACCOUNT_PASSWORD`) were missing from it,
+  and the two Upstash variables are new. **The tables in this file are the
+  authoritative list.** Tracking `.env.example` with a `!.env.example` negation
+  would fix it and is a deliberate decision, not a tidy-up: it makes a file that
+  currently cannot be committed committable, and the value of that depends on
+  trusting that nobody ever pastes a real key into it.
 - Secrets live in the Vercel project's environment variables, set per
   environment. **Production values must not be present in Preview** —
   preview deployments are built from branches and are reachable by URL.
@@ -174,6 +184,62 @@ the evidence and does nothing about the copy somebody already has.
 > currently carries production values can only be seen in the Vercel dashboard.
 > Worth confirming; it is the most common way a production key ends up
 > somewhere it should not be.
+
+---
+
+## Rate limiting
+
+Two layers, in `src/proxy.ts` and `src/lib/security/rate-limit.ts`:
+
+1. **A per-instance burst guard.** In memory, no network, runs first. Not a real
+   limit — that is the point of layer 2 — but it rejects a pathological flood
+   without spending a Redis round trip on every request.
+2. **Upstash Redis**, shared across every serverless instance. Per-route-class
+   ceilings from `lib/security/config.ts`, keyed by the **authenticated user id**
+   where there is one and by IP where there is not.
+
+Set `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` in Vercel. Without
+them the limiter logs a warning once per cold start and falls back to layer 1
+alone, which on a serverless deployment means the limit is 120/min multiplied by
+however many instances are warm.
+
+**It fails open.** If Redis is unreachable, requests are allowed and the failure
+is logged. That is deliberate: this limiter guards ordinary application routes,
+all of which are already behind authentication and RLS, and failing closed would
+turn an Upstash outage into a total outage of a paid product. The endpoints where
+failing open would be dangerous are not limited here at all — see below.
+
+Webhooks and cron are never limited. A webhook's control is its signature;
+throttling it only drops real events the provider then retries, which turns a
+limiter into an outage in the billing path.
+
+### Auth limits live in Supabase, deliberately
+
+Sign-in, sign-up, OTP request, OTP verify and password reset are called by
+`createBrowserClient` **directly against `<project>.supabase.co/auth/v1/*`**.
+Those requests never reach this origin, so nothing in this repository can see
+them, count them or limit them.
+
+The mechanism in the path is GoTrue's own limiting. WP13.5 asks that the two be
+coordinated so they cannot silently disagree, and the way to guarantee that is
+to have one mechanism rather than two — a second limiter here would see a
+fraction of the traffic and disagree with the real one by construction.
+
+> **Operator task.** Set these in Supabase → Authentication → Rate Limits. They
+> are recorded in `SUPABASE_AUTH_RATE_LIMITS` in `src/lib/security/config.ts`
+> because a number that lives only in a dashboard is a number nobody reviews.
+>
+> | Setting | Value |
+> |---|---|
+> | Sign-in / sign-up per hour per IP | 30 |
+> | OTP / magic-link sends per hour | 3 |
+> | OTP verification attempts | 5 |
+> | Password reset emails per hour | 3 |
+> | Token refreshes per 5 min | 150 |
+>
+> Also confirm **email confirmation is enabled**. Migration 058 requires a
+> confirmed address to log a session, and the impact query at the top of that
+> file must be run before it is applied.
 
 ---
 
@@ -204,14 +270,13 @@ Listed because a security document that only describes what works is
 marketing. Full detail and severities are in
 [AUDIT-split-index.md](AUDIT-split-index.md).
 
-- **Rate limiting is per-instance.** `src/proxy.ts` holds counters in memory, so
-  the effective limit on a serverless deployment is 60/min multiplied by however
-  many instances are warm. Auth routes are not covered at all — they go straight
-  to Supabase and rely on its defaults. (Audit H3.)
 - **No structured security logging.** No auth failures, rate-limit trips or
   entitlement denials are recorded, so there is no alert path and little to read
   after an incident. (Audit H6.)
-- **Email verification is never checked in application code.** (Audit H7.)
+- **The GoTrue session settings are unverified from here.** Session lifetime,
+  refresh rotation, single-use reset and OTP tokens are all Supabase behaviours
+  this application never touches, so there is nothing in the test suite that can
+  prove them. They need an integration test against a live project. (Audit M7.)
 - **No HSTS header**, and the production CSP allows `'unsafe-inline'` for
   scripts. (Audit M8, M9.)
 - **Postgres error text reaches clients** in roughly 23 route files, carrying
