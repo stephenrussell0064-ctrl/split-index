@@ -28,6 +28,10 @@ its current status inline; this table is the summary.
 | M2 provider error text in a redirect URL | **CLOSED** | `0dd3d55` |
 | H3 per-instance rate limiting | **CLOSED** | `76b9d6b` |
 | H7 email verification never enforced | **CLOSED** | `76b9d6b` |
+| H8 Engine palette fails WCAG at 2.50:1 | **CLOSED** | `5525455` |
+| M3 PremiumGate exposes the value in the DOM | **CLOSED** | `5525455` |
+| M13 no accessibility statement, no skip link | **CLOSED** | `5525455` |
+| L1 muted-foreground fails text AA | **CLOSED** | `5525455` |
 | M7 session/refresh left at defaults | **PARTIAL** — values recorded and made an operator task; GoTrue behaviour still unverifiable from here | `76b9d6b` |
 | H2 no boundary validation | **PARTIAL** — 3 routes of ~40; **and materially corrected, see the finding** | `4f10902` |
 | M11 no central config / bounds | **PARTIAL** — module exists; a second set of bounds still lives in the scoring guard | `4f10902` |
@@ -486,6 +490,7 @@ verification.
 ---
 
 #### H8 — The Engine palette fails WCAG 2.2 AA at 2.50:1, below even the non-text threshold
+> **CLOSED `5525455`.** Tuned variants at 5.26:1 (text) and 3.52:1 (icons/borders), scoped to the light surfaces so the dark shell — where the same blue is 7.80:1 — is untouched. Two further failures surfaced in the light-mode token remap that Phase 0 had not measured: cardio-mode muted text at 3.04:1, and **white on the accent fill at 2.60:1**, which made every primary button label in cardio mode less legible than its button. All measured by a test that reads the shipped tokens.
 **WP12 · Evidence: measured, computed from the shipped tokens.**
 
 The brief predicted colour would be the likely conformance failure and asked for measured
@@ -578,6 +583,7 @@ limits volume, not sensitivity. Map to a code, as `mapOAuthErrorReason` already 
 ---
 
 #### M3 — `PremiumGate` blurs the real value in the DOM, with no `aria-hidden`
+> **CLOSED `5525455`.** Locked panels render nothing they hide — not blurred, not aria-hidden, absent. A shaped placeholder with fixed bar heights takes its place. Closes WP6.3 and WP12.7 together, as predicted.
 **WP6.3, WP12.7 · Evidence: [premium-gate.tsx:27](src/components/analytics/premium-gate.tsx#L27)**
 
 ```tsx
@@ -786,6 +792,7 @@ database. Everything above is a structural reading of DDL, not a measurement.
 ---
 
 #### M13 — No accessibility statement; no skip link
+> **CLOSED `5525455`.** Skip link as the first focusable element, with `tabIndex={-1}` on the main landmark so focus actually moves. Statement at `/accessibility`, linked from the footer, claiming "partially conformant" and naming four specific remaining failures — see N7.
 **WP12.5, WP12.8 · Evidence: `grep -rni "skip to\|skip-link"` → zero. No `/accessibility` route.**
 
 WP12.8 wants a statement at a stable URL, linked from the footer and in-app settings, stating
@@ -823,8 +830,7 @@ username is taken". The two findings should be fixed together.
 
 ### LOW
 
-- **L1 — `--muted-foreground` at 4.19:1 fails text AA** (WP12). Passes the 3:1 non-text
-  threshold. A near miss; roughly `#8A8A94` clears 4.5:1 on `#060606`.
+- ~~**L1 — `--muted-foreground` at 4.19:1 fails text AA**~~ **CLOSED `5525455`.** Lightened along the same neutral to `#7D7D87`, 4.97:1.
 - **L2 — JSON-LD via `dangerouslySetInnerHTML`** (WP3.4).
   [layout.tsx:88](src/app/layout.tsx#L88) and
   [how-scoring-works/page.tsx:97](src/app/how-scoring-works/page.tsx#L97). Both stringify
@@ -931,6 +937,28 @@ Fixable with a `!.env.example` negation, flagged rather than done: it makes a
 file that currently cannot be committed committable, and the value of that
 depends on trusting nobody ever pastes a real key into it.
 
+#### N7 — Four WCAG 2.2 AA failures remain, and the statement names them
+**WP12 · Medium · Evidence: `/accessibility`, "Known issues".**
+
+Closing H8 did not make the app conformant, and the published statement says
+"partially conformant" rather than claiming otherwise. What remains:
+
+1. **Charts have no text or table equivalent** exposed to assistive technology.
+   Every graph has a plain-English explainer already — WP12.4 asks that it be
+   extended into a text equivalent rather than something new being built.
+   (WCAG 1.1.1.)
+2. **Some states are still signalled by colour alone** — parts of the Lab /
+   Engine distinction and some status indicators. (WCAG 1.4.1.)
+3. **Form errors are not always programmatically tied to their field**, so a
+   screen reader may not announce them on reaching the input. (WCAG 3.3.1.)
+4. **No keyboard-only or screen-reader walkthrough has been done.** Automated
+   tooling and contrast measurement find roughly a third of real problems; the
+   brief asks for a manual pass over onboarding, logging a session, the
+   dashboard, the leaderboard, analytics and checkout. Until that exists,
+   claiming those journeys are operable without a mouse is a guess.
+
+The statement is only honest while this list is accurate. Update both together.
+
 ### Part D — activation and monetisation
 
 Reported as findings for completeness. None is a security or compliance matter, and D0's
@@ -978,10 +1006,10 @@ including the four findings raised during remediation:
 | Severity | Open | Closed | Note |
 |---|---|---|---|
 | Critical | **0** | 4 | All four were one defect in four places. |
-| High | 4 | 5 | H1, H3, H4, H5, H7 closed; H2 corrected and partially closed. |
-| Medium | 12 | 2 | M1, M2 closed; M7 and M11 partially. N1, N5 added. |
-| Low | 7 | 3 | L3, L6, N4 closed; N2, N3, N6 added. |
-| **Total** | **23** | **14** | 38 findings raised in total. |
+| High | 3 | 6 | H1, H3, H4, H5, H7, H8 closed; H2 corrected and partially closed. |
+| Medium | 11 | 4 | M1, M2, M3, M13 closed; M7 and M11 partially. N1, N5, N7 added. |
+| Low | 6 | 4 | L1, L3, L6, N4 closed; N2, N3, N6 added. |
+| **Total** | **20** | **19** | 39 findings raised in total. |
 
 All four Criticals are the same defect in four places: a policy written to enable a public
 leaderboard exposes the underlying user-owned table instead of a column-scoped projection.
@@ -1010,7 +1038,7 @@ Then:
 | 4 | ~~**WP2 build gate + `server-only`**~~ **DONE `8d9096a`** | H4, L3 | Small, and it stops the one mistake with no recovery short of rotation. Needs step 0. |
 | 5 | ~~**WP5 error boundary**~~ **DONE `c467470`, `0dd3d55`** | M1, M2 (M14 **not** started) | Mechanical, 23 files, one house pattern (`auth-errors.ts`) already exists to copy. |
 | 6 | ~~**WP13 + WP4 auth hardening**~~ **DONE `76b9d6b`** | H3, H7; M7 partly (M6 **not** started) | Per-account and per-IP limits must be designed together, per WP13.5. Needs a shared store. |
-| 7 | **WP12 contrast + gating** | H8, M3, M13, L1 | M3 satisfies WP6.3 and WP12.7 at once. Statement written last, after the fix, so it is honest. |
+| 7 | ~~**WP12 contrast + gating**~~ **DONE `5525455`** | H8, M3, M13, L1 (N7 opened) | M3 satisfies WP6.3 and WP12.7 at once. Statement written last, after the fix, so it is honest. |
 | 8 | **WP6 entitlement matrix** | M4, M3 | The matrix test is the deliverable; `features.ts` mostly stands. |
 | 9 | **WP7 logging** | H6 | Build the redaction rule in from the first line, not after. |
 | 10 | **WP14 headers, WP11 deletion test, WP8 plans** | M5, M8, M9, M12, L2, L4, L5 | Independent, parallelisable, none blocking. |
@@ -1064,10 +1092,10 @@ is different.
   someone's programme as a side effect of a privacy choice would punish the
   choice.
 
-**Next in the recommended order:** step 7, WP12 — accessibility. The measured
-contrast failure (H8, 2.50:1 on the Engine palette) and the `PremiumGate`
-DOM-exposure problem (M3), which satisfies WP6.3 and WP12.7 at once. The
-accessibility statement is written last, after the fix, so it is honest.
+**Next in the recommended order:** step 8, WP6 — the entitlement matrix. M3 is
+already closed by WP12, so what remains is a single `getEntitlements(userId)`
+and the five-role × every-protected-route matrix test, which is the deliverable
+rather than the code. `features.ts` mostly stands.
 
 **Four operator items outstanding:**
 
@@ -1082,3 +1110,5 @@ accessibility statement is written last, after the fix, so it is honest.
 4. Set the GoTrue rate limits and confirm email confirmation is enabled — the
    table is in SECURITY.md. **Run the impact query at the top of migration 058
    before applying it**; it can otherwise stop every athlete logging.
+5. Create `accessibility@splitindex.co.uk`, the contact on the published
+   accessibility statement, which promises a reply within 5 working days.
