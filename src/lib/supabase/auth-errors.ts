@@ -3,6 +3,9 @@ import type { AuthError } from "@supabase/supabase-js";
 const GENERIC_SERVER_ERROR =
   "Something went wrong on our side. Please try again in a moment.";
 
+/** One answer for "wrong password" and "no such account". See the note below. */
+const INVALID_LOGIN_MESSAGE = "Email or password is incorrect.";
+
 const DEV_DB_TRIGGER_HINT =
   "Likely cause: handle_new_user trigger failed (missing search_path or trigger). " +
   "Run supabase/diagnostics/signup_full_diagnostic.sql in Supabase SQL Editor, " +
@@ -29,7 +32,24 @@ const AUTH_CODE_MESSAGES: Record<string, string> = {
     "Too many attempts. Please wait a few minutes and try again.",
   rate_limit_exceeded:
     "Too many attempts. Please wait a few minutes and try again.",
-  invalid_credentials: "Email or password is incorrect.",
+  /*
+   * INVALID_CREDENTIALS AND USER_NOT_FOUND MUST SAY THE SAME THING.
+   *
+   * "Email or password is incorrect" and "No account found for that email" are
+   * different sentences, and the difference is an account-enumeration oracle:
+   * submit an address, read which sentence comes back, learn whether that
+   * person has an account here. On an app holding health data that is worth
+   * something to somebody.
+   *
+   * auth-errors.test.ts asserts the two are byte-identical, so splitting them
+   * again fails the build rather than quietly reopening the oracle.
+   *
+   * Signup is deliberately NOT given the same treatment. `email_exists` has to
+   * tell the truth or the flow dead-ends on an address the person cannot use,
+   * and every signup form in existence leaks the same bit. The sign-in and
+   * reset paths are where the neutral answer costs nothing.
+   */
+  invalid_credentials: INVALID_LOGIN_MESSAGE,
   signup_disabled: "New sign-ups are temporarily disabled. Please try again later.",
   email_address_not_authorized:
     "This email address cannot receive mail from the default Supabase sender. Configure custom SMTP in Supabase → Authentication → SMTP.",
@@ -39,7 +59,7 @@ const AUTH_CODE_MESSAGES: Record<string, string> = {
     "Too many emails sent to this address. Please wait a while and try again.",
   email_not_confirmed:
     "Please confirm your email before signing in — check your inbox for the 6-digit code.",
-  user_not_found: "No account found for that email.",
+  user_not_found: INVALID_LOGIN_MESSAGE,
   validation_failed: "Please check your email and password and try again.",
   unexpected_failure:
     "We couldn't complete sign-up right now. Please try again in a moment.",
@@ -183,3 +203,12 @@ export function authErrorMessage(
 
   return withDevAuthDetails(fallback, error);
 }
+
+/**
+ * Exported for auth-errors coverage only.
+ *
+ * The map itself stays private — a caller reaching into it would be picking a
+ * message by provider error code, which is the mapping's job and not theirs.
+ * The tests need it to assert that two specific entries have not drifted apart.
+ */
+export const AUTH_ERROR_MESSAGES_FOR_TEST = AUTH_CODE_MESSAGES;

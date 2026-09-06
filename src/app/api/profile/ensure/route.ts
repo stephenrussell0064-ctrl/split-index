@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { databaseError } from "@/lib/api/errors";
 import { createClient } from "@/lib/supabase/server";
 import { ensureProfileForUser } from "@/lib/supabase/ensure-profile";
 
@@ -15,7 +16,7 @@ export async function POST() {
   const { error } = await ensureProfileForUser(user);
 
   if (error) {
-    return NextResponse.json({ error: error.message, code: error.code }, { status: 500 });
+    return databaseError(error, { operation: "POST /api/profile/ensure" });
   }
 
   return NextResponse.json({ ok: true });

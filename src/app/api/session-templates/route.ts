@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { databaseError } from "@/lib/api/errors";
 import { createClient } from "@/lib/supabase/server";
 import type { SportType } from "@/types";
 
@@ -28,7 +29,7 @@ export async function GET(request: Request) {
   const { data, error } = await query.limit(20);
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return databaseError(error, { operation: "GET /api/session-templates" });
   }
 
   return NextResponse.json({ templates: data ?? [] });
@@ -70,7 +71,7 @@ export async function POST(request: Request) {
     .single();
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return databaseError(error, { operation: "POST /api/session-templates" });
   }
 
   return NextResponse.json({ template: data });
@@ -100,7 +101,7 @@ export async function DELETE(request: Request) {
     .eq("user_id", user.id);
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return databaseError(error, { operation: "DELETE /api/session-templates" });
   }
 
   return NextResponse.json({ ok: true });

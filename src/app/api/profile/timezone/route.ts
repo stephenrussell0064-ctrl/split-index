@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { databaseError } from "@/lib/api/errors";
 import { createClient } from "@/lib/supabase/server";
 import { detectBrowserTimezone } from "@/lib/utils/timezone";
 
@@ -24,7 +25,7 @@ export async function POST(request: Request) {
     .eq("user_id", user.id);
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return databaseError(error, { operation: "POST /api/profile/timezone" });
   }
 
   return NextResponse.json({ timezone });

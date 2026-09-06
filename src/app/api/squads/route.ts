@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { databaseError, serverError } from "@/lib/api/errors";
 import { createClient } from "@/lib/supabase/server";
 import { fetchSquads } from "@/lib/social/queries";
 import { generateInviteCode } from "@/lib/social/squads";
@@ -48,7 +49,7 @@ export async function POST(request: Request) {
   }
 
   if (error || !squad) {
-    return NextResponse.json({ error: error?.message ?? "Failed to create squad" }, { status: 500 });
+    return serverError({ operation: "POST /api/squads", cause: error });
   }
 
   const { error: memberError } = await supabase
@@ -56,7 +57,7 @@ export async function POST(request: Request) {
     .insert({ squad_id: squad.id, user_id: user.id });
 
   if (memberError) {
-    return NextResponse.json({ error: memberError.message }, { status: 500 });
+    return databaseError(memberError, { operation: "POST /api/squads" });
   }
 
   const squads = await fetchSquads(supabase, user.id);

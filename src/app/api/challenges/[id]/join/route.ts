@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { databaseError } from "@/lib/api/errors";
 import { createClient } from "@/lib/supabase/server";
 
 export async function POST(
@@ -44,7 +45,7 @@ export async function POST(
   });
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return databaseError(error, { operation: "POST /api/challenges/[id]/join" });
   }
 
   return NextResponse.json({ ok: true });

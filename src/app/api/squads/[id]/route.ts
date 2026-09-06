@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { databaseError } from "@/lib/api/errors";
 import { createClient } from "@/lib/supabase/server";
 
 export async function DELETE(
@@ -22,7 +23,7 @@ export async function DELETE(
     .eq("user_id", user.id);
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return databaseError(error, { operation: "DELETE /api/squads/[id]" });
   }
 
   return NextResponse.json({ ok: true });

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { databaseError } from "@/lib/api/errors";
 import { createClient } from "@/lib/supabase/server";
 
 export async function PUT(request: Request) {
@@ -28,7 +29,7 @@ export async function PUT(request: Request) {
     .single();
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return databaseError(error, { operation: "PUT /api/activities/draft" });
   }
 
   return NextResponse.json({ draft: data });
@@ -56,7 +57,7 @@ export async function GET(request: Request) {
   const { data, error } = await query;
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return databaseError(error, { operation: "GET /api/activities/draft" });
   }
 
   return NextResponse.json({ drafts: data });
@@ -86,7 +87,7 @@ export async function DELETE(request: Request) {
     .eq("sport", sport);
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return databaseError(error, { operation: "DELETE /api/activities/draft" });
   }
 
   return NextResponse.json({ ok: true });

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { databaseError } from "@/lib/api/errors";
 import { createClient } from "@/lib/supabase/server";
 
 const MIN_TARGET = 350;
@@ -75,7 +76,7 @@ export async function POST(request: Request) {
     .single();
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return databaseError(error, { operation: "POST /api/goals" });
   }
 
   return NextResponse.json({ goal });
@@ -147,7 +148,7 @@ export async function PATCH(request: Request) {
     .single();
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return databaseError(error, { operation: "PATCH /api/goals" });
   }
 
   return NextResponse.json({ goal });
@@ -176,7 +177,7 @@ export async function DELETE(request: Request) {
     .eq("user_id", user.id);
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return databaseError(error, { operation: "DELETE /api/goals" });
   }
 
   return NextResponse.json({ ok: true });
