@@ -1,5 +1,7 @@
 "use client";
 
+import { ChartFigure } from "@/components/analytics/chart-figure";
+import type { DayBucketStat } from "@/lib/scoring/interference";
 import {
   BarChart,
   Bar,
@@ -224,7 +226,18 @@ export function InterferenceDetail({ report }: { report: InterferenceReport }) {
                   meantime. It upgrades to the precise day-after chart once you log cardio within a
                   few days of a strength session.
                 </p>
-                <div role="img" aria-label="Cardio efficiency in weeks with vs without a strength session">
+                <ChartFigure
+                  label="Cardio efficiency: weeks with a strength session against weeks without"
+                  summary={`Average cardio efficiency was ${strengthToCardio.weeklyFallback.weeksWithoutStrengthAvgEF} in weeks without a strength session, and ${strengthToCardio.weeklyFallback.weeksWithStrengthAvgEF} in weeks with one.`}
+                  columns={[
+                    { header: "Week type", cell: (d: { label: string; value: number }) => d.label },
+                    { header: "Average efficiency", cell: (d: { label: string; value: number }) => String(d.value) },
+                  ]}
+                  rows={[
+                    { label: "Normal week", value: strengthToCardio.weeklyFallback.weeksWithoutStrengthAvgEF },
+                    { label: "Strength-training week", value: strengthToCardio.weeklyFallback.weeksWithStrengthAvgEF },
+                  ]}
+                >
                   <ResponsiveContainer width="100%" height={140}>
                     <BarChart
                       data={[
@@ -256,7 +269,7 @@ export function InterferenceDetail({ report }: { report: InterferenceReport }) {
                       </Bar>
                     </BarChart>
                   </ResponsiveContainer>
-                </div>
+                </ChartFigure>
                 <p className="mt-2 text-xs text-muted">
                   Based on {strengthToCardio.weeklyFallback.sampleCountWithStrength} qualifying{" "}
                   {strengthToCardio.primarySport?.replace("_", " ")} session
@@ -290,7 +303,18 @@ export function InterferenceDetail({ report }: { report: InterferenceReport }) {
                   the chart only earns its place once there's more than one
                   distinct day to actually compare. */}
               {populatedBuckets.length > 1 ? (
-                <div role="img" aria-label="Efficiency delta by days since last strength session">
+                <ChartFigure
+                  label="Cardio efficiency by days since the last strength session"
+                  summary={`Change in cardio efficiency grouped by how long since the last strength session, across ${populatedBuckets.length} groups: ${populatedBuckets
+                    .map((b) => `${b.daysSinceStrength} ${b.daysSinceStrength === 1 ? "day" : "days"} after, ${b.efDeltaPct === null ? "no reading" : `${b.efDeltaPct > 0 ? "+" : ""}${b.efDeltaPct}%`}`)
+                    .join("; ")}.`}
+                  columns={[
+                    { header: "Days since strength", cell: (b: DayBucketStat) => String(b.daysSinceStrength) },
+                    { header: "Efficiency change", cell: (b: DayBucketStat) => (b.efDeltaPct === null ? "no reading" : `${b.efDeltaPct > 0 ? "+" : ""}${b.efDeltaPct}%`) },
+                    { header: "Sessions", cell: (b: DayBucketStat) => String(b.sampleCount) },
+                  ]}
+                  rows={populatedBuckets}
+                >
                   {/* User feedback, with a screenshot: the ReferenceLine's
                       own in-chart label ("0% = your normal rested pace")
                       floated at a fixed position inside the plot area —
@@ -340,7 +364,7 @@ export function InterferenceDetail({ report }: { report: InterferenceReport }) {
                       </Bar>
                     </BarChart>
                   </ResponsiveContainer>
-                </div>
+                </ChartFigure>
               ) : (
                 <p className="rounded-xl border border-white/5 bg-white/[0.02] px-4 py-3 text-xs text-muted">
                   A day-by-day breakdown appears once you&apos;ve logged {strengthToCardio.primarySport?.replace("_", " ")}{" "}
@@ -386,7 +410,25 @@ export function InterferenceDetail({ report }: { report: InterferenceReport }) {
                 sentence={cardioToStrength.summary}
                 metricLabel="strength score"
               />
-              <div role="img" aria-label="Strength score in high vs low cardio-volume weeks">
+              <ChartFigure
+                label="Strength score: lighter cardio weeks against heavy cardio weeks"
+                summary={`Average strength score was ${cardioToStrength.lowCardioAvgStrengthComponent} in lighter cardio weeks, and ${cardioToStrength.highCardioAvgStrengthComponent} in heavy cardio weeks.`}
+                columns={[
+                  { header: "Week type", cell: (d: { label: string; value: number | null }) => d.label },
+                  {
+                    header: "Average strength score",
+                    // Nullable in the source type and passed straight to recharts
+                    // before this, which renders a gap. "No reading" is the same
+                    // gap, said out loud.
+                    cell: (d: { label: string; value: number | null }) =>
+                      d.value === null ? "no reading" : String(d.value),
+                  },
+                ]}
+                rows={[
+                  { label: "Lighter cardio week", value: cardioToStrength.lowCardioAvgStrengthComponent },
+                  { label: "Heavy cardio week", value: cardioToStrength.highCardioAvgStrengthComponent },
+                ]}
+              >
                 <ResponsiveContainer width="100%" height={140}>
                   <BarChart
                     data={[
@@ -412,7 +454,7 @@ export function InterferenceDetail({ report }: { report: InterferenceReport }) {
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
-              </div>
+              </ChartFigure>
               <p className="mt-2 text-xs text-muted">
                 Based on {cardioToStrength.sampleCount} gym sessions, split by whether their
                 trailing {INTERFERENCE_CONFIG.LOOKBACK_DAYS_CARDIO_EFFECT_ON_STRENGTH}-day cardio

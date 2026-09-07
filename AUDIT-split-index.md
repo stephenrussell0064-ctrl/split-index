@@ -1310,18 +1310,38 @@ takes from the shape of the line.
 trend, split/endurance/strength trend, sport-balance radar — plus `trend-panel`,
 `moving-average-chart`, `volume-chart`, `fatigue-recovery-chart` and `projection-chart`.
 
-**NOT covered, and why the published statement is unchanged.** Five data charts still have
-a label and no data — `acwr-trend-chart`, the three in `interference-detail`, and
-`engine-lab-trend-card` — and three have neither: `training-zones-chart`,
-`intensity-distribution` and `compare-chart`. The last three are the awkward ones: a donut,
-a zone histogram and a two-athlete comparison are categorical rather than a time series, so
-`describeSeries` does not fit them and each needs its own sentence. `recovery-gauge` and
-`progress-ring` are single-value indicators rather than charts, and `hero-split`,
-`product-showcase` and `oauth-icons` are decoration.
+**The remaining five time series are now done too.** `acwr-trend-chart`, the three in
+`interference-detail`, and `engine-lab-trend-card`. **Thirteen chart surfaces carry their
+data, and no chart anywhere is left with a bare `role="img"`** — there is a test asserting
+that, because reverting one to a label-only wrapper looks entirely reasonable in a diff and
+is exactly the state this finding describes.
 
-So "Charts do not yet have a text equivalent" remains true of eight surfaces and the
-statement stays as written. It becomes editable when the remaining eight are done, and the
-work is now mechanical for the five that are time series.
+Two of the five needed a sentence `describeSeries` could not have written, which is the
+argument for the summary being a required prop rather than derived:
+
+- **ACWR** is not about the shape of the line but which *band* the ratio sits in — the plot
+  draws optimal (0.8–1.3) and danger (>1.5) as shaded regions. The summary names the band
+  in words and the table carries a Zone column, so "1.12, in the optimal band" survives
+  instead of "up from 0.94 to 1.12", which reports the movement and loses the meaning.
+- **The interference charts** are categorical comparisons — weeks with a strength session
+  against weeks without, efficiency by days since the last one — so each got its own
+  sentence naming both sides.
+
+Writing them surfaced a small pre-existing inaccuracy: `cardioToStrength`'s two averages are
+`number | null` and were passed straight to recharts, which renders a gap. The table now
+says "no reading", which is the same gap said out loud.
+
+**STILL NOT COVERED — three charts, named with reasons in the test's allowlist.**
+`training-zones-chart` (a heart-rate zone histogram), `intensity-distribution` (two donuts
+side by side) and `compare-chart` (two athletes rather than one series over time). All three
+are categorical, so `describeSeries` does not fit and each needs a sentence written for it —
+the same reason the interference charts needed theirs, without the same shape to copy.
+`recovery-gauge` and `progress-ring` are single-value indicators rather than charts, and
+`hero-split`, `product-showcase` and `oauth-icons` are decoration.
+
+So "Charts do not yet have a text equivalent" is still true of three surfaces, and the
+published statement stays as written. Checked before leaving it, rather than closing the
+finding from the register.
 
 **ITEM 3 — MOSTLY CLOSED, and deliberately not claimed as closed.**
 

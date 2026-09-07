@@ -93,7 +93,27 @@ describe("charts expose their data, not only a name", () => {
     "src/components/analytics/volume-chart.tsx",
     "src/components/analytics/fatigue-recovery-chart.tsx",
     "src/components/analytics/projection-chart.tsx",
+    "src/components/analytics/acwr-trend-chart.tsx",
+    "src/components/analytics/interference-detail.tsx",
+    "src/components/dashboard/engine-lab-trend-card.tsx",
   ];
+
+  /**
+   * Charts that render no data equivalent yet, each with the reason. An
+   * allowlist so that adding to it is a decision rather than an omission —
+   * the same shape as SURVIVES_ERASURE and NOT_YET_REVOKED.
+   *
+   * All three are categorical rather than time series, so `describeSeries`
+   * does not fit them and each needs a sentence written for it.
+   */
+  const NO_DATA_EQUIVALENT_YET: Record<string, string> = {
+    "src/components/analytics/training-zones-chart.tsx":
+      "a histogram of time in each heart-rate zone; needs a sentence naming the zones and their shares, not a trend",
+    "src/components/analytics/intensity-distribution.tsx":
+      "a donut of session intensities; same shape of problem, and it renders two of them side by side",
+    "src/components/social/compare-chart.tsx":
+      "compares two athletes rather than one series over time, so the summary has to name both and neither is 'the' value",
+  };
 
   it.each(CONVERTED)("%s renders a data equivalent", (file) => {
     const code = read(file);
@@ -140,5 +160,33 @@ describe("charts expose their data, not only a name", () => {
     const fig = read("src/components/analytics/chart-figure.tsx");
     expect(fig).toContain("MAX_ROWS");
     expect(fig).toMatch(/slice\(0, MAX_ROWS\)/);
+  });
+
+  /**
+   * The regression this prevents: reverting a chart to a bare `role="img"`
+   * wrapper. That was the state the finding described — a name and no data —
+   * and it looks entirely reasonable in a diff.
+   */
+  it("leaves no chart with only a label", () => {
+    const offenders: string[] = [];
+    for (const file of [...CONVERTED, ...Object.keys(NO_DATA_EQUIVALENT_YET)]) {
+      const code = read(file);
+      if (code.includes('role="img"') && !code.includes("<ChartFigure")) {
+        offenders.push(file);
+      }
+    }
+    expect(
+      offenders,
+      "these name the chart without exposing its values — the exact state N7 " +
+        "item 1 describes:\n  " + offenders.join("\n  ")
+    ).toEqual([]);
+  });
+
+  it("keeps every uncovered chart documented with a reason", () => {
+    for (const [file, reason] of Object.entries(NO_DATA_EQUIVALENT_YET)) {
+      expect(reason.length, `${file} has no reason recorded`).toBeGreaterThan(40);
+      // And it must still exist, or the entry is stale.
+      expect(() => read(file), `${file} is gone`).not.toThrow();
+    }
   });
 });
