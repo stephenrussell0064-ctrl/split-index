@@ -6,15 +6,29 @@
 	<true/>
 	<key>com.apple.developer.healthkit.background-delivery</key>
 	<true/>
-	<!-- Sign in with Apple. Required by App Store Guideline 4.8 because the app
-	     also offers Google Sign-In, and required by the OS before the native
-	     flow will run at all. The matching Services ID and return URL still have
-	     to be registered in the Apple Developer portal and in Supabase's Apple
-	     auth provider — this entitlement is the device half only. -->
-	<key>com.apple.developer.applesignin</key>
-	<array>
-		<string>Default</string>
-	</array>
+	<!-- No com.apple.developer.applesignin here, deliberately, and the comment
+	     that used to sit in its place was wrong on the point that matters: it
+	     said the entitlement was "required by the OS before the native flow
+	     will run at all". There is no native flow. The app does offer Sign in
+	     with Apple (Guideline 4.8), but through Apple's *web* OAuth flow via
+	     Supabase in an in-app browser — see handleOAuth in
+	     src/components/auth/auth-form.tsx. There is no ASAuthorization call, no
+	     AuthenticationServices import and no Apple sign-in plugin anywhere in
+	     the project.
+
+	     That path is authorized by a Services ID configured in Supabase, not by
+	     an app entitlement. The entitlement only authorizes the native
+	     AuthenticationServices sheet, so it bought nothing here and cost every
+	     device build: the App ID does not have Sign In with Apple enabled, so
+	     automatic signing could not produce a profile satisfying it and archiving
+	     failed with "Provisioning profile doesn't include the Sign In with Apple
+	     capability" plus an opaque APPLE_ID_AUTH error. Simulator builds passed
+	     throughout, because entitlements are only checked when signing for a
+	     device.
+
+	     Put it back only alongside a native Apple sign-in plugin AND Sign In
+	     with Apple enabled on the App ID in the developer portal. Any two of
+	     those three without the third breaks signing again. -->
 	<key>com.apple.security.application-groups</key>
 	<array>
 		<string>group.co.uk.splitindex.app</string>
