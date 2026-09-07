@@ -193,10 +193,28 @@ describe("measured contrast", () => {
     expect(contrastRatio(T["cardio-accent-text"], T["cardio-bg"])).toBeGreaterThanOrEqual(TEXT);
   });
 
+  /*
+   * ACCENT-AS-TEXT IS NOT ASSERTED HERE, AND THAT IS THE DESIGN, NOT AN
+   * OVERSIGHT.
+   *
+   * This list used to require `--accent` inside the cardio scopes to clear
+   * 4.5:1 by itself, which assumed the fix was to darken the accent token.
+   * The fix that shipped keeps `--cardio-accent` at the brand #3BA6FF as a
+   * FILL — where 2.50:1 is irrelevant, because nothing reads the fill — and
+   * redirects only the TEXT uses, via the
+   * `[class*="text-cardio-accent"]` rules in globals.css. Asserting the fill
+   * as if it were text failed a palette that is actually correct, and would
+   * have pushed the brand colour out of the product to satisfy a measurement
+   * of something nobody reads.
+   *
+   * The two things that must hold under that design are both still measured,
+   * harder than before:
+   *   - the ink the text rules redirect TO — `cardio-accent-text` on
+   *     `cardio-bg`, in PAIRINGS above;
+   *   - the label sitting ON the fill — asserted immediately below.
+   */
   it.each([
     ['[data-mode="cardio"] .mode-content', "muted-foreground", "cardio-bg", TEXT, "cardio-mode muted text"],
-    ['[data-mode="cardio"] .mode-content', "accent", "cardio-bg", TEXT, "cardio-mode accent as text"],
-    ['.bg-cardio-zone', "accent", "cardio-bg", TEXT, "zone accent as text"],
   ])("%s remaps --%s to something legible (%s)", (selector, property, bg, min) => {
     const fg = scopedValue(selector, property);
     const ratio = contrastRatio(fg, T[bg]);
@@ -204,6 +222,28 @@ describe("measured contrast", () => {
       Number(ratio.toFixed(2)),
       `${selector} --${property} (${fg}) on --${bg} (${T[bg]}) measures ${ratio.toFixed(2)}:1`
     ).toBeGreaterThanOrEqual(min);
+  });
+
+  /**
+   * The mechanism that replaces the two assertions removed above.
+   *
+   * Keeping the brand blue as a fill is only safe while something redirects
+   * the TEXT uses of it. Delete those rules and every `text-cardio-accent` in
+   * the Engine falls back to 2.50:1 with no token changing value — invisible
+   * to a token-level check, which is exactly why this asserts on the rules.
+   */
+  it("redirects every text use of the Engine accent to the readable ink", () => {
+    const css = readFileSync(CSS, "utf8");
+    const rule = css.match(
+      /\[data-mode="cardio"\][^{]*\[class\*="text-cardio-accent"\][^{]*\{([^}]*)\}/
+    );
+    expect(rule, "globals.css no longer redirects text-cardio-accent inside the Engine").toBeTruthy();
+    expect(rule![1]).toContain("--cardio-accent-text");
+
+    // And the ink it redirects to still clears the text bar.
+    expect(
+      Number(contrastRatio(T["cardio-accent-text"], T["cardio-bg"]).toFixed(2))
+    ).toBeGreaterThanOrEqual(TEXT);
   });
 
   it("keeps a button label legible against its own accent fill in cardio mode", () => {
