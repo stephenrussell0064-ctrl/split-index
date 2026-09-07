@@ -168,6 +168,20 @@ function GpsRunScreen() {
   const [starting, setStarting] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [rejoining, setRejoining] = useState(false);
+  /*
+    LOCATION WAS DENIED, AND THE SCREEN USED TO CARRY ON REGARDLESS.
+
+    `addWatcher` resolves with a watcher id whether or not permission was
+    granted, so tapping "Don't Allow" still produced the full tracking HUD, a
+    ticking clock and a Live Activity on the lock screen — against 0.00 km,
+    forever. The only record of the denial was a `permissionRevoked` flag read
+    by the summariser at the END of the run, which is after the athlete has
+    already run for nothing.
+
+    Also covers a revocation part-way through, where the clock keeps counting
+    against a distance that has quietly stopped moving.
+  */
+  const [locationDenied, setLocationDenied] = useState(false);
   /** User report: "No stop start button on GPS runs. Once paused you can only discard run." A paused run is not an abandoned run — everything recorded stays recorded, and this flips straight back. */
   const [paused, setPaused] = useState(false);
   const [pauses, setPauses] = useState<PauseInterval[]>([]);
@@ -402,6 +416,7 @@ function GpsRunScreen() {
     setStarting(true);
     setError("");
     setLivePoints([]);
+    setLocationDenied(false);
     setSegments([]);
     setSegmentType("easy");
     setHrReadings([]);
@@ -411,7 +426,10 @@ function GpsRunScreen() {
     setConfirmingDiscard(false);
     applyPauses([]);
     try {
-      await startGpsSession((point) => setLivePoints((prev) => [...prev, point]));
+      await startGpsSession(
+        (point) => setLivePoints((prev) => [...prev, point]),
+        () => setLocationDenied(true)
+      );
       if (isOnFootSport && isStepCadenceSupported()) {
         // Best-effort — a missing Motion & Fitness permission or an older
         // device without the M-series coprocessor just means no cadence
@@ -465,7 +483,8 @@ function GpsRunScreen() {
           pauses: recovered.livePauses,
           startedAt: recovered.startedAt,
         },
-        (point) => setLivePoints((prev) => [...prev, point])
+        (point) => setLivePoints((prev) => [...prev, point]),
+        () => setLocationDenied(true)
       );
       if (isOnFootSport && isStepCadenceSupported()) {
         startStepCadence((cadence) => {
@@ -815,6 +834,28 @@ function GpsRunScreen() {
         </div>
 
         <div className="flex flex-1 flex-col items-center justify-between overflow-y-auto px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-5 landscape:h-full landscape:justify-center landscape:gap-6 landscape:py-6">
+          {/*
+            Said plainly, at the top, while it is still fixable — and it names
+            Settings, because that is the only place it can be fixed. The
+            clock keeps running and Stop still saves whatever was recorded:
+            a denial part-way through a run must not cost the athlete the
+            part that worked.
+          */}
+          {locationDenied && (
+            <div
+              role="alert"
+              className="mb-4 w-full rounded-xl border border-danger/40 bg-danger/[0.12] px-4 py-3"
+            >
+              <p className="text-sm font-semibold text-danger">
+                Location is off — this run isn&apos;t being recorded
+              </p>
+              <p className="mt-1 text-xs text-white/70">
+                Split Index needs location access to track distance and pace. Turn it on in
+                Settings &rsaquo; Privacy &rsaquo; Location Services, then start a new run.
+                Stopping now saves whatever was recorded before this.
+              </p>
+            </div>
+          )}
           <div className="flex w-full flex-1 flex-col items-center justify-center landscape:flex-none">
             <div className="flex items-center gap-2">
               <span className="h-2 w-2 rounded-full bg-gradient-to-br from-cardio-accent to-strength-accent" aria-hidden />

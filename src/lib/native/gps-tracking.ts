@@ -125,10 +125,13 @@ export interface GpsSessionHandle {
  * source of truth (Preferences persistence above is), so a missed callback
  * during a brief app suspend never loses data, just a map redraw.
  */
-export async function startGpsSession(onPoint?: (point: GpsPoint) => void): Promise<GpsSessionHandle> {
+export async function startGpsSession(
+  onPoint?: (point: GpsPoint) => void,
+  onPermissionDenied?: () => void
+): Promise<GpsSessionHandle> {
   const startedAt = Date.now();
   await writeSession({ points: [], startedAt, permissionRevoked: false, pauses: [] });
-  await attachWatcher(onPoint);
+  await attachWatcher(onPoint, onPermissionDenied);
   return { active: true };
 }
 
@@ -138,7 +141,10 @@ export async function startGpsSession(onPoint?: (point: GpsPoint) => void): Prom
  * `rejoinGpsSession`, which needs exactly the same watcher over a session
  * record it did not create.
  */
-async function attachWatcher(onPoint?: (point: GpsPoint) => void): Promise<void> {
+async function attachWatcher(
+  onPoint?: (point: GpsPoint) => void,
+  onPermissionDenied?: () => void
+): Promise<void> {
   const watcherId = await BackgroundGeolocation.addWatcher(
     {
       backgroundTitle: "Split Index",
@@ -153,6 +159,22 @@ async function attachWatcher(onPoint?: (point: GpsPoint) => void): Promise<void>
             const current = await readSession();
             if (current) await writeSession({ ...current, permissionRevoked: true });
           });
+          /*
+            TELL THE SCREEN, not only the storage record.
+
+            `addWatcher` resolves with a watcher id whether or not permission
+            was granted, so `handleStart` ran to completion regardless: full
+            tracking HUD, ticking clock, Live Activity on the lock screen — and
+            0.00 km, forever, with nothing ever saying why. The
+            `permissionRevoked` flag written above was the only signal and it
+            was read at the END of the run, by the summariser, long after the
+            athlete had finished running for nothing.
+
+            The same callback covers a revocation mid-run, where the HUD
+            otherwise keeps counting time against a distance that has stopped
+            moving.
+          */
+          onPermissionDenied?.();
         }
         return;
       }
@@ -210,7 +232,8 @@ async function detachWatcher(): Promise<void> {
  */
 export async function rejoinGpsSession(
   session: { points: GpsPoint[]; pauses: PauseInterval[]; startedAt: number; permissionRevoked?: boolean },
-  onPoint?: (point: GpsPoint) => void
+  onPoint?: (point: GpsPoint) => void,
+  onPermissionDenied?: () => void
 ): Promise<GpsSessionHandle> {
   await writeSession({
     points: session.points,
@@ -218,7 +241,7 @@ export async function rejoinGpsSession(
     permissionRevoked: session.permissionRevoked ?? false,
     pauses: session.pauses,
   });
-  await attachWatcher(onPoint);
+  await attachWatcher(onPoint, onPermissionDenied);
   return { active: true };
 }
 
