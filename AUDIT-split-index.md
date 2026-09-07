@@ -37,10 +37,20 @@ its current status inline; this table is the summary.
 | M7 session/refresh left at defaults | **PARTIAL** — values recorded and made an operator task; GoTrue behaviour still unverifiable from here | `76b9d6b` |
 | H2 no boundary validation | **PARTIAL** — 3 routes of ~40; **and materially corrected, see the finding** | `4f10902` |
 | M11 no central config / bounds | **PARTIAL** — module exists; a second set of bounds still lives in the scoring guard | `4f10902` |
+| L2 JSON-LD via `dangerouslySetInnerHTML` | **CLOSED** | `f84b4eb` |
+| M5 account deletion non-atomic | **CLOSED** | `25ad889` |
+| L5 `USER_TABLES` redundant with the cascade | **CLOSED** | `25ad889` |
+| M8 no HSTS | **CLOSED** | `6b6aebf` |
+| L4 `geolocation=()` undocumented | **CLOSED** | `6b6aebf` |
+| M12 index gaps | **OPEN — deliberately.** No index added, because no query plan could be produced. Diagnostic shipped instead; needs an operator to run it | `7893c0c` |
+| M9 CSP allows `'unsafe-inline'` | **OPEN — needs a decision from Stephen**, see the finding | — |
 | Everything else | **OPEN** | — |
 
 Zero Critical findings remain open. The brief's gate for a growth push is WP1,
-WP2, WP6 and WP13 complete: **WP1 done, WP2 done, WP6 open, WP13 open.**
+WP2, WP6 and WP13 complete: **all four are done** — WP1 `5e70dd8`, WP2 `8d9096a`,
+WP6 `1d6976c`, WP13 `76b9d6b`. (This line previously read "WP6 open, WP13 open"
+and was stale; corrected rather than silently updated, since the gate being met
+is the thing the brief keys the growth push to.)
 
 ### Corrections to Phase 0 itself
 
@@ -657,6 +667,27 @@ It is Medium because it is complete for a reason the code does not state and not
   criterion and the only thing that would keep this true as tables are added. A new table
   without the cascade would break deletion silently.
 
+**CLOSED `25ad889` (with L5).** The nineteen-table loop is one
+`admin.auth.admin.deleteUser` call. Half-purged-with-a-live-login is now unreachable: either
+the cascade ran or it did not.
+
+The WP11.3 acceptance criterion — "test that a deleted user cannot be reconstructed" — is met
+in a different form than it is written, and the substitution is deliberate rather than
+convenient. There is no database here, so there is no row to delete and nothing to query
+afterwards; an end-to-end deletion test would have to fake the database, and would then be
+asserting that my own stub forgets what I told it to forget. What is tested instead is the
+property the route now rests on: `account-deletion.test.ts` parses every migration, walks each
+`CREATE TABLE` to its matching paren, and fails on any user-bearing column that does not
+cascade. That is stronger than one deletion, because it also covers the table added next month.
+
+Three columns deliberately survive, as a named allowlist with a reason each rather than a
+pattern — `admin_access_log.admin_user_id`, `security_events.user_id`, `challenges.created_by`.
+The test's failure message says that adding to that list is a decision about somebody's right
+to erasure.
+
+**Still unverified from here:** that the cascade actually fires in the deployed database. The
+test reads DDL. Only an operator running a deletion against a real account can close that gap.
+
 ---
 
 #### M6 — `CRON_SECRET` is accepted from the query string
@@ -712,6 +743,17 @@ Capacitor is clean: `cleartext: false` and `allowNavigation` scoped to the three
 `splitindex.co.uk` hosts ([capacitor.config.ts:28-30](capacitor.config.ts#L28)) — the
 development-cleartext-exception risk WP14 warns about is not present.
 
+**CLOSED `6b6aebf` (with L4).** `max-age=63072000; includeSubDomains`, deliberately without
+`preload`. Preload is a one-way door — submission is easy, removal takes months to reach users
+through browser release cycles, and every future subdomain must then serve valid TLS forever.
+That is an operator's commitment to make, so the header comment records what enabling it would
+cost rather than the change making that commitment on Stephen's behalf.
+
+**No test, and none is claimed.** `headers()` is a build-time config value with no runtime seam
+a unit test can reach; asserting that `next.config.ts` contains a string I just typed is a
+tautology dressed as coverage. The verification that means anything is a response header on a
+deployed URL — an operator check, listed as one.
+
 ---
 
 #### M9 — Production CSP allows `'unsafe-inline'` for scripts
@@ -725,6 +767,45 @@ script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""};
 clause that does most of the work in blocking injected script. With `dangerouslySetInnerHTML`
 in use for JSON-LD (L2) the two findings compound slightly. Next.js supports a nonce-based CSP
 through middleware — here, `src/proxy.ts` — which is the shape of the fix.
+
+**OPEN — needs a decision from Stephen, not a commit from me.** I costed the fix rather than
+taking it, because the cheapest version of it changes how the marketing site is served.
+
+`node_modules/next/dist/docs/01-app/02-guides/content-security-policy.md:38` is unambiguous:
+"you **must use dynamic rendering** to add nonces", and at line 391, "**all pages must be
+dynamically rendered**" — static optimisation and ISR disabled, "pages cannot be cached by CDNs
+without additional configuration", PPR incompatible.
+
+Measured against a real `npm run build` on this branch, **13 routes are prerendered static**:
+
+```
+/                      /_not-found            /accessibility         /cardio/gps-run
+/email-confirmed       /forgot-password       /privacy               /reset-password
+/robots.txt            /settings              /settings/billing      /sitemap.xml
+/terms
+```
+
+The first one is the cost. `/` is the marketing landing page; `/privacy`, `/terms` and
+`/accessibility` are the pages a regulator or an app store reviewer reads. Nonces move all of
+them to server-rendered-on-demand.
+
+Three options, and the third only surfaced on re-reading the bundled doc:
+
+1. **Nonce CSP** (docs §"Adding a nonce with Proxy"). Strongest. Costs static rendering and CDN
+   caching on all 13, including the landing page.
+2. **Leave `'unsafe-inline'`.** Free. Keeps the weakest clause in the policy — though note the
+   realistic injection paths are narrow: L2 is now closed, and boundary validation covers the
+   parsed routes.
+3. **`experimental.sri`** (docs:455). Hash-based CSP that "allows you to maintain static
+   generation while still having a strict CSP". Keeps all 13 static. Two caveats the doc states
+   and one it does not: it is **experimental**, it is **build-time only**, and SRI adds
+   `integrity` to *file* scripts — it does not cover **inline** ones, so dropping
+   `'unsafe-inline'` under this option would block both `application/ld+json` blocks and lose
+   the structured data on exactly the pages that need it, unless their hashes are added to the
+   policy by hand and kept in step.
+
+Not decided here. A change that makes the landing page dynamic, or that puts an experimental
+flag in the production build, is a product call.
 
 ---
 
@@ -795,6 +876,33 @@ The gaps:
 I have run no `EXPLAIN ANALYZE`. WP8 requires plans in the commit message, and that needs a
 database. Everything above is a structural reading of DDL, not a measurement.
 
+**STILL OPEN — and deliberately so `7893c0c`.** No index was added, because none could be
+justified. WP8's rule is that every index is justified by a plan in the commit message; with no
+reachable database there is no plan, so an index added here would be added on the strength of it
+looking right, which is the thing the rule exists to stop. On write-heavy tables an unneeded
+index is a tax on every session an athlete logs, permanently.
+
+What was shipped instead is the measurement, runnable:
+[wp8_hot_query_plans.sql](supabase/diagnostics/wp8_hot_query_plans.sql) — the ten hottest
+queries wrapped in `EXPLAIN (ANALYZE, BUFFERS)`, plus the `pg_stat_user_indexes` sweep for
+indexes nobody reads, which is the half of WP8 that usually gets skipped. It carries the
+conditions under which its output means anything (real data, a heavy user, fresh `ANALYZE`),
+because a plan taken against an empty development database is fiction.
+
+**A finding against my own earlier fix.** Migration 056 added
+`idx_profiles_bracket_keys (country, weight_kg, age)` to serve the bracket board. It probably
+does nothing. The index is on raw columns, but `leaderboard_profiles` exposes *bands* computed
+by `CASE` expressions over them — and `age_band` is computed not from `profiles.age` but from a
+`LATERAL` that prefers `date_part('year', age(date_of_birth))` whenever a date of birth is set.
+Filtering on `age_band` therefore cannot use that index, and for any athlete with a date of
+birth the indexed column is not even the input. Query 9 in the script settles it. If the plan
+does not name the index, the two honest outcomes are to drop it or rebuild it as an expression
+index matching the view's `CASE` arms; keeping it because it was well-intentioned is the option
+WP8 rules out.
+
+**Operator task:** run the script against production, paste the plans, then decide. Until then
+this finding stays open, because a diagnostic is not a fix.
+
 ---
 
 #### M13 — No accessibility statement; no skip link
@@ -837,23 +945,26 @@ username is taken". The two findings should be fixed together.
 ### LOW
 
 - ~~**L1 — `--muted-foreground` at 4.19:1 fails text AA**~~ **CLOSED `5525455`.** Lightened along the same neutral to `#7D7D87`, 4.97:1.
-- **L2 — JSON-LD via `dangerouslySetInnerHTML`** (WP3.4).
-  [layout.tsx:88](src/app/layout.tsx#L88) and
-  [how-scoring-works/page.tsx:97](src/app/how-scoring-works/page.tsx#L97). Both stringify
-  static objects with no user input, so there is no injection path today. `JSON.stringify`
-  does not escape `</script>`, so this becomes live the moment any user-controlled string
-  enters either object.
+- ~~**L2 — JSON-LD via `dangerouslySetInnerHTML`** (WP3.4)~~ **CLOSED `f84b4eb`.**
+  `jsonLdScript()` escapes `<`, `&` and U+2028/U+2029 — all standard JSON escapes, so the
+  representation changes and the data does not, which a round-trip test asserts. The escaping
+  test alone would have passed against the old code, since the old code was never called with
+  anything hostile; the test that matters is the scanner over every `dangerouslySetInnerHTML`
+  in `src`, which fails against a *future* commit that adds a username to one of those objects.
+  Recorded as closing a latent defect, not an exploitable one.
 - ~~**L3 — `SECURITY.md` absent**~~ **CLOSED `8d9096a`.** Keys, blast radius, per-key rotation steps, the eleven elevated call sites with justifications, and a Known Gaps section. Its security contact address is a placeholder that still needs creating.
-- **L4 — `Permissions-Policy` denies `geolocation=()`** (WP14). Correct today — GPS is
-  Capacitor-native and `navigator.geolocation` is not used anywhere — but it will silently
-  break a web GPS path if one ships. Worth a comment in `next.config.ts` so the next person
-  finds it in seconds rather than in an afternoon.
-- **L5 — `USER_TABLES` in the deletion route is redundant with the cascade** and will drift.
-  See M5; listed separately because deleting the list is a different change from making
-  deletion atomic.
-- **L6 — `challenge_participants` `USING (true)`**
+- ~~**L4 — `Permissions-Policy` denies `geolocation=()`** (WP14)~~ **CLOSED `6b6aebf`.** The
+  comment now names the mechanism the app actually uses (imported files and the Capacitor
+  native layer, neither of which touches the browser permission this header governs) and what
+  to change when web GPS ships. A policy-denied request is denied *silently*, so the failure
+  mode is a feature that does not work with no prompt and no error.
+- ~~**L5 — `USER_TABLES` in the deletion route is redundant with the cascade**~~
+  **CLOSED `25ad889`.** The list is gone; see M5.
+- ~~**L6 — `challenge_participants` `USING (true)`**~~ **CLOSED `5e70dd8`.**
   ([001:377](supabase/migrations/001_initial_schema.sql#L377)). Same shape as C2–C4 but the
-  table carries only challenge progress. Fix alongside them since the work is identical.
+  table carries only challenge progress. Fixed alongside them, as predicted — the work was
+  identical. (The status table has recorded this as closed since `5e70dd8`; this bullet was
+  missed at the time and is struck through now.)
 
 ---
 
@@ -1031,16 +1142,30 @@ button.
 | Low | 6 |
 | **Total** | **33** |
 
-**Still open as of 2026-09-06**, after WP1, WP11, CI and part of WP3, and
-including the four findings raised during remediation:
+**Still open as of 2026-09-07**, after WP1, WP2, WP3 (part), WP4, WP5, WP6, WP7,
+WP11, WP12, WP13, WP14 (part) and CI, and including the nine findings raised
+during remediation:
 
-| Severity | Open | Closed | Note |
-|---|---|---|---|
-| Critical | **0** | 4 | All four were one defect in four places. |
-| High | 2 | 7 | H1, H3, H4, H5, H6, H7, H8 closed; H2 corrected and partially closed. |
-| Medium | 10 | 5 | M1, M2, M3, M4, M13 closed; M7 and M11 partially. N1, N5, N7 added. |
-| Low | 8 | 4 | L1, L3, L6, N4 closed; N2, N3, N6, N8, N9 added. |
-| **Total** | **20** | **21** | 41 findings raised in total. |
+| Severity | Open | Partial | Closed | Total | Which |
+|---|---|---|---|---|---|
+| Critical | **0** | 0 | 4 | 4 | All four were one defect in four places. |
+| High | 1 | 1 | 7 | 9 | Closed H1, H3–H8. Partial H2. Open H9 (DPIA — Stephen's). |
+| Medium | 8 | 2 | 7 | 17 | Closed M1–M5, M8, M13. Partial M7, M11. Open M6, M9, M10, M12, M14, N1, N5, N7. |
+| Low | 5 | 0 | 7 | 12 | Closed L1–L6, N4. Open N2, N3, N6, N8, N9. |
+| **Total** | **14** | **3** | **25** | **42** | |
+
+**Correction to this table's arithmetic.** Earlier revisions reported "41 findings
+raised" and columns that did not sum to it: partially-closed findings were counted
+in neither the open nor the closed column, so the rows silently lost them. Counted
+by hand off the headings — C1–C4 (4), H1–H9 (9), M1–M14 (14), L1–L6 (6), N1–N9 (9)
+— the total is **42**, and partials now have a column of their own so the rows add
+up. The finding text was always right; only the summary was wrong.
+
+Two of the sixteen are open on purpose rather than for want of effort: **M12**
+(no index added, because no query plan could be produced — see the finding) and
+**M9** (nonce CSP costs static rendering on 13 routes including `/`, which is
+Stephen's call). Naming them here so a later reader does not mistake either for
+something that was quietly dropped.
 
 All four Criticals are the same defect in four places: a policy written to enable a public
 leaderboard exposes the underlying user-owned table instead of a column-scoped projection.
@@ -1072,7 +1197,7 @@ Then:
 | 7 | ~~**WP12 contrast + gating**~~ **DONE `5525455`** | H8, M3, M13, L1 (N7 opened) | M3 satisfies WP6.3 and WP12.7 at once. Statement written last, after the fix, so it is honest. |
 | 8 | ~~**WP6 entitlement matrix**~~ **DONE `1d6976c`** | M4 (M3 already closed by WP12); N8 opened | The matrix test is the deliverable; `features.ts` mostly stands. |
 | 9 | ~~**WP7 logging**~~ **DONE `4d55a69`** | H6; N9 opened | Build the redaction rule in from the first line, not after. |
-| 10 | **WP14 headers, WP11 deletion test, WP8 plans** | M5, M8, M9, M12, L2, L4, L5 | Independent, parallelisable, none blocking. |
+| 10 | **WP14 headers, WP11 deletion test, WP8 plans** — **MOSTLY DONE** `f84b4eb`, `25ad889`, `6b6aebf`, `7893c0c` | M5, M8, L2, L4, L5 closed. **M9 needs a decision** (nonce CSP costs static rendering on 13 routes including `/`); **M12 stays open** (no plan, so no index) | Independent, parallelisable, none blocking. |
 | 11 | **H9 — DPIA + ICO** | H9 | Stephen's, not code. Should start now and run alongside; it does not block engineering. |
 | 12 | **Part D** | D1–D5 | After the brief's own gate: WP1, WP2, WP6 and WP13 complete before any growth push. |
 
@@ -1123,20 +1248,25 @@ is different.
   someone's programme as a side effect of a privacy choice would punish the
   choice.
 
-**Next in the recommended order:** step 10 — the parallelisable remainder.
-M5 (account deletion is non-atomic and untested), M8 (no HSTS), M9 (CSP allows
-`'unsafe-inline'`), M12 (index gaps, needs `EXPLAIN` against a real database),
-L2, L4, L5. None blocks another, and M8 is a two-line change.
+**Step 10 is now done except for the two items that were never mine to close.**
+M5, M8, L2, L4 and L5 are closed (`f84b4eb`, `25ad889`, `6b6aebf`). M12 is open
+by design — WP8 forbids an index without a query plan and no database was
+reachable, so the measurement shipped instead of a guess (`7893c0c`). M9 is a
+decision: nonces force dynamic rendering on all 13 currently-static routes,
+including the landing page, and that is a product call rather than a security
+one.
 
-After that the open set is mostly things needing a live database (N5's GoTrue
-integration tests, M12's query plans), a decision from Stephen (H9's DPIA, the
-EU question), or a sweep through call sites (N1, N8, N9).
+What remains needs a live database (N5's GoTrue integration tests, M12's query
+plans, the erasure cascade check), a decision from Stephen (H9's DPIA, the EU
+question, M9's CSP), or a sweep through call sites (N1, N8, N9). No open finding
+is now blocked on engineering judgement alone.
 
 **Two remaining High findings**, both partially addressed and neither closable
 from here alone: H2 (most routes still unparsed — N1) and M7/N5 (GoTrue session
 behaviour unverifiable without an integration environment).
 
-**Four operator items outstanding:**
+**Seven operator items outstanding** (this heading read "Four" while listing
+five; corrected, and two more added by the WP8/WP11 batch):
 
 1. Create the security contact address in SECURITY.md. It is a placeholder, and
    a bouncing vulnerability report is worse than no address at all.
@@ -1151,3 +1281,11 @@ behaviour unverifiable without an integration environment).
    before applying it**; it can otherwise stop every athlete logging.
 5. Create `accessibility@splitindex.co.uk`, the contact on the published
    accessibility statement, which promises a reply within 5 working days.
+6. Run [wp8_hot_query_plans.sql](supabase/diagnostics/wp8_hot_query_plans.sql)
+   against production or a restored copy, with a heavy user substituted for
+   `ATHLETE_UUID`. Ten plans and an unused-index sweep. M12 cannot close without
+   them, and no index should be added before them.
+7. Delete one real throwaway account and confirm the cascade actually fires in
+   the deployed database. The test in `account-deletion.test.ts` reads migration
+   DDL; it proves the schema declares the cascade, not that production has it.
+   Given migration 049's history, source and production have diverged here before.
