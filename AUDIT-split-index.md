@@ -44,6 +44,7 @@ its current status inline; this table is the summary.
 | L4 `geolocation=()` undocumented | **CLOSED** | `6b6aebf` |
 | M12 index gaps | **OPEN — deliberately.** No index added, because no query plan could be produced. Diagnostic shipped instead; needs an operator to run it | `7893c0c` |
 | M9 CSP allows `'unsafe-inline'` | **CLOSED on the authenticated surface** — public pages keep it, deliberately; see the finding | `695c2d3` |
+| N10 email addresses in an anon-readable column | **OPEN — High**, raised 2026-09-07; app-layer fix landed on `main`, the trigger and the view are not covered | — |
 | Everything else | **OPEN** | — |
 
 Zero Critical findings remain open. The brief's gate for a growth push is WP1,
@@ -1125,6 +1126,29 @@ Closing H8 did not make the app conformant, and the published statement says
 
 The statement is only honest while this list is accurate. Update both together.
 
+**Checked against a peer session's accessibility work on `main`, 2026-09-07.** That
+session landed nav landmarks, `aria-expanded` on three disclosures, `role="alert"` on
+form errors, two icon-button labels, and ten touch targets raised to 44pt, and asked
+whether any of these four could be closed. Verified against `origin/main`: **none of
+the four closes, and item 3 improves without closing.**
+
+- **Item 3 is now partially addressed.** `role="alert"` is on all three error slots in
+  [input.tsx](src/components/ui/input.tsx) (lines 56, 112, 145) — so an error is
+  announced *at the moment it appears*, which is a real improvement. But the finding is
+  about the error being **programmatically tied to its field**, and `grep` for
+  `aria-describedby`, `aria-errormessage` and `aria-invalid` across `src/components/ui`
+  returns nothing. A screen-reader user who tabs back to the input afterwards, or
+  arrives at it with the error already rendered, still gets no association between the
+  two. That is precisely the case a live region does not cover. (WCAG 3.3.1.)
+- **Items 1, 2 and 4 are untouched** by that work: chart text equivalents, colour-alone
+  state, and the manual keyboard/screen-reader walkthrough. Item 4 cannot be closed by
+  code at all — it is a human pass, and until someone does it, claiming those journeys
+  are operable without a mouse remains a guess.
+
+The published statement therefore stays accurate as written and needs no edit. Recorded
+in full because "we did some accessibility work, can the finding close" is a question
+that will be asked again, and the answer needs to be checkable rather than remembered.
+
 #### N8 — Seventeen call sites still resolve entitlement themselves
 **WP6.2 · Low · Evidence: `grep -rln isPremiumUser src` — 21 sites, 4 migrated.**
 
@@ -1149,6 +1173,67 @@ audit writer itself — do not.
 Worth doing with the N8 entitlement migration rather than separately: both are
 the same sweep through overlapping call sites, and doing them together means
 reading each one once.
+
+#### N10 — Email addresses sit in a column the anon key can read
+
+**WP1 / WP11 · High · Raised 2026-09-07, from a peer session's fix. Evidence below.**
+
+A concurrent session found and fixed this on `main` (`8623658`): onboarding wrote
+`user.email` into `profiles.display_name` whenever the identity provider returned no
+name — every ordinary email/password signup — and `display_name` is the athlete's
+public name on the leaderboards, the feed, the friends list and both share cards.
+The fix is right and the reasoning is right. **It is also application-layer only, and
+two gaps remain that keep the data readable.** Verified here rather than taken on
+trust, because the commit message says "That fixes new accounts."
+
+**Gap 1 — the database trigger still writes the address.** `handle_new_user()`, as
+last set by [007:14-18](supabase/migrations/007_signup_trigger_bulletproof.sql#L14),
+is unchanged and still reads:
+
+```sql
+INSERT INTO public.profiles (user_id, display_name)
+VALUES (NEW.id, COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.email))
+```
+
+It fires on `auth.users` INSERT — at signup, **before** onboarding runs. So every new
+email/password signup still gets an email address written into `display_name` at the
+database layer. Onboarding now overwrites it with null, which closes the case for
+anyone who reaches that step; it does nothing for anyone who abandons onboarding, and
+it leaves a window for everyone else. The same expression appears in that migration's
+backfill at line 54.
+
+**Gap 2 — `public_profiles` publishes the column to `anon`, and PostgREST does not run
+TypeScript.** This one is mine. Migration 056 — WP1, the fix for C1–C4 — created the
+view with `display_name` among its twelve columns and
+[056:446-447](supabase/migrations/056_public_projections.sql#L446)
+`GRANT SELECT ON public_profiles TO anon`. `publicDisplayName` guards the render sites
+in our code; it cannot guard `GET /rest/v1/public_profiles?select=display_name`, which
+anyone can issue with the anon key that ships in the client bundle by design.
+
+I wrote in that migration: *"Do not add a column here without asking whether a
+logged-out stranger should have it."* I added `display_name` and did not ask whether it
+could contain an email address. Had this been caught in Phase 0 it would have sat with
+C1–C4 as a Critical; it is High only because the exposed population is narrower.
+
+**Who is actually exposed.** The view is `WHERE p.username IS NOT NULL`, so athletes
+who abandoned onboarding are excluded — their address stays in the table but out of the
+view until they pick a username. The exposed set is **existing athletes who completed
+onboarding before `8623658` and whose `display_name` still holds an address**. That is
+readable from the internet right now.
+
+**What closing it needs** (not written, because it changes production data and that is
+the operator's call):
+
+1. Redefine `handle_new_user()` to drop the `NEW.email` fallback and write NULL, matching
+   what onboarding now does.
+2. Scrub the stored rows — `UPDATE profiles SET display_name = NULL WHERE display_name
+   LIKE '%@%'` — behind a mandatory impact query first, the way migration 058 carries one.
+   It is a destructive write against real rows and the count should be known before it runs.
+3. Then re-ask the WP1 question about every remaining column in `public_profiles`, since
+   the process failure here was mine and column-by-column is the only way to find another.
+
+A CHECK constraint on `display_name` was considered and rejected: it would make the
+signup trigger's INSERT fail, turning a privacy defect into a total signup outage.
 
 ### Part D — activation and monetisation
 
@@ -1198,16 +1283,16 @@ during remediation:
 | Severity | Open | Partial | Closed | Total | Which |
 |---|---|---|---|---|---|
 | Critical | **0** | 0 | 4 | 4 | All four were one defect in four places. |
-| High | 1 | 1 | 7 | 9 | Closed H1, H3–H8. Partial H2. Open H9 (DPIA — Stephen's). |
+| High | 2 | 1 | 7 | 10 | Closed H1, H3–H8. Partial H2. Open H9 (DPIA — Stephen's) and N10 (raised 2026-09-07). |
 | Medium | 7 | 2 | 8 | 17 | Closed M1–M5, M8, M9, M13. Partial M7, M11. Open M6, M10, M12, M14, N1, N5, N7. |
 | Low | 5 | 0 | 7 | 12 | Closed L1–L6, N4. Open N2, N3, N6, N8, N9. |
-| **Total** | **13** | **3** | **26** | **42** | |
+| **Total** | **14** | **3** | **26** | **43** | |
 
 **Correction to this table's arithmetic.** Earlier revisions reported "41 findings
 raised" and columns that did not sum to it: partially-closed findings were counted
 in neither the open nor the closed column, so the rows silently lost them. Counted
-by hand off the headings — C1–C4 (4), H1–H9 (9), M1–M14 (14), L1–L6 (6), N1–N9 (9)
-— the total is **42**, and partials now have a column of their own so the rows add
+by hand off the headings — C1–C4 (4), H1–H9 (9), M1–M14 (14), L1–L6 (6), N1–N10 (10)
+— the total is **43**, and partials now have a column of their own so the rows add
 up. The finding text was always right; only the summary was wrong.
 
 One of the thirteen is open on purpose rather than for want of effort: **M12**
@@ -1313,9 +1398,12 @@ plans, the erasure cascade check), a decision from Stephen (H9's DPIA, the EU
 question), or a sweep through call sites (N1, N8, N9). No open finding is now
 blocked on engineering judgement alone.
 
-**Two remaining High findings**, both partially addressed and neither closable
-from here alone: H2 (most routes still unparsed — N1) and M7/N5 (GoTrue session
-behaviour unverifiable without an integration environment).
+**Remaining High findings:** H2 (most routes still unparsed — N1) and M7/N5
+(GoTrue session behaviour unverifiable without an integration environment), both
+partially addressed and neither closable from here alone — plus **N10**, raised
+2026-09-07, which is neither. N10 is a live exposure of personal data to the
+public anon key and is closable: it needs a trigger change and a scrub of stored
+rows, both written as a migration and both requiring an operator to apply.
 
 **Seven operator items outstanding** (this heading read "Four" while listing
 five; corrected, and two more added by the WP8/WP11 batch):
