@@ -22,6 +22,18 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<!-- Answers Apple's export-compliance question up front so App Store
+	     Connect stops holding each build for a manual answer before it can go
+	     to TestFlight or review. "false" means no NON-exempt encryption: the
+	     app ships no cryptography of its own — no CryptoKit, no CommonCrypto,
+	     no bundled algorithms — and everything it does encrypt (the WebView's
+	     connection to splitindex.co.uk, plus Supabase, Stripe and RevenueCat)
+	     is standard HTTPS/TLS provided by iOS, which Apple exempts.
+	     Revisit this if the app ever encrypts anything itself, e.g. encrypting
+	     cached sessions on disk with our own key rather than relying on iOS
+	     file protection. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>
@@ -73,7 +85,6 @@
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>location</string>
-		<string>workout-processing</string>
 	</array>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Split Index connects to your heart rate monitor or rowing machine (Garmin, Polar, Concept2, or other standard Bluetooth devices) during a session.</string>
