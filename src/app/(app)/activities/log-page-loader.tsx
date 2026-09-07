@@ -153,13 +153,19 @@ export async function loadLogPage({
     }
   }
 
+  // `updated_at` so the client can tell a server draft from a newer local
+  // mirror — see draft-mirror.ts. Without it every stale server row would win
+  // over work this device typed offline.
   const { data: drafts } = await supabase
     .from("workout_drafts")
-    .select("sport, form_data")
+    .select("sport, form_data, updated_at")
     .eq("user_id", user.id);
 
   const initialDrafts = Object.fromEntries(
     (drafts ?? []).map((d) => [d.sport as SportType, d.form_data])
+  );
+  const draftUpdatedAt = Object.fromEntries(
+    (drafts ?? []).map((d) => [d.sport as SportType, d.updated_at as string | null])
   );
 
   const premium = isPremiumUser(
@@ -171,6 +177,7 @@ export async function loadLogPage({
     <ActivityForm
       profileWeightKg={profile.weight_kg}
       initialDrafts={initialDrafts}
+      draftUpdatedAt={draftUpdatedAt}
       isPremium={premium}
       initialSport={sport}
       initialRepeatState={initialRepeatState}

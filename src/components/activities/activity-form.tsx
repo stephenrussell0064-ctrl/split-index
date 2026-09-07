@@ -41,6 +41,7 @@ import type { CardioEnrichment } from "@/lib/scoring/cardio";
 import { useSetModeOverride } from "@/components/layout/mode-override-context";
 import { endLiveActivity } from "@/lib/native/live-activity";
 import { clearPersistedGymTimerState } from "./gym-timer-storage";
+import { clearMirroredDraft, preferredDraft, readMirroredDraft } from "./draft-mirror";
 
 type View = "picker" | "form" | "success";
 
@@ -141,6 +142,7 @@ const slideVariants = {
 export function ActivityForm({
   profileWeightKg,
   initialDrafts,
+  draftUpdatedAt,
   isPremium = false,
   initialSport = null,
   initialRepeatState,
@@ -156,6 +158,8 @@ export function ActivityForm({
 }: {
   profileWeightKg?: number | null;
   initialDrafts?: Partial<Record<SportType, unknown>>;
+  /** `workout_drafts.updated_at` per sport, so a newer offline mirror can win. See draft-mirror.ts. */
+  draftUpdatedAt?: Partial<Record<SportType, string | null>>;
   isPremium?: boolean;
   initialSport?: SportType | null;
   initialRepeatState?: WorkoutFormState;
@@ -279,12 +283,26 @@ export function ActivityForm({
       flush();
       setDirection(sport ? (sportIndexOf(next) >= sportIndexOf(sport) ? 1 : -1) : 1);
       if (!stateMap[next]) {
-        const draft = serverDrafts[next];
-        const hydrated = draft
-          ? restoreDraftState(next, draft, profileWeightKg)
-          : createDefaultState(next, profileWeightKg);
+        /*
+          The newer of the two drafts, not simply the server's.
+
+          The server copy is what follows an athlete to another device and is
+          still the default. The local mirror only wins when it is provably
+          newer, which is exactly the case the server cannot cover: work typed
+          while offline, where the PUT never landed. Without this the mirror
+          would be written and never read.
+        */
+        const { source, draft } = preferredDraft(
+          serverDrafts[next],
+          draftUpdatedAt?.[next],
+          readMirroredDraft(next)
+        );
+        const hydrated =
+          source === "none"
+            ? createDefaultState(next, profileWeightKg)
+            : restoreDraftState(next, draft, profileWeightKg);
         setStateMap((prev) => ({ ...prev, [next]: hydrated }));
-        if (draft) setRestoredSport(next);
+        if (source !== "none") setRestoredSport(next);
       }
       setErrors({});
       setSubmitError(null);
@@ -292,7 +310,7 @@ export function ActivityForm({
       setSport(next);
       setView("form");
     },
-    [flush, sport, stateMap, serverDrafts, profileWeightKg]
+    [flush, sport, stateMap, serverDrafts, draftUpdatedAt, profileWeightKg]
   );
 
   useEffect(() => {
@@ -453,6 +471,10 @@ export function ActivityForm({
 
   /** The server deletes the draft when a session is saved; mirror that locally. Shared by the scored path and the queued one, which is just as saved. */
   function clearDraftFor(saved: SportType) {
+    // The device mirror goes with it. A mirror that outlived its session would
+    // hydrate the next visit with a workout the athlete has already saved —
+    // which is the same data-loss bug wearing a duplicate's clothes.
+    clearMirroredDraft(saved);
     setStateMap((prev) => {
       const next = { ...prev };
       delete next[saved];
@@ -540,6 +562,9 @@ export function ActivityForm({
     });
     setErrors({});
     setSubmitError(null);
+    // Locally too, and first — the server DELETE is best-effort and may not
+    // land, and a discard the athlete asked for must not come back on relaunch.
+    clearMirroredDraft(sport);
     void fetch(`/api/activities/draft?sport=${sport}`, { method: "DELETE" });
   };
 
