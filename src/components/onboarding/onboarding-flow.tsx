@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { Sparkles, Dumbbell, Activity, Check, X, Loader2, Camera } from "lucide-react";
@@ -17,6 +17,7 @@ import { PRESET_AVATARS } from "@/lib/constants/avatars";
 import { createClient } from "@/lib/supabase/client";
 import { supabaseErrorMessage } from "@/lib/supabase/errors";
 import { validateDisplayText, validateUsernameFormat } from "@/lib/utils/username";
+import { useKeyboardSafeFocus } from "@/components/activities/use-keyboard";
 import { ageFromDateOfBirth, maxDobForMinAge, minDobForMaxAge } from "@/lib/utils/age";
 import { cn } from "@/lib/utils/cn";
 import { ScoreRevealSequence } from "@/components/onboarding/score-reveal";
@@ -58,6 +59,18 @@ function inRange(value: string, { min, max }: { min: number; max: number }) {
 
 export function OnboardingFlow() {
   const router = useRouter();
+  /*
+    On iOS the software keyboard does NOT resize the layout viewport, so a
+    field in the lower half of a step is typed into blind — it sits behind the
+    keyboard and nothing scrolls to reveal it. This is the very first form a
+    new athlete meets, and it is several fields long on every step.
+
+    Declared up here with the other hooks rather than beside the JSX, because
+    this component returns early for the score-reveal step and a hook after
+    that return would run conditionally.
+  */
+  const formRef = useRef<HTMLDivElement>(null);
+  useKeyboardSafeFocus(formRef);
   const reducedMotion = useReducedMotion();
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -402,7 +415,7 @@ export function OnboardingFlow() {
   }
 
   return (
-    <div className="mx-auto max-w-lg">
+    <div ref={formRef} className="mx-auto max-w-lg">
       <div className="mb-8">
         <div className="mb-4 flex gap-2">
           {STEPS.map((s, i) => (

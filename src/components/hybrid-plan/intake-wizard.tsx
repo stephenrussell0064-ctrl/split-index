@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useKeyboardSafeFocus } from "@/components/activities/use-keyboard";
 import Link from "next/link";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -160,6 +161,14 @@ function normalizeCustomDays(raw: unknown): CustomSplitDayValue[] {
 }
 
 export function IntakeWizard() {
+  /*
+    On iOS the software keyboard does NOT resize the layout viewport, so a
+    field in the lower half of a step is typed into blind. This is the longest
+    form in the app — multi-step, many fields per step — and it is the one that
+    decides what the athlete's training block will be.
+  */
+  const formRef = useRef<HTMLDivElement>(null);
+  useKeyboardSafeFocus(formRef);
   const router = useRouter();
   const [data, setData] = useState<IntakeResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -358,7 +367,7 @@ export function IntakeWizard() {
   const completed = new Set(intake.sectionsCompleted);
 
   return (
-    <div className="space-y-5">
+    <div ref={formRef} className="space-y-5">
       {/* Progress. Mandatory sections are visually distinct from skippable
           ones so the athlete can see how short the required part is. */}
       <div className="flex gap-1.5">

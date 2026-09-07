@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Check, User, Ruler, Dumbbell, Compass } from "lucide-react";
@@ -8,6 +8,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Select, Textarea } from "@/components/ui/input";
 import { validateDisplayText } from "@/lib/utils/username";
+import { useKeyboardSafeFocus } from "@/components/activities/use-keyboard";
 import {
   EXPERIENCE_LEVELS,
   GENDERS,
@@ -150,8 +151,17 @@ export function ProfileForm({ profile }: ProfileFormProps) {
     setSaving(false);
   };
 
+  /*
+    On iOS the software keyboard does NOT resize the layout viewport, so a
+    field in the lower half of a long form is typed into blind — it sits behind
+    the keyboard and nothing scrolls to reveal it. `use-keyboard.ts` exists for
+    exactly this and, until now, only the activity form called it.
+  */
+  const formRef = useRef<HTMLFormElement>(null);
+  useKeyboardSafeFocus(formRef);
+
   return (
-    <form onSubmit={handleSave} className="space-y-6">
+    <form ref={formRef} onSubmit={handleSave} className="space-y-6">
       <Card>
         <CardHeader>
           <div className="flex items-center gap-2">
