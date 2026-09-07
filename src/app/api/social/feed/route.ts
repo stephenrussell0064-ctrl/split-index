@@ -1,3 +1,5 @@
+import { parseQuery } from "@/lib/validation/boundary";
+import { offsetQuerySchema } from "@/lib/validation/schemas/query";
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { fetchActivityFeed } from "@/lib/social/feed";
@@ -12,8 +14,10 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { searchParams } = new URL(request.url);
-  const offset = Math.max(0, Number(searchParams.get("offset")) || 0);
+  // N1. Same floor at zero; a negative offset no longer reaches the builder.
+  const q = parseQuery(request, offsetQuerySchema);
+  if (q.response) return q.response;
+  const offset = q.data.offset;
 
   const page = await fetchActivityFeed(supabase, user.id, { offset });
 

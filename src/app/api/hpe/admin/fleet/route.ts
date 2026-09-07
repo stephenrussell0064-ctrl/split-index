@@ -1,3 +1,5 @@
+import { parseQuery } from "@/lib/validation/boundary";
+import { windowDaysQuerySchema } from "@/lib/validation/schemas/query";
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -82,7 +84,10 @@ export async function GET(request: Request) {
   }
 
   const { searchParams } = new URL(request.url);
-  const windowDays = Math.min(365, Math.max(7, Number(searchParams.get("days")) || DEFAULT_WINDOW_DAYS));
+  // N1. Same clamp, same default.
+  const q = parseQuery(request, windowDaysQuerySchema(DEFAULT_WINDOW_DAYS));
+  if (q.response) return q.response;
+  const windowDays = q.data.days;
 
   /*
    * WP6.4 — one row per access to the fleet view.

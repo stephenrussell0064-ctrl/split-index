@@ -1,3 +1,5 @@
+import { parseQuery } from "@/lib/validation/boundary";
+import { compareQuerySchema } from "@/lib/validation/schemas/query";
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { fetchCompareHistory } from "@/lib/social/queries";
@@ -12,14 +14,18 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { searchParams } = new URL(request.url);
-  const username = searchParams.get("username")?.replace(/^@/, "");
-  const userId = searchParams.get("userId");
-  const days = Number(searchParams.get("days") ?? 30);
-  const metric = (searchParams.get("metric") ?? "split") as
-    | "split"
-    | "endurance"
-    | "strength";
+  /*
+    N1. `Number(searchParams.get("days") ?? 30)` had no `||` fallback, so
+    `?days=abc` produced NaN and NaN reached a date computation — the one
+    genuine bug among the query parameters rather than a missing guard.
+  */
+  const q = parseQuery(request, compareQuerySchema);
+  if (q.response) return q.response;
+  const username = q.data.username?.replace(/^@/, "");
+  const userId = q.data.userId ?? null;
+  const days = q.data.days;
+  // Another assertion, now an enum that falls back to "split" as before.
+  const metric = q.data.metric;
 
   let otherUserId = userId;
 

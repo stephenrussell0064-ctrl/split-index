@@ -1240,8 +1240,53 @@ readable.
   to a payment webhook without understanding the provider's payload versioning is how you
   start rejecting real events.
 
-**Untouched:** query parameters on roughly 19 read routes. `parseQuery` exists and is used
-by one route; the rest still read `searchParams` directly.
+**QUERY PARAMETERS DONE TOO.** 14 of the 19 read routes now parse; the five that do not
+each validate by their own means and are listed below. 33 of 52 route files validate
+something.
+
+**Two rules here are the opposite of the body schemas, and both are load-bearing:**
+
+1. **Not `.strict()`.** A body with an unknown key means the caller and the server disagree
+   about a contract. A URL with an unknown key means somebody shared a link — `utm_source`,
+   `fbclid` and `gclid` are appended by mail clients, ad platforms and social apps to URLs
+   nobody controls. Rejecting them would turn a shared logbook link into a 400.
+2. **Bad values fall back**, wherever the route already had a default, because a schema that
+   started returning 400 would break links that work today. Ids are the exception and do
+   reject: a malformed uuid in a WHERE clause is a Postgres cast error rather than a miss,
+   so a 400 naming the parameter beats a 500 from the driver.
+
+**What was actually wrong**, since "no schema" undersells it a third time:
+
+- `Number(x) || DEFAULT` treats 0 as absent, so `?limit=0` silently became a full page, and
+  passes NEGATIVES through because `-5` is truthy. `?limit=-5` reached the query builder.
+- The logbook's `limit` had **no upper bound at all** — `?limit=100000` was passed as
+  written. That is the one deliberate behaviour change in the pass; it is capped now.
+- `social/compare` did `Number(searchParams.get("days") ?? 30)` with no `||`, so `?days=abc`
+  produced **NaN**, and NaN reached a date computation. The one genuine bug rather than a
+  missing guard.
+
+**A trap that would have broken the logbook, caught before commit.** The obvious move is to
+validate `?sport=` with `sportSchema`. The logbook filters against `SPORTS` from
+`constants/sports.ts`, which carries `all`, `legs`, `arms`, `chest`, `back`, `core` and
+`shoulders` alongside the nine real sports — it is the FILTER catalog, not the sport enum.
+`sportSchema` is the nine, so that change would have answered `?sport=all`, the default
+view, with a 400. The route keeps its own catalog check, for the same reason `zone` and
+`sort` keep `parseZone` and `parseSort`.
+
+**Clamping was preserved where it existed.** Several routes do
+`Math.min(365, Math.max(7, ...))`, which answers `?days=500` with 365; a fallback to 30
+would have quietly changed what a bookmarked link returns. `clampedIntParam` mirrors the
+expression it replaces, and a test compares the two across a range of inputs.
+
+**A second unrealistic fixture, same class as the merge one.** The entitlement matrix asked
+`/api/social/leaderboard/detail?userId=someone`. `profiles.user_id` is a uuid column, so
+that is an id the database cannot hold.
+
+**The five read routes not using `parseQuery`, and why each is fine:** `social/block` and
+`social/leaderboard/dimension` validate with their own schema or set;
+`profile/username-check` is deliberately loose so the form can explain WHY a name is
+invalid; `hpe/plan` reads one `=== "true"` boolean; `activities/draft`'s remaining
+`searchParams` reference is gone.
 
 #### N2 — Two sets of plausibility bounds now coexist
 **WP3 · Low · Evidence: `src/lib/security/config.ts` and `src/lib/scoring/input-guards.ts`.**

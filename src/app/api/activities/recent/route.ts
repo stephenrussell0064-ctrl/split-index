@@ -1,3 +1,5 @@
+import { parseQuery } from "@/lib/validation/boundary";
+import { recentQuerySchema } from "@/lib/validation/schemas/query";
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { activityToFormState } from "@/lib/activities/db-form";
@@ -21,13 +23,16 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { searchParams } = new URL(request.url);
-  const sport = searchParams.get("sport") as SportType | null;
-  const limit = Math.min(Number(searchParams.get("limit")) || DEFAULT_LIMIT, 20);
-
-  if (!sport) {
-    return NextResponse.json({ error: "sport query param required" }, { status: 400 });
-  }
+  /*
+    N1. `searchParams.get("sport") as SportType` was an assertion: any string
+    reached `.eq("sport", ...)`. This route queries a single sport, so the enum
+    is the right type here — unlike the logbook, which filters against a
+    catalog that also carries "all" and the muscle groups.
+  */
+  const q = parseQuery(request, recentQuerySchema(DEFAULT_LIMIT));
+  if (q.response) return q.response;
+  const sport = q.data.sport as SportType;
+  const limit = q.data.limit;
 
   const { data: profile } = await supabase
     .from("profiles")

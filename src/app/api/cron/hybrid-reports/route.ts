@@ -1,3 +1,5 @@
+import { parseQuery } from "@/lib/validation/boundary";
+import { reportPeriodQuerySchema } from "@/lib/validation/schemas/query";
 import { verifyCronRequest } from "@/lib/security/cron-auth";
 import { NextResponse } from "next/server";
 import { databaseError } from "@/lib/api/errors";
@@ -25,8 +27,10 @@ export async function GET(request: Request) {
     build and is safe in the URL. It is read here rather than in the auth
     helper, which now takes only the Request and cares only about the header.
   */
-  const { searchParams } = new URL(request.url);
-  const period: ReportPeriod = searchParams.get("period") === "quarterly" ? "quarterly" : "monthly";
+  // N1. Same two values, same default, now declared rather than implied.
+  const q = parseQuery(request, reportPeriodQuerySchema);
+  if (q.response) return q.response;
+  const period = q.data.period as ReportPeriod;
 
   const { data: profiles, error } = await admin
     .from("profiles")

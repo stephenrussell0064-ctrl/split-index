@@ -1,5 +1,6 @@
-import { parseBody } from "@/lib/validation/boundary";
+import { parseBody, parseQuery } from "@/lib/validation/boundary";
 import { draftSchema } from "@/lib/validation/schemas/routes";
+import { draftQuerySchema } from "@/lib/validation/schemas/query";
 import { NextResponse } from "next/server";
 import { databaseError } from "@/lib/api/errors";
 import { createClient } from "@/lib/supabase/server";
@@ -60,8 +61,11 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { searchParams } = new URL(request.url);
-  const sport = searchParams.get("sport");
+  // N1. `sport` reached `.eq("sport", ...)` unchecked. Optional here: absent
+  // still means "every draft".
+  const q = parseQuery(request, draftQuerySchema);
+  if (q.response) return q.response;
+  const sport = q.data.sport;
 
   let query = supabase.from("workout_drafts").select("*").eq("user_id", user.id);
 
@@ -88,8 +92,11 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { searchParams } = new URL(request.url);
-  const sport = searchParams.get("sport");
+  // Required here, unlike the GET above: "which drafts" and "delete which
+  // draft" are different questions about the same parameter.
+  const q = parseQuery(request, draftQuerySchema);
+  if (q.response) return q.response;
+  const sport = q.data.sport;
 
   if (!sport) {
     return NextResponse.json({ error: "sport is required" }, { status: 400 });

@@ -165,7 +165,7 @@ const MATRIX: {
   {
     route: "GET /api/social/leaderboard/detail",
     load: () => import("@/app/api/social/leaderboard/detail/route"),
-    url: "/api/social/leaderboard/detail?userId=someone",
+    url: "/api/social/leaderboard/detail?userId=44444444-4444-4444-8444-444444444444",
     admits: ["trialling", "premium"],
   },
   {
@@ -259,7 +259,7 @@ describe("a refused response carries no premium value", () => {
   it.each([
     ["/api/export/activities?format=json", () => import("@/app/api/export/activities/route")],
     [
-      "/api/social/leaderboard/detail?userId=someone",
+      "/api/social/leaderboard/detail?userId=44444444-4444-4444-8444-444444444444",
       () => import("@/app/api/social/leaderboard/detail/route"),
     ],
   ])("%s returns no data to a free account", async (url, load) => {

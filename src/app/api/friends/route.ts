@@ -1,3 +1,5 @@
+import { parseQuery } from "@/lib/validation/boundary";
+import { idQuerySchema } from "@/lib/validation/schemas/query";
 import { parseBody } from "@/lib/validation/boundary";
 import {
   friendActionSchema,
@@ -141,12 +143,11 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { searchParams } = new URL(request.url);
-  const id = searchParams.get("id");
-
-  if (!id) {
-    return NextResponse.json({ error: "id required" }, { status: 400 });
-  }
+  // N1. A malformed uuid in a WHERE clause is a Postgres cast error rather
+  // than a miss, so this rejects instead of falling back.
+  const q = parseQuery(request, idQuerySchema);
+  if (q.response) return q.response;
+  const id = q.data.id;
 
   const { data: row } = await supabase
     .from("friends")

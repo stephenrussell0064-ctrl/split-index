@@ -1,3 +1,5 @@
+import { parseQuery } from "@/lib/validation/boundary";
+import { commentIdQuerySchema } from "@/lib/validation/schemas/query";
 import { parseBody } from "@/lib/validation/boundary";
 import { commentSchema } from "@/lib/validation/schemas/social";
 import { NextResponse } from "next/server";
@@ -107,11 +109,11 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { searchParams } = new URL(request.url);
-  const commentId = searchParams.get("commentId");
-  if (!commentId) {
-    return NextResponse.json({ error: "commentId is required" }, { status: 400 });
-  }
+  // N1. A malformed uuid in a WHERE clause is a Postgres cast error rather
+  // than a miss, so this rejects instead of falling back.
+  const q = parseQuery(request, commentIdQuerySchema);
+  if (q.response) return q.response;
+  const commentId = q.data.commentId;
 
   const { error } = await supabase
     .from("activity_comments")

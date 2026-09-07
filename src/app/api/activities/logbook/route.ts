@@ -1,3 +1,5 @@
+import { parseQuery } from "@/lib/validation/boundary";
+import { logbookQuerySchema } from "@/lib/validation/schemas/query";
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -29,6 +31,18 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  /*
+    N1. `limit` had NO upper bound: `Number(x) || LOGBOOK_PAGE_SIZE` passed
+    `?limit=100000` to the query builder as written. It is capped now, and a
+    negative or zero offset lands on 0 rather than being passed through.
+
+    `sport`, `zone` and `sort` deliberately stay with the route: SPORTS here is
+    the FILTER catalog (it carries "all" and the muscle groups), not the sport
+    enum, so validating against sportSchema would 400 the default view.
+  */
+  const q = parseQuery(request, logbookQuerySchema(LOGBOOK_PAGE_SIZE));
+  if (q.response) return q.response;
+
   const { searchParams } = new URL(request.url);
   const sportParam = searchParams.get("sport");
   // Only ever pass a sport the app actually knows about — this string reaches
@@ -54,8 +68,8 @@ export async function GET(request: Request) {
       zone: parseZone(searchParams.get("zone")),
       sport,
       sort: parseSort(searchParams.get("sort")),
-      offset: Math.max(0, Number(searchParams.get("offset")) || 0),
-      limit: Number(searchParams.get("limit")) || LOGBOOK_PAGE_SIZE,
+      offset: q.data.offset,
+      limit: q.data.limit,
     });
 
     return NextResponse.json(page);

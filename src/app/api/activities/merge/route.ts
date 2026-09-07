@@ -57,12 +57,6 @@ import {
  * expressed by passing a null base.
  */
 
-interface MergeRequestBody {
-  activityIds?: unknown;
-  /** Compute and return the plan without writing anything. Drives the confirmation dialog. */
-  dryRun?: unknown;
-}
-
 /** The plan, minus the merged polyline — hundreds of coordinate pairs the dialog has no use for. */
 function previewOf(plan: MergePlan) {
   const { route, ...merged } = plan.merged;

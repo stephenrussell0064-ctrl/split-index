@@ -1,3 +1,5 @@
+import { parseQuery } from "@/lib/validation/boundary";
+import { gymHistoryQuerySchema } from "@/lib/validation/schemas/query";
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
@@ -19,11 +21,10 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { searchParams } = new URL(request.url);
-  const name = searchParams.get("name")?.trim();
-  if (!name) {
-    return NextResponse.json({ error: "name query param is required" }, { status: 400 });
-  }
+  // N1. Bounded, so an 80KB exercise name cannot reach the query builder.
+  const q = parseQuery(request, gymHistoryQuerySchema);
+  if (q.response) return q.response;
+  const name = q.data.name;
 
   const { data: activities } = await supabase
     .from("activities")

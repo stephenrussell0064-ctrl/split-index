@@ -1,3 +1,5 @@
+import { parseQuery } from "@/lib/validation/boundary";
+import { windowDaysQuerySchema } from "@/lib/validation/schemas/query";
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { buildMonitoringSnapshot, type FeedbackEvent, type GenerationEvent, type InjuryReport, type ProfileSnapshot } from "@/lib/scoring/hpe/monitoring";
@@ -42,8 +44,11 @@ export async function GET(request: Request) {
     });
   }
 
-  const { searchParams } = new URL(request.url);
-  const windowDays = Math.min(365, Math.max(7, Number(searchParams.get("days")) || DEFAULT_WINDOW_DAYS));
+  // N1. Same clamp, same default — clampedIntParam mirrors the expression it
+  // replaces rather than swapping the clamp for a fallback.
+  const q = parseQuery(request, windowDaysQuerySchema(DEFAULT_WINDOW_DAYS));
+  if (q.response) return q.response;
+  const windowDays = q.data.days;
   const since = new Date(Date.now() - windowDays * 86_400_000).toISOString();
 
   const [{ data: eventRows }, { data: feedbackRows }, { data: profileRows }, { data: injuryRows }, { data: flagRow }] =

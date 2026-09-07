@@ -1,3 +1,5 @@
+import { parseQuery } from "@/lib/validation/boundary";
+import { userIdQuerySchema } from "@/lib/validation/schemas/query";
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { fetchLeaderboardDetail } from "@/lib/social/queries";
@@ -25,11 +27,11 @@ export async function GET(request: Request) {
     return NextResponse.json(PREMIUM_REQUIRED, { status: 403 });
   }
 
-  const { searchParams } = new URL(request.url);
-  const targetUserId = searchParams.get("userId");
-  if (!targetUserId) {
-    return NextResponse.json({ error: "userId required" }, { status: 400 });
-  }
+  // N1. A malformed uuid in a WHERE clause is a Postgres cast error rather
+  // than a miss, so this rejects instead of falling back.
+  const q = parseQuery(request, userIdQuerySchema);
+  if (q.response) return q.response;
+  const targetUserId = q.data.userId;
 
   const detail = await fetchLeaderboardDetail(supabase, targetUserId);
   return NextResponse.json(detail);
