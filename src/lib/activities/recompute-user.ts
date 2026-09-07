@@ -15,7 +15,7 @@ import { setsForExercise } from "@/lib/activities/gym-sets";
 import { normalizeName } from "@/lib/scoring/split-strength-engine";
 import { defaultWeightEntryMode } from "@/lib/scoring/weight-entry";
 import type { WeightEntryMode } from "@/lib/scoring/weight-entry";
-import { isPremiumUser } from "@/lib/retention/trial";
+import { hasPaidAccess } from "@/lib/retention/trial";
 import { mapSportToBenchmarkSport, computeBodyBenchmarkEquivalentSeconds } from "@/lib/scoring/adapters";
 import {
   blendPredictedBenchmark,
@@ -165,7 +165,7 @@ export async function recomputeUser(
     0
   );
   const effectiveMaxHr = resolveEffectiveMaxHr(profile.max_hr, observedMaxHr || null);
-  const isPremium = isPremiumUser(profile.subscription_tier, profile.subscription_status);
+  const isPremium = hasPaidAccess(profile);
 
   let recomputed = 0;
   const failures: Array<{ id: string; error: string }> = [];

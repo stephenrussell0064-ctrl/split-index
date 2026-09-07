@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { ActivityForm } from "@/components/activities/activity-form";
-import { isPremiumUser } from "@/lib/retention/trial";
+import { hasPaidAccess } from "@/lib/retention/trial";
 import { getWorkoutPlan } from "@/lib/constants/workout-plans";
 import {
   createDefaultState,
@@ -168,10 +168,7 @@ export async function loadLogPage({
     (drafts ?? []).map((d) => [d.sport as SportType, d.updated_at as string | null])
   );
 
-  const premium = isPremiumUser(
-    profile.subscription_tier,
-    profile.subscription_status
-  );
+  const premium = hasPaidAccess(profile);
 
   return (
     <ActivityForm

@@ -28,7 +28,7 @@ import {
   type HistorySession,
 } from "@/lib/scoring/cardio/race-prediction";
 import { isEnduranceSport } from "@/lib/scoring/engine";
-import { isPremiumUser } from "@/lib/retention/trial";
+import { hasPaidAccess } from "@/lib/retention/trial";
 import type { ActivityFormData, Profile } from "@/types";
 import {
   upsertPersonalRecordsIfBetter,
@@ -214,7 +214,7 @@ export async function scoreAndPersist(
       ];
     });
 
-  const premium = isPremiumUser(profile.subscription_tier, profile.subscription_status);
+  const premium = hasPaidAccess(profile);
   const exerciseHistory =
     body.sport === "gym" && body.exercises?.length
       ? await fetchExerciseHistory(

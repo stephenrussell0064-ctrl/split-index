@@ -10,7 +10,7 @@ import {
   FREE_TIER_FEATURES,
   PREMIUM_TIER_FEATURES,
 } from "@/lib/premium/features";
-import { getTrialDaysRemaining, isPremiumUser } from "@/lib/retention/trial";
+import { getTrialDaysRemaining, hasPaidAccess } from "@/lib/retention/trial";
 import { createClient } from "@/lib/supabase/client";
 import { ScoreDisclaimer } from "@/components/legal/score-disclaimer";
 import { SkuPicker } from "@/components/pricing/sku-picker";
@@ -50,7 +50,7 @@ function BillingContent() {
   }, []);
 
   const premium = profile
-    ? isPremiumUser(profile.tier, profile.status)
+    ? hasPaidAccess({ subscription_tier: profile.tier, subscription_status: profile.status })
     : false;
   const trialDays = profile
     ? getTrialDaysRemaining(profile.createdAt, profile.tier, profile.status)

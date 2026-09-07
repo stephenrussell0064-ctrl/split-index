@@ -49,7 +49,7 @@ import { RacePredictionsSync } from "@/lib/native/race-predictions-sync";
 import type { SplitIndexWidgetPayload } from "@/lib/native/race-predictions";
 import { computeStreakMetrics } from "@/lib/retention/streak-utils";
 import { getGlobalRankPercentile, getNextRankTarget, seedRetentionNotifications } from "@/lib/retention/rank";
-import { isPremiumUser, hasSoftTrialAccess } from "@/lib/retention/trial";
+import { hasShowcaseAccess } from "@/lib/retention/trial";
 import { ACTIVATION_EVENT_SESSION_COUNT, PRICING } from "@/lib/pricing/config";
 import { computeSplitIndexProjection } from "@/lib/premium/projection";
 import { gateAiFeedback } from "@/lib/scoring/gates";
@@ -130,8 +130,7 @@ export default async function DashboardPage() {
   // `premium` extends automatically for the trial window, then reverts to
   // the real free-tier view once it lapses (unless they've actually paid).
   const premium =
-    isPremiumUser(profile.subscription_tier, profile.subscription_status) ||
-    hasSoftTrialAccess(profile.created_at, profile.subscription_tier, profile.subscription_status);
+    hasShowcaseAccess(profile);
 
   const heatmapCutoff = isoDaysAgo(HEATMAP_DAYS);
   const trendCutoff = isoDaysAgo(premium ? 90 : 7);

@@ -10,7 +10,7 @@ import {
   fetchSquads,
 } from "@/lib/social/queries";
 import { computeTrainingStreak } from "@/lib/social/streaks";
-import { isPremiumUser } from "@/lib/retention/trial";
+import { hasPaidAccess } from "@/lib/retention/trial";
 
 export default async function SocialPage() {
   const supabase = await createClient();
@@ -30,10 +30,7 @@ export default async function SocialPage() {
 
   if (!profile?.onboarding_completed) redirect("/onboarding");
 
-  const premium = isPremiumUser(
-    profile.subscription_tier,
-    profile.subscription_status
-  );
+  const premium = hasPaidAccess(profile);
 
   const [
     { data: activityDates },

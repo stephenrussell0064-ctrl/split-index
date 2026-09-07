@@ -36,7 +36,7 @@ import {
   type HistorySession,
 } from "@/lib/scoring/cardio/race-prediction";
 import { isEnduranceSport } from "@/lib/scoring/engine";
-import { isPremiumUser } from "@/lib/retention/trial";
+import { hasPaidAccess } from "@/lib/retention/trial";
 import { serializeScoreBreakdown } from "@/lib/scoring/presentation";
 import { canAccessProfile } from "@/lib/premium/features";
 import type { GymExercise } from "@/types";
@@ -474,7 +474,7 @@ export async function POST(request: Request) {
     .order("started_at", { ascending: false })
     .limit(10);
 
-  const premium = isPremiumUser(profile.subscription_tier, profile.subscription_status);
+  const premium = hasPaidAccess(profile);
   const exerciseHistory =
     body.sport === "gym" && body.exercises?.length
       ? await fetchExerciseHistory(

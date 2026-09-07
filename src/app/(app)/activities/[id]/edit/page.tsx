@@ -2,7 +2,7 @@ import { redirect, notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { ActivityForm } from "@/components/activities/activity-form";
 import { activityToFormState } from "@/lib/activities/db-form";
-import { isPremiumUser } from "@/lib/retention/trial";
+import { hasPaidAccess } from "@/lib/retention/trial";
 import { resolveScoringSex } from "@/lib/scoring/adapters";
 import type { SportType } from "@/types";
 import { SPORTS } from "@/lib/constants/sports";
@@ -54,10 +54,7 @@ export default async function EditActivityPage({
     profile.weight_kg
   );
 
-  const premium = isPremiumUser(
-    profile.subscription_tier,
-    profile.subscription_status
-  );
+  const premium = hasPaidAccess(profile);
 
   return (
     <ActivityForm

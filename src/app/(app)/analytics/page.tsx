@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { AnalyticsClient } from "@/components/analytics/analytics-client";
-import { isPremiumUser } from "@/lib/retention/trial";
+import { hasPaidAccess } from "@/lib/retention/trial";
 import { canAccessProfile } from "@/lib/premium/features";
 import { hasArticle9Consent } from "@/lib/consent/article9";
 import { resolveScoringSex } from "@/lib/scoring/adapters";
@@ -39,10 +39,7 @@ export default async function AnalyticsPage() {
 
   if (!profile?.onboarding_completed) redirect("/onboarding");
 
-  const premium = isPremiumUser(
-    profile.subscription_tier,
-    profile.subscription_status
-  );
+  const premium = hasPaidAccess(profile);
   const showDotsGl = canAccessProfile("strength_dots_gl", profile);
   const historyCutoff = isoDaysAgo(premium ? HISTORY_DAYS : 7);
   const activityCutoff = isoDaysAgo(ACTIVITY_DAYS);

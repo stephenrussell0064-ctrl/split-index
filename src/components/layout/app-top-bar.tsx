@@ -7,7 +7,7 @@ import { Crown, ChevronLeft } from "lucide-react";
 import { NotificationBell } from "@/components/retention/notification-bell";
 import { PremiumBadge } from "@/components/retention/premium-badge";
 import { createClient } from "@/lib/supabase/client";
-import { isPremiumUser } from "@/lib/retention/trial";
+import { hasPaidAccess } from "@/lib/retention/trial";
 import { navigateBack } from "@/lib/utils/navigate-back";
 
 function BackButton() {
@@ -55,10 +55,10 @@ export function AppTopBar({
 
       if (cancelled) return;
       setPremium(
-        isPremiumUser(
-          profile?.subscription_tier ?? "free",
-          profile?.subscription_status ?? null
-        )
+        hasPaidAccess({
+          subscription_tier: profile?.subscription_tier ?? "free",
+          subscription_status: profile?.subscription_status ?? null,
+        })
       );
     }
 

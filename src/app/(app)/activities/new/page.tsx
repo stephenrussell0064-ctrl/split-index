@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { ActivityForm } from "@/components/activities/activity-form";
 import { SPORTS } from "@/lib/constants/sports";
-import { isPremiumUser } from "@/lib/retention/trial";
+import { hasPaidAccess } from "@/lib/retention/trial";
 import type { SportType } from "@/types";
 
 function parseSportParam(value: string | undefined): SportType | null {
@@ -39,10 +39,7 @@ export default async function NewActivityPage({
     (drafts ?? []).map((d) => [d.sport as SportType, d.form_data])
   );
 
-  const premium = isPremiumUser(
-    profile.subscription_tier,
-    profile.subscription_status
-  );
+  const premium = hasPaidAccess(profile);
 
   return (
     <ActivityForm

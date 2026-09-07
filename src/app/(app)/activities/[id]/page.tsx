@@ -14,7 +14,7 @@ import { SessionScoreInsights } from "@/components/scoring/session-score-insight
 import { ScoringExplainerNote } from "@/components/scoring/scoring-explainer-note";
 import { ScoreDisclaimer } from "@/components/legal/score-disclaimer";
 import { canAccessProfile } from "@/lib/premium/features";
-import { isPremiumUser } from "@/lib/retention/trial";
+import { hasPaidAccess } from "@/lib/retention/trial";
 import {
   extractGatedCardioInsight,
   resolveStrengthInsights,
@@ -80,7 +80,7 @@ export default async function ActivityDetailPage({
     ? canAccessProfile("cardio_hr_accountability", profile)
     : false;
   const isPremium = profile
-    ? isPremiumUser(profile.subscription_tier, profile.subscription_status)
+    ? hasPaidAccess(profile)
     : false;
 
   const [{ data: score }, { data: exercises }, { data: priorScores }, { data: strengthScores }] =

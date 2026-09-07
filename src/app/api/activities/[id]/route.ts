@@ -10,7 +10,7 @@ import { enrichCardioScore } from "@/lib/scoring/cardio";
 import { cardioResultToEnrichment } from "@/lib/scoring/adapters";
 import type { CardioResult } from "@/lib/scoring/cardio-activity";
 import { isEnduranceSport } from "@/lib/scoring/engine";
-import { isPremiumUser } from "@/lib/retention/trial";
+import { hasPaidAccess } from "@/lib/retention/trial";
 import { serializeScoreBreakdown } from "@/lib/scoring/presentation";
 import type { WeightEntryMode } from "@/lib/scoring/weight-entry";
 import { defaultWeightEntryMode } from "@/lib/scoring/weight-entry";
@@ -87,7 +87,7 @@ export async function GET(
     ]);
 
   const premium = profile
-    ? isPremiumUser(profile.subscription_tier, profile.subscription_status)
+    ? hasPaidAccess(profile)
     : false;
 
   const score = scoreRaw
@@ -352,10 +352,7 @@ export async function PATCH(
     );
   }
 
-  const premium = isPremiumUser(
-    profile.subscription_tier,
-    profile.subscription_status
-  );
+  const premium = hasPaidAccess(profile);
 
   let cardioEnrichment = null;
   if (isEnduranceSport(body.sport)) {

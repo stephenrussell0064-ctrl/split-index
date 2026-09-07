@@ -50,6 +50,7 @@ its current status inline; this table is the summary.
 | M10 share card content and per-share consent | **CLOSED** — and the finding's "Tier 2" claim corrected; see the finding | see finding |
 | M14 username reserved words and lookalikes | **CLOSED** | see finding |
 | N9 elevated queries unrecorded | **CLOSED** — the record moved into `createAdminClient`, whose `source` argument is required | see finding |
+| N8 entitlement resolved per call site | **CLOSED** — the two questions are named; the finding's "accidental coexistence" was wrong and the split is documented | see finding |
 | Everything else | **OPEN** | — |
 
 Zero Critical findings remain open. The brief's gate for a growth push is WP1,
@@ -1582,6 +1583,42 @@ the other.
 
 Low because nothing is currently wrong, and worth doing because the next
 divergence will be silent in exactly the same way.
+
+**CLOSED — and the finding's diagnosis was wrong, which changed the fix.**
+
+N8 read the coexistence of `isPremiumUser` and `hasSoftTrialAccess` as accidental: "two
+entitlement concepts came to coexist without either knowing about the other". They know
+about each other. `trial.ts` says the soft trial is for surfaces where showing the premium
+experience up front is the point, and explicitly **"not a substitute for real entitlement
+checks on paid-feature gates like data export or leaderboards"**.
+
+Measured: **2 of 16 sites fold in the soft trial and 14 do not** — the dashboard and the
+report view against everything else. That is the documented split, not drift. Doing what the
+finding implies, migrating all sixteen onto one answer, would either give every paid feature
+away to every new signup or take the trial away from the dashboard it was built for.
+
+**What was actually wrong is that the CHOICE was invisible.** Every site wrote the
+expression out, so which question was being asked could only be inferred from whether
+somebody had remembered a second clause. A new page copying the dashboard extends the trial
+to a paid gate; one copying analytics denies it on a showcase surface. Both look right in
+review.
+
+`hasPaidAccess` and `hasShowcaseAccess` now name the two questions, and all sixteen sites
+call the one matching **their existing behaviour** — no answer changed anywhere. The
+migration is asserted rather than assumed: a test checks each function against the exact
+expression it replaced, across a paid athlete, a lapsed free athlete and one inside the
+trial window.
+
+The test that matters most asserts the two functions **disagree** for a new free athlete. If
+they ever agree there, either the trial has been taken from the dashboard or every paid gate
+has been opened to every signup, and that is the one change here that would cost money.
+
+Two parameter types rather than one, because a shared `PremiumSubject` would have forced
+eleven pages to select `created_at` for a function that never reads it: a paid gate asks
+about the subscription, and only the showcase question needs the signup date.
+
+A guard keeps the primitives to the three modules that define the policy — `trial.ts`,
+`entitlements.ts` and `features.ts` — as a named allowlist, so a fourth is a decision.
 
 #### N9 — `elevated_query` has an event type and ten missing call sites
 **WP7 · Low · Evidence: `createAdminClient` is called in 12 places; 2 record it.**

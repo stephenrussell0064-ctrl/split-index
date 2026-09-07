@@ -4,7 +4,7 @@ import { verifyCronRequest } from "@/lib/security/cron-auth";
 import { NextResponse } from "next/server";
 import { databaseError } from "@/lib/api/errors";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { isPremiumUser } from "@/lib/retention/trial";
+import { hasPaidAccess } from "@/lib/retention/trial";
 import { generateHybridReport, currentPeriodStart } from "@/lib/scoring/hybrid-report-data";
 import type { ReportPeriod } from "@/lib/scoring/hybrid-report";
 
@@ -41,7 +41,7 @@ export async function GET(request: Request) {
   }
 
   const premiumUserIds = (profiles ?? [])
-    .filter((p) => isPremiumUser(p.subscription_tier, p.subscription_status))
+    .filter((p) => hasPaidAccess(p))
     .map((p) => p.user_id as string);
 
   let generated = 0;
