@@ -63,10 +63,33 @@ export default function TermsOfServicePage() {
 
             <section>
               <h2 className="text-lg font-semibold text-foreground">4. Subscriptions &amp; billing</h2>
+              {/*
+                This said premium was "billed via Stripe" full stop. In the iOS
+                app it is not: purchases there go through Apple's in-app
+                purchase, which is the whole point of the platform branch in
+                lib/native/use-checkout.ts. A reviewer opens these terms from
+                inside the app, so a flat claim that a digital subscription is
+                billed by a third-party processor reads as the Guideline 3.1.1
+                violation the app specifically avoids — and it was untrue for
+                every iOS subscriber besides.
+
+                Naming the rail per platform is also what makes the refund
+                sentence honest: Apple, not us, handles refunds for anything
+                bought through the App Store, and telling an iOS subscriber to
+                come to us for one sends them somewhere that cannot help.
+              */}
               <p className="mt-3">
-                Premium features are billed via Stripe on a recurring basis unless cancelled.
-                Refunds are handled according to applicable consumer law and our billing
-                provider&apos;s policies. You may cancel at any time from account settings.
+                Monthly and annual subscriptions renew automatically unless cancelled
+                at least 24 hours before the end of the current period. Lifetime access
+                is a single one-time payment and does not renew.
+              </p>
+              <p className="mt-3">
+                Where you buy matters for how you cancel and how you are refunded. Purchases
+                made in the iOS app are processed by Apple through in-app purchase: manage or
+                cancel them in your Apple subscription settings, or from Settings inside the
+                app, and refunds are handled by Apple under its own policies. Purchases made
+                on the web are processed by Stripe and can be cancelled from account settings,
+                with refunds handled by us according to applicable consumer law.
               </p>
             </section>
 
