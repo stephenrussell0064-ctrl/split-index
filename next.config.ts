@@ -1,23 +1,19 @@
 import type { NextConfig } from "next";
 
-const isDev = process.env.NODE_ENV === "development";
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-
-const cspHeader = `
-  default-src 'self';
-  script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""};
-  style-src 'self' 'unsafe-inline';
-  img-src 'self' data: https:;
-  font-src 'self' data:;
-  connect-src 'self' ${supabaseUrl};
-  object-src 'none';
-  base-uri 'self';
-  form-action 'self';
-  frame-ancestors 'none';
-  upgrade-insecure-requests;
-`
-  .replace(/\s{2,}/g, " ")
-  .trim();
+/*
+ * The Content-Security-Policy is NOT here any more. It moved to src/proxy.ts
+ * (M9), because it now differs by path: the authenticated surface gets a
+ * per-request nonce and the public surface keeps the policy that was here.
+ * A static `headers()` entry cannot know a nonce, and setting the header in
+ * both places would send two policies, which browsers enforce TOGETHER — the
+ * strictest reading of both, which is neither of the two we wrote.
+ *
+ * See src/lib/security/csp.ts for the split and what it deliberately does not
+ * fix. The one thing lost by moving it: paths excluded by the proxy matcher
+ * (`_next/static`, `_next/image`, favicon, image extensions) no longer receive
+ * a CSP. They are static assets, and a policy on a .js or .png response governs
+ * nothing.
+ */
 
 const nextConfig: NextConfig = {
   images: {
@@ -55,7 +51,6 @@ const nextConfig: NextConfig = {
       {
         source: "/(.*)",
         headers: [
-          { key: "Content-Security-Policy", value: cspHeader },
           {
             /*
              * HSTS. Vercel serves HTTPS and redirects, but without this the

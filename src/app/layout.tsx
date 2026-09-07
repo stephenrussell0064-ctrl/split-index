@@ -1,5 +1,4 @@
 import type { Metadata, Viewport } from "next";
-import { jsonLdScript } from "@/lib/utils/json-ld";
 import { Geist, Geist_Mono, Space_Grotesk, Unbounded } from "next/font/google";
 import "./globals.css";
 import { ClientBootstrap } from "@/components/providers/client-bootstrap";
@@ -65,13 +64,27 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
-const organizationJsonLd = {
-  "@context": "https://schema.org",
-  "@type": "Organization",
-  name: "Split Index",
-  url: appUrl,
-  logo: `${appUrl}/splitindex-icon.png`,
-};
+/*
+ * The Organization JSON-LD used to be rendered here, in the root layout, and
+ * therefore on every route in the application. It now lives on `/` — see
+ * src/app/page.tsx.
+ *
+ * Two reasons, and the second is the one that forced it:
+ *
+ *  1. It never did anything on the other 40-odd routes. /dashboard and
+ *     /activities require a login, so no crawler has ever seen the block there.
+ *     Organization markup belongs on the page that identifies the organisation.
+ *
+ *  2. M9. The authenticated surface now runs a nonce-based CSP, and Next nonces
+ *     only its OWN script tags — framework bundles, page chunks, and <Script>
+ *     components. A hand-written <script> in a layout gets nothing, so this
+ *     block would have been silently blocked on every app route. Giving it a
+ *     nonce means calling `headers()` in the root layout, which would opt EVERY
+ *     route into dynamic rendering and throw away the entire point of the split.
+ *
+ * So the structured data sits on the static public page, where it is read, and
+ * the strict policy covers the pages holding athlete data, where it matters.
+ */
 
 export default function RootLayout({
   children,
@@ -84,10 +97,6 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} ${spaceGrotesk.variable} ${unbounded.variable} h-full antialiased dark selection:bg-accent/35`}
     >
       <body className="min-h-full flex flex-col bg-background text-foreground font-sans">
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: jsonLdScript(organizationJsonLd) }}
-        />
         {/*
           Skip link. First focusable thing in the document, visually hidden
           until it takes focus.

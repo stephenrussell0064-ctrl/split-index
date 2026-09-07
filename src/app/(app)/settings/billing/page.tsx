@@ -1,180 +1,28 @@
-"use client";
+import { connection } from "next/server";
+import BillingClient from "./billing-client";
 
-import { useEffect, useState, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
-import Link from "next/link";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { PREMIUM_PRICE_GBP, FREE_TRIAL_DAYS } from "@/lib/stripe/config";
-import {
-  FREE_TIER_FEATURES,
-  PREMIUM_TIER_FEATURES,
-} from "@/lib/premium/features";
-import { getTrialDaysRemaining, isPremiumUser } from "@/lib/retention/trial";
-import { createClient } from "@/lib/supabase/client";
-import { ScoreDisclaimer } from "@/components/legal/score-disclaimer";
-import { SkuPicker } from "@/components/pricing/sku-picker";
-import { ManageSubscription } from "@/components/pricing/manage-subscription";
-import type { SubscriptionStatus, SubscriptionTier } from "@/types";
-
-function BillingContent() {
-  const searchParams = useSearchParams();
-  const success = searchParams.get("success");
-  const canceled = searchParams.get("canceled");
-  const [checkoutError, setCheckoutError] = useState<string | null>(null);
-  const [profile, setProfile] = useState<{
-    tier: SubscriptionTier;
-    status: SubscriptionStatus | null;
-    createdAt: string;
-  } | null>(null);
-
-  useEffect(() => {
-    const supabase = createClient();
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (!user) return;
-      supabase
-        .from("profiles")
-        .select("subscription_tier, subscription_status, created_at")
-        .eq("user_id", user.id)
-        .single()
-        .then(({ data }) => {
-          if (data) {
-            setProfile({
-              tier: data.subscription_tier,
-              status: data.subscription_status,
-              createdAt: data.created_at,
-            });
-          }
-        });
-    });
-  }, []);
-
-  const premium = profile
-    ? isPremiumUser(profile.tier, profile.status)
-    : false;
-  const trialDays = profile
-    ? getTrialDaysRemaining(profile.createdAt, profile.tier, profile.status)
-    : null;
-
-  if (success) {
-    return (
-      <Card glow="accent">
-        <CardContent className="text-center py-8">
-          <p className="text-2xl mb-2">Welcome to Premium</p>
-          <p className="text-muted text-sm mb-6">
-            Your subscription is active. AI coaching and advanced analytics are now unlocked.
-          </p>
-          <Link href="/dashboard">
-            <Button>Go to Dashboard</Button>
-          </Link>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  return (
-    <>
-      {canceled && (
-        <p className="text-sm text-warning mb-4">
-          Checkout was canceled. You can try again anytime.
-        </p>
-      )}
-
-      {trialDays !== null && trialDays > 0 && !premium && (
-        <div className="mb-4 rounded-xl border border-accent/20 bg-accent/10 px-4 py-3 text-center">
-          <p className="text-sm font-medium text-accent tabular-nums">
-            {trialDays} day{trialDays === 1 ? "" : "s"} left in your free trial
-          </p>
-        </div>
-      )}
-
-      <div className="grid sm:grid-cols-2 gap-4 mb-6">
-        <Card padding="sm">
-          <CardHeader className="mb-2">
-            <CardTitle className="text-base">Free</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ul className="space-y-2">
-              {FREE_TIER_FEATURES.map((f) => (
-                <li key={f} className="text-sm text-muted">
-                  · {f}
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
-        <Card glow="accent" padding="sm">
-          <CardHeader className="mb-2">
-            <CardTitle className="text-base">
-              Premium · £{PREMIUM_PRICE_GBP}/mo
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ul className="space-y-2">
-              {PREMIUM_TIER_FEATURES.map((f) => (
-                <li key={f} className="text-sm flex items-center gap-2">
-                  <span className="text-success">✓</span> {f}
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card glow="accent">
-        <CardHeader>
-          <CardTitle>
-            {premium ? "Premium active" : `Start your ${FREE_TRIAL_DAYS}-day trial`}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {!premium && (
-            <>
-              <p className="text-sm text-muted mb-6">
-                Cancel anytime. Full access during trial.
-              </p>
-              {checkoutError && (
-                <p className="text-sm text-warning mb-4">{checkoutError}</p>
-              )}
-              <SkuPicker onError={setCheckoutError} />
-              {/*
-                Manual premium for testing (Supabase SQL editor):
-                UPDATE profiles
-                SET subscription_tier = 'premium',
-                    subscription_status = 'active'
-                WHERE user_id = (SELECT id FROM auth.users WHERE email = 'your@email.com');
-              */}
-            </>
-          )}
-          {premium && (
-            <>
-              <p className="text-sm text-muted">
-                You have full access to AI Coach, analytics, and leaderboards.
-              </p>
-              {/* Native only — see the component for why web renders nothing. */}
-              <ManageSubscription className="mt-4" />
-            </>
-          )}
-        </CardContent>
-      </Card>
-    </>
-  );
-}
-
-export default function BillingPage() {
-  return (
-    <div className="max-w-2xl mx-auto">
-      <Link
-        href="/settings"
-        className="text-sm text-muted hover:text-foreground mb-4 inline-block"
-      >
-        ← Settings
-      </Link>
-      <h1 className="text-2xl font-bold mb-6">Billing</h1>
-      <Suspense fallback={<div className="text-muted">Loading...</div>}>
-        <BillingContent />
-      </Suspense>
-      <ScoreDisclaimer className="mt-8" variant="compact" />
-    </div>
-  );
+/**
+ * A server shell whose only job is to stop this page being prerendered (M9).
+ *
+ * `/settings/billing` sits under a path prefix that receives the nonce-based CSP, and a
+ * nonce exists only on a server-rendered request. Prerendered, this page's
+ * script tags would be baked at build time carrying no nonce, and the browser
+ * would refuse to run the page's own JavaScript — a blank screen, with nothing
+ * in it to connect the failure to a header set in a proxy.
+ *
+ * `await connection()` is the documented way to say "wait for a request before
+ * rendering this" (see the bundled Next docs, content-security-policy.md,
+ * "Forcing dynamic rendering"). The route segment config `export const dynamic
+ * = "force-dynamic"` was tried first and is NOT equivalent here: exported from
+ * a "use client" module it is accepted silently and does nothing, and the build
+ * output still showed this route as prerendered. Route segment config no longer
+ * lists `dynamic` at all in Next 16.
+ *
+ * The cost is one server render per view of a page that already requires a
+ * login. That is the whole trade the CSP split exists to make: pay it here,
+ * not on the landing page.
+ */
+export default async function BillingClientPage() {
+  await connection();
+  return <BillingClient />;
 }
