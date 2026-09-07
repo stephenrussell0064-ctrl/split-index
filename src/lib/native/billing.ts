@@ -244,7 +244,47 @@ export type PurchaseResult =
       message: string;
     };
 
+/**
+ * Whether the SDK holds a usable configuration. `configuredForUserId` is only
+ * set after `Purchases.configure` resolves, so null means either no usable API
+ * key was found or configure threw — in both cases nothing that talks to the
+ * store can work yet.
+ */
+export function isBillingConfigured(): boolean {
+  return configuredForUserId !== null;
+}
+
 export async function purchaseNativeSku(sku: SubscriptionSku): Promise<PurchaseResult> {
+  /*
+   * Without this, an unconfigured SDK produced the least useful outcome
+   * available: `Purchases.getOfferings()` throws, the catch below cannot match
+   * the error to any store condition, and the athlete is told "Purchase failed.
+   * Please try again." — for a purchase that was never attempted and a
+   * condition that retrying cannot change. It was seen exactly that way on a
+   * real device.
+   *
+   * The distinction matters to whoever is on call as much as to the athlete:
+   * "no API key in this deployment" and "the App Store declined this card" are
+   * the same sentence otherwise. The console line names the variable, because
+   * this is nearly always a deploy that has not been rebuilt since the key was
+   * added — NEXT_PUBLIC_* is inlined at build time, so setting it without
+   * redeploying changes nothing.
+   */
+  if (!isBillingConfigured()) {
+    console.error(
+      "[revenuecat] purchase attempted before the SDK was configured — no usable API key. " +
+        "Check NEXT_PUBLIC_REVENUECAT_IOS_API_KEY in the DEPLOYED environment (it is inlined at " +
+        "build time, so a production build must have run since it was set)."
+    );
+    return {
+      ok: false,
+      cancelled: false,
+      pending: false,
+      canRestore: false,
+      message: "In-app purchases aren't set up on this build yet. Nothing has been charged.",
+    };
+  }
+
   try {
     const offerings = await Purchases.getOfferings();
     const current = offerings.current;
