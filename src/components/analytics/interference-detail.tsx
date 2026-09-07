@@ -240,13 +240,27 @@ export function InterferenceDetail({ report }: { report: InterferenceReport }) {
                 >
                   <ResponsiveContainer width="100%" height={140}>
                     <BarChart
+                      /*
+                        SHORTER TICKS THAN THE `rows` ABOVE, DELIBERATELY.
+
+                        "Strength-training week" measures 120px at 11px, which
+                        is why the axis below was 140 — 44% of a 318px card
+                        spent on two words, leaving 134px of plot for the bars
+                        the chart exists to compare.
+
+                        Nothing is lost by shortening these. The full wording
+                        survives in three places a reader actually gets it: the
+                        `summary` sentence, the `rows` table ChartFigure renders
+                        sr-only for assistive tech, and the prose under the
+                        chart. A tick label is a key, not a sentence.
+                      */
                       data={[
                         {
-                          label: "Normal week",
+                          label: "Without lifting",
                           value: strengthToCardio.weeklyFallback.weeksWithoutStrengthAvgEF,
                         },
                         {
-                          label: "Strength-training week",
+                          label: "With lifting",
                           value: strengthToCardio.weeklyFallback.weeksWithStrengthAvgEF,
                         },
                       ]}
@@ -261,7 +275,7 @@ export function InterferenceDetail({ report }: { report: InterferenceReport }) {
                         axisLine={false}
                         tickLine={false}
                         tick={{ fontSize: 11, fill: chartTickFill }}
-                        width={140}
+                        width={82}
                       />
                       <Tooltip contentStyle={chartTooltipStyle} formatter={(value) => [value, "How efficiently you ran"]} />
                       <Bar dataKey="value" radius={[0, 4, 4, 0]} fill={designTokens.strengthAccent}>
@@ -431,9 +445,10 @@ export function InterferenceDetail({ report }: { report: InterferenceReport }) {
               >
                 <ResponsiveContainer width="100%" height={140}>
                   <BarChart
+                    // Ticks shortened, full wording kept in `rows` and the summary — see the note on the chart above.
                     data={[
-                      { label: "Lighter cardio week", value: cardioToStrength.lowCardioAvgStrengthComponent },
-                      { label: "Heavy cardio week", value: cardioToStrength.highCardioAvgStrengthComponent },
+                      { label: "Lighter cardio", value: cardioToStrength.lowCardioAvgStrengthComponent },
+                      { label: "Heavy cardio", value: cardioToStrength.highCardioAvgStrengthComponent },
                     ]}
                     layout="vertical"
                     margin={{ top: 8, right: 36, left: 8, bottom: 0 }}
@@ -446,7 +461,7 @@ export function InterferenceDetail({ report }: { report: InterferenceReport }) {
                       axisLine={false}
                       tickLine={false}
                       tick={{ fontSize: 11, fill: chartTickFill }}
-                      width={120}
+                      width={82}
                     />
                     <Tooltip contentStyle={chartTooltipStyle} formatter={(value) => [value, "Strength score"]} />
                     <Bar dataKey="value" radius={[0, 4, 4, 0]} fill={designTokens.cardioAccent}>
