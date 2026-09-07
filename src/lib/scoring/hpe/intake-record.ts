@@ -380,7 +380,33 @@ function parseExercisesByDay(value: unknown): Record<string, string[]> {
 
 export function parseIntakeRow(row: Record<string, unknown> | null): IntakeRecord {
   const b = (key: string): boolean | null => (row?.[key] == null ? null : Boolean(row[key]));
-  const n = (key: string): number | null => (row?.[key] == null ? null : Number(row[key]));
+  /*
+    A value that is not a number reads as ABSENT, not as NaN.
+
+    `Number(row[key])` has no guard, and roughly twenty of the fields below go
+    through it — training years, sessions per week, 1RM overrides, max HR, the
+    week the plan is built around. A single non-numeric value in any of them
+    put NaN into the plan engine, where it does not throw: it propagates
+    silently through the ramp, the ACWR and the prescriptions, and comes out as
+    a block full of NaN that the athlete is shown.
+
+    Several of these also carry an `?? default` on the line that reads them, so
+    returning null means the default applies — which is the behaviour those
+    lines were written for and never got, because NaN is not null.
+
+    The empty string is the same bug wearing a disguise: `Number("")` is 0, and
+    0 is a legitimate answer to several of these fields, so an unanswered
+    `am_hour` came back as midnight rather than as the 7am default.
+  */
+  const n = (key: string): number | null => {
+    const raw = row?.[key];
+    if (raw == null) return null;
+    // `Number("")` is 0, and 0 is a real answer to several of these — an empty
+    // `am_hour` became "trains at midnight" rather than "did not say".
+    if (typeof raw === "string" && raw.trim() === "") return null;
+    const value = Number(raw);
+    return Number.isFinite(value) ? value : null;
+  };
   const arr = (key: string): string[] => (Array.isArray(row?.[key]) ? (row[key] as string[]) : []);
 
   return {

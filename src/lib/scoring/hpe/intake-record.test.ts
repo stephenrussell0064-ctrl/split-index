@@ -437,3 +437,57 @@ describe("section regrouping", () => {
     expect(MANDATORY_SECTIONS).toEqual(["health", "goal", "availability"]);
   });
 });
+
+/**
+ * A NUMBER THAT IS NOT A NUMBER USED TO BECOME NaN, NOT "UNANSWERED".
+ *
+ * `parseIntakeRow` reads about twenty numeric fields through one helper, and
+ * that helper was a bare `Number(row[key])`. NaN does not throw in the plan
+ * engine — it propagates silently through the ramp, the ACWR and the
+ * prescriptions, and the athlete is shown a block full of NaN.
+ *
+ * It also defeated the defaults on the very lines that read these fields:
+ * `n("priority") ?? 0.5` gives 0.5 for null and NaN for NaN, and the engine
+ * has no idea which of those it is looking at.
+ */
+describe("an intake value that is not a number", () => {
+  it("is treated as unanswered rather than as NaN", () => {
+    const parsed = parseIntakeRow({ max_hr_override: "not a number" });
+    expect(parsed.maxHrOverride).toBeNull();
+  });
+
+  it("lets the field's own default apply, which NaN never did", () => {
+    // `n("priority") ?? 0.5` — the default was written for exactly this case
+    // and could not fire, because NaN is not null.
+    expect(parseIntakeRow({ priority: "high" }).priority).toBe(0.5);
+    expect(parseIntakeRow({ am_hour: "" }).amHour).toBe(7);
+  });
+
+  it("does not read an empty answer as zero", () => {
+    // `Number("")` is 0, and 0 is a real answer to several of these fields —
+    // an unanswered `am_hour` came back as midnight rather than as the default.
+    expect(parseIntakeRow({ am_hour: "   " }).amHour).toBe(7);
+    expect(parseIntakeRow({ strength_training_years: "" }).strengthTrainingYears).toBeNull();
+  });
+
+  it("keeps a real zero, which is not the same thing", () => {
+    expect(parseIntakeRow({ am_hour: 0 }).amHour).toBe(0);
+    expect(parseIntakeRow({ strength_training_years: 0 }).strengthTrainingYears).toBe(0);
+  });
+
+  it("still reads the numbers people actually answer with", () => {
+    const parsed = parseIntakeRow({
+      max_hr_override: 188,
+      strength_training_years: "3",
+      priority: 0.8,
+    });
+    expect(parsed.maxHrOverride).toBe(188);
+    expect(parsed.strengthTrainingYears).toBe(3);
+    expect(parsed.priority).toBe(0.8);
+  });
+
+  it("keeps a genuinely absent answer absent", () => {
+    const parsed = parseIntakeRow({ max_hr_override: null });
+    expect(parsed.maxHrOverride).toBeNull();
+  });
+});
