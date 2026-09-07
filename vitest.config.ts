@@ -45,6 +45,18 @@ export default defineConfig({
         neither the extension nor the path matches.
       */
       "scripts/**/*.{test,spec}.{ts,tsx}",
+      /*
+        `tests/uat/` holds the user-acceptance personas — simulated athletes
+        driven through the real scoring engines. They belong in the same gate as
+        everything else: their whole purpose is to fail when a change makes the
+        app worse for a kind of athlete nobody happened to think about, and a
+        suite CI does not run cannot do that.
+
+        Safe against the problem above for the same two reasons the scripts
+        entry is: the skill tests that caused it are `.mjs`, and they live under
+        `.claude/`. Neither matches.
+      */
+      "tests/**/*.{test,spec}.{ts,tsx}",
     ],
   },
 });
