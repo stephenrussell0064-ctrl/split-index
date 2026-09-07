@@ -65,10 +65,13 @@ GRANT EXECUTE ON FUNCTION public.handle_new_user() TO postgres, service_role;
 -- fallback to their username.
 --
 -- Both views are rebuilt in full because Postgres cannot alter a view's column
--- expressions in place. Column lists, filters and security_invoker settings are
--- reproduced exactly as migration 056 defined them; only display_name changes.
+-- expressions in place. They are reproduced from migration 061, NOT 056 — 061
+-- added `AND u.email_confirmed_at IS NOT NULL` to both, and rebuilding from the
+-- older definition would have silently reverted that and re-exposed unverified
+-- accounts. Only the display_name expression differs from 061; everything else,
+-- including the verified-email gate, is carried through unchanged.
 
-DROP VIEW IF EXISTS public_profiles;
+DROP VIEW IF EXISTS public_profiles CASCADE;
 CREATE VIEW public_profiles (
   user_id,
   username,
@@ -97,9 +100,9 @@ SELECT
   p.current_endurance_index,
   p.current_strength_index
 FROM profiles p
--- Same row rule the dropped policy used, now gating twelve columns instead of
--- the whole table.
-WHERE p.username IS NOT NULL;
+JOIN auth.users u ON u.id = p.user_id
+WHERE p.username IS NOT NULL
+  AND u.email_confirmed_at IS NOT NULL;
 
 ALTER VIEW public_profiles SET (security_invoker = off);
 GRANT SELECT ON public_profiles TO anon, authenticated;
@@ -131,8 +134,6 @@ SELECT
   p.current_split_index,
   p.current_endurance_index,
   p.current_strength_index,
-  -- Coarse, mirrors AGE_BRACKETS. Under 18 has no bracket rather than being
-  -- swept into the youngest one.
   CASE
     WHEN eff.age BETWEEN 18 AND 29 THEN '18-29'
     WHEN eff.age BETWEEN 30 AND 39 THEN '30-39'
@@ -140,8 +141,6 @@ SELECT
     WHEN eff.age >= 50            THEN '50+'
     ELSE NULL
   END,
-  -- Coarse, mirrors WEIGHT_CLASSES, which uses [min, max) — light is under 70,
-  -- middle is 70 up to but not including 85.
   CASE
     WHEN p.weight_kg IS NULL   THEN NULL
     WHEN p.weight_kg < 70      THEN 'light'
@@ -149,7 +148,6 @@ SELECT
     WHEN p.weight_kg < 100     THEN 'heavy'
     ELSE 'super'
   END,
-  -- Fine, mirrors AGE_BANDS labels exactly.
   CASE
     WHEN eff.age IS NULL       THEN NULL
     WHEN eff.age <= 19         THEN 'Under 20'
@@ -160,8 +158,6 @@ SELECT
     WHEN eff.age <= 64         THEN '55-64'
     ELSE '65+'
   END,
-  -- Fine, mirrors weightBandFor: a floor at 50kg, then 10kg bands labelled
-  -- "min-maxkg". Cast through int so 80.0 renders as "80-90kg", not "80.0-90.0kg".
   CASE
     WHEN p.weight_kg IS NULL THEN NULL
     WHEN p.weight_kg < 50    THEN 'Under 50kg'
@@ -170,19 +166,13 @@ SELECT
          || (60 + FLOOR((p.weight_kg - 50) / 10) * 10)::INT::TEXT
          || 'kg'
   END,
-  -- scoring_basis first (it is the answer to "which standards", which is what
-  -- a bracket is asking), then gender where it happens to answer the same
-  -- question. Deliberately NOT falling back to DEFAULT_SCORING_BASIS the way
-  -- the scoring engine does: defaulting an unknown to 'male' is defensible when
-  -- the alternative is refusing to score, and indefensible when it silently
-  -- files a real person into a competitive bracket they never chose. NULL here
-  -- means "no sex bracket", not "male".
   CASE
     WHEN COALESCE(p.scoring_basis, p.gender::TEXT) IN ('male', 'female')
       THEN COALESCE(p.scoring_basis, p.gender::TEXT)
     ELSE NULL
   END
 FROM profiles p
+JOIN auth.users u ON u.id = p.user_id
 CROSS JOIN LATERAL (
   SELECT CASE
     WHEN p.date_of_birth IS NOT NULL
@@ -190,7 +180,8 @@ CROSS JOIN LATERAL (
     ELSE p.age
   END AS age
 ) eff
-WHERE p.username IS NOT NULL;
+WHERE p.username IS NOT NULL
+  AND u.email_confirmed_at IS NOT NULL;
 
 ALTER VIEW leaderboard_profiles SET (security_invoker = off);
 GRANT SELECT ON leaderboard_profiles TO authenticated;
