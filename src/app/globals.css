@@ -393,13 +393,39 @@ body {
   color: var(--cardio-accent-text);
 }
 
-/* White-alpha utilities are invisible on the light cardio shell — remap them */
+/*
+  White-alpha utilities are invisible on the light cardio shell — remap them.
+
+  THE SUBSTRING SELECTOR MATCHES THE VARIANTS TOO. `[class*="bg-white"]` catches
+  `hover:bg-white/5` and `active:bg-white/[0.06]` exactly as readily as a plain
+  `bg-white/5`, and the rule carries no pseudo-class — so at specificity (0,3,0)
+  it beat Tailwind's own `.hover\:bg-white\/5:hover` at (0,2,0) and applied
+  ALWAYS. Two consequences on every /cardio route:
+
+    * `Button variant="ghost"`, whose only white utility is `hover:bg-white/5`,
+      rendered with a permanent grey fill and stopped reading as a ghost button.
+    * Nothing on the cardio theme could change background on press. Every
+      `active:bg-white/[…]` state was dead.
+
+  So the base rule now excludes anything whose class carries a variant prefix —
+  `:bg-white` only appears in `hover:bg-white`, `active:bg-white` and the like,
+  never in the bare utility — and the variants get their own rules with the
+  pseudo-class attached, which is what makes them states again.
+*/
 [data-mode="cardio"] .mode-content [class*="border-white"] {
   border-color: rgba(12, 26, 36, 0.12);
 }
 
-[data-mode="cardio"] .mode-content [class*="bg-white"] {
+[data-mode="cardio"] .mode-content [class*="bg-white"]:not([class*=":bg-white"]) {
   background-color: rgba(12, 26, 36, 0.04);
+}
+
+[data-mode="cardio"] .mode-content [class*="hover:bg-white"]:hover {
+  background-color: rgba(12, 26, 36, 0.06);
+}
+
+[data-mode="cardio"] .mode-content [class*="active:bg-white"]:active {
+  background-color: rgba(12, 26, 36, 0.09);
 }
 
 /**
@@ -425,7 +451,42 @@ body {
   }
 }
 
-[data-mode="cardio"] .mode-content [class*="text-white"] {
+/*
+  The same blanket-match problem, costing hierarchy rather than interaction.
+
+  `text-white`, `text-white/60` and `text-white/50` all collapsed to the same
+  full-strength dark, so on the GPS run review card the "Distance" caption and
+  the "5.02 km" value came out identical and the label/value relationship the
+  layout depends on disappeared. Legible, so a design regression rather than an
+  accessibility failure — but the hierarchy is the reason the card is readable
+  at a glance after a run.
+
+  Graded overrides after the blanket rule, so the opacity steps stay steps. The
+  variant forms are excluded from the base rule for the same reason as the
+  background above: `hover:text-white` is a state, not a colour.
+
+  The `:not()` is repeated on the graded rules DELIBERATELY, and measured: it
+  contributes its argument's specificity, so the base rule sits at (0,4,0) and
+  a graded rule without it at (0,3,0) — the blanket rule would win and every
+  opacity step would still collapse. With it they match at (0,4,0) and source
+  order decides, which is what these rules coming last is for.
+*/
+[data-mode="cardio"] .mode-content [class*="text-white"]:not([class*=":text-white"]) {
+  color: var(--cardio-text);
+}
+
+[data-mode="cardio"] .mode-content [class*="text-white/6"]:not([class*=":text-white"]),
+[data-mode="cardio"] .mode-content [class*="text-white/5"]:not([class*=":text-white"]) {
+  color: var(--cardio-muted);
+}
+
+[data-mode="cardio"] .mode-content [class*="text-white/4"]:not([class*=":text-white"]),
+[data-mode="cardio"] .mode-content [class*="text-white/3"]:not([class*=":text-white"]) {
+  color: var(--cardio-muted);
+  opacity: 0.75;
+}
+
+[data-mode="cardio"] .mode-content [class*="hover:text-white"]:hover {
   color: var(--cardio-text);
 }
 
