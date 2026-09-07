@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { jsonLdScript } from "@/lib/utils/json-ld";
 import { Geist, Geist_Mono, Space_Grotesk, Unbounded } from "next/font/google";
 import "./globals.css";
 import { ClientBootstrap } from "@/components/providers/client-bootstrap";
@@ -85,7 +86,7 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col bg-background text-foreground font-sans">
         <script
           type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
+          dangerouslySetInnerHTML={{ __html: jsonLdScript(organizationJsonLd) }}
         />
         {/*
           Skip link. First focusable thing in the document, visually hidden
