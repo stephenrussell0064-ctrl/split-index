@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { isNativePlatform } from "@/lib/native/platform";
 import {
   fetchNativeOfferings,
@@ -39,9 +39,11 @@ import type { SubscriptionSku } from "@/types";
  * safe direction: worst case the native purchase fails with a message, rather
  * than silently falling back to a payment method Apple rejects the app for.
  *
- * The initial value is `"checking"` rather than a lazy `isNativePlatform()`
- * call because this component server-renders, where Capacitor reports web —
- * a lazy initialiser would hydrate the native app with `"web"` already latched.
+ * The value is `"checking"` on the server and through hydration rather than a
+ * lazy `isNativePlatform()` call, because this component server-renders, where
+ * Capacitor reports web — a lazy initialiser would hydrate the native app with
+ * `"web"` already latched. See `useCheckout` below for how that is arranged
+ * without assigning state from an effect.
  */
 export type CheckoutPlatform = "checking" | "native" | "web";
 
@@ -119,22 +121,66 @@ export function resolvePlatform(): CheckoutPlatform {
   return isNativePlatform() ? "native" : "web";
 }
 
+/*
+ * The platform is read through `useSyncExternalStore` rather than held in state
+ * and assigned from an effect.
+ *
+ * The requirement is awkward and worth restating, because it is what rules out
+ * the two obvious shapes. The value must be `"checking"` on the server and
+ * during hydration — Capacitor reports web there, so committing to an answer
+ * early latches `"web"` into the native app, which is blocker B2 — and it must
+ * become the real answer immediately after, without waiting on anything.
+ *
+ *   - A lazy `useState(resolvePlatform)` answers during the server render and
+ *     hydrates the native app as `"web"`.
+ *   - `useState("checking")` plus `setPlatform` in an effect is correct, and is
+ *     what this was. It also triggers `react-hooks/set-state-in-effect`: a
+ *     synchronous setState in an effect renders the tree, throws it away and
+ *     renders it again. The lint rule is right, and this is precisely the case
+ *     `useSyncExternalStore` was added for.
+ *
+ * `getServerSnapshot` is used for the server render AND the hydration render;
+ * `getSnapshot` takes over immediately afterwards. So the sequence is unchanged
+ * — checking, then native or web — and the extra render pass is gone.
+ *
+ * `subscribe` is a no-op returning a no-op: whether this is a native shell or a
+ * browser tab cannot change during the life of the page, so there is nothing to
+ * subscribe to. Both functions are module-scope constants because React
+ * re-subscribes if `subscribe` changes identity between renders.
+ */
+const subscribeToNothing = () => () => {};
+const serverPlatform = (): CheckoutPlatform => "checking";
+
 export function useCheckout(): UseCheckout {
-  const [platform, setPlatform] = useState<CheckoutPlatform>("checking");
+  const platform = useSyncExternalStore(
+    subscribeToNothing,
+    resolvePlatform,
+    serverPlatform,
+  );
   const [offerings, setOfferings] = useState<NativeOfferingPackage[]>([]);
 
   useEffect(() => {
-    const resolved = resolvePlatform();
-    setPlatform(resolved);
-    if (resolved !== "native") return;
+    if (platform !== "native") return;
 
+    /*
+     * Guarded because this effect now runs when `platform` changes rather than
+     * once on mount, so a resolve arriving after unmount (or after a second
+     * run in StrictMode) would otherwise set state on a dead component.
+     */
+    let live = true;
     fetchNativeOfferings()
-      .then(setOfferings)
+      .then((packages) => {
+        if (live) setOfferings(packages);
+      })
       .catch(() => {
         // Prices fall back to the configured ones; the rail does not change.
         // Failing open to Stripe here would be the rejection we are avoiding.
       });
-  }, []);
+
+    return () => {
+      live = false;
+    };
+  }, [platform]);
 
   const checkout = useCallback(
     (sku: SubscriptionSku = "annual") => performCheckout(platform, sku),

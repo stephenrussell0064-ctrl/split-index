@@ -1,4 +1,6 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi, beforeEach } from "vitest";
+import { stripComments } from "@/lib/testing/source-scan";
 
 /*
  * These tests exist for one reason: an App Store reviewer must never reach
@@ -124,5 +126,61 @@ describe("resolvePlatform", () => {
     expect(resolvePlatform()).not.toBe("checking");
     isNativePlatform.mockReturnValue(false);
     expect(resolvePlatform()).not.toBe("checking");
+  });
+});
+
+/**
+ * The hook's wiring, asserted on the source.
+ *
+ * `useCheckout` cannot be executed here — this project has no React testing
+ * library, which is the reason `performCheckout` and `resolvePlatform` were
+ * split out as pure functions in the first place. So this is a weaker kind of
+ * test than the ones above and is labelled as such rather than dressed up: it
+ * cannot prove the hook behaves correctly, only that it has not been rewritten
+ * into the two shapes that are known to reintroduce B2.
+ *
+ * It exists because the platform read changed. `useState("checking")` plus a
+ * `setPlatform` in an effect was correct and tripped
+ * `react-hooks/set-state-in-effect` — a synchronous setState in an effect
+ * renders the tree, discards it and renders again. It is now
+ * `useSyncExternalStore`, which is the API for exactly this: a value that must
+ * differ between the server render and the client.
+ *
+ * The regression to guard against is somebody simplifying that to a lazy
+ * initialiser. It would look tidier, it would pass every test above, and it
+ * would hydrate the native app with "web" already latched — which is B2,
+ * returned, in the most prominent upgrade button in the app.
+ */
+describe("useCheckout resolves the platform without latching it early", () => {
+  const source = stripComments(
+    readFileSync(new URL("./use-checkout.ts", import.meta.url), "utf8")
+  );
+
+  it("reads the platform through useSyncExternalStore", () => {
+    expect(source).toContain("useSyncExternalStore");
+  });
+
+  it("does not assign the platform from an effect", () => {
+    // The lint rule catches this too. Asserted here as well because the rule
+    // is a warning away from being switched off, and this is the reason it
+    // matters in this specific file.
+    expect(source).not.toMatch(/setPlatform\s*\(/);
+  });
+
+  it("hydrates as 'checking', never as a guess", () => {
+    /*
+     * The third argument to useSyncExternalStore is the server snapshot, and
+     * React uses it for the hydration render as well as the server one. If it
+     * ever returns anything but "checking", the native app can hydrate holding
+     * an answer nobody has checked.
+     */
+    expect(source).toMatch(/serverPlatform\s*=\s*\(\)\s*:\s*CheckoutPlatform\s*=>\s*"checking"/);
+    expect(source).toContain("serverPlatform,");
+  });
+
+  it("does not resolve the platform during render on the server", () => {
+    // A lazy initialiser is the tidy-looking mistake.
+    expect(source).not.toMatch(/useState\s*\(\s*resolvePlatform\s*\)/);
+    expect(source).not.toMatch(/useState\s*\(\s*\(\)\s*=>\s*resolvePlatform/);
   });
 });
