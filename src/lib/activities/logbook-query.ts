@@ -68,7 +68,27 @@ export interface LogbookQueryOptions {
 export type LogbookSportCounts = Record<string, number>;
 
 const ENTRY_COLUMNS =
-  "id, sport, title, started_at, duration_seconds, distance_meters, elevation_meters, avg_heart_rate, avg_pace_seconds_per_km, avg_split_seconds, session_type, source, metadata";
+  /*
+    `route:metadata->route`, not `metadata`.
+
+    This selected the whole metadata column to read ONE key out of it. For a
+    merged session that column also carries the entire undo record — every leg
+    as it was at merge time, across all 28 snapshot columns, nested one level
+    deeper per merge. Measured: about 1.8KB per merge, so a session merged four
+    times ships roughly 7KB of merge history to the client on every logbook
+    page, times up to 25 rows a page, to render a map polyline.
+
+    (The audit called this growth "roughly 2x per nested merge". It is not —
+    the `merge:` key in mergedMetadata overwrites the one that arrives with the
+    `...survivorMetadata` spread, so the chain is nested once rather than
+    duplicated. Measured at 891 bytes for one leg and linear from there. The
+    nesting is also correct and load-bearing: it is what lets an A+B+C session
+    be unmerged twice, so it should not be flattened.)
+
+    PostgREST projects the one path server-side, so nothing else in that column
+    leaves the database for a list view.
+  */
+  "id, sport, title, started_at, duration_seconds, distance_meters, elevation_meters, avg_heart_rate, avg_pace_seconds_per_km, avg_split_seconds, session_type, source, route:metadata->route";
 
 export function zoneOf(sport: string): ActivityZone {
   return sport === "gym" ? "gym" : "cardio";
@@ -152,10 +172,7 @@ export async function fetchLogbookPage(
       // Parsed server-side rather than in the client so a malformed stored
       // value can never reach a render, and null-checked so imported or
       // manually logged runs simply have no map rather than an empty box.
-      route:
-        a.source === "gps"
-          ? parseRoutePolyline((a.metadata as { route?: unknown } | null)?.route)
-          : null,
+      route: a.source === "gps" ? parseRoutePolyline(a.route) : null,
       gymSummary: gymSummaries[id] ?? null,
     };
   });
