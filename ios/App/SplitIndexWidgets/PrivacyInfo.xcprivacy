@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Privacy manifest for the SplitIndexWidgets extension.
+
+  App extensions need their own manifest — the app target's does not cover
+  them, and a missing one here produces the same ITMS-91053 upload rejection.
+
+  The widgets COLLECT nothing. They read what the app has already written into
+  the shared App Group container (DailyTrainingStore.swift,
+  RacePredictionStore.swift) and draw it. Nothing is gathered from the device
+  here and nothing is sent anywhere, so NSPrivacyCollectedDataTypes is empty —
+  which is a real declaration, not an omission. The data those stores hold is
+  declared by the app target, which is what actually collects it.
+
+  What does need declaring is the UserDefaults access those stores use to read
+  the group container.
+-->
+<plist version="1.0">
+<dict>
+	<key>NSPrivacyTracking</key>
+	<false/>
+
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array/>
+
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array>
+		<!--
+		  DailyTrainingStore, RacePredictionStore and GymTimerIntents all read
+		  UserDefaults(suiteName: "group.co.uk.splitindex.app"). CA92.1 covers
+		  access to the app group container of the same app, which is exactly
+		  what a widget extension reading its host app's store is doing.
+		-->
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>CA92.1</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { motion, useReducedMotion } from "framer-motion";
 import type { AuthError } from "@supabase/supabase-js";
 import { BrandMark } from "@/components/brand/brand-mark";
-import { GoogleIcon } from "@/components/auth/oauth-icons";
+import { AppleIcon, GoogleIcon } from "@/components/auth/oauth-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { createClient } from "@/lib/supabase/client";
@@ -37,6 +37,9 @@ export function AuthForm({
   const [resending, setResending] = useState(false);
   const [error, setError] = useState(initialError ?? "");
   const [message, setMessage] = useState("");
+  // Which social button is mid-flight, so the other one greys out rather than
+  // letting a second provider be started on top of the first.
+  const [oauthPending, setOauthPending] = useState<"google" | "apple" | null>(null);
 
   const authCallbackUrl = (nextPath = "/dashboard") => buildAuthCallbackUrl(undefined, nextPath);
 
@@ -164,7 +167,20 @@ export function AuthForm({
     setMessage("");
   };
 
-  const handleOAuth = async () => {
+  /**
+   * Both social sign-in buttons run through here.
+   *
+   * Apple is not optional. Guideline 4.8 requires that an app offering a
+   * third-party social login also offer a login service that limits collection
+   * to name and email, lets the user keep their email private, and does not
+   * collect interactions for advertising — which in practice means Sign in with
+   * Apple. Email OTP does not satisfy it: 4.8 asks for a login *service*, and a
+   * self-hosted code is not one. Removing the Apple button without also
+   * removing Google puts the app back in automatic-rejection territory.
+   */
+  const handleOAuth = async (provider: "google" | "apple") => {
+    const label = provider === "apple" ? "Apple" : "Google";
+    setOauthPending(provider);
     setError("");
     try {
       const supabase = createClient();
@@ -174,9 +190,10 @@ export function AuthForm({
       // the app's own main webview is — on native, the OAuth screens run in
       // a separate in-app browser instead (see lib/native/oauth.ts), and
       // skipBrowserRedirect keeps this call from navigating the main webview
-      // itself away from the app.
+      // itself away from the app. Apple's web flow behaves the same way, so it
+      // takes the identical path rather than a special case.
       const { data, error } = await supabase.auth.signInWithOAuth({
-        provider: "google",
+        provider,
         options: native
           ? { redirectTo: nativeOAuthRedirectUrl(), skipBrowserRedirect: true }
           : // No `?next=` query param — Supabase's redirectTo allowlist match is
@@ -187,7 +204,8 @@ export function AuthForm({
       });
 
       if (error) {
-        setError(authErrorMessage(error, "Google sign-in failed. Please try again."));
+        setError(authErrorMessage(error, `${label} sign-in failed. Please try again.`));
+        setOauthPending(null);
         return;
       }
 
@@ -195,7 +213,8 @@ export function AuthForm({
         await openNativeOAuthUrl(data.url);
       }
     } catch (err) {
-      setError(authErrorMessage(err, "Google sign-in failed. Please try again."));
+      setError(authErrorMessage(err, `${label} sign-in failed. Please try again.`));
+      setOauthPending(null);
     }
   };
 
@@ -274,11 +293,30 @@ export function AuthForm({
           </>
         ) : (
           <>
+            {/*
+              Apple sits above Google deliberately. Guideline 4.8 requires the
+              alternative to appear with equivalent prominence, and Apple's own
+              Sign in with Apple guidance asks for it to be at least as
+              prominent as the other options — top of the stack satisfies both
+              readings without argument.
+            */}
             <div className="space-y-3 mb-6">
               <Button
                 variant="secondary"
                 className="w-full gap-2"
-                onClick={handleOAuth}
+                loading={oauthPending === "apple"}
+                disabled={oauthPending !== null}
+                onClick={() => handleOAuth("apple")}
+              >
+                <AppleIcon className="h-4 w-4" />
+                Continue with Apple
+              </Button>
+              <Button
+                variant="secondary"
+                className="w-full gap-2"
+                loading={oauthPending === "google"}
+                disabled={oauthPending !== null}
+                onClick={() => handleOAuth("google")}
               >
                 <GoogleIcon className="h-4 w-4" />
                 Continue with Google

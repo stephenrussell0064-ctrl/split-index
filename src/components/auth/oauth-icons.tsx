@@ -1,3 +1,17 @@
+/**
+ * Apple's mark is supplied as a single filled path with no colour of its own,
+ * because Sign in with Apple's guidelines require the logo to match the button
+ * label's colour rather than carry brand colours the way Google's does.
+ * `currentColor` gives that for free in both themes.
+ */
+export function AppleIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden className={className} fill="currentColor">
+      <path d="M17.05 12.66c-.02-2.3 1.88-3.4 1.96-3.46-1.07-1.56-2.73-1.78-3.32-1.8-1.41-.14-2.76.83-3.48.83-.72 0-1.83-.81-3-.79-1.55.02-2.97.9-3.77 2.29-1.6 2.78-.41 6.9 1.15 9.16.76 1.1 1.67 2.34 2.87 2.3 1.15-.05 1.59-.75 2.98-.75 1.39 0 1.78.75 3 .72 1.24-.02 2.02-1.12 2.78-2.23.87-1.28 1.23-2.52 1.25-2.58-.03-.01-2.4-.92-2.42-3.65zM14.79 5.9c.63-.77 1.06-1.83.94-2.9-.91.04-2.02.61-2.67 1.37-.58.68-1.09 1.77-.95 2.81 1.02.08 2.05-.52 2.68-1.28z" />
+    </svg>
+  );
+}
+
 export function GoogleIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" aria-hidden className={className}>

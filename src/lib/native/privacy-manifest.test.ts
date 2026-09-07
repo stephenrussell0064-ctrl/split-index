@@ -1,0 +1,145 @@
+import { describe, expect, it } from "vitest";
+import { readFileSync, existsSync } from "node:fs";
+import { resolve } from "node:path";
+
+/*
+ * B6 — the privacy manifests.
+ *
+ * These are checked in a test rather than left to a reviewer because a missing
+ * or malformed manifest is an AUTOMATED upload rejection (ITMS-91053) before a
+ * human ever opens the build. The failure arrives hours after you press submit,
+ * with an error code and no context, so it is worth catching here.
+ *
+ * The subtle one is the last test in this file. Creating the .xcprivacy file is
+ * not enough — it has to be in the App target's Resources build phase or it
+ * never gets copied into the bundle, and the upload fails exactly as if the
+ * file did not exist. That is the trap this whole file exists to keep shut.
+ */
+
+const IOS = resolve(__dirname, "../../../ios/App");
+const APP_MANIFEST = resolve(IOS, "App/PrivacyInfo.xcprivacy");
+const WIDGET_MANIFEST = resolve(IOS, "SplitIndexWidgets/PrivacyInfo.xcprivacy");
+const PBXPROJ = resolve(IOS, "App.xcodeproj/project.pbxproj");
+
+const read = (p: string) => readFileSync(p, "utf8");
+
+describe("privacy manifests exist", () => {
+  it("ships one for the app target", () => {
+    expect(existsSync(APP_MANIFEST)).toBe(true);
+  });
+
+  it("ships a separate one for the widget extension", () => {
+    // An extension is not covered by the app's manifest.
+    expect(existsSync(WIDGET_MANIFEST)).toBe(true);
+  });
+});
+
+describe("the app manifest declares what the app actually does", () => {
+  const xml = read(APP_MANIFEST);
+
+  it.each([
+    ["HealthFitness", "HealthKit workouts and heart rate"],
+    ["PreciseLocation", "background GPS during outdoor runs"],
+    ["EmailAddress", "sign-in identity"],
+    ["Name", "profiles.display_name on leaderboards"],
+    ["UserID", "the Supabase auth user id every row is keyed on"],
+    ["PurchaseHistory", "subscription state via RevenueCat"],
+    ["ProductInteraction", "which features an athlete opens"],
+  ])("declares %s — %s", (type) => {
+    expect(xml).toContain(`NSPrivacyCollectedDataType${type}`);
+  });
+
+  it("does NOT declare crash or performance data", () => {
+    // The app ships no analytics or crash SDK. Declaring data you do not
+    // collect mismatches the App Privacy answers, which is its own rejection.
+    expect(xml).not.toContain("NSPrivacyCollectedDataTypeCrashData");
+    expect(xml).not.toContain("NSPrivacyCollectedDataTypePerformanceData");
+  });
+
+  it("declares UserDefaults with reason CA92.1", () => {
+    // Used by RacePredictionsPlugin.swift and @capacitor/preferences, always
+    // against the app's own group container.
+    expect(xml).toContain("NSPrivacyAccessedAPICategoryUserDefaults");
+    expect(xml).toContain("CA92.1");
+  });
+
+  it("declares no tracking and no tracking domains", () => {
+    expect(xml).toMatch(/<key>NSPrivacyTracking<\/key>\s*<false\/>/);
+    expect(xml).toMatch(/<key>NSPrivacyTrackingDomains<\/key>\s*<array\/>/);
+  });
+});
+
+describe("the widget manifest", () => {
+  const xml = read(WIDGET_MANIFEST);
+
+  it("collects nothing — it only reads what the app already wrote", () => {
+    expect(xml).toMatch(/<key>NSPrivacyCollectedDataTypes<\/key>\s*<array\/>/);
+  });
+
+  it("still declares its UserDefaults access to the shared group", () => {
+    expect(xml).toContain("NSPrivacyAccessedAPICategoryUserDefaults");
+    expect(xml).toContain("CA92.1");
+  });
+});
+
+describe("the manifests are actually bundled", () => {
+  const pbxproj = read(PBXPROJ);
+
+  it("has the app manifest in the App target's Resources build phase", () => {
+    // A file on disk that no build phase copies is invisible to the packager,
+    // and the upload fails exactly as if it were missing.
+    const resources = pbxproj.match(
+      /504EC3021FED79650016851F \/\* Resources \*\/ = \{[\s\S]*?\};/,
+    )?.[0];
+    expect(resources).toBeDefined();
+    expect(resources).toContain("PrivacyInfo.xcprivacy in Resources");
+  });
+
+  it("leaves the widget manifest to the synchronized group, which excludes only Info.plist", () => {
+    // SplitIndexWidgets is a PBXFileSystemSynchronizedRootGroup, so files in
+    // that folder are included automatically unless listed as an exception.
+    // If someone adds PrivacyInfo.xcprivacy to membershipExceptions, the widget
+    // silently stops shipping its manifest.
+    const exceptions = pbxproj.match(/membershipExceptions = \([\s\S]*?\);/)?.[0];
+    expect(exceptions).toBeDefined();
+    expect(exceptions).not.toContain("PrivacyInfo.xcprivacy");
+  });
+});
+
+describe("Sign in with Apple (B4)", () => {
+  const authForm = read(resolve(__dirname, "../../components/auth/auth-form.tsx"));
+
+  it("has the entitlement, or Apple sign-in fails at runtime however good the UI is", () => {
+    const entitlements = read(resolve(IOS, "App/App.entitlements"));
+    expect(entitlements).toContain("com.apple.developer.applesignin");
+    expect(entitlements).toContain("<string>Default</string>");
+  });
+
+  /*
+   * The rule Guideline 4.8 actually states, expressed as a test: offering
+   * Google without an equivalent login service is the rejection. So this is
+   * conditional rather than absolute — if Google is ever removed, Apple stops
+   * being mandatory and this test correctly stops demanding it.
+   */
+  it("offers Apple whenever it offers Google", () => {
+    const offersGoogle = authForm.includes('handleOAuth("google")');
+    const offersApple = authForm.includes('handleOAuth("apple")');
+    if (offersGoogle) expect(offersApple).toBe(true);
+  });
+
+  it("puts Apple at least as prominently as Google", () => {
+    // Equivalent prominence is the wording in 4.8. Rendering it first satisfies
+    // that and Apple's own button guidance without needing an argument.
+    const appleAt = authForm.indexOf('handleOAuth("apple")');
+    const googleAt = authForm.indexOf('handleOAuth("google")');
+    expect(appleAt).toBeGreaterThan(-1);
+    expect(appleAt).toBeLessThan(googleAt);
+  });
+
+  it("routes both providers through one handler rather than a second copy", () => {
+    // The same drift that produced B1 — one payment branch migrated, the other
+    // forgotten — is available here too if the providers get separate handlers.
+    expect(authForm).toContain('provider: "google" | "apple"');
+    expect(authForm.match(/signInWithOAuth\(/g) ?? []).toHaveLength(1);
+  });
+});

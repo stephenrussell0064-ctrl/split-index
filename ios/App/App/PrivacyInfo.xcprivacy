@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Privacy manifest for the Split Index app target.
+
+  Required since 1 May 2024. Without it the upload is rejected automatically as
+  ITMS-91053 before a human reviewer sees the build, which is why this counts as
+  a blocker rather than a piece of paperwork.
+
+  Two rules govern what is in here:
+
+  1. It must match the App Privacy answers in App Store Connect exactly. A
+     mismatch is its own rejection, so do not add a data type here "to be safe" —
+     over-declaring is as wrong as under-declaring.
+
+  2. Everything declared must actually be collected. Crash and performance data
+     is deliberately ABSENT: the app ships no analytics or crash-reporting SDK
+     (no Sentry, Firebase, Amplitude or equivalent in package.json), so
+     declaring it would describe an app that does not exist.
+
+  Linked to the athlete's account: everything below. The app has no anonymous
+  mode — all of it is written against a Supabase user id.
+
+  Tracking: false. Nothing here is shared with data brokers, joined with
+  third-party data for advertising, or used for cross-app measurement.
+-->
+<plist version="1.0">
+<dict>
+	<key>NSPrivacyTracking</key>
+	<false/>
+
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array>
+		<!-- HealthKit workouts, heart rate, and every logged session. The core
+		     of the product: without this there is nothing to score. -->
+		<dict>
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypeHealthFitness</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<true/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
+
+		<!-- Background GPS during outdoor runs, for pace and splits. Precise,
+		     not coarse — the route is recorded metre by metre. -->
+		<dict>
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypePreciseLocation</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<true/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
+
+		<!-- Sign-in identity. Collected whether the athlete uses email, Google
+		     or Sign in with Apple; with Apple's private relay the address is a
+		     relay address, but it is still an email address and is declared. -->
+		<dict>
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypeEmailAddress</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<true/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
+
+		<!-- profiles.display_name — shown on leaderboards the athlete opts into. -->
+		<dict>
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypeName</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<true/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
+
+		<!-- The Supabase auth user id, which every row is keyed on. -->
+		<dict>
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypeUserID</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<true/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
+
+		<!-- Subscription state via RevenueCat: which SKU, when it renews,
+		     whether the entitlement is active. -->
+		<dict>
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypePurchaseHistory</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<true/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
+
+		<!-- Which features an athlete opens, recorded so the hybrid plan can
+		     adapt. Not used for advertising and not shared. -->
+		<dict>
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypeProductInteraction</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<true/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
+	</array>
+
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array>
+		<!--
+		  UserDefaults, reached from RacePredictionsPlugin.swift and by
+		  @capacitor/preferences. CA92.1 is the correct reason: every access is
+		  to the app's own group container (group.co.uk.splitindex.app), shared
+		  with the widget extension of the same app, and the data never leaves
+		  it. Do not switch this to 1C8F.1 — that reason is for third-party
+		  SDKs operating on behalf of the host app, which this is not.
+
+		  File-timestamp, disk-space and system-boot-time categories are
+		  deliberately absent: nothing in the app or the widgets calls those
+		  APIs. Verified by grep for creationDate / modificationDate /
+		  attributesOfItem across both targets.
+		-->
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>CA92.1</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

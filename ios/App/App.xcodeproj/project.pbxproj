@@ -10,13 +10,10 @@
 		075CD833F22079FDFE695F99 /* MainViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 339AD66125F5C3C038A95501 /* MainViewController.swift */; };
 		1C0C770ACA8D1A32B338CC6E /* SplitIndexWidgets/SplitIndexActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = B06D17B99535773D2986A555 /* SplitIndexWidgets/SplitIndexActivityAttributes.swift */; };
 		2FAD9763203C412B000D30F8 /* config.xml in Resources */ = {isa = PBXBuildFile; fileRef = 2FAD9762203C412B000D30F8 /* config.xml */; };
+		AA01F1E2C3D4B5A600000202 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = AA01F1E2C3D4B5A600000201 /* PrivacyInfo.xcprivacy */; };
 		3CF22481AD63A24515A72F48 /* HeartRateWorkoutPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 338FBDBD569DD1923954F771 /* HeartRateWorkoutPlugin.swift */; };
 		3E38E33CB312398DB591C71A /* StepCadencePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06E549172EFD899E1B52C9C3 /* StepCadencePlugin.swift */; };
 		4D22ABE92AF431CB00220026 /* CapApp-SPM in Frameworks */ = {isa = PBXBuildFile; productRef = 4D22ABE82AF431CB00220026 /* CapApp-SPM */; };
-		AA01F1E2C3D4B5A600000101 /* SplitIndexWidgets/RacePredictionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA01F1E2C3D4B5A600000102 /* SplitIndexWidgets/RacePredictionStore.swift */; };
-		AA01F1E2C3D4B5A600000103 /* RacePredictionsPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA01F1E2C3D4B5A600000104 /* RacePredictionsPlugin.swift */; };
-		AA01F1E2C3D4B5A600000105 /* SplitIndexWidgets/DailyTrainingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA01F1E2C3D4B5A600000106 /* SplitIndexWidgets/DailyTrainingStore.swift */; };
-		AA01F1E2C3D4B5A600000107 /* DailyTrainingPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA01F1E2C3D4B5A600000108 /* DailyTrainingPlugin.swift */; };
 		50379B232058CBB4000EE86E /* capacitor.config.json in Resources */ = {isa = PBXBuildFile; fileRef = 50379B222058CBB4000EE86E /* capacitor.config.json */; };
 		504EC3081FED79650016851F /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 504EC3071FED79650016851F /* AppDelegate.swift */; };
 		504EC30D1FED79650016851F /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30B1FED79650016851F /* Main.storyboard */; };
@@ -24,6 +21,10 @@
 		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
 		9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9582B6822FE993A50072D4E8 /* SceneDelegate.swift */; };
+		AA01F1E2C3D4B5A600000101 /* SplitIndexWidgets/RacePredictionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA01F1E2C3D4B5A600000102 /* SplitIndexWidgets/RacePredictionStore.swift */; };
+		AA01F1E2C3D4B5A600000103 /* RacePredictionsPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA01F1E2C3D4B5A600000104 /* RacePredictionsPlugin.swift */; };
+		AA01F1E2C3D4B5A600000105 /* SplitIndexWidgets/DailyTrainingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA01F1E2C3D4B5A600000106 /* SplitIndexWidgets/DailyTrainingStore.swift */; };
+		AA01F1E2C3D4B5A600000107 /* DailyTrainingPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA01F1E2C3D4B5A600000108 /* DailyTrainingPlugin.swift */; };
 		B67CD127024B78C9493D382A /* LiveActivityPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98252592C588BFFF1721B263 /* LiveActivityPlugin.swift */; };
 		EEBF54E53022651800657F01 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EEBF54E43022651800657F01 /* WidgetKit.framework */; };
 		EEBF54E73022651800657F01 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EEBF54E63022651800657F01 /* SwiftUI.framework */; };
@@ -57,6 +58,7 @@
 /* Begin PBXFileReference section */
 		06E549172EFD899E1B52C9C3 /* StepCadencePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StepCadencePlugin.swift; sourceTree = "<group>"; };
 		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
+		AA01F1E2C3D4B5A600000201 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		338FBDBD569DD1923954F771 /* HeartRateWorkoutPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeartRateWorkoutPlugin.swift; sourceTree = "<group>"; };
 		339AD66125F5C3C038A95501 /* MainViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainViewController.swift; sourceTree = "<group>"; };
 		50379B222058CBB4000EE86E /* capacitor.config.json */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.json; path = capacitor.config.json; sourceTree = "<group>"; };
@@ -86,7 +88,6 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
-				SplitIndexWidgets.entitlements,
 			);
 			target = EEBF54E13022651800657F01 /* SplitIndexWidgetsExtension */;
 		};
@@ -158,6 +159,7 @@
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
 				504EC3131FED79650016851F /* Info.plist */,
 				2FAD9762203C412B000D30F8 /* config.xml */,
+				AA01F1E2C3D4B5A600000201 /* PrivacyInfo.xcprivacy */,
 				50B271D01FEDC1A000F3C39B /* public */,
 			);
 			path = App;
@@ -272,6 +274,7 @@
 				50379B232058CBB4000EE86E /* capacitor.config.json in Resources */,
 				504EC30D1FED79650016851F /* Main.storyboard in Resources */,
 				2FAD9763203C412B000D30F8 /* config.xml in Resources */,
+				AA01F1E2C3D4B5A600000202 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
