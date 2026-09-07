@@ -148,15 +148,23 @@ export function MergeActivitiesModal({
   const merged = preview?.merged;
   const pace = merged ? paceLine(merged) : null;
 
+  /*
+    A bottom sheet at p-4 puts its own controls 16px from the physical edge of
+    the phone — inside the 34px the home indicator owns, where a swipe up goes
+    to the OS rather than to the button under the finger. And `vh` on iOS is
+    the viewport BEFORE the keyboard opens, so a sheet capped at 85vh is taller
+    than what is actually visible the moment anything is typed into it. `dvh`
+    tracks the real one, the way the shell already does.
+  */
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center p-4 sm:items-center">
+    <div className="fixed inset-0 z-50 flex items-end justify-center p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:items-center sm:pb-4">
       <button type="button" aria-label="Close" className="absolute inset-0 bg-black/60" onClick={onClose} />
       <div
         role="dialog"
         aria-modal="true"
         aria-label="Merge sessions"
         className={cn(
-          "relative max-h-[85vh] w-full max-w-md overflow-y-auto rounded-2xl border border-white/10 bg-[#12121a] p-6 shadow-xl",
+          "relative max-h-[85dvh] w-full max-w-md overflow-y-auto rounded-2xl border border-white/10 bg-[#12121a] p-6 shadow-xl",
           "animate-in fade-in slide-in-from-bottom-4 duration-200"
         )}
       >

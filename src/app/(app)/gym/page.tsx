@@ -186,7 +186,7 @@ export default async function GymPage() {
 
   return (
     <TrainZoneSwipe mode="gym">
-      <div className="bg-gym-zone rounded-2xl overflow-hidden border border-gym-border/40 min-h-[80vh]">
+      <div className="bg-gym-zone rounded-2xl overflow-hidden border border-gym-border/40 min-h-[80dvh]">
         <div className="p-6 sm:p-10">
           <div className="flex flex-wrap items-start justify-between gap-4 mb-8">
             <div>

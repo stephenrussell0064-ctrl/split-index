@@ -73,7 +73,10 @@ export function AnalyticsFilters({
           value={sport}
           onChange={(e) => onSportChange(e.target.value as SportFilter)}
           aria-label="Filter by sport"
-          className="h-9 min-w-0 flex-1 rounded-lg border border-white/[0.08] bg-white/[0.02] px-2.5 text-xs text-foreground sm:max-w-[150px] sm:flex-none"
+          // text-base, not text-xs: under 16px iOS zooms into the control
+          // and, in an SPA, never zooms back out. Same rule as `input.tsx`;
+          // leading-none holds the h-9 box.
+          className="h-9 min-w-0 flex-1 rounded-lg border border-white/[0.08] bg-white/[0.02] px-2.5 text-base leading-none text-foreground sm:max-w-[150px] sm:flex-none"
         >
           {sportOptions.map((o) => (
             <option key={o.value} value={o.value}>

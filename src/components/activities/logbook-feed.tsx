@@ -321,13 +321,21 @@ export function LogbookFeed({
             <label className="sr-only" htmlFor="logbook-sport">
               Filter by sport
             </label>
+            {/*
+              iOS zooms into any form control whose font-size is under 16px,
+              and because this is an SPA the zoom does NOT reset on navigation
+              — tap this filter once and the whole app stays zoomed in and cut
+              off until the athlete pinches back out. `input.tsx` documents the
+              rule; these two raw selects bypass the Select component and never
+              got it. text-base with leading-none keeps the h-9 box as it was.
+            */}
             <select
               id="logbook-sport"
               value={sport ?? ""}
               disabled={loading}
               onChange={(e) => applyFilters({ sport: e.target.value || null })}
               className={cn(
-                "h-9 rounded-xl border px-2.5 text-xs font-medium disabled:opacity-60",
+                "h-9 rounded-xl border px-2.5 text-base font-medium leading-none disabled:opacity-60",
                 theme.border,
                 theme.fill,
                 theme.text
@@ -350,7 +358,7 @@ export function LogbookFeed({
               disabled={loading}
               onChange={(e) => applyFilters({ sort: e.target.value as LogbookSort })}
               className={cn(
-                "h-9 rounded-xl border px-2.5 text-xs font-medium disabled:opacity-60",
+                "h-9 rounded-xl border px-2.5 text-base font-medium leading-none disabled:opacity-60",
                 theme.border,
                 theme.fill,
                 theme.text
