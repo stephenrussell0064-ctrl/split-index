@@ -44,7 +44,7 @@ its current status inline; this table is the summary.
 | L4 `geolocation=()` undocumented | **CLOSED** | `6b6aebf` |
 | M12 index gaps | **OPEN — deliberately.** No index added, because no query plan could be produced. Diagnostic shipped instead; needs an operator to run it | `7893c0c` |
 | M9 CSP allows `'unsafe-inline'` | **CLOSED on the authenticated surface** — public pages keep it, deliberately; see the finding | `695c2d3` |
-| N10 email addresses in an anon-readable column | **OPEN — High**, raised 2026-09-07; app-layer fix landed on `main`, the trigger and the view are not covered | — |
+| N10 email addresses in an anon-readable column | **OPEN — High.** Migration 061 written and tested; stays open until an operator runs the impact query and applies it | `eff60ac` |
 | Everything else | **OPEN** | — |
 
 Zero Critical findings remain open. The brief's gate for a growth push is WP1,
@@ -1221,16 +1221,39 @@ view until they pick a username. The exposed set is **existing athletes who comp
 onboarding before `8623658` and whose `display_name` still holds an address**. That is
 readable from the internet right now.
 
-**What closing it needs** (not written, because it changes production data and that is
-the operator's call):
+**PARTIALLY ADDRESSED `eff60ac` — migration 061 written, not applied.**
+[061_display_name_is_never_an_email.sql](supabase/migrations/061_display_name_is_never_an_email.sql)
+redefines `handle_new_user()` to drop the `NEW.email` fallback (and to discard a
+provider-supplied name that is itself an address, since some OAuth providers return the
+email in the name field), then scrubs the stored rows, both in one transaction.
 
-1. Redefine `handle_new_user()` to drop the `NEW.email` fallback and write NULL, matching
-   what onboarding now does.
-2. Scrub the stored rows — `UPDATE profiles SET display_name = NULL WHERE display_name
-   LIKE '%@%'` — behind a mandatory impact query first, the way migration 058 carries one.
-   It is a destructive write against real rows and the count should be known before it runs.
-3. Then re-ask the WP1 question about every remaining column in `public_profiles`, since
-   the process failure here was mine and column-by-column is the only way to find another.
+The scrub is deliberately narrow: it nulls rows where `display_name` **is** the athlete's
+own address, not every name containing `@`. The broad predicate reads as the safer one
+and is not — `@rachelruns` is a plausible chosen name, a hand-typed `display_name` has no
+copy anywhere to restore from, and deleting somebody's chosen name to fix a bug we caused
+would be a second wrong. The narrow bucket is also the only recoverable one, since every
+row it nulls equalled `auth.users.email` and that row still exists. The impact query
+surfaces the remainder for a person to look at.
+
+**The finding stays OPEN until an operator applies it.** A migration in the repository
+changes nothing in the database. Specifically outstanding:
+
+1. Run the impact query at the top of 061 and read `exposed_via_view` — that is the count
+   of addresses readable from the internet right now.
+2. Apply the migration, then run the two verification queries at the bottom. Both must
+   return zero.
+3. Re-ask the WP1 question about every remaining column in `public_profiles`, since the
+   process failure was mine and column-by-column is the only way to find another. `bio` is
+   the next one to look at: also free text, also published to `anon`, and nothing has ever
+   audited what people put in it.
+
+Two fixes considered and rejected, with the reasoning recorded in the migration rather
+than only here: a CHECK constraint (it would be evaluated inside the trigger's INSERT, so
+one unexpected provider payload takes down signup entirely — a privacy defect traded for
+an outage), and a `CASE` filter on `display_name` inside `public_profiles` (it would close
+the class permanently, including for an address somebody types into their own profile, and
+would silently overrule a deliberate choice; 056 draws exactly that line for
+`injury_status`). The second is genuinely arguable and should be its own migration if taken.
 
 A CHECK constraint on `display_name` was considered and rejected: it would make the
 signup trigger's INSERT fail, turning a privacy defect into a total signup outage.
@@ -1405,7 +1428,7 @@ partially addressed and neither closable from here alone — plus **N10**, raise
 public anon key and is closable: it needs a trigger change and a scrub of stored
 rows, both written as a migration and both requiring an operator to apply.
 
-**Seven operator items outstanding** (this heading read "Four" while listing
+**Eight operator items outstanding** (this heading read "Four" while listing
 five; corrected, and two more added by the WP8/WP11 batch):
 
 1. Create the security contact address in SECURITY.md. It is a placeholder, and
@@ -1421,11 +1444,15 @@ five; corrected, and two more added by the WP8/WP11 batch):
    before applying it**; it can otherwise stop every athlete logging.
 5. Create `accessibility@splitindex.co.uk`, the contact on the published
    accessibility statement, which promises a reply within 5 working days.
-6. Run [wp8_hot_query_plans.sql](supabase/diagnostics/wp8_hot_query_plans.sql)
+6. **Run the impact query in migration 061, then apply it** (N10). It reports
+   `exposed_via_view` — the number of athletes whose email address is readable
+   from the internet through `public_profiles` right now. The migration also
+   contains two verification queries to run afterwards; both must return zero.
+7. Run [wp8_hot_query_plans.sql](supabase/diagnostics/wp8_hot_query_plans.sql)
    against production or a restored copy, with a heavy user substituted for
    `ATHLETE_UUID`. Ten plans and an unused-index sweep. M12 cannot close without
    them, and no index should be added before them.
-7. Delete one real throwaway account and confirm the cascade actually fires in
+8. Delete one real throwaway account and confirm the cascade actually fires in
    the deployed database. The test in `account-deletion.test.ts` reads migration
    DDL; it proves the schema declares the cascade, not that production has it.
    Given migration 049's history, source and production have diverged here before.
