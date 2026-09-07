@@ -804,8 +804,23 @@ Three options, and the third only surfaced on re-reading the bundled doc:
    the structured data on exactly the pages that need it, unless their hashes are added to the
    policy by hand and kept in step.
 
+4. **Scope the strict policy to the routes that are already dynamic.** The 13 static routes are
+   the marketing and legal surface plus three app pages; everything holding athlete data —
+   `/dashboard`, `/activities`, `/social`, `/gym`, `/cardio`, `/hybrid-plan`, `/profile`, every
+   `/api/*` — is already `ƒ` server-rendered on demand and can therefore carry a nonce at no
+   cost. `headers()` takes a `source` pattern and `src/proxy.ts` can branch on pathname, so the
+   nonce policy can apply where the data is and the current policy stay where the marketing is.
+   `/settings`, `/settings/billing` and `/cardio/gps-run` are the three static pages that would
+   want the strict policy; opting those three into dynamic rendering costs nothing anyone
+   notices, unlike `/`.
+
+   **Unverified.** This is a reading of the docs and the build output, not a spike. The failure
+   mode to check first is the proxy setting a CSP on a *static* response, whose scripts have no
+   nonce — that would break the page rather than harden it.
+
 Not decided here. A change that makes the landing page dynamic, or that puts an experimental
-flag in the production build, is a product call.
+flag in the production build, is a product call. Option 4 looks like it gets most of the
+security benefit for none of the rendering cost, and is where I would spend the time.
 
 ---
 
