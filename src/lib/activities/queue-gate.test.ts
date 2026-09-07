@@ -78,6 +78,12 @@ describe("the flush itself still refuses to run offline", () => {
 
     // `flushedSports` names the sports the SERVER accepted, so an offline
     // flush names none — which is what keeps their draft mirrors alive.
-    expect(result).toEqual({ flushed: 0, failed: 0, dropped: 0, flushedSports: [] });
+    expect(result).toEqual({
+      flushed: 0,
+      failed: 0,
+      dropped: 0,
+      flushedSports: [],
+      droppedSports: [],
+    });
   });
 });

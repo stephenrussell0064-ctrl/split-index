@@ -145,6 +145,9 @@ describe("which workouts the server has actually accepted", () => {
 
     expect(result.dropped).toBe(1);
     expect(result.flushedSports).toEqual([]);
+    // Named so the athlete can be told WHERE the workout still is, rather than
+    // told to log it again — the mirror for this sport was never cleared.
+    expect(result.droppedSports).toEqual(["running"]);
   });
 
   it("names nothing for a workout still waiting", async () => {
@@ -158,6 +161,8 @@ describe("which workouts the server has actually accepted", () => {
 
     expect(result.failed).toBe(1);
     expect(result.flushedSports).toEqual([]);
+    // Still waiting is not given up on.
+    expect(result.droppedSports).toEqual([]);
   });
 });
 

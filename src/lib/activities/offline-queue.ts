@@ -199,22 +199,33 @@ export interface FlushResult {
   flushedSports: string[];
   /** Still queued, will be tried again. */
   failed: number;
-  /** Given up on and removed — the workout is gone and the user should be told. */
+  /** Given up on and removed from the queue. The workout never reached the server. */
   dropped: number;
+  /**
+   * Sports whose workout the queue gave up on.
+   *
+   * Reported so the athlete can be told WHERE the session still is. It is not
+   * lost: the device draft mirror deliberately survives being queued, so a
+   * dropped workout is sitting in the log form for that sport waiting to be
+   * finished. Saying "you will need to log it again" would send someone to
+   * re-enter work they still have.
+   */
+  droppedSports: string[];
 }
 
 export async function flushActivityQueue(userId?: string | null): Promise<FlushResult> {
   if (typeof window === "undefined" || !navigator.onLine) {
-    return { flushed: 0, failed: 0, dropped: 0, flushedSports: [] };
+    return { flushed: 0, failed: 0, dropped: 0, flushedSports: [], droppedSports: [] };
   }
 
   const queue = readQueue().filter((item) => ownedBy(item, userId));
-  if (queue.length === 0) return { flushed: 0, failed: 0, dropped: 0, flushedSports: [] };
+  if (queue.length === 0) return { flushed: 0, failed: 0, dropped: 0, flushedSports: [], droppedSports: [] };
 
   let flushed = 0;
   let failed = 0;
   let dropped = 0;
   const flushedSports = new Set<string>();
+  const droppedSports = new Set<string>();
 
   for (const item of queue) {
     const attempts = (item.attempts ?? 0) + 1;
@@ -241,6 +252,8 @@ export async function flushActivityQueue(userId?: string | null): Promise<FlushR
       if (isPermanentFailure(res.status) || attempts >= MAX_ATTEMPTS) {
         removeQueuedActivity(item.id);
         dropped += 1;
+        const droppedSport = (item.payload as { sport?: unknown } | null)?.sport;
+        if (typeof droppedSport === "string") droppedSports.add(droppedSport);
         console.error(
           `[offline-queue] giving up on a queued workout after ${attempts} attempt(s), HTTP ${res.status}`
         );
@@ -260,7 +273,13 @@ export async function flushActivityQueue(userId?: string | null): Promise<FlushR
     }
   }
 
-  return { flushed, failed, dropped, flushedSports: [...flushedSports] };
+  return {
+    flushed,
+    failed,
+    dropped,
+    flushedSports: [...flushedSports],
+    droppedSports: [...droppedSports],
+  };
 }
 
 export function isNetworkFailure(err: unknown): boolean {

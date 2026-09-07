@@ -32,7 +32,7 @@ export function PendingSyncBanner({ className }: { className?: string }) {
   const [count, setCount] = useState(0);
   const [userId, setUserId] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
-  const [dropped, setDropped] = useState(0);
+  const [droppedSports, setDroppedSports] = useState<string[]>([]);
 
   // Who we are, once. The queue filters by owner so an unsent workout is never
   // uploaded by whoever signs in next — the count has to filter the same way.
@@ -67,17 +67,17 @@ export function PendingSyncBanner({ className }: { className?: string }) {
 
   const syncNow = useCallback(async () => {
     setSyncing(true);
-    setDropped(0);
+    setDroppedSports([]);
     try {
       const result = await flushActivityQueue(userId);
-      setDropped(result.dropped);
+      setDroppedSports(result.droppedSports);
     } finally {
       setSyncing(false);
       setCount(getPendingActivityCount(userId));
     }
   }, [userId]);
 
-  if (count === 0 && dropped === 0) return null;
+  if (count === 0 && droppedSports.length === 0) return null;
 
   return (
     <div
@@ -103,15 +103,21 @@ export function PendingSyncBanner({ className }: { className?: string }) {
         ) : (
           /*
             The queue gives up after five attempts or on an answer that will
-            not change (see isPermanentFailure). Silently dropping a workout
-            the athlete believes is saved is the one outcome worth interrupting
-            them for — they can still log it again from memory today, and
-            cannot in a month.
+            not change (see isPermanentFailure). This used to say "you will
+            need to log it again", which was true when a queued save cleared
+            the device draft mirror — and stopped being true the moment the
+            mirror was kept until the SERVER accepts the workout.
+
+            It is now the wrong thing to say for a worse reason than being
+            stale: the session is sitting in the log form for that sport, and
+            telling someone to re-enter it sends them to redo work they still
+            have. So it names the sport and says where the workout is.
           */
           <p className="text-sm font-medium text-danger">
-            {dropped === 1 ? "A workout" : `${dropped} workouts`} could not be saved and
-            {dropped === 1 ? " has" : " have"} been removed. You will need to log{" "}
-            {dropped === 1 ? "it" : "them"} again.
+            {droppedSports.length === 1 ? "A workout" : `${droppedSports.length} workouts`} could
+            not be uploaded. Still saved on this phone — open{" "}
+            {droppedSports.map((s) => s.replace(/_/g, " ")).join(" and ")} logging to finish{" "}
+            {droppedSports.length === 1 ? "it" : "them"}.
           </p>
         )}
       </div>
