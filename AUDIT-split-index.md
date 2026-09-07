@@ -47,6 +47,7 @@ its current status inline; this table is the summary.
 | N10 email addresses in an anon-readable column | **CLOSED** by a peer session's migration 064, which masks the column in both views rather than scrubbing rows — a better fix than my 061, which never landed | `ff0ab52` |
 | M6 `CRON_SECRET` accepted from the query string | **CLOSED** | see finding |
 | N11 `REVOKE FROM PUBLIC` leaves anon's direct grant | **OPEN — High.** 067 written, not applied; `prune_security_events` is the one with teeth | `067` |
+| M10 share card content and per-share consent | **CLOSED** — and the finding's "Tier 2" claim corrected; see the finding | see finding |
 | Everything else | **OPEN** | — |
 
 Zero Critical findings remain open. The brief's gate for a growth push is WP1,
@@ -912,6 +913,54 @@ authenticated, and it renders only the requesting user's own report.
 `src/app/api/interference/report-card/route.tsx` needs the same review; I have not read it in
 detail.
 
+**CLOSED — and the finding was half wrong, which is recorded because the wrong half would
+have sent the next person hunting the wrong thing.**
+
+**The correction first.** "A Tier 2-derived value" is false. Readiness on that card comes
+from `computeReadiness(params.sessions, …)`, which derives an acute:chronic workload ratio
+from training load. It reads no health table, no PAR-Q answer, no HRV row and no sleep row
+— traced from `hybrid-report.ts:65` through `readiness.ts:61`. It is **Tier 1 training
+data held on contract necessity**, not Article 9 special category data. I wrote the
+finding from the word "readiness" rather than from the call graph.
+
+**It came off the card anyway**, for the reason that survives the correction: D4 permits
+the username, the score, the tier and the interference finding, and readiness is outside
+that list. A readiness figure printed beside somebody's name on an image built to be posted
+publicly is an inference about their physical condition, and the allowlist exists precisely
+so that judgement is not made field by field by whoever is adding a line to a PNG.
+
+**The per-share opt-in is now real.** D4 asks for opt-in per share with the exact content
+shown first. Neither path did that:
+
+- The Hybrid report was a bare `<a href="/api/reports/hybrid/card" target="_blank">`, so
+  the card was generated and opened before the athlete had seen anything. That is
+  disclosure, not consent.
+- The Interference path went through `ShareImageButton`, which fetched the PNG and handed
+  it straight to the OS share sheet. The sheet's thumbnail appears *after* the decision and
+  is the size of a stamp, and the desktop fallback had no preview at all.
+
+Both now fetch the image, render **the actual PNG** at a readable size in a focus-trapped
+dialog with a plain-English line naming what is on it, and share nothing until the athlete
+presses Share there. Cancel discards the blob and revokes the object URL. `contentSummary`
+is a required prop, so a new card cannot be wired up without someone writing down what it
+carries.
+
+One thing that looks like a risk and is the opposite: `navigator.share` needs transient
+activation, and the old code spent the click's activation on a `fetch` before calling it.
+The confirm press is a fresh gesture, so sharing is now more reliable, not less.
+
+**A judgement call, stated rather than buried.** `targetPaceLabel` is also outside D4's
+literal allowlist and is **kept**. It is a training target the athlete set for themselves,
+carries no inference about their physical condition, and reads as the kind of thing the
+feature exists to let people post. If that reading is wrong it is one line to remove — but
+removing it silently under cover of a privacy fix would be the wrong way to decide it.
+
+**What is NOT verified:** the dialog has not been exercised in a browser. Reaching it needs
+a signed-in premium account with a generated report, which is not available from here. The
+tests assert the source — that the preview renders the fetched blob, that `nav.share` is
+reachable only from the confirm handler, that no raw link to a card route remains — and
+that is weaker than clicking it. Worth ten minutes on the deployed app.
+
 ---
 
 #### M11 — No central configuration module; no plausibility bounds
@@ -1513,9 +1562,9 @@ during remediation:
 |---|---|---|---|---|---|
 | Critical | **0** | 0 | 4 | 4 | All four were one defect in four places. |
 | High | 2 | 1 | 8 | 11 | Closed H1, H3–H8 and N10. Partial H2. Open H9 (DPIA — Stephen's) and N11. |
-| Medium | 6 | 2 | 9 | 17 | Closed M1–M6, M8, M9, M13. Partial M7, M11. Open M10, M12, M14, N1, N5, N7. |
+| Medium | 5 | 2 | 10 | 17 | Closed M1–M6, M8, M9, M10, M13. Partial M7, M11. Open M12, M14, N1, N5, N7. |
 | Low | 5 | 0 | 7 | 12 | Closed L1–L6, N4. Open N2, N3, N6, N8, N9. |
-| **Total** | **13** | **3** | **28** | **44** | |
+| **Total** | **12** | **3** | **29** | **44** | |
 
 **Correction to this table's arithmetic.** Earlier revisions reported "41 findings
 raised" and columns that did not sum to it: partially-closed findings were counted

@@ -42,7 +42,27 @@ export async function GET() {
           report.scoreTrend.deltaPct !== null && report.scoreTrend.deltaPct >= 0 ? "+" : ""
         }${report.scoreTrend.deltaPct ?? "—"}%)`
       : "Split Index — building history this period";
-  const readinessLine = `Readiness ${report.readinessTrend.start} → ${report.readinessTrend.end}`;
+  /*
+    NO READINESS ON THE CARD (M10).
+
+    This rendered `Readiness <start> → <end>`. D4 permits a shared card to carry
+    the username, the score, the tier and the interference finding — and nothing
+    else. Readiness is outside that list.
+
+    Being precise about WHY, because the audit finding that raised this was
+    wrong about it and the wrong reason would send the next person hunting the
+    wrong thing: readiness here is NOT Article 9 health data. `computeReadiness`
+    takes `sessions` and derives an acute:chronic workload ratio from training
+    load. It reads no health table, no PAR-Q answer, no HRV and no sleep row.
+    The audit called it "a Tier 2-derived value"; measured, it is Tier 1
+    training data held on contract necessity.
+
+    It comes off the card anyway, for the reason that survives the correction:
+    a readiness figure printed next to somebody's name on an image built to be
+    posted publicly is an inference about their physical condition, and D4's
+    allowlist exists precisely so that judgement is not made per-field by
+    whoever is adding a line to a PNG.
+  */
 
   return new ImageResponse(
     (
@@ -68,7 +88,6 @@ export async function GET() {
 
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           <div style={{ fontSize: 32, fontWeight: 600 }}>{scoreLine}</div>
-          <div style={{ fontSize: 28, color: "#b8b8c8" }}>{readinessLine}</div>
           <div style={{ fontSize: 36, fontWeight: 600, lineHeight: 1.3, maxWidth: 1000, marginTop: 8 }}>
             {report.interferenceHeadline}
           </div>
