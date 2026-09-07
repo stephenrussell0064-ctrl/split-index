@@ -43,7 +43,8 @@ its current status inline; this table is the summary.
 | M8 no HSTS | **CLOSED** | `6b6aebf` |
 | L4 `geolocation=()` undocumented | **CLOSED** | `6b6aebf` |
 | M12 index gaps | **OPEN — deliberately.** No index added, because no query plan could be produced. Diagnostic shipped instead; needs an operator to run it | `7893c0c` |
-| M9 CSP allows `'unsafe-inline'` | **OPEN — needs a decision from Stephen**, see the finding | — |
+| M9 CSP allows `'unsafe-inline'` | **CLOSED on the authenticated surface** — public pages keep it, deliberately; see the finding | `3e8994d` |
+| N10 email addresses in an anon-readable column | **CLOSED** by a peer session's migration 064, which masks the column in both views rather than scrubbing rows — a better fix than my 061, which never landed | `ff0ab52` |
 | Everything else | **OPEN** | — |
 
 Zero Critical findings remain open. The brief's gate for a growth push is WP1,
@@ -822,6 +823,40 @@ Not decided here. A change that makes the landing page dynamic, or that puts an 
 flag in the production build, is a product call. Option 4 looks like it gets most of the
 security benefit for none of the rendering cost, and is where I would spend the time.
 
+**CLOSED `695c2d3`, on `main` as `3e8994d` — option 4, chosen by Stephen.** The authenticated surface gets a
+per-request nonce with `'strict-dynamic'`; the public surface keeps the previous policy and
+stays static. Static routes went from 13 to 10, and the three that moved — `/settings`,
+`/settings/billing`, `/cardio/gps-run` — are behind a login. `/`, `/privacy`, `/terms` and
+`/accessibility` are untouched.
+
+**Not fully closed as a security matter, and the finding should be read that way.** The public
+pages still carry `'unsafe-inline'`. An injection into the landing page would still execute.
+The judgement is that those pages render no user-controlled data, so the residual risk is
+small — but "M9 closed" means the policy is now strict where athlete data is, not that
+`'unsafe-inline'` is gone from the application. `style-src` keeps it in both policies; nonce-ing
+styles is a separate change and was not smuggled in here.
+
+**Three things the spike caught that would otherwise have shipped broken**, recorded because
+each is the same shape — a change that looks correct, returns 200, and silently does nothing:
+
+1. `export const dynamic = "force-dynamic"` is inert from a `"use client"` module. It was the
+   first thing tried on all three pages; the build still reported them prerendered. Route
+   segment config no longer lists `dynamic` at all in Next 16. Only the build output revealed
+   it. Each page is now a server shell awaiting `connection()`.
+2. The Organization JSON-LD was in the **root layout**, so it rendered on every authenticated
+   route, where a nonce policy would have dropped it. Nonce-ing it means reading headers in the
+   root layout, which makes every route dynamic and defeats the split entirely. It moved to `/`.
+3. Two `Content-Security-Policy` headers on one response are enforced as their **intersection**.
+   Keeping the header in `next.config.ts` alongside the new one would have blocked the very
+   inline blocks the public policy exists to permit.
+
+**A build gate, not just tests:** `scripts/check-csp-routes.mjs` runs inside `npm run build` and
+fails if any prerendered route sits under a nonce prefix. The invariant is "this route is
+server-rendered", which only a build knows — a route can go static because somebody removed a
+line three components down, with nothing in the diff that looks like a rendering change. It
+cannot run in CI, which has no build job by design; the same is already true of WP2's bundle
+scanner, and `ci.yml` makes that argument.
+
 ---
 
 #### M10 — The share card carries a Tier 2-derived value, generated with no per-share opt-in
@@ -1091,6 +1126,29 @@ Closing H8 did not make the app conformant, and the published statement says
 
 The statement is only honest while this list is accurate. Update both together.
 
+**Checked against a peer session's accessibility work on `main`, 2026-09-07.** That
+session landed nav landmarks, `aria-expanded` on three disclosures, `role="alert"` on
+form errors, two icon-button labels, and ten touch targets raised to 44pt, and asked
+whether any of these four could be closed. Verified against `origin/main`: **none of
+the four closes, and item 3 improves without closing.**
+
+- **Item 3 is now partially addressed.** `role="alert"` is on all three error slots in
+  [input.tsx](src/components/ui/input.tsx) (lines 56, 112, 145) — so an error is
+  announced *at the moment it appears*, which is a real improvement. But the finding is
+  about the error being **programmatically tied to its field**, and `grep` for
+  `aria-describedby`, `aria-errormessage` and `aria-invalid` across `src/components/ui`
+  returns nothing. A screen-reader user who tabs back to the input afterwards, or
+  arrives at it with the error already rendered, still gets no association between the
+  two. That is precisely the case a live region does not cover. (WCAG 3.3.1.)
+- **Items 1, 2 and 4 are untouched** by that work: chart text equivalents, colour-alone
+  state, and the manual keyboard/screen-reader walkthrough. Item 4 cannot be closed by
+  code at all — it is a human pass, and until someone does it, claiming those journeys
+  are operable without a mouse remains a guess.
+
+The published statement therefore stays accurate as written and needs no edit. Recorded
+in full because "we did some accessibility work, can the finding close" is a question
+that will be asked again, and the answer needs to be checkable rather than remembered.
+
 #### N8 — Seventeen call sites still resolve entitlement themselves
 **WP6.2 · Low · Evidence: `grep -rln isPremiumUser src` — 21 sites, 4 migrated.**
 
@@ -1115,6 +1173,119 @@ audit writer itself — do not.
 Worth doing with the N8 entitlement migration rather than separately: both are
 the same sweep through overlapping call sites, and doing them together means
 reading each one once.
+
+#### N10 — Email addresses sit in a column the anon key can read
+
+**WP1 / WP11 · High · Raised 2026-09-07, from a peer session's fix. Evidence below.**
+
+A concurrent session found and fixed this on `main` (`8623658`): onboarding wrote
+`user.email` into `profiles.display_name` whenever the identity provider returned no
+name — every ordinary email/password signup — and `display_name` is the athlete's
+public name on the leaderboards, the feed, the friends list and both share cards.
+The fix is right and the reasoning is right. **It is also application-layer only, and
+two gaps remain that keep the data readable.** Verified here rather than taken on
+trust, because the commit message says "That fixes new accounts."
+
+**Gap 1 — the database trigger still writes the address.** `handle_new_user()`, as
+last set by [007:14-18](supabase/migrations/007_signup_trigger_bulletproof.sql#L14),
+is unchanged and still reads:
+
+```sql
+INSERT INTO public.profiles (user_id, display_name)
+VALUES (NEW.id, COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.email))
+```
+
+It fires on `auth.users` INSERT — at signup, **before** onboarding runs. So every new
+email/password signup still gets an email address written into `display_name` at the
+database layer. Onboarding now overwrites it with null, which closes the case for
+anyone who reaches that step; it does nothing for anyone who abandons onboarding, and
+it leaves a window for everyone else. The same expression appears in that migration's
+backfill at line 54.
+
+**Gap 2 — `public_profiles` publishes the column to `anon`, and PostgREST does not run
+TypeScript.** This one is mine. Migration 056 — WP1, the fix for C1–C4 — created the
+view with `display_name` among its twelve columns and
+[056:446-447](supabase/migrations/056_public_projections.sql#L446)
+`GRANT SELECT ON public_profiles TO anon`. `publicDisplayName` guards the render sites
+in our code; it cannot guard `GET /rest/v1/public_profiles?select=display_name`, which
+anyone can issue with the anon key that ships in the client bundle by design.
+
+I wrote in that migration: *"Do not add a column here without asking whether a
+logged-out stranger should have it."* I added `display_name` and did not ask whether it
+could contain an email address. Had this been caught in Phase 0 it would have sat with
+C1–C4 as a Critical; it is High only because the exposed population is narrower.
+
+**Who is actually exposed.** The view is `WHERE p.username IS NOT NULL`, so athletes
+who abandoned onboarding are excluded — their address stays in the table but out of the
+view until they pick a username. The exposed set is **existing athletes who completed
+onboarding before `8623658` and whose `display_name` still holds an address**. That is
+readable from the internet right now.
+
+**CLOSED `ff0ab52` — migration
+[064_display_name_is_never_an_email.sql](supabase/migrations/064_display_name_is_never_an_email.sql),
+by a peer session, and by a better route than the one I proposed.**
+
+It does two things. `handle_new_user()` stops writing the address — a provider-supplied
+name is still used, and absent one the column stays NULL, which every render site
+already falls back from. That covers Gap 1, including the abandoned-onboarding case.
+And **both** views mask an address that is already stored:
+
+```sql
+CASE WHEN p.display_name LIKE '%@%' THEN NULL ELSE p.display_name END
+```
+
+**Where my own proposal was worse, recorded because the reasoning is the useful part.**
+I wrote migration 061 (on `venture/b1-b2-iap-routing`, now dead and never landed) to fix
+the trigger and then *scrub* the stored rows with an `UPDATE`. I explicitly rejected
+masking at the view, on the grounds that it would overrule a self-chosen disclosure —
+citing 056's own line about `injury_status`, that "self-chosen disclosure is a different
+thing from inferred health data". That was too clever for the situation. The column was
+full of addresses **nobody chose**; the self-disclosure case was the rare one, and I let
+it drive the design for the common one.
+
+Masking is strictly better here on two counts:
+
+1. **It is not destructive.** The exposure closes while the value stays intact and
+   recoverable, so the `UPDATE` stops being load-bearing for privacy and becomes a
+   separate question — whether the app should hold the address in that column at all.
+   That decision can now be made with numbers and without pressure; the impact query and
+   the `UPDATE` are in 064 as comments.
+2. **It covers `leaderboard_profiles`, which my 061 did not touch at all.** I scoped to
+   `public_profiles` because `anon` was the headline, and missed that the same column is
+   served to every authenticated athlete. Smaller blast radius than the internet, still
+   every athlete on the platform reading every other athlete's address. That is a
+   straightforward miss on my part and the second one in this finding.
+
+**A history hazard this created, which the tree does not show.** 064 landed as two
+commits. `da224f7` added it as `062`, rebuilt from 056 — which silently dropped
+`AND u.email_confirmed_at IS NOT NULL` and would have re-exposed every unverified
+account, a worse leak than the one being closed. `ff0ab52` renamed it to 064 and
+regenerated it from 061 with the gate intact. Both went up in one push, so main's tip was
+never in the flawed state and Vercel only ever built the good one. Verified here:
+`git show da224f7:supabase/migrations/062_display_name_is_never_an_email.sql | grep -c
+email_confirmed_at` returns **0**; main's current 064 returns **3**. That tree also
+carried a duplicate `062`, since `062_admin_access_log.sql` already existed.
+
+The practical consequence is narrow but sharp: **`git revert ff0ab52` restores the flawed
+migration**, and so does cherry-picking `da224f7` onto another branch. Anyone undoing the
+rename must undo both commits or neither. If those views are ever rebuilt, rebuild from
+064 — never from 056.
+
+**Still outstanding, and no longer urgent:**
+
+1. Decide whether to run the `UPDATE` in 064's comments. This is now data minimisation
+   under the storage-limitation principle, not exposure — the addresses are masked either
+   way. Run the impact query first for the count.
+2. Re-ask the WP1 question about every remaining column in `public_profiles`, since the
+   process failure was mine and column-by-column is the only way to find another. `bio` is
+   the next one to look at: also free text, also published to `anon`, and nothing has ever
+   audited what people put in it.
+
+A CHECK constraint was considered and rejected by both sessions independently: it would be
+evaluated inside the trigger's INSERT, so one unexpected provider payload would fail signup
+entirely — a privacy defect traded for an outage.
+A CHECK constraint on `display_name` was considered and rejected: it would make the
+signup trigger's INSERT fail, turning a privacy defect into a total signup outage.
 
 ### Part D — activation and monetisation
 
@@ -1164,23 +1335,26 @@ during remediation:
 | Severity | Open | Partial | Closed | Total | Which |
 |---|---|---|---|---|---|
 | Critical | **0** | 0 | 4 | 4 | All four were one defect in four places. |
-| High | 1 | 1 | 7 | 9 | Closed H1, H3–H8. Partial H2. Open H9 (DPIA — Stephen's). |
-| Medium | 8 | 2 | 7 | 17 | Closed M1–M5, M8, M13. Partial M7, M11. Open M6, M9, M10, M12, M14, N1, N5, N7. |
+| High | 1 | 1 | 8 | 10 | Closed H1, H3–H8 and N10. Partial H2. Open H9 (DPIA — Stephen's). |
+| Medium | 7 | 2 | 8 | 17 | Closed M1–M5, M8, M9, M13. Partial M7, M11. Open M6, M10, M12, M14, N1, N5, N7. |
 | Low | 5 | 0 | 7 | 12 | Closed L1–L6, N4. Open N2, N3, N6, N8, N9. |
-| **Total** | **14** | **3** | **25** | **42** | |
+| **Total** | **13** | **3** | **27** | **43** | |
 
 **Correction to this table's arithmetic.** Earlier revisions reported "41 findings
 raised" and columns that did not sum to it: partially-closed findings were counted
 in neither the open nor the closed column, so the rows silently lost them. Counted
-by hand off the headings — C1–C4 (4), H1–H9 (9), M1–M14 (14), L1–L6 (6), N1–N9 (9)
-— the total is **42**, and partials now have a column of their own so the rows add
+by hand off the headings — C1–C4 (4), H1–H9 (9), M1–M14 (14), L1–L6 (6), N1–N10 (10)
+— the total is **43**, and partials now have a column of their own so the rows add
 up. The finding text was always right; only the summary was wrong.
 
-Two of the sixteen are open on purpose rather than for want of effort: **M12**
-(no index added, because no query plan could be produced — see the finding) and
-**M9** (nonce CSP costs static rendering on 13 routes including `/`, which is
-Stephen's call). Naming them here so a later reader does not mistake either for
-something that was quietly dropped.
+One of the thirteen is open on purpose rather than for want of effort: **M12**
+— no index was added, because no query plan could be produced. Named here so a
+later reader does not mistake it for something quietly dropped.
+
+**M9 is marked closed with a caveat worth reading.** The strict policy now
+covers every route holding athlete data. The public marketing and legal pages
+keep `'unsafe-inline'`, deliberately, so that they stay statically rendered.
+That residual is stated in the finding rather than counted as fixed.
 
 All four Criticals are the same defect in four places: a policy written to enable a public
 leaderboard exposes the underlying user-owned table instead of a column-scoped projection.
@@ -1212,7 +1386,7 @@ Then:
 | 7 | ~~**WP12 contrast + gating**~~ **DONE `5525455`** | H8, M3, M13, L1 (N7 opened) | M3 satisfies WP6.3 and WP12.7 at once. Statement written last, after the fix, so it is honest. |
 | 8 | ~~**WP6 entitlement matrix**~~ **DONE `1d6976c`** | M4 (M3 already closed by WP12); N8 opened | The matrix test is the deliverable; `features.ts` mostly stands. |
 | 9 | ~~**WP7 logging**~~ **DONE `4d55a69`** | H6; N9 opened | Build the redaction rule in from the first line, not after. |
-| 10 | **WP14 headers, WP11 deletion test, WP8 plans** — **MOSTLY DONE** `f84b4eb`, `25ad889`, `6b6aebf`, `7893c0c` | M5, M8, L2, L4, L5 closed. **M9 needs a decision** (nonce CSP costs static rendering on 13 routes including `/`); **M12 stays open** (no plan, so no index) | Independent, parallelisable, none blocking. |
+| 10 | ~~**WP14 headers, WP11 deletion test, WP8 plans**~~ **DONE** `f84b4eb`, `25ad889`, `6b6aebf`, `7893c0c`, `695c2d3` | M5, M8, M9, L2, L4, L5 closed. **M12 stays open** — no query plan was obtainable, so no index was added | Independent, parallelisable, none blocking. |
 | 11 | **H9 — DPIA + ICO** | H9 | Stephen's, not code. Should start now and run alongside; it does not block engineering. |
 | 12 | **Part D** | D1–D5 | After the brief's own gate: WP1, WP2, WP6 and WP13 complete before any growth push. |
 
@@ -1263,24 +1437,26 @@ is different.
   someone's programme as a side effect of a privacy choice would punish the
   choice.
 
-**Step 10 is now done except for the two items that were never mine to close.**
-M5, M8, L2, L4 and L5 are closed (`f84b4eb`, `25ad889`, `6b6aebf`). M12 is open
+**Step 10 is done.** M5, M8, M9, L2, L4 and L5 are closed (`f84b4eb`,
+`25ad889`, `6b6aebf`, `695c2d3`). M12 is open
 by design — WP8 forbids an index without a query plan and no database was
-reachable, so the measurement shipped instead of a guess (`7893c0c`). M9 is a
-decision: nonces force dynamic rendering on all 13 currently-static routes,
-including the landing page, and that is a product call rather than a security
-one.
+reachable, so the measurement shipped instead of a guess (`7893c0c`). M9 is
+closed on the authenticated surface (`695c2d3`): the strict nonce policy went
+where the athlete data is, and the marketing and legal pages kept the previous
+policy so they could stay static — 10 prerendered routes rather than 0.
 
 What remains needs a live database (N5's GoTrue integration tests, M12's query
 plans, the erasure cascade check), a decision from Stephen (H9's DPIA, the EU
-question, M9's CSP), or a sweep through call sites (N1, N8, N9). No open finding
-is now blocked on engineering judgement alone.
+question), or a sweep through call sites (N1, N8, N9). No open finding is now
+blocked on engineering judgement alone.
 
-**Two remaining High findings**, both partially addressed and neither closable
-from here alone: H2 (most routes still unparsed — N1) and M7/N5 (GoTrue session
-behaviour unverifiable without an integration environment).
+**Remaining High findings:** H2 (most routes still unparsed — N1) and M7/N5
+(GoTrue session behaviour unverifiable without an integration environment), both
+partially addressed and neither closable from here alone. **N10 is closed** — see
+the finding; it was raised and closed on the same day, by two sessions, and the
+version that landed was not mine.
 
-**Seven operator items outstanding** (this heading read "Four" while listing
+**Eight operator items outstanding** (this heading read "Four" while listing
 five; corrected, and two more added by the WP8/WP11 batch):
 
 1. Create the security contact address in SECURITY.md. It is a placeholder, and
@@ -1292,15 +1468,21 @@ five; corrected, and two more added by the WP8/WP11 batch):
    per-user rate limits are advisory and only the per-instance burst guard
    applies.
 4. Set the GoTrue rate limits and confirm email confirmation is enabled — the
-   table is in SECURITY.md. **Run the impact query at the top of migration 058
+   table is in SECURITY.md. **Run the impact query at the top of migration 061
    before applying it**; it can otherwise stop every athlete logging.
 5. Create `accessibility@splitindex.co.uk`, the contact on the published
    accessibility statement, which promises a reply within 5 working days.
-6. Run [wp8_hot_query_plans.sql](supabase/diagnostics/wp8_hot_query_plans.sql)
+6. **Decide whether to run the `UPDATE` in migration 064's comments** (N10).
+   No longer urgent and no longer about exposure: 064 masks the column in both
+   views, so the addresses are already private. What remains is whether the app
+   should still be storing them at all — data minimisation under the
+   storage-limitation principle. Run the impact query in that file first, so the
+   decision is made with a count rather than a guess.
+7. Run [wp8_hot_query_plans.sql](supabase/diagnostics/wp8_hot_query_plans.sql)
    against production or a restored copy, with a heavy user substituted for
    `ATHLETE_UUID`. Ten plans and an unused-index sweep. M12 cannot close without
    them, and no index should be added before them.
-7. Delete one real throwaway account and confirm the cascade actually fires in
+8. Delete one real throwaway account and confirm the cascade actually fires in
    the deployed database. The test in `account-deletion.test.ts` reads migration
    DDL; it proves the schema declares the cascade, not that production has it.
    Given migration 049's history, source and production have diverged here before.
