@@ -115,10 +115,32 @@ describe("the manifests are actually bundled", () => {
 describe("Sign in with Apple (B4)", () => {
   const authForm = read(resolve(__dirname, "../../components/auth/auth-form.tsx"));
 
-  it("has the entitlement, or Apple sign-in fails at runtime however good the UI is", () => {
+  /*
+   * There is deliberately NO applesignin entitlement, and this test guards the
+   * absence rather than the presence.
+   *
+   * It originally asserted the opposite, which was wrong. The entitlement is
+   * required only for the native AuthenticationServices sheet
+   * (ASAuthorizationAppleIDProvider). This app offers Sign in with Apple
+   * through Apple's *web* OAuth flow via Supabase in an in-app browser — the
+   * same path Google takes — and that needs a Services ID configured in
+   * Supabase, not an app entitlement.
+   *
+   * Adding it back is not merely redundant: it breaks code signing until Sign
+   * In with Apple is also enabled on the App ID in the developer portal, so an
+   * entitlement added "to be safe" stops the build.
+   */
+  it("does NOT carry the applesignin entitlement, which the web OAuth flow does not use", () => {
     const entitlements = read(resolve(IOS, "App/App.entitlements"));
-    expect(entitlements).toContain("com.apple.developer.applesignin");
-    expect(entitlements).toContain("<string>Default</string>");
+    expect(entitlements).not.toMatch(/<key>com\.apple\.developer\.applesignin<\/key>/);
+  });
+
+  it("explains in the entitlements file why it is absent", () => {
+    // Without the note, the next person reading Guideline 4.8 adds it back and
+    // breaks signing. The comment is the fix for that, so it is load-bearing.
+    const entitlements = read(resolve(IOS, "App/App.entitlements"));
+    expect(entitlements).toMatch(/applesignin/);
+    expect(entitlements).toMatch(/Services ID/i);
   });
 
   /*
