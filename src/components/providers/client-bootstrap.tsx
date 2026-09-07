@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { detectBrowserTimezone } from "@/lib/utils/timezone";
 import { flushActivityQueue, hasQueuedActivities } from "@/lib/activities/offline-queue";
+import { clearMirroredDraft } from "@/components/activities/draft-mirror";
 import { createClient } from "@/lib/supabase/client";
 
 /** Sync browser timezone to profile and retry queued workout submits on reconnect and on resume. */
@@ -34,7 +35,17 @@ export function ClientBootstrap() {
       flushing = true;
       try {
         const { data } = await createClient().auth.getUser();
-        await flushActivityQueue(data.user?.id ?? null);
+        const result = await flushActivityQueue(data.user?.id ?? null);
+        /*
+          Clear the device draft mirror only for workouts the SERVER has now
+          accepted. The mirror deliberately survives being queued, because the
+          queue can still give up — five failed attempts, or an answer that
+          will not change — and at that point the phone is the only place the
+          session exists.
+        */
+        for (const sport of result.flushedSports) {
+          clearMirroredDraft(sport as Parameters<typeof clearMirroredDraft>[0]);
+        }
       } finally {
         flushing = false;
       }

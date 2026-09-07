@@ -42,6 +42,7 @@ import { useSetModeOverride } from "@/components/layout/mode-override-context";
 import { endLiveActivity } from "@/lib/native/live-activity";
 import { clearPersistedGymTimerState } from "./gym-timer-storage";
 import { clearMirroredDraft, preferredDraft, readMirroredDraft } from "./draft-mirror";
+import { queuedSports } from "@/lib/activities/offline-queue";
 
 type View = "picker" | "form" | "success";
 
@@ -295,7 +296,13 @@ export function ActivityForm({
         const { source, draft } = preferredDraft(
           serverDrafts[next],
           draftUpdatedAt?.[next],
-          readMirroredDraft(next)
+          // A mirror for a sport still in the queue is a COPY of a workout
+          // already handed over, not work in progress. Offering it back would
+          // invite a second submit under a different idempotency key, which is
+          // the same session in the logbook twice. It stays on disk as the
+          // safety net for the queue giving up; it just is not editable while
+          // the queue still holds it.
+          queuedSports().includes(next) ? null : readMirroredDraft(next)
         );
         const hydrated =
           source === "none"
@@ -469,12 +476,11 @@ export function ActivityForm({
     }
   };
 
-  /** The server deletes the draft when a session is saved; mirror that locally. Shared by the scored path and the queued one, which is just as saved. */
-  function clearDraftFor(saved: SportType) {
-    // The device mirror goes with it. A mirror that outlived its session would
-    // hydrate the next visit with a workout the athlete has already saved —
-    // which is the same data-loss bug wearing a duplicate's clothes.
-    clearMirroredDraft(saved);
+  /**
+   * Forget the in-memory and server draft. Deliberately leaves the device
+   * mirror alone — see the queued branch in handleSubmit for why that matters.
+   */
+  function clearFormFor(saved: SportType) {
     setStateMap((prev) => {
       const next = { ...prev };
       delete next[saved];
@@ -517,7 +523,22 @@ export function ActivityForm({
         // is no score yet — the server has not seen this session. What the
         // athlete has is a saved workout, and the form must not offer to save
         // it a second time.
-        clearDraftFor(sport);
+        /*
+          The FORM is cleared, the device mirror is NOT.
+
+          I got this wrong when I wrote it: the queued branch called
+          `clearDraftFor`, which takes the mirror with it. A queued workout is
+          not a saved one — `flushActivityQueue` gives up after five attempts
+          or on an answer that will not change, and at that point the activity
+          had never reached the server, the draft was gone and the mirror was
+          gone too. The banner said "you will need to log it again", and it was
+          telling the truth.
+
+          So the mirror survives until the SERVER has the workout, which is
+          what `flushedSports` reports. If the queue gives up instead, the
+          session is still on the phone.
+        */
+        clearFormFor(sport);
         if (sport === "gym") {
           void endLiveActivity();
           clearPersistedGymTimerState();
@@ -528,7 +549,11 @@ export function ActivityForm({
 
       const data = result.data;
       setResult(buildScoreSummary(data, sport, currentState));
-      clearDraftFor(sport);
+      // The server has it, so the mirror is redundant — and a mirror that
+      // outlived its session would hydrate the next visit with a workout
+      // already in the logbook.
+      clearFormFor(sport);
+      clearMirroredDraft(sport);
       // User feedback: "the widget timer for the lab does not stop when
       // the timer is stopped in app, i want the widget to be removed once
       // it's finished being used in app" — a gym workout just got

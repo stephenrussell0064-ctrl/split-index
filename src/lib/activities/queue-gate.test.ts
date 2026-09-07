@@ -76,6 +76,8 @@ describe("the flush itself still refuses to run offline", () => {
 
     const result = await flushActivityQueue("athlete-1");
 
-    expect(result).toEqual({ flushed: 0, failed: 0, dropped: 0 });
+    // `flushedSports` names the sports the SERVER accepted, so an offline
+    // flush names none — which is what keeps their draft mirrors alive.
+    expect(result).toEqual({ flushed: 0, failed: 0, dropped: 0, flushedSports: [] });
   });
 });

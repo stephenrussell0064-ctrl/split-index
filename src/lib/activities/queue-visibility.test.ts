@@ -102,3 +102,77 @@ describe("knowing when the count changed", () => {
     expect(getPendingActivityCount("athlete-1")).toBe(1);
   });
 });
+
+/**
+ * WHAT SURVIVES EACH OUTCOME.
+ *
+ * A queued workout is not a saved one. `flushActivityQueue` gives up after
+ * MAX_ATTEMPTS or on an answer that will not change, and at that moment the
+ * activity has never reached the server. If the device draft mirror was
+ * cleared when the workout was QUEUED — which is what the first version of
+ * this did — the session exists nowhere at all, and the banner's "you will
+ * need to log it again" is simply true.
+ *
+ * So the queue reports which sports the SERVER accepted, and only those
+ * mirrors are cleared. These pin that reporting, because it is the signal the
+ * whole safety net hangs off.
+ */
+describe("which workouts the server has actually accepted", () => {
+  it("names the sport of every item that flushed", async () => {
+    const { enqueueActivitySubmit, flushActivityQueue } = await import("./offline-queue");
+    vi.stubGlobal("navigator", { onLine: true });
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200 })));
+
+    enqueueActivitySubmit({ ...RUN, payload: { sport: "running" }, userId: "athlete-1" });
+    enqueueActivitySubmit({ ...RUN, payload: { sport: "gym" }, userId: "athlete-1" });
+
+    const result = await flushActivityQueue("athlete-1");
+
+    expect(result.flushed).toBe(2);
+    expect(result.flushedSports.sort()).toEqual(["gym", "running"]);
+  });
+
+  it("names nothing for a workout it gave up on", async () => {
+    // The case that matters: a permanent rejection. The mirror must NOT be
+    // cleared, because the phone is now the only copy.
+    const { enqueueActivitySubmit, flushActivityQueue } = await import("./offline-queue");
+    vi.stubGlobal("navigator", { onLine: true });
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 400 })));
+
+    enqueueActivitySubmit({ ...RUN, payload: { sport: "running" }, userId: "athlete-1" });
+
+    const result = await flushActivityQueue("athlete-1");
+
+    expect(result.dropped).toBe(1);
+    expect(result.flushedSports).toEqual([]);
+  });
+
+  it("names nothing for a workout still waiting", async () => {
+    const { enqueueActivitySubmit, flushActivityQueue } = await import("./offline-queue");
+    vi.stubGlobal("navigator", { onLine: true });
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 503 })));
+
+    enqueueActivitySubmit({ ...RUN, payload: { sport: "running" }, userId: "athlete-1" });
+
+    const result = await flushActivityQueue("athlete-1");
+
+    expect(result.failed).toBe(1);
+    expect(result.flushedSports).toEqual([]);
+  });
+});
+
+describe("a sport whose workout is still in the queue", () => {
+  it("is reported, so its mirror is not offered back as editable", async () => {
+    // Rehydrating it would invite a second submit under a fresh idempotency
+    // key — the same session in the logbook twice.
+    const { enqueueActivitySubmit, queuedSports } = await import("./offline-queue");
+    enqueueActivitySubmit({ ...RUN, payload: { sport: "running" }, userId: "athlete-1" });
+    expect(queuedSports("athlete-1")).toEqual(["running"]);
+  });
+
+  it("is not reported once nothing of theirs is queued", async () => {
+    const { enqueueActivitySubmit, queuedSports } = await import("./offline-queue");
+    enqueueActivitySubmit({ ...RUN, payload: { sport: "running" }, userId: "someone-else" });
+    expect(queuedSports("athlete-1")).toEqual([]);
+  });
+});

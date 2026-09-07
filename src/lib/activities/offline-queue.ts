@@ -100,6 +100,23 @@ export function hasQueuedActivities(): boolean {
   return readQueue().length > 0;
 }
 
+/**
+ * Sports with a workout still waiting to be sent, for this athlete.
+ *
+ * Used to decide whether a device draft mirror is a workout in progress or a
+ * copy of one already handed to the queue — the second must not be offered
+ * back as something to edit and submit again.
+ */
+export function queuedSports(userId?: string | null): string[] {
+  const sports = new Set<string>();
+  for (const item of readQueue()) {
+    if (!ownedBy(item, userId)) continue;
+    const sport = (item.payload as { sport?: unknown } | null)?.sport;
+    if (typeof sport === "string") sports.add(sport);
+  }
+  return [...sports];
+}
+
 /** Pending items belonging to this athlete (plus legacy rows with no owner recorded). */
 export function getPendingActivityCount(userId?: string | null): number {
   return readQueue().filter((item) => ownedBy(item, userId)).length;
@@ -171,6 +188,15 @@ function isPermanentFailure(status: number): boolean {
 
 export interface FlushResult {
   flushed: number;
+  /**
+   * Sports whose workout the SERVER has now accepted.
+   *
+   * The device draft mirror has to survive until this point, not until the
+   * queue accepts the item — a queued workout is not a saved one, and the
+   * queue can still give up on it. Reported per sport so the caller can clear
+   * exactly the mirrors that are now redundant and leave the rest alone.
+   */
+  flushedSports: string[];
   /** Still queued, will be tried again. */
   failed: number;
   /** Given up on and removed — the workout is gone and the user should be told. */
@@ -179,15 +205,16 @@ export interface FlushResult {
 
 export async function flushActivityQueue(userId?: string | null): Promise<FlushResult> {
   if (typeof window === "undefined" || !navigator.onLine) {
-    return { flushed: 0, failed: 0, dropped: 0 };
+    return { flushed: 0, failed: 0, dropped: 0, flushedSports: [] };
   }
 
   const queue = readQueue().filter((item) => ownedBy(item, userId));
-  if (queue.length === 0) return { flushed: 0, failed: 0, dropped: 0 };
+  if (queue.length === 0) return { flushed: 0, failed: 0, dropped: 0, flushedSports: [] };
 
   let flushed = 0;
   let failed = 0;
   let dropped = 0;
+  const flushedSports = new Set<string>();
 
   for (const item of queue) {
     const attempts = (item.attempts ?? 0) + 1;
@@ -206,6 +233,8 @@ export async function flushActivityQueue(userId?: string | null): Promise<FlushR
       if (res.ok) {
         removeQueuedActivity(item.id);
         flushed += 1;
+        const sport = (item.payload as { sport?: unknown } | null)?.sport;
+        if (typeof sport === "string") flushedSports.add(sport);
         continue;
       }
 
@@ -231,7 +260,7 @@ export async function flushActivityQueue(userId?: string | null): Promise<FlushR
     }
   }
 
-  return { flushed, failed, dropped };
+  return { flushed, failed, dropped, flushedSports: [...flushedSports] };
 }
 
 export function isNetworkFailure(err: unknown): boolean {
