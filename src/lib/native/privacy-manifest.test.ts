@@ -38,7 +38,13 @@ describe("the app manifest declares what the app actually does", () => {
   const xml = read(APP_MANIFEST);
 
   it.each([
-    ["HealthFitness", "HealthKit workouts and heart rate"],
+    // Health and Fitness are two separate Apple values, not one. This
+    // originally asserted a combined "HealthFitness" type, which Apple does not
+    // define — Xcode cannot build a correct privacy report from an invented
+    // data type, so it would have shipped a manifest that looked complete and
+    // was not.
+    ["Health", "heart rate, bodyweight, body fat, sex and age"],
+    ["Fitness", "workouts, logged sessions and step cadence"],
     ["PreciseLocation", "background GPS during outdoor runs"],
     ["EmailAddress", "sign-in identity"],
     ["Name", "profiles.display_name on leaderboards"],

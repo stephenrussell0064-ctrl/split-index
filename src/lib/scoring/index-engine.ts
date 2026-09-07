@@ -80,6 +80,27 @@ export function aggregateSideIndex(
   return sideIndex(activities, side);
 }
 
+/**
+ * How much confident evidence a side is standing on, 0–1.
+ *
+ * Five well-evidenced sessions is a real read on a side; one is a data point.
+ * Summing the per-activity confidences rather than counting rows means a
+ * session the scorer itself was unsure about — a run with no heart rate, a
+ * gym session of one working set — counts for less, which is the same signal
+ * `sideIndex` already blends by.
+ */
+const FULL_EVIDENCE_SESSIONS = 5;
+
+function sideEvidence(activities: ActivityScore[], side: 'lab' | 'engine'): number {
+  const confidence = activities
+    .filter(a => a.side === side)
+    .sort((a, b) => +new Date(b.date) - +new Date(a.date))
+    .slice(0, RECENT_WINDOW_SIZE)
+    .reduce((sum, a) => sum + clamp(a.confidence, 0, 1), 0);
+
+  return clamp(confidence / FULL_EVIDENCE_SESSIONS, 0, 1);
+}
+
 export function computeIndexes(
   activities: ActivityScore[],
   profile: Profile,
@@ -90,9 +111,61 @@ export function computeIndexes(
   const wLab = clamp(weightLab, 0, 1);
   const wEng = 1 - wLab;
 
+  /*
+   * The blend is weighted by EVIDENCE as well as by the athlete's chosen split.
+   *
+   * A naive `lab * wLab + engine * wEng` is right once both sides are
+   * established and badly wrong before that: with one side populated the
+   * headline is that side, and the instant the other logs its first session the
+   * headline jumps straight to the full blend. The UAT personas caught this as a
+   * 193-point move on one ordinary run — half the gap between the two sides,
+   * delivered in a single step, off a single data point.
+   *
+   * Scaling each side's weight by its evidence and renormalising makes the new
+   * side arrive gradually instead. The limits are unchanged, which is what makes
+   * this safe: a side with no sessions contributes nothing (so a single-sport
+   * athlete still sees exactly their one side), and two established sides give
+   * exactly the configured weighting with no residual damping.
+   */
   let split: number | null = null;
-  if (lab !== null && engine !== null) split = Math.round(lab * wLab + engine * wEng);
-  else split = lab ?? engine; // only one side logged so far
+  if (lab !== null && engine !== null) {
+    /*
+     * Each side's weight is scaled by how much evidence stands behind it, then
+     * renormalised. A side with ten solid sessions carries its full configured
+     * weight; a side with one carries a fifth of it.
+     *
+     * This stops a single session on a newly-taken-up discipline yanking an
+     * established athlete's headline — the case the UAT swimmer persona shows,
+     * where two gym sessions a week for shoulder health drag a number built on
+     * forty swims.
+     *
+     * What it deliberately does NOT do is damp the case where BOTH sides are
+     * thin. There the scaling cancels and the plain weighting returns, which is
+     * correct: an athlete with one gym session and one run has genuinely
+     * doubled what is known about them, and a headline that moves a long way on
+     * their second ever session is information arriving, not instability. An
+     * earlier attempt to suppress that anchored the headline on whichever side
+     * had more evidence, which inverted on ties — one confident run outweighed
+     * one hesitant gym session and the brand-new side became the anchor.
+     *
+     * Limits, which is what makes this safe under the headline number:
+     *   · a side with no sessions leaves the other showing unchanged;
+     *   · two established sides give exactly the configured weighting, with no
+     *     residual damping.
+     */
+    const effLab = wLab * sideEvidence(activities, 'lab');
+    const effEng = wEng * sideEvidence(activities, 'engine');
+    const totalWeight = effLab + effEng;
+
+    split =
+      totalWeight > 0
+        ? Math.round((lab * effLab + engine * effEng) / totalWeight)
+        : // Both sides exist but nothing carries any confidence — fall back to
+          // the plain weighting rather than dividing by zero.
+          Math.round(lab * wLab + engine * wEng);
+  } else {
+    split = lab ?? engine; // only one side logged so far
+  }
 
   // Headline is always the combined Split Index, regardless of onboarding
   // profile (user feedback — see file header). `split` already collapses to

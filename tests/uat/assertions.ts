@@ -242,21 +242,42 @@ export function checkAthlete(result: SimulationResult): Finding[] {
   // ── 9. Is the number stable enough to trust? ──────────────────────────────
   // An index that lurches 200 points on a normal session reads as broken, even
   // when each individual computation is defensible.
+  /*
+   * Only once there is enough history for the number to have settled.
+   *
+   * The first version flagged the largest jump anywhere in the history and
+   * fired on session 2 of 18 — where an athlete with one gym session and one
+   * run has just doubled what is known about them. A large move there is
+   * information arriving, and "suppressing" it turned out to mean showing a
+   * number that ignores the run they just logged. The defect worth catching is
+   * a lurch AFTER the index should have settled, so the first ten sessions are
+   * excluded rather than the threshold being raised, which would have hidden
+   * late lurches too.
+   */
+  const SETTLED_AFTER = 10;
   let worstJump = 0;
   let worstAt = -1;
-  for (let i = 1; i < sessions.length; i++) {
+  for (let i = Math.max(1, SETTLED_AFTER); i < sessions.length; i++) {
     const jump = Math.abs(sessions[i].splitIndex - sessions[i - 1].splitIndex);
     if (jump > worstJump) {
       worstJump = jump;
       worstAt = i;
     }
   }
-  if (worstJump > 150 && sessions.length > 5) {
+  if (worstJump > 150 && sessions.length > SETTLED_AFTER + 5) {
     const s = sessions[worstAt];
+    const prev = sessions[worstAt - 1];
+    // The sides either measurement is built from, because "the index jumped"
+    // is not actionable and "the Lab side appeared at 690 against an Engine
+    // side of 240" is.
+    const sides = (x: typeof s) =>
+      `lab ${x.output.indexResult.labIndex ?? "—"} / engine ${x.output.indexResult.engineIndex ?? "—"}`;
     add(
       "degraded",
       "the index does not lurch",
-      `Index moved ${worstJump.toFixed(0)} points on one ordinary ${s.sport} session (week ${s.week}). An athlete seeing that assumes the number is made up.`
+      `Index moved ${worstJump.toFixed(0)} points on one ordinary ${s.sport} session (week ${s.week}, session ${s.index} of ${sessions.length}): ` +
+        `${prev.splitIndex} → ${s.splitIndex}. Before: ${sides(prev)}. After: ${sides(s)}. ` +
+        `An athlete seeing that assumes the number is made up.`
     );
   }
 

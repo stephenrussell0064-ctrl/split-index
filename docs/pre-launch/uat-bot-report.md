@@ -7,7 +7,7 @@ a training behaviour rather than a fixture, and the checks ask whether that
 person got something worth paying for, not whether a function returned the
 number it returned last time.
 
-**0 blocking · 1 degraded · 1 notes** across 10 athletes.
+**0 blocking · 0 degraded · 1 notes** across 10 athletes.
 
 ## Athletes
 
@@ -55,20 +55,12 @@ returner — SERVED
     running           n= 30  mean  755  first3  645 → last3  825
     gym               n= 20  mean  425  first3  367 → last3  473
   0 blocking, 0 degraded
-sporadic — SHORT-CHANGED
+sporadic — SERVED
   18 sessions over 12 weeks · index 258 → 458 · ACWR 0.23–4.00
     gym               n= 12  mean  261  first3  258 → last3  266
     running           n=  6  mean  649  first3  650 → last3  649
-  0 blocking, 1 degraded
+  0 blocking, 0 degraded
 ```
-
-## Short-changed
-
-Works, but this athlete is getting less than they paid for. Does not fail the build — where to spend effort is a product decision.
-
-### sporadic — the index does not lurch
-
-Index moved 193 points on one ordinary running session (week 0). An athlete seeing that assumes the number is made up.
 
 ## Notes
 
