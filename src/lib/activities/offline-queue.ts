@@ -87,6 +87,19 @@ function writeQueue(items: QueuedActivitySubmit[]) {
   }
 }
 
+/**
+ * Is there anything queued at all, for anybody?
+ *
+ * A deliberately cheap gate — one localStorage read, no owner resolution and
+ * no auth call — so a caller that fires on every resume can ask "is this worth
+ * doing" before doing the expensive part. Use `getPendingActivityCount` for
+ * anything an athlete is shown; this one is not owner-filtered and would
+ * report a signed-out device's leftovers as pending.
+ */
+export function hasQueuedActivities(): boolean {
+  return readQueue().length > 0;
+}
+
 /** Pending items belonging to this athlete (plus legacy rows with no owner recorded). */
 export function getPendingActivityCount(userId?: string | null): number {
   return readQueue().filter((item) => ownedBy(item, userId)).length;
