@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { fetchLatestHybridReport } from "@/lib/scoring/hybrid-report-data";
 import { isPremiumUser } from "@/lib/retention/trial";
 import { formatIndex } from "@/lib/utils/format";
+import { shareableAthleteName } from "@/lib/social/shareable-name";
 
 const CARD_WIDTH = 1200;
 const CARD_HEIGHT = 630;
@@ -33,7 +34,7 @@ export async function GET() {
     return new Response("No report generated yet", { status: 404 });
   }
 
-  const name = profile.display_name ?? profile.username ?? "This athlete";
+  const name = shareableAthleteName(profile.display_name, profile.username);
   const scoreLine =
     report.scoreTrend.startIndex !== null && report.scoreTrend.endIndex !== null
       ? `Split Index ${formatIndex(report.scoreTrend.startIndex)} → ${formatIndex(report.scoreTrend.endIndex)} (${

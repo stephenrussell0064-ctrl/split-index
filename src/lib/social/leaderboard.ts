@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { LeaderboardPeriod } from "@/types";
+import { publicDisplayName } from "@/lib/social/shareable-name";
 import {
   getPeriodStart,
   type IndexMetric,
@@ -149,7 +150,7 @@ function toRows(
     rank: i + 1,
     userId: p.user_id,
     username: p.username,
-    displayName: p.display_name,
+    displayName: publicDisplayName(p.display_name),
     avatarUrl: p.avatar_url,
     country: p.country,
     splitIndex: p.current_split_index ?? 0,
@@ -339,7 +340,7 @@ export async function fetchLeaderboardWithBracket(
       rank: i + 1,
       userId: entry.user_id,
       username: profile!.username,
-      displayName: profile!.display_name,
+      displayName: publicDisplayName(profile!.display_name),
       avatarUrl: profile!.avatar_url,
       country: profile!.country,
       splitIndex: entry.split_index,
@@ -417,7 +418,7 @@ export async function fetchLeaderboard(
       rank: i + 1,
       userId: entry.user_id,
       username: profile!.username,
-      displayName: profile!.display_name,
+      displayName: publicDisplayName(profile!.display_name),
       avatarUrl: profile!.avatar_url,
       country: profile!.country,
       splitIndex: entry.split_index,

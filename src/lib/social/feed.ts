@@ -37,6 +37,8 @@ import type { SportType } from "@/types";
  * blocked.
  */
 
+import { publicDisplayName } from "@/lib/social/shareable-name";
+
 export interface FeedAuthor {
   userId: string;
   username: string | null;
@@ -362,7 +364,7 @@ export async function fetchActivityFeed(
       author: {
         userId: row.user_id as string,
         username: (author?.username as string | null) ?? null,
-        displayName: (author?.display_name as string | null) ?? null,
+        displayName: publicDisplayName(author?.display_name as string | null),
         avatarUrl: (author?.avatar_url as string | null) ?? null,
       },
       isOwn: row.user_id === userId,

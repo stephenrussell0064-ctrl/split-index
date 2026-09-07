@@ -16,7 +16,7 @@ import {
 import { PRESET_AVATARS } from "@/lib/constants/avatars";
 import { createClient } from "@/lib/supabase/client";
 import { supabaseErrorMessage } from "@/lib/supabase/errors";
-import { validateUsernameFormat } from "@/lib/utils/username";
+import { validateDisplayText, validateUsernameFormat } from "@/lib/utils/username";
 import { ageFromDateOfBirth, maxDobForMinAge, minDobForMaxAge } from "@/lib/utils/age";
 import { cn } from "@/lib/utils/cn";
 import { ScoreRevealSequence } from "@/components/onboarding/score-reveal";
@@ -293,12 +293,31 @@ export function OnboardingFlow() {
       avatarUrl = supabase.storage.from("avatars").getPublicUrl(path).data.publicUrl;
     }
 
+    /*
+      NEVER THE EMAIL ADDRESS.
+
+      This fell back to `user.email` when the identity provider gave no name —
+      which is every ordinary email/password signup. `display_name` is not
+      private: `PROFILE_SELECT` in social/leaderboard.ts returns it, the
+      leaderboard renders `displayName ?? username` as the athlete's name, and
+      both share-card routes print it onto an image made to be posted. So
+      signing up with an email address and tapping through onboarding put that
+      address on a public leaderboard and into a shareable PNG, with nothing
+      anywhere saying so.
+
+      Null instead. Every render site already falls back to the username the
+      athlete chose two steps earlier, which is the name they picked to be
+      known by. An OAuth-provided name is still used, trimmed and length-capped
+      the same way the profile form caps one typed by hand — a provider is not
+      a validated input either.
+    */
+    const providerName = (user.user_metadata?.full_name as string | undefined)?.trim();
     const profilePayload = {
       user_id: user.id,
       display_name:
-        (user.user_metadata?.full_name as string | undefined) ??
-        user.email ??
-        null,
+        providerName && validateDisplayText(providerName, { label: "Display name" }).valid
+          ? providerName
+          : null,
       username: username.trim(),
       avatar_url: avatarUrl,
       date_of_birth: form.date_of_birth,
