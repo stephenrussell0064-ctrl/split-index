@@ -21,6 +21,48 @@ import {
 
 type Phase = "form" | "otp";
 
+/**
+ * How long a confirmation code is allowed to be.
+ *
+ * Supabase issues codes at whatever length the project is configured for —
+ * Authentication → Email → "Email OTP Length", 6 by default and settable up to
+ * 10. This project issues 8.
+ *
+ * The field used to hard-code 6, in three places at once: `maxLength={6}`, a
+ * `.slice(0, 6)` in the change handler, and a submit button gated on
+ * `otp.length !== 6`. The slice is the damaging one. Someone typing the 8-digit
+ * code from their email got the first six characters kept and the last two
+ * dropped in silence, and the form then submitted that truncated token quite
+ * happily. Supabase rejected it — correctly, it was not the code — and the
+ * screen said "That code didn't work. Please check it and try again.", telling
+ * someone who had copied the number correctly that they had got it wrong. No
+ * amount of care on their part could have fixed it.
+ *
+ * A client cannot read the project's OTP length, so the field accepts the whole
+ * range Supabase can issue and leaves the judgement of whether a code is right
+ * to the only thing that actually knows: Supabase.
+ */
+const OTP_MIN_LENGTH = 6;
+const OTP_MAX_LENGTH = 10;
+
+/**
+ * Strips anything that is not a digit and caps the length.
+ *
+ * Split out of the JSX so the truncation rule can be tested without a React
+ * renderer, which this project has no infrastructure for — the same reason
+ * `performCheckout` lives outside its hook. The bug this replaces was invisible
+ * to the type checker and to every existing test, and it lived in an inline
+ * arrow function inside a `<Input onChange>` where nothing could reach it.
+ */
+export function sanitizeOtpInput(raw: string): string {
+  return raw.replace(/\D/g, "").slice(0, OTP_MAX_LENGTH);
+}
+
+/** Whether a typed code is long enough to be worth sending to Supabase at all. */
+export function isSubmittableOtp(otp: string): boolean {
+  return otp.length >= OTP_MIN_LENGTH;
+}
+
 export function AuthForm({
   mode,
   initialError,
@@ -242,9 +284,9 @@ export function AuthForm({
         {phase === "otp" ? (
           <>
             <p className="text-sm text-muted mb-2">
-              We sent a 6-digit code to <span className="text-foreground">{email}</span>. Enter
-              it below to confirm your account — or click the confirm link in that same email if
-              you&apos;d rather use that.
+              We sent a confirmation code to <span className="text-foreground">{email}</span>.
+              Enter it below to confirm your account — or click the confirm link in that same
+              email if you&apos;d rather use that.
             </p>
             <p className="text-xs text-muted/70 mb-6">
               Don&apos;t see it? Check your junk/spam folder — confirmation emails end up there
@@ -253,14 +295,14 @@ export function AuthForm({
 
             <form onSubmit={handleVerifyOtp} className="space-y-4">
               <Input
-                label="6-digit code"
+                label="Confirmation code"
                 type="text"
                 inputMode="numeric"
                 autoComplete="one-time-code"
                 pattern="[0-9]*"
-                maxLength={6}
+                maxLength={OTP_MAX_LENGTH}
                 value={otp}
-                onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                onChange={(e) => setOtp(sanitizeOtpInput(e.target.value))}
                 required
                 autoFocus
               />
@@ -268,7 +310,12 @@ export function AuthForm({
               {error && <p className="text-sm text-danger">{error}</p>}
               {message && <p className="text-sm text-success">{message}</p>}
 
-              <Button type="submit" className="w-full" loading={loading} disabled={otp.length !== 6}>
+              <Button
+                type="submit"
+                className="w-full"
+                loading={loading}
+                disabled={!isSubmittableOtp(otp)}
+              >
                 Verify code
               </Button>
             </form>
