@@ -730,6 +730,10 @@ const SESSION_TYPE_VALUES: SessionType[] = [
  */
 const DECIMAL_INPUT = /^[+-]?(\d+(\.\d*)?|\.\d+)$/;
 
+/** Matches `assertScoringInput` — see the date check in validateAndBuildPayload. */
+const FUTURE_SESSION_GRACE_MS = 6 * 60 * 60 * 1000;
+const EARLIEST_SESSION_YEAR = 1950;
+
 export function parseNum(value: string): number | null {
   const trimmed = value.trim().replace(",", ".");
   if (trimmed === "") return null;
@@ -1059,8 +1063,29 @@ export function validateAndBuildPayload(
     return value;
   };
 
-  if (!state.startedAt || Number.isNaN(new Date(state.startedAt).getTime())) {
+  /*
+    The date is BOUNDED, not merely parseable.
+
+    Only `isNaN` was checked, so "2099-12-31" sailed through the form and the
+    API and was written to `activities.started_at`,
+    `split_index_history.recorded_at` and `workout_scores.created_at`. The
+    dashboard reads the current Split Index as `recorded_at DESC LIMIT 1` — so
+    one mistyped year became the athlete's index permanently, with every 7-day
+    delta measured against it. Nothing in the app could undo it except deleting
+    the session, and nothing told them that was the cause.
+
+    The same bounds run server-side in `assertScoringInput`, so the form and
+    the API agree and the athlete sees the problem on the field rather than as
+    a 400 after a round trip. A few hours of future slack covers a phone clock
+    that runs fast and a session logged across a timezone boundary.
+  */
+  const startedAtMs = state.startedAt ? new Date(state.startedAt).getTime() : NaN;
+  if (!state.startedAt || Number.isNaN(startedAtMs)) {
     errors.startedAt = "Pick a valid date & time";
+  } else if (startedAtMs > Date.now() + FUTURE_SESSION_GRACE_MS) {
+    errors.startedAt = "That date is in the future";
+  } else if (new Date(startedAtMs).getFullYear() < EARLIEST_SESSION_YEAR) {
+    errors.startedAt = `Sessions can't be dated before ${EARLIEST_SESSION_YEAR}`;
   }
 
   // Rowing/ski erg: split is mandatory and, depending on rowInputMode, either

@@ -131,6 +131,7 @@ export async function POST(request: Request) {
   try {
     assertScoringInput({
       sport: mergedBody.sport,
+      startedAt: mergedBody.started_at,
       durationSeconds: mergedBody.duration_seconds,
       distanceMeters: mergedBody.distance_meters,
       avgHeartRate: mergedBody.avg_heart_rate,

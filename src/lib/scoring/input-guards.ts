@@ -1,5 +1,9 @@
 import type { SportType } from "@/types";
 import { MAX_INDEX, MIN_INDEX } from "@/lib/scoring/constants";
+import { SPORTS } from "@/lib/constants/sports";
+
+/** Built from the app's own sport list, so a sport added there is scoreable here without a second edit. */
+const VALID_SPORTS = new Set<string>(SPORTS.map((s) => s.id));
 
 const MAX_DURATION_SECONDS = 24 * 60 * 60; // 24 h
 const MAX_DISTANCE_METERS = 500_000; // 500 km
@@ -25,6 +29,30 @@ const MAX_ELEVATION_METERS = 9000;
  * is a data-entry error (a 10×BW "bench press" is still rejected).
  */
 const MAX_BODYWEIGHT_MULTIPLE = 6;
+
+/**
+ * A rep count nobody performs, and a date nobody trains on.
+ *
+ * MAX_REPS: the form already caps this; the API did not, so `reps: 1000000`
+ * reached `gym_exercises.reps` and every piece of volume and 1RM arithmetic
+ * downstream of it. 200 is past any real set — a 100-rep squat challenge fits.
+ *
+ * THE DATE BOUNDS ARE THE IMPORTANT ONES. `started_at` was written verbatim to
+ * `activities.started_at`, `workout_scores.created_at` and
+ * `split_index_history.recorded_at`, and nothing anywhere checked it. The
+ * dashboard reads the latest index as `recorded_at DESC LIMIT 1` — so one
+ * session mistyped as 2099 becomes the athlete's current Split Index
+ * permanently, and every 7-day delta is computed against it for the next
+ * seventy-four years. A typo in a date field is not a rare event.
+ *
+ * A few hours of slack into the future, not zero: a phone whose clock is
+ * slightly ahead, and a session logged across a timezone the app resolved
+ * differently, are both ordinary. 1950 at the other end is old enough to
+ * accept any real training history and new enough to catch a stray century.
+ */
+const MAX_REPS = 200;
+const MAX_FUTURE_MS = 6 * 60 * 60 * 1000;
+const EARLIEST_SESSION_YEAR = 1950;
 /**
  * The same sanity check for machine-anchored leg movements. Leverage, a
  * counterweighted sled and a fixed rail mean these genuinely take multiples of
@@ -97,6 +125,8 @@ export class ScoringInputError extends Error {
 /** Server-side guards before invoking score engines. Does not alter coefficient tables. */
 export function assertScoringInput(input: {
   sport: SportType;
+  /** ISO timestamp the session began. Optional so existing callers that never had one keep working; when present it is bounded. */
+  startedAt?: string | Date | null;
   durationSeconds: number;
   distanceMeters?: number | null;
   avgHeartRate?: number | null;
@@ -119,6 +149,26 @@ export function assertScoringInput(input: {
    */
   profile?: { weight_kg?: number | null; gender?: import("@/types").Gender | null };
 }): void {
+  // The `sport` parameter was never validated here. An unknown value was
+  // stopped only by the Postgres enum, several writes later, and surfaced to
+  // the athlete as a raw driver message in a 500 body.
+  if (!VALID_SPORTS.has(input.sport)) {
+    throw new ScoringInputError("That is not a sport this app can score.");
+  }
+
+  if (input.startedAt != null) {
+    const started = input.startedAt instanceof Date ? input.startedAt : new Date(input.startedAt);
+    if (Number.isNaN(started.getTime())) {
+      throw new ScoringInputError("That session date could not be read.");
+    }
+    if (started.getTime() > Date.now() + MAX_FUTURE_MS) {
+      throw new ScoringInputError("That session is dated in the future.");
+    }
+    if (started.getUTCFullYear() < EARLIEST_SESSION_YEAR) {
+      throw new ScoringInputError("That session date is too far in the past.");
+    }
+  }
+
   if (!Number.isFinite(input.durationSeconds) || input.durationSeconds <= 0) {
     throw new ScoringInputError("Duration must be greater than zero.");
   }
@@ -214,6 +264,9 @@ export function assertScoringInput(input: {
         }
         if (!Number.isInteger(s.reps) || s.reps <= 0) {
           throw new ScoringInputError(`${named}Reps must be a positive whole number.`);
+        }
+        if (s.reps > MAX_REPS) {
+          throw new ScoringInputError(`${named}That is more reps than a set can hold.`);
         }
         if (s.rpe != null && (!Number.isFinite(s.rpe) || s.rpe < 1 || s.rpe > 10)) {
           throw new ScoringInputError("RPE must be between 1 and 10.");

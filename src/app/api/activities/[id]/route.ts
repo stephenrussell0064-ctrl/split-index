@@ -145,6 +145,7 @@ export async function PATCH(
   try {
     assertScoringInput({
       sport: body.sport,
+      startedAt: body.started_at,
       durationSeconds: body.duration_seconds,
       distanceMeters: body.distance_meters,
       avgHeartRate: body.avg_heart_rate,

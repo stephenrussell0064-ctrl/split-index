@@ -135,6 +135,11 @@ export function scoreActivity(
     avgSplitSeconds: input.avgSplitSeconds,
     elevationMeters: input.elevationMeters,
     splitPacesSec: input.splitPacesSec,
+    // Passed through, finally. The RPE range check only ever ran because the
+    // two API routes happened to call assertScoringInput themselves first —
+    // anything reaching scoreActivity by another door got no RPE validation
+    // at all.
+    rpe: input.rpe,
     exercises: input.exercises,
     profile: input.profile,
   });
