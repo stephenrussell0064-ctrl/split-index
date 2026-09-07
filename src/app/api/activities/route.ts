@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { serverError } from "@/lib/api/errors";
+import { databaseError } from "@/lib/api/errors";
 import { parseBody } from "@/lib/validation/boundary";
 import { createActivitySchema } from "@/lib/validation/schemas/activity";
 import { ROUTE_CONFIG, applyRoutePrivacyZone, parseRoutePolyline } from "@/lib/scoring/gps-track";
@@ -396,10 +396,35 @@ export async function POST(request: Request) {
     .single();
 
   if (activityError || !activity) {
-    return serverError({
-      operation: "POST /api/activities",
-      cause: activityError,
-    });
+    /*
+     * An RLS refusal is not a server fault, and saying "something went wrong on
+     * our side" when the database did exactly what it was told is the worst of
+     * both: the athlete cannot act on it, and we go looking for an outage that
+     * never happened. This was seen for real — a session that would not save,
+     * reported as a 500 with a correlation id pointing at nothing.
+     *
+     * The only RESTRICTIVE policy on this insert is migration 061's verified-
+     * email requirement, so 42501 here has one cause and can name it. Everything
+     * else keeps the generic treatment, because everything else really might be
+     * our fault.
+     *
+     * Worth knowing for anyone chasing this again: an account confirms by
+     * six-digit OTP, and an address that cannot receive mail (a seeded demo
+     * account on @example.com, say) can never be confirmed by clicking a link —
+     * it has to be set in the database.
+     */
+    if (activityError?.code === "42501") {
+      return NextResponse.json(
+        {
+          error:
+            "Confirm your email address before saving a session. " +
+            "Check your inbox for the six-digit code, or request a new one from Settings.",
+        },
+        { status: 403 }
+      );
+    }
+
+    return databaseError(activityError ?? {}, { operation: "POST /api/activities" });
   }
 
   if (body.exercises && body.exercises.length > 0) {

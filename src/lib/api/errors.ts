@@ -89,6 +89,30 @@ const CODE_MESSAGES: Record<string, string> = {
 };
 
 /**
+ * The status that matches what actually happened.
+ *
+ * `databaseError` used to answer 409 for every recognised code, which is right
+ * for the unique violation it was written around and wrong for the rest. A
+ * permission denial in particular is neither a conflict nor a server fault: RLS
+ * did exactly its job, and answering 409 — or worse, letting it fall through to
+ * a 500 — makes the error dashboard lie in the opposite direction from the one
+ * the 409 was introduced to fix.
+ *
+ * 409 stays the default so anything unlisted behaves as it did before.
+ */
+const CODE_STATUS: Record<string, number> = {
+  // An RLS policy refused the row. The caller is authenticated but not allowed.
+  "42501": 403,
+  // Pointing at a row that is gone.
+  "23503": 409,
+  // Values the schema refuses: the request is malformed, not conflicting.
+  "23514": 400,
+  "23502": 400,
+  // Unique violation — the case this helper was written for.
+  "23505": 409,
+};
+
+/**
  * Turn a database error into a message it is safe to send.
  *
  * Returns null when there is nothing specific to say, which the caller turns
@@ -189,7 +213,10 @@ export function databaseError(
       code: error.code,
       ...options.context,
     });
-    return NextResponse.json({ error: specific, ref }, { status: 409 });
+    return NextResponse.json(
+      { error: specific, ref },
+      { status: (error.code && CODE_STATUS[error.code]) || 409 }
+    );
   }
 
   return serverError({ ...options, cause: error });
