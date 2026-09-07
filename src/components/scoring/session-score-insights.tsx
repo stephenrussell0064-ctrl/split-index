@@ -125,8 +125,16 @@ function CardioPremiumStats({
     // Rendered as a sentence below instead of as a raw "· age graded"
     // bullet — the same adjustment the strength side now names outright.
     "age-graded",
+    // Rendered as a sentence with the actual paces below, rather than as the
+    // bare words "interval work piece scored".
+    "interval-work-piece-scored",
+    "fartlek-work-piece-scored",
   ]);
   const remainingFlags = result.flags.filter((f) => !hiddenFlags.has(f));
+  // Optional on CardioResult (results persisted before the field existed do
+  // not carry it), so coalesce rather than guarding with `in`, which narrowed
+  // the type to {}.
+  const workPiece = result.workPiece ?? null;
   const isAgeGraded = result.flags.includes("age-graded");
   // Null for a session scored before `ageGradeFactor` was reported. Those
   // results carry the flag but no magnitude, so they keep the numberless
@@ -186,6 +194,43 @@ function CardioPremiumStats({
             The times shown here — including the predictions — are your real, un-graded times.
           </ScoringExplainerNote>
         </>
+      )}
+      {workPiece && (
+        <div className="border-t border-white/5 pt-4">
+          <p className="text-[10px] uppercase tracking-wider text-muted mb-2">
+            Scored on your {workPiece.kind === "interval" ? "reps" : "hard efforts"}, not your
+            session average
+          </p>
+          <dl className="grid gap-1.5 text-xs sm:grid-cols-3">
+            <div>
+              <dt className="text-muted">
+                {workPiece.kind === "interval" ? "Rep pace" : "On pace"}
+              </dt>
+              <dd className="font-medium tabular-nums">
+                {formatRiegelPrediction(workPiece.workPaceSecPerKm)}/km
+              </dd>
+            </div>
+            <div>
+              <dt className="text-muted">Scored as</dt>
+              <dd className="font-medium tabular-nums">
+                {formatRiegelPrediction(workPiece.equivalentPaceSecPerKm)}/km
+              </dd>
+            </div>
+            {workPiece.sessionAvgPaceSecPerKm !== null && (
+              <div>
+                <dt className="text-muted">Session average</dt>
+                <dd className="font-medium tabular-nums line-through opacity-60">
+                  {formatRiegelPrediction(workPiece.sessionAvgPaceSecPerKm)}/km
+                </dd>
+              </div>
+            )}
+          </dl>
+          <ScoringExplainerNote>
+            Your {workPiece.kind === "interval" ? "rep" : "hard-effort"} pace is converted to a
+            race-equivalent using the rest you took — recovery makes a pace easier to hold, so the
+            scored figure sits behind the raw one. The standing around never counts.
+          </ScoringExplainerNote>
+        </div>
       )}
       {result.predictions && (
         <div className="border-t border-white/5 pt-4">
