@@ -3,23 +3,13 @@ import { databaseError } from "@/lib/api/errors";
 import { createClient } from "@/lib/supabase/server";
 import { fetchDuels } from "@/lib/social/queries";
 import type { DuelMetric } from "@/lib/social/types";
+import { parseBody } from "@/lib/validation/boundary";
+import {
+  DEFAULT_DURATION_DAYS,
+  createDuelSchema,
+} from "@/lib/validation/schemas/social";
 import type { SportType } from "@/types";
 
-const DUEL_METRICS: DuelMetric[] = ["sessions", "load", "speed", "strength"];
-const SPORT_TYPES: SportType[] = [
-  "running",
-  "walking",
-  "swimming",
-  "rowing",
-  "bike_erg",
-  "indoor_cycling",
-  "outdoor_cycling",
-  "ski_erg",
-  "gym",
-];
-const MIN_DURATION_DAYS = 1;
-const MAX_DURATION_DAYS = 30;
-const DEFAULT_DURATION_DAYS = 7;
 
 export async function GET() {
   const supabase = await createClient();
@@ -45,17 +35,24 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await request.json();
-  const opponentId = String(body.friendId ?? "");
-  const metric: DuelMetric = DUEL_METRICS.includes(body.metric) ? body.metric : "sessions";
-  const sport: SportType | null = SPORT_TYPES.includes(body.sport) ? body.sport : null;
-  const days = Number.isFinite(body.days)
-    ? Math.min(MAX_DURATION_DAYS, Math.max(MIN_DURATION_DAYS, Math.round(body.days)))
-    : DEFAULT_DURATION_DAYS;
+  /*
+    N1. This clamped and defaulted: an out-of-range `days` became 30, an
+    unrecognised `metric` became "sessions", an unknown `sport` became null. A
+    malformed request produced a working duel that was not the one asked for,
+    so a client bug looked like a feature until somebody noticed the length was
+    wrong. The schema refuses and says which field.
 
-  if (!opponentId) {
-    return NextResponse.json({ error: "friendId required" }, { status: 400 });
-  }
+    The DEFAULTS survive, because they are a different thing from clamping: an
+    ABSENT metric or duration still means "the usual one". Only a PRESENT but
+    invalid value is now refused.
+  */
+  const parsed = await parseBody(request, createDuelSchema);
+  if (parsed.response) return parsed.response;
+
+  const opponentId = parsed.data.friendId;
+  const metric = (parsed.data.metric ?? "sessions") as DuelMetric;
+  const sport = (parsed.data.sport ?? null) as SportType | null;
+  const days = parsed.data.days ?? DEFAULT_DURATION_DAYS;
   if (opponentId === user.id) {
     return NextResponse.json({ error: "Cannot challenge yourself" }, { status: 400 });
   }
