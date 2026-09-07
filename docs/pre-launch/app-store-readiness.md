@@ -437,6 +437,52 @@ in practice but occasionally queried. **Fix:** change to `arm64`.
       widgets on device (mitigates R2)
 - [ ] Statement of what each permission is for and where the reviewer will be prompted for it
 - [ ] Statement that all purchases use In-App Purchase via RevenueCat
+- [ ] **The two gates in front of the Hybrid Plan, with the exact taps to clear them.** See below —
+      this is the flagship feature and a reviewer currently cannot reach it without being told how.
+
+#### The Hybrid Plan is gated twice, and neither gate is guessable
+
+Verified against production on 2026-09-07. A reviewer signing in as the demo account and tapping
+**Hybrid Plan** does NOT see a plan. Two things stand in front of it:
+
+1. **Article 9 health-data consent.** `/api/hpe/plan` refuses outright until the athlete has explicitly
+   consented to the app processing health information (migration 057). `article9_consent_events` holds
+   **one** row across the whole system — the owner's account. The demo account has **none**, so the
+   reviewer meets the consent screen first.
+   Clear it: **Settings → "Health data for the Hybrid Plan" → tick the consent checkbox → "Save my
+   consent"**.
+
+2. **The intake.** The demo account has **no `hpe_intake` row at all**, so even after consenting the
+   plan cannot be built: `MANDATORY_SECTIONS` requires *health*, *goal* and *availability* to be
+   answered before generation. The reviewer would be sent to the intake wizard next.
+
+**Preferred fix — do this rather than relying on the notes:** grant consent and complete the intake ON
+THE DEMO ACCOUNT before submitting, so the reviewer taps Hybrid Plan and sees a real 7-week block
+immediately. Notes are read inconsistently; a working screen is not. Both are legitimate to pre-set:
+the demo account is ours, and consenting on our own account is not a misrepresentation.
+
+Keep the written note anyway, for a reviewer who makes their own account instead of using the demo one.
+
+#### Paste-ready text for the "Notes" field
+
+> **Hybrid Plan — please read before testing this feature.**
+>
+> Split Index builds training plans from health information (resting and maximum heart rate, injury
+> history, a pre-exercise health screen). Under UK/EU data-protection law that is special-category
+> data, so the app will not process it until the user gives explicit, separate consent. This is a
+> deliberate legal safeguard, not a defect.
+>
+> The demo account has this consent already granted and its intake completed, so **Hybrid Plan opens
+> straight onto a generated training block**.
+>
+> If you sign in with an account of your own instead, the Hybrid Plan tab will show a screen titled
+> "One thing first" explaining that consent is needed. To proceed:
+>   1. Settings → "Health data for the Hybrid Plan"
+>   2. Tick the consent checkbox, then tap "Save my consent"
+>   3. Complete the intake when prompted (health, goal and availability are required)
+>   4. Return to Hybrid Plan — a full training block is generated
+>
+> Consent can be withdrawn at any time in the same place, which deletes the health answers.
 
 ### App Privacy ("nutrition label") answers — must match B6 and B7 exactly
 
