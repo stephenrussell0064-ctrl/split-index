@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
@@ -28,12 +29,44 @@ import { AGE_BRACKETS, WEIGHT_CLASSES } from "./constants";
  * rest cover the widening behaviour that the refactor could have broken.
  */
 
-const MIGRATION = fileURLToPath(
-  new URL("../../../supabase/migrations/056_public_projections.sql", import.meta.url)
-);
+const MIGRATIONS_DIR = fileURLToPath(new URL("../../../supabase/migrations", import.meta.url));
+
+/**
+ * The migration that CURRENTLY defines `leaderboard_profiles`, found rather
+ * than named.
+ *
+ * This used to read `056_public_projections.sql` by name, which was the
+ * definition when the test was written and has not been since: 061 rebuilt
+ * both public views to add the verified-email gate, and 064 rebuilt them again
+ * to stop `display_name` publishing an email address. Neither touched the band
+ * expressions — checked by diff at the time — so the test kept passing.
+ *
+ * It kept passing for the wrong reason. A test whose entire purpose is to stop
+ * the SQL and the TypeScript drifting apart was reading a file that is no
+ * longer what runs, so an edit to the bands in any later migration would have
+ * left it green while athletes were filed into the wrong bracket — which is
+ * the exact failure the docblock above describes.
+ *
+ * Highest number wins, because migrations apply in order and the last
+ * definition is the live one.
+ */
+function latestViewDefinition(view: string): string {
+  const files = readdirSync(MIGRATIONS_DIR)
+    .filter((f) => f.endsWith(".sql"))
+    .sort()
+    .filter((f) =>
+      new RegExp(`CREATE\\s+VIEW\\s+${view}\\b`, "i").test(
+        readFileSync(join(MIGRATIONS_DIR, f), "utf8")
+      )
+    );
+  if (files.length === 0) {
+    throw new Error(`No migration defines the view ${view} — has it been renamed?`);
+  }
+  return files[files.length - 1]!;
+}
 
 function migrationSql(): string {
-  return readFileSync(MIGRATION, "utf8")
+  return readFileSync(join(MIGRATIONS_DIR, latestViewDefinition("leaderboard_profiles")), "utf8")
     .split("\n")
     .map((line) => line.replace(/--.*$/, ""))
     .join("\n");
