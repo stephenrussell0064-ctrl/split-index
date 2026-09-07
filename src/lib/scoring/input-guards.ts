@@ -281,7 +281,17 @@ export function assertScoringInput(input: {
   }
 }
 
+/**
+ * `Infinity` used to come back as MIN_INDEX along with NaN — a scoring blow-up
+ * at the top of the scale was reported to the athlete as the bottom of it, and
+ * a run so fast the maths overflowed made them the worst athlete on the
+ * leaderboard. NaN keeps landing on MIN, because a number that is not a number
+ * says nothing about the effort and the floor is the safe direction to fail;
+ * the infinities clamp to the end they actually came from.
+ */
 export function clampIndexScore(value: number): number {
-  if (!Number.isFinite(value)) return MIN_INDEX;
+  if (Number.isNaN(value)) return MIN_INDEX;
+  if (value === Infinity) return MAX_INDEX;
+  if (value === -Infinity) return MIN_INDEX;
   return Math.max(MIN_INDEX, Math.min(MAX_INDEX, Math.round(value)));
 }

@@ -542,6 +542,11 @@ export function computeHitRate(
   weeks = 8,
   timeZone?: string | null
 ): number {
+  // `sessions >= 0` is true every week, so a target of zero reported a
+  // flawless 100% hit rate to an athlete who had trained on none of those
+  // days. There is no rate to report against a target nobody set.
+  if (!Number.isFinite(targetSessionsPerWeek) || targetSessionsPerWeek <= 0) return 0;
+
   const tz = resolveTimezone(timeZone);
   const byDate = new Map(heatmapDays.map((d) => [d.date, d]));
   const today = new Date();

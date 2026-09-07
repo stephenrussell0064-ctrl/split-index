@@ -733,6 +733,8 @@ const DECIMAL_INPUT = /^[+-]?(\d+(\.\d*)?|\.\d+)$/;
 /** Matches `assertScoringInput` — see the date check in validateAndBuildPayload. */
 const FUTURE_SESSION_GRACE_MS = 6 * 60 * 60 * 1000;
 const EARLIEST_SESSION_YEAR = 1950;
+/** Faster than any human-powered sport; above this the preview is reporting a typo, not a speed. */
+const MAX_PLAUSIBLE_SPEED_KMH = 200;
 
 export function parseNum(value: string): number | null {
   const trimmed = value.trim().replace(",", ".");
@@ -753,10 +755,26 @@ export function parseSeconds(value: string): number | null {
   if (!trimmed.includes(":")) return parseNum(trimmed);
   const parts = trimmed.split(":");
   if (parts.length > 3) return null;
+
+  /*
+    Every segment has to be a number a person would write, and every segment
+    after the first has to be a real minutes/seconds value.
+
+    `Number("")` is 0, so ":" parsed as 0 and "1:" as 60 — an athlete who
+    typed half a time got a silent, wrong answer instead of a correction. And
+    `Number` accepts what nobody types: "0x10:00" was read as 16:00.
+
+    "1:99" is the interesting one. It parsed as 159 seconds — 2:39 — which is
+    a number the athlete did not write and would not recognise. A minutes or
+    seconds segment above 59 is a typo, not shorthand.
+  */
   let total = 0;
-  for (const part of parts) {
-    const n = Number(part.trim().replace(",", "."));
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i]!.trim().replace(",", ".");
+    if (!DECIMAL_INPUT.test(part)) return null;
+    const n = Number(part);
     if (!Number.isFinite(n) || n < 0) return null;
+    if (i > 0 && n >= 60) return null;
     total = total * 60 + n;
   }
   return total;
@@ -778,7 +796,15 @@ export function splitSecondsFromState(state: WorkoutFormState): number | null {
 
 // ─── Derived metrics ─────────────────────────────────────────────────────────
 
+/**
+ * These strings are the live preview under the duration and pace fields, so
+ * they are rendered while the athlete is still typing. Unguarded they read
+ * `NaN:NaN` for a half-typed entry and `Infinity:NaN:NaN` for a pathological
+ * one, and a negative input produced "-2:-30" — a clock face that cannot
+ * exist. A preview that cannot compute yet should show nothing.
+ */
 export function formatClock(totalSeconds: number): string {
+  if (!Number.isFinite(totalSeconds) || totalSeconds < 0) return "—";
   const rounded = Math.round(totalSeconds);
   const h = Math.floor(rounded / 3600);
   const m = Math.floor((rounded % 3600) / 60);
@@ -807,7 +833,12 @@ export function deriveSplitPer500m(meters: number | null, seconds: number): stri
 
 export function deriveSpeedKmh(meters: number | null, seconds: number): string | null {
   if (!meters || meters <= 0 || seconds <= 0) return null;
-  return `${((meters / 1000) / (seconds / 3600)).toFixed(1)} km/h`;
+  const kmh = (meters / 1000) / (seconds / 3600);
+  // A duration still being typed can be a fraction of a second, which turned
+  // an ordinary distance into "3600000000000.0 km/h" under the field. Nothing
+  // is a better preview than a number that obviously came from a bug.
+  if (!Number.isFinite(kmh) || kmh > MAX_PLAUSIBLE_SPEED_KMH) return null;
+  return `${kmh.toFixed(1)} km/h`;
 }
 
 /** Duration from distance + split/500m — rowing/ski erg "log by distance" mode. */
