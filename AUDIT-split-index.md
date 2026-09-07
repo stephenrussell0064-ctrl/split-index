@@ -1167,6 +1167,51 @@ are covered and the scoring guard still backstops the rest — but the fuzz swee
 cannot claim "every route" until this is finished, and the brief's acceptance
 criterion says every route.
 
+**PARTIALLY CLOSED — 7 routes done, 14 body-taking routes remain.** Measured rather than
+estimated: at the start of this pass 6 of 52 route files validated anything; 12 do now.
+Body-taking routes with no schema went from 20 to 14.
+
+Done: `activities/[id]/comments`, `squads`, `squads/join`, `duels`, `recovery/hrv`,
+`profile/timezone` — plus the three that already parsed, and three a peer session added
+(`hpe/session-feedback`, `social/report`, `social/block`).
+
+**None of these routes was unguarded, and the finding's phrasing "no schema" was fair but
+undersold what was there.** What the ad-hoc guards actually got wrong, each now a named
+test case:
+
+- `String(body.name ?? "")` coerces an object to `"[object Object]"` and an array to its
+  comma-joined contents. Both are non-empty, both passed the length check, and both were
+  stored as somebody's comment.
+- `.slice(0, MAX_NAME_LENGTH)` silently truncated a squad name. The athlete got a shorter
+  name back with nothing saying so.
+- `duels` clamped and defaulted: an out-of-range `days` became 30, an unknown `metric`
+  became `"sessions"`, an unknown `sport` became null. A malformed request produced a
+  working duel nobody asked for, so a client bug looked like a feature.
+
+Absent is still distinguished from invalid — a missing `metric` still means "sessions", so
+the defaults survive and only present-but-wrong values are refused.
+
+**A mistake worth recording, because it would have created N2 out of the fix for N1.** The
+first draft of the schema module invented its own limits — 500 characters for a comment,
+50 for a squad name — against the 1000 and 40 the routes were using. That is precisely
+"two sets of bounds coexisting". The constants moved into the schema module instead, the
+routes import them, and a test asserts both values so the next person cannot drift them
+apart. `hrvSchema` is asserted against `BOUND_HRV_MS` from the central config rather than
+against a literal, for the same reason.
+
+**Still to do (14):** `activities/[id]`, `activities/[id]/reactions`, `activities/draft`,
+`activities/merge`, `consent/article9`, `duels/[id]`, `friends`, `goals`,
+`hpe/admin/rollout`, `onboarding/calibrate`, `races`, `revenuecat/webhook`,
+`session-templates`, `stripe/checkout`. Plus the query parameters on roughly 19 read
+routes, which are untouched.
+
+Two of the remainder need a decision rather than a schema. `onboarding/calibrate` currently
+FILTERS invalid lifts and proceeds with whatever is left, so a typo in one lift is silently
+dropped from a calibration the athlete thinks completed; refusing instead is better but is
+a behaviour change on the onboarding path. `revenuecat/webhook` and `stripe/checkout` are
+signature-verified, which is a different kind of guard and may make a body schema redundant
+rather than absent.
+
 #### N2 — Two sets of plausibility bounds now coexist
 **WP3 · Low · Evidence: `src/lib/security/config.ts` and `src/lib/scoring/input-guards.ts`.**
 
