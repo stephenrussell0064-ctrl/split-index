@@ -1149,6 +1149,54 @@ The published statement therefore stays accurate as written and needs no edit. R
 in full because "we did some accessibility work, can the finding close" is a question
 that will be asked again, and the answer needs to be checkable rather than remembered.
 
+**CORRECTION to item 1, 2026-09-07 — measured, after a peer session reported a ~1-in-10
+rate of audit findings that were wrong or misdirected on measurement rather than on
+reading.** They named four of their own. I re-measured mine, since the published
+accessibility statement names these four and a wrong finding here is a public one.
+
+Item 1 said charts have "no text or table equivalent **exposed to assistive
+technology**". That phrasing is wrong, and wrong in the direction that misdirects the
+work. Measured on `9a1ac02`, there are two distinct populations:
+
+- **Eight chart surfaces already carry `role="img"` with a descriptive `aria-label`** —
+  the three in [analytics/charts.tsx](src/components/analytics/charts.tsx) (line, index
+  trend, sport-balance radar), [engine-lab-trend-card.tsx](src/components/dashboard/engine-lab-trend-card.tsx),
+  the three in [interference-detail.tsx](src/components/analytics/interference-detail.tsx),
+  and [acwr-trend-chart.tsx](src/components/analytics/acwr-trend-chart.tsx). Something
+  *is* exposed.
+- **Eight have nothing at all**: `compare-chart`, `moving-average-chart`, `volume-chart`,
+  `training-zones-chart`, `trend-panel`, `fatigue-recovery-chart`, `projection-chart`,
+  `intensity-distribution`.
+- **None of the sixteen has a data equivalent.** No `<table>`, no `sr-only` value list,
+  anywhere among them.
+
+So the *published statement* — "Charts do not yet have a text equivalent" — is accurate
+and needs no edit: `aria-label="Index trend chart showing split, endurance and strength
+over 20 data points"` announces that a chart exists and what it is about, and conveys
+none of what it says. A label is not an equivalent, and WCAG 1.1.1 asks for one that
+serves the equivalent purpose.
+
+The *finding* was the imprecise thing, and the imprecision has a cost: it describes one
+undifferentiated problem where there are two, with different fixes. Half need a data
+equivalent added alongside a label that already exists; the other half need the label
+first. Anyone working from the finding as written would do the same work in both places.
+
+Items 2, 3 and 4 re-checked at the same time and all three stand:
+
+- **Item 2 confirmed.** [engine-lab-trend-card.tsx:69-71](src/components/dashboard/engine-lab-trend-card.tsx#L69)
+  ties each legend entry to its line with a coloured dot and no second cue — no dash
+  pattern, no marker shape. The series *names* are in text, so this is narrower than
+  "signalled by colour alone" implies, but the legend-to-line mapping is colour-only and
+  that is the 1.4.1 failure.
+- **Item 3 confirmed** (see the entry above): `role="alert"` present, `aria-describedby`
+  / `aria-errormessage` / `aria-invalid` absent.
+- **Item 4 is not falsifiable from code** — it asserts that no manual walkthrough has been
+  done, and no walkthrough has been done.
+
+One of four needed correcting, and it was a precision error rather than a false claim.
+Recorded anyway: this document is used to decide what to build, and a finding that sends
+someone to do unnecessary work costs the same whether it is wrong or merely vague.
+
 #### N8 — Seventeen call sites still resolve entitlement themselves
 **WP6.2 · Low · Evidence: `grep -rln isPremiumUser src` — 21 sites, 4 migrated.**
 
