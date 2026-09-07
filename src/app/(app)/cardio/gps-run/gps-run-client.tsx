@@ -758,7 +758,18 @@ function GpsRunScreen() {
     trackSummary: GpsTrackSummary,
     startedAtIso: string,
     sourcePoints: GpsPoint[] = livePoints,
-    sourcePauses: readonly PauseInterval[] = pauses
+    sourcePauses: readonly PauseInterval[] = pauses,
+    /*
+      Heart rate and cadence from before this component existed.
+      
+      Defaults to the rejoin snapshot, and MUST be passed explicitly by the
+      recovered-orphan path for the same reason `sourcePoints` must be: that
+      run's readings are in `orphaned.sensorTotals`, not in this component,
+      which mounted fresh after the app was killed. Without it a recovered run
+      saves with no heart rate at all — and unlike the missing route, nothing
+      about the saved session shows that anything is absent.
+    */
+    priorTotals: SensorTotals | null = priorTotalsRef.current
   ) {
     if (saving) return;
     setSaving(true);
@@ -799,7 +810,7 @@ function GpsRunScreen() {
 
             Null for a run that was never interrupted.
           */
-          priorTotals: priorTotalsRef.current,
+          priorTotals,
           segments,
         })
       );
@@ -1230,7 +1241,10 @@ function GpsRunScreen() {
                       // the app was killed. Without them the run saves with no
                       // map and no temperature.
                       orphaned.points,
-                      orphaned.pauses
+                      orphaned.pauses,
+                      // Same reason as the points above: this run's heart rate
+                      // and cadence are in the recovered record, not in state.
+                      orphaned.sensorTotals
                     )
                   }
                 >
