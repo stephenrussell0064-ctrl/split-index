@@ -1,3 +1,4 @@
+import { verifyCronRequest } from "@/lib/security/cron-auth";
 import { NextResponse } from "next/server";
 import { databaseError } from "@/lib/api/errors";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -5,13 +6,6 @@ import { isPremiumUser } from "@/lib/retention/trial";
 import { generateHybridReport, currentPeriodStart } from "@/lib/scoring/hybrid-report-data";
 import type { ReportPeriod } from "@/lib/scoring/hybrid-report";
 
-function verifyCronSecret(request: Request): boolean {
-  const { searchParams } = new URL(request.url);
-  const secret =
-    searchParams.get("secret") ??
-    request.headers.get("authorization")?.replace("Bearer ", "");
-  return secret === process.env.CRON_SECRET && !!process.env.CRON_SECRET;
-}
 
 /**
  * Generates the Hybrid Athlete Report (Part 5) for every premium user, on
@@ -20,11 +14,17 @@ function verifyCronSecret(request: Request): boolean {
  * which is a no-op given the (user_id, period, period_start) unique key).
  */
 export async function GET(request: Request) {
-  if (!verifyCronSecret(request)) {
+  if (!verifyCronRequest(request, "/api/cron/hybrid-reports")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const admin = createAdminClient();
+
+  /*
+    `period` is a plain switch, not a credential — it selects which report to
+    build and is safe in the URL. It is read here rather than in the auth
+    helper, which now takes only the Request and cares only about the header.
+  */
   const { searchParams } = new URL(request.url);
   const period: ReportPeriod = searchParams.get("period") === "quarterly" ? "quarterly" : "monthly";
 

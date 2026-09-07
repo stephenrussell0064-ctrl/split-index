@@ -1,3 +1,4 @@
+import { verifyCronRequest } from "@/lib/security/cron-auth";
 import { NextResponse } from "next/server";
 import { databaseError } from "@/lib/api/errors";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -14,16 +15,9 @@ interface ProfileRow {
   username: string | null;
 }
 
-function verifyCronSecret(request: Request): boolean {
-  const { searchParams } = new URL(request.url);
-  const secret =
-    searchParams.get("secret") ??
-    request.headers.get("authorization")?.replace("Bearer ", "");
-  return secret === process.env.CRON_SECRET && !!process.env.CRON_SECRET;
-}
 
 export async function GET(request: Request) {
-  if (!verifyCronSecret(request)) {
+  if (!verifyCronRequest(request, "/api/cron/leaderboard")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

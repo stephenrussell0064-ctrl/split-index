@@ -94,6 +94,16 @@ revoke old.
 **`CRON_SECRET`** — generate any long random value (`openssl rand -hex 32`),
 update it in Vercel, redeploy. Nothing else reads it.
 
+It is presented as `Authorization: Bearer $CRON_SECRET` and in no other way.
+Vercel Cron sends that header unprompted, so a scheduled job needs no change.
+Anything calling a cron endpoint by hand must send the header too: the
+`?secret=` query parameter was removed in M6, because a secret in a URL is
+copied into access logs, proxy logs and any error report that captures the
+request URL — which turns one rotation into an unanswerable question about how
+many log stores still hold the old value. A caller still using it receives a
+401 and leaves an `auth.failure` event naming the parameter, so the breakage is
+findable rather than silent.
+
 After any rotation, check the Supabase and Stripe logs for use of the old key
 between the suspected exposure and the revocation.
 

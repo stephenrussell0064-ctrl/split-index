@@ -45,6 +45,7 @@ its current status inline; this table is the summary.
 | M12 index gaps | **OPEN — deliberately.** No index added, because no query plan could be produced. Diagnostic shipped instead; needs an operator to run it | `7893c0c` |
 | M9 CSP allows `'unsafe-inline'` | **CLOSED on the authenticated surface** — public pages keep it, deliberately; see the finding | `3e8994d` |
 | N10 email addresses in an anon-readable column | **CLOSED** by a peer session's migration 064, which masks the column in both views rather than scrubbing rows — a better fix than my 061, which never landed | `ff0ab52` |
+| M6 `CRON_SECRET` accepted from the query string | **CLOSED** | see finding |
 | Everything else | **OPEN** | — |
 
 Zero Critical findings remain open. The brief's gate for a growth push is WP1,
@@ -707,6 +708,38 @@ correctly prevents an unset env var from making the endpoint public, which is th
 would actually matter.
 
 Same pattern in `cron/hybrid-reports`.
+
+**CLOSED.** Both routes now call one shared
+[verifyCronRequest](src/lib/security/cron-auth.ts), which reads the `Authorization`
+header and nothing else. The query parameter is gone rather than validated harder — the
+value being correct is precisely why it worked, so tightening it was never the fix.
+
+Removing it is safe because nothing ever asked for it, which was checked rather than
+assumed: `vercel.json` schedules only `hybrid-reports` and Vercel Cron sends the Bearer
+header unprompted; `/api/cron/leaderboard` is scheduled nowhere at all; and `?secret=`
+appears in no config, script, workflow or document in the repository. `.env.example:32`
+and `README.md:265` both document the header and only the header.
+
+**A caller still using it gets a 401 and a log line, not silence.** A scheduled job that
+stops running looks like nothing until somebody notices a stale leaderboard, so a request
+carrying `?secret=` is recorded as an `auth.failure` naming the parameter and what to send
+instead. The value is never read — logging it would put the secret in the log this change
+exists to keep it out of, and there is a test asserting the secret does not appear in the
+output.
+
+The `&& !!process.env.CRON_SECRET` guard is preserved as an explicit early return with its
+own test. It is the one branch where a refactor is catastrophic rather than merely wrong:
+an unset variable must not make a job that walks every athlete's row public.
+
+**A correction to this finding, and to my own first draft of the fix.** The finding called
+the comparison "non-constant-time … listed only for completeness", and that was fair. What
+it did not mention, and what I initially wrote up as a second security weakness, is the
+`.replace("Bearer ", "")` substring replace. Measured, it is **not** a bypass:
+`xBearer <token>` becomes `x<token>` and is refused. Its entire effect was rejecting
+requests it should have accepted — a lowercase `bearer`, which HTTP explicitly permits
+since the scheme token is case-insensitive, and `Bearer  <token>` with two spaces. That is
+a correctness fix wearing security clothing, and it is recorded that way in the module
+rather than left implying a hole that was never there.
 
 ---
 
@@ -1425,9 +1458,9 @@ during remediation:
 |---|---|---|---|---|---|
 | Critical | **0** | 0 | 4 | 4 | All four were one defect in four places. |
 | High | 1 | 1 | 8 | 10 | Closed H1, H3–H8 and N10. Partial H2. Open H9 (DPIA — Stephen's). |
-| Medium | 7 | 2 | 8 | 17 | Closed M1–M5, M8, M9, M13. Partial M7, M11. Open M6, M10, M12, M14, N1, N5, N7. |
+| Medium | 6 | 2 | 9 | 17 | Closed M1–M6, M8, M9, M13. Partial M7, M11. Open M10, M12, M14, N1, N5, N7. |
 | Low | 5 | 0 | 7 | 12 | Closed L1–L6, N4. Open N2, N3, N6, N8, N9. |
-| **Total** | **13** | **3** | **27** | **43** | |
+| **Total** | **12** | **3** | **28** | **43** | |
 
 **Correction to this table's arithmetic.** Earlier revisions reported "41 findings
 raised" and columns that did not sum to it: partially-closed findings were counted
