@@ -162,18 +162,11 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
     // dvh (dynamic viewport height) tracks the real visible viewport.
     <div className="min-h-dvh" data-mode={mode}>
       {/*
-        BYPASS BLOCKS (2.4.1). Nine sidebar items stand between a keyboard or
-        switch user and the page content, on every single page — nine presses
-        of Tab to reach the thing they navigated to, repeated every time they
-        navigate. This is the standard escape: invisible until focused, first
-        in the tab order, jumps to <main id="main-content">.
+        The skip link for this <main> lives in the root layout, not here — one
+        in each would put two of them back to back in the tab order, both
+        pointing at the same place. What this file owns is the target: see
+        `id="main-content"` and its tabIndex below.
       */}
-      <a
-        href="#main-content"
-        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-accent focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-black"
-      >
-        Skip to content
-      </a>
       <NativeBillingBootstrap />
       {/*
         Themed background lives on a FIXED, viewport-covering backdrop rather
