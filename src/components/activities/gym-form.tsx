@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { motion, useMotionValue, useTransform, PanInfo } from "framer-motion";
 import {
   Check,
@@ -547,26 +546,26 @@ function ExerciseRow({
   /*
    * Why a set can be unscoreable, in the athlete's words rather than ours.
    *
-   * Every strength standard this app uses — DOTS, IPF GL, the split-strength
-   * engine — is defined against sex and bodyweight. Without them there is no
-   * correct number to show, and picking a default sex would be worse than
-   * showing nothing: it would produce a confidently wrong score in an app whose
-   * entire premise is that the score means something.
+   * The symptom that led here: a completed set showed "—" under Top set while
+   * Est. 1RM, × BW and Volume all filled in beside it, which reads as a broken
+   * scorer rather than a missing input. The asymmetry is the whole explanation
+   * — those three need only weight, reps and the bodyweight from the session
+   * bar, while scoreSet needs the exercise NAME, because the name is what
+   * resolves the anchor table and the weight convention. No name, no standard
+   * to score against, so scoreSet returns null at its first guard.
    *
-   * So the fix is not to invent a figure, it is to stop failing silently. Four
-   * of eleven accounts had no sex or bodyweight recorded, and every one of them
-   * saw "—" against a completed set with no hint that a profile field was the
-   * reason, while Est. 1RM, × BW and Volume filled in normally — those come from
-   * the bodyweight typed into the session bar, not the profile, which is exactly
-   * what made the dash look like a bug rather than a missing input.
+   * Note what is deliberately NOT checked here: sex. resolveScoringSex never
+   * returns null — it falls back to DEFAULT_SCORING_BASIS — so a `!scoringSex`
+   * branch is unreachable, and an earlier version of this hint that led with it
+   * silently never rendered. If that fallback ever becomes nullable, this needs
+   * a branch for it.
    *
-   * Ordered by what to fix first. Bodyweight is asked for on this screen, so it
-   * is the cheaper of the two to resolve.
+   * Ordered by what the athlete can fix fastest: both inputs are on this screen.
    */
-  const unscoreableReason: string | null = !bodyweight
-    ? "Enter your bodyweight above to score these sets."
-    : !scoringSex
-      ? "Add your sex in your profile to score these sets — strength standards are sex-specific."
+  const unscoreableReason: string | null = !row.name.trim()
+    ? "Pick an exercise above to score these sets — the score is set against that lift's standard."
+    : !bodyweight
+      ? "Enter your bodyweight in the session bar to score these sets."
       : null;
 
   /**
@@ -1253,17 +1252,6 @@ function ExerciseRow({
         {unscoreableReason && topSet ? (
           <p className="mt-1.5 px-2.5 text-[11px] leading-snug text-muted/70">
             {unscoreableReason}
-            {!bodyweight ? null : (
-              <>
-                {" "}
-                <Link
-                  href="/profile"
-                  className="underline underline-offset-2 hover:text-foreground"
-                >
-                  Open profile
-                </Link>
-              </>
-            )}
           </p>
         ) : null}
 
