@@ -104,8 +104,10 @@ export default function PrivacyPolicyPage() {
                   you do, we only ever hold Apple&apos;s relay address.
                 </li>
                 <li>
-                  <strong>Social features:</strong> friend connections, leaderboard
-                  participation, and public profile information you choose to share.
+                  <strong>Social features and content you write:</strong> friend
+                  connections, leaderboard participation, public profile information you
+                  choose to share, and free text you enter yourself — your profile bio, and
+                  comments you leave on activities shared with you.
                 </li>
                 <li>
                   <strong>Technical and usage data:</strong> IP address, browser type,
@@ -229,6 +231,10 @@ export default function PrivacyPolicyPage() {
                   subscription receipts from Apple and Google;
                 </li>
                 <li>
+                  <strong>Upstash</strong> — rate limiting, which processes IP addresses to
+                  stop abuse of the service;
+                </li>
+                <li>
                   <strong>OpenAI</strong> — AI-generated coaching feedback based on your
                   workout data.
                 </li>
@@ -238,6 +244,15 @@ export default function PrivacyPolicyPage() {
                 these providers beyond the hosting and database services that store it, and
                 is never sold, shared for advertising, or used to build a profile of your
                 movements outside the sessions you record.
+              </p>
+              <p className="mt-3">
+                The same applies to everything read from your body or your devices — heart
+                rate, Apple Health data, motion and cadence, and readings from equipment you
+                pair over Bluetooth. We do not sell it, share it with data brokers, use it
+                for advertising, or use it to track you across other companies&apos; apps and
+                websites; the apps contain no advertising or cross-app tracking software.
+                Data read from Apple Health is used only to show and score your own training
+                in the app, and is never disclosed to a third party without your consent.
               </p>
               <p className="mt-3">
                 Each third party operates under its own privacy policy, and each is bound
