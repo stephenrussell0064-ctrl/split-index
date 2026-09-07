@@ -239,7 +239,18 @@ function BlockOverview({
         fourth week steps back.
       </p>
 
-      <div className="mt-4 flex items-end gap-[3px] overflow-x-auto pb-1">
+      {/*
+        NO SCROLLER. `min-w-[1.35rem]` per bar plus a 3px gap meant 13 bars fit
+        the 318px a Card gives at 390px — so a 16-week block needed 391px and a
+        20-week block 489px, and the strip started scrolling sideways. A block
+        overview that has to be swiped to see the end of the block is not an
+        overview; the whole point of it is that the shape is one glance.
+
+        The bars get thinner instead of the strip getting wider: `flex-1
+        min-w-0` divides whatever width there is between however many weeks
+        there are.
+      */}
+      <div className="mt-4 flex items-end gap-[3px] pb-1">
         {weeks.map((w) => {
           const active = w.week === selectedWeek;
           const start = firstOfWeek.get(w.week);
@@ -254,7 +265,7 @@ function BlockOverview({
               aria-label={`Week ${w.week}, ${PHASE_LABEL[w.phase] ?? w.phase}${w.deload ? ", deload week" : ""}`}
               aria-current={active ? "true" : undefined}
               className={cn(
-                "group relative flex min-w-[1.35rem] flex-1 flex-col items-center gap-1 rounded-t-md transition-opacity",
+                "group relative flex min-w-0 flex-1 flex-col items-center gap-1 rounded-t-md transition-opacity",
                 active ? "opacity-100" : "opacity-55 hover:opacity-85"
               )}
             >
@@ -266,7 +277,19 @@ function BlockOverview({
                 )}
                 style={{ height: `${Math.max(6, (w.enduranceMin / peakMinutes) * 88)}px` }}
               />
-              <span className="text-[0.6rem] tabular-nums text-muted">{w.week}</span>
+              {/*
+                Every fourth week, at a size that can actually be read. All of
+                them at 9.6px was a row of digits too small and too tight to
+                take anything from; the block's rhythm is four-week cycles, so
+                1 / 5 / 9 / 13 is the scale the athlete already thinks in. The
+                exact week is still on every bar's `aria-label` and title.
+              */}
+              <span
+                aria-hidden
+                className="h-3 text-[10px] leading-3 tabular-nums text-muted"
+              >
+                {w.week % 4 === 1 ? w.week : ""}
+              </span>
             </button>
           );
         })}

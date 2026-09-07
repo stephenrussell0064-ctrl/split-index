@@ -13,6 +13,7 @@ import { serializeScoreBreakdown } from "@/lib/scoring/presentation";
 import type { WeightEntryMode } from "@/lib/scoring/weight-entry";
 import { defaultWeightEntryMode } from "@/lib/scoring/weight-entry";
 import { buildGymExerciseRows, insertGymExercises } from "@/lib/activities/gym-exercise-rows";
+import { resolveScoringBodyweightKg } from "@/lib/activities/bodyweight";
 import {
   scoreAndPersist,
   type ScoreAndPersistBody,
@@ -142,6 +143,36 @@ export async function PATCH(
     body
   );
 
+  const { data: priorStrength } = await supabase
+    .from("strength_scores")
+    .select("bodyweight_kg")
+    .eq("activity_id", id)
+    .limit(1)
+    .maybeSingle();
+
+  /*
+    JUDGE THE EDIT AGAINST THE BODYWEIGHT THE SESSION WAS LIFTED AT.
+
+    This passed the raw `profile`, so the "is this load plausible for this
+    athlete" check used `profiles.weight_kg` — today's weight — against a
+    session that may be a year old. An athlete who has since lost 15kg could
+    not open an old gym session and fix a typo in it: the lift they genuinely
+    performed now read as implausible for a person who no longer weighs that
+    much, and the edit came back 400.
+
+    `resolveScoringBodyweightKg` already encodes the right precedence and POST
+    already uses it — what the athlete submitted with this edit, then the
+    session's own recorded bodyweight, then the profile. The only thing wrong
+    here was the order of two reads: the anchored weight was fetched twenty
+    lines BELOW the guard that needed it.
+  */
+  const editBodyweightKg = resolveScoringBodyweightKg(body.sport, {
+    submittedBodyweight: body.bodyweight_kg,
+    activityMetadata: existing.metadata as Record<string, unknown>,
+    strengthScoreBodyweight: priorStrength?.bodyweight_kg,
+    profileWeightKg: profile.weight_kg,
+  });
+
   try {
     assertScoringInput({
       sport: body.sport,
@@ -156,7 +187,7 @@ export async function PATCH(
       elevationMeters: body.elevation_meters,
       rpe: body.rpe,
       exercises: body.exercises,
-      profile,
+      profile: { ...profile, weight_kg: editBodyweightKg ?? profile.weight_kg },
     });
   } catch (err) {
     if (err instanceof ScoringInputError) {
@@ -164,13 +195,6 @@ export async function PATCH(
     }
     throw err;
   }
-
-  const { data: priorStrength } = await supabase
-    .from("strength_scores")
-    .select("bodyweight_kg")
-    .eq("activity_id", id)
-    .limit(1)
-    .maybeSingle();
 
   const { data: activity, error: updateError } = await supabase
     .from("activities")
