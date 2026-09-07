@@ -24,6 +24,21 @@ import { stripSqlComments } from "@/lib/testing/source-scan";
  * A grep is a poor substitute for asking the database. It is what is available
  * without one, it catches the shape of the mistake, and 067 carries the
  * `pg_proc.proacl` query for whoever does have a connection.
+ *
+ * SCOPE CORRECTED 2026-09-07. The first version of this file filtered to
+ * SECURITY DEFINER functions, and that is the wrong axis. The grant defect is
+ * independent of the security mode: `latest_strength_scores` (019) is SECURITY
+ * INVOKER and was still executable by anon, which a peer session found after
+ * this test had already passed over it twice. INVOKER limits the DAMAGE —
+ * RLS still applies, so the measured result was reachable-but-zero-rows — it
+ * does not make the grant intended. And a function flipped from INVOKER to
+ * DEFINER later gains its privileges with no grant statement in the diff for
+ * anyone to review.
+ *
+ * So this now checks EVERY function any migration defines. That is three
+ * separate wrong-grant findings in one day, none of them in the migration its
+ * author was writing at the time, which is the argument for enumerating the
+ * whole set rather than auditing the file in front of you.
  */
 
 const MIGRATIONS = fileURLToPath(
@@ -84,10 +99,14 @@ function allSql(): string {
  */
 const NOT_YET_REVOKED: Record<string, string> = {
   activity_is_visible_to:
-    "referenced by the 'Friends view shared activities' SELECT policy on " +
-    "activities (049:157). If any anonymous read path evaluates that policy, " +
-    "revoking EXECUTE turns a no-rows result into an error. Needs a database " +
-    "to settle, not a guess.",
+    "SETTLED against production, do not revoke. The four policies in 031 that " +
+    "call it carry no TO clause, so they apply to PUBLIC — which includes " +
+    "anon — and an anonymous SELECT on activities returns 200 with an empty " +
+    "array today, proving the policy is evaluated and the function called as " +
+    "anon. Revoking EXECUTE would turn that empty result into a permission " +
+    "error on a table the app reads while logged out. Closing it properly " +
+    "means re-scoping those policies TO authenticated first, which is a " +
+    "behaviour change and belongs in its own migration.",
   sync_profile_current_index:
     "RETURNS TRIGGER. Postgres refuses to invoke a trigger function directly " +
     "and PostgREST does not expose one, so no role can reach it over the API.",
@@ -109,10 +128,9 @@ describe("SECURITY DEFINER functions are not reachable by anon", () => {
    * withdraw_article9_health_data, caller_email_verified and
    * prune_security_events — are revoked from PUBLIC and from nothing else.
    */
-  it("revokes EXECUTE from anon, not only from PUBLIC", () => {
+  it("revokes EXECUTE from anon on every function, not only from PUBLIC", () => {
     const sql = allSql();
     const missing = definedFunctions()
-      .filter((f) => f.definer)
       .filter((f) => !(f.name in NOT_YET_REVOKED))
       .filter((f) => {
         // Any revoke naming this function and mentioning anon, in any migration.

@@ -1537,8 +1537,49 @@ referenced by a SELECT policy on `activities`, so revoking EXECUTE could turn "r
 rows" into "the query errors" for an anonymous reader — that needs a database to settle and
 was not guessed at with a submission pending.
 
-**Outstanding:** apply 067 and compare the ACL query output; then decide
-`activity_is_visible_to` with a live database.
+**APPLIED AND VERIFIED 2026-09-07.** A peer session probed production with the anon key
+after Stephen applied 067 and 068. `prune_security_events`,
+`withdraw_article9_health_data`, `caller_email_verified` and `replace_personal_records` all
+return 42501 permission denied; `handle_new_user` returns 404, because PostgREST does not
+expose trigger functions. What must still work does: `service_role` still reaches
+`replace_personal_records`, and an anonymous read of `public_profiles` still returns 200, so
+the logged-out profile page is intact. (A trap for whoever repeats this: PostgREST maps
+42501 to **401**, not 403 — easy to misread as the anon key itself being broken.)
+
+**`activity_is_visible_to` is now SETTLED, and the answer is do not revoke.** I had left it
+in the allowlist as "needs a database to settle"; a peer settled it. The four policies in
+031 that call it carry no `TO` clause, so they apply to PUBLIC — which includes anon — and
+an anonymous `SELECT` on `activities` returns 200 with an empty array today, which proves
+the policy is evaluated and the function called as anon. Revoking EXECUTE would turn that
+empty result into a permission error on a table the app reads while logged out. Closing it
+properly means re-scoping those policies `TO authenticated` first, which is a behaviour
+change and belongs in its own migration.
+
+**A FIFTH FUNCTION, AND A FLAW IN MY OWN GUARD.** `latest_strength_scores(p_user_id UUID)`
+from migration 019 was also executable by anon. Measured with a real user id lifted from
+the anon-readable view: anon reaches it and gets zero rows, `service_role` gets the row —
+SECURITY INVOKER with RLS doing the work, so no exposure, same wrong grant. Fixed by a peer
+in 069.
+
+`function-grants.test.ts` did not catch it, and the reason is worth recording because the
+test looked right. It filtered to SECURITY DEFINER functions, and **that is the wrong
+axis**: the grant defect is independent of the security mode. INVOKER limits the damage —
+RLS still applies — it does not make the grant intended, and a function flipped from INVOKER
+to DEFINER later gains its privileges with no grant statement in the diff to review. The
+test now checks **every** function any migration defines. Verified it fails, naming
+`latest_strength_scores` and `replace_personal_records`, against the tree my earlier version
+passed.
+
+**The generalisable finding, now three for three.** The defect is not in any one migration.
+It is that on Supabase neither `GRANT ... TO authenticated` nor `REVOKE ... FROM PUBLIC`
+means what it reads as, and both failure modes are invisible in review because both lines
+look exactly like the correct thing. None of the three was found in the migration its author
+was writing at the time. The only reliable check is enumerating `CREATE FUNCTION` across
+**all** migrations and probing each with the anon key — not auditing the file in front of
+you.
+
+**Outstanding:** apply 069; then re-scope the 031 policies `TO authenticated` if
+`activity_is_visible_to` is to be closed.
 
 ---
 
