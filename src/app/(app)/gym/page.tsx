@@ -224,6 +224,27 @@ export default async function GymPage() {
 
               <WorkoutPlansDisclosure />
 
+              {/*
+                QUICK START, ON A PHONE, BEFORE THE LOGBOOK.
+
+                The right rail below is a sticky sidebar on desktop and a
+                perfectly good one. On a phone the grid collapses to one column
+                and it renders LAST — after the strength panel, the recommended
+                split, the plans disclosure and the entire paged logbook. So the
+                primary action of the strength zone, "start a session", sat
+                several screens below the fold on the device this app is mostly
+                used on.
+
+                Hoisted rather than reordered: `order-first` cannot move a child
+                across a grid-column collapse, because on desktop these are in
+                different columns rather than different positions in one. So the
+                phone gets its own copy here and the aside is hidden below `lg`
+                — one of the two renders at any width, never both.
+              */}
+              <div className="mb-8 lg:hidden">
+                <GymQuickStart />
+              </div>
+
               {/* Keyed off logged sessions, not scored ones: an unscored
                   session is still a session the athlete logged and expects
                   to find here. */}
@@ -240,7 +261,7 @@ export default async function GymPage() {
               )}
             </div>
 
-            <aside className="min-w-0 lg:sticky lg:top-24 lg:self-start">
+            <aside className="hidden min-w-0 lg:sticky lg:top-24 lg:block lg:self-start">
               <GymQuickStart />
             </aside>
           </div>

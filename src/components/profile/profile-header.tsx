@@ -69,7 +69,14 @@ export function ProfileHeader({
       transition={{ type: "spring", stiffness: 400, damping: 30 }}
       className="glass-strong overflow-hidden rounded-3xl border border-white/[0.08]"
     >
-      <div className="h-24 bg-gradient-to-r from-accent/25 via-endurance/15 to-strength/20" />
+      {/*
+        48px on a phone, 96 from `sm` up. This carries no information at all,
+        and at h-24 it spent 15% of the 620px visible window on decoration —
+        enough that ProfileForm started around y585 and showed about two fields
+        before the bottom nav. The gradient still does its job as a header at
+        half the height; it was never doing 96px of work.
+      */}
+      <div className="h-12 bg-gradient-to-r from-accent/25 via-endurance/15 to-strength/20 sm:h-24" />
 
       <div className="px-6 pb-6 md:px-8 md:pb-8">
         <div className="flex flex-col sm:flex-row sm:items-end gap-4 -mt-10">
@@ -114,19 +121,33 @@ export function ProfileHeader({
           <p className="mt-4 text-sm text-muted leading-relaxed">{profile.bio}</p>
         )}
 
-        <div className="mt-6 grid grid-cols-3 sm:grid-cols-5 gap-3">
+        {/*
+          Six columns, spanned 2/2/2 then 3/3, so both rows fill completely.
+
+          There are exactly five stats and this was `grid-cols-3`, which left
+          the last two alone on a second row with a hole beside them — a row's
+          worth of height that reads as something having failed to load.
+
+          Five across was the obvious fix and I measured it before taking it:
+          at 390px it gives each label a 39px box, and SPLIT INDEX, ENDURANCE,
+          STRENGTH and WORKOUTS all truncate. "STRE…" under a number is worse
+          than the hole it replaces, and there is no honest six-character word
+          for "Workouts" — LOGGED needs 41px, SESSIONS 46, WORKOUTS 53. So the
+          row stays, and what gets fixed is the gap in it.
+        */}
+        <div className="mt-6 grid grid-cols-6 gap-1.5 sm:grid-cols-5 sm:gap-3">
           {indexStats.map((stat, i) => (
             <motion.div
               key={stat.label}
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.15 + i * 0.05 }}
-              className="glass rounded-xl border border-white/[0.06] p-3 text-center transition-colors hover:border-white/10"
+              className="glass col-span-2 rounded-xl border border-white/[0.06] p-3 text-center transition-colors hover:border-white/10 sm:col-span-1"
             >
               <p className={`index-display text-xl font-bold ${stat.accent}`}>
                 {stat.value !== null ? formatIndex(stat.value) : "—"}
               </p>
-              <p className="mt-1 text-[11px] text-muted uppercase tracking-wider">
+              <p className="mt-1 text-[10px] text-muted uppercase tracking-wider sm:text-[11px]">
                 {stat.label}
               </p>
             </motion.div>
@@ -137,12 +158,12 @@ export function ProfileHeader({
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.15 + (indexStats.length + i) * 0.05 }}
-              className="glass rounded-xl border border-white/[0.06] p-3 text-center transition-colors hover:border-white/10"
+              className="glass col-span-3 rounded-xl border border-white/[0.06] p-3 text-center transition-colors hover:border-white/10 sm:col-span-1"
             >
               <p className={`index-display text-xl font-bold ${stat.accent}`}>
                 {stat.value.toLocaleString()}
               </p>
-              <p className="mt-1 text-[11px] text-muted uppercase tracking-wider">
+              <p className="mt-1 text-[10px] text-muted uppercase tracking-wider sm:text-[11px]">
                 {stat.label}
               </p>
             </motion.div>
