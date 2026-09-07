@@ -49,6 +49,7 @@ its current status inline; this table is the summary.
 | N11 `REVOKE FROM PUBLIC` leaves anon's direct grant | **OPEN — High.** 067 written, not applied; `prune_security_events` is the one with teeth | `067` |
 | M10 share card content and per-share consent | **CLOSED** — and the finding's "Tier 2" claim corrected; see the finding | see finding |
 | M14 username reserved words and lookalikes | **CLOSED** | see finding |
+| N9 elevated queries unrecorded | **CLOSED** — the record moved into `createAdminClient`, whose `source` argument is required | see finding |
 | Everything else | **OPEN** | — |
 
 Zero Critical findings remain open. The brief's gate for a growth push is WP1,
@@ -1594,6 +1595,36 @@ audit writer itself — do not.
 Worth doing with the N8 entitlement migration rather than separately: both are
 the same sweep through overlapping call sites, and doing them together means
 reading each one once.
+
+**CLOSED — and not by the sweep this finding proposed.**
+
+Adding a `logSecurityEvent` call to the other eleven sites was the obvious fix and the wrong
+one: it records the eleven that exist today and says nothing about the thirteenth, which
+will be written by somebody who has never opened `admin.ts`. The finding itself notes that
+"adding a thirteenth means adding it to that list" — a rule enforced by hope.
+
+So the record moved INTO `createAdminClient`, and `source` became a **required argument**.
+The compiler now refuses a call that does not say where it is from, so the event cannot be
+forgotten — it can only be wrong, and a wrong one is visible in review in a way a missing
+one is not. Making the change produced twelve compile errors naming every site, which is
+the property the sweep would not have had.
+
+**What it records, precisely:** that an elevated client was *obtained* here, not that a
+query was made with it. A handler that builds one and returns early still logs. That is the
+deliberate trade — over-recording the availability of a service-role client is the cheap
+error, and wrapping every query method is a large surface for a smaller gain. The event says
+`service_role_client_obtained` so nobody reads it as more than it is.
+
+**The recursion question, asked once so nobody rediscovers it:** `admin-audit` uses this
+client to write `admin_access_log`, so logging from inside the factory would loop if the
+logger touched a table. It does not — `logSecurityEvent` writes to stdout — and there is a
+test asserting the logger references neither `createAdminClient` nor `.from(`.
+
+`account/delete` had the only pre-existing record, as a separate call beside the client.
+The two collapsed into one, keeping its richer detail, and its test now asserts the call
+ARGUMENTS rather than reading stdout — stronger, because it pins the source, the user id,
+the reason, and the ordering that matters: the client is obtained before the delete, and
+after it there is no user id left to record.
 
 #### N10 — Email addresses sit in a column the anon key can read
 

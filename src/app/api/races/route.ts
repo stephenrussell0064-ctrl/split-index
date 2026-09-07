@@ -316,7 +316,7 @@ export async function GET() {
 
   const base5kSeconds = benchmark?.benchmark_seconds ?? null;
   const riegelK = benchmark?.riegel_k ?? DEFAULT_RIEGEL_K;
-  const admin = createAdminClient();
+  const admin = createAdminClient("/api/races");
 
   const enriched = await Promise.all(
     (races ?? []).map(async (race) => {

@@ -2,8 +2,6 @@ import { NextResponse } from "next/server";
 import { serverError } from "@/lib/api/errors";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { logSecurityEvent } from "@/lib/observability/security-log";
-import { correlationId } from "@/lib/api/errors";
 
 /**
  * Erasure. One statement, because the schema already does the work.
@@ -61,21 +59,19 @@ export async function DELETE() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const admin = createAdminClient();
-
   /*
-   * Logged BEFORE the delete, because afterwards there is no user id to log —
-   * and an erasure with no record that it was requested is indistinguishable
-   * from data loss. The event itself contains no personal data beyond the id,
-   * which is about to stop referring to anybody.
+   * The record is made by obtaining the client, which happens BEFORE the delete
+   * — and that ordering is the point, because afterwards there is no user id to
+   * log. An erasure with no record that it was requested is indistinguishable
+   * from data loss. The event carries no personal data beyond the id, which is
+   * about to stop referring to anybody.
+   *
+   * This used to be a separate logSecurityEvent call beside the client. N9 made
+   * `source` a required argument of createAdminClient, so the two collapsed
+   * into one and there is no way to obtain the client without the record.
    */
-  logSecurityEvent({
-    type: "elevated_query",
-    correlationId: correlationId(),
+  const admin = createAdminClient("/api/account/delete", {
     userId: user.id,
-    source: "/api/account/delete",
-    outcome: "allowed",
-    retention: "audit",
     detail: { action: "account_erasure_requested" },
   });
 

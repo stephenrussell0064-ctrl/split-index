@@ -54,7 +54,7 @@ export async function POST(request: Request) {
     detail: { stripeEvent: event.type },
   });
 
-  const supabaseAdmin = createAdminClient();
+  const supabaseAdmin = createAdminClient("/api/stripe/webhook");
 
   /*
     EVERY WRITE IN THIS FILE USED TO BE FIRE-AND-FORGET.

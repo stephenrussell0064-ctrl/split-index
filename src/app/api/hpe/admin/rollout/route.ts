@@ -78,7 +78,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "A reason of at least 8 characters is required." }, { status: 400 });
   }
 
-  const admin = createAdminClient();
+  const admin = createAdminClient("/api/hpe/admin/rollout");
   const { data: flagRow } = await admin
     .from("hpe_feature_flags")
     .select("enabled, rollout_percentage, last_fleet_review_at, last_fleet_review_by, last_fleet_review_alarm_count")

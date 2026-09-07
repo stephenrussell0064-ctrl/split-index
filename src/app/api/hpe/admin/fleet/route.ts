@@ -112,7 +112,7 @@ export async function GET(request: Request) {
   // so a background refresh cannot silently keep a stale gate open.
   const recordReview = searchParams.get("review") !== "false";
 
-  const admin = createAdminClient();
+  const admin = createAdminClient("/api/hpe/admin/fleet");
 
   const [{ data: eventRows }, { data: feedbackRows }, { data: profileRows }, { data: injuryRows }, { data: flagRow }] =
     await Promise.all([

@@ -29,7 +29,7 @@ export async function POST(request: Request) {
   // Squads are only SELECT-able by existing members, so the code -> id lookup
   // needs the admin client — the code itself is the trust boundary, and the
   // membership insert right below still runs through the user's own client.
-  const admin = createAdminClient();
+  const admin = createAdminClient("/api/squads/join");
   const { data: squad } = await admin
     .from("squads")
     .select("id")

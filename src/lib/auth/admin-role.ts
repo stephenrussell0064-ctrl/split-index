@@ -31,7 +31,7 @@ export async function resolveAdminRole(userId: string): Promise<AdminIdentity | 
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return null;
 
   try {
-    const admin = createAdminClient();
+    const admin = createAdminClient("lib/auth/admin-role");
     const { data, error } = await admin
       .from("admin_users")
       .select("user_id, role")

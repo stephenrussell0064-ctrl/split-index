@@ -20,7 +20,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const admin = createAdminClient();
+  const admin = createAdminClient("/api/cron/hybrid-reports");
 
   /*
     `period` is a plain switch, not a credential — it selects which report to

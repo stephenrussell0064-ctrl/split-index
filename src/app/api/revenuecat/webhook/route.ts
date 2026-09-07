@@ -101,7 +101,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ received: true, ignored: "not_premium_entitlement" });
   }
 
-  const admin = createAdminClient();
+  const admin = createAdminClient("/api/revenuecat/webhook");
   const userId = event.app_user_id;
 
   /*
