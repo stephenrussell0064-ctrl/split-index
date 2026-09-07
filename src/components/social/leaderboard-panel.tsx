@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { ArrowDown, ArrowUp, Minus, Trophy } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronDown, Minus, Trophy } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { UserAvatar } from "@/components/social/user-avatar";
 import { formatIndex, formatWeight } from "@/lib/utils/format";
@@ -466,7 +466,7 @@ export function LeaderboardPanel({
           </div>
         )}
 
-        <div className={cn("space-y-1", loading && "opacity-50")}>
+        <div aria-busy={loading} className={cn("space-y-1", loading && "opacity-50")}>
           {rows.length === 0 ? (
             <p className="py-8 text-center text-sm text-muted">
               No rankings yet — log workouts to appear on the leaderboard
@@ -482,16 +482,28 @@ export function LeaderboardPanel({
 
               return (
                 <div key={entry.userId}>
+                {/*
+                  THE ROW IS NOT THE BUTTON ANY MORE.
+
+                  It carried `role="button"` and `tabIndex={0}` while containing
+                  a profile Link and a Compare button — interactive controls
+                  inside an interactive control, which is invalid, and the
+                  `stopPropagation` on each of them was papering over it. Space
+                  was handled without `preventDefault`, so expanding a row also
+                  scrolled the page out from under it, and nothing announced
+                  whether a row was open.
+
+                  The whole row still expands on tap, because that is the right
+                  target size on a phone. But the real control is the chevron
+                  button at the end: focusable, labelled with whose row it is,
+                  and carrying `aria-expanded`. The Link and Compare are now
+                  ordinary siblings.
+                */}
                 <motion.div
                   initial={{ opacity: 0, x: -8 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: i * 0.03 }}
-                  role="button"
-                  tabIndex={0}
                   onClick={() => toggleExpanded(entry.userId)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") toggleExpanded(entry.userId);
-                  }}
                   className={cn(
                     "flex items-center gap-3 rounded-xl p-3 transition-colors cursor-pointer",
                     isMe ? "bg-accent/10 ring-1 ring-accent/30" : "hover:bg-white/5",
@@ -581,12 +593,31 @@ export function LeaderboardPanel({
                       Compare
                     </button>
                   )}
+
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleExpanded(entry.userId);
+                    }}
+                    aria-expanded={isExpanded}
+                    aria-controls={`leaderboard-detail-${entry.userId}`}
+                    aria-label={`Details for ${entry.displayName ?? entry.username ?? "this athlete"}`}
+                    className="-mr-1 shrink-0 rounded-lg p-1.5 text-muted transition-colors hover:bg-white/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  >
+                    <ChevronDown
+                      className={cn("h-4 w-4 transition-transform", isExpanded && "rotate-180")}
+                      aria-hidden
+                    />
+                  </button>
                 </motion.div>
                 {isExpanded && (
-                  <LeaderboardDetailCard
-                    detail={detailCache[entry.userId] ?? null}
-                    isPremium={isPremium}
-                  />
+                  <div id={`leaderboard-detail-${entry.userId}`}>
+                    <LeaderboardDetailCard
+                      detail={detailCache[entry.userId] ?? null}
+                      isPremium={isPremium}
+                    />
+                  </div>
                 )}
                 </div>
               );
@@ -694,7 +725,7 @@ function DimensionLeaderboard({
         </div>
       )}
 
-      <div className={cn("space-y-1", loading && "opacity-50")}>
+      <div aria-busy={loading} className={cn("space-y-1", loading && "opacity-50")}>
         {rows.length === 0 ? (
           <p className="py-8 text-center text-sm text-muted">
             {loading ? "Loading…" : "No rankings yet for this selection — log a matching session to appear here"}

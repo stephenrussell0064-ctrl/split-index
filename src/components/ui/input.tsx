@@ -53,7 +53,7 @@ export function Input({ label, error, hint, className, id, ...props }: InputProp
         {...props}
       />
       {hint && !error && <p className="text-xs text-muted/80">{hint}</p>}
-      {error && <p className="text-xs text-danger">{error}</p>}
+      {error && <p role="alert" className="text-xs text-danger">{error}</p>}
     </div>
   );
 }
@@ -109,7 +109,7 @@ export function Select({ label, error, options, className, id, ...props }: Selec
         </select>
         <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
       </div>
-      {error && <p className="text-xs text-danger">{error}</p>}
+      {error && <p role="alert" className="text-xs text-danger">{error}</p>}
     </div>
   );
 }
@@ -142,7 +142,7 @@ export function Textarea({ label, error, className, id, ...props }: TextareaProp
         )}
         {...props}
       />
-      {error && <p className="text-xs text-danger">{error}</p>}
+      {error && <p role="alert" className="text-xs text-danger">{error}</p>}
     </div>
   );
 }

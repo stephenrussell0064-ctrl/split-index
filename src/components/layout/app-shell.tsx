@@ -161,6 +161,19 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
     // own background no longer covers it — exactly when a user is typing.
     // dvh (dynamic viewport height) tracks the real visible viewport.
     <div className="min-h-dvh" data-mode={mode}>
+      {/*
+        BYPASS BLOCKS (2.4.1). Nine sidebar items stand between a keyboard or
+        switch user and the page content, on every single page — nine presses
+        of Tab to reach the thing they navigated to, repeated every time they
+        navigate. This is the standard escape: invisible until focused, first
+        in the tab order, jumps to <main id="main-content">.
+      */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-accent focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-black"
+      >
+        Skip to content
+      </a>
       <NativeBillingBootstrap />
       {/*
         Themed background lives on a FIXED, viewport-covering backdrop rather
@@ -193,7 +206,7 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
             </p>
           </Link>
 
-          <nav className="flex-1 px-3 py-4 space-y-1">
+          <nav aria-label="Primary" className="flex-1 px-3 py-4 space-y-1">
             <p className="px-3 pb-2 micro-label text-muted/60">Train</p>
             {primaryNav.map((item) => {
               const active = isActive(item.href);
@@ -290,6 +303,7 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
                 className="fixed inset-0 z-40 bg-black/50 lg:hidden"
               />
               <motion.div
+                id="more-nav-sheet"
                 initial={{ opacity: 0, y: 16 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 16 }}
@@ -330,7 +344,7 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
           )}
         </AnimatePresence>
 
-        <nav className="fixed bottom-0 left-0 right-0 z-40 flex items-center justify-around border-t border-white/5 glass-strong px-1 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] lg:hidden">
+        <nav aria-label="Bottom tab bar" className="fixed bottom-0 left-0 right-0 z-40 flex items-center justify-around border-t border-white/5 glass-strong px-1 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] lg:hidden">
           {[primaryNav[0], primaryNav[1]].map((item) => {
             const active = isActive(item.href);
             const Icon = item.icon;
@@ -391,9 +405,14 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
             );
           })}
 
+          {/* A toggle that does not say whether it is open leaves a screen
+              reader user tapping it to find out — and closing the sheet they
+              had just opened. */}
           <button
             type="button"
             onClick={() => setMoreOpen((v) => !v)}
+            aria-expanded={moreOpen}
+            aria-controls="more-nav-sheet"
             className={cn(
               "flex min-w-0 flex-col items-center gap-1 rounded-2xl px-3 py-2 text-[10px] font-medium transition-colors",
               moreOpen || secondaryNav.some((item) => isActive(item.href))
@@ -406,7 +425,10 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
           </button>
         </nav>
 
-        <main className="lg:pl-64">
+        {/* tabIndex -1 so the skip link actually MOVES focus. Without it
+            WebKit scrolls to the anchor and leaves focus in the nav, so the
+            next Tab goes back to sidebar item two. */}
+        <main id="main-content" tabIndex={-1} className="lg:pl-64 focus:outline-none">
           {/* calc(env(...) + gap) rather than a bare max() — the status bar height alone with no breathing room left the top bar sitting flush against the battery/signal icons; adding a fixed gap on top of the real inset (now resolvable at all thanks to viewport-fit: cover in layout.tsx) gives real clearance instead. A no-op on web where env() resolves to 0. */}
           {/*
             pb-28, not pb-24. The bottom nav measures ~101px on a phone with a

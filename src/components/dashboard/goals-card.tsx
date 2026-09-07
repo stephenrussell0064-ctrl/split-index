@@ -197,7 +197,8 @@ function GoalEditForm({
             <Check className="h-3.5 w-3.5" />
             {goal.completed ? "Mark incomplete" : "Mark complete"}
           </button>
-          <Button size="sm" variant="ghost" onClick={onDone} disabled={busy}>
+          {/* Icon-only: without a label this announces as "button". */}
+          <Button size="sm" variant="ghost" onClick={onDone} disabled={busy} aria-label="Stop editing this goal">
             <X className="h-3.5 w-3.5" />
           </Button>
           <Button size="sm" loading={saving} disabled={deleting} onClick={save}>

@@ -28,11 +28,24 @@ export function MicroLabel({
   );
 }
 
+/**
+ * A field's validation message — spoken, not only drawn.
+ *
+ * This rendered a bare `motion.p`. An athlete filling in a session with a
+ * screen reader pressed Save, the form refused, and nothing said why: the
+ * message appeared on screen and the announcement queue stayed empty. WCAG
+ * 4.1.3 Status Messages, and in practice a form that cannot be completed.
+ *
+ * `role="alert"` rather than a polite region: this is the answer to something
+ * the athlete just did, it is the reason the save did not happen, and waiting
+ * politely for a gap means waiting behind whatever is already being read.
+ */
 export function FieldError({ error }: { error?: string }) {
   return (
     <AnimatePresence initial={false}>
       {error && (
         <motion.p
+          role="alert"
           initial={{ opacity: 0, height: 0, y: -2 }}
           animate={{ opacity: 1, height: "auto", y: 0 }}
           exit={{ opacity: 0, height: 0, y: -2 }}

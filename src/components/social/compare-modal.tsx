@@ -95,9 +95,13 @@ export function CompareModal({
               <GitCompare className="h-4 w-4 text-accent" />
               <h2 className="font-semibold">Compare Index Trends</h2>
             </div>
+            {/* lucide marks every childless icon aria-hidden, correctly — which
+                leaves an icon-only button with no accessible name at all, not a
+                weak one. A screen reader said "button". */}
             <button
               type="button"
               onClick={onClose}
+              aria-label="Close comparison"
               className="rounded-lg p-1.5 text-muted hover:bg-white/5 hover:text-foreground"
             >
               <X className="h-4 w-4" />

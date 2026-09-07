@@ -645,10 +645,20 @@ export default async function DashboardPage() {
 
       {/* One line, deliberately. Two lines of greeting is a tenth of a phone
           screen spent on a name the athlete already knows. */}
+      {/*
+        The page's heading is "Dashboard", and it is not drawn.
+
+        The only <h1> here used to be the greeting at 14px — a heading level
+        picked for styling rather than structure, naming the athlete rather
+        than the page. A screen reader jumping by heading landed on "Hi,
+        Stephen" and learned nothing about where it was. The greeting stays
+        exactly as designed and is a <p>, which is what it is.
+      */}
+      <h1 className="sr-only">Dashboard</h1>
       <div className="flex items-baseline gap-x-2 overflow-hidden">
-        <h1 className="headline-tight shrink-0 text-sm font-bold">
+        <p className="headline-tight shrink-0 text-sm font-bold">
           {displayName ? `Hi, ${displayName}` : "Welcome back"}
-        </h1>
+        </p>
         <p className="truncate text-xs text-muted">
           {format(new Date(), "EEE d MMM")} · {sessionHint}
         </p>
