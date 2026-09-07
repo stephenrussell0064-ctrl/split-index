@@ -317,12 +317,60 @@
         redrawRoute();
       }
 
-      async function persistSession() {
-        if (!Preferences) return;
-        await Preferences.set({
-          key: SESSION_KEY,
-          value: JSON.stringify({ points: points, startedAt: startedAt, permissionRevoked: false }),
-        });
+      /*
+        `permissionRevoked` was hardcoded false here.
+
+        It is the flag `summarizeGpsTrack` reads to decide whether a recovered
+        run is partial, and `recoverOrphanedSession` reads to decide whether it
+        is resumable. Hardcoding it false meant a run recorded through this page
+        with location DENIED came back to the app looking clean and resumable —
+        the athlete was offered a complete-looking session that had recorded
+        nothing, with no indication anywhere that the reason was a permission
+        they could go and grant.
+
+        The main tracker learned to say this out loud; this page kept writing
+        false regardless. It is the same record, read by the same code.
+      */
+      var permissionRevoked = false;
+
+      /*
+        WRITES ARE SERIALISED, because the last fix of a run is the one at risk.
+
+        Every call serialises the WHOLE points array, and the watcher fires
+        `persistSession()` without awaiting it. Two writes in flight across the
+        Capacitor bridge can complete in either order, so an earlier, shorter
+        array can land after a later, longer one — and the fix that was lost is
+        always the most recent, which for a run being interrupted is the one
+        nearest the end of it.
+
+        It mostly self-heals, because the next fix rewrites everything. The
+        session that does not get a next fix is exactly the session this page
+        exists for. `gps-tracking.ts` has `withSessionLock` for this; this file
+        cannot import it, so this is the same idea in four lines.
+      */
+      var writeChain = Promise.resolve();
+
+      function persistSession() {
+        if (!Preferences) return writeChain;
+        // Snapshot inside the chained callback, not here: the value written
+        // should be the state at the moment the write actually runs.
+        writeChain = writeChain
+          .then(function () {
+            return Preferences.set({
+              key: SESSION_KEY,
+              value: JSON.stringify({
+                points: points,
+                startedAt: startedAt,
+                permissionRevoked: permissionRevoked,
+              }),
+            });
+          })
+          .catch(function () {
+            // A failed write must not break the chain — the next fix rewrites
+            // the whole array anyway, so one lost write costs nothing while a
+            // dead chain would cost the rest of the run.
+          });
+        return writeChain;
       }
 
       startBtn.addEventListener("click", async function () {
@@ -361,6 +409,7 @@
 
         startedAt = Date.now();
         points = [];
+        permissionRevoked = false;
         await persistSession();
 
         try {
@@ -374,7 +423,14 @@
             function (position, error) {
               if (error) {
                 if (error.code === "NOT_AUTHORIZED") {
-                  statusEl.textContent = "Location permission was denied — check Settings.";
+                  // Recorded, not just displayed. The app reads this flag when
+                  // it recovers the session; a message on a page the athlete
+                  // has already walked away from reaches nobody.
+                  permissionRevoked = true;
+                  persistSession();
+                  statusEl.textContent =
+                    "Location permission was denied — this run is NOT being recorded. " +
+                    "Grant location access in Settings, then start again.";
                 }
                 return;
               }
