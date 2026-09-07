@@ -30,31 +30,50 @@ export function LandingPage() {
       <header className="sticky top-0 z-50 border-b border-white/[0.06] bg-[#050605]/80 pt-[env(safe-area-inset-top)] backdrop-blur-md">
         <div className="flex h-16 items-center justify-between px-4 sm:px-6 md:px-[6vw]">
           <BrandMark variant="full" href="/" logoHeight={34} priority className="shrink-0" />
-          <nav className="hidden items-center gap-8 text-xs uppercase tracking-[0.18em] text-white/50 md:flex">
+          <nav className="hidden items-center text-xs uppercase tracking-[0.18em] text-white/50 md:flex">
             <a href="#pricing" className="transition hover:text-white">
               Pricing
             </a>
-            <Link href="/login" className="transition hover:text-white">
+          </nav>
+
+          <div className="flex shrink-0 items-center gap-1 sm:gap-3">
+            {/*
+              Log in is NOT desktop-only, because of where this page is reached
+              from. Logging out of the native app lands you here, and this used
+              to be the whole route back: sign up, then find "Already have an
+              account?" at the bottom of the signup form. Someone who has just
+              logged out is, by definition, the person most likely to want to
+              log back in, and on a phone the one link for it was hidden.
+
+              It sits outside the `md:flex` nav rather than inside it so the
+              breakpoint governs Pricing alone. There is room: at 375px the
+              logo ends around x=140 and the button starts around x=261.
+            */}
+            <Link
+              href="/login"
+              className="inline-flex min-h-11 items-center px-2 text-xs uppercase tracking-[0.14em] text-white/60 transition hover:text-white sm:tracking-[0.18em]"
+            >
               Log in
             </Link>
-          </nav>
-          {/*
-            One anchor styled as a button, not an anchor wrapping a <button>.
-            The latter is what this was, and it emits `<a><button>`: interactive
-            content nested inside interactive content, which WKWebView declines
-            to navigate — the tap lands on the button, the button has no form to
-            submit, and Next's click handler on the anchor never runs. It works
-            in a desktop browser, which is why it survived review.
-          */}
-          <Link
-            href="/signup"
-            className={cn(
-              buttonVariants({ size: "sm" }),
-              "min-h-11 shrink-0 bg-gym-accent font-bold text-[#04120a] hover:bg-gym-accent/90"
-            )}
-          >
-            Start free
-          </Link>
+            {/*
+              One anchor styled as a button, not an anchor wrapping a <button>.
+              The latter is what this was, and it emits `<a><button>`:
+              interactive content nested inside interactive content, which
+              WKWebView declines to navigate — the tap lands on the button, the
+              button has no form to submit, and Next's click handler on the
+              anchor never runs. It works in a desktop browser, which is why it
+              survived review.
+            */}
+            <Link
+              href="/signup"
+              className={cn(
+                buttonVariants({ size: "sm" }),
+                "min-h-11 shrink-0 bg-gym-accent font-bold text-[#04120a] hover:bg-gym-accent/90"
+              )}
+            >
+              Start free
+            </Link>
+          </div>
         </div>
       </header>
 
