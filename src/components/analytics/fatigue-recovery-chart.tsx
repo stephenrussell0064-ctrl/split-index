@@ -1,5 +1,7 @@
 "use client";
 
+import { ChartFigure } from "@/components/analytics/chart-figure";
+import { describeSeries } from "@/lib/a11y/describe-series";
 import {
   XAxis,
   YAxis,
@@ -46,6 +48,17 @@ export function FatigueRecoveryChart({ data }: FatigueRecoveryChartProps) {
           {data.length < 2 ? (
             <ChartEmptyState message="Recovery and fatigue trends appear after scoring workouts" />
           ) : (
+              <ChartFigure
+                label="Fatigue against recovery"
+                summary={describeSeries("Recovery", data.map((d) => ({ at: d.date, value: d.recovery })))}
+                columns={[
+                { header: "Date", cell: (d: FatigueRecoveryPoint) => d.date },
+                { header: "Recovery", cell: (d: FatigueRecoveryPoint) => String(Math.round(d.recovery)) },
+                { header: "Fatigue", cell: (d: FatigueRecoveryPoint) => String(Math.round(d.fatigue)) },
+                { header: "ACWR", cell: (d: FatigueRecoveryPoint) => d.acwr === null ? "not enough history" : String(d.acwr) },
+                ]}
+                rows={data}
+              >
             <ResponsiveContainer width="100%" height={240}>
               <ComposedChart data={data} margin={{ top: 8, right: 8, left: -8, bottom: 0 }}>
                 <defs>
@@ -125,6 +138,7 @@ export function FatigueRecoveryChart({ data }: FatigueRecoveryChartProps) {
                 />
               </ComposedChart>
             </ResponsiveContainer>
+              </ChartFigure>
           )}
         </CardContent>
       </Card>

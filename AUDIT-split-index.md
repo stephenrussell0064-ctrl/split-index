@@ -1280,6 +1280,49 @@ One of four needed correcting, and it was a precision error rather than a false 
 Recorded anyway: this document is used to decide what to build, and a finding that sends
 someone to do unnecessary work costs the same whether it is wrong or merely vague.
 
+**ITEM 1 — EIGHT CHART SURFACES NOW CARRY THEIR DATA. Not closed; the remainder is named.**
+
+[ChartFigure](src/components/analytics/chart-figure.tsx) renders two siblings: the chart in
+a `role="img"` wrapper with its name, and an `sr-only` region holding a one-sentence summary
+and a real `<table>` of the values, with `<caption>`, `scope="col"` headers and the first
+cell of each row as `scope="row"` so a reader hears "week 3, load 412" rather than a bare
+number.
+
+**Siblings and not nested, which is the whole trick.** `role="img"` makes its subtree
+presentational, so a table inside it is invisible to a screen reader — the fix would render,
+look correct in the DOM, and do nothing. There is a test asserting the table appears after
+the `role="img"` element closes.
+
+The summary is a required prop rather than something derived, because
+[describeSeries](src/lib/a11y/describe-series.ts) cannot know which number matters: "Split
+Index rose from 412 to 448" and "your acute:chronic ratio stayed in the optimal band" are
+the same shape of data and different sentences. It is a pure function with real tests —
+one point is reported as a reading and not a trend, a flat line is "unchanged" without
+dividing by a zero delta, and the range clause appears only when the line moved and came
+back, which is the case where endpoints alone are true and useless.
+
+**Long series are capped at 40 rows** with the table saying so. A year of daily points is
+365 rows, and handing a screen-reader user that is a worse problem than the one being fixed;
+at that length the summary is what carries the meaning, which is also what a sighted reader
+takes from the shape of the line.
+
+**Covered (8):** the three in [charts.tsx](src/components/analytics/charts.tsx) — index
+trend, split/endurance/strength trend, sport-balance radar — plus `trend-panel`,
+`moving-average-chart`, `volume-chart`, `fatigue-recovery-chart` and `projection-chart`.
+
+**NOT covered, and why the published statement is unchanged.** Five data charts still have
+a label and no data — `acwr-trend-chart`, the three in `interference-detail`, and
+`engine-lab-trend-card` — and three have neither: `training-zones-chart`,
+`intensity-distribution` and `compare-chart`. The last three are the awkward ones: a donut,
+a zone histogram and a two-athlete comparison are categorical rather than a time series, so
+`describeSeries` does not fit them and each needs its own sentence. `recovery-gauge` and
+`progress-ring` are single-value indicators rather than charts, and `hero-split`,
+`product-showcase` and `oauth-icons` are decoration.
+
+So "Charts do not yet have a text equivalent" remains true of eight surfaces and the
+statement stays as written. It becomes editable when the remaining eight are done, and the
+work is now mechanical for the five that are time series.
+
 **ITEM 3 — MOSTLY CLOSED, and deliberately not claimed as closed.**
 
 Every input that lives inside a `Field` or one of the `components/ui` controls now points

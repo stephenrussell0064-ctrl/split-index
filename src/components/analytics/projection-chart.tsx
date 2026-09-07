@@ -1,5 +1,7 @@
 "use client";
 
+import { ChartFigure } from "@/components/analytics/chart-figure";
+import { describeSeries } from "@/lib/a11y/describe-series";
 import {
   XAxis,
   YAxis,
@@ -42,6 +44,17 @@ export function ProjectionChart({ data }: ProjectionChartProps) {
           {data.length < 3 ? (
             <ChartEmptyState message="Projections unlock after a few logged workouts" />
           ) : (
+              <ChartFigure
+                label="Split Index with its projection"
+                summary={describeSeries("Split Index", data.filter((d) => d.split !== null).map((d) => ({ at: d.date, value: d.split as number })))}
+                columns={[
+                { header: "Date", cell: (d: ProjectionPoint) => d.date },
+                { header: "Split Index", cell: (d: ProjectionPoint) => d.split === null ? "—" : formatIndex(d.split) },
+                { header: "Projected", cell: (d: ProjectionPoint) => d.projected === null ? "—" : formatIndex(d.projected) },
+                { header: "Forecast", cell: (d: ProjectionPoint) => d.isForecast ? "projected" : "recorded" },
+                ]}
+                rows={data}
+              >
             <ResponsiveContainer width="100%" height={220}>
               <LineChart data={data} margin={{ top: 8, right: 4, left: -8, bottom: 0 }}>
                 <CartesianGrid vertical={false} strokeDasharray="3 6" strokeOpacity={0.15} />
@@ -93,6 +106,7 @@ export function ProjectionChart({ data }: ProjectionChartProps) {
                 />
               </LineChart>
             </ResponsiveContainer>
+              </ChartFigure>
           )}
         </CardContent>
       </Card>

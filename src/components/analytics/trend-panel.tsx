@@ -1,5 +1,7 @@
 "use client";
 
+import { ChartFigure } from "@/components/analytics/chart-figure";
+import { describeSeries } from "@/lib/a11y/describe-series";
 import {
   XAxis,
   YAxis,
@@ -68,6 +70,17 @@ export function TrendPanel({ data, granularity }: TrendPanelProps) {
           {data.length < 2 ? (
             <ChartEmptyState message="Log workouts to unlock index trends across time" />
           ) : (
+            <ChartFigure
+              label="Split, endurance and strength over time"
+              summary={describeSeries("Split Index", data.map((d) => ({ at: d.date, value: d.split })))}
+              columns={[
+                { header: "Date", cell: (d: TrendPoint) => d.date },
+                { header: "Split", cell: (d: TrendPoint) => formatIndex(d.split) },
+                { header: "Endurance", cell: (d: TrendPoint) => formatIndex(d.endurance) },
+                { header: "Strength", cell: (d: TrendPoint) => formatIndex(d.strength) },
+              ]}
+              rows={data}
+            >
             <ResponsiveContainer width="100%" height={260}>
               <AreaChart data={data} margin={{ top: 8, right: 4, left: -8, bottom: 0 }}>
                 <defs>
@@ -134,6 +147,7 @@ export function TrendPanel({ data, granularity }: TrendPanelProps) {
                 />
               </AreaChart>
             </ResponsiveContainer>
+            </ChartFigure>
           )}
         </CardContent>
       </Card>
