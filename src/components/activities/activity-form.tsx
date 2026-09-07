@@ -199,6 +199,24 @@ export function ActivityForm({
   const [restoredSport, setRestoredSport] = useState<SportType | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  /*
+    A QUEUED SAVE IS A SUCCESS, AND THE FORM HAS TO STOP BEING ARMED.
+
+    The queued branch used to `setSubmitError(result.message)` and return early:
+    the message went out through the ERROR channel, red and alarming, while the
+    draft stayed put, the gym Live Activity kept running, the timer state was
+    kept, and the `finally` re-enabled Save.
+
+    So an athlete reading "saved on this device" as a failure — which is what
+    red text under a Save button means — taps Save again. Every submit mints
+    its own client_request_id, so the second tap is a second queue entry that
+    the server cannot recognise as a repeat, and both flush on reconnect. Two
+    identical workouts, both scored, both in the logbook.
+
+    That got more likely, not less, when the submit path gained a timeout: a
+    flaky connection now queues where it used to hang.
+  */
+  const [queuedMessage, setQueuedMessage] = useState<string | null>(null);
   const [result, setResult] = useState<ScoreResultSummary | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   /**
@@ -433,8 +451,22 @@ export function ActivityForm({
     }
   };
 
+  /** The server deletes the draft when a session is saved; mirror that locally. Shared by the scored path and the queued one, which is just as saved. */
+  function clearDraftFor(saved: SportType) {
+    setStateMap((prev) => {
+      const next = { ...prev };
+      delete next[saved];
+      return next;
+    });
+    setServerDrafts((prev) => {
+      const next = { ...prev };
+      delete next[saved];
+      return next;
+    });
+  }
+
   const handleSubmit = async () => {
-    if (!sport || !currentState || submitting) return;
+    if (!sport || !currentState || submitting || queuedMessage) return;
     setSubmitError(null);
 
     const { errors: validationErrors, payload } = validateAndBuildPayload(
@@ -459,23 +491,22 @@ export function ActivityForm({
       }
 
       if (result.queued) {
-        setSubmitError(result.message);
+        // Everything the success path does except show a score, because there
+        // is no score yet — the server has not seen this session. What the
+        // athlete has is a saved workout, and the form must not offer to save
+        // it a second time.
+        clearDraftFor(sport);
+        if (sport === "gym") {
+          void endLiveActivity();
+          clearPersistedGymTimerState();
+        }
+        setQueuedMessage(result.message);
         return;
       }
 
       const data = result.data;
       setResult(buildScoreSummary(data, sport, currentState));
-      // Server deletes the draft on successful submit; mirror that locally.
-      setStateMap((prev) => {
-        const next = { ...prev };
-        delete next[sport];
-        return next;
-      });
-      setServerDrafts((prev) => {
-        const next = { ...prev };
-        delete next[sport];
-        return next;
-      });
+      clearDraftFor(sport);
       // User feedback: "the widget timer for the lab does not stop when
       // the timer is stopped in app, i want the widget to be removed once
       // it's finished being used in app" — a gym workout just got
@@ -815,6 +846,32 @@ export function ActivityForm({
                     </div>
                   </motion.div>
                 )}
+                {queuedMessage && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 6, height: 0 }}
+                    animate={{ opacity: 1, y: 0, height: "auto" }}
+                    exit={{ opacity: 0, y: 6, height: 0 }}
+                    className="overflow-hidden"
+                  >
+                    {/*
+                      The accent channel, not the danger one. This is a saved
+                      workout, and the previous version said so in red under a
+                      Save button — which reads as "that did not work, try
+                      again", and trying again queued it twice.
+                    */}
+                    <div
+                      role="status"
+                      className="rounded-lg border border-accent/30 bg-accent/10 px-2.5 py-1.5 text-[12px] leading-snug text-accent"
+                    >
+                      <div className="flex items-start gap-2">
+                        <Check className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                        <span>
+                          {queuedMessage} You can leave this screen — it will upload on its own.
+                        </span>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
               </AnimatePresence>
               {/* size="sm" is h-11 — 44px, still a full tap target, where
                   size="lg" was a fixed h-14. A 56px button is right when it is
@@ -824,10 +881,20 @@ export function ActivityForm({
                 className="w-full text-[15px]"
                 size="sm"
                 loading={submitting}
+                disabled={queuedMessage !== null}
                 onClick={handleSubmit}
               >
-                <Zap className="h-4 w-4" />
-                {isEdit ? "Save changes" : "Score workout"}
+                {queuedMessage ? (
+                  <>
+                    <Check className="h-4 w-4" />
+                    Saved on this phone
+                  </>
+                ) : (
+                  <>
+                    <Zap className="h-4 w-4" />
+                    {isEdit ? "Save changes" : "Score workout"}
+                  </>
+                )}
               </Button>
               {/* Fixed height, so the draft line moving between "Saving…",
                   "Draft saved 40s ago" and nothing at all doesn't resize the
