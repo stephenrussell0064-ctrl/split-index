@@ -1232,9 +1232,29 @@ readable.
 
 **The three remaining, and why each needs you rather than a schema:**
 
-- `onboarding/calibrate` FILTERS invalid lifts and proceeds with whatever survives, so a
-  typo in one lift is silently dropped from a calibration the athlete believes completed.
-  Refusing is better and is a behaviour change on the onboarding path.
+- ~~`onboarding/calibrate`~~ **DONE — Stephen's decision, to reject.** `validLift` and
+  `validCardioStat` were predicates fed to `.filter()`, so a bad entry was dropped and the
+  request carried on with whatever survived. An athlete who typed 600kg for their deadlift
+  finished onboarding scored off two lifts, was told it worked, and never learned the third
+  had been discarded. It refuses now and the error names the lift.
+
+  **Safe for the shipped form, checked rather than assumed:** `score-reveal.tsx` builds its
+  payload from `filledLifts` and `completeCardioEntries`, which already require a non-zero
+  weight, reps, distance and duration. It never sends an untouched lift, so nothing that
+  works today starts failing — what changes is only the filled-but-out-of-range case, which
+  is exactly what was being thrown away in silence.
+
+  **Bounds preserved to the comparison operator.** `validLift` used `weightKg > 0` strictly,
+  so the schema is `.gt(0)` and not `.min(0)` — `.min(0)` would have accepted a zero-kilo
+  squat the old code refused.
+
+  **Two things deliberately NOT tightened, named rather than smuggled in.** Reps still allow
+  a fraction, because `validLift` never required an integer and rejecting one would be a
+  second behaviour change nobody asked for; a fractional rep is nonsense and is left as an
+  open question. And one thing that IS newly rejected: `weightKg: "140"` was coerced by
+  `Number()` and accepted before, and the schema refuses it — consistent with every other
+  body schema here, and with what the form sends, but a real change to what the endpoint
+  accepts.
 - `revenuecat/webhook` and `stripe/checkout` are signature-verified, which is a different
   kind of guard. A body schema may be redundant there rather than missing, and adding one
   to a payment webhook without understanding the provider's payload versioning is how you

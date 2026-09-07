@@ -1,3 +1,5 @@
+import { parseBody } from "@/lib/validation/boundary";
+import { calibrateSchema } from "@/lib/validation/schemas/calibrate";
 import { NextResponse } from "next/server";
 import { databaseError } from "@/lib/api/errors";
 import { createClient } from "@/lib/supabase/server";
@@ -10,7 +12,6 @@ import {
   gymRecordCandidates,
   type PersonalRecordCandidate,
 } from "@/lib/activities/personal-records";
-import { ENDURANCE_SPORTS } from "@/lib/constants/sports";
 import type { GymExerciseInput, SportType } from "@/types";
 
 /**
@@ -37,14 +38,8 @@ import type { GymExerciseInput, SportType } from "@/types";
  * who logged all of these as separate sessions would end up with.
  */
 
-const MIN_LIFT_KG = 0;
-const MAX_LIFT_KG = 500;
-const MIN_REPS = 1;
-const MAX_REPS = 50;
-const MIN_DISTANCE_METERS = 50;
-const MAX_DISTANCE_METERS = 250_000;
-const MIN_DURATION_SECONDS = 30;
-const MAX_DURATION_SECONDS = 6 * 60 * 60;
+/* The plausibility bounds moved to schemas/calibrate.ts with the predicates
+   they belonged to, so there is one definition rather than two. */
 /** Synthetic session length for the gym scoring call — DOTS/1RM/relative-strength are all set/weight/rep-derived, not duration-derived, so this only affects the (unused-here) load-score estimate. */
 const GYM_SESSION_SECONDS_PER_LIFT = 300;
 
@@ -65,37 +60,6 @@ interface CardioStatInput {
   durationSeconds: number;
 }
 
-function validLift(l: unknown): l is LiftInput {
-  if (!l || typeof l !== "object") return false;
-  const weightKg = Number((l as Record<string, unknown>).weightKg);
-  const reps = Number((l as Record<string, unknown>).reps);
-  return (
-    Number.isFinite(weightKg) &&
-    weightKg > MIN_LIFT_KG &&
-    weightKg <= MAX_LIFT_KG &&
-    Number.isFinite(reps) &&
-    reps >= MIN_REPS &&
-    reps <= MAX_REPS
-  );
-}
-
-function validCardioStat(s: unknown): s is CardioStatInput {
-  if (!s || typeof s !== "object") return false;
-  const row = s as Record<string, unknown>;
-  const distanceMeters = Number(row.distanceMeters);
-  const durationSeconds = Number(row.durationSeconds);
-  return (
-    typeof row.sport === "string" &&
-    (ENDURANCE_SPORTS as string[]).includes(row.sport) &&
-    Number.isFinite(distanceMeters) &&
-    distanceMeters >= MIN_DISTANCE_METERS &&
-    distanceMeters <= MAX_DISTANCE_METERS &&
-    Number.isFinite(durationSeconds) &&
-    durationSeconds >= MIN_DURATION_SECONDS &&
-    durationSeconds <= MAX_DURATION_SECONDS
-  );
-}
-
 export async function POST(request: Request) {
   const supabase = await createClient();
   const {
@@ -106,14 +70,27 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await request.json().catch(() => ({}));
-  const sbdInput = (body.sbd ?? {}) as Record<"squat" | "bench" | "deadlift", unknown>;
-  const cardioInput = Array.isArray(body.cardio) ? body.cardio : [];
+  /*
+    N1. These were `.filter(validLift)` and `.filter(validCardioStat)`: an entry
+    that failed was DROPPED and the request carried on with what survived. An
+    athlete who typed their deadlift as 600kg — a plausible slip for 60 or 160 —
+    finished onboarding with a score calibrated off two lifts, was told it
+    worked, and never learned the third had been discarded.
 
+    It refuses now, and the error names the lift. The shipped form only ever
+    sends lifts the athlete actually filled in (see `filledLifts` in
+    score-reveal.tsx), so nothing that works today starts failing: what changes
+    is only the filled-but-out-of-range case, which is exactly the one that was
+    being thrown away in silence.
+  */
+  const parsed = await parseBody(request, calibrateSchema);
+  if (parsed.response) return parsed.response;
+
+  const sbdInput = parsed.data.sbd ?? {};
   const lifts = (["squat", "bench", "deadlift"] as const)
-    .filter((key) => validLift(sbdInput[key]))
+    .filter((key) => sbdInput[key] !== undefined)
     .map((key) => ({ key, ...(sbdInput[key] as LiftInput) }));
-  const cardioStats = cardioInput.filter(validCardioStat) as CardioStatInput[];
+  const cardioStats = (parsed.data.cardio ?? []) as CardioStatInput[];
 
   if (lifts.length === 0 && cardioStats.length === 0) {
     return NextResponse.json(
