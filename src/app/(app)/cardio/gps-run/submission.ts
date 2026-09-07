@@ -42,12 +42,26 @@ export interface GpsSubmissionInput {
   pauses: readonly PauseInterval[];
   hrReadings: HrReading[];
   cadenceReadings: number[];
+  /**
+   * Heart rate and cadence from before an interruption, as totals.
+   *
+   * `hrReadings` is React state and does not survive the WebView being
+   * reclaimed, so a rejoined run's readings cover only the part after the
+   * rejoin. Averaging those alone reported the last ten minutes of a
+   * ninety-minute run as the whole session's average heart rate — a scoring
+   * input, and a plausible-looking number.
+   *
+   * Null for a run that was never interrupted, and for one recovered from a
+   * record written before these were carried.
+   */
+  priorTotals?: {
+    hrSum: number;
+    hrCount: number;
+    hrMax: number;
+    cadenceSum: number;
+    cadenceCount: number;
+  } | null;
   segments: RunSegment[];
-}
-
-function mean(values: number[]): number | undefined {
-  if (values.length === 0) return undefined;
-  return Math.round(values.reduce((sum, v) => sum + v, 0) / values.length);
 }
 
 /** Interval/fartlek session types reduce their marked hard/easy segments into the same structured fields the manual form collects. */
@@ -82,6 +96,23 @@ export function buildGpsActivityPayload(input: GpsSubmissionInput): Record<strin
   const startPoint = input.points[0];
   const bpm = input.hrReadings.map((r) => r.bpm);
 
+  /*
+    Fold in whatever was recorded before an interruption. Weighted by count,
+    not averaged with the post-rejoin average — eighty minutes and ten minutes
+    are not two equal halves, and treating them as such would swap one wrong
+    number for a subtler one.
+  */
+  const prior = input.priorTotals ?? null;
+  const hrCount = bpm.length + (prior?.hrCount ?? 0);
+  const hrSum = bpm.reduce((sum, b) => sum + b, 0) + (prior?.hrSum ?? 0);
+  const avgHeartRate = hrCount > 0 ? Math.round(hrSum / hrCount) : undefined;
+  const maxHeartRate = hrCount > 0 ? Math.max(...bpm, prior?.hrMax ?? 0) : undefined;
+
+  const cadenceCount = input.cadenceReadings.length + (prior?.cadenceCount ?? 0);
+  const cadenceSum =
+    input.cadenceReadings.reduce((sum, c) => sum + c, 0) + (prior?.cadenceSum ?? 0);
+  const avgCadence = cadenceCount > 0 ? Math.round(cadenceSum / cadenceCount) : undefined;
+
   return {
     sport: input.sport,
     started_at: input.startedAtIso,
@@ -89,9 +120,9 @@ export function buildGpsActivityPayload(input: GpsSubmissionInput): Record<strin
     distance_meters: input.summary.distanceMeters,
     elevation_meters: input.summary.elevationGainMeters ?? undefined,
     avg_pace_seconds_per_km: input.summary.avgPaceSecondsPerKm ?? undefined,
-    avg_heart_rate: mean(bpm),
-    max_heart_rate: bpm.length > 0 ? Math.max(...bpm) : undefined,
-    avg_cadence: mean(input.cadenceReadings),
+    avg_heart_rate: avgHeartRate,
+    max_heart_rate: maxHeartRate,
+    avg_cadence: avgCadence,
     session_type: input.sessionType,
     source: "gps",
     is_partial_track: input.summary.isPartial,

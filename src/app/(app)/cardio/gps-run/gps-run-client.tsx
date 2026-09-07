@@ -24,7 +24,9 @@ import {
   resumeGpsSession,
   recoverOrphanedSession,
   rejoinGpsSession,
+  recordSensorTotals,
   type RecoveredGpsSession,
+  type SensorTotals,
 } from "@/lib/native/gps-tracking";
 import { connectHeartRateMonitor, disconnectHeartRateMonitor } from "@/lib/native/heart-rate";
 import {
@@ -164,6 +166,29 @@ function GpsRunScreen() {
   const [hrError, setHrError] = useState("");
   const [liveCadence, setLiveCadence] = useState<number | null>(null);
   const [cadenceReadings, setCadenceReadings] = useState<number[]>([]);
+  /*
+    HEART RATE AND CADENCE FROM BEFORE AN INTERRUPTION.
+
+    `hrReadings` is React state and dies with the WebView, so a rejoined run
+    used to compute its average heart rate from post-rejoin readings only. A
+    ninety-minute run interrupted at minute eighty reported the average of its
+    last ten minutes as the average for the whole session — a scoring input,
+    and a number that looks entirely plausible next to the rest of the run.
+
+    Carried as totals rather than as a series: a strap notifies at about 1Hz,
+    so the readings themselves are ~180KB for that run and half a megabyte for
+    a marathon, which is not what Preferences is for. `priorTotals` is what came
+    back from the interrupted session; `pendingTotals` is what has accumulated
+    since the last flush to storage.
+  */
+  const priorTotalsRef = useRef<SensorTotals | null>(null);
+  const pendingTotalsRef = useRef<SensorTotals>({
+    hrSum: 0,
+    hrCount: 0,
+    hrMax: 0,
+    cadenceSum: 0,
+    cadenceCount: 0,
+  });
   const [saving, setSaving] = useState(false);
   const [starting, setStarting] = useState(false);
   const [stopping, setStopping] = useState(false);
@@ -269,6 +294,32 @@ function GpsRunScreen() {
     return () => clearInterval(id);
   }, [phase]);
 
+  /*
+    Push the accumulated sensor totals into the stored session every 15
+    seconds, so an app kill costs at most 15 seconds of heart rate rather than
+    everything before it.
+
+    On a timer rather than per reading: point writes are distance-filtered and
+    infrequent, and a Preferences write every second for five numbers would be
+    a large change in write rate for a small gain. The ref is drained before
+    the await, so readings arriving during the write are counted once, in the
+    next flush.
+  */
+  useEffect(() => {
+    if (phase !== "tracking") return;
+    const flush = () => {
+      const delta = pendingTotalsRef.current;
+      if (delta.hrCount === 0 && delta.cadenceCount === 0) return;
+      pendingTotalsRef.current = { hrSum: 0, hrCount: 0, hrMax: 0, cadenceSum: 0, cadenceCount: 0 };
+      void recordSensorTotals(delta);
+    };
+    const id = setInterval(flush, 15_000);
+    return () => {
+      clearInterval(id);
+      flush();
+    };
+  }, [phase]);
+
   // Live distance during tracking — the same function the final summary uses,
   // so the number on screen mid-run is the number that gets saved. Legs that
   // straddle a pause are skipped: standing at a crossing for two minutes must
@@ -366,6 +417,9 @@ function GpsRunScreen() {
     try {
       const device = await connectHeartRateMonitor((reading) => {
         setLiveBpm(reading.bpm);
+        pendingTotalsRef.current.hrSum += reading.bpm;
+        pendingTotalsRef.current.hrCount += 1;
+        pendingTotalsRef.current.hrMax = Math.max(pendingTotalsRef.current.hrMax, reading.bpm);
         setHrReadings((prev) => [...prev, reading]);
       });
       setHrDeviceName(device.name);
@@ -384,6 +438,9 @@ function GpsRunScreen() {
     try {
       await startAirPodsHeartRate(sport, (reading) => {
         setLiveBpm(reading.bpm);
+        pendingTotalsRef.current.hrSum += reading.bpm;
+        pendingTotalsRef.current.hrCount += 1;
+        pendingTotalsRef.current.hrMax = Math.max(pendingTotalsRef.current.hrMax, reading.bpm);
         setHrReadings((prev) => [...prev, reading]);
       });
       setHrDeviceName("AirPods (Apple Health)");
@@ -422,6 +479,8 @@ function GpsRunScreen() {
     setHrReadings([]);
     setLiveCadence(null);
     setCadenceReadings([]);
+    priorTotalsRef.current = null;
+    pendingTotalsRef.current = { hrSum: 0, hrCount: 0, hrMax: 0, cadenceSum: 0, cadenceCount: 0 };
     setPaused(false);
     setConfirmingDiscard(false);
     applyPauses([]);
@@ -436,6 +495,8 @@ function GpsRunScreen() {
         // tile shows up later, never something that should block the run.
         startStepCadence((cadence) => {
           setLiveCadence(cadence);
+          pendingTotalsRef.current.cadenceSum += cadence;
+          pendingTotalsRef.current.cadenceCount += 1;
           setCadenceReadings((prev) => [...prev, cadence]);
         }).catch(() => {});
       }
@@ -489,6 +550,8 @@ function GpsRunScreen() {
       if (isOnFootSport && isStepCadenceSupported()) {
         startStepCadence((cadence) => {
           setLiveCadence(cadence);
+          pendingTotalsRef.current.cadenceSum += cadence;
+          pendingTotalsRef.current.cadenceCount += 1;
           setCadenceReadings((prev) => [...prev, cadence]);
         }).catch(() => {});
       }
@@ -503,6 +566,11 @@ function GpsRunScreen() {
       segmentStartRef.current = Date.now();
       setSegments([]);
       setSegmentType("easy");
+      // Heart rate and cadence from before the interruption. Null on an older
+      // record, which reads as "no readings from before this point" — the
+      // behaviour that existed before, and incomplete rather than wrong.
+      priorTotalsRef.current = recovered.sensorTotals;
+      pendingTotalsRef.current = { hrSum: 0, hrCount: 0, hrMax: 0, cadenceSum: 0, cadenceCount: 0 };
       setOrphaned(null);
       setPhase("tracking");
       if (isLiveActivitySupported()) {
@@ -718,6 +786,20 @@ function GpsRunScreen() {
           pauses: sourcePauses,
           hrReadings,
           cadenceReadings,
+          /*
+            ONLY what was measured BEFORE the interruption, and nothing else.
+
+            `priorTotalsRef` is a snapshot taken at rejoin, so it holds exactly
+            the readings this session can no longer see. `pendingTotalsRef` is
+            deliberately NOT added: it accumulates post-rejoin readings for the
+            15-second flush to storage, and every one of those is already in
+            `hrReadings` above — adding both would count the tail of the run
+            twice and pull the average toward it, which is a subtler version of
+            the bug this fixes.
+
+            Null for a run that was never interrupted.
+          */
+          priorTotals: priorTotalsRef.current,
           segments,
         })
       );

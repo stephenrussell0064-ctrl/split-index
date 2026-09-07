@@ -29,10 +29,41 @@ import {
 const SESSION_KEY = "gps-tracking-session";
 const WATCHER_ID_KEY = "gps-tracking-watcher-id";
 
+/**
+ * Heart-rate and cadence carried across an interruption as TOTALS, not as a
+ * series.
+ *
+ * A strap notifies at about 1Hz, so persisting every reading is roughly 180KB
+ * for a ninety-minute run and half a megabyte for a marathon — too much for
+ * Preferences, which is UserDefaults on iOS. Five numbers cost nothing and fix
+ * the part that was actually wrong.
+ *
+ * What they fix: `hrReadings` is React state and dies with the WebView, so a
+ * rejoined run computed its average heart rate from post-rejoin readings only.
+ * A ninety-minute run interrupted at minute eighty reported the average of its
+ * last ten minutes as the average for the whole session — a scoring input, and
+ * a number that looks entirely plausible.
+ *
+ * What they do NOT try to fix: per-segment heart rate for the lost portion.
+ * `segments` is deliberately reset on rejoin (a rejoined interval run starts a
+ * fresh segment rather than pretending one has been open since the start), so
+ * there is nothing before the interruption to attribute readings to. That data
+ * is genuinely gone, and missing is the honest state for it.
+ */
+export interface SensorTotals {
+  hrSum: number;
+  hrCount: number;
+  hrMax: number;
+  cadenceSum: number;
+  cadenceCount: number;
+}
+
 interface StoredSession {
   points: GpsPoint[];
   startedAt: number;
   permissionRevoked: boolean;
+  /** Absent on records written before this existed, and by the offline fallback page. */
+  sensorTotals?: SensorTotals;
   /**
    * Optional because the offline fallback page (public/offline-track.html)
    * writes this same record without it, and because sessions persisted before
@@ -125,6 +156,33 @@ export interface GpsSessionHandle {
  * source of truth (Preferences persistence above is), so a missed callback
  * during a brief app suspend never loses data, just a map redraw.
  */
+/**
+ * Merge the readings taken since the last call into the stored session.
+ *
+ * Called on a timer rather than per reading: the point writes are already
+ * distance-filtered and infrequent, and adding a Preferences write every second
+ * would be a large change in write rate for five numbers. Under the same lock
+ * as every other session write, so it cannot interleave with a point landing.
+ */
+export async function recordSensorTotals(delta: SensorTotals): Promise<void> {
+  if (delta.hrCount === 0 && delta.cadenceCount === 0) return;
+  await withSessionLock(async () => {
+    const current = await readSession();
+    if (!current) return;
+    const prior = current.sensorTotals;
+    await writeSession({
+      ...current,
+      sensorTotals: {
+        hrSum: (prior?.hrSum ?? 0) + delta.hrSum,
+        hrCount: (prior?.hrCount ?? 0) + delta.hrCount,
+        hrMax: Math.max(prior?.hrMax ?? 0, delta.hrMax),
+        cadenceSum: (prior?.cadenceSum ?? 0) + delta.cadenceSum,
+        cadenceCount: (prior?.cadenceCount ?? 0) + delta.cadenceCount,
+      },
+    });
+  });
+}
+
 export async function startGpsSession(
   onPoint?: (point: GpsPoint) => void,
   onPermissionDenied?: () => void
@@ -356,6 +414,14 @@ export interface RecoveredGpsSession {
    */
   pauses: PauseInterval[];
   /**
+   * Heart rate and cadence from BEFORE the interruption, as totals — see
+   * `SensorTotals`. Null on a record written before these were carried, and on
+   * one written by the offline fallback page; a caller must treat null as "no
+   * readings from before this point", which is the behaviour that existed
+   * before and is merely incomplete rather than wrong.
+   */
+  sensorTotals: SensorTotals | null;
+  /**
    * The pauses exactly as they were stored, with a pause left open by the
    * interruption still open. Only for `rejoinGpsSession` — a run picked back up
    * was never interrupted at all from the athlete's point of view, so the pause
@@ -503,6 +569,10 @@ export async function recoverOrphanedSession(): Promise<RecoveredGpsSession | nu
     startedAt: session.startedAt,
     wasPaused,
     finished,
+    // Absent on a record written before these were carried, and on one written
+    // by the offline fallback page. The caller treats absent as "no readings
+    // from before the interruption", which is the old behaviour exactly.
+    sensorTotals: session.sensorTotals ?? null,
     // A finished run is not resumable — it is waiting to be saved, not to be
     // continued.
     resumable:

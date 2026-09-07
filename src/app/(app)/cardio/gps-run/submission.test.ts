@@ -132,3 +132,102 @@ describe("buildGpsActivityPayload", () => {
     expect(route.every(([, lng]) => Math.abs(lng - HOME_LNG) < 0.0001)).toBe(true);
   });
 });
+
+/**
+ * A RUN THE APP WAS KILLED DURING REPORTED THE WRONG HEART RATE, NOT NONE.
+ *
+ * `hrReadings` is React state and dies with the WebView. A rejoined run
+ * therefore computed its average from post-rejoin readings only: a ninety-
+ * minute run interrupted at minute eighty reported the average of its last ten
+ * minutes as the average for the whole session. That is a scoring input, and
+ * unlike a missing value it looks entirely plausible sitting next to the pace
+ * and distance, so nothing about the saved run invites a second look.
+ *
+ * The readings themselves are not carried — a strap notifies at ~1Hz, which is
+ * about 180KB for that run — so what survives is five numbers, and these tests
+ * are about the arithmetic that folds them back in.
+ */
+describe("heart rate across an interruption", () => {
+  const hr = (bpm: number, time: number) => ({ bpm, time });
+
+  it("weights the two stretches by how long each one was", () => {
+    // 80 minutes at 150 before the kill, 10 minutes at 120 after it. The true
+    // average is much nearer 150; averaging the two averages would say 135.
+    const payload = buildGpsActivityPayload({
+      ...input(),
+      hrReadings: [hr(120, 1000), hr(120, 2000)],
+      priorTotals: { hrSum: 150 * 4800, hrCount: 4800, hrMax: 178, cadenceSum: 0, cadenceCount: 0 },
+    });
+    // (150*4800 + 120*2) / 4802
+    expect(payload.avg_heart_rate).toBe(150);
+    expect(payload.avg_heart_rate).not.toBe(135);
+  });
+
+  it("keeps a peak that happened before the interruption", () => {
+    // The hardest effort of a run is usually not in its last ten minutes.
+    const payload = buildGpsActivityPayload({
+      ...input(),
+      hrReadings: [hr(140, 1000)],
+      priorTotals: { hrSum: 150 * 100, hrCount: 100, hrMax: 186, cadenceSum: 0, cadenceCount: 0 },
+    });
+    expect(payload.max_heart_rate).toBe(186);
+  });
+
+  it("still reports a peak set after the rejoin", () => {
+    const payload = buildGpsActivityPayload({
+      ...input(),
+      hrReadings: [hr(191, 1000)],
+      priorTotals: { hrSum: 150 * 100, hrCount: 100, hrMax: 186, cadenceSum: 0, cadenceCount: 0 },
+    });
+    expect(payload.max_heart_rate).toBe(191);
+  });
+
+  it("changes nothing for a run that was never interrupted", () => {
+    const uninterrupted = buildGpsActivityPayload({
+      ...input(),
+      hrReadings: [hr(140, 1000), hr(160, 2000)],
+    });
+    expect(uninterrupted.avg_heart_rate).toBe(150);
+    expect(uninterrupted.max_heart_rate).toBe(160);
+  });
+
+  it("reports nothing rather than zero when no strap was worn", () => {
+    // A run with no heart-rate monitor must not post avg_heart_rate: 0 — the
+    // scoring engine reads that as a measurement.
+    const payload = buildGpsActivityPayload({ ...input(), hrReadings: [] });
+    expect(payload.avg_heart_rate).toBeUndefined();
+    expect(payload.max_heart_rate).toBeUndefined();
+  });
+
+  it("recovers heart rate from a run whose own readings are all gone", () => {
+    // The app was killed and the athlete accepted the recovered session
+    // without the strap reconnecting: every reading is on the prior side.
+    const payload = buildGpsActivityPayload({
+      ...input(),
+      hrReadings: [],
+      priorTotals: { hrSum: 148 * 3000, hrCount: 3000, hrMax: 181, cadenceSum: 0, cadenceCount: 0 },
+    });
+    expect(payload.avg_heart_rate).toBe(148);
+    expect(payload.max_heart_rate).toBe(181);
+  });
+
+  it("carries cadence the same way", () => {
+    const payload = buildGpsActivityPayload({
+      ...input(),
+      cadenceReadings: [160, 160],
+      priorTotals: { hrSum: 0, hrCount: 0, hrMax: 0, cadenceSum: 180 * 1000, cadenceCount: 1000 },
+    });
+    expect(payload.avg_cadence).toBe(180);
+  });
+
+  it("treats a pre-carry recovery record as no readings, not as zero readings", () => {
+    // Sessions stored before totals were carried come back with null, and must
+    // behave exactly as they did before this existed.
+    const payload = buildGpsActivityPayload({
+      ...input(),
+      hrReadings: [hr(150, 1000)],
+      priorTotals: null,
+    });
+    expect(payload.avg_heart_rate).toBe(150);
+  });
+});
