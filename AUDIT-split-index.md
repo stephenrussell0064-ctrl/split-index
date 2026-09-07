@@ -46,6 +46,7 @@ its current status inline; this table is the summary.
 | M9 CSP allows `'unsafe-inline'` | **CLOSED on the authenticated surface** — public pages keep it, deliberately; see the finding | `3e8994d` |
 | N10 email addresses in an anon-readable column | **CLOSED** by a peer session's migration 064, which masks the column in both views rather than scrubbing rows — a better fix than my 061, which never landed | `ff0ab52` |
 | M6 `CRON_SECRET` accepted from the query string | **CLOSED** | see finding |
+| N11 `REVOKE FROM PUBLIC` leaves anon's direct grant | **OPEN — High.** 067 written, not applied; `prune_security_events` is the one with teeth | `067` |
 | Everything else | **OPEN** | — |
 
 Zero Critical findings remain open. The brief's gate for a growth push is WP1,
@@ -1438,6 +1439,60 @@ button.
 
 ---
 
+#### N11 — `REVOKE ... FROM PUBLIC` does not revoke from `anon`
+
+**WP1 / WP7 · High · Raised 2026-09-07, from a peer session's probe against production.**
+
+A Supabase project bootstraps with `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON
+FUNCTIONS TO anon, authenticated, service_role`. Every function created afterwards is
+therefore granted to `anon` **by name**, at creation. `REVOKE ALL ON FUNCTION f() FROM
+PUBLIC` removes only the implicit PUBLIC grant and leaves that direct one standing.
+
+Found twice on the same day, from opposite directions, and neither was visible in review
+because both lines look exactly like the correct thing:
+
+- A peer's 065 wrote `GRANT ... TO authenticated, service_role` believing it restricted.
+  It added. Fixed in their 066.
+- My 060, 061 and 063 each wrote `REVOKE ... FROM PUBLIC` believing it removed. It removed
+  half.
+
+**Which of mine actually mattered, measured rather than assumed.** The peer flagged
+`withdraw_article9_health_data` — an unauthenticated caller reaching a function whose job
+is to purge Article 9 health data, which sounds like the worst of them. It is not
+exploitable, and the reason is worth stating precisely: it is SECURITY DEFINER, so it can
+reach the tables, but every statement is scoped `WHERE user_id = auth.uid()`, and an anon
+JWT carries no `sub` claim, so `auth.uid()` is NULL. `user_id = NULL` is NULL, never TRUE.
+Zero rows updated, zero deleted. A no-op by construction rather than by permission.
+
+**The one that matters is `prune_security_events`, which nobody was looking at.** Also
+SECURITY DEFINER, and it selects rows **by date** — there is no `auth.uid()` in it, so
+there is no NULL to save it. If `anon` holds EXECUTE, an unauthenticated request can make
+the security and audit log prune itself on demand. The blast radius today is small because
+it deletes only rows already past 90 or 365 days and this database is young — but that is
+an accident of the calendar, not a property of the design.
+
+**ADDRESSED `067`, not applied.**
+[067_revoke_execute_from_anon.sql](supabase/migrations/067_revoke_execute_from_anon.sql)
+revokes `PUBLIC, anon` explicitly on all four functions the audit introduced, keeps
+`authenticated` on the Article 9 withdrawal path (removing it would swap a permissions
+defect for a compliance one), and carries a `pg_proc.proacl` query to run before and after.
+Checked before writing that revoking cannot break an anonymous read: `caller_email_verified`
+is referenced only in the `WITH CHECK` of three RESTRICTIVE **INSERT** policies, and anon
+does not insert.
+
+**Three pre-existing functions are deliberately left alone**, recorded in
+`function-grants.test.ts` as a named allowlist with reasons rather than silently skipped.
+`sync_profile_current_index` and `update_updated_at` both `RETURNS TRIGGER`, which Postgres
+refuses to invoke directly and PostgREST does not expose. `activity_is_visible_to` is
+referenced by a SELECT policy on `activities`, so revoking EXECUTE could turn "returns no
+rows" into "the query errors" for an anonymous reader — that needs a database to settle and
+was not guessed at with a submission pending.
+
+**Outstanding:** apply 067 and compare the ACL query output; then decide
+`activity_is_visible_to` with a live database.
+
+---
+
 ## 4. Triage summary
 
 **As found in Phase 0 (`adb35c5`):**
@@ -1457,16 +1512,16 @@ during remediation:
 | Severity | Open | Partial | Closed | Total | Which |
 |---|---|---|---|---|---|
 | Critical | **0** | 0 | 4 | 4 | All four were one defect in four places. |
-| High | 1 | 1 | 8 | 10 | Closed H1, H3–H8 and N10. Partial H2. Open H9 (DPIA — Stephen's). |
+| High | 2 | 1 | 8 | 11 | Closed H1, H3–H8 and N10. Partial H2. Open H9 (DPIA — Stephen's) and N11. |
 | Medium | 6 | 2 | 9 | 17 | Closed M1–M6, M8, M9, M13. Partial M7, M11. Open M10, M12, M14, N1, N5, N7. |
 | Low | 5 | 0 | 7 | 12 | Closed L1–L6, N4. Open N2, N3, N6, N8, N9. |
-| **Total** | **12** | **3** | **28** | **43** | |
+| **Total** | **13** | **3** | **28** | **44** | |
 
 **Correction to this table's arithmetic.** Earlier revisions reported "41 findings
 raised" and columns that did not sum to it: partially-closed findings were counted
 in neither the open nor the closed column, so the rows silently lost them. Counted
-by hand off the headings — C1–C4 (4), H1–H9 (9), M1–M14 (14), L1–L6 (6), N1–N10 (10)
-— the total is **43**, and partials now have a column of their own so the rows add
+by hand off the headings — C1–C4 (4), H1–H9 (9), M1–M14 (14), L1–L6 (6), N1–N11 (11)
+— the total is **44**, and partials now have a column of their own so the rows add
 up. The finding text was always right; only the summary was wrong.
 
 One of the thirteen is open on purpose rather than for want of effort: **M12**
