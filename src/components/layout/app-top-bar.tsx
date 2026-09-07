@@ -18,7 +18,10 @@ function BackButton() {
       type="button"
       onClick={() => navigateBack(router)}
       aria-label="Back"
-      className="-ml-2 flex h-9 w-9 items-center justify-center rounded-full text-foreground/80 transition-colors hover:bg-white/8 hover:text-foreground"
+      // h-11 w-11, not h-9: 44pt is Apple's minimum and this is the control
+      // the athlete taps more than any other. The negative margin keeps the
+      // chevron sitting where it always did while the hit area grows around it.
+      className="-ml-3 flex h-11 w-11 items-center justify-center rounded-full text-foreground/80 transition-colors hover:bg-white/8 hover:text-foreground"
     >
       <ChevronLeft className="h-5 w-5" />
     </button>
@@ -90,7 +93,7 @@ export function AppTopBar({
       ) : (
         <Link
           href="/settings/billing"
-          className="inline-flex items-center gap-1 rounded-full border border-white/10 px-2.5 py-1 text-[10px] font-medium text-muted transition-colors hover:border-warning/30 hover:text-warning"
+          className="inline-flex min-h-11 items-center gap-1 rounded-full border border-white/10 px-2.5 py-1 text-[10px] font-medium text-muted transition-colors hover:border-warning/30 hover:text-warning"
         >
           <Crown className="h-3 w-3" />
           Upgrade

@@ -383,7 +383,7 @@ export function LeaderboardPanel({
                   setScope(s.value);
                 }}
                 className={cn(
-                  "rounded-xl px-3 py-1.5 text-xs font-medium transition-colors glass",
+                  "inline-flex min-h-11 items-center rounded-xl px-3 py-1.5 text-xs font-medium transition-colors glass",
                   scope === s.value
                     ? "bg-white/10 text-foreground border border-white/15"
                     : "text-muted hover:text-foreground hover:bg-white/5",
@@ -413,7 +413,10 @@ export function LeaderboardPanel({
           />
         )}
 
-        {/* Free for everyone — Split / Endurance / Strength (Lab/Engine) metric toggle. */}
+        {/* Free for everyone — Split / Endurance / Strength (Lab/Engine) metric toggle.
+            min-h-11 on every filter chip on this screen: they were about 25px
+            tall, and a leaderboard is a screen made almost entirely of chips.
+            The height comes from min-height so the chip still LOOKS small. */}
         <div className="flex flex-wrap gap-2">
           {INDEX_METRICS.map((m) => (
             <button
@@ -421,7 +424,7 @@ export function LeaderboardPanel({
               type="button"
               onClick={() => setMetric(m.value)}
               className={cn(
-                "rounded-lg px-3 py-1 text-xs font-medium",
+                "inline-flex min-h-11 items-center rounded-lg px-3 py-1 text-xs font-medium",
                 metric === m.value ? "bg-accent/20 text-accent" : "text-muted"
               )}
             >
@@ -438,7 +441,7 @@ export function LeaderboardPanel({
                 type="button"
                 onClick={() => setAgeBracket(b.value)}
                 className={cn(
-                  "rounded-lg px-3 py-1 text-xs",
+                  "inline-flex min-h-11 items-center rounded-lg px-3 py-1 text-xs",
                   ageBracket === b.value ? "bg-accent/20 text-accent" : "text-muted"
                 )}
               >
@@ -456,7 +459,7 @@ export function LeaderboardPanel({
                 type="button"
                 onClick={() => setWeightClass(w.value)}
                 className={cn(
-                  "rounded-lg px-3 py-1 text-xs",
+                  "inline-flex min-h-11 items-center rounded-lg px-3 py-1 text-xs",
                   weightClass === w.value ? "bg-accent/20 text-accent" : "text-muted"
                 )}
               >

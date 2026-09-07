@@ -33,7 +33,7 @@ export function CompleteProfileBanner({ needsProfile }: { needsProfile: boolean 
         type="button"
         aria-label="Dismiss"
         onClick={dismiss}
-        className="absolute right-3 top-3 rounded-lg p-1 text-muted hover:bg-white/5 hover:text-foreground"
+        className="absolute right-1 top-1 flex h-11 w-11 items-center justify-center rounded-lg text-muted hover:bg-white/5 hover:text-foreground"
       >
         <X className="h-4 w-4" />
       </button>

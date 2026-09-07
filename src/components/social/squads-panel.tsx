@@ -31,7 +31,7 @@ function InviteCode({ code }: { code: string }) {
     <button
       type="button"
       onClick={copy}
-      className="flex items-center gap-1.5 rounded-lg border border-white/[0.06] bg-white/[0.03] px-2.5 py-1 font-mono text-xs tracking-wider text-muted transition-colors hover:border-accent/30 hover:text-foreground"
+      className="flex min-h-11 items-center gap-1.5 rounded-lg border border-white/[0.06] bg-white/[0.03] px-2.5 py-1 font-mono text-xs tracking-wider text-muted transition-colors hover:border-accent/30 hover:text-foreground"
     >
       {code}
       {copied ? <Check className="h-3 w-3 text-success" /> : <Copy className="h-3 w-3" />}

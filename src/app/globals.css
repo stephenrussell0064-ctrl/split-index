@@ -668,11 +668,21 @@ body {
   pointer-events: none;
 }
 
+/*
+  min-height 2.75rem = 44pt, Apple's floor for anything a finger has to hit.
+  These were about 27px tall. The padding is what makes a chip look like a
+  chip, so the height comes from min-height and the text stays centred —
+  raising the padding instead would have made them visually chunky.
+*/
 .logbook-filter-chip {
   font-size: 0.65rem;
   font-weight: 600;
   letter-spacing: 0.16em;
   text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.75rem;
   padding: 0.45rem 0.9rem;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.1);

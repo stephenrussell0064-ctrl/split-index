@@ -404,7 +404,7 @@ export function GymWorkoutTimer({
           onClick={toggleRunning}
           aria-label={running ? "Pause workout timer" : "Start workout timer"}
           className={cn(
-            "flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-all",
+            "flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition-all",
             running
               ? "bg-warning/20 text-warning shadow-[0_0_0_2px_rgba(234,179,8,0.15)]"
               : "bg-gym-accent/20 text-gym-accent shadow-[0_0_0_2px_rgba(0,230,95,0.12)]"

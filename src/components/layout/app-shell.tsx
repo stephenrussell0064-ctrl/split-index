@@ -316,7 +316,7 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
                     type="button"
                     onClick={() => setMoreOpen(false)}
                     aria-label="Close menu"
-                    className="rounded-lg p-1 text-muted hover:bg-white/5 hover:text-foreground"
+                    className="-m-2 flex h-11 w-11 items-center justify-center rounded-lg text-muted hover:bg-white/5 hover:text-foreground"
                   >
                     <X className="h-4 w-4" />
                   </button>

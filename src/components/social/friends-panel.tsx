@@ -222,7 +222,7 @@ export function FriendsPanel({
                     <button
                       type="button"
                       onClick={() => removeFriend(friend.id)}
-                      className="rounded-lg p-1.5 text-muted hover:text-danger"
+                      className="-m-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-muted hover:text-danger"
                     >
                       <UserMinus className="h-3 w-3" />
                     </button>

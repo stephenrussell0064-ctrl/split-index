@@ -102,7 +102,7 @@ export function CompareModal({
               type="button"
               onClick={onClose}
               aria-label="Close comparison"
-              className="rounded-lg p-1.5 text-muted hover:bg-white/5 hover:text-foreground"
+              className="-m-1.5 flex h-11 w-11 items-center justify-center rounded-lg text-muted hover:bg-white/5 hover:text-foreground"
             >
               <X className="h-4 w-4" />
             </button>
