@@ -56,10 +56,42 @@ const nextConfig: NextConfig = {
         source: "/(.*)",
         headers: [
           { key: "Content-Security-Policy", value: cspHeader },
+          {
+            /*
+             * HSTS. Vercel serves HTTPS and redirects, but without this the
+             * FIRST request of a session is downgradeable — a redirect can be
+             * intercepted, and the CSP's `upgrade-insecure-requests` only
+             * covers subresources, not the initial navigation.
+             *
+             * Two years, subdomains included. `preload` is deliberately absent:
+             * it is a one-way door — getting a domain OUT of the browsers'
+             * preload list takes months — and it should be a decision made
+             * knowingly, not one that arrives inside a security fix.
+             *
+             * Capacitor is unaffected: the native shell already pins
+             * `cleartext: false` and only navigates splitindex.co.uk hosts.
+             */
+            key: "Strict-Transport-Security",
+            value: "max-age=63072000; includeSubDomains",
+          },
           { key: "X-Frame-Options", value: "DENY" },
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           {
+            /*
+             * geolocation=() is correct TODAY and is a trap for tomorrow.
+             *
+             * GPS run tracking exists, but it goes through Capacitor's native
+             * background-geolocation plugin, which does not consult a
+             * Permissions-Policy header — `navigator.geolocation` appears
+             * nowhere in this codebase. So denying it costs nothing now.
+             *
+             * The day a web GPS path ships, this header will block it silently:
+             * no console error the developer will connect to a header set in a
+             * config file. Change it to `geolocation=(self)` at that point, and
+             * narrowly — the brief's instruction is to grant it only when the
+             * feature needs it.
+             */
             key: "Permissions-Policy",
             value: "camera=(), microphone=(), geolocation=(), payment=()",
           },
