@@ -34,11 +34,32 @@
 
 	<key>NSPrivacyCollectedDataTypes</key>
 	<array>
-		<!-- HealthKit workouts, heart rate, and every logged session. The core
-		     of the product: without this there is nothing to score. -->
+		<!-- Heart rate read from HealthKit (NSHealthShareUsageDescription), plus
+		     the bodyweight, body fat, sex and age the scoring model needs.
+		     Apple files all of that under Health, NOT Fitness — Fitness is the
+		     next entry and they are two different values. There is no combined
+		     "HealthFitness" type; this pair previously WAS one, which is not a
+		     value Apple defines, and Apple's own guidance is that Xcode cannot
+		     produce a correct privacy report from an invented data type. -->
 		<dict>
 			<key>NSPrivacyCollectedDataType</key>
-			<string>NSPrivacyCollectedDataTypeHealthFitness</string>
+			<string>NSPrivacyCollectedDataTypeHealth</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<true/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
+
+		<!-- Workouts and every logged session, plus step cadence from the
+		     Motion API (NSMotionUsageDescription). The core of the product:
+		     without this there is nothing to score. -->
+		<dict>
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypeFitness</string>
 			<key>NSPrivacyCollectedDataTypeLinked</key>
 			<true/>
 			<key>NSPrivacyCollectedDataTypeTracking</key>
@@ -128,6 +149,28 @@
 		<dict>
 			<key>NSPrivacyCollectedDataType</key>
 			<string>NSPrivacyCollectedDataTypeProductInteraction</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<true/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
+
+		<!-- Free text the athlete writes: profiles.bio, and the comments
+		     accepted friends leave on a shared activity (migration 031).
+		     "Other User Content" is Apple's catch-all for user-generated
+		     content that is not a photo, recording or gameplay artifact.
+
+		     Easy to miss because none of it is a permission-gated API — there
+		     is no prompt to remind you it exists — but it is typed by a person,
+		     stored against their account and shown to others, which is exactly
+		     what the category covers. -->
+		<dict>
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypeOtherUserContent</string>
 			<key>NSPrivacyCollectedDataTypeLinked</key>
 			<true/>
 			<key>NSPrivacyCollectedDataTypeTracking</key>
