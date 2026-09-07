@@ -1,4 +1,4 @@
-import { text, z } from "@/lib/validation/boundary";
+import { numberFields, text, z } from "@/lib/validation/boundary";
 import type { DuelMetric } from "@/lib/social/types";
 import type { SportType } from "@/types";
 
@@ -112,5 +112,35 @@ export const createDuelSchema = z
       .min(MIN_DURATION_DAYS, `A duel runs for at least ${MIN_DURATION_DAYS} days.`)
       .max(MAX_DURATION_DAYS, `A duel runs for at most ${MAX_DURATION_DAYS} days.`)
       .optional(),
+  })
+  .strict();
+
+/**
+ * A single HRV reading.
+ *
+ * `numberFields.hrvMs` is BOUND_HRV_MS, [1, 500], which is exactly the range
+ * the route already enforced by hand (`> 0 && <= 500`). Checked before
+ * switching: a schema that quietly widened or narrowed a plausibility bound
+ * would be a worse outcome than the ad-hoc check it replaced.
+ */
+export const hrvSchema = z
+  .object({
+    hrvMs: numberFields.hrvMs,
+  })
+  .strict();
+
+/**
+ * The athlete's time zone.
+ *
+ * The route already rejects an unknown zone, and for a good reason recorded
+ * there: `Intl.DateTimeFormat` throws on one, and a single bad POST used to
+ * 500 the athlete's own dashboard permanently. This adds what a hand-rolled
+ * check cannot — a body size cap and refusal of unknown keys — and leaves the
+ * zone lookup itself where it is, because `isValidTimezone` asks the runtime
+ * and a regex would only approximate it.
+ */
+export const timezoneSchema = z
+  .object({
+    timezone: z.string({ message: "Time zone must be text." }).trim().max(64),
   })
   .strict();

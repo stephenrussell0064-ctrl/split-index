@@ -1,3 +1,5 @@
+import { parseBody } from "@/lib/validation/boundary";
+import { timezoneSchema } from "@/lib/validation/schemas/social";
 import { NextResponse } from "next/server";
 import { databaseError } from "@/lib/api/errors";
 import { createClient } from "@/lib/supabase/server";
@@ -13,8 +15,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await request.json().catch(() => ({}));
-  const submitted = typeof body.timezone === "string" ? body.timezone.trim() : "";
+  // N1. The zone check below is unchanged and stays where it is —
+  // isValidTimezone asks the runtime, which a regex can only approximate. This
+  // adds the body size cap and refuses unknown keys.
+  const parsed = await parseBody(request, timezoneSchema);
+  if (parsed.response) return parsed.response;
+  const submitted = parsed.data.timezone;
 
   /*
     Rejected rather than stored, because an unknown zone is not a cosmetic
