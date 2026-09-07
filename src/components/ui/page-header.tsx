@@ -28,7 +28,21 @@ export function PageHeader({
             {eyebrow}
           </p>
         )}
-        <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
+        {/*
+          text-xl on phones, unchanged from `md` up. Every page header sits
+          directly under the top bar and directly above the content the athlete
+          came for, and on the screens where the title repeats the nav label
+          they just tapped it is spending the top of the fold to tell them
+          where they already know they are.
+
+          Only the SIZE is reduced globally. The audit also proposed hiding the
+          subtitle below `sm`, which is wrong for this codebase: several of
+          them are the only explanation a screen gives — "Lock your phone.
+          Tracking keeps going." and "Background GPS tracking needs the Split
+          Index app, not the website." are not decoration. The two that really
+          are decoration are removed at their call sites instead.
+        */}
+        <h1 className="text-xl font-semibold tracking-tight md:text-3xl">
           {title}
         </h1>
         {subtitle && (

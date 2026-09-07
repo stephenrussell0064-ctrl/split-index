@@ -244,7 +244,6 @@ export function AnalyticsClient({ data }: { data: AnalyticsPayload }) {
       <PageHeader
         eyebrow="Performance"
         title="Analytics"
-        subtitle="Deep performance insights · hybrid athlete intelligence"
         action={
           !data.isPremium ? (
             <p className="text-xs text-muted">

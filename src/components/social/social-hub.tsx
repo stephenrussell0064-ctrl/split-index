@@ -98,7 +98,6 @@ export function SocialHub({
       <PageHeader
         eyebrow="Community"
         title="Social"
-        subtitle="Compete, connect, and challenge"
       />
 
       {/*
