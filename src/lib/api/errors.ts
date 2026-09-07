@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { logSecurityEvent } from "@/lib/observability/security-log";
+import {
+  UNIQUE_VIOLATION,
+  uniqueViolationMessage,
+} from "@/lib/api/unique-violations";
 
 /**
  * WP5 — one place where a server-side failure becomes a response.
@@ -61,19 +65,6 @@ export interface DatabaseErrorLike {
  * rewords an error, and would silently fall through to a generic message
  * rather than failing loudly.
  */
-const UNIQUE_VIOLATION_MESSAGES: Record<string, string> = {
-  profiles_username_key: "That username is taken.",
-  profiles_user_id_key: "That profile already exists.",
-  profiles_stripe_customer_id_key: "That billing account is already linked.",
-  activities_user_id_source_external_id_key:
-    "That session has already been imported.",
-  activity_reactions_activity_id_user_id_key: "You have already scored this session.",
-  squad_members_squad_id_user_id_key: "You are already in that squad.",
-  friends_user_id_friend_id_key: "You are already connected to that athlete.",
-  leaderboard_entries_period_period_start_user_id_key:
-    "That leaderboard entry already exists.",
-  hpe_intake_pkey: "Your intake answers already exist.",
-};
 
 /** Postgres SQLSTATEs worth distinguishing from "something went wrong". */
 const CODE_MESSAGES: Record<string, string> = {
@@ -119,14 +110,12 @@ const CODE_STATUS: Record<string, number> = {
  * into a generic 500. Never returns any part of `error.message`.
  */
 export function safeDatabaseMessage(error: DatabaseErrorLike): string | null {
-  if (error.code === "23505") {
-    // The constraint name appears in `details` or `message`; we only ever read
-    // it to look up OUR mapping, and never pass either string on.
-    const haystack = `${error.message ?? ""} ${error.details ?? ""}`;
-    for (const [constraint, message] of Object.entries(UNIQUE_VIOLATION_MESSAGES)) {
-      if (haystack.includes(constraint)) return message;
-    }
-    return "That already exists.";
+  if (error.code === UNIQUE_VIOLATION) {
+    // Shared with the browser path, so the same conflict cannot produce two
+    // different answers depending on which client wrote the row. The helper
+    // reads the constraint NAME and discards the error text, which carries the
+    // conflicting value.
+    return uniqueViolationMessage(error);
   }
 
   return error.code ? (CODE_MESSAGES[error.code] ?? null) : null;

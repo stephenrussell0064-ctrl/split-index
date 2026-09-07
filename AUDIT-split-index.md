@@ -48,6 +48,7 @@ its current status inline; this table is the summary.
 | M6 `CRON_SECRET` accepted from the query string | **CLOSED** | see finding |
 | N11 `REVOKE FROM PUBLIC` leaves anon's direct grant | **OPEN — High.** 067 written, not applied; `prune_security_events` is the one with teeth | `067` |
 | M10 share card content and per-share consent | **CLOSED** — and the finding's "Tier 2" claim corrected; see the finding | see finding |
+| M14 username reserved words and lookalikes | **CLOSED** | see finding |
 | Everything else | **OPEN** | — |
 
 Zero Critical findings remain open. The brief's gate for a growth push is WP1,
@@ -1073,6 +1074,50 @@ write happens later. `profiles.username` is `UNIQUE` at the database level, so t
 closes as a constraint violation — surfacing as a 500 with Postgres text (M1) instead of "that
 username is taken". The two findings should be fixed together.
 
+**CLOSED.** Three parts, and the first one had to happen before the second or the second
+would have made things worse.
+
+**The lists are split.** Profanity stays substring-matched (a shipped decision, kept:
+for slurs a false positive is the better error). Impersonation terms move to
+`RESERVED_NAMES`, matched as a WHOLE username and by WORD in a display name — never as a
+substring of a word.
+
+That was not a tidy-up. The old rule was refusing real names, demonstrated before changing
+anything: `badminton`, `grapes`, `scunthorpe`, `shitake` and the surname `Rapetti` could not
+be registered. Adding WP3.3's list to a substring test would have added `rapid`,
+`therapist`, `capital`, `rooted`, `staffordshire` and `Rapinoe` to that. A short exception
+list covers the demonstrated innocent words; the general Scunthorpe problem has no fix and
+is not claimed to have one.
+
+**All nine reserved words WP3.3 named are added**, plus `administrator`, `sysadmin`,
+`helpdesk`, `team`, `payments`, `noreply`, `webmaster` and `abuse`. `admin7`, `ad_min`,
+`adm1n` and `4dm1n` are refused; `badminton` is not.
+
+**A lookalike hole the finding did not know about**, because it predates
+`validateDisplayText`. The finding credits the ASCII-only username pattern with ruling out
+homoglyphs "by construction", and it does — for usernames. Display names permit unicode and
+are what appears beside a score on a leaderboard, and `Аdmin` with a Cyrillic А matched
+nothing at all. Confusables are now folded before the reserved check.
+
+**The race is closed at the message, which is the only place it can be closed.**
+`username-check` reads and the write happens later, so two athletes can pass the check and
+one loses at the constraint — no amount of checking harder changes that. What was wrong is
+what the loser was told: `profiles_username_key` was mapped on the server, but onboarding
+writes with the BROWSER client, so it surfaced as "Could not save your profile. Please try
+again." That is not merely vague, it is wrong advice — trying again with the same username
+fails identically. The map moved to
+[unique-violations.ts](src/lib/api/unique-violations.ts), dependency-free so both paths
+share it and cannot drift, and the browser now says "That username is taken." without ever
+repeating the conflicting value, which belongs to somebody else.
+
+**A bug I introduced and caught before committing**, recorded because the interaction is
+not obvious: folding digits to letters (`7`→`t`) before stripping trailing digits turned
+`admin7` into `admint`, which matches nothing — so the folding I added to catch `adm1n`
+silently broke every case the trailing-digit strip existed to catch. `admin7`, `admin1`,
+`adm1n` and `4dm1n` all slipped through. The two rules need opposite treatments of a digit,
+so the implementation generates candidate spellings and checks them all rather than
+computing one canonical form. There is a test named for exactly that.
+
 ---
 
 ### LOW
@@ -1666,9 +1711,9 @@ during remediation:
 |---|---|---|---|---|---|
 | Critical | **0** | 0 | 4 | 4 | All four were one defect in four places. |
 | High | 2 | 1 | 8 | 11 | Closed H1, H3–H8 and N10. Partial H2. Open H9 (DPIA — Stephen's) and N11. |
-| Medium | 5 | 2 | 10 | 17 | Closed M1–M6, M8, M9, M10, M13. Partial M7, M11. Open M12, M14, N1, N5, N7. |
+| Medium | 4 | 2 | 11 | 17 | Closed M1–M6, M8, M9, M10, M13, M14. Partial M7, M11. Open M12, N1, N5, N7. |
 | Low | 5 | 0 | 7 | 12 | Closed L1–L6, N4. Open N2, N3, N6, N8, N9. |
-| **Total** | **12** | **3** | **29** | **44** | |
+| **Total** | **11** | **3** | **30** | **44** | |
 
 **Correction to this table's arithmetic.** Earlier revisions reported "41 findings
 raised" and columns that did not sum to it: partially-closed findings were counted
