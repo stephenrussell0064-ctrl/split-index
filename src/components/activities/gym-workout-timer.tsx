@@ -4,6 +4,12 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowDownToLine, Play, Pause, RotateCcw, Timer as TimerIcon, X } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 import {
+  clearPersistedGymTimerState,
+  loadPersistedTimerState,
+  persistTimerState,
+  type PersistedTimerState,
+} from "./gym-timer-storage";
+import {
   isLiveActivitySupported,
   startLiveActivity,
   updateLiveActivity,
@@ -14,46 +20,6 @@ import {
 const REST_PRESETS_SECONDS = [60, 90, 120, 180];
 const MIN_CUSTOM_REST_SECONDS = 5;
 const MAX_CUSTOM_REST_SECONDS = 3600;
-
-/**
- * Survives an in-app tab switch (user feedback: "if you click off the lab
- * onto another tab within split index... it stops the timer and resets all
- * your logged details"). sessionStorage, not the server — this is
- * ephemeral in-progress state, not permanent training data, and needs to
- * survive a component unmount/remount within the same browser tab, not a
- * full app relaunch (workout_drafts already covers the actual logged sets
- * across a real relaunch — see use-autosave.ts).
- */
-const STORAGE_KEY = "split-index-gym-timer";
-
-interface PersistedTimerState {
-  running: boolean;
-  pausedElapsedMs: number;
-  effectiveStartMs: number | null;
-  restEndMs: number | null;
-  hasLiveActivity: boolean;
-}
-
-function loadPersistedState(): PersistedTimerState | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = window.sessionStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw) as PersistedTimerState;
-  } catch {
-    return null;
-  }
-}
-
-/** Exported so activity-form.tsx can clear a just-finished workout's timer state on successful save — otherwise the next fresh workout would restore stale elapsed time from the one that just got submitted. */
-export function clearPersistedGymTimerState() {
-  if (typeof window === "undefined") return;
-  try {
-    window.sessionStorage.removeItem(STORAGE_KEY);
-  } catch {
-    // Best-effort — a lost persisted state just means the next mount starts fresh.
-  }
-}
 
 /**
  * Web Audio + Vibration API alert — no new native dependency (unlike the
@@ -131,17 +97,17 @@ export function GymWorkoutTimer({
   onUseDuration: (totalSeconds: number) => void;
 }) {
   // Lazy useState initializers run exactly once (on first mount), so
-  // calling loadPersistedState() separately in each is fine — no need to
+  // calling loadPersistedTimerState() separately in each is fine — no need to
   // cache it in a ref first.
-  const [running, setRunning] = useState(() => loadPersistedState()?.running ?? false);
+  const [running, setRunning] = useState(() => loadPersistedTimerState()?.running ?? false);
   /** Frozen total (ms) accumulated across all PAST running segments — the source of truth while paused. */
-  const [pausedElapsedMs, setPausedElapsedMs] = useState(() => loadPersistedState()?.pausedElapsedMs ?? 0);
+  const [pausedElapsedMs, setPausedElapsedMs] = useState(() => loadPersistedTimerState()?.pausedElapsedMs ?? 0);
   /** Adjusted epoch ms for the CURRENT running segment (`now - pausedElapsedMs` at the moment of start/resume) — meaningless while paused. Plain state, not a ref: its value is read during render (to derive the displayed clock), and React refs aren't meant to be read outside effects/handlers. */
   const [effectiveStartMs, setEffectiveStartMs] = useState<number | null>(
-    () => loadPersistedState()?.effectiveStartMs ?? null
+    () => loadPersistedTimerState()?.effectiveStartMs ?? null
   );
   /** Absolute epoch ms the rest countdown ends at; null when no rest is active. */
-  const [restEndMs, setRestEndMs] = useState<number | null>(() => loadPersistedState()?.restEndMs ?? null);
+  const [restEndMs, setRestEndMs] = useState<number | null>(() => loadPersistedTimerState()?.restEndMs ?? null);
   const [customRestInput, setCustomRestInput] = useState("");
   /**
    * The custom-rest field is opened on demand and takes the presets' place on
@@ -155,7 +121,7 @@ export function GymWorkoutTimer({
    * pill sits at the end of the preset row — not buried in a menu.
    */
   const [customRestOpen, setCustomRestOpen] = useState(false);
-  const liveActivityStartedRef = useRef(loadPersistedState()?.hasLiveActivity ?? false);
+  const liveActivityStartedRef = useRef(loadPersistedTimerState()?.hasLiveActivity ?? false);
   const alertFiredRef = useRef(false);
   /** Bumped once a second purely to force a re-render while something is ticking — the actual numbers are always recomputed fresh from Date.now(), never accumulated from this. */
   const [, setTick] = useState(0);
@@ -169,20 +135,15 @@ export function GymWorkoutTimer({
   const hasProgress = elapsed > 0 || restActive;
 
   function persistState(overrides: Partial<PersistedTimerState> = {}) {
-    if (typeof window === "undefined") return;
-    const state: PersistedTimerState = {
+    persistTimerState({
       running,
       pausedElapsedMs,
       effectiveStartMs,
       restEndMs,
       hasLiveActivity: liveActivityStartedRef.current,
+      savedAtMs: Date.now(),
       ...overrides,
-    };
-    try {
-      window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    } catch {
-      // Best-effort — losing persistence just means the next mount starts fresh.
-    }
+    });
   }
 
   // Note: this component deliberately does NOT end the Live Activity on

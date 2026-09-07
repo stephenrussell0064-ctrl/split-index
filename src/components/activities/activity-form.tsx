@@ -40,7 +40,7 @@ import { submitActivityRequest } from "@/lib/activities/submit-activity";
 import type { CardioEnrichment } from "@/lib/scoring/cardio";
 import { useSetModeOverride } from "@/components/layout/mode-override-context";
 import { endLiveActivity } from "@/lib/native/live-activity";
-import { clearPersistedGymTimerState } from "./gym-workout-timer";
+import { clearPersistedGymTimerState } from "./gym-timer-storage";
 
 type View = "picker" | "form" | "success";
 

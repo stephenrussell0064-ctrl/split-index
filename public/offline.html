@@ -113,8 +113,27 @@
     <img class="icon" src="/splitindex-icon.svg" alt="" aria-hidden="true" />
     <h1>No connection right now</h1>
     <p>Split Index needs a connection to load. This isn't a crash — we'll reconnect as soon as you have any signal.</p>
+    <!--
+      This used to say "GPS keeps recording in the background even with the app
+      screen showing this — you won't lose your data."
+
+      That is half true and reads as fully true. This page is Capacitor's
+      errorPath: it is here because a navigation FAILED, which means the WebView
+      loaded a new document, which means the JavaScript context that owned the
+      location watcher's callback is gone. The native watcher may still be
+      alive, but its callback can never fire again, so nothing further is
+      written to the session. Everything recorded before the swap is safe;
+      everything after it is lost.
+
+      An athlete who believed the old wording would put the phone back in their
+      pocket and keep running, and get back a run that stops at the moment they
+      lost signal. Telling them to reopen the app, or to use the offline
+      tracker below, is the only version of this that is worth reading.
+    -->
     <div class="note">
-      Already tracking a run? GPS keeps recording in the background even with the app screen showing this — you won't lose your data. Anything already logged will sync automatically once you're back online.
+      Anything already recorded is safe on this phone and will sync once you're back online.
+      <strong>A run in progress has stopped recording</strong> — tap Try again to get back to it,
+      or start an offline run below.
     </div>
     <div>
       <button id="retry">Try again</button>
