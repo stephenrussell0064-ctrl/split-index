@@ -634,29 +634,35 @@ export async function recomputeUser(
     noteRebuild("predicted_benchmarks upsert", benchmarkError);
   }
 
-  // Full rebuild — recompute is the authoritative pass, so replace every
-  // existing record rather than incrementally upserting (see
-  // trackPersonalRecords above for why that's necessary here).
-  const { error: recordsDeleteError } = await supabase
-    .from("personal_records")
-    .delete()
-    .eq("user_id", user.id);
-  noteRebuild("personal_records delete", recordsDeleteError);
+  /*
+    Full rebuild — recompute is the authoritative pass, so it replaces every
+    existing record rather than incrementally upserting (see
+    trackPersonalRecords above for why that is necessary here).
 
-  if (bestPersonalRecords.size > 0) {
-    const { error: recordsInsertError } = await supabase.from("personal_records").insert(
-      Array.from(bestPersonalRecords.values()).map((c) => ({
-        user_id: user.id,
-        sport: c.sport,
-        metric: c.metric,
-        value: c.value,
-        unit: c.unit,
-        activity_id: c.activityId,
-        achieved_at: c.achievedAt,
-      }))
-    );
-    noteRebuild("personal_records insert", recordsInsertError);
-  }
+    ONE CALL, NOT TWO. This was a DELETE round trip followed by an INSERT round
+    trip, and this client has no transaction to hold them together. The route
+    that triggers it takes no parameters and has no in-flight guard, so a
+    double-tap starts two passes: B's delete landing between A's delete and A's
+    insert makes A's insert collide with UNIQUE(user_id, sport, metric) and fail
+    whole, and the athlete's entire PR history is gone while the response still
+    reads 200.
+
+    `replace_personal_records` (migration 065) does both inside one transaction
+    behind a per-user advisory lock, so there is no instant in which the records
+    are missing and a second recompute waits rather than interleaves.
+  */
+  const { error: recordsError } = await supabase.rpc("replace_personal_records", {
+    p_user_id: user.id,
+    p_records: Array.from(bestPersonalRecords.values()).map((c) => ({
+      sport: c.sport,
+      metric: c.metric,
+      value: c.value,
+      unit: c.unit,
+      activity_id: c.activityId,
+      achieved_at: c.achievedAt,
+    })),
+  });
+  noteRebuild("personal_records rebuild", recordsError);
 
   return {
     total: activities?.length ?? 0,

@@ -17,6 +17,8 @@ interface RecordedCall {
   op: string;
   terminal: string | null;
   payload?: unknown;
+  /** The second argument to insert/upsert — where `onConflict` and `ignoreDuplicates` live. */
+  options?: unknown;
 }
 
 const OK: QueryResult = { data: null, error: null };
@@ -28,10 +30,11 @@ function createFakeSupabase(results: Record<string, QueryResult>) {
     let op: string | null = null;
     let terminal: string | null = null;
     let payload: unknown;
+    let options: unknown;
 
     const result = (): QueryResult => {
       const resolvedOp = op ?? "select";
-      calls.push({ table, op: resolvedOp, terminal, payload });
+      calls.push({ table, op: resolvedOp, terminal, payload, options });
       const override =
         (terminal ? results[`${table}:${resolvedOp}:${terminal}`] : undefined) ??
         results[`${table}:${resolvedOp}`];
@@ -50,9 +53,10 @@ function createFakeSupabase(results: Record<string, QueryResult>) {
       },
     };
     for (const write of ["insert", "upsert", "update", "delete"]) {
-      chain[write] = (values?: unknown) => {
+      chain[write] = (values?: unknown, opts?: unknown) => {
         op = write;
         payload = values;
+        options = opts;
         return chain;
       };
     }
@@ -203,14 +207,33 @@ describe("POST /api/activities/[id]/unmerge", () => {
 
   it("brings the absorbed sessions back under their original ids", async () => {
     const { calls } = await unmergeWith(baseResults());
-    const inserted = find(calls, "activities", "insert")[0].payload as Array<
-      Record<string, unknown>
-    >;
+    const restore = find(calls, "activities", "upsert")[0];
+    const inserted = restore.payload as Array<Record<string, unknown>>;
     expect(inserted).toHaveLength(1);
     expect(inserted[0].id).toBe("leg-b");
     expect(inserted[0].duration_seconds).toBe(600);
     expect(inserted[0].user_id).toBe(USER_ID);
     expect(inserted[0].is_draft).toBe(false);
+  });
+
+  it("lets a second, concurrent unmerge be a no-op rather than a false alarm", async () => {
+    /*
+      The legs come back under their ORIGINAL ids, so two unmerges of the same
+      session race for the same primary key. As a plain insert the loser hit a
+      duplicate and returned "we restored the first session but could not bring
+      the others back" — alarming, and untrue: the rows were there, put back by
+      whichever request got in first, and the athlete was sent to check a
+      logbook that was correct.
+
+      `ignoreDuplicates` is what makes the loser harmless, and it is only safe
+      because the ids are the originals: a row already under one of these ids
+      IS this restore, not a different session that happens to collide.
+    */
+    const { calls } = await unmergeWith(baseResults());
+    expect(find(calls, "activities", "upsert")[0].options).toMatchObject({
+      onConflict: "id",
+      ignoreDuplicates: true,
+    });
   });
 
   it("re-scores every restored session, oldest first", async () => {
@@ -243,10 +266,12 @@ describe("POST /api/activities/[id]/unmerge", () => {
     expect(body.error).toMatch(/not created by merging/i);
   });
 
-  it("says so plainly when the other halves could not be brought back", async () => {
+  it("says so plainly when the other halves genuinely could not be brought back", async () => {
+    // A real database failure, not a lost race — the duplicate-key case is now
+    // a no-op by design and is covered above.
     const { response, body } = await unmergeWith({
       ...baseResults(),
-      "activities:insert": { data: null, error: { message: "duplicate key" } },
+      "activities:upsert": { data: null, error: { message: "connection reset" } },
     });
     expect(response.status).toBe(500);
     expect(body.error).toMatch(/check your logbook/i);

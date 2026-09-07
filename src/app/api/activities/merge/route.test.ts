@@ -109,6 +109,12 @@ function createFakeSupabase(results: Record<string, QueryResult | QueryResult[]>
     client: {
       auth: { getUser: async () => ({ data: { user: { id: USER_ID } }, error: null }) },
       from: (table: string) => chainFor(table),
+      // The personal-record rebuild is one `replace_personal_records` call now
+      // rather than a delete followed by an insert — see migration 065.
+      rpc: async (fn: string, args?: unknown) => {
+        calls.push({ table: "rpc", op: fn, terminal: null, payload: args });
+        return results[`rpc:${fn}`] ?? { data: null, error: null };
+      },
     },
     calls,
   };
