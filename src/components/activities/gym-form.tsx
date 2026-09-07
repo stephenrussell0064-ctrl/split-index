@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { motion, useMotionValue, useTransform, PanInfo } from "framer-motion";
 import {
   Check,
@@ -542,6 +543,31 @@ function ExerciseRow({
   const topSet = bestSetRow(row.sets);
   const scoringSex =
     profileScoringSex === "female" || profileScoringSex === "male" ? profileScoringSex : null;
+
+  /*
+   * Why a set can be unscoreable, in the athlete's words rather than ours.
+   *
+   * Every strength standard this app uses — DOTS, IPF GL, the split-strength
+   * engine — is defined against sex and bodyweight. Without them there is no
+   * correct number to show, and picking a default sex would be worse than
+   * showing nothing: it would produce a confidently wrong score in an app whose
+   * entire premise is that the score means something.
+   *
+   * So the fix is not to invent a figure, it is to stop failing silently. Four
+   * of eleven accounts had no sex or bodyweight recorded, and every one of them
+   * saw "—" against a completed set with no hint that a profile field was the
+   * reason, while Est. 1RM, × BW and Volume filled in normally — those come from
+   * the bodyweight typed into the session bar, not the profile, which is exactly
+   * what made the dash look like a bug rather than a missing input.
+   *
+   * Ordered by what to fix first. Bodyweight is asked for on this screen, so it
+   * is the cheaper of the two to resolve.
+   */
+  const unscoreableReason: string | null = !bodyweight
+    ? "Enter your bodyweight above to score these sets."
+    : !scoringSex
+      ? "Add your sex in your profile to score these sets — strength standards are sex-specific."
+      : null;
 
   /**
    * Score ONE set, exactly the way the saved score does.
@@ -1220,6 +1246,26 @@ function ExerciseRow({
             className="items-end text-right"
           />
         </div>
+
+        {/* Only once they have actually logged something. Explaining why a set
+            did not score before there is a set to score would be noise on an
+            empty card. */}
+        {unscoreableReason && topSet ? (
+          <p className="mt-1.5 px-2.5 text-[11px] leading-snug text-muted/70">
+            {unscoreableReason}
+            {!bodyweight ? null : (
+              <>
+                {" "}
+                <Link
+                  href="/profile"
+                  className="underline underline-offset-2 hover:text-foreground"
+                >
+                  Open profile
+                </Link>
+              </>
+            )}
+          </p>
+        ) : null}
 
         {noteOpen || row.notes ? (
           <GlassInput
