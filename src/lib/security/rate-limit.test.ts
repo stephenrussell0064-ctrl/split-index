@@ -21,6 +21,17 @@ import {
  * one of them is interesting on its own.
  */
 
+/*
+ * At module scope: vi.hoisted and vi.mock are lifted above everything wherever
+ * they are written, so nesting them inside a describe makes the file read in an
+ * order it does not execute in. Vitest warns that it will stop accepting it.
+ */
+const updateSessionMock = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/supabase/proxy", () => ({
+  USER_ID_HEADER: "x-si-user",
+  updateSession: (req: unknown) => updateSessionMock(req),
+}));
+
 describe("route classification", () => {
   /**
    * Read as a table, because this is where a mistake is easy and invisible: a
@@ -101,12 +112,6 @@ describe("the 429 itself", () => {
  * than a mock that asserts my own stub returns what I told it to.
  */
 describe("proxy enforcement", () => {
-  const updateSessionMock = vi.hoisted(() => vi.fn());
-  vi.mock("@/lib/supabase/proxy", () => ({
-    USER_ID_HEADER: "x-si-user",
-    updateSession: (req: unknown) => updateSessionMock(req),
-  }));
-
   /**
    * A NextRequest as far as `proxy()` is concerned: it reads `nextUrl.pathname`,
    * `method` and two headers, and nothing else. Building the minimum rather
