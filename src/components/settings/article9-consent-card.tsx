@@ -38,6 +38,18 @@ interface ConsentState {
   staleVersion: boolean;
 }
 
+/**
+ * Shared by the mount load and the post-grant/withdraw refresh, so the two
+ * cannot drift apart on what "read the current consent" means. Throws rather
+ * than returning null — each caller decides what a failure looks like on
+ * screen, and only one of them is allowed to touch state after unmount.
+ */
+async function fetchConsentState(): Promise<ConsentState> {
+  const res = await fetch("/api/consent/article9");
+  if (!res.ok) throw new Error();
+  return (await res.json()) as ConsentState;
+}
+
 export function Article9ConsentCard({
   onChange,
 }: {
@@ -50,19 +62,42 @@ export function Article9ConsentCard({
   const [error, setError] = useState<string | null>(null);
   const [confirmingWithdraw, setConfirmingWithdraw] = useState(false);
 
+  /** Re-fetch after the athlete grants or withdraws — an event, not an effect. */
   const load = useCallback(async () => {
     try {
-      const res = await fetch("/api/consent/article9");
-      if (!res.ok) throw new Error();
-      setState((await res.json()) as ConsentState);
+      setState(await fetchConsentState());
     } catch {
       setError("Could not load your consent settings.");
     }
   }, []);
 
+  /*
+   * The mount load is written out rather than calling `load()`, for two
+   * reasons that happen to point the same way.
+   *
+   * It is guarded by `cancelled`, so a response that arrives after the card
+   * unmounts — a settings tab closed mid-flight — is dropped instead of
+   * setting state on a component that is gone.
+   *
+   * And it keeps react-hooks/set-state-in-effect satisfied honestly rather
+   * than by suppression: the rule cannot see past a `load()` call into an
+   * async body, so it assumes the worst. Here every setState is visibly
+   * inside a promise callback, which is the shape the rule is asking for.
+   */
   useEffect(() => {
-    void load();
-  }, [load]);
+    let cancelled = false;
+    void (async () => {
+      try {
+        const next = await fetchConsentState();
+        if (!cancelled) setState(next);
+      } catch {
+        if (!cancelled) setError("Could not load your consent settings.");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function grant() {
     if (!state) return;

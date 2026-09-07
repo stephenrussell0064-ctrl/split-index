@@ -60,7 +60,7 @@
 -- ─── 1. Is the CALLER verified? ─────────────────────────────────────────────
 -- Takes no argument and answers only about auth.uid(), for the same reason
 -- activity_is_visible_to() was narrowed in migration 049 and
--- withdraw_article9_health_data() takes none in 057: a SECURITY DEFINER
+-- withdraw_article9_health_data() takes none in 060: a SECURITY DEFINER
 -- function that accepts a user id is an oracle. `is_email_verified('<uuid>')`
 -- would tell any authenticated caller whether an arbitrary account exists and
 -- has confirmed its address, which is precisely the enumeration WP5 spent

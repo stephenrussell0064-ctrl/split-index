@@ -28,7 +28,7 @@ import { SECTION_FIELDS } from "@/lib/scoring/hpe/intake-record";
  */
 
 const MIGRATION = fileURLToPath(
-  new URL("../../../supabase/migrations/057_article9_consent.sql", import.meta.url)
+  new URL("../../../supabase/migrations/060_article9_consent.sql", import.meta.url)
 );
 
 function migrationSql(): string {

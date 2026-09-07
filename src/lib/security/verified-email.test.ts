@@ -34,7 +34,7 @@ function migration(name: string): string {
     .join("\n");
 }
 
-const SQL = migration("058_require_verified_email.sql");
+const SQL = migration("061_require_verified_email.sql");
 
 describe("an unverified account cannot log a session", () => {
   /**
@@ -162,7 +162,7 @@ describe("the migration says how to check it is safe before applying", () => {
     // This migration can silently stop every athlete logging if
     // email_confirmed_at is not actually populated. A migration that dangerous
     // has to arrive with the query that tells you whether it is.
-    const raw = readFileSync(`${MIGRATIONS}/058_require_verified_email.sql`, "utf8");
+    const raw = readFileSync(`${MIGRATIONS}/061_require_verified_email.sql`, "utf8");
     expect(raw).toContain("email_confirmed_at IS NULL");
     expect(raw).toMatch(/RUN THIS BEFORE APPLYING/i);
     expect(raw).toMatch(/Do not backfill blindly/i);
