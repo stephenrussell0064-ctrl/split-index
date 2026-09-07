@@ -24,6 +24,7 @@ import { AppTopBar } from "@/components/layout/app-top-bar";
 import { EdgeSwipeBack } from "@/components/layout/edge-swipe-back";
 import { ModeOverrideProvider, useModeOverride } from "@/components/layout/mode-override-context";
 import { NativeBillingBootstrap } from "@/components/layout/native-billing-bootstrap";
+import { PendingSyncBanner } from "@/components/activities/pending-sync-banner";
 
 type AppMode = "neutral" | "gym" | "cardio";
 
@@ -431,6 +432,14 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
           */}
           <div className="mode-content mx-auto max-w-7xl px-4 pt-[max(1.5rem,calc(env(safe-area-inset-top)+0.75rem))] pb-28 lg:px-8 lg:pb-8 lg:pt-[max(2rem,calc(env(safe-area-inset-top)+0.75rem))]">
             {showTopBar && <AppTopBar mode={mode} showBack={showBackButton} />}
+            {/*
+              Renders nothing unless the app is holding a workout it has not
+              managed to upload — which is almost never, so this costs no
+              vertical space on a normal day. When it does appear it is above
+              the page content deliberately: an athlete who thinks a run was
+              lost needs to find out before they log it a second time.
+            */}
+            <PendingSyncBanner />
             {/*
               No `mode="wait"` here on purpose: it forces the outgoing page to
               fully fade out (200ms) before the incoming one starts fading in

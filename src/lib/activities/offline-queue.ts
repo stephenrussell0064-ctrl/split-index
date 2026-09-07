@@ -56,6 +56,15 @@ function readQueue(): QueuedActivitySubmit[] {
   }
 }
 
+/**
+ * Fired whenever the queue's contents change, so anything showing the athlete
+ * a pending count can update without polling localStorage.
+ *
+ * The `storage` event does not help here: it only fires in OTHER tabs, never
+ * in the one that wrote. This is a phone app with one tab.
+ */
+export const ACTIVITY_QUEUE_CHANGED = "split-index:activity-queue-changed";
+
 function writeQueue(items: QueuedActivitySubmit[]) {
   if (typeof window === "undefined") return;
   try {
@@ -64,6 +73,17 @@ function writeQueue(items: QueuedActivitySubmit[]) {
     // A full or disabled store must not throw out of a save path — the request
     // itself already failed, and losing the queue write is not made better by
     // also throwing away the error the caller was about to show.
+  }
+  // After the write, and outside the try: a listener that throws is not a
+  // reason to report the save as failed.
+  try {
+    window.dispatchEvent(new CustomEvent(ACTIVITY_QUEUE_CHANGED));
+  } catch {
+    // A WebView without CustomEvent, or a subscriber that threw. Either way
+    // the write above already happened, and the count picks the change up on
+    // the next mount or `online` event — which is the pre-existing behaviour,
+    // not a regression. What must not happen is a broken listener surfacing
+    // as a failed save to someone whose workout is safely queued.
   }
 }
 
