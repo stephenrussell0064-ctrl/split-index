@@ -43,7 +43,7 @@ its current status inline; this table is the summary.
 | M8 no HSTS | **CLOSED** | `6b6aebf` |
 | L4 `geolocation=()` undocumented | **CLOSED** | `6b6aebf` |
 | M12 index gaps | **OPEN — deliberately.** No index added, because no query plan could be produced. Diagnostic shipped instead; needs an operator to run it | `7893c0c` |
-| M9 CSP allows `'unsafe-inline'` | **OPEN — needs a decision from Stephen**, see the finding | — |
+| M9 CSP allows `'unsafe-inline'` | **CLOSED on the authenticated surface** — public pages keep it, deliberately; see the finding | `695c2d3` |
 | Everything else | **OPEN** | — |
 
 Zero Critical findings remain open. The brief's gate for a growth push is WP1,
@@ -822,6 +822,40 @@ Not decided here. A change that makes the landing page dynamic, or that puts an 
 flag in the production build, is a product call. Option 4 looks like it gets most of the
 security benefit for none of the rendering cost, and is where I would spend the time.
 
+**CLOSED `695c2d3` — option 4, chosen by Stephen.** The authenticated surface gets a
+per-request nonce with `'strict-dynamic'`; the public surface keeps the previous policy and
+stays static. Static routes went from 13 to 10, and the three that moved — `/settings`,
+`/settings/billing`, `/cardio/gps-run` — are behind a login. `/`, `/privacy`, `/terms` and
+`/accessibility` are untouched.
+
+**Not fully closed as a security matter, and the finding should be read that way.** The public
+pages still carry `'unsafe-inline'`. An injection into the landing page would still execute.
+The judgement is that those pages render no user-controlled data, so the residual risk is
+small — but "M9 closed" means the policy is now strict where athlete data is, not that
+`'unsafe-inline'` is gone from the application. `style-src` keeps it in both policies; nonce-ing
+styles is a separate change and was not smuggled in here.
+
+**Three things the spike caught that would otherwise have shipped broken**, recorded because
+each is the same shape — a change that looks correct, returns 200, and silently does nothing:
+
+1. `export const dynamic = "force-dynamic"` is inert from a `"use client"` module. It was the
+   first thing tried on all three pages; the build still reported them prerendered. Route
+   segment config no longer lists `dynamic` at all in Next 16. Only the build output revealed
+   it. Each page is now a server shell awaiting `connection()`.
+2. The Organization JSON-LD was in the **root layout**, so it rendered on every authenticated
+   route, where a nonce policy would have dropped it. Nonce-ing it means reading headers in the
+   root layout, which makes every route dynamic and defeats the split entirely. It moved to `/`.
+3. Two `Content-Security-Policy` headers on one response are enforced as their **intersection**.
+   Keeping the header in `next.config.ts` alongside the new one would have blocked the very
+   inline blocks the public policy exists to permit.
+
+**A build gate, not just tests:** `scripts/check-csp-routes.mjs` runs inside `npm run build` and
+fails if any prerendered route sits under a nonce prefix. The invariant is "this route is
+server-rendered", which only a build knows — a route can go static because somebody removed a
+line three components down, with nothing in the diff that looks like a rendering change. It
+cannot run in CI, which has no build job by design; the same is already true of WP2's bundle
+scanner, and `ci.yml` makes that argument.
+
 ---
 
 #### M10 — The share card carries a Tier 2-derived value, generated with no per-share opt-in
@@ -1165,9 +1199,9 @@ during remediation:
 |---|---|---|---|---|---|
 | Critical | **0** | 0 | 4 | 4 | All four were one defect in four places. |
 | High | 1 | 1 | 7 | 9 | Closed H1, H3–H8. Partial H2. Open H9 (DPIA — Stephen's). |
-| Medium | 8 | 2 | 7 | 17 | Closed M1–M5, M8, M13. Partial M7, M11. Open M6, M9, M10, M12, M14, N1, N5, N7. |
+| Medium | 7 | 2 | 8 | 17 | Closed M1–M5, M8, M9, M13. Partial M7, M11. Open M6, M10, M12, M14, N1, N5, N7. |
 | Low | 5 | 0 | 7 | 12 | Closed L1–L6, N4. Open N2, N3, N6, N8, N9. |
-| **Total** | **14** | **3** | **25** | **42** | |
+| **Total** | **13** | **3** | **26** | **42** | |
 
 **Correction to this table's arithmetic.** Earlier revisions reported "41 findings
 raised" and columns that did not sum to it: partially-closed findings were counted
@@ -1176,11 +1210,14 @@ by hand off the headings — C1–C4 (4), H1–H9 (9), M1–M14 (14), L1–L6 (6
 — the total is **42**, and partials now have a column of their own so the rows add
 up. The finding text was always right; only the summary was wrong.
 
-Two of the sixteen are open on purpose rather than for want of effort: **M12**
-(no index added, because no query plan could be produced — see the finding) and
-**M9** (nonce CSP costs static rendering on 13 routes including `/`, which is
-Stephen's call). Naming them here so a later reader does not mistake either for
-something that was quietly dropped.
+One of the thirteen is open on purpose rather than for want of effort: **M12**
+— no index was added, because no query plan could be produced. Named here so a
+later reader does not mistake it for something quietly dropped.
+
+**M9 is marked closed with a caveat worth reading.** The strict policy now
+covers every route holding athlete data. The public marketing and legal pages
+keep `'unsafe-inline'`, deliberately, so that they stay statically rendered.
+That residual is stated in the finding rather than counted as fixed.
 
 All four Criticals are the same defect in four places: a policy written to enable a public
 leaderboard exposes the underlying user-owned table instead of a column-scoped projection.
@@ -1212,7 +1249,7 @@ Then:
 | 7 | ~~**WP12 contrast + gating**~~ **DONE `5525455`** | H8, M3, M13, L1 (N7 opened) | M3 satisfies WP6.3 and WP12.7 at once. Statement written last, after the fix, so it is honest. |
 | 8 | ~~**WP6 entitlement matrix**~~ **DONE `1d6976c`** | M4 (M3 already closed by WP12); N8 opened | The matrix test is the deliverable; `features.ts` mostly stands. |
 | 9 | ~~**WP7 logging**~~ **DONE `4d55a69`** | H6; N9 opened | Build the redaction rule in from the first line, not after. |
-| 10 | **WP14 headers, WP11 deletion test, WP8 plans** — **MOSTLY DONE** `f84b4eb`, `25ad889`, `6b6aebf`, `7893c0c` | M5, M8, L2, L4, L5 closed. **M9 needs a decision** (nonce CSP costs static rendering on 13 routes including `/`); **M12 stays open** (no plan, so no index) | Independent, parallelisable, none blocking. |
+| 10 | ~~**WP14 headers, WP11 deletion test, WP8 plans**~~ **DONE** `f84b4eb`, `25ad889`, `6b6aebf`, `7893c0c`, `695c2d3` | M5, M8, M9, L2, L4, L5 closed. **M12 stays open** — no query plan was obtainable, so no index was added | Independent, parallelisable, none blocking. |
 | 11 | **H9 — DPIA + ICO** | H9 | Stephen's, not code. Should start now and run alongside; it does not block engineering. |
 | 12 | **Part D** | D1–D5 | After the brief's own gate: WP1, WP2, WP6 and WP13 complete before any growth push. |
 
@@ -1263,18 +1300,18 @@ is different.
   someone's programme as a side effect of a privacy choice would punish the
   choice.
 
-**Step 10 is now done except for the two items that were never mine to close.**
-M5, M8, L2, L4 and L5 are closed (`f84b4eb`, `25ad889`, `6b6aebf`). M12 is open
+**Step 10 is done.** M5, M8, M9, L2, L4 and L5 are closed (`f84b4eb`,
+`25ad889`, `6b6aebf`, `695c2d3`). M12 is open
 by design — WP8 forbids an index without a query plan and no database was
-reachable, so the measurement shipped instead of a guess (`7893c0c`). M9 is a
-decision: nonces force dynamic rendering on all 13 currently-static routes,
-including the landing page, and that is a product call rather than a security
-one.
+reachable, so the measurement shipped instead of a guess (`7893c0c`). M9 is
+closed on the authenticated surface (`695c2d3`): the strict nonce policy went
+where the athlete data is, and the marketing and legal pages kept the previous
+policy so they could stay static — 10 prerendered routes rather than 0.
 
 What remains needs a live database (N5's GoTrue integration tests, M12's query
 plans, the erasure cascade check), a decision from Stephen (H9's DPIA, the EU
-question, M9's CSP), or a sweep through call sites (N1, N8, N9). No open finding
-is now blocked on engineering judgement alone.
+question), or a sweep through call sites (N1, N8, N9). No open finding is now
+blocked on engineering judgement alone.
 
 **Two remaining High findings**, both partially addressed and neither closable
 from here alone: H2 (most routes still unparsed — N1) and M7/N5 (GoTrue session
