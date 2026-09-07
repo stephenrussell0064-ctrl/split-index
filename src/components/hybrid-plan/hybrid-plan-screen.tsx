@@ -93,6 +93,20 @@ interface PlanResponse {
   rerun?: { shouldRegenerate: boolean; explanations: string[] } | null;
   /** Generation is paused but a stored plan exists — the kill switch's defining asymmetry. */
   paused?: boolean;
+  /**
+   * The Article 9 health-data consent has not been given, so the engine will
+   * not screen health answers and therefore will not programme anything.
+   *
+   * Declared here because it was NOT, and the screen had no branch for it. The
+   * route answers this case with `message` rather than `refusal` (see
+   * api/hpe/plan), so the refusal path below rendered `refusal?.reason` as
+   * undefined: an athlete who had not consented — which is every athlete who
+   * has not been to Settings, including a fresh account — got the "Not yet"
+   * header over an empty "Why" card, with nothing to read and nothing to tap.
+   */
+  consentRequired?: boolean;
+  /** Explanation that accompanies `consentRequired`. Not the same field as `refusal.reason`. */
+  message?: string;
   storedPlan?: { generatedAt: string; constantsVersion: string } | null;
   tailoring?: {
     level: string;
@@ -285,6 +299,48 @@ export function HybridPlanScreen() {
    */
   const widgetSync = widgetPayload ? <DailyTrainingSync payload={widgetPayload} /> : null;
 
+  // ---- consent has not been given -----------------------------------------
+  // FIRST, because this is the one "no plan" case with a fix the athlete can
+  // perform in two taps, and because it is the state EVERY new account starts
+  // in — a reviewer included.
+  //
+  // It has to be its own branch. The route answers this case with `message`
+  // and `consentRequired`, not with `refusal`, and it sets `paused: true` —
+  // so an athlete with no stored plan fell past the paused branch below
+  // (which needs storedWeeks) into the refusal path, which renders
+  // `refusal?.reason`. That is undefined here, so the screen showed the "Not
+  // yet" header above an empty "Why" card: no explanation, no next step, no
+  // way out of it.
+  if (!data.generated && data.consentRequired) {
+    return (
+      <div className="space-y-5">
+        {widgetSync}
+        <PageHeader
+          eyebrow="Hybrid plan"
+          title="One thing first"
+          subtitle="The plan needs your permission before it reads anything about your health."
+        />
+        <Card glow="accent">
+          <h2 className="text-lg font-semibold tracking-tight">Why we are asking</h2>
+          <p className="mt-2 text-sm leading-relaxed text-foreground/90">
+            {data.message ??
+              "The Hybrid Plan screens your health before it programmes anything, so it needs your explicit consent to use that information. You can give it — or take it back — in Settings."}
+          </p>
+          <Link
+            href="/settings"
+            className="mt-5 inline-flex min-h-11 items-center rounded-2xl bg-accent px-5 text-sm font-semibold text-accent-foreground transition-colors hover:bg-accent/90"
+          >
+            Go to Settings
+          </Link>
+          <p className="mt-3 text-xs leading-relaxed text-muted/80">
+            Nothing else in Split Index needs this — your logging, scores and history all work either way, and you can
+            withdraw it later in the same place.
+          </p>
+        </Card>
+      </div>
+    );
+  }
+
   // ---- paused, but the plan survives --------------------------------------
   // The kill switch stops NEW generation and leaves existing plans readable.
   // That asymmetry is the whole reason a pause is safe to perform, and it was
@@ -330,7 +386,17 @@ export function HybridPlanScreen() {
         />
         <Card glow="none">
           <h2 className="text-lg font-semibold tracking-tight">Why</h2>
-          <p className="mt-2 text-sm leading-relaxed text-foreground/90">{data.refusal?.reason}</p>
+          {/* The fallback is not decoration. This card rendered
+              `refusal?.reason` bare, so ANY response that stops generation
+              without filling `refusal` — the consent gate did exactly that —
+              produced a heading over nothing: no reason, no next step, and no
+              hint that the screen was broken rather than empty. A "no plan"
+              screen that cannot say why is worse than no screen. */}
+          <p className="mt-2 text-sm leading-relaxed text-foreground/90">
+            {data.refusal?.reason ??
+              data.message ??
+              "Your plan could not be built just now, and the reason did not come back with it. Reopening this screen usually resolves it; if it does not, everything else in Split Index is unaffected."}
+          </p>
 
           {(data.refusal?.nextSteps.length ?? 0) > 0 && (
             <>
