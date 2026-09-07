@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build && npm run check:bundle",
+    "build": "next build && npm run check:bundle && npm run check:csp",
     "check:bundle": "node scripts/check-client-bundle.mjs",
     "start": "next start",
     "lint": "eslint",
@@ -12,7 +12,8 @@
     "postinstall": "node scripts/patch-capacitor-spm.mjs",
     "cap:sync": "cap sync",
     "cap:open:ios": "cap open ios",
-    "cap:open:android": "cap open android"
+    "cap:open:android": "cap open android",
+    "check:csp": "node scripts/check-csp-routes.mjs"
   },
   "dependencies": {
     "@capacitor-community/background-geolocation": "^1.2.26",

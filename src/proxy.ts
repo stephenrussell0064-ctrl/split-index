@@ -10,6 +10,12 @@ import {
   isDistributedLimitingEnabled,
   tooManyRequests,
 } from "@/lib/security/rate-limit";
+import {
+  generateNonce,
+  needsNonce,
+  publicCsp,
+  strictCsp,
+} from "@/lib/security/csp";
 
 /**
  * WP4 — rate limiting, in two layers.
@@ -91,17 +97,55 @@ export async function proxy(request: NextRequest) {
   const method = request.method;
   const cls = classifyRoute(pathname, method);
 
+  /*
+   * M9 — the CSP is decided here rather than in next.config.ts, because it now
+   * differs by path and a static `headers()` entry cannot know a per-request
+   * nonce.
+   *
+   * Setting it in both places would be worse than setting it in neither: two
+   * Content-Security-Policy headers on one response are ENFORCED TOGETHER, so a
+   * script would have to satisfy the loose policy and the strict one at once,
+   * and the inline blocks the loose policy exists to allow would be blocked by
+   * the strict one anyway. One header, decided in one place.
+   *
+   * Computed before the burst guard so that EVERY return below carries it,
+   * including the 429s. A 429 is JSON and has no scripts to govern, so this
+   * buys nothing directly — it buys not having to remember which exits are
+   * HTML, which is the kind of thing that stays right for about a year.
+   */
+  const nonce = needsNonce(pathname) ? generateNonce() : null;
+  const csp = nonce ? strictCsp(nonce) : publicCsp();
+  // Generic over Response, not NextResponse: tooManyRequests returns a plain
+  // Response and it needs the header too.
+  const withCsp = <T extends Response>(response: T): T => {
+    response.headers.set("Content-Security-Policy", csp);
+    return response;
+  };
+
   if (cls !== "exempt") {
     const ip = clientIp(request);
 
     // Layer 1 — free, no network, catches the pathological case.
     if (isBursting(ip)) {
-      return tooManyRequests(Math.ceil(RATE_LIMIT_WINDOW_MS / 1000));
+      return withCsp(tooManyRequests(Math.ceil(RATE_LIMIT_WINDOW_MS / 1000)));
     }
   }
 
-  // Session first, so the real limit can be keyed by a VERIFIED user id.
-  const sessionResponse = await updateSession(request);
+  /*
+   * Session first, so the real limit can be keyed by a VERIFIED user id.
+   *
+   * The nonce goes onto the REQUEST headers as well as the response. That is
+   * not belt-and-braces: Next injects the nonce into its own script tags by
+   * reading the CSP header off the request during server-side rendering. Set it
+   * only on the response and the header ships, nothing is ever nonced, and the
+   * browser blocks the page's own JavaScript.
+   */
+  const sessionResponse = withCsp(
+    await updateSession(
+      request,
+      nonce ? { "x-nonce": nonce, "Content-Security-Policy": csp } : undefined
+    )
+  );
 
   /*
    * Read and strip the internal user header FIRST, unconditionally.
@@ -134,7 +178,7 @@ export async function proxy(request: NextRequest) {
   const verdict = await checkRateLimit(cls, identifier);
 
   if (!verdict.allowed) {
-    return tooManyRequests(verdict.retryAfterSeconds);
+    return withCsp(tooManyRequests(verdict.retryAfterSeconds));
   }
 
   return sessionResponse;

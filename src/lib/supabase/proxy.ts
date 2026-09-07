@@ -14,8 +14,37 @@ import { NextResponse, type NextRequest } from "next/server";
  */
 export const USER_ID_HEADER = "x-si-user";
 
-export async function updateSession(request: NextRequest) {
-  let supabaseResponse = NextResponse.next({ request });
+/**
+ * `NextResponse.next()` carrying extra headers on the REQUEST as well as the
+ * response.
+ *
+ * Built fresh from `request.headers` at each call site rather than once up
+ * front, because Supabase's `setAll` mutates the request's cookie header before
+ * rebuilding the response — a headers object captured earlier would carry the
+ * cookies from before the refresh and quietly sign the athlete out.
+ *
+ * The request side is not decoration: Next injects a CSP nonce into its own
+ * script tags by reading the Content-Security-Policy header off the REQUEST
+ * during server-side rendering. Set it only on the response and the header is
+ * sent, the nonce is never applied to anything, and the browser blocks the
+ * page's own JavaScript.
+ */
+function nextWithRequestHeaders(
+  request: NextRequest,
+  extra?: Record<string, string>
+): NextResponse {
+  if (!extra) return NextResponse.next({ request });
+
+  const headers = new Headers(request.headers);
+  for (const [key, value] of Object.entries(extra)) headers.set(key, value);
+  return NextResponse.next({ request: { headers } });
+}
+
+export async function updateSession(
+  request: NextRequest,
+  extraRequestHeaders?: Record<string, string>
+) {
+  let supabaseResponse = nextWithRequestHeaders(request, extraRequestHeaders);
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -34,7 +63,7 @@ export async function updateSession(request: NextRequest) {
           cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value)
           );
-          supabaseResponse = NextResponse.next({ request });
+          supabaseResponse = nextWithRequestHeaders(request, extraRequestHeaders);
           cookiesToSet.forEach(({ name, value, options }) =>
             supabaseResponse.cookies.set(name, value, options)
           );
