@@ -35,13 +35,35 @@ export async function GET(request: Request) {
   // a query filter, so it gets matched against the catalog rather than trusted.
   const sport = SPORTS.some((s) => s.id === sportParam) ? sportParam : null;
 
-  const page = await fetchLogbookPage(supabase, user.id, {
-    zone: parseZone(searchParams.get("zone")),
-    sport,
-    sort: parseSort(searchParams.get("sort")),
-    offset: Math.max(0, Number(searchParams.get("offset")) || 0),
-    limit: Number(searchParams.get("limit")) || LOGBOOK_PAGE_SIZE,
-  });
+  /**
+   * `fetchLogbookPage` throws on a query failure, and this had no handler — so
+   * anything the database refused became an unhandled exception and a bare 500
+   * with no body. The feed's `loadMore` does catch and surface a message, but
+   * the message it had to show was whatever Postgres said, which is not
+   * something to put in front of an athlete.
+   *
+   * An out-of-range offset no longer reaches here at all (see the PGRST103
+   * branch in fetchLogbookPage — it is an empty page, not an error). What is
+   * left is a genuine failure: a dropped connection, a refused policy. Those
+   * still fail, but they fail as a 500 with a sentence the feed can render, and
+   * the underlying error is logged server-side rather than shipped to the
+   * client.
+   */
+  try {
+    const page = await fetchLogbookPage(supabase, user.id, {
+      zone: parseZone(searchParams.get("zone")),
+      sport,
+      sort: parseSort(searchParams.get("sort")),
+      offset: Math.max(0, Number(searchParams.get("offset")) || 0),
+      limit: Number(searchParams.get("limit")) || LOGBOOK_PAGE_SIZE,
+    });
 
-  return NextResponse.json(page);
+    return NextResponse.json(page);
+  } catch (err) {
+    console.error("[activities/logbook] read failed:", err instanceof Error ? err.message : err);
+    return NextResponse.json(
+      { error: "We could not load your sessions just now. Pull to refresh, or try again in a moment." },
+      { status: 500 }
+    );
+  }
 }

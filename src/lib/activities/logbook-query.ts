@@ -90,6 +90,37 @@ export function parseSort(value: string | null | undefined): LogbookSort {
  * would reintroduce the exact "where did the rest of my history go" problem
  * this module exists to fix.
  */
+/**
+ * How many rows match these filters, without fetching any of them.
+ *
+ * Head-only, so it costs a count and no payload. Exists for the out-of-range
+ * branch below, which needs the true total after a query that failed before it
+ * could report one — the filters are rebuilt here rather than shared with the
+ * caller's builder because a Supabase query builder cannot be re-executed once
+ * it has been awaited.
+ */
+async function countMatching(
+  supabase: SupabaseClient,
+  userId: string,
+  zone: LogbookZone,
+  sport: string | null | undefined
+): Promise<{ count: number }> {
+  let q = supabase
+    .from("activities")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .eq("is_draft", false);
+
+  if (zone === "gym") q = q.eq("sport", "gym");
+  if (zone === "cardio") q = q.neq("sport", "gym");
+  if (sport) q = q.eq("sport", sport);
+
+  const { count, error } = await q;
+  // A failure here must not turn an empty page back into a crash; 0 is the
+  // conservative answer and the page is empty either way.
+  return { count: error ? 0 : (count ?? 0) };
+}
+
 export async function fetchLogbookPage(
   supabase: SupabaseClient,
   userId: string,
@@ -118,6 +149,31 @@ export async function fetchLogbookPage(
   } = await query
     .order("started_at", { ascending: sort === "oldest" })
     .range(offset, offset + limit - 1);
+
+  /**
+   * An offset past the end of the history is an EMPTY PAGE, not a failure.
+   *
+   * PostgREST answers `.range(offset, …)` with PGRST103 ("Requested range not
+   * satisfiable") once `offset` exceeds the row count, and this threw that
+   * straight up as an Error. The route above has no handler, so it surfaced as
+   * an unhandled 500 — for a request whose honest answer is "there is nothing
+   * there", which is exactly what `offset === total` already returns without
+   * complaint. One row either side of the same boundary behaving completely
+   * differently is the bug.
+   *
+   * The feed never asks for it: `loadMore` renders only while `hasMore` and
+   * uses the server's own `nextOffset`. But a stale tab, a double-tapped
+   * button, or activities deleted from another device between pages all land
+   * here, and none of those is a server error.
+   *
+   * `count` comes back null on this failure, so the true total is fetched
+   * separately rather than reported as 0 — an empty page that claims the
+   * athlete has no history would be a worse answer than the crash.
+   */
+  if (error?.code === "PGRST103") {
+    const { count: trueTotal } = await countMatching(supabase, userId, zone, options.sport);
+    return { entries: [], total: trueTotal, hasMore: false, nextOffset: trueTotal };
+  }
 
   if (error) throw new Error(error.message);
 
