@@ -5,28 +5,57 @@ import { DataTicker } from "@/components/marketing/data-ticker";
 import { DataTiles } from "@/components/marketing/data-tiles";
 import { ProductShowcase } from "@/components/marketing/product-showcase";
 import { PricingSection, CtaStrip } from "@/components/marketing/pricing-cta";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils/cn";
 
 export function LandingPage() {
   return (
     <div className="landing-page relative min-h-dvh bg-[#050605] text-white">
       <div className="landing-grain pointer-events-none fixed inset-0 z-[100]" aria-hidden />
 
-      <header className="sticky top-0 z-50 flex h-16 items-center justify-between border-b border-white/[0.06] bg-[#050605]/80 px-4 backdrop-blur-md sm:px-6 md:px-[6vw]">
-        <BrandMark variant="full" href="/" logoHeight={34} priority className="shrink-0" />
-        <nav className="hidden items-center gap-8 text-xs uppercase tracking-[0.18em] text-white/50 md:flex">
-          <a href="#pricing" className="transition hover:text-white">
-            Pricing
-          </a>
-          <Link href="/login" className="transition hover:text-white">
-            Log in
-          </Link>
-        </nav>
-        <Link href="/signup" className="min-h-11 shrink-0">
-          <Button size="sm" className="min-h-11 bg-gym-accent font-bold text-[#04120a] hover:bg-gym-accent/90">
+      {/*
+        The status bar sits ON TOP of this header in the native app.
+        `viewport-fit=cover` (see app/layout.tsx) hands the webview the full
+        screen including the notch area, so a `sticky top-0` header starts at
+        y=0 — underneath the clock and the battery icon. On the marketing page
+        this was never noticed, because nobody reaches it from inside the app
+        except by logging out, which is exactly where it lands you.
+
+        Worse than ugly: iOS treats taps in the status bar strip as its own
+        (scroll-to-top), so the "Start free" button was not merely overlapping
+        the clock, it was largely UNTAPPABLE. The padding is what makes the
+        button reachable; `h-16` stays the bar's own height so the layout is
+        unchanged on the web, where the inset resolves to 0.
+      */}
+      <header className="sticky top-0 z-50 border-b border-white/[0.06] bg-[#050605]/80 pt-[env(safe-area-inset-top)] backdrop-blur-md">
+        <div className="flex h-16 items-center justify-between px-4 sm:px-6 md:px-[6vw]">
+          <BrandMark variant="full" href="/" logoHeight={34} priority className="shrink-0" />
+          <nav className="hidden items-center gap-8 text-xs uppercase tracking-[0.18em] text-white/50 md:flex">
+            <a href="#pricing" className="transition hover:text-white">
+              Pricing
+            </a>
+            <Link href="/login" className="transition hover:text-white">
+              Log in
+            </Link>
+          </nav>
+          {/*
+            One anchor styled as a button, not an anchor wrapping a <button>.
+            The latter is what this was, and it emits `<a><button>`: interactive
+            content nested inside interactive content, which WKWebView declines
+            to navigate — the tap lands on the button, the button has no form to
+            submit, and Next's click handler on the anchor never runs. It works
+            in a desktop browser, which is why it survived review.
+          */}
+          <Link
+            href="/signup"
+            className={cn(
+              buttonVariants({ size: "sm" }),
+              "min-h-11 shrink-0 bg-gym-accent font-bold text-[#04120a] hover:bg-gym-accent/90"
+            )}
+          >
             Start free
-          </Button>
-        </Link>
+          </Link>
+        </div>
       </header>
 
       <HeroSplit />

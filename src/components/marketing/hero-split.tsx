@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { motion, useReducedMotion } from "framer-motion";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils/cn";
 
 function GaugeRing({
   value,
@@ -205,10 +206,15 @@ export function HeroSplit() {
       </p>
 
       <div className="relative flex justify-center px-4 py-8 sm:px-6 md:hidden">
-        <Link href="/signup" className="min-h-11 min-w-[44px] w-full max-w-xs">
-          <Button className="w-full min-h-11 px-8 bg-gym-accent text-[#04120a] hover:bg-gym-accent/90 font-bold">
-            Start free
-          </Button>
+        {/* One anchor, not an anchor around a <button> — see landing-page.tsx. */}
+        <Link
+          href="/signup"
+          className={cn(
+            buttonVariants(),
+            "w-full min-h-11 min-w-[44px] max-w-xs px-8 bg-gym-accent text-[#04120a] hover:bg-gym-accent/90 font-bold"
+          )}
+        >
+          Start free
         </Link>
       </div>
     </section>

@@ -2,7 +2,8 @@ import Link from "next/link";
 import { ShieldAlert, TrendingUp, Radar, Award } from "lucide-react";
 import { FREE_TIER_FEATURES, PREMIUM_TIER_FEATURES } from "@/lib/premium/features";
 import { PRICING, ANNUAL_MONTHLY_EQUIVALENT_GBP } from "@/lib/pricing/config";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils/cn";
 import { ScoreDisclaimer } from "@/components/legal/score-disclaimer";
 
 const OUTCOMES = [
@@ -66,10 +67,14 @@ export function PricingSection() {
               </li>
             ))}
           </ul>
-          <Link href="/signup" className="mt-8 block">
-            <Button variant="outline" className="w-full border-white/15 bg-transparent text-white hover:bg-white/5">
-              Get started
-            </Button>
+          <Link
+            href="/signup"
+            className={cn(
+              buttonVariants({ variant: "outline" }),
+              "mt-8 flex w-full border-white/15 bg-transparent text-white hover:bg-white/5"
+            )}
+          >
+            Get started
           </Link>
         </article>
 
@@ -96,10 +101,14 @@ export function PricingSection() {
               </li>
             ))}
           </ul>
-          <Link href="/signup" className="mt-8 block">
-            <Button className="w-full bg-gym-accent font-bold text-[#04120a] hover:bg-gym-accent/90">
-              Start free trial
-            </Button>
+          <Link
+            href="/signup"
+            className={cn(
+              buttonVariants(),
+              "mt-8 flex w-full bg-gym-accent font-bold text-[#04120a] hover:bg-gym-accent/90"
+            )}
+          >
+            Start free trial
           </Link>
           <p className="mt-4 text-center text-xs text-white/40">
             Also available monthly (£{PRICING.MONTHLY_GBP}/mo) or lifetime (£{PRICING.LIFETIME_GBP}, one-time) after signup.
