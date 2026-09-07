@@ -1,3 +1,15 @@
+/*
+ * The session ids in this file are real uuids rather than "leg-a" and "leg-b".
+ *
+ * They were readable placeholders, and readable is better — but `activities.id`
+ * is `UUID PRIMARY KEY` (001:46), so an id of "leg-a" is one the database
+ * cannot produce and a query filtering on it would fail with a Postgres cast
+ * error rather than a miss. The fixtures were describing a request that could
+ * not happen.
+ *
+ * That went unnoticed until N1 put a uuid schema on the route and fifteen tests
+ * turned 400. The schema was right; the fixtures were not.
+ */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
@@ -140,7 +152,7 @@ const PROFILE = {
 
 /** 20 min / 4 km, then — after a 60 s fumble with the phone — 10 min / 3 km. */
 const LEG_A = {
-  id: "leg-a",
+  id: "11111111-1111-4111-8111-111111111111",
   user_id: USER_ID,
   sport: "running",
   title: "Morning run",
@@ -160,7 +172,7 @@ const LEG_A = {
 };
 const LEG_B = {
   ...LEG_A,
-  id: "leg-b",
+  id: "22222222-2222-4222-8222-222222222222",
   title: null,
   started_at: "2026-01-05T08:21:00.000Z",
   duration_seconds: 600,
@@ -181,10 +193,10 @@ vi.mock("@/lib/supabase/server", () => ({
 function baseResults(): Record<string, QueryResult | QueryResult[]> {
   return {
     "activities:select": { data: [LEG_A, LEG_B], error: null },
-    "activities:select:single": { data: { ...LEG_A, id: "leg-a" }, error: null },
+    "activities:select:single": { data: { ...LEG_A, id: "11111111-1111-4111-8111-111111111111" }, error: null },
     "profiles:select": { data: PROFILE, error: null },
     "workout_scores:insert": {
-      data: { id: "score-1", activity_id: "leg-a", user_id: USER_ID },
+      data: { id: "score-1", activity_id: "11111111-1111-4111-8111-111111111111", user_id: USER_ID },
       error: null,
     },
   };
@@ -192,7 +204,7 @@ function baseResults(): Record<string, QueryResult | QueryResult[]> {
 
 async function mergeWith(
   results: Record<string, QueryResult | QueryResult[]>,
-  payload: unknown = { activityIds: ["leg-a", "leg-b"] }
+  payload: unknown = { activityIds: ["11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222"] }
 ) {
   const { client, calls } = createFakeSupabase(results);
   createClientMock.mockResolvedValue(client);
@@ -266,8 +278,8 @@ describe("POST /api/activities/merge", () => {
     // would mean the run had been counted twice in the load and trend models.
     expect(find(calls, "workout_scores", "insert")).toHaveLength(1);
     expect(find(calls, "split_index_history", "insert")).toHaveLength(1);
-    expect(payloadOf(calls, "workout_scores", "insert").activity_id).toBe("leg-a");
-    expect(payloadOf(calls, "split_index_history", "insert").activity_id).toBe("leg-a");
+    expect(payloadOf(calls, "workout_scores", "insert").activity_id).toBe("11111111-1111-4111-8111-111111111111");
+    expect(payloadOf(calls, "split_index_history", "insert").activity_id).toBe("11111111-1111-4111-8111-111111111111");
   });
 
   it("does not let the halves' own scores inflate the merged session's training load", async () => {
@@ -278,8 +290,8 @@ describe("POST /api/activities/merge", () => {
       ...baseResults(),
       "workout_scores:select": {
         data: [
-          { activity_id: "leg-a", load_score: 400, created_at: LEG_A.started_at, sport_index: 700 },
-          { activity_id: "leg-b", load_score: 260, created_at: LEG_B.started_at, sport_index: 720 },
+          { activity_id: "11111111-1111-4111-8111-111111111111", load_score: 400, created_at: LEG_A.started_at, sport_index: 700 },
+          { activity_id: "22222222-2222-4222-8222-222222222222", load_score: 260, created_at: LEG_B.started_at, sport_index: 720 },
         ],
         error: null,
       },
@@ -306,12 +318,12 @@ describe("POST /api/activities/merge", () => {
       merge: { sources: Array<{ id: string; wasSurvivor: boolean; duration_seconds: number }> };
     };
 
-    expect(metadata.merge.sources.map((s) => s.id).sort()).toEqual(["leg-a", "leg-b"]);
+    expect(metadata.merge.sources.map((s) => s.id).sort()).toEqual(["11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222"]);
     expect(metadata.merge.sources.filter((s) => s.wasSurvivor)).toHaveLength(1);
     // The pre-merge numbers, not the merged ones — this is what a restore
     // writes back.
-    expect(metadata.merge.sources.find((s) => s.id === "leg-a")!.duration_seconds).toBe(1200);
-    expect(metadata.merge.sources.find((s) => s.id === "leg-b")!.duration_seconds).toBe(600);
+    expect(metadata.merge.sources.find((s) => s.id === "11111111-1111-4111-8111-111111111111")!.duration_seconds).toBe(1200);
+    expect(metadata.merge.sources.find((s) => s.id === "22222222-2222-4222-8222-222222222222")!.duration_seconds).toBe(600);
   });
 
   it("does not report a merge as scored when the score never landed", async () => {
@@ -335,13 +347,13 @@ describe("POST /api/activities/merge", () => {
 
   it("writes nothing at all on a dry run", async () => {
     const { response, body, calls } = await mergeWith(baseResults(), {
-      activityIds: ["leg-a", "leg-b"],
+      activityIds: ["11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222"],
       dryRun: true,
     });
 
     expect(response.status).toBe(200);
     expect(body.preview.merged.duration_seconds).toBe(1800);
-    expect(body.preview.absorbedIds).toEqual(["leg-b"]);
+    expect(body.preview.absorbedIds).toEqual(["22222222-2222-4222-8222-222222222222"]);
     for (const op of ["insert", "update", "delete", "upsert"]) {
       expect(calls.filter((c) => c.op === op)).toHaveLength(0);
     }
@@ -407,14 +419,14 @@ describe("POST /api/activities/merge", () => {
   it("refuses a selection that includes a session the athlete does not own", async () => {
     const { response, body } = await mergeWith(
       { ...baseResults(), "activities:select": { data: [LEG_A], error: null } },
-      { activityIds: ["leg-a", "someone-elses"] }
+      { activityIds: ["11111111-1111-4111-8111-111111111111", "33333333-3333-4333-8333-333333333333"] }
     );
     expect(response.status).toBe(404);
     expect(body.error).toMatch(/no longer exists/i);
   });
 
   it("refuses a single session", async () => {
-    const { response } = await mergeWith(baseResults(), { activityIds: ["leg-a"] });
+    const { response } = await mergeWith(baseResults(), { activityIds: ["11111111-1111-4111-8111-111111111111"] });
     expect(response.status).toBe(400);
   });
 });
@@ -446,7 +458,7 @@ describe("merging does not wipe the stored race prediction", () => {
   const PRIOR_PREDICTION = {
     benchmark_seconds: 1105,
     sample_count: 24,
-    last_activity_id: "leg-b",
+    last_activity_id: "22222222-2222-4222-8222-222222222222",
     updated_at: "2026-01-05T09:00:00.000Z",
     last_quality_at: "2026-01-05T09:00:00.000Z",
     riegel_k: 1.06,
@@ -478,7 +490,7 @@ describe("merging does not wipe the stored race prediction", () => {
     // rejoined — and they do not become 25 either, since the absorbed
     // session's evidence was already in there.
     expect(upsert.sample_count).toBe(24);
-    expect(upsert.last_activity_id).toBe("leg-a");
+    expect(upsert.last_activity_id).toBe("11111111-1111-4111-8111-111111111111");
     expect(upsert.benchmark_seconds).toBeGreaterThan(0);
   });
 
@@ -524,7 +536,7 @@ describe("a merged session survives a full recompute", () => {
     const mergedRow = {
       ...LEG_A,
       ...mergeUpdate,
-      id: "leg-a",
+      id: "11111111-1111-4111-8111-111111111111",
       user_id: USER_ID,
       is_draft: false,
     };
@@ -547,7 +559,7 @@ describe("a merged session survives a full recompute", () => {
       endurance_component: number;
       activity_id: string;
     };
-    expect(recomputed.activity_id).toBe("leg-a");
+    expect(recomputed.activity_id).toBe("11111111-1111-4111-8111-111111111111");
     expect(recomputed.sport_index).toBe(mergedScore.sport_index);
     expect(recomputed.load_score).toBe(mergedScore.load_score);
     expect(recomputed.endurance_component).toBe(mergedScore.endurance_component);

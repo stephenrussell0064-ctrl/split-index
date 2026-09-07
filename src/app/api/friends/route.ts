@@ -1,3 +1,8 @@
+import { parseBody } from "@/lib/validation/boundary";
+import {
+  friendActionSchema,
+  friendRequestSchema,
+} from "@/lib/validation/schemas/routes";
 import { NextResponse } from "next/server";
 import { databaseError } from "@/lib/api/errors";
 import { createClient } from "@/lib/supabase/server";
@@ -27,10 +32,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await request.json();
-  const username = String(body.username ?? "")
-    .trim()
-    .replace(/^@/, "");
+  // N1. A leading "@" is still stripped, so pasting "@rachel" works.
+  const parsed = await parseBody(request, friendRequestSchema);
+  if (parsed.response) return parsed.response;
+  const username = parsed.data.username.replace(/^@/, "");
 
   if (!username) {
     return NextResponse.json({ error: "Username required" }, { status: 400 });
@@ -94,12 +99,10 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await request.json();
-  const { id, action } = body as { id?: string; action?: "accept" | "decline" };
-
-  if (!id || !action) {
-    return NextResponse.json({ error: "id and action required" }, { status: 400 });
-  }
+  // N1. Another assertion — any string was reaching the branch below.
+  const parsed = await parseBody(request, friendActionSchema);
+  if (parsed.response) return parsed.response;
+  const { id, action } = parsed.data;
 
   const { data: row } = await supabase
     .from("friends")

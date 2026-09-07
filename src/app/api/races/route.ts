@@ -1,3 +1,5 @@
+import { parseBody } from "@/lib/validation/boundary";
+import { createRaceSchema } from "@/lib/validation/schemas/routes";
 import { NextResponse } from "next/server";
 import { databaseError } from "@/lib/api/errors";
 import { createClient } from "@/lib/supabase/server";
@@ -185,7 +187,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await request.json();
+  /*
+    N1. The numeric coercion below is deliberately left alone: the handler
+    treats "" as "not given", so a form posting an empty elevation works today
+    and a strict z.number() would start answering it with a 400. The schema
+    caps the body, refuses unknown keys, bounds the free text, and checks the
+    two enumerated fields.
+  */
+  const parsed = await parseBody(request, createRaceSchema);
+  if (parsed.response) return parsed.response;
+  const body = parsed.data;
   const eventName = String(body.eventName ?? "").trim();
   const locationName = String(body.locationName ?? "").trim();
   const raceDate = String(body.raceDate ?? "");

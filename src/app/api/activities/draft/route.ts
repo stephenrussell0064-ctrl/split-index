@@ -1,3 +1,5 @@
+import { parseBody } from "@/lib/validation/boundary";
+import { draftSchema } from "@/lib/validation/schemas/routes";
 import { NextResponse } from "next/server";
 import { databaseError } from "@/lib/api/errors";
 import { createClient } from "@/lib/supabase/server";
@@ -12,7 +14,20 @@ export async function PUT(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { sport, formData } = await request.json();
+  /*
+    N1. This destructured an unparsed body: no check of any kind, and `sport`
+    went straight into an upsert keyed on (user_id, sport). It was also the one
+    route storing an unbounded payload — `formData` is written to the database
+    as it arrives — so the body size cap parseBody applies matters more here
+    than anywhere else in this batch.
+
+    `formData` itself stays a passthrough record. It is the half-finished
+    contents of whichever form the athlete is in, the shape differs per sport,
+    and only that same form reads it back.
+  */
+  const parsed = await parseBody(request, draftSchema);
+  if (parsed.response) return parsed.response;
+  const { sport, formData } = parsed.data;
 
   const { data, error } = await supabase
     .from("workout_drafts")

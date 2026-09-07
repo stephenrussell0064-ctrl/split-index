@@ -1199,18 +1199,49 @@ routes import them, and a test asserts both values so the next person cannot dri
 apart. `hrvSchema` is asserted against `BOUND_HRV_MS` from the central config rather than
 against a literal, for the same reason.
 
-**Still to do (14):** `activities/[id]`, `activities/[id]/reactions`, `activities/draft`,
-`activities/merge`, `consent/article9`, `duels/[id]`, `friends`, `goals`,
-`hpe/admin/rollout`, `onboarding/calibrate`, `races`, `revenuecat/webhook`,
-`session-templates`, `stripe/checkout`. Plus the query parameters on roughly 19 read
-routes, which are untouched.
+**BODY VALIDATION COMPLETE except three, which need a decision rather than a schema.**
+23 of 52 route files now validate; body-taking routes with no schema went 20 → 14 → **3**.
 
-Two of the remainder need a decision rather than a schema. `onboarding/calibrate` currently
-FILTERS invalid lifts and proceeds with whatever is left, so a typo in one lift is silently
-dropped from a calibration the athlete thinks completed; refusing instead is better but is
-a behaviour change on the onboarding path. `revenuecat/webhook` and `stripe/checkout` are
-signature-verified, which is a different kind of guard and may make a body schema redundant
-rather than absent.
+The second batch's gaps were mostly type ASSERTIONS, which are a promise to the compiler
+and nothing whatever to the runtime:
+
+- `const body: ActivityBody = await request.json()` — the PATCH handler then read seventeen
+  fields off it and handed them to the scoring engine. `updateActivitySchema` already
+  existed from WP3 and had never been wired up.
+- `body.action as "accept" | "decline" | "cancel"` in two routes — any string reached the
+  switch below, and only the absent case was caught.
+- `const { sport, formData } = await request.json()` in `activities/draft` — no check of any
+  kind, and the only route storing an unbounded payload straight to the database.
+
+**Three things this batch got wrong first, all caught before commit**, recorded because each
+is a way a schema can be worse than the guard it replaces:
+
+1. `.strict()` on the merge schema would have rejected `dryRun` and returned 400 on every
+   merge preview. Being strict about unknown keys means knowing all the known ones.
+2. The goals schema used `targetDate`; the client sends `deadline`.
+3. The races schema used `z.number()` for elevation, but the handler treats `""` as "not
+   given" — so a form posting an empty optional field works today and would have started
+   getting a 400. Those fields stay loose deliberately, and the comment says why.
+
+**A finding inside the test suite.** Fifteen merge tests failed on the new uuid check because
+their fixtures used `"leg-a"` and `"leg-b"`. `activities.id` is `UUID PRIMARY KEY` (001:46),
+so those are ids the database cannot produce — the tests were describing a request that
+cannot happen, and a query filtering on one would fail with a Postgres cast error rather
+than a miss. The fixtures are real uuids now, with a note saying why they stopped being
+readable.
+
+**The three remaining, and why each needs you rather than a schema:**
+
+- `onboarding/calibrate` FILTERS invalid lifts and proceeds with whatever survives, so a
+  typo in one lift is silently dropped from a calibration the athlete believes completed.
+  Refusing is better and is a behaviour change on the onboarding path.
+- `revenuecat/webhook` and `stripe/checkout` are signature-verified, which is a different
+  kind of guard. A body schema may be redundant there rather than missing, and adding one
+  to a payment webhook without understanding the provider's payload versioning is how you
+  start rejecting real events.
+
+**Untouched:** query parameters on roughly 19 read routes. `parseQuery` exists and is used
+by one route; the rest still read `searchParams` directly.
 
 #### N2 — Two sets of plausibility bounds now coexist
 **WP3 · Low · Evidence: `src/lib/security/config.ts` and `src/lib/scoring/input-guards.ts`.**

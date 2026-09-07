@@ -1,3 +1,5 @@
+import { parseBody } from "@/lib/validation/boundary";
+import { article9ConsentSchema } from "@/lib/validation/schemas/routes";
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -48,9 +50,13 @@ export async function POST(request: Request) {
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const body = (await request.json().catch(() => null)) as {
-    acknowledgedVersion?: unknown;
-  } | null;
+  // N1. The version comparison below is the point and stays exactly where it
+  // is — a schema cannot know which version this build ships. This only makes
+  // the field a string, so a null or an object cannot reach an equality check
+  // that would quietly answer false.
+  const parsed = await parseBody(request, article9ConsentSchema);
+  if (parsed.response) return parsed.response;
+  const body = parsed.data;
 
   /*
    * The client must echo back the version it displayed, and it must match what
@@ -59,7 +65,7 @@ export async function POST(request: Request) {
    * ago — the evidence would say one thing and the screen said another, which
    * is worse than having no record at all.
    */
-  if (body?.acknowledgedVersion !== ARTICLE9_CONSENT_VERSION) {
+  if (body.acknowledgedVersion !== ARTICLE9_CONSENT_VERSION) {
     return NextResponse.json(
       {
         error:

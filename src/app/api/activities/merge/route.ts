@@ -1,3 +1,5 @@
+import { parseBody } from "@/lib/validation/boundary";
+import { mergeSchema } from "@/lib/validation/schemas/routes";
 import { NextResponse } from "next/server";
 import { databaseError } from "@/lib/api/errors";
 import { createClient } from "@/lib/supabase/server";
@@ -85,17 +87,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body: MergeRequestBody = await request.json();
-  const requestedIds = Array.isArray(body.activityIds)
-    ? [...new Set(body.activityIds.filter((id): id is string => typeof id === "string"))]
-    : [];
+  /*
+    N1. The filter kept any string, and those ids go into a WHERE clause. They
+    are uuids now. Ownership is still checked below — the schema settles the
+    shape and nothing else.
 
-  if (requestedIds.length < 2) {
-    return NextResponse.json(
-      { error: "Select at least two sessions to merge." },
-      { status: 400 }
-    );
-  }
+    Dedupe stays here rather than in the schema: sending the same id twice is a
+    client quirk rather than a malformed request, and refusing it would be
+    stricter than the finding asks for.
+  */
+  const parsed = await parseBody(request, mergeSchema);
+  if (parsed.response) return parsed.response;
+  const requestedIds = [...new Set(parsed.data.activityIds)];
 
   const { data: rows, error: fetchError } = await supabase
     .from("activities")
@@ -149,7 +152,7 @@ export async function POST(request: Request) {
     throw err;
   }
 
-  if (body.dryRun === true) {
+  if (parsed.data.dryRun === true) {
     return NextResponse.json({ preview: previewOf(plan) });
   }
 

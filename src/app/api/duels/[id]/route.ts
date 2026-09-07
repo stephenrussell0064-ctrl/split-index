@@ -1,3 +1,5 @@
+import { parseBody } from "@/lib/validation/boundary";
+import { duelActionSchema } from "@/lib/validation/schemas/routes";
 import { NextResponse } from "next/server";
 import { databaseError } from "@/lib/api/errors";
 import { createClient } from "@/lib/supabase/server";
@@ -16,12 +18,12 @@ export async function PATCH(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await request.json();
-  const action = body.action as "accept" | "decline" | "cancel" | undefined;
-
-  if (!action) {
-    return NextResponse.json({ error: "action required" }, { status: 400 });
-  }
+  // N1. `body.action as "accept" | "decline" | "cancel"` was a type assertion:
+  // any string reached the switch below it, and only the absent case was
+  // caught. The enum settles it.
+  const parsed = await parseBody(request, duelActionSchema);
+  if (parsed.response) return parsed.response;
+  const action = parsed.data.action;
 
   const { data: duel } = await supabase
     .from("duels")

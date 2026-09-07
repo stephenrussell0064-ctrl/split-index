@@ -1,3 +1,5 @@
+import { parseBody } from "@/lib/validation/boundary";
+import { rolloutSchema } from "@/lib/validation/schemas/routes";
 import { NextResponse } from "next/server";
 import { databaseError } from "@/lib/api/errors";
 import { createClient } from "@/lib/supabase/server";
@@ -63,8 +65,12 @@ export async function POST(request: Request) {
     );
   }
 
-  const body = await request.json().catch(() => ({}));
-  const reason = typeof body.reason === "string" ? body.reason.trim() : "";
+  // N1. Same eight-character minimum, same reasoning, now as a schema so the
+  // percentage is bounded too rather than coerced with Number().
+  const parsed = await parseBody(request, rolloutSchema);
+  if (parsed.response) return parsed.response;
+  const body = parsed.data;
+  const reason = body.reason;
   if (reason.length < 8) {
     // Not bureaucracy: the audit row is the only thing that will explain this
     // change to whoever reads it in three months, including the person making

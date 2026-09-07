@@ -1,3 +1,5 @@
+import { parseBody } from "@/lib/validation/boundary";
+import { updateActivitySchema } from "@/lib/validation/schemas/activity";
 import { NextResponse } from "next/server";
 import { databaseError, serverError } from "@/lib/api/errors";
 import { createClient } from "@/lib/supabase/server";
@@ -115,7 +117,20 @@ export async function PATCH(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body: ActivityBody = await request.json();
+  /*
+    N1. This was `const body: ActivityBody = await request.json()` — a type
+    ASSERTION, which is a promise to the compiler and nothing whatever to the
+    runtime. Seventeen fields were then read off it and handed to the scoring
+    engine.
+
+    updateActivitySchema already existed and was never wired up: it is
+    activityFieldsSchema.partial(), the same shape POST validates, with the
+    cross-field rules deliberately not reapplied because a partial update that
+    touches only `notes` has no exercises in the payload.
+  */
+  const parsed = await parseBody(request, updateActivitySchema);
+  if (parsed.response) return parsed.response;
+  const body = parsed.data as ActivityBody;
 
   const { data: existing, error: fetchError } = await supabase
     .from("activities")

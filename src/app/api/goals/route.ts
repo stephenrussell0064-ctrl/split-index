@@ -1,3 +1,8 @@
+import { parseBody } from "@/lib/validation/boundary";
+import {
+  createGoalSchema,
+  updateGoalSchema,
+} from "@/lib/validation/schemas/routes";
 import { NextResponse } from "next/server";
 import { databaseError } from "@/lib/api/errors";
 import { createClient } from "@/lib/supabase/server";
@@ -32,15 +37,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await request.json();
-  const targetSplitIndex = Number(body.targetSplitIndex);
-
-  if (!Number.isFinite(targetSplitIndex) || targetSplitIndex < MIN_TARGET || targetSplitIndex > MAX_TARGET) {
-    return NextResponse.json(
-      { error: `Target must be between ${MIN_TARGET} and ${MAX_TARGET}` },
-      { status: 400 }
-    );
-  }
+  // N1. Same range, same message — MIN_TARGET_INDEX and MAX_TARGET_INDEX are
+  // the 350 and 999 that were declared in this file, moved so the validator and
+  // the message cannot drift apart.
+  const parsed = await parseBody(request, createGoalSchema);
+  if (parsed.response) return parsed.response;
+  const body = parsed.data;
+  const targetSplitIndex = body.targetSplitIndex;
 
   // User feedback (Slice 6): "Allow the user to amend their goals on the
   // dashboard by clicking into the goals section" — the add-a-goal flow now
@@ -99,11 +102,13 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await request.json();
-  const goalId = String(body.id ?? "");
-  if (!goalId) {
-    return NextResponse.json({ error: "Goal id is required" }, { status: 400 });
-  }
+  // N1. The per-field `!== undefined` checks below are unchanged; the schema
+  // settles the shapes so `String(body.id ?? "")` is not deciding what an
+  // object means.
+  const parsed = await parseBody(request, updateGoalSchema);
+  if (parsed.response) return parsed.response;
+  const body = parsed.data;
+  const goalId = body.id;
 
   const updates: Record<string, unknown> = {};
 
