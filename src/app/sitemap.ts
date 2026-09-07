@@ -18,6 +18,9 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { path: "/signup", changeFrequency: "yearly", priority: 0.5 },
     { path: "/terms", changeFrequency: "yearly", priority: 0.2 },
     { path: "/privacy", changeFrequency: "yearly", priority: 0.2 },
+    // The App Store Support URL. Apple fetches it during review, so it needs
+    // to be a real indexed page rather than an orphan route.
+    { path: "/support", changeFrequency: "monthly", priority: 0.4 },
   ];
 
   return publicRoutes.map((route) => ({
