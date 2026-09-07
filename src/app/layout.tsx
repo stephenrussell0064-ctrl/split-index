@@ -88,6 +88,22 @@ export default function RootLayout({
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
         />
+        {/*
+          Skip link. First focusable thing in the document, visually hidden
+          until it takes focus.
+
+          Keyboard and screen-reader users otherwise tab through the whole
+          sidebar and top bar on every page before reaching the content — this
+          app's nav is around thirty stops. WCAG 2.2 2.4.1 (Bypass Blocks).
+
+          Targets #main-content, the <main> in app-shell.tsx.
+        */}
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-lg focus:bg-accent focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-accent-foreground focus:outline-2 focus:outline-offset-2 focus:outline-accent"
+        >
+          Skip to main content
+        </a>
         <ClientBootstrap />
         <RouteRestore />
         {/* LaunchOverlay animates too, so it sits inside the provider rather than beside it. */}

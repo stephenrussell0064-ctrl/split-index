@@ -7,6 +7,8 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils/cn";
+import { Article9ConsentCard } from "@/components/settings/article9-consent-card";
+import { isTier2Section } from "@/lib/consent/article9";
 import { DEFAULT_TRAINING_SPLIT, TRAINING_SPLITS, type TrainingSplit } from "@/lib/scoring/hpe/constants";
 import {
   CustomSplitEditor,
@@ -206,6 +208,33 @@ export function IntakeWizard() {
     };
   }, []);
 
+  /*
+   * Article 9 consent. Held here rather than read per-section so that granting
+   * it on the health screen immediately unlocks the fuelling screen too,
+   * without a reload. Starts null (unknown) rather than false, so the gate
+   * renders nothing until the real answer arrives — flashing a consent wall at
+   * somebody who already consented is its own small insult.
+   */
+  const [article9Consent, setArticle9Consent] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/consent/article9");
+        if (!res.ok || cancelled) return;
+        const json = (await res.json()) as { granted?: boolean };
+        if (!cancelled) setArticle9Consent(Boolean(json.granted));
+      } catch {
+        // Fail closed: unknown consent means the gate stays shut.
+        if (!cancelled) setArticle9Consent(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const section = ORDER[step];
   const intake = data?.intake;
   const prefilled = data?.prefilled;
@@ -369,6 +398,21 @@ export function IntakeWizard() {
           </p>
         )}
 
+        {/*
+            The Article 9 gate. The health and fuelling screens ask questions
+            whose whole purpose is to determine health status, so they are not
+            rendered at all until consent is on record — the athlete is asked
+            for permission before they are asked the questions, which is the
+            only order in which the permission means anything.
+
+            The API refuses these writes independently (see
+            /api/hpe/intake). This is the courtesy; that is the control.
+        */}
+        {isTier2Section(section) && article9Consent === false ? (
+          <div className="mt-4">
+            <Article9ConsentCard onChange={(granted) => setArticle9Consent(granted)} />
+          </div>
+        ) : (
         <div className="mt-4">
           {section === "health" && (
             <>
@@ -1044,6 +1088,7 @@ export function IntakeWizard() {
           )}
 
         </div>
+        )}
 
         {error && (
           <p className="mt-4 rounded-2xl border border-danger/25 bg-danger/[0.06] p-3 text-sm text-danger">{error}</p>

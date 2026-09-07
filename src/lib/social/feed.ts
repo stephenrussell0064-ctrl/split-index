@@ -134,11 +134,13 @@ function describeFailure(what: string, error: { message?: string } | null): stri
 /**
  * This viewer's accepted friends. Note what this deliberately does NOT do:
  * it does not pre-filter on the friend's `share_activities_with_friends`
- * flag. It used to, and that was a bug — reading another user's profile row
- * requires the "Public profiles readable" policy (migration 001), which is
- * `USING (username IS NOT NULL)`. Any friend without a username was
- * therefore invisible to the pre-filter and silently dropped from the feed
- * even though the activities RLS would happily have shown their workouts.
+ * flag. It used to, and that was a bug — reading another athlete's profile
+ * has always been limited to those with a username (the "Public profiles
+ * readable" policy until migration 056, the `public_profiles` view since).
+ * Any friend without a username was therefore invisible to the pre-filter and
+ * silently dropped from the feed even though the activities RLS would happily
+ * have shown their workouts. The narrowing is the same shape after 056; the
+ * reason not to pre-filter here is unchanged.
  *
  * The sharing check now happens in exactly one place — activity_is_visible_to()
  * in the activities RLS policy (migration 031), which is the real enforcement
@@ -166,20 +168,38 @@ async function fetchAcceptedFriendIds(
   };
 }
 
-/** Pulls out only the fields worth surfacing on a feed post — never the raw score_breakdown blob (internal flags/explanation strings aren't meant for another user's eyes). */
-function extractExtra(breakdown: Record<string, unknown> | null): Record<string, unknown> | null {
-  if (!breakdown) return null;
+/** The six curated score_breakdown paths public_workout_scores projects, as columns. */
+interface FeedScoreExtras {
+  vo2max?: unknown;
+  execution_score?: unknown;
+  decoupling_pct?: unknown;
+  dots_score?: unknown;
+  gl_points?: unknown;
+  per_lift?: unknown;
+}
+
+/**
+ * Pulls out only the fields worth surfacing on a feed post — never the raw
+ * score_breakdown blob (internal flags and explanation strings aren't meant for
+ * another user's eyes).
+ *
+ * The curation now happens twice, on purpose. public_workout_scores projects
+ * these six paths and nothing else, so the blob no longer leaves the database
+ * at all; this function still type-checks each one before it reaches a feed
+ * card, because the columns are jsonb and a scoring change could put a string
+ * where a number was. The view decides what may be read; this decides what is
+ * worth rendering.
+ */
+function extractExtra(row: FeedScoreExtras | null): Record<string, unknown> | null {
+  if (!row) return null;
   const extra: Record<string, unknown> = {};
 
-  const cardio = breakdown.cardio_activity as Record<string, unknown> | undefined;
-  if (cardio) {
-    if (typeof cardio.vo2max === "number") extra.vo2max = cardio.vo2max;
-    if (typeof cardio.executionScore === "number") extra.executionScore = cardio.executionScore;
-    if (typeof cardio.decouplingPct === "number") extra.decouplingPct = cardio.decouplingPct;
-  }
-  if (typeof breakdown.dots_score === "number") extra.dotsScore = breakdown.dots_score;
-  if (typeof breakdown.gl_points === "number") extra.glPoints = breakdown.gl_points;
-  if (breakdown.per_lift && typeof breakdown.per_lift === "object") extra.perLift = breakdown.per_lift;
+  if (typeof row.vo2max === "number") extra.vo2max = row.vo2max;
+  if (typeof row.execution_score === "number") extra.executionScore = row.execution_score;
+  if (typeof row.decoupling_pct === "number") extra.decouplingPct = row.decoupling_pct;
+  if (typeof row.dots_score === "number") extra.dotsScore = row.dots_score;
+  if (typeof row.gl_points === "number") extra.glPoints = row.gl_points;
+  if (row.per_lift && typeof row.per_lift === "object") extra.perLift = row.per_lift;
 
   return Object.keys(extra).length > 0 ? extra : null;
 }
@@ -288,10 +308,12 @@ export async function fetchActivityFeed(
   // a readable feed with an error card.
   const [{ data: scores }, { data: authors }, { data: reactions }, { data: comments }] = await Promise.all([
     supabase
-      .from("workout_scores")
-      .select("activity_id, sport_index, load_score, score_breakdown")
+      .from("public_workout_scores")
+      .select(
+        "activity_id, sport_index, load_score, vo2max, execution_score, decoupling_pct, dots_score, gl_points, per_lift"
+      )
       .in("activity_id", activityIds),
-    supabase.from("profiles").select("user_id, username, display_name, avatar_url").in("user_id", authorIds),
+    supabase.from("public_profiles").select("user_id, username, display_name, avatar_url").in("user_id", authorIds),
     supabase.from("activity_reactions").select("activity_id, user_id, score").in("activity_id", activityIds),
     supabase.from("activity_comments").select("activity_id").in("activity_id", activityIds),
   ]);
@@ -346,7 +368,7 @@ export async function fetchActivityFeed(
       isOwn: row.user_id === userId,
       sportIndex: (score?.sport_index as number | null) ?? null,
       loadScore: (score?.load_score as number | null) ?? null,
-      extra: extractExtra((score?.score_breakdown as Record<string, unknown> | null) ?? null),
+      extra: extractExtra((score as FeedScoreExtras | undefined) ?? null),
       reactionAverage: reactionAgg && reactionAgg.count > 0 ? reactionAgg.sum / reactionAgg.count : null,
       reactionCount: reactionAgg?.count ?? 0,
       myReaction: reactionAgg?.mine ?? null,

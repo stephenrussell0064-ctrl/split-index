@@ -53,30 +53,27 @@ export async function fetchFriendsData(
     r.user_id === userId ? r.friend_id : r.user_id
   );
 
-  // Two reads, not one, and deliberately so — the same shape Settings uses for
-  // `share_activities_with_friends`. `injury_status` arrived in migration 053,
-  // and naming it in the SELECT above would make a database that has not taken
-  // 053 fail the WHOLE profile read with 42703, emptying the friends list of
-  // names, avatars and indexes over a decorative badge. A missing column must
-  // cost only the thing it holds.
+  // One read now, where this used to be two.
   //
-  // Not `select("*")` either: that would drag every other athlete's date of
-  // birth, weight, subscription and Stripe id into this process for a chip.
-  const [{ data: profiles }, { data: injuries }] = await Promise.all([
-    supabase
-      .from("profiles")
-      .select("user_id, username, display_name, avatar_url, current_split_index")
-      .in("user_id", otherIds),
-    supabase.from("profiles").select("user_id, injury_status").in("user_id", otherIds),
-  ]);
-
-  const injuryByUser = new Map((injuries ?? []).map((p) => [p.user_id, p.injury_status]));
+  // The split existed because `injury_status` arrived in migration 053, and
+  // naming it alongside the other columns would make a database that had not
+  // taken 053 fail the WHOLE profile read with 42703 — emptying the friends
+  // list of names, avatars and indexes over a decorative badge. A missing
+  // column had to cost only the thing it holds.
+  //
+  // public_profiles names injury_status in its own definition, so a database
+  // that can answer this query at all has the column by construction. The
+  // failure it was guarding against can no longer happen, and the view is also
+  // what stops this read seeing another athlete's date of birth, weight,
+  // subscription or Stripe id — which the old `profiles` read could have
+  // reached for at any time.
+  const { data: profiles } = await supabase
+    .from("public_profiles")
+    .select("user_id, username, display_name, avatar_url, current_split_index, injury_status")
+    .in("user_id", otherIds);
 
   const profileMap = new Map(
-    (profiles ?? []).map((p) => [
-      p.user_id,
-      mapFriendProfile({ ...p, injury_status: injuryByUser.get(p.user_id) }),
-    ])
+    (profiles ?? []).map((p) => [p.user_id, mapFriendProfile(p)])
   );
 
   const toConnection = (row: (typeof rows)[0]): FriendConnection => {
@@ -132,7 +129,7 @@ export async function fetchChallenges(
 
   const [{ data: participants }, { data: myParticipation }] = await Promise.all([
     supabase
-      .from("challenge_participants")
+      .from("public_challenge_participation")
       .select("challenge_id")
       .in("challenge_id", ids),
     supabase
@@ -198,7 +195,7 @@ export async function fetchDuels(
   );
 
   const { data: profiles } = await supabase
-    .from("profiles")
+    .from("public_profiles")
     .select("user_id, username, display_name, avatar_url")
     .in("user_id", otherIds);
 
@@ -212,7 +209,7 @@ export async function fetchDuels(
     acceptedRows.map(async (d) => {
       const windowEnd = d.end_date < today ? d.end_date : today;
       let query = supabase
-        .from("workout_scores")
+        .from("public_workout_scores")
         .select("user_id, load_score, created_at, endurance_component, strength_component")
         .in("user_id", [d.challenger_id, d.opponent_id])
         .gte("created_at", `${d.start_date}T00:00:00.000Z`)
@@ -286,7 +283,7 @@ export async function fetchSquads(
 
   const memberIds = Array.from(new Set((allMembers ?? []).map((m) => m.user_id)));
   const { data: profiles } = await supabase
-    .from("profiles")
+    .from("public_profiles")
     .select("user_id, username, display_name, avatar_url, current_split_index")
     .in("user_id", memberIds);
 
@@ -357,7 +354,7 @@ export async function fetchPublicProfile(
   username: string
 ) {
   const { data: profile } = await supabase
-    .from("profiles")
+    .from("public_profiles")
     .select("*")
     .eq("username", username)
     .single();
@@ -376,13 +373,13 @@ export async function fetchPublicProfile(
         .order("started_at", { ascending: false })
         .limit(365),
       supabase
-        .from("split_index_history")
+        .from("public_index_history")
         .select("split_index, recorded_at")
         .eq("user_id", profile.user_id)
         .gte("recorded_at", thirtyDaysAgo)
         .order("recorded_at", { ascending: false }),
       supabase
-        .from("workout_scores")
+        .from("public_workout_scores")
         .select("created_at")
         .eq("user_id", profile.user_id)
         .gte("created_at", thirtyDaysAgo),
@@ -451,13 +448,13 @@ export async function fetchCompareHistory(
         .gte("recorded_at", cutoff)
         .order("recorded_at", { ascending: true }),
       supabase
-        .from("split_index_history")
+        .from("public_index_history")
         .select("split_index, endurance_index, strength_index, recorded_at")
         .eq("user_id", otherUserId)
         .gte("recorded_at", cutoff)
         .order("recorded_at", { ascending: true }),
       supabase
-        .from("profiles")
+        .from("public_profiles")
         .select("user_id, username, display_name")
         .in("user_id", [userId, otherUserId]),
     ]);
@@ -532,7 +529,7 @@ export async function fetchLeaderboardDetail(
 ): Promise<LeaderboardDetail> {
   const [{ data: gymRow }, { data: cardioRow }] = await Promise.all([
     supabase
-      .from("workout_scores")
+      .from("public_workout_scores")
       .select("score_breakdown")
       .eq("user_id", targetUserId)
       .eq("sport", "gym")
@@ -540,7 +537,7 @@ export async function fetchLeaderboardDetail(
       .limit(1)
       .maybeSingle(),
     supabase
-      .from("workout_scores")
+      .from("public_workout_scores")
       .select("score_breakdown")
       .eq("user_id", targetUserId)
       .eq("sport", "running")

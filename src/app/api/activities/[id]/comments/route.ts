@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { databaseError } from "@/lib/api/errors";
 import { createClient } from "@/lib/supabase/server";
 
 const MAX_COMMENT_LENGTH = 1000;
@@ -26,13 +27,13 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     .order("created_at", { ascending: true });
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return databaseError(error, { operation: "GET /api/activities/[id]/comments" });
   }
 
   const authorIds = [...new Set((comments ?? []).map((c) => c.user_id as string))];
   const { data: authors } =
     authorIds.length > 0
-      ? await supabase.from("profiles").select("user_id, username, display_name, avatar_url").in("user_id", authorIds)
+      ? await supabase.from("public_profiles").select("user_id, username, display_name, avatar_url").in("user_id", authorIds)
       : { data: [] as { user_id: string; username: string | null; display_name: string | null; avatar_url: string | null }[] };
   const authorById = new Map((authors ?? []).map((a) => [a.user_id as string, a]));
 
@@ -84,7 +85,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     .single();
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 403 });
+    // RLS refuses the insert for an activity the requester cannot see. The 403
+    // is right; the Postgres permission string that came with it is not — it
+    // names the policy and the table.
+    return NextResponse.json(
+      { error: "You can't comment on that activity." },
+      { status: 403 }
+    );
   }
 
   return NextResponse.json({ comment });
@@ -115,7 +122,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
     .eq("user_id", user.id);
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return databaseError(error, { operation: "DELETE /api/activities/[id]/comments" });
   }
 
   return NextResponse.json({ ok: true });

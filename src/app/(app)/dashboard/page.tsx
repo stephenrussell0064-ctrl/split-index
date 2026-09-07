@@ -835,7 +835,6 @@ export default async function DashboardPage() {
           <PremiumTease
             title="Beat the next rank"
             subtitle="Unlock Premium to see exactly how many points separate you from the athlete ahead."
-            showPreview={false}
             className="h-full"
           />
         )}
