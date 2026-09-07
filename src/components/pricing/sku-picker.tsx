@@ -1,31 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { cn } from "@/lib/utils/cn";
 import { Button } from "@/components/ui/button";
 import { PRICING, ANNUAL_MONTHLY_EQUIVALENT_GBP } from "@/lib/pricing/config";
-import { startStripeCheckout } from "@/lib/stripe/start-checkout";
-import { isNativePlatform } from "@/lib/native/platform";
-import {
-  fetchNativeOfferings,
-  purchaseNativeSku,
-  restoreNativePurchases,
-  type NativeOfferingPackage,
-} from "@/lib/native/billing";
-import { presentProPaywall } from "@/lib/native/paywall";
+import { restoreNativePurchases } from "@/lib/native/billing";
+import { useCheckout } from "@/lib/native/use-checkout";
 import type { SubscriptionSku } from "@/types";
-
-/**
- * Whether the native checkout hands off to the RevenueCat dashboard paywall
- * instead of the inline picker below.
- *
- * Behind a flag rather than always-on because presenting a paywall that has
- * not been built in the dashboard yet returns an error and leaves the athlete
- * with no way to pay at all. Turning this on is the last step of the paywall
- * setup, after the Offering has a paywall attached — see
- * docs/native-billing-setup.md.
- */
-const USE_DASHBOARD_PAYWALL = process.env.NEXT_PUBLIC_REVENUECAT_USE_PAYWALL === "true";
 
 const SKUS: Array<{
   sku: SubscriptionSku;
@@ -64,68 +45,38 @@ interface SkuPickerProps {
 export function SkuPicker({ ctaLabel, onError, className }: SkuPickerProps) {
   const [selected, setSelected] = useState<SubscriptionSku>("annual");
   const [loading, setLoading] = useState(false);
-  const [native, setNative] = useState(false);
-  const [nativeOfferings, setNativeOfferings] = useState<NativeOfferingPackage[]>([]);
 
-  // Apple/Google both require in-app subscriptions to go through their own
-  // billing — Stripe cannot process a purchase inside the native app, so
-  // the whole checkout path branches here rather than deeper down.
-  useEffect(() => {
-    if (!isNativePlatform()) return;
-    fetchNativeOfferings()
-      .then((offerings) => {
-        setNative(true);
-        setNativeOfferings(offerings);
-      })
-      .catch(() => setNative(true));
-  }, []);
+  // Apple and Google both require in-app subscriptions to go through their own
+  // billing, so the checkout path branches on platform. That branch lives in
+  // `useCheckout` and nowhere else — it used to be duplicated here and in the
+  // Settings screen, they drifted, and the Settings copy shipped a Guideline
+  // 3.1.1 rejection.
+  const { platform, resolving, priceFor, checkout } = useCheckout();
+  const native = platform === "native";
 
   const handleCheckout = async () => {
     setLoading(true);
     onError?.("");
 
-    if (native) {
-      // The dashboard paywall runs the whole flow itself — selection, purchase,
-      // restore — so the SKU chosen above is only a fallback path's input.
-      if (USE_DASHBOARD_PAYWALL) {
-        const outcome = await presentProPaywall();
-        if (outcome.entitled) {
-          window.location.reload();
-          return;
-        }
-        // A dismissed paywall is not an error and gets no message; a genuinely
-        // failed one does, because otherwise the button just silently stops
-        // working and there is nothing on screen to explain it.
-        if (outcome.reason === "error") {
-          onError?.("Couldn't open checkout. Please try again.");
-        }
-        setLoading(false);
+    const outcome = await checkout(selected);
+    switch (outcome.status) {
+      case "redirecting":
+        window.location.href = outcome.url;
         return;
-      }
-
-      const result = await purchaseNativeSku(selected);
-      if (result.ok) {
+      case "entitled":
         window.location.reload();
         return;
-      }
-      // `pending` is neither: the purchase is alive and awaiting approval, so
-      // the message is shown but it is not framed as a failure.
-      if (!result.cancelled) onError?.(result.message);
-      setLoading(false);
-      return;
+      case "error":
+        onError?.(outcome.message);
+        break;
+      case "not-ready":
+      case "cancelled":
+        break;
     }
-
-    const result = await startStripeCheckout(selected);
-    if (result.ok) {
-      window.location.href = result.url;
-      return;
-    }
-    onError?.(result.message);
     setLoading(false);
   };
 
-  const nativePriceFor = (sku: SubscriptionSku) =>
-    nativeOfferings.find((o) => o.sku === sku)?.priceString;
+  const nativePriceFor = priceFor;
 
   const defaultCta = (sku: SubscriptionSku) =>
     sku === "lifetime" ? `Get lifetime access — £${PRICING.LIFETIME_GBP}` : `Start your ${PRICING.TRIAL_DAYS}-day free trial`;
@@ -173,7 +124,18 @@ export function SkuPicker({ ctaLabel, onError, className }: SkuPickerProps) {
         })}
       </div>
 
-      <Button className="w-full" loading={loading} onClick={handleCheckout}>
+      {/*
+        Disabled until the platform is known. Without this the button is live
+        during the window where the app has not yet established that it is
+        running natively, and a fast tap there took the Stripe path inside the
+        native app — a Guideline 3.1.1 rejection triggered by tapping quickly.
+      */}
+      <Button
+        className="w-full"
+        loading={loading || resolving}
+        disabled={resolving}
+        onClick={handleCheckout}
+      >
         {(ctaLabel ?? defaultCta)(selected)}
       </Button>
 
