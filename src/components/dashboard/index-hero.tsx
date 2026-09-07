@@ -153,25 +153,47 @@ export function IndexHero({
             )}
           </div>
 
-          <ProgressRing
-            progress={weeklyTarget > 0 ? weeklySessions / weeklyTarget : 0}
-            size={74}
-            strokeWidth={6}
-            colorClassName={weeklySessions >= weeklyTarget ? "text-success" : "text-accent"}
-            trackClassName="text-white/8"
+          {/*
+            THE LABEL INSIDE THE RING WAS 7px, AND THE RING HAD NO NAME.
+
+            "Sessions this week" was set at 7px across two lines inside a 74px
+            ring — a size nobody reads, so the ring effectively showed a bare
+            "3/4". And the ring itself carried no accessible name at all: the
+            SVG has no role or label, so a screen reader got the digits and
+            nothing to attach them to.
+
+            Dropping the caption outright would leave sighted users with the
+            same bare "3/4". So the wrapper carries the whole sentence for
+            assistive tech, the visible caption becomes one legible word, and
+            the inner text is hidden from the accessibility tree because the
+            wrapper already says all of it — otherwise it is announced twice.
+
+            Labelled from here rather than by adding a prop to ProgressRing:
+            it is one caller that needs this, and components/ui is another
+            session's lane this week.
+          */}
+          <div
+            role="img"
+            aria-label={`${weeklySessions} of ${weeklyTarget} sessions logged this week`}
           >
-            <div className="text-center">
-              <p className="index-display text-base font-bold leading-none tabular-nums">
-                {weeklySessions}
-                <span className="text-[11px] text-muted">/{weeklyTarget}</span>
-              </p>
-              <p className="mt-0.5 text-[7px] font-semibold uppercase tracking-wider text-muted">
-                Sessions
-                <br />
-                this week
-              </p>
-            </div>
-          </ProgressRing>
+            <ProgressRing
+              progress={weeklyTarget > 0 ? weeklySessions / weeklyTarget : 0}
+              size={74}
+              strokeWidth={6}
+              colorClassName={weeklySessions >= weeklyTarget ? "text-success" : "text-accent"}
+              trackClassName="text-white/8"
+            >
+              <div className="text-center" aria-hidden>
+                <p className="index-display text-base font-bold leading-none tabular-nums">
+                  {weeklySessions}
+                  <span className="text-[11px] text-muted">/{weeklyTarget}</span>
+                </p>
+                <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted">
+                  Sessions
+                </p>
+              </div>
+            </ProgressRing>
+          </div>
         </div>
 
         <div className="mt-3 grid grid-cols-3 gap-3 border-t border-white/[0.06] pt-3">

@@ -294,8 +294,27 @@ body {
   line-height: 1.1;
 }
 
+/*
+  11px, not 10. `.micro-label` is the app's label style and it is on 118
+  elements: card titles, stat captions, the eyebrow above almost every heading.
+  At 0.625rem it was 10px, uppercase, with 0.12em of tracking — a combination
+  that is small before the tracking and smaller after it.
+
+  Raised once here rather than at 118 call sites. Measured first in the
+  narrowest place a micro-label actually sits inside a grid cell — the
+  raw-stats-panel tiles, 153px at 390px — where the longest labels
+  ("Elevation gain", "Avg heart rate") stay on one line at both sizes. The
+  whole cost is 2px of height per label.
+
+  Deliberately NOT accompanied by the `text-[9px]` sweep the audit pairs with
+  this. Several of those 9px instances are load-bearing: the race-prediction
+  strip's distance captions were measured at 320px to fit five across only at
+  that size, and raising them would undo a fit verified two days ago. A 9px
+  label that has been measured into its box is a different thing from one that
+  is small by default.
+*/
 .micro-label {
-  font-size: 0.625rem;
+  font-size: 0.6875rem;
   font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
