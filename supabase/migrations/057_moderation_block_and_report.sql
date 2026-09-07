@@ -82,8 +82,24 @@ CREATE TABLE IF NOT EXISTS content_reports (
 CREATE INDEX IF NOT EXISTS idx_content_reports_status ON content_reports(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_content_reports_reported ON content_reports(reported_user_id);
 -- Rate limiting reads this: one report per reporter per subject per day.
+--
+-- The day is pinned to UTC rather than written as `created_at::date`. Casting a
+-- timestamptz to date is STABLE, not IMMUTABLE — the answer depends on the
+-- session's TimeZone — so Postgres refuses it in an index expression and the
+-- whole migration dies with:
+--
+--   ERROR: 42P17: functions in index expression must be marked IMMUTABLE
+--
+-- Which means this file, as first written, could never be applied at all. It
+-- had not been: production was still missing both tables when this was found,
+-- while the app had been shipping against them.
+--
+-- `AT TIME ZONE 'UTC'` is immutable, and it also makes the rule mean something
+-- fixed. Under the old expression "one report per day" would have silently been
+-- a different window for a reporter in Sydney than for one in London, and would
+-- have moved for the same person twice a year.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_content_reports_dedupe
-  ON content_reports(reporter_id, reported_user_id, subject_type, COALESCE(subject_id, '00000000-0000-0000-0000-000000000000'::uuid), (created_at::date));
+  ON content_reports(reporter_id, reported_user_id, subject_type, COALESCE(subject_id, '00000000-0000-0000-0000-000000000000'::uuid), ((created_at AT TIME ZONE 'UTC')::date));
 
 ALTER TABLE content_reports ENABLE ROW LEVEL SECURITY;
 
