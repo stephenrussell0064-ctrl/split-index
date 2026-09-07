@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { jsonLdScript } from "@/lib/utils/json-ld";
 import Link from "next/link";
 import { BrandMark } from "@/components/brand/brand-mark";
 import { getAppUrl } from "@/lib/app-url";
@@ -95,7 +96,7 @@ export default async function HowScoringWorksPage() {
     <div className="min-h-dvh bg-[#050508] text-foreground">
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(articleJsonLd) }}
+        dangerouslySetInnerHTML={{ __html: jsonLdScript(articleJsonLd) }}
       />
       <header className="border-b border-white/[0.06] glass-strong">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-6 py-4">
