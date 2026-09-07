@@ -8,7 +8,7 @@ export const metadata: Metadata = {
     "How Split Index collects, uses, and protects your personal and fitness data.",
 };
 
-const EFFECTIVE_DATE = "July 2026";
+const EFFECTIVE_DATE = "September 2026";
 const CONTACT_EMAIL = "privacy@splitindex.co.uk";
 
 export default function PrivacyPolicyPage() {
@@ -39,7 +39,9 @@ export default function PrivacyPolicyPage() {
               <p className="mt-3">
                 Split Index (&quot;we&quot;, &quot;us&quot;, or &quot;our&quot;) operates the Split
                 Index fitness analytics platform at{" "}
-                <a href="https://splitindex.co.uk">splitindex.co.uk</a>. We are the data
+                <a href="https://splitindex.co.uk">splitindex.co.uk</a> and the Split Index
+                mobile apps for iOS and Android. This policy covers all of them; where
+                something applies only to the mobile apps, it says so. We are the data
                 controller for personal data processed through the service.
               </p>
               <p className="mt-3">
@@ -69,18 +71,57 @@ export default function PrivacyPolicyPage() {
                   experience level, training history, and preferred sports.
                 </li>
                 <li>
+                  <strong>Location data (mobile apps):</strong> when you start a tracked
+                  outdoor session, we use your device&apos;s precise location, including
+                  while the app is in the background or your phone is locked, so tracking
+                  survives a pocketed phone. Your route itself stays on your device: the
+                  individual GPS fixes are stored in the app&apos;s own storage so an
+                  interrupted run can be recovered, and only a summary — distance,
+                  duration, pace and elevation gain — is sent to us. The one exception is
+                  the coordinate a session starts at, which is sent so we can look up the
+                  temperature at the time; it is used for that and not stored as part of
+                  your activity. We never collect location when a session is not running,
+                  and you can refuse or revoke the permission in your device settings.
+                </li>
+                <li>
+                  <strong>Motion and fitness sensors (mobile apps):</strong> step counts
+                  from your device&apos;s motion sensors during a run or walk, used to show
+                  your cadence.
+                </li>
+                <li>
+                  <strong>Connected Bluetooth equipment (mobile apps):</strong> readings
+                  from heart rate monitors and rowing machines you choose to pair, such as
+                  Garmin, Polar or Concept2 devices. We use Bluetooth to talk to the
+                  equipment in front of you; we do not use it to detect your location or
+                  nearby devices for any other purpose.
+                </li>
+                <li>
+                  <strong>Apple Health (iOS app):</strong> if you allow it, we read your
+                  heart rate from Apple Health during a session, including from compatible
+                  headphones. The app also starts a Health workout session so those sensors
+                  switch on — that workout is not saved to Apple Health.
+                </li>
+                <li>
                   <strong>Payment information:</strong> subscription status, billing
                   history, and Stripe customer identifiers. Payment card details are
                   collected and processed directly by Stripe; we do not store full card
                   numbers.
                 </li>
                 <li>
+                  <strong>In-app purchases (mobile apps):</strong> subscriptions bought
+                  inside the apps are processed by Apple or Google, not by us. We receive
+                  the purchase and renewal status for your account through RevenueCat. We
+                  never see your card details, and Apple and Google do not give them to us.
+                </li>
+                <li>
                   <strong>OAuth data:</strong> when you sign in with Google, we receive
                   account identifiers authorised by you through that provider.
                 </li>
                 <li>
-                  <strong>Social features:</strong> friend connections, leaderboard
-                  participation, and public profile information you choose to share.
+                  <strong>Social features and content you write:</strong> friend
+                  connections, leaderboard participation, public profile information you
+                  choose to share, and free text you enter yourself — your profile bio, and
+                  comments you leave on activities shared with you.
                 </li>
                 <li>
                   <strong>Technical and usage data:</strong> IP address, browser type,
@@ -102,6 +143,10 @@ export default function PrivacyPolicyPage() {
                 <li>Process subscriptions and manage billing;</li>
                 <li>Authenticate your account and secure the platform;</li>
                 <li>Import and sync activities from connected fitness integrations;</li>
+                <li>
+                  Measure distance, pace, splits and cadence during a tracked session, and
+                  record heart rate from Apple Health or a paired Bluetooth device;
+                </li>
                 <li>Enable social features such as leaderboards and shared profiles;</li>
                 <li>Generate AI-powered coaching feedback based on your workout data;</li>
                 <li>Communicate with you about your account, updates, and support requests;</li>
@@ -112,6 +157,33 @@ export default function PrivacyPolicyPage() {
                 authorise (such as your name and email address) solely to create and
                 authenticate your Split Index account. We do not use Google user data for
                 advertising, and we do not sell your personal data.
+              </p>
+
+              <h3 className="mt-6 font-medium">
+                What we never do with health, location or sensor data
+              </h3>
+              <p className="mt-3">
+                Health, location, motion and connected-device data is used to run the
+                service and nothing else. Specifically, we do not:
+              </p>
+              <ul className="mt-3">
+                <li>Use any of it for advertising or marketing;</li>
+                <li>Sell it, or share it with data brokers;</li>
+                <li>
+                  Use it to track you across other companies&apos; apps or websites. The
+                  apps contain no advertising or cross-app tracking SDKs;
+                </li>
+                <li>
+                  Disclose data read from Apple Health to any third party without your
+                  consent, or use it for anything other than your own health and fitness
+                  in the app.
+                </li>
+              </ul>
+              <p className="mt-3">
+                Location, motion, Bluetooth and Apple Health access are each asked for
+                separately, and each is optional. You can refuse any of them, or withdraw
+                them later in your device settings; the rest of the app keeps working
+                without them, with the feature that needed the sensor switched off.
               </p>
             </section>
 
@@ -193,7 +265,20 @@ export default function PrivacyPolicyPage() {
                 </li>
                 <li>
                   <strong>OpenAI</strong> — AI-generated coaching feedback based on your
-                  workout data.
+                  workout data;
+                </li>
+                <li>
+                  <strong>Apple and Google</strong> — payment processing for subscriptions
+                  bought inside the mobile apps. They act as the seller for those purchases
+                  under their own terms, not as our processor;
+                </li>
+                <li>
+                  <strong>RevenueCat</strong> — recording which subscription an account
+                  holds and when it renews, for purchases made inside the mobile apps;
+                </li>
+                <li>
+                  <strong>Upstash</strong> — rate limiting, which processes IP addresses to
+                  stop abuse of the service.
                 </li>
               </ul>
               <p className="mt-3">
@@ -256,6 +341,20 @@ export default function PrivacyPolicyPage() {
                 anonymise your personal data within a reasonable period, except where we
                 must retain information for legal, accounting, or fraud-prevention
                 purposes.
+              </p>
+              <p className="mt-3">
+                You can delete your account yourself, from Settings in the app or on the
+                website — you do not need to email us or ask permission. Deleting removes
+                your account and the data held against it, including your activities, your
+                health screening answers and your profile. GPS fixes from a tracked session
+                are held in the app&apos;s own storage on your device; removing the app
+                deletes those with it.
+              </p>
+              <p className="mt-3">
+                Deleting your Split Index account does not cancel a subscription bought
+                through Apple or Google. Those are managed by the store that sold them —
+                on iOS, through Manage Subscription in the app or in your Apple account
+                settings.
               </p>
             </section>
 
