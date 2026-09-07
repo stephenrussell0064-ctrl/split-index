@@ -40,11 +40,12 @@ export function MicroLabel({
  * the athlete just did, it is the reason the save did not happen, and waiting
  * politely for a gap means waiting behind whatever is already being read.
  */
-export function FieldError({ error }: { error?: string }) {
+export function FieldError({ error, id }: { error?: string; id?: string }) {
   return (
     <AnimatePresence initial={false}>
       {error && (
         <motion.p
+          id={id}
           role="alert"
           initial={{ opacity: 0, height: 0, y: -2 }}
           animate={{ opacity: 1, height: "auto", y: 0 }}
@@ -82,6 +83,37 @@ interface FieldProps {
 const FieldIdContext = createContext<string | undefined>(undefined);
 
 /**
+ * The surrounding Field's error message, for the inputs inside it to point at.
+ *
+ * Separate from FieldIdContext because the rule is the opposite one. An input
+ * that names itself must NOT adopt the field's `id` — that would put duplicate
+ * ids in the document, which is why useFieldId excludes it. But it SHOULD point
+ * at the field's error: `aria-describedby` is a reference, not an identifier,
+ * and several elements referring to one message is both legal and what a
+ * composite needs. DurationInput's three boxes are each rejected by the same
+ * message, so each of them has to be able to say so.
+ */
+const FieldErrorContext = createContext<
+  { errorId: string; hasError: boolean } | undefined
+>(undefined);
+
+/**
+ * `aria-invalid` and `aria-describedby` for an input inside a Field.
+ *
+ * Returns nothing at all when there is no error: `aria-invalid="false"` claims
+ * the field was checked and passed, and `aria-describedby=""` is a reference to
+ * an element with no id.
+ */
+function useFieldErrorProps(): {
+  "aria-invalid"?: true;
+  "aria-describedby"?: string;
+} {
+  const ctx = useContext(FieldErrorContext);
+  if (!ctx?.hasError) return {};
+  return { "aria-invalid": true, "aria-describedby": ctx.errorId };
+}
+
+/**
  * Adopt the surrounding Field's id — unless this input already carries its own
  * name.
  *
@@ -102,14 +134,25 @@ function useFieldId(props: { id?: string; "aria-label"?: string }): string | und
 export function Field({ label, error, hint, htmlFor, children, className }: FieldProps) {
   const generatedId = useId();
   const id = htmlFor ?? generatedId;
+  /*
+    N7 item 3. role="alert" announces the message when it appears and says
+    nothing on the way back to the field — so the message gets an id and every
+    input inside this Field points at it, which is what survives a re-render and
+    a second visit.
+  */
+  const errorId = `${id}-error`;
   return (
     <FieldIdContext.Provider value={id}>
-      <div className={cn("flex min-w-0 flex-col gap-1.5", className)}>
-        <MicroLabel htmlFor={id}>{label}</MicroLabel>
-        {children}
-        {hint && !error && <p className="text-xs text-muted/70">{hint}</p>}
-        <FieldError error={error} />
-      </div>
+      <FieldErrorContext.Provider
+        value={{ errorId, hasError: Boolean(error) }}
+      >
+        <div className={cn("flex min-w-0 flex-col gap-1.5", className)}>
+          <MicroLabel htmlFor={id}>{label}</MicroLabel>
+          {children}
+          {hint && !error && <p className="text-xs text-muted/70">{hint}</p>}
+          <FieldError error={error} id={errorId} />
+        </div>
+      </FieldErrorContext.Provider>
     </FieldIdContext.Provider>
   );
 }
@@ -128,6 +171,7 @@ export function GlassInput({
   ...props
 }: React.InputHTMLAttributes<HTMLInputElement> & { invalid?: boolean }) {
   const id = useFieldId(props);
+  const errorProps = useFieldErrorProps();
   return (
     <input
       // The surrounding Field's label points here — see useFieldId. Without it
@@ -138,6 +182,7 @@ export function GlassInput({
       // the first bad field with `[aria-invalid="true"]` so it can take the
       // athlete straight to it.
       aria-invalid={invalid || undefined}
+      {...errorProps}
       className={cn(
         inputBase,
         invalid && "border-danger/50 focus:border-danger/50 focus:ring-danger/30",
@@ -169,6 +214,7 @@ export function UnitInput({
   wrapperClassName?: string;
 }) {
   const id = useFieldId(props);
+  const errorProps = useFieldErrorProps();
   return (
     <div className={cn("relative min-w-0", wrapperClassName)}>
       <input
@@ -177,6 +223,7 @@ export function UnitInput({
         inputMode="decimal"
         autoComplete="off"
         aria-invalid={invalid || undefined}
+        {...errorProps}
         className={cn(
           inputBase,
           unit && "pr-9",
@@ -213,6 +260,7 @@ export function HeroInput({
   wrapperClassName?: string;
 }) {
   const id = useFieldId(props);
+  const errorProps = useFieldErrorProps();
   return (
     <div className={cn("relative min-w-0", wrapperClassName)}>
       <input
@@ -221,6 +269,7 @@ export function HeroInput({
         inputMode="decimal"
         autoComplete="off"
         aria-invalid={invalid || undefined}
+        {...errorProps}
         className={cn(
           "h-16 w-full rounded-2xl glass px-4 text-3xl font-semibold tracking-tight text-foreground",
           "placeholder:text-muted/30 placeholder:font-normal border border-white/10",

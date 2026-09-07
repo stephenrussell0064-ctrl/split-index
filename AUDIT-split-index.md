@@ -1197,6 +1197,47 @@ One of four needed correcting, and it was a precision error rather than a false 
 Recorded anyway: this document is used to decide what to build, and a finding that sends
 someone to do unnecessary work costs the same whether it is wrong or merely vague.
 
+**ITEM 3 — MOSTLY CLOSED, and deliberately not claimed as closed.**
+
+Every input that lives inside a `Field` or one of the `components/ui` controls now points
+at its own error with `aria-describedby`, and carries `aria-invalid` when it has one.
+`role="alert"` stays: announcing the error when it appears and being reachable from the
+field afterwards are two different requirements, and the app now meets both.
+
+Covered: **78 `<Field>` call sites** — the whole activity-logging surface, through a
+`FieldErrorContext` that gives the message an id and hands the reference to `GlassInput`,
+`UnitInput` and `HeroInput` — plus `Input`, `Select` and `Textarea` in
+[components/ui/input.tsx](src/components/ui/input.tsx).
+
+`aria-describedby` rather than `aria-errormessage`, deliberately. `aria-errormessage` is
+the semantically precise answer and reads better on paper; support is materially worse,
+and a user on one of the pairings that ignores it gets nothing at all — which is the state
+being left behind. Revisit when support catches up: one line in each component.
+
+**NOT covered, which is why the published statement is unchanged.** Nine `<FieldError>`
+render at *block* level rather than beside a field — four in
+[interval-blocks.tsx](src/components/activities/interval-blocks.tsx) and five in
+[gym-form.tsx](src/components/activities/gym-form.tsx). `errors["ex.<id>.sets"]` describes
+a control somewhere inside a repeated row and is drawn after the whole row, so there is no
+single element to attach it to without restructuring how those forms report. That is a
+real piece of work, not an oversight, and until it is done the statement's wording — "Form
+errors are **not always** tied to their field" — is exactly true, so it stays as written.
+
+Three further `role="alert"` sites were checked and are correctly out of scope:
+`article9-consent-card`, `goals-panel` and `upcoming-races-panel` render *form-level*
+failures ("that save did not work"), which belong to no field and have nothing to be tied
+to.
+
+The testable half is a real unit test rather than a source scan:
+[field-describedby.ts](src/lib/a11y/field-describedby.ts) exists as its own module so the
+merging rules can be executed — that a caller's existing `aria-describedby` is preserved
+and read first, that the hint reference is dropped while the error is showing (the
+components swap one for the other, so pointing at the hint would dangle), and that both
+attributes are omitted rather than emitted empty or `false`. The component wiring is
+checked by reading the source, which is weaker and is labelled as such in the file: this
+project has no React testing library, which is the reason the logic worth testing was
+moved out of the component to begin with.
+
 #### N8 — Seventeen call sites still resolve entitlement themselves
 **WP6.2 · Low · Evidence: `grep -rln isPremiumUser src` — 21 sites, 4 migrated.**
 

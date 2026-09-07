@@ -3,6 +3,7 @@
 import { useId } from "react";
 import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
+import { fieldDescribedBy, fieldInvalid } from "@/lib/a11y/field-describedby";
 
 interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   label?: string;
@@ -13,7 +14,15 @@ interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
 const labelClass =
   "text-[11px] font-medium uppercase tracking-[0.1em] text-muted";
 
-export function Input({ label, error, hint, className, id, ...props }: InputProps) {
+export function Input({
+  label,
+  error,
+  hint,
+  className,
+  id,
+  "aria-describedby": describedBy,
+  ...props
+}: InputProps) {
   /*
     A UNIQUE id per instance, not one derived from the label text.
 
@@ -29,6 +38,15 @@ export function Input({ label, error, hint, className, id, ...props }: InputProp
   const generatedId = useId();
   const inputId = id ?? generatedId;
 
+  /*
+    N7 item 3. `role="alert"` on the error already announces it when it appears;
+    these ids are what keep it attached to the field afterwards, for the user
+    who tabs back to it or who arrives with the error already rendered.
+  */
+  const errorId = `${inputId}-error`;
+  const hintId = `${inputId}-hint`;
+  const showHint = Boolean(hint) && !error;
+
   return (
     <div className="flex flex-col gap-1.5">
       {label && (
@@ -38,6 +56,14 @@ export function Input({ label, error, hint, className, id, ...props }: InputProp
       )}
       <input
         id={inputId}
+        aria-invalid={fieldInvalid(Boolean(error))}
+        aria-describedby={fieldDescribedBy({
+          caller: describedBy,
+          hintId,
+          errorId,
+          hasHint: Boolean(hint),
+          hasError: Boolean(error),
+        })}
         className={cn(
           // text-base (16px), not text-sm — iOS auto-zooms into any input
           // whose font-size is under 16px, and since this is an SPA (no
@@ -52,8 +78,16 @@ export function Input({ label, error, hint, className, id, ...props }: InputProp
         )}
         {...props}
       />
-      {hint && !error && <p className="text-xs text-muted/80">{hint}</p>}
-      {error && <p role="alert" className="text-xs text-danger">{error}</p>}
+      {showHint && (
+        <p id={hintId} className="text-xs text-muted/80">
+          {hint}
+        </p>
+      )}
+      {error && (
+        <p id={errorId} role="alert" className="text-xs text-danger">
+          {error}
+        </p>
+      )}
     </div>
   );
 }
@@ -64,10 +98,19 @@ interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
   options: { value: string; label: string }[];
 }
 
-export function Select({ label, error, options, className, id, ...props }: SelectProps) {
+export function Select({
+  label,
+  error,
+  options,
+  className,
+  id,
+  "aria-describedby": describedBy,
+  ...props
+}: SelectProps) {
   // Same reasoning as Input above.
   const generatedId = useId();
   const selectId = id ?? generatedId;
+  const errorId = `${selectId}-error`;
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -79,6 +122,12 @@ export function Select({ label, error, options, className, id, ...props }: Selec
       <div className="relative">
         <select
           id={selectId}
+          aria-invalid={fieldInvalid(Boolean(error))}
+          aria-describedby={fieldDescribedBy({
+            caller: describedBy,
+            errorId,
+            hasError: Boolean(error),
+          })}
           className={cn(
             "h-11 w-full rounded-xl glass px-4 pr-9 text-base text-foreground",
             "border border-white/10 focus:border-accent/50 focus:ring-1 focus:ring-accent/30 focus:outline-none",
@@ -109,7 +158,11 @@ export function Select({ label, error, options, className, id, ...props }: Selec
         </select>
         <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
       </div>
-      {error && <p role="alert" className="text-xs text-danger">{error}</p>}
+      {error && (
+        <p id={errorId} role="alert" className="text-xs text-danger">
+          {error}
+        </p>
+      )}
     </div>
   );
 }
@@ -119,10 +172,18 @@ interface TextareaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement
   error?: string;
 }
 
-export function Textarea({ label, error, className, id, ...props }: TextareaProps) {
+export function Textarea({
+  label,
+  error,
+  className,
+  id,
+  "aria-describedby": describedBy,
+  ...props
+}: TextareaProps) {
   // Same reasoning as Input above.
   const generatedId = useId();
   const textareaId = id ?? generatedId;
+  const errorId = `${textareaId}-error`;
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -133,6 +194,12 @@ export function Textarea({ label, error, className, id, ...props }: TextareaProp
       )}
       <textarea
         id={textareaId}
+        aria-invalid={fieldInvalid(Boolean(error))}
+        aria-describedby={fieldDescribedBy({
+          caller: describedBy,
+          errorId,
+          hasError: Boolean(error),
+        })}
         className={cn(
           "min-h-[100px] w-full rounded-xl glass px-4 py-3 text-base text-foreground placeholder:text-muted/40",
           "border border-white/10 focus:border-accent/50 focus:ring-1 focus:ring-accent/30 focus:outline-none",
@@ -142,7 +209,11 @@ export function Textarea({ label, error, className, id, ...props }: TextareaProp
         )}
         {...props}
       />
-      {error && <p role="alert" className="text-xs text-danger">{error}</p>}
+      {error && (
+        <p id={errorId} role="alert" className="text-xs text-danger">
+          {error}
+        </p>
+      )}
     </div>
   );
 }
