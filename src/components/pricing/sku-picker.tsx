@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { cn } from "@/lib/utils/cn";
 import { Button } from "@/components/ui/button";
 import { PRICING, ANNUAL_MONTHLY_EQUIVALENT_GBP } from "@/lib/pricing/config";
@@ -157,6 +158,44 @@ export function SkuPicker({ ctaLabel, onError, className }: SkuPickerProps) {
           Restore purchases
         </button>
       )}
+
+      {/*
+        Guideline 3.1.2 requires the purchase surface itself to carry the terms
+        of the sale and working links to the EULA and privacy policy. Both were
+        reachable from /login, /signup and /support but not from here, which is
+        the one place the guideline actually names — a common enough rejection
+        that it is worth stating why this block must not be tidied away.
+
+        It sits in SkuPicker rather than in each caller so both paywalls (the
+        onboarding score reveal and Settings → Billing) are covered by
+        construction, the way the checkout branch itself is.
+
+        Title, duration and price are already disclosed by the SKU buttons
+        above, so what is left is the renewal terms and the two links.
+
+        The renewal sentence is conditional because lifetime is a one-time
+        purchase — showing "renews automatically" against it would be a false
+        statement about the thing being sold, which is worse than showing
+        nothing. Only the two auto-renewing SKUs claim to auto-renew.
+      */}
+      <div className="mt-4 space-y-2 text-center text-[11px] leading-relaxed text-muted">
+        {selected !== "lifetime" && (
+          <p>
+            Your {selected === "annual" ? "annual" : "monthly"} subscription renews
+            automatically unless cancelled at least 24 hours before the end of the
+            current period. Manage or cancel it any time from Settings.
+          </p>
+        )}
+        <p>
+          <Link href="/terms" className="underline underline-offset-2 hover:text-foreground">
+            Terms of Use
+          </Link>
+          {" · "}
+          <Link href="/privacy" className="underline underline-offset-2 hover:text-foreground">
+            Privacy Policy
+          </Link>
+        </p>
+      </div>
     </div>
   );
 }
