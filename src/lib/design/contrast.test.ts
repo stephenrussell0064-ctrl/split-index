@@ -143,17 +143,24 @@ const PAIRINGS: Pairing[] = [
   { what: "Engine accent on the app background", fg: "cardio-accent", bg: "background", min: TEXT },
 ];
 
-/**
- * The light-mode remaps, which are scoped CSS rules rather than :root tokens.
+/*
+ * ── Reading the light-mode remaps ─────────────────────────────────────────
  *
+ * The remaps are scoped CSS rules rather than :root tokens.
  * `[data-mode="cardio"] .mode-content` and `.bg-cardio-zone` override the
  * dark-theme tokens so shared components stay legible on white. Three of those
  * overrides were themselves failures — including white-on-accent at 2.60:1,
  * which made the label of every primary button in cardio mode harder to read
  * than the button — so they are measured here too. Values are read out of the
  * rules rather than restated, for the same reason as the tokens above.
+ *
+ * The four helpers below do that reading. Two of them answer subtly different
+ * questions and the difference has already caused one wrong number, so they are
+ * named for the question rather than for the mechanism.
  */
-function scopedValue(selector: string, property: string): string {
+
+/** A token as literally written inside one rule block, or null if that block does not set it. */
+function rawIn(selector: string, property: string): string | null {
   const css = readFileSync(CSS, "utf8");
   /*
     Match the selector where it OPENS A RULE, not merely where the characters
@@ -163,40 +170,75 @@ function scopedValue(selector: string, property: string): string {
     of the wrong block. Same trap as the scanners in lib/testing/source-scan.ts:
     prose about a thing is not the thing.
   */
-  const opens = new RegExp(
-    `${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\{`
-  );
+  const opens = new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\{`);
   const found = opens.exec(css);
-  if (!found) throw new Error(`no rule for ${selector}`);
-  const start = found.index;
-  const block = css.slice(start, css.indexOf("}", start));
-  const match = block.match(new RegExp(`--${property}:\\s*(#[0-9a-fA-F]{6}|var\\(--[a-z0-9-]+\\))`));
-  if (!match) throw new Error(`${selector} does not set --${property}`);
-  return resolve(match[1]!, selector, property);
+  if (!found) return null;
+  const block = css.slice(found.index, css.indexOf("}", found.index));
+  const match = block.match(
+    new RegExp(`--${property}:\\s*(#[0-9a-fA-F]{6}|var\\(--[a-z0-9-]+\\))`)
+  );
+  return match ? match[1]! : null;
+}
+
+/** The same, from :root. Sliced the way `tokens()` slices it, for the same reasons. */
+function rawInRoot(property: string): string | null {
+  const css = readFileSync(CSS, "utf8");
+  const root = css.slice(css.indexOf(":root"), css.indexOf("@theme"));
+  const match = root.match(
+    new RegExp(`--${property}:\\s*(#[0-9a-fA-F]{6}|var\\(--[a-z0-9-]+\\))`)
+  );
+  return match ? match[1]! : null;
 }
 
 /**
- * Follow `var()` down to a hex.
+ * Follow `var()` down to a hex, AS IT WOULD COMPUTE INSIDE `selector`.
  *
- * This used to stop after one hop, with a comment saying one hop was all these
- * rules used. That stopped being true: `--gym-accent: var(--strength-accent)`
- * is two, so a scope resolving through it produced `undefined` and a NaN ratio
- * — which reads as a failure rather than a pass, but for the wrong reason, and
- * a NaN that happens to fail is one edit away from a NaN that happens not to.
+ * The scope is consulted before :root at every hop, because that is what custom
+ * property inheritance does, and getting it wrong is not a subtle error. Two
+ * earlier versions of this got it wrong in opposite directions: one stopped
+ * after a single hop, so `--gym-accent: var(--strength-accent)` resolved to
+ * undefined and failed on a NaN; the next resolved every hop against :root, so
+ * a scope that redefines --accent was read as though it had not, reporting a
+ * green ring at 1.28:1 on a branch whose ring is really the dark ink at 5.30:1.
+ *
+ * A NaN that happens to fail and a lookup that happens to agree with :root are
+ * the same bug wearing different clothes: the number in the message is not
+ * describing the CSS.
  */
-function resolve(raw: string, selector: string, property: string, depth = 0): string {
+function resolveIn(selector: string, raw: string, depth = 0): string {
   if (!raw.startsWith("var(")) return raw.toUpperCase();
-  if (depth > 4) throw new Error(`--${property} in ${selector} loops through var()`);
+  if (depth > 6) throw new Error(`--${raw} in ${selector} loops through var()`);
   const name = raw.slice(6, -1);
-  if (T[name]) return T[name]!;
-  // Not a plain hex token — find where :root defines it and keep going.
-  const css = readFileSync(CSS, "utf8");
-  const root = css.slice(css.indexOf(":root"), css.indexOf("@theme"));
-  const next = root.match(
-    new RegExp(`--${name}:\\s*(#[0-9a-fA-F]{6}|var\\(--[a-z0-9-]+\\))`)
-  );
-  if (!next) throw new Error(`--${name} (via ${selector} --${property}) is not defined in :root`);
-  return resolve(next[1]!, selector, property, depth + 1);
+  const next = rawIn(selector, name) ?? rawInRoot(name);
+  if (!next) throw new Error(`--${name} (via ${selector}) is defined nowhere this test can see`);
+  return resolveIn(selector, next, depth + 1);
+}
+
+/**
+ * A token this scope sets ITSELF.
+ *
+ * Throws when the scope does not set it, and that guard is the point: the
+ * assertions below use this to check that a light-mode remap is present, so
+ * quietly falling back to the dark-theme value would turn a deleted remap into
+ * a pass.
+ */
+function scopedValue(selector: string, property: string): string {
+  const raw = rawIn(selector, property);
+  if (raw === null) throw new Error(`${selector} does not set --${property}`);
+  return resolveIn(selector, raw);
+}
+
+/**
+ * A token as a control inside this scope would actually see it — set here, or
+ * inherited from :root and re-resolved against this scope.
+ *
+ * This is the one to use for anything a global rule draws, because a global
+ * rule does not know which scope it landed in.
+ */
+function inheritedValue(selector: string, property: string): string {
+  const raw = rawIn(selector, property) ?? rawInRoot(property);
+  if (raw === null) throw new Error(`--${property} is set neither in ${selector} nor :root`);
+  return resolveIn(selector, raw);
 }
 
 describe("measured contrast", () => {
@@ -333,14 +375,11 @@ describe("measured contrast", () => {
       ).toBeTruthy();
       const property = usesVar![1]!;
 
-      // Follow the token into this scope. A scope that does not pin it inherits
-      // whatever :root resolved to, which is the behaviour being asserted.
-      let colour: string;
-      try {
-        colour = scopedValue(selector, property);
-      } catch {
-        colour = scopedValue(":root", property);
-      }
+      // As a control inside this scope actually sees it: pinned here, or
+      // inherited from :root and re-resolved against this scope's own tokens.
+      // A global rule does not know which scope it landed in, which is the
+      // whole reason this assertion exists.
+      const colour = inheritedValue(selector, property);
 
       const ratio = contrastRatio(colour, T[bg]!);
       expect(
