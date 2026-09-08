@@ -1,4 +1,45 @@
 import type { NextConfig } from "next";
+import { paymentEnvProblems } from "./scripts/check-payment-env.mjs";
+
+/**
+ * Refuse a production build that cannot reliably take money.
+ *
+ * The webhook that grants premium reads REVENUECAT_WEBHOOK_SECRET and rejects
+ * every callback when it is unset — the purchase succeeds, Apple takes the
+ * money, and the entitlement is never granted. Nothing else in the build, the
+ * deploy or the app notices; the first sign is a support email from somebody
+ * who has already paid.
+ *
+ * The quieter one is NEXT_PUBLIC_REVENUECAT_USE_TEST_STORE. Left at "true" it
+ * routes every purchase to RevenueCat's test store: the paywall works, the
+ * purchase succeeds, the customer sees a confirmation, and no money moves. It
+ * is the only failure here that looks like success from every angle.
+ *
+ * Scoped to builds aimed at a real origin, so local and preview work untouched
+ * — the sibling guard in apprentigate/next.config.ts is scoped the same way and
+ * exists because a broken contact form reached the live domain twice.
+ */
+function assertProductionCanTakeMoney() {
+  const problems = paymentEnvProblems(process.env);
+  if (problems.length === 0) return;
+
+  throw new Error(
+    [
+      "",
+      "Refusing to build for production: this build cannot reliably take money.",
+      "",
+      ...problems.map((p) => `  ${p.name}\n    ${p.consequence}`),
+      "",
+      "The first subscriber is the one this protects. They are charged once and",
+      "they do not come back to try again.",
+      "",
+      "SECURITY.md holds the authoritative list and where each value comes from.",
+      "",
+    ].join("\n"),
+  );
+}
+
+assertProductionCanTakeMoney();
 
 /*
  * The Content-Security-Policy is NOT here any more. It moved to src/proxy.ts
