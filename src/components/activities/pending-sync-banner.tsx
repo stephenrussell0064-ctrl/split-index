@@ -7,6 +7,7 @@ import {
   ACTIVITY_QUEUE_CHANGED,
   flushActivityQueue,
   getPendingActivityCount,
+  getPendingActivityCountOnDevice,
 } from "@/lib/activities/offline-queue";
 import { cn } from "@/lib/utils/cn";
 
@@ -34,14 +35,29 @@ export function PendingSyncBanner({ className }: { className?: string }) {
   const [syncing, setSyncing] = useState(false);
   const [droppedSports, setDroppedSports] = useState<string[]>([]);
 
-  // Who we are, once. The queue filters by owner so an unsent workout is never
-  // uploaded by whoever signs in next — the count has to filter the same way.
+  /*
+    Who we are, once — WITHOUT asking the network.
+
+    This used to call `auth.getUser()`, which is documented as performing a
+    request to the auth server on every call. That is the wrong question to ask
+    here for a reason that took a test to see: the queue filters by owner, and
+    `ownedBy` treats a missing id as "signed out" rather than "anyone", so it
+    excludes every item that names an owner. An unresolved owner therefore
+    counts ZERO — and the one situation a network call reliably fails in is the
+    one this banner exists for. Offline, with two workouts on the phone, it
+    rendered nothing at all.
+
+    `getSession()` reads the stored session instead, and only reaches the
+    network if the access token has already expired. That is device-local
+    state, which is the right kind of state to consult about device-local
+    workouts.
+  */
   useEffect(() => {
     let cancelled = false;
     void createClient()
-      .auth.getUser()
+      .auth.getSession()
       .then(({ data }) => {
-        if (!cancelled) setUserId(data.user?.id ?? null);
+        if (!cancelled) setUserId(data.session?.user.id ?? null);
       })
       .catch(() => {
         if (!cancelled) setUserId(null);
@@ -52,7 +68,15 @@ export function PendingSyncBanner({ className }: { className?: string }) {
   }, []);
 
   useEffect(() => {
-    const refresh = () => setCount(getPendingActivityCount(userId));
+    /*
+      And when even that cannot answer — an expired token with no signal — fall
+      back to counting the device rather than counting nothing. On a shared
+      phone that could include a workout someone else queued, which is a far
+      smaller problem than telling an athlete their session is gone. Sending
+      still filters by owner; only the count relaxes.
+    */
+    const refresh = () =>
+      setCount(userId ? getPendingActivityCount(userId) : getPendingActivityCountOnDevice());
     refresh();
     // The queue writes to localStorage, whose `storage` event fires only in
     // OTHER tabs. This is a phone app with one tab, so the queue announces its
@@ -66,6 +90,7 @@ export function PendingSyncBanner({ className }: { className?: string }) {
   }, [userId]);
 
   const syncNow = useCallback(async () => {
+    if (!userId) return;
     setSyncing(true);
     setDroppedSports([]);
     try {
@@ -121,7 +146,14 @@ export function PendingSyncBanner({ className }: { className?: string }) {
           </p>
         )}
       </div>
-      {count > 0 && (
+      {/*
+        No button until we know whose workouts these are. Sending is the one
+        operation that must not relax the owner filter — a flush with no id
+        sends nothing and would leave the athlete pressing a button that
+        silently does nothing. The count above is still true, and the automatic
+        flush picks them up once the session resolves.
+      */}
+      {count > 0 && userId && (
         <button
           type="button"
           onClick={syncNow}

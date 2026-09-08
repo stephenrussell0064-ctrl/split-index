@@ -101,25 +101,6 @@ export function hasQueuedActivities(): boolean {
 }
 
 /**
- * Sports with a workout still waiting to be sent, for a given athlete.
- *
- * Owner-filtered, so pass the id. `queuedSports()` with no argument does NOT
- * mean "anyone": `ownedBy` reads a missing id as "signed out", and returns
- * false for every item that names an owner — which is every item enqueued
- * since ownership was recorded. Use `queuedSportsOnDevice` for the
- * device-level question.
- */
-export function queuedSports(userId?: string | null): string[] {
-  const sports = new Set<string>();
-  for (const item of readQueue()) {
-    if (!ownedBy(item, userId)) continue;
-    const sport = (item.payload as { sport?: unknown } | null)?.sport;
-    if (typeof sport === "string") sports.add(sport);
-  }
-  return [...sports];
-}
-
-/**
  * Sports with a workout queued on THIS DEVICE, whoever queued it.
  *
  * Deliberately not owner-filtered, and not the same question as
@@ -132,9 +113,12 @@ export function queuedSports(userId?: string | null): string[] {
  * for a workout already in the queue invites a second submit under a fresh
  * idempotency key, which is the same session in the logbook twice.
  *
- * This exists because the first version of that check called `queuedSports()`
- * with no argument and always got an empty array, so the suppression never
- * fired at all.
+ * Not owner-filtered for a second reason as well, learned the hard way: an
+ * owner-filtered call with no id does NOT mean "anyone". `ownedBy` reads a
+ * missing id as "signed out" and returns false for every item that names an
+ * owner — which is every item enqueued since ownership was recorded. The first
+ * version of this check was owner-filtered and always came back empty, so the
+ * suppression never fired once.
  */
 export function queuedSportsOnDevice(): string[] {
   const sports = new Set<string>();
@@ -143,6 +127,21 @@ export function queuedSportsOnDevice(): string[] {
     if (typeof sport === "string") sports.add(sport);
   }
   return [...sports];
+}
+
+/**
+ * How many workouts are queued on this device, whoever queued them.
+ *
+ * The fallback for when the owner cannot be established. `auth.getUser()` is a
+ * network call, so the one situation it reliably fails in is the one this
+ * queue exists for — and an owner-filtered count with an unresolved owner is
+ * zero, which would render the "waiting to sync" banner invisible to an
+ * athlete standing offline with unsent workouts. A count that might include a
+ * second athlete's session on a shared phone is a far smaller problem than
+ * silence; sending still filters by owner.
+ */
+export function getPendingActivityCountOnDevice(): number {
+  return readQueue().length;
 }
 
 /** Pending items belonging to this athlete (plus legacy rows with no owner recorded). */

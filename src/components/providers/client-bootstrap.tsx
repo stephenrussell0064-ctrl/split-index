@@ -34,8 +34,16 @@ export function ClientBootstrap() {
       if (flushing) return;
       flushing = true;
       try {
-        const { data } = await createClient().auth.getUser();
-        const result = await flushActivityQueue(data.user?.id ?? null);
+        /*
+          `getSession` rather than `getUser`: the latter asks the auth server
+          on every call, and this runs on every tab focus. Worse, a request
+          that fails on a flaky connection comes back with no user, and a
+          flush with no id sends nothing — so the one connection state worth
+          retrying in was the state that made the retry a no-op. The stored
+          session answers the same question locally.
+        */
+        const { data } = await createClient().auth.getSession();
+        const result = await flushActivityQueue(data.session?.user.id ?? null);
         /*
           Clear the device draft mirror only for workouts the SERVER has now
           accepted. The mirror deliberately survives being queued, because the
