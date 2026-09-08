@@ -16,6 +16,29 @@
   --accent: #3dff6e;
   --accent-foreground: #04120a;
   --accent-glow: rgba(61, 255, 110, 0.2);
+  /*
+    The keyboard focus outline, and the reason it is not just --accent.
+
+    A focus ring is neither text nor a decorative fill. It is non-text content
+    that carries meaning, so WCAG 1.4.11 puts it at 3:1 against whatever it is
+    drawn on — and `outline-offset: 2px` draws it on the PAGE, not on the
+    control. On the dark shell --accent is #3DFF6E at 15.17:1 and there is
+    nothing to think about.
+
+    In the Engine there could be. On this branch the cardio scope sets --accent
+    to the dark ink --cardio-accent-text, which measures 5.30:1 on --cardio-bg,
+    so following --accent is safe here and nothing is pinned. That is NOT true
+    everywhere: where the cardio scope keeps the brand #3BA6FF as a fill — the
+    right call for a fill, and what main does — the same rule draws a 2.50:1
+    ring, and this token has to be pinned there instead.
+
+    Which is the point of separating it from --accent at all. The outline is a
+    third kind of use, alongside text at 4.5:1 and a fill nobody reads at
+    nothing, and it needs somewhere to be pinned when the palette moves under
+    it. contrast.test.ts measures the resolved value per scope, so the day this
+    branch takes that palette change the test says so.
+  */
+  --focus-ring: var(--accent);
   --success: #22c55e;
   --warning: #eab308;
   --danger: #ef4444;
@@ -470,7 +493,7 @@ body {
 }
 
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
