@@ -143,16 +143,22 @@ const PAIRINGS: Pairing[] = [
   { what: "Engine accent on the app background", fg: "cardio-accent", bg: "background", min: TEXT },
 ];
 
-/**
- * The light-mode remaps, which are scoped CSS rules rather than :root tokens.
+/*
+ * ── Reading the light-mode remaps ─────────────────────────────────────────
  *
+ * The remaps are scoped CSS rules rather than :root tokens.
  * `[data-mode="cardio"] .mode-content` and `.bg-cardio-zone` override the
  * dark-theme tokens so shared components stay legible on white. Three of those
  * overrides were themselves failures — including white-on-accent at 2.60:1,
  * which made the label of every primary button in cardio mode harder to read
  * than the button — so they are measured here too. Values are read out of the
  * rules rather than restated, for the same reason as the tokens above.
+ *
+ * The four helpers below do that reading. Two of them answer subtly different
+ * questions and the difference has already caused one wrong number, so they are
+ * named for the question rather than for the mechanism.
  */
+
 /** A token as literally written inside one rule block, or null if that block does not set it. */
 function rawIn(selector: string, property: string): string | null {
   const css = readFileSync(CSS, "utf8");
