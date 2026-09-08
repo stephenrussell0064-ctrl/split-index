@@ -9,6 +9,7 @@
  * every angle including the customer's.
  */
 
+import { readFileSync } from 'node:fs';
 import { paymentEnvProblems } from './check-payment-env.mjs';
 
 const PRODUCTION = {
@@ -104,6 +105,37 @@ check(
   paymentEnvProblems({ VERCEL_ENV: 'production' }).every(
     (p) => typeof p.consequence === 'string' && p.consequence.length > 30,
   ),
+  true,
+);
+
+/*
+ * The guard has to be WIRED IN, not merely correct.
+ *
+ * Everything above tests `paymentEnvProblems` in isolation, and the registry
+ * milestone ran only this file. So deleting the call from `next.config.ts` —
+ * or just the import — left every assertion here passing, the milestone green,
+ * and a production build free to ship with no webhook secret: the purchase
+ * succeeds, Apple takes the money, the entitlement never lands, and nothing
+ * anywhere reports it. That is the exact failure this guard exists to prevent,
+ * reachable by removing one line that nothing was watching.
+ *
+ * Asserted on the real config, at module scope. `assertProductionCanTakeMoney`
+ * inside a function nobody calls would satisfy a grep for the name.
+ */
+const config = readFileSync(new URL('../next.config.ts', import.meta.url), 'utf8')
+  .replace(/\/\*[\s\S]*?\*\//g, ' ')
+  .replace(/(^|[^:])\/\/[^\n]*/g, '$1 ');
+
+check(
+  'next.config.ts imports the guard',
+  /import\s*\{[^}]*\bpaymentEnvProblems\b[^}]*\}\s*from\s*["']\.\/scripts\/check-payment-env\.mjs["']/.test(config),
+  true,
+);
+
+check(
+  'next.config.ts CALLS it at module scope, not just defines it',
+  // A bare call on its own line, outside any block: `assertProductionCanTakeMoney();`
+  /^assertProductionCanTakeMoney\(\);?\s*$/m.test(config),
   true,
 );
 
