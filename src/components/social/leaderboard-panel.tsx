@@ -334,7 +334,25 @@ export function LeaderboardPanel({
   return (
     <Card glow="accent">
       <CardHeader>
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        {/*
+          Stacked on a phone, side by side from sm up — deliberately explicit
+          rather than left to flex-wrap.
+
+          This row was `flex flex-wrap justify-between` holding the title and
+          the Weekly/Monthly/All Time toggle. In principle the toggle should
+          have wrapped to a second line when the two did not fit. In practice it
+          did not: the toggle stayed beside the title and ran off the right of
+          the screen, widening the card so the whole leaderboard scrolled
+          sideways, and then — once <main> began clipping — simply lost "All
+          Time" off the edge. Adding flex-wrap and min-w-0 to the toggle itself
+          did not change what rendered either.
+
+          So the layout no longer depends on wrap behaviour at all. `flex-col`
+          below sm puts the toggle on its own line by construction, which is
+          where wrapping was supposed to put it, and there is nothing left for
+          the browser to decide.
+        */}
+        <div className="flex flex-col items-start gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-center gap-2">
             <Trophy className="h-4 w-4 shrink-0 text-warning" />
             <CardTitle>Leaderboard</CardTitle>
