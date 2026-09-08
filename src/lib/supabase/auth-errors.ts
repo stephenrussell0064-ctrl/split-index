@@ -146,6 +146,15 @@ function withDevAuthDetails(message: string, error: unknown): string {
 }
 
 /** Human-readable message from Supabase Auth errors (handles `{}` from 500 responses). */
+/**
+ * Shown when a sign-in provider is offered but not configured. Deliberately
+ * does not say "try again": the one thing that is certain is that trying again
+ * will fail the same way, and telling somebody otherwise wastes their time and
+ * their trust.
+ */
+const PROVIDER_NOT_ENABLED =
+  "That sign-in method is not available right now. Please use email, or another provider.";
+
 export function authErrorMessage(
   error: unknown,
   fallback = "Something went wrong. Please try again."
@@ -180,6 +189,27 @@ export function authErrorMessage(
         AUTH_CODE_MESSAGES.email_send_failed,
         error
       );
+    }
+    /*
+     * "Unsupported provider: provider is not enabled".
+     *
+     * Supabase returns this when an OAuth provider is offered by the app but
+     * not switched on in the project — and without this case it reaches the
+     * user verbatim, because the message is specific enough to survive
+     * isUselessMessage and none of the branches above claim it.
+     *
+     * It matters most during App Review. Sign in with Apple has to be offered
+     * wherever Google is (guideline 4.8), so the button ships; if the provider
+     * is not configured, the reviewer presses it and reads an internal error
+     * string. The generic fallback is no better here — it says "please try
+     * again", and trying again cannot work.
+     *
+     * This is a safety net, not the fix. The fix is enabling the provider, and
+     * apple-provider-config on the dashboard checks the live project for
+     * exactly that.
+     */
+    if (lower.includes("provider is not enabled") || lower.includes("unsupported provider")) {
+      return withDevAuthDetails(PROVIDER_NOT_ENABLED, error);
     }
     if (mapped && (status === 500 || message === "{}")) {
       return withDevAuthDetails(mapped, error);
