@@ -177,7 +177,12 @@ export const FEMALE_CARDIO_FACTORS: Record<BenchmarkSport, number> = {
   walk: 1.191, // mirrors running per instruction; no walking data exists (§6)
   swim: 1.14, // §5, 400 m freestyle, 50th percentile
   cycle: 1.098, // §2c, IM 70.3 bike leg, 823,459 finishers — a floor, see above
-  row: 1.187, // unused for row's own scoring — row has sex-specific tables now
+  // Dead. Row is scored from ROW_2K_ANCHORS_MALE/FEMALE and never reaches the
+  // multiplier path; ski used to inherit this value, which was the stated
+  // reason for keeping it, and no longer does. The Record type requires every
+  // sport to have an entry, so it stays as a placeholder rather than a number
+  // anyone should read or maintain.
+  row: 1.187,
   ski: 1.1644, // §3b, C2 logbook 2025, 2000 m: 9:35.8 F / 8:14.5 M
 };
 
@@ -334,13 +339,50 @@ const ROW_2K_ANCHORS_MALE: Anchor[] = [
   [597.4, 125], // 9:57.4 — 5th percentile (was 8:06.9)
 ];
 
+/*
+ * The sex ratios below were GIVEN, not measured, and the only measured rowing
+ * distribution disagrees with them.
+ *
+ * Each row used to be annotated "sourced sex ratio". §4b of
+ * `docs/pre-launch/calibration-data.md` lists this exact column as "Existing
+ * app calibration — given in brief". It is an assumption, and calling it
+ * sourced in the code is the same fault SKI_FROM_ROW_PACE had when it claimed
+ * to be "Validated".
+ *
+ * What the data says. §3c is the 2025 Concept2 logbook at 2000 m: 9,561 men
+ * and 2,545 women, the best-sampled sex-split distribution anywhere in that
+ * document. Its F:M ratios are near flat — 1.131 at the 90th, 1.127 at the
+ * 75th, 1.137 at the 50th, 1.152 at the 25th, so about 2 points of widening
+ * across the whole measured range. This table implies 1.145 rising to 1.261,
+ * roughly six times that gradient.
+ *
+ * The populations differ — the logbook is fitness-enthusiast, this table is
+ * general — and §4 establishes that the sex gap does move with ability, so
+ * some divergence is expected. It does not cover this much: the app's median
+ * male, 8:03.1, sits near the logbook's 40th percentile, where the measured
+ * ratio is about 1.143. This table uses 1.202 there. In real terms the female
+ * median anchor is 9:40.5 where the measured ratio would put it at 9:12.2 —
+ * 28 seconds more generous, so a median woman is scored against a standard
+ * about 6% easier than the only measurement supports.
+ *
+ * Left as it stands rather than quietly rebased, because a correction here is
+ * a whole table and not a scalar, and the tails cannot be sourced: the app's
+ * 99th and 5th percentiles fall outside the logbook's measured range at both
+ * ends, and extrapolating the gradient there is exactly the unsupported move
+ * §5 warns against for swimming. Fixing the middle three anchors alone would
+ * leave a kinked table, which is worse than a consistent wrong one.
+ *
+ * Tracked as its own milestone (`row-sex-table`) so it is visible rather than
+ * buried here, with `scripts/check-row-sex-table-sourced.mjs` asserting only
+ * over the range the logbook actually covers.
+ */
 const ROW_2K_ANCHORS_FEMALE: Anchor[] = [
-  [439.2, 925], // 7:19.2 — 99th percentile (was 6:52.2; sourced sex ratio 1.145)
-  [459.1, 850], // 7:39.1 — 95th percentile (was 7:03.9; 1.145)
-  [496.3, 725], // 8:16.3 — 80th percentile (was 7:44.0; 1.172)
-  [580.5, 475], // 9:40.5 — 50th percentile (was 8:30.2; 1.202)
-  [661.4, 250], // 11:01.4 — 20th percentile (was 9:21.0; 1.232)
-  [753.6, 125], // 12:33.6 — 5th percentile (was 10:14.2; 1.261)
+  [439.2, 925], // 7:19.2 — 99th percentile (was 6:52.2; assumed ratio 1.145)
+  [459.1, 850], // 7:39.1 — 95th percentile (was 7:03.9; assumed 1.145)
+  [496.3, 725], // 8:16.3 — 80th percentile (was 7:44.0; assumed 1.172)
+  [580.5, 475], // 9:40.5 — 50th percentile (was 8:30.2; assumed 1.202)
+  [661.4, 250], // 11:01.4 — 20th percentile (was 9:21.0; assumed 1.232)
+  [753.6, 125], // 12:33.6 — 5th percentile (was 10:14.2; assumed 1.261)
 ];
 
 /**
