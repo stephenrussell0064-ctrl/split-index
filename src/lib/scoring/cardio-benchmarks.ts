@@ -51,17 +51,36 @@ export const BENCHMARK_DISTANCE_METERS: Record<BenchmarkSport, number> = {
  * miscalibration wearing the first one's clothes. Same distance as the anchor
  * table, or the number does not belong here.
  *
- * `run` is deliberately NOT changed. 1.152 sits inside its sourced band (§5
- * cross-sport: 1.121 elite to 1.191 recreational median) but on a different
- * basis from the three above — it is between the two rather than at the median.
- * Moving it to 1.191 would make the basis uniform and would also move every
- * score in the app's most-used sport, on the strength of a table the research
- * labels "for sanity-checking a finished table" rather than a primary source.
- * That is a separate decision and it has not been taken.
+ *   run 1.152 → 1.191   §4a, and this one has the best evidence of the four.
+ *                       RunRepeat's 5 km percentile table is 35 million race
+ *                       results at this table's own benchmark distance, and the
+ *                       F:M ratio is flat across the entire middle of the
+ *                       distribution: 1.195 at the 80th, 1.191 at the 70th,
+ *                       60th and 50th, 1.189 at the 40th, 1.186 at the 30th.
+ *                       It moves only at the extremes — 1.237 at the 99th,
+ *                       1.146 at the 10th. So 1.191 is not a median cherry-
+ *                       picked from a curve; it is the value for almost every
+ *                       runner this app will score. parkrun's ~1.19 and a
+ *                       separate 736,928-result dataset both agree.
+ *
+ *                       1.152 matched no percentile in that table. The nearest
+ *                       is the 10th-20th (1.146-1.179): the sex gap of the
+ *                       slowest runners, applied to everyone, which under-
+ *                       credited every woman through the middle of the field.
+ *
+ *                       This one carries the furthest. The run table is the
+ *                       reference population the other anchor tables were
+ *                       rebased onto, so it is the table the rest are read
+ *                       against.
+ *
+ * `walk` mirrors `run` and moves with it, as it was originally set to do. There
+ * is no walking sex-ratio data in the research at all — §6 lists it among what
+ * could not be found — so mirroring remains an assumption, just a better-
+ * anchored one than before.
  */
 export const FEMALE_CARDIO_FACTORS: Record<BenchmarkSport, number> = {
-  run: 1.152,
-  walk: 1.152, // mirrors running per instruction
+  run: 1.191, // §4a, RunRepeat 5 km — flat at 1.186-1.195 across the 30th-80th
+  walk: 1.191, // mirrors running per instruction; no walking data exists (§6)
   swim: 1.14, // §5, 400 m freestyle, 50th percentile
   cycle: 1.1, // §5, 20 km TT — the midpoint of 1.098 and 1.126, the only two sourced values
   row: 1.187, // unused for row's own scoring — row has sex-specific tables now

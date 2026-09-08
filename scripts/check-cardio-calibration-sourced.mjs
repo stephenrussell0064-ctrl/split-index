@@ -67,10 +67,25 @@ const BANDS = [
   {
     what: 'FEMALE_CARDIO_FACTORS.run',
     read: (src) => number(src, /FEMALE_CARDIO_FACTORS[\s\S]*?\brun:\s*([\d.]+)/),
-    min: 1.12,
-    max: 1.2,
-    where: '§5 cross-sport reference — running 1.121 elite to 1.191 recreational median',
-    quote: '| Running 5 km | 1.121 (WR/top-20) | 1.191 (RunRepeat 50th) | 1.6× |',
+    /*
+     * Narrowed on 8 Sep 2026, and re-sourced.
+     *
+     * This band was 1.12-1.20, read off §5's cross-sport table — which the
+     * research labels "for sanity-checking a finished table", not as a source.
+     * That span is the whole distance from elite to recreational, so it
+     * admitted 1.152, a number matching no percentile in the actual data.
+     *
+     * §4a is the primary evidence and the best in the document: RunRepeat's
+     * 5 km percentiles, 35 million race results, at this table's own benchmark
+     * distance. The ratio is flat across the middle — 1.195 (80th), 1.191
+     * (70th/60th/50th), 1.189 (40th), 1.186 (30th) — and moves only at the
+     * extremes. The band is that flat region, because that is where nearly
+     * every athlete this app scores actually sits.
+     */
+    min: 1.185,
+    max: 1.196,
+    where: '§4a RunRepeat 5 km — 1.186 (30th) to 1.195 (80th), 1.191 across the 50th-70th; parkrun and a separate 736,928-result dataset agree at ~1.19',
+    quote: '| 50th | 50th | 31:28 | 37:28 | **1.191** |',
   },
   {
     what: 'FEMALE_CARDIO_FACTORS.swim',
