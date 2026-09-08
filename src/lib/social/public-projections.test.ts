@@ -235,6 +235,15 @@ describe("WP1 — the public projections", () => {
   it("defines every view the application reads from", () => {
     expect([...views.keys()].sort()).toEqual([
       "leaderboard_profiles",
+      /*
+        073. Two columns — user_id and username — over EVERY profile, so the
+        username uniqueness check can see unverified accounts. It cannot use
+        public_profiles for that: `username` is UNIQUE at the column level, so
+        checking only verified rows would report a taken name as free and the
+        save would fail on a constraint the athlete cannot act on. Revoked from
+        anon; signed-in callers only.
+      */
+      "profile_usernames",
       "public_challenge_participation",
       "public_index_history",
       "public_leaderboard_entries",

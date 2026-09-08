@@ -45,6 +45,9 @@ const PROJECTIONS = [
   "public_workout_scores",
   "public_index_history",
   "public_leaderboard_entries",
+  // 073. Two columns over every profile, for the uniqueness check that cannot
+  // use public_profiles because it must see unverified accounts too.
+  "profile_usernames",
 ];
 
 function migrationFiles(): string[] {

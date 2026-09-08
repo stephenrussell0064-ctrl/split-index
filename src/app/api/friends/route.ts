@@ -44,7 +44,17 @@ export async function POST(request: Request) {
   }
 
   const { data: target } = await supabase
-    .from("profiles")
+    /*
+      `public_profiles`, not `profiles`. The base-table read worked through a
+      001 policy that let any caller read any named profile in full, which 073
+      removes.
+
+      The view is the right answer here rather than a workaround: it gates on a
+      confirmed email address, so an account that cannot receive mail is not
+      discoverable by username — which is what 061 decided about public
+      visibility generally, and a friend request is exactly that.
+    */
+    .from("public_profiles")
     .select("user_id, username")
     .eq("username", username)
     .single();
