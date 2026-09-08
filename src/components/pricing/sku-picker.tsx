@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils/cn";
 import { Button } from "@/components/ui/button";
 import { PRICING, ANNUAL_MONTHLY_EQUIVALENT_GBP } from "@/lib/pricing/config";
@@ -14,6 +15,8 @@ import {
   type NativeOfferingPackage,
 } from "@/lib/native/billing";
 import { presentProPaywall } from "@/lib/native/paywall";
+import { waitForServerEntitlement } from "@/lib/native/entitlement-settle";
+import { PremiumWelcome } from "@/components/pricing/premium-welcome";
 import type { SubscriptionSku } from "@/types";
 
 /**
@@ -67,6 +70,38 @@ export function SkuPicker({ ctaLabel, onError, className }: SkuPickerProps) {
   const [loading, setLoading] = useState(false);
   const [nativeOfferings, setNativeOfferings] = useState<NativeOfferingPackage[]>([]);
   const [offeringsLoaded, setOfferingsLoaded] = useState(false);
+  const router = useRouter();
+
+  /*
+    What replaced `window.location.reload()` on every success path.
+
+    Reloading was wrong twice over. It raced the RevenueCat webhook, so the page
+    came back before the server knew about the purchase and the athlete saw the
+    paywall they had just paid to leave. And reloading a Capacitor WebView while
+    iOS is still restoring the app after the StoreKit sheet often fails the load
+    entirely, at which point Capacitor falls back to `errorPath` — someone paid
+    and landed on "No connection right now", which is exactly what happened in
+    testing.
+
+    So: no reload. Show the confirmation immediately (the purchase is already
+    real at this point — Apple has the money and RevenueCat has the receipt),
+    poll for the server to catch up behind it, and hand over with
+    `router.refresh()`, which re-renders the server components in place without
+    the WebView ever navigating.
+  */
+  const [welcome, setWelcome] = useState<null | "purchase" | "restore">(null);
+  const [settling, setSettling] = useState(false);
+
+  const celebrate = async (variant: "purchase" | "restore") => {
+    setWelcome(variant);
+    setLoading(false);
+    setSettling(true);
+    await waitForServerEntitlement();
+    setSettling(false);
+    // Refreshed while the overlay is still up, so the screen behind it is
+    // already premium by the time they tap through.
+    router.refresh();
+  };
 
   /*
     WHICH BILLING PATH THIS IS, DECIDED BY THE DEVICE — not by a network call.
@@ -107,7 +142,7 @@ export function SkuPicker({ ctaLabel, onError, className }: SkuPickerProps) {
       if (USE_DASHBOARD_PAYWALL) {
         const outcome = await presentProPaywall();
         if (outcome.entitled) {
-          window.location.reload();
+          await celebrate(outcome.via === "restore" ? "restore" : "purchase");
           return;
         }
         // A dismissed paywall is not an error and gets no message; a genuinely
@@ -122,7 +157,7 @@ export function SkuPicker({ ctaLabel, onError, className }: SkuPickerProps) {
 
       const result = await purchaseNativeSku(selected);
       if (result.ok) {
-        window.location.reload();
+        await celebrate("purchase");
         return;
       }
       // `pending` is neither: the purchase is alive and awaiting approval, so
@@ -152,6 +187,20 @@ export function SkuPicker({ ctaLabel, onError, className }: SkuPickerProps) {
 
   return (
     <div className={className}>
+      {/*
+        Rendered over the picker rather than replacing it. The purchase is done
+        by the time this appears, so there is nothing behind it left to do —
+        but keeping the tree mounted means dismissing it cannot land on a blank
+        screen if the refresh is still in flight.
+      */}
+      {welcome && (
+        <PremiumWelcome
+          variant={welcome}
+          settling={settling}
+          onContinue={() => setWelcome(null)}
+        />
+      )}
+
       <div className="grid grid-cols-3 gap-3 mb-6">
         {SKUS.map((option) => {
           const isSelected = option.sku === selected;
@@ -212,7 +261,7 @@ export function SkuPicker({ ctaLabel, onError, className }: SkuPickerProps) {
             setLoading(true);
             const result = await restoreNativePurchases();
             if (result.ok) {
-              window.location.reload();
+              await celebrate("restore");
               return;
             }
             onError?.(result.message);
