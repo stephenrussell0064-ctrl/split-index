@@ -205,8 +205,36 @@ export const FEMALE_CARDIO_FACTORS: Record<BenchmarkSport, number> = {
  *       ÷ 1.0593 (ski:row men)           = 466.8 s   the median male rower ✓
  *
  * and 575.8 ÷ 530.7 = 1.085, §3d's women's figure, falls out of it rather than
- * being set. Both sexes land on their own median. That is the whole test of
- * whether these two numbers are right, and it is why they must move together.
+ * being set. Both sexes land on their own median, and that is why the two must
+ * move together or not at all.
+ *
+ * ## How much that composition actually proves — less than it looks
+ *
+ * Both constants are read from the same two tables, §3b and §3c, so the medians
+ * landing on each other is guaranteed by construction. It shows the pair is
+ * coherent; it does not show either is true of a real population. Stated here
+ * because the first pass presented it as validation, and it is weaker than
+ * that.
+ *
+ * ## The open question on ski, which is a real one
+ *
+ * §3g prefers the 1000 m tables to the 2000 m ones, and says the 2000 m
+ * women's ratios — 1.164 to 1.188, which is exactly the range these constants
+ * come from — are "too noisy to contradict the 1000 m pattern". Women's n at
+ * 2000 m is 129. At 1000 m the median ratio is 1.246, and the gap widens as
+ * ability falls (1.216 at the 80th to 1.322 at the 5th) where the 2000 m table
+ * shows it flat.
+ *
+ * The 2000 m numbers are used anyway, for a reason that is structural rather
+ * than a preference: the ski:row conversion only exists at 2000 m. §3c is a
+ * RowErg 2000 m table, there is no 1000 m rowing distribution here, and this
+ * app's rowing anchors are 2 km. A 1000 m F:M ratio has nothing at its own
+ * distance to compose with, and pairing it with the 2000 m pace conversion
+ * scores a median female skier 30 seconds faster than the median male rower.
+ *
+ * So this is the best available coherent pair, not the best available data. If
+ * ski ever gets its own anchor table instead of borrowing rowing's, the 1000 m
+ * distribution becomes usable and both of these should be revisited together.
  */
 export const SKI_FROM_ROW_PACE = 1.0593;
 

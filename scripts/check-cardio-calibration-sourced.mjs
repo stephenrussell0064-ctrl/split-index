@@ -157,9 +157,27 @@ const BANDS = [
      * truth than the inherited rowing factor of 1.187 it was meant to replace.
      * The band has to come from the distance the anchor table actually scores.
      */
-    min: 1.15,
-    max: 1.19,
-    where: '§3b SkiErg 2000 m, C2 logbook 2025 — 1.164 at the median, 1.171 at the 75th, 1.188 at the 90th; the app benchmarks ski at 2000 m, so §5 (1000 m) is the wrong table',
+    /*
+     * Tightened to the median region on the second pass, because 1.15-1.19
+     * admitted 1.187 — the rowing-inherited value this band exists to catch.
+     * 1.187 happens to sit at the 90th percentile of the 2000 m table, so a
+     * band spanning the whole table could not tell "calibrated to the median"
+     * from "inherited from another sport and coincidentally close".
+     *
+     * A band wide enough to be safe from every reading is a band that catches
+     * nothing.
+     *
+     * This also excludes 1.246, the 1000 m median that §3g would prefer on
+     * sample size. That is deliberate and is the one place this check takes a
+     * side: the ski:row conversion exists only at 2000 m, so a 1000 m ratio has
+     * nothing at its own distance to compose with, and pairing the two scores a
+     * median female skier 30 seconds fast. If ski ever gets its own anchor
+     * table, this band and SKI_FROM_ROW_PACE move together — see the note in
+     * cardio-benchmarks.ts.
+     */
+    min: 1.16,
+    max: 1.17,
+    where: '§3b SkiErg 2000 m, C2 logbook 2025 — 1.164 at the median, 1.165 at the 25th. The app benchmarks ski at 2000 m, so §5 (1000 m) is the wrong table; §3g prefers 1000 m on sample size but nothing there composes with the 2000 m ski:row conversion',
     quote: '| 50th | 8:14.5 | 9:35.8 | 1.164 |',
   },
   {
