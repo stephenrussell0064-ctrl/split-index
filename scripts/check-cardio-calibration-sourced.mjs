@@ -88,6 +88,34 @@ const BANDS = [
     quote: '| 50th | 50th | 31:28 | 37:28 | **1.191** |',
   },
   {
+    what: 'FEMALE_CARDIO_FACTORS.walk',
+    read: (src) => number(src, /FEMALE_CARDIO_FACTORS[\s\S]*?\bwalk:\s*([\d.]+)/),
+    /*
+     * The only band here that asserts a direction rather than a measurement,
+     * because that is all the evidence supports.
+     *
+     * Walking was never in scope for the research. §6's list of what could not
+     * be found does not mention it — not because it was sought and missing,
+     * but because nobody looked. There is no walking distribution here at all.
+     *
+     * What there is, is one sentence in §4e explaining why the RUNNING ratio
+     * narrows at the bottom: the slow tail of a mass road race is dominated by
+     * walkers, and "walking speed differs between the sexes far less than
+     * running speed does". That makes the mirror this constant used to be — an
+     * exact copy of run's factor — contradicted rather than merely unsourced,
+     * and it is the trap this band exists to catch: run moved from 1.152 to
+     * 1.191 and walk was carried with it, straight past the one piece of
+     * evidence pointing the other way.
+     *
+     * The ceiling is set below run's floor deliberately. Equality with running
+     * is the specific error, so equality must fail.
+     */
+    min: 1.1,
+    max: 1.18,
+    where: '§4e — walking is not in this research at all; the only statement about it is that the sexes differ "far less than running", so this asserts a direction. 1.146 is §4a\'s walker-dominated bottom decile, a proxy from a mixed field and not a walking measurement',
+    quote: 'walking speed differs',
+  },
+  {
     what: 'FEMALE_CARDIO_FACTORS.swim',
     read: (src) => number(src, /FEMALE_CARDIO_FACTORS[\s\S]*?\bswim:\s*([\d.]+)/),
     /*

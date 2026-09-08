@@ -81,10 +81,41 @@ export const BENCHMARK_DISTANCE_METERS: Record<BenchmarkSport, number> = {
  *                       rebased onto, so it is the table the rest are read
  *                       against.
  *
- * `walk` mirrors `run` and moves with it, as it was originally set to do. There
- * is no walking sex-ratio data in the research at all — §6 lists it among what
- * could not be found — so mirroring remains an assumption, just a better-
- * anchored one than before.
+ *   walk 1.191 → 1.146  and it should never have been 1.191. This mirrored
+ *                       `run` "per instruction", so when run moved from 1.152
+ *                       to 1.191 walk was carried along with it. The research
+ *                       contradicts the mirror directly. §4e, explaining why
+ *                       the running ratio *narrows* to 1.146 at the 10th
+ *                       percentile after sitting flat at ~1.19 through the
+ *                       middle: "the slow tail of a mass road race is
+ *                       dominated by walkers of both sexes, and walking speed
+ *                       differs between the sexes far less than running speed
+ *                       does."
+ *
+ *                       So walking's sex gap is not running's — it is
+ *                       materially smaller, and mirroring pushed it the wrong
+ *                       way. 1.146 is that walker-dominated tail figure, which
+ *                       is the closest thing to a measurement of walking in
+ *                       the document.
+ *
+ * ## Walking is the least-evidenced constant here, and it is worth saying why
+ *
+ * 1.146 is a proxy, not a walking measurement. It is the F:M ratio of the
+ * bottom decile of a mass 5 km road race — a field that is *dominated by*
+ * walkers, not made only of them. A pure walking population would sit lower
+ * still, since the slow runners mixed into that decile are the ones carrying
+ * the larger gap.
+ *
+ * It is also not the app's distance: walk benchmarks at 2500 m against a 5 km
+ * running field, and §4e's own data-quality note treats RunRepeat as "one good
+ * estimate, not ground truth".
+ *
+ * Note what §6 does *not* say. Its eight-item list of what could not be found
+ * has no walking entry — not because walking data was searched for and missing,
+ * but because walking was never in scope. That is a different and weaker
+ * position than the other four sports, all of which were looked for
+ * deliberately, and it is why the band on this one only asserts the direction
+ * the evidence gives: below running, not equal to it.
  *
  * ## Cycling: do not "improve" this with the power model in §2d
  *
@@ -174,7 +205,7 @@ export const BENCHMARK_DISTANCE_METERS: Record<BenchmarkSport, number> = {
  */
 export const FEMALE_CARDIO_FACTORS: Record<BenchmarkSport, number> = {
   run: 1.191, // §4a, RunRepeat 5 km — flat at 1.186-1.195 across the 30th-80th
-  walk: 1.191, // mirrors running per instruction; no walking data exists (§6)
+  walk: 1.146, // §4e's walker-dominated tail — NOT run's figure, see below
   swim: 1.14, // §5, 400 m freestyle, 50th percentile
   cycle: 1.098, // §2c, IM 70.3 bike leg, 823,459 finishers — a floor, see above
   // Dead. Row is scored from ROW_2K_ANCHORS_MALE/FEMALE and never reaches the
