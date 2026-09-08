@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { databaseError } from "@/lib/api/errors";
 import { createClient } from "@/lib/supabase/server";
+import { assess } from "@/lib/moderation/filter";
 
 const MAX_COMMENT_LENGTH = 1000;
 
@@ -76,6 +77,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       { error: `Comment must be ${MAX_COMMENT_LENGTH} characters or fewer` },
       { status: 400 }
     );
+  }
+
+  /*
+   * Guideline 1.2's first requirement: filter objectionable content. `reject`
+   * is reserved for the unambiguous — see filter.ts on why training talk about
+   * killing a set must not trip it. Anything merely flagged publishes, and a
+   * report queue is where a human looks at it.
+   */
+  const verdict = assess(text);
+  if (verdict.verdict === "reject") {
+    return NextResponse.json({ error: verdict.refusal }, { status: 400 });
   }
 
   const { data: comment, error } = await supabase
