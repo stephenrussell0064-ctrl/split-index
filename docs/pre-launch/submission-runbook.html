@@ -168,7 +168,7 @@
   <header class="mast">
     <p class="eyebrow">Split Index · iOS 1.0 (build 3) · App Review</p>
     <h1>Submission Runbook</h1>
-    <p class="standfirst">Everything seven working sessions turned up, in the order it has to happen. Amber steps are gates — do not pass one until it reads green. Red steps are things that will cost you the review if you do them.</p>
+    <p class="standfirst">Everything seven working sessions and two days of device testing turned up, in the order it has to happen. Amber steps are gates — do not pass one until it reads green. Red steps are things that will cost you the review if you do them. Phases 0 and 1 are complete; what remains is the walkthrough, App Store Connect, and the button.</p>
   </header>
 
   <div class="progress">
@@ -179,100 +179,36 @@
 
   <!-- ============ PHASE 0 ============ -->
   <section class="phase">
-    <div class="phase-head"><span class="phase-num">00</span><h2>Unblock yourself</h2></div>
-    <p class="phase-note">You currently cannot save a workout in your own app, and there are two independent reasons for it. Nothing below can be tested until both are cleared.</p>
+    <div class="phase-head"><span class="phase-num">00</span><h2>Cleared on 8 Sept</h2></div>
+    <p class="phase-note">Everything in this phase is done and verified against production. Kept rather than deleted, because each entry is a thing that looked like a different problem first, and the wrong diagnosis is worth remembering.</p>
 
-    <div class="step gate">
-      <input type="checkbox" data-id="0-3">
-      <div class="step-body">
-        <h3>Apply migrations 057, 058 and 069<span class="tag gate">Gate</span></h3>
-        <span class="where"><b>Where:</b> Supabase Dashboard → SQL Editor — use the corrected bundle, not the first one</span>
-        <p>This is the actual cause of the 500 on save. <code>POST /api/activities</code> inserts <code>client_request_id</code>; migration <b>058</b> adds that column and was never applied, so every insert fails on a column that does not exist. The code is unmapped, so it surfaced as "Something went wrong on our side".</p>
-        <p><b>057</b> was also never applied — its dedupe index used <code>created_at::date</code>, which is STABLE rather than IMMUTABLE, so Postgres refused it (<code>42P17</code>) and the migration died every time. Fixed on <code>main</code> in <code>ab29539</code> by pinning the day to UTC. <b>069</b> is newer than the 064–068 batch.</p>
-        <div class="warn"><b>How these were missed:</b> 057 and 058 sit exactly in the range where <code>main</code> and the venture branch number the same migrations differently. The earlier audit checked 060 and above and never looked below it.</div>
-      </div>
-    </div>
-
-    <div class="step gate">
-      <input type="checkbox" data-id="0-1">
-      <div class="step-body">
-        <h3>Confirm your own account's email in the database<span class="tag gate">Gate</span></h3>
-        <span class="where"><b>Where:</b> Supabase Dashboard → SQL Editor</span>
-        <p>Still needed once 058 is in. Of 11 accounts, 10 are verified; the one that isn't is yours, created 2026-08-09. Migration 061 is live and adds a <code>RESTRICTIVE</code> policy requiring a confirmed email before an activity <code>INSERT</code>, so the save would be refused at the next hurdle.</p>
-        <pre><code>UPDATE auth.users
-SET email_confirmed_at = NOW()
-WHERE email = 'stephen.russell0064@gmail.com'
-  AND email_confirmed_at IS NULL;</code></pre>
-        <p>Confirmation is by six-digit OTP, so this can only be set in the database — there is no link to click.</p>
-        <div class="expect"><b>Then:</b> log a workout in the app. It saves.</div>
-      </div>
-    </div>
-
-    <div class="step">
-      <input type="checkbox" data-id="0-2">
-      <div class="step-body">
-        <h3>Confirm the two bug fixes have deployed</h3>
-        <span class="where"><b>Where:</b> Vercel → Deployments</span>
-        <p>Commits <code>4636076</code> and <code>6a2163a</code> are on <code>main</code>. Wait for the deployment carrying them to go live before testing anything else, or you will be testing yesterday's code.</p>
-        <div class="expect"><b>Then:</b> a refused save reads "Confirm your email address before saving a session", not "Something went wrong on our side".</div>
-      </div>
-    </div>
-
-    <div class="step">
-      <input type="checkbox" data-id="0-4">
-      <div class="step-body">
-        <h3>Pick an exercise, or every set scores "—"</h3>
-        <span class="where"><b>Where:</b> the gym logging card → the exercise picker</span>
-        <p>This was chased through profile data first and that was wrong. <code>scoreSet</code> bails on an empty <code>row.name</code>, because the name is what resolves the anchor table and the weight convention. Est. 1RM, × BW and Volume need only weight, reps and the session-bar bodyweight — which is exactly why three stats fill in and the score does not, and why it reads as a broken scorer rather than a missing input.</p>
-        <p>The muscle-group dropdown is not the exercise. Pick the lift itself and every set scores immediately. Since <code>ab9a88a</code> the card says so rather than showing a bare dash.</p>
-        <div class="expect"><b>Note:</b> an unrecognised name still scores — <code>resolveLiftAnchor</code> falls back to a generic standard. Only an empty name blocks it.</div>
-      </div>
+    <div class="done-block">
+      <h3>Fixed and confirmed — no action</h3>
+      <ul>
+        <li><b>Saving a workout</b> — returned a 500 for everyone. Migration <b>058</b> adds <code>activities.client_request_id</code> and had never been applied, so every insert failed on a column that did not exist. Applied. The route no longer reports an RLS refusal as a server fault either (<code>4636076</code>).</li>
+        <li><b>Migration 057</b> — could never run at all: its dedupe index used <code>created_at::date</code>, which is STABLE not IMMUTABLE, so Postgres rejected it with <code>42P17</code> every time. Pinned to UTC and applied (<code>ab29539</code>).</li>
+        <li><b>Sets scoring "—"</b> — chased through profile data, which was wrong. <code>scoreSet</code> bails on an empty exercise <b>name</b>; Est. 1RM, × BW and Volume need only weight, reps and the session-bar bodyweight, which is exactly why three stats fill in and the score does not. The card now says so (<code>ab9a88a</code>). An unrecognised name still scores — only an empty one blocks it.</li>
+        <li><b>Paying and landing on the offline error page</b> — <code>window.location.reload()</code> fired while iOS was still restoring the app after the StoreKit sheet, the WebView load failed, and Capacitor fell back to <code>errorPath</code>. Replaced with a confirmation screen and <code>router.refresh()</code> (<code>501d33a</code>).</li>
+        <li><b>Account deletion</b> — see Phase 3.</li>
+      </ul>
     </div>
   </section>
 
   <!-- ============ PHASE 1 ============ -->
   <section class="phase">
-    <div class="phase-head"><span class="phase-num">01</span><h2>RevenueCat</h2></div>
-    <p class="phase-note">Configuration is <b>finished and verified</b> — every layer was checked on 7 Sept, most of it independently through RevenueCat's API rather than by reading the dashboard. What remains is not a setting. Apple has not yet published product availability to StoreKit, so the device asks for the three products and gets none back, which is what surfaces as <code>Error 23</code>. One retest, no further changes.</p>
+    <div class="phase-head"><span class="phase-num">01</span><h2>RevenueCat — complete</h2></div>
+    <p class="phase-note">Proven end to end against production on 8 Sept, in both directions. This phase needs nothing further; it is kept as the record of what was verified and how, because almost every step of it was diagnosed by inference first and inference was wrong more than once.</p>
 
     <div class="done-block">
-      <h3>Verified correct on 7 Sept — do not change these again</h3>
+      <h3>Verified working — do not change</h3>
       <ul>
-        <li><b>Paid Apps Agreement</b> — Active (effective 7 Sept).</li>
-        <li><b>Products in App Store Connect</b> — <code>co.uk.splitindex.app.monthly</code> / <code>.annual</code> / <code>.lifetime</code>, all Ready for Review, IDs matching the code exactly.</li>
-        <li><b>Subscription pricing</b> — set in every territory, £29.99 UK annual, 2-week free trial.</li>
-        <li><b>RevenueCat ↔ App Store Connect</b> — connected; RevenueCat reads "Ready to Submit" back from Apple.</li>
-        <li><b>Offering <code>default</code></b> — <code>$rc_monthly</code>/<code>$rc_annual</code>/<code>$rc_lifetime</code> mapped to the right products, paywall attached. Confirmed by querying RevenueCat's API directly, not just the dashboard.</li>
-        <li><b>Entitlement <code>split_index_pro</code></b> — attached to all three.</li>
-        <li><b>Bundle ID</b> — <code>co.uk.splitindex.app</code>, matching the Xcode project.</li>
-        <li><b>API key</b> — the <code>appl_</code> public key works; it created a real subscriber from the device.</li>
-        <li><b>SDK</b> — installed and configured. <code>purchases-ios-spm</code> 5.87.1 via <code>purchases-hybrid-common</code> 18.33.1, new enough for v2 paywalls. The dashboard's "install the SDK first" banner is static onboarding copy, not a detection result.</li>
-        <li><b>No StoreKit test configuration</b>, sandbox account signed in.</li>
+        <li><b>A real sandbox purchase granted premium</b> — <code>subscription_tier: premium</code>, <code>subscription_source: revenuecat</code>, written by the webhook. Purchase → Apple → RevenueCat → webhook → Supabase.</li>
+        <li><b>And revoked it on expiry</b> — the sandbox subscription lapsed minutes later, RevenueCat sent EXPIRATION, and the webhook correctly matched its <code>subscription_source = 'revenuecat'</code> guard and downgraded. The full lifecycle, not just the happy path.</li>
+        <li><b>Real store prices on device</b> — £4.99 / £29.99 / £79.99 from StoreKit. Apple's propagation completed roughly 18 hours after the Paid Apps Agreement activated; nothing configured after the first evening changed the outcome.</li>
+        <li><b>Webhook URL</b> — the <code>www</code> host. The apex 308-redirects and the setup doc pointed at it (since corrected, <code>4be5574</code>).</li>
+        <li><b>Authorization header</b> — <code>Bearer &lt;secret&gt;</code>, matching <code>REVENUECAT_WEBHOOK_SECRET</code> in Vercel.</li>
+        <li><b>Offering, packages, entitlement, bundle ID, API key, SDK</b> — all confirmed, several of them by querying RevenueCat's API directly rather than reading the dashboard.</li>
       </ul>
-    </div>
-
-    <div class="step gate">
-      <input type="checkbox" data-id="1-10">
-      <div class="step-body">
-        <h3>Retest the prices on device<span class="tag gate">Gate</span></h3>
-        <span class="where"><b>Where:</b> the app on a physical iPhone → any paywall</span>
-        <p>The single check that tells you whether Apple has caught up. Products were created in RevenueCat at 16:40 UTC on 7 Sept and the agreement activated the same day; availability normally propagates within 24 hours.</p>
-        <div class="expect"><b>Fixed:</b> real localised App Store prices.</div>
-        <div class="warn"><b>Not fixed:</b> £5 / £29.99 / £79.99. Those exact numbers are the hardcoded fallbacks in <code>src/lib/pricing/config.ts</code> — seeing them means RevenueCat returned nothing, so they prove the opposite of what they look like.</div>
-      </div>
-    </div>
-
-    <div class="step gate">
-      <input type="checkbox" data-id="1-9">
-      <div class="step-body">
-        <h3>Then make one sandbox purchase — on a separate account<span class="tag gate">Gate</span></h3>
-        <span class="where"><b>Where:</b> the app, signed into a sandbox Apple ID</span>
-        <p>Only worth attempting once prices are real. This is the check that proves the whole chain, and it is exactly what the reviewer does.</p>
-        <pre><code>SELECT subscription_tier, subscription_status, subscription_source
-FROM profiles WHERE user_id = '&lt;the test account&gt;';</code></pre>
-        <div class="expect"><b>Expect:</b> <code>premium</code> / <code>active</code> / <code>revenuecat</code>.</div>
-        <div class="warn"><b>Not on the demo account.</b> Sandbox subscriptions expire in minutes, and the EXPIRATION webhook matches the <code>subscription_source = 'revenuecat'</code> guard — it would downgrade your review account, possibly while the reviewer is inside it.</div>
-      </div>
     </div>
 
     <div class="step">
@@ -280,17 +216,8 @@ FROM profiles WHERE user_id = '&lt;the test account&gt;';</code></pre>
       <div class="step-body">
         <h3>Leave <code>NEXT_PUBLIC_REVENUECAT_USE_PAYWALL</code> set to <code>false</code></h3>
         <span class="where"><b>Where:</b> Vercel → Environment Variables → Production</span>
-        <p>With it <code>true</code>, checkout hands off to RevenueCat's dashboard paywall, which currently shows an Error 23 alert and no way to pay — the worst thing a reviewer could meet. With it <code>false</code>, the built-in picker runs, and that is the one now carrying the Guideline 3.1.2 renewal terms and legal links.</p>
+        <p>The built-in picker now shows real store prices and carries the Guideline 3.1.2 renewal terms and legal links. The dashboard paywall was the one path still throwing Error 23 while products were unresolved; it may work now, but it is untested and there is nothing to gain by finding out during review.</p>
         <p>Turn it on after approval: a Vercel env change and a redeploy, no rebuild and no resubmission.</p>
-      </div>
-    </div>
-
-    <div class="step">
-      <input type="checkbox" data-id="1-11">
-      <div class="step-body">
-        <h3>If prices are still wrong after 24 hours, escalate rather than reconfigure</h3>
-        <span class="where"><b>Where:</b> RevenueCat support, with your app ID and the Error 23</span>
-        <p>Everything configurable has been eliminated by evidence. If it has not resolved by then it is not propagation either, and RevenueCat can read server-side logs that neither the dashboard nor the device console exposes. More dashboard changes at that point are guesswork.</p>
       </div>
     </div>
   </section>
@@ -298,22 +225,17 @@ FROM profiles WHERE user_id = '&lt;the test account&gt;';</code></pre>
   <!-- ============ PHASE 2 ============ -->
   <section class="phase">
     <div class="phase-head"><span class="phase-num">02</span><h2>The reviewer's account</h2></div>
-    <p class="phase-note">The account is <code>demo.athlete+splitindex@example.com</code> / <code>@demo_masters_hybrid</code>. It currently holds 94 activities, 94 scores and 59 personal records — healthy data you do not want to lose. It is also, right now, on the free tier and unable to reach the Hybrid Plan.</p>
+    <p class="phase-note">The account is <code>demo.athlete+splitindex@example.com</code> / <code>@demo_masters_hybrid</code>. It currently holds 94 activities, 94 scores and 59 personal records — healthy data you do not want to lose. Both gates that stood against it on 7 Sept are now closed: it is premium again, and the Hybrid Plan consent and intake rows exist.</p>
 
-    <div class="step gate">
-      <input type="checkbox" data-id="2-1">
-      <div class="step-body">
-        <h3>Put the demo account back on premium<span class="tag gate">Gate</span></h3>
-        <span class="where"><b>Where:</b> Supabase Dashboard → SQL Editor</span>
-        <p>It is currently <code>free</code> with a null status — something reset it at 13:22 today. A reviewer signing in now finds Analytics, DOTS/IPF GL, Injury Risk Index, Interference Radar and race predictions all gated: exactly the features your App Store description promises.</p>
-        <pre><code>UPDATE profiles
-SET subscription_tier = 'premium', subscription_status = 'active'
-WHERE username = 'demo_masters_hybrid';</code></pre>
-        <div class="expect"><b>Leave <code>subscription_source</code> NULL.</b> The RevenueCat downgrade path is filtered on <code>subscription_source = 'revenuecat'</code>, so a NULL source cannot be downgraded by any webhook. This is the durable fix — granting via RevenueCat instead would be the fragile one.</div>
-      </div>
+    <div class="done-block">
+      <h3>Closed on 8 Sept — no action</h3>
+      <ul>
+        <li><b>Premium restored</b> — <code>subscription_tier: premium</code>, <code>subscription_status: active</code>, and <code>subscription_source</code> deliberately <b>NULL</b>. That NULL is what makes it durable: the RevenueCat revoke path filters on <code>subscription_source = 'revenuecat'</code>, so no expiry can downgrade the reviewer's account mid-review. Watched exactly that happen to the sandbox test account hours later.</li>
+        <li><b>Hybrid Plan gates</b> — the Article 9 consent event and the <code>hpe_intake</code> row both exist now, so the flagship feature renders instead of meeting a consent wall and a wizard.</li>
+      </ul>
     </div>
 
-    <div class="step">
+    <div class="step gate">
       <input type="checkbox" data-id="2-2">
       <div class="step-body">
         <h3>Confirm the demo account's email is verified</h3>
@@ -350,6 +272,7 @@ WHERE email = 'demo.athlete+splitindex@example.com';</code></pre>
           <li><b>Premium surfaces render</b> — Analytics, Injury Risk Index, Interference Radar, race predictions.</li>
           <li><b>Settings → Recompute scores</b> — completes, rather than the partial-failure message.</li>
           <li><b>Tap Share</b> on a report card once — the fallback can silently do nothing in a WebView.</li>
+          <li><b>Delete an account</b> — on a throwaway signup, not the demo one. Verified through the admin API, but that skips the route's own auth and audit step, and a reviewer will press this exact button.</li>
         </ul>
         <div class="warn"><b>The logbook is unverified by anyone.</b> The session that owned it had its context compacted, so its "no open bugs" is an absence of recollection rather than an absence of bugs. Its records show the logbook redesign, dark-UI-on-edit, hidden HR/RPE/elevation fields and a wrong 5k prediction all fixed and pushed — but nobody has re-opened that surface. Your taps are the only verification it will get.</div>
       </div>
@@ -370,7 +293,17 @@ WHERE email = 'demo.athlete+splitindex@example.com';</code></pre>
   <!-- ============ PHASE 3 ============ -->
   <section class="phase">
     <div class="phase-head"><span class="phase-num">03</span><h2>Confirm the migrations took</h2></div>
-    <p class="phase-note">All applied and verified against production on 7 Sept. 057 and 058 were the ones missing — 058 is why saving a workout returned a 500, and 057 could never run at all until its dedupe index was pinned to UTC (<code>ab29539</code>). Both are confirmed present: <code>activities.client_request_id</code> exists, and <code>blocked_users</code> and <code>content_reports</code> read back. These two are optional confirmation.</p>
+    <p class="phase-note">056 through 070 are applied and verified against production. 057 and 058 were missing until 8 Sept — 058 is why saving a workout returned a 500, and 057 could never run until its index was pinned to UTC. <b>070 is the newest and the most important:</b> without it, account deletion failed for every athlete who had ever been scored, which is a Guideline 5.1.1(v) rejection.</p>
+
+    <div class="done-block">
+      <h3>Migration 070 — account deletion</h3>
+      <ul>
+        <li>"Delete account and all data" returned a 500 for anyone who had ever been scored. Reproduced exactly: no history rows deletes fine, <b>one</b> <code>split_index_history</code> row fails.</li>
+        <li>Migration 054 widened the profile-sync trigger to fire on DELETE, so it ran during the cascade from <code>auth.users</code> and tried to <code>UPDATE profiles</code> — a row the same cascade was deleting. Postgres refuses that and the whole delete aborts.</li>
+        <li>Nothing was ever half-deleted: the error is raised inside the single statement, so the account was left intact rather than partly erased with a working login.</li>
+        <li>Applied and verified 500 → 200 on the same user with the same data (<code>6b79c20</code>).</li>
+      </ul>
+    </div>
 
     <div class="step">
       <input type="checkbox" data-id="3-1">
