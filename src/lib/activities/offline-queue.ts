@@ -101,16 +101,44 @@ export function hasQueuedActivities(): boolean {
 }
 
 /**
- * Sports with a workout still waiting to be sent, for this athlete.
+ * Sports with a workout still waiting to be sent, for a given athlete.
  *
- * Used to decide whether a device draft mirror is a workout in progress or a
- * copy of one already handed to the queue — the second must not be offered
- * back as something to edit and submit again.
+ * Owner-filtered, so pass the id. `queuedSports()` with no argument does NOT
+ * mean "anyone": `ownedBy` reads a missing id as "signed out", and returns
+ * false for every item that names an owner — which is every item enqueued
+ * since ownership was recorded. Use `queuedSportsOnDevice` for the
+ * device-level question.
  */
 export function queuedSports(userId?: string | null): string[] {
   const sports = new Set<string>();
   for (const item of readQueue()) {
     if (!ownedBy(item, userId)) continue;
+    const sport = (item.payload as { sport?: unknown } | null)?.sport;
+    if (typeof sport === "string") sports.add(sport);
+  }
+  return [...sports];
+}
+
+/**
+ * Sports with a workout queued on THIS DEVICE, whoever queued it.
+ *
+ * Deliberately not owner-filtered, and not the same question as
+ * `queuedSports`. The draft mirror is device-local storage, so the thing worth
+ * knowing before offering a mirror back as editable work is whether this
+ * device is already holding a queued workout for that sport — not whose it is.
+ *
+ * It also fails in the safe direction. Suppressing a mirror costs nothing
+ * permanent, because the mirror stays on disk either way; offering one back
+ * for a workout already in the queue invites a second submit under a fresh
+ * idempotency key, which is the same session in the logbook twice.
+ *
+ * This exists because the first version of that check called `queuedSports()`
+ * with no argument and always got an empty array, so the suppression never
+ * fired at all.
+ */
+export function queuedSportsOnDevice(): string[] {
+  const sports = new Set<string>();
+  for (const item of readQueue()) {
     const sport = (item.payload as { sport?: unknown } | null)?.sport;
     if (typeof sport === "string") sports.add(sport);
   }

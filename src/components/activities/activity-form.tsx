@@ -42,7 +42,7 @@ import { useSetModeOverride } from "@/components/layout/mode-override-context";
 import { endLiveActivity } from "@/lib/native/live-activity";
 import { clearPersistedGymTimerState } from "./gym-timer-storage";
 import { clearMirroredDraft, preferredDraft, readMirroredDraft } from "./draft-mirror";
-import { queuedSports } from "@/lib/activities/offline-queue";
+import { queuedSportsOnDevice } from "@/lib/activities/offline-queue";
 
 type View = "picker" | "form" | "success";
 
@@ -302,7 +302,7 @@ export function ActivityForm({
           // the same session in the logbook twice. It stays on disk as the
           // safety net for the queue giving up; it just is not editable while
           // the queue still holds it.
-          queuedSports().includes(next) ? null : readMirroredDraft(next)
+          queuedSportsOnDevice().includes(next) ? null : readMirroredDraft(next)
         );
         const hydrated =
           source === "none"

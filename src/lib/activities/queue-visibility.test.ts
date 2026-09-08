@@ -167,17 +167,39 @@ describe("which workouts the server has actually accepted", () => {
 });
 
 describe("a sport whose workout is still in the queue", () => {
-  it("is reported, so its mirror is not offered back as editable", async () => {
-    // Rehydrating it would invite a second submit under a fresh idempotency
-    // key — the same session in the logbook twice.
+  it("is reported for the athlete who queued it", async () => {
     const { enqueueActivitySubmit, queuedSports } = await import("./offline-queue");
     enqueueActivitySubmit({ ...RUN, payload: { sport: "running" }, userId: "athlete-1" });
     expect(queuedSports("athlete-1")).toEqual(["running"]);
   });
 
-  it("is not reported once nothing of theirs is queued", async () => {
+  it("is not reported for a different athlete", async () => {
     const { enqueueActivitySubmit, queuedSports } = await import("./offline-queue");
     enqueueActivitySubmit({ ...RUN, payload: { sport: "running" }, userId: "someone-else" });
     expect(queuedSports("athlete-1")).toEqual([]);
+  });
+
+  it("is invisible to an owner-filtered call with no id — which is why the device-level one exists", async () => {
+    /*
+      THE BUG THIS PINS. The form's hydration check originally called
+      `queuedSports()` with no argument. `ownedBy` reads a missing id as
+      "signed out" and returns false for every item that names an owner —
+      which is every item enqueued since ownership was recorded — so it always
+      came back empty and the suppression never fired once. The mirror was
+      offered back for a workout already in the queue, which is the duplicate
+      this whole mechanism exists to prevent.
+    */
+    const { enqueueActivitySubmit, queuedSports, queuedSportsOnDevice } =
+      await import("./offline-queue");
+    enqueueActivitySubmit({ ...RUN, payload: { sport: "running" }, userId: "athlete-1" });
+
+    expect(queuedSports()).toEqual([]);
+    expect(queuedSportsOnDevice()).toEqual(["running"]);
+  });
+
+  it("is reported on the device whoever queued it, because the mirror is device-local too", async () => {
+    const { enqueueActivitySubmit, queuedSportsOnDevice } = await import("./offline-queue");
+    enqueueActivitySubmit({ ...RUN, payload: { sport: "gym" }, userId: "someone-else" });
+    expect(queuedSportsOnDevice()).toEqual(["gym"]);
   });
 });
