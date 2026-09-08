@@ -1044,75 +1044,18 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
    * session. So durations give way first, down to their floors and no
    * further, and only a week that still does not fit loses a slot.
    */
-  const enduranceTotal = () => sessions.reduce((s, x) => s + x.minutes, 0);
-  const budgetMinutes = Math.round(totalMinutes);
-  if (budgetMinutes > 0 && enduranceTotal() > budgetMinutes && sessions.length > 0) {
-    const floorFor = (kind: string) =>
-      kind === "long_run"
-        ? MIN_ENDURANCE_SESSION_MIN
-        : kind === "easy_run" || kind === "recovery_run"
-          ? MIN_ENDURANCE_SESSION_MIN
-          : MIN_QUALITY_SESSION_MIN;
-
-    // Pass 1 — take the excess off the longest sessions first, so a week
-    // shaves its biggest run rather than flattening a 30-minute interval
-    // session into nothing. Repeated until no session has room left.
-    let guard = 0;
-    while (enduranceTotal() > budgetMinutes && guard++ < 50) {
-      const excess = enduranceTotal() - budgetMinutes;
-      const trimmable = sessions
-        .map((x, i) => ({ i, room: x.minutes - floorFor(x.kind) }))
-        .filter((x) => x.room > 0)
-        .sort((a, b) => b.room - a.room);
-      if (trimmable.length === 0) break;
-      const take = Math.min(trimmable[0].room, excess);
-      const i = trimmable[0].i;
-      sessions[i] = { ...sessions[i], minutes: sessions[i].minutes - take };
-    }
-
-    // Pass 2 — everything is at its floor and the week still does not fit, so
-    // now the count genuinely has to give. Easy volume goes first and the long
-    // run last: the sessions that survive a short week should be the ones the
-    // block is built around.
-    const droppedForBudget: string[] = [];
-    const sacrifice = (): number => {
-      for (let i = sessions.length - 1; i >= 0; i--) {
-        if (sessions[i].kind === "easy_run" || sessions[i].kind === "recovery_run") return i;
-      }
-      for (let i = sessions.length - 1; i >= 0; i--) {
-        if (sessions[i].kind !== "long_run") return i;
-      }
-      return -1;
-    };
-    while (enduranceTotal() > budgetMinutes && sessions.length > 1) {
-      const idx = sacrifice();
-      if (idx < 0) break;
-      droppedForBudget.push(sessions[idx].kind);
-      sessions.splice(idx, 1);
-    }
-    if (droppedForBudget.length > 0) {
+  {
+    const fitted = fitEnduranceToMinutes(sessions, Math.round(totalMinutes), {
+      easyCeiling: Math.min(constraints.maxSessionMin, easyCeiling),
+    });
+    sessions.length = 0;
+    sessions.push(...fitted.sessions);
+    if (fitted.dropped.length > 0) {
       notes.push(
-        `${droppedForBudget.length} endurance session${droppedForBudget.length > 1 ? "s" : ""} dropped this week — ` +
-          `${budgetMinutes} minutes will not stretch to more without making each one too short to be worth doing.`
+        `${fitted.dropped.length} endurance session${fitted.dropped.length > 1 ? "s" : ""} dropped this week — ` +
+          `${Math.round(totalMinutes)} minutes will not stretch to more without making each one too short to be ` +
+          `worth doing.`
       );
-    }
-
-    // Dropping is coarse, so anything the drop freed goes back into easy
-    // volume rather than being lost. Both ceilings that governed easy runs
-    // when they were built still bind — the athlete's own session limit, and
-    // staying below the long run so it remains the longest session.
-    const easyIdx = sessions
-      .map((x, i) => ({ x, i }))
-      .filter(({ x }) => x.kind === "easy_run" || x.kind === "recovery_run")
-      .map(({ i }) => i);
-    if (droppedForBudget.length > 0 && easyIdx.length > 0) {
-      const ceiling = Math.min(constraints.maxSessionMin, easyCeiling);
-      for (const i of easyIdx) {
-        const slack = budgetMinutes - enduranceTotal();
-        if (slack <= 0) break;
-        const give = Math.min(ceiling - sessions[i].minutes, slack);
-        if (give > 0) sessions[i] = { ...sessions[i], minutes: sessions[i].minutes + give };
-      }
     }
   }
 
@@ -1359,4 +1302,104 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
   }
 
   return { sessions, allocation, notes };
+}
+
+
+/**
+ * Bring a set of endurance sessions inside a minute budget.
+ *
+ * Extracted because two callers need exactly this and had no business
+ * growing two versions of it: the week's own budget (step 3b above), and the
+ * ACWR cap in engine.ts, which trims a week that came out too hard relative to
+ * the athlete's chronic load. Both are answering the same question — these
+ * sessions cost more than this week may spend, so what gives?
+ *
+ * TRIM BEFORE DROPPING. Shortening a session that sits above its own floor
+ * costs the week nothing it needs; deleting one costs it a session. So
+ * durations give way first, taken off the longest session each pass so a week
+ * shaves its biggest run rather than flattening a 30-minute interval session
+ * into nothing, and never below the floor that makes a session a session.
+ * Only a week that still does not fit loses a slot — easy volume first, the
+ * long run last, because the sessions that survive a short week should be the
+ * ones the block is built around.
+ *
+ * Stress travels with the minutes. Endurance stress is
+ * `BASE_STRESS_PER_MIN[kind] * minutes` — linear — so scaling a session's
+ * stress by the same ratio as its minutes is exact, not an approximation.
+ * Leaving it stale would hand the scheduler and the ACWR ratios a cost for
+ * work that is no longer prescribed.
+ *
+ * Strength sessions are returned untouched. Their stress is a flat per-kind
+ * constant that does not vary with minutes, so shortening one cannot reduce
+ * the week's load at all — trimming them would cost the athlete training and
+ * buy nothing.
+ */
+export function fitEnduranceToMinutes(
+  all: readonly PlannedSession[],
+  budgetMinutes: number,
+  opts: { easyCeiling?: number } = {}
+) : { sessions: PlannedSession[]; dropped: SessionKind[]; keptIndices: number[] } {
+  const out = all.map((x) => ({ ...x }));
+  // Which entry of `all` each surviving session came from. Callers hold other
+  // references to these objects — engine.ts's `placements` is the same session
+  // by identity — and after a drop the arrays no longer line up by position,
+  // so the correspondence has to be reported rather than inferred.
+  let src = all.map((_, i) => i);
+  const isEasy = (x: PlannedSession) => x.kind === "easy_run" || x.kind === "recovery_run";
+  const enduranceIdx = () => out.map((x, i) => ({ x, i })).filter(({ x }) => x.domain === "endurance");
+  const total = () => enduranceIdx().reduce((s, { x }) => s + x.minutes, 0);
+
+  if (budgetMinutes <= 0 || total() <= budgetMinutes) return { sessions: out, dropped: [], keptIndices: src };
+
+  const floorFor = (x: PlannedSession) =>
+    x.isQuality && !isEasy(x) && x.kind !== "long_run" ? MIN_QUALITY_SESSION_MIN : MIN_ENDURANCE_SESSION_MIN;
+  const retime = (x: PlannedSession, minutes: number): PlannedSession => ({
+    ...x,
+    minutes,
+    stress: x.minutes > 0 ? (x.stress / x.minutes) * minutes : x.stress,
+  });
+
+  // Pass 1 — durations, longest-first, never below the floor.
+  let guard = 0;
+  while (total() > budgetMinutes && guard++ < 100) {
+    const excess = total() - budgetMinutes;
+    const room = enduranceIdx()
+      .map(({ x, i }) => ({ i, room: x.minutes - floorFor(x) }))
+      .filter((r) => r.room > 0)
+      .sort((a, b) => b.room - a.room);
+    if (room.length === 0) break;
+    const take = Math.min(room[0].room, excess);
+    out[room[0].i] = retime(out[room[0].i], out[room[0].i].minutes - take);
+  }
+
+  // Pass 2 — everything is at its floor and it still does not fit.
+  const dropped: SessionKind[] = [];
+  const sacrifice = (): number => {
+    const end = enduranceIdx();
+    for (let k = end.length - 1; k >= 0; k--) if (isEasy(end[k].x)) return end[k].i;
+    for (let k = end.length - 1; k >= 0; k--) if (end[k].x.kind !== "long_run") return end[k].i;
+    return -1;
+  };
+  while (total() > budgetMinutes && enduranceIdx().length > 1) {
+    const idx = sacrifice();
+    if (idx < 0) break;
+    dropped.push(out[idx].kind);
+    out.splice(idx, 1);
+    src = src.filter((_, k) => k !== idx);
+  }
+
+  // Dropping is coarse, so give anything it freed back to easy volume rather
+  // than losing it. Bounded by the caller's ceiling, which is what keeps the
+  // long run the longest session of the week.
+  const ceiling = opts.easyCeiling;
+  if (dropped.length > 0 && ceiling != null) {
+    for (const { i } of enduranceIdx().filter(({ x }) => isEasy(x))) {
+      const slack = budgetMinutes - total();
+      if (slack <= 0) break;
+      const give = Math.min(ceiling - out[i].minutes, slack);
+      if (give > 0) out[i] = retime(out[i], out[i].minutes + give);
+    }
+  }
+
+  return { sessions: out, dropped, keptIndices: src };
 }

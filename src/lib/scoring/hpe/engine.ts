@@ -31,7 +31,7 @@ import type { Constraints, Goal, AthleteState } from "./intake";
 import { buildMacrocycle, enforceAcwr, type AcwrEnforcement, type MacrocycleWeek } from "./macrocycle";
 import { autoregulate, type SessionFeedback } from "./progression";
 import { scheduleWeek, type Placement } from "./scheduler";
-import { buildSessionSet, type PlannedSession } from "./session-set";
+import { buildSessionSet, fitEnduranceToMinutes, type PlannedSession } from "./session-set";
 import {
   emptyModalityFitness,
   enduranceBenchmark,
@@ -215,11 +215,85 @@ export function generatePlan(input: GeneratePlanInput): GeneratedPlan {
     w.stressCapped = acwr.cappedStress[i];
     w.acwr = acwr.ratios[i];
     if (w.stressCapped < w.stress - 0.5) {
-      // The week's stress was capped; the volume the athlete actually does
-      // must follow, or the cap is cosmetic.
+      /**
+       * The week's stress was capped; the volume the athlete actually does
+       * must follow, or the cap is cosmetic.
+       *
+       * It was cosmetic. This scaled `enduranceMin` — the number quoted in the
+       * week's notes — and stopped there. The sessions had already been built
+       * and scheduled by the time this runs, and nothing came back to touch
+       * them, so the athlete was told their volume had been trimmed for their
+       * own safety and then handed the untrimmed sessions to do. The label
+       * moved; the training did not.
+       *
+       * Trimming really does mean endurance and not strength. Endurance stress
+       * is `BASE_STRESS_PER_MIN[kind] * minutes`, so minutes are the lever;
+       * strength stress is a flat per-kind constant that does not move with
+       * duration at all, so shortening a lifting session would cost the
+       * athlete training and reduce the week's load by nothing.
+       *
+       * `fitEnduranceToMinutes` is the same reconciliation the session set
+       * uses against its own budget — durations give way before the count
+       * does, floors hold, and the long run is the last thing to go.
+       *
+       * MEASURED: across 900 generated plans containing 92 ACWR-capped weeks,
+       * the reconciliation below currently changes NOTHING. Every capped week
+       * was already prescribing far less than its trimmed budget — 180 minutes
+       * against 543 in the worst example — because of the separate, unfixed
+       * undershoot where `maxSessionMin` caps every session while the slot
+       * count comes from the phase tables, so a high budget has nowhere to go.
+       *
+       * It is kept anyway, as the guard the comment above always claimed was
+       * here. The day the undershoot is fixed and weeks start spending their
+       * budgets, this becomes load-bearing immediately, and a safety cap that
+       * silently stops applying when the rest of the engine improves is the
+       * worst possible failure. What must NOT be inferred from it is that
+       * capped weeks are being trimmed today: they are not, because they do
+       * not need to be.
+       */
+      const enduranceMinutesOf = (ss: readonly PlannedSession[]) =>
+        ss.filter((s) => s.domain === "endurance").reduce((sum, s) => sum + s.minutes, 0);
+      const before = enduranceMinutesOf(w.sessions);
+
       const scale = w.stressCapped / w.stress;
       w.enduranceMin = Math.round(w.enduranceMin * scale);
-      w.notes.push("Volume trimmed this week to keep your acute:chronic load inside a safe ramp.");
+
+      const fitted = fitEnduranceToMinutes(w.sessions, w.enduranceMin);
+      // `placements` holds references to the very objects in `sessions`, and
+      // the reconciliation returns new ones. Rewiring both from the same map
+      // keeps the week's two views of a session from disagreeing about how
+      // long it is — the schedule the athlete reads is built from placements.
+      const replacement = new Map<PlannedSession, PlannedSession>();
+      fitted.keptIndices.forEach((srcIdx, i) => {
+        const old = w.sessions[srcIdx];
+        if (old) replacement.set(old, fitted.sessions[i]);
+      });
+      // A session with no replacement was dropped, and its placement goes with
+      // it — leaving the placement behind would put a session on the calendar
+      // that is no longer in the week.
+      w.placements = w.placements.flatMap((p) => {
+        const next = replacement.get(p.session);
+        return next ? [{ ...p, session: next }] : [];
+      });
+      w.sessions = fitted.sessions;
+      w.stress = w.placements.reduce((s, p) => s + p.session.stress, 0);
+
+      /**
+       * Only claim a trim when there was one.
+       *
+       * This note fired on the ratio alone, so in all 92 capped weeks measured
+       * it told the athlete their volume had been cut for their safety while
+       * handing them exactly the sessions they would otherwise have had. A
+       * plan that describes work it did not change is the same defect as one
+       * that changes work it did not describe — it just reads more reassuring.
+       */
+      const after = enduranceMinutesOf(w.sessions);
+      if (after < before) {
+        w.notes.push(
+          `Volume trimmed this week — ${before} minutes down to ${after} — to keep your acute:chronic load ` +
+            `inside a safe ramp.`
+        );
+      }
     }
   });
   for (const week of acwr.belowFloorWeeks) {
