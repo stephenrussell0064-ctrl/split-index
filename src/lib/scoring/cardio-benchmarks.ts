@@ -35,7 +35,13 @@ export const BENCHMARK_DISTANCE_METERS: Record<BenchmarkSport, number> = {
  *                       The swim anchor table had already been rebased from
  *                       club swimmers to the general population and the sex
  *                       factor was left behind, so a median woman was scored
- *                       against an Olympic-final sex gap.
+ *                       against an Olympic-final sex gap. 1.14 is §5's 50th,
+ *                       derived from the USMS mid-pack tiers; re-checked
+ *                       against §1b directly, whose five non-elite tiers
+ *                       average 1.1454, so the two agree to within half a
+ *                       point. See the two warnings below — swimming has the
+ *                       weakest foundation of the five and it is not the one
+ *                       most people would guess.
  *   cycle 1.219 → 1.098 The IRONMAN 70.3 bike leg: 625,393 men and 198,066
  *                       women, directly measured, and what §2e explicitly
  *                       recommends as the recreational anchor. 1.219 was
@@ -124,6 +130,47 @@ export const BENCHMARK_DISTANCE_METERS: Record<BenchmarkSport, number> = {
  * The gap that would settle it is named in §2e: no UK CTT distribution has
  * ever been published, and getting one means scraping event results directly.
  * Until then this number should move only on new data, not on new reasoning.
+ *
+ * ## Swimming: the IRONMAN split is the wrong dataset here, unlike cycling
+ *
+ * §1c is the largest sex-split adult swimming dataset in the document —
+ * 823,459 IRONMAN 70.3 finishers, a general population rather than a
+ * competitive one — and it gives 1.0573. It is exactly the source that ought
+ * to be used, by the same reasoning that makes the equivalent bike figure the
+ * right anchor for cycling, and §1d says specifically not to:
+ *
+ *     "For a 400 m pool event, the USMS-family ratios are the relevant ones
+ *      and the 70.3 ratio should not be used."
+ *
+ * A 70.3 swim is 1.9 km of open water, wetsuit-legal, mass start with
+ * drafting, and a cut-off that truncates the slow tail. Neoprene removes much
+ * of the buoyancy advantage women hold in a pool and drafting compresses the
+ * field, so that 5.7% gap is a fact about that race format, not about swimming
+ * 400 m. The two source families disagree by a factor of two — 5.7% against
+ * USMS's 13-17% — and both are right about their own population.
+ *
+ * So cycling and swimming take opposite answers from the same study, and the
+ * reason is the format rather than the sample size. Reaching for the bigger
+ * dataset is the mistake here.
+ *
+ * ## Swimming: the population this table scores has never been measured
+ *
+ * §1d calls this "the single biggest gap in this whole document": no published
+ * percentile distribution of 400 m pool freestyle for a general adult
+ * population, split by sex, appears to exist.
+ *
+ * The size of the extrapolation is worth seeing plainly. USMS's slowest
+ * published tier is the 45th percentile *of people who entered a sanctioned
+ * masters meet*, about 6:10 for 400 m. This table's 50th percentile is 9:20.
+ * The median swimmer it scores is three minutes slower than the slowest
+ * swimmer anyone has measured a sex ratio for.
+ *
+ * 1.14 is therefore the mid-pack ratio of the nearest measured population, not
+ * of the scored one, and §5 is explicit that extrapolating further is
+ * unsupported: the running pattern would give ~1.13 at the 20th percentile and
+ * the SkiErg pattern ~1.19, "and the choice is unsupported". Six points apart,
+ * with no way to choose. The cells are noisy too — 83 women and 99 men — which
+ * is why the tier shape is used rather than any single cell.
  */
 export const FEMALE_CARDIO_FACTORS: Record<BenchmarkSport, number> = {
   run: 1.191, // §4a, RunRepeat 5 km — flat at 1.186-1.195 across the 30th-80th

@@ -90,14 +90,30 @@ const BANDS = [
   {
     what: 'FEMALE_CARDIO_FACTORS.swim',
     read: (src) => number(src, /FEMALE_CARDIO_FACTORS[\s\S]*?\bswim:\s*([\d.]+)/),
-    // The swim anchor table was rebased from club swimmers to the general
-    // population; the factor was not moved with it. 1.065 is the ratio between
-    // two world records. The population this table now scores sits at ~1.09
-    // (95th) to ~1.14 (50th).
-    min: 1.09,
+    /*
+     * Narrowed to the USMS mid-pack tiers, and floored above the trap.
+     *
+     * The trap is the mirror of cycling's. §1c is the largest sex-split adult
+     * swimming dataset here — 823,459 IRONMAN 70.3 finishers, general
+     * population — and gives 1.0573. For cycling the equivalent dataset IS the
+     * right anchor. For swimming §1d says the opposite in as many words: a
+     * 70.3 swim is wetsuit-legal open water with drafting and a cut-off, which
+     * compresses the gap to a fact about that format. Anything at or below
+     * 1.09 here almost certainly means somebody reached for the bigger sample.
+     *
+     * The ceiling excludes USMS's own Top 2% tier (1.092 — elite, and below
+     * the band for the same reason the world-record ratio was) and its Top 15%
+     * cell (1.165), which is an 85th-percentile ratio and too fast a
+     * population for a table whose median swimmer takes 9:20.
+     *
+     * Width is honest uncertainty: the five non-elite tiers run 1.133 to 1.165
+     * on 83 women and 99 men, so the tier shape is trustworthy and no single
+     * cell is.
+     */
+    min: 1.133,
     max: 1.15,
-    where: '§5 swimming — 1.09 at the 95th (USMS Top 2%), ~1.14 at the 50th',
-    quote: 'SOURCED — USMS 500 free SCY "Top 2%" tier (1.092)',
+    where: '§1b USMS 500 free — the five non-elite tiers span 1.133 (Top 55%) to 1.165 (Top 15%), mean 1.145. NOT §1c: the 70.3 open-water ratio of 1.0573 is the wrong format for a 400 m pool event',
+    quote: 'the 70.3 ratio should not be used',
   },
   {
     what: 'FEMALE_CARDIO_FACTORS.cycle',
