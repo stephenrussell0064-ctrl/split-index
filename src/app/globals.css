@@ -16,6 +16,20 @@
   --accent: #3dff6e;
   --accent-foreground: #04120a;
   --accent-glow: rgba(61, 255, 110, 0.2);
+  /*
+    The keyboard focus outline, and the reason it is not just --accent.
+
+    A focus ring is neither text nor a decorative fill. It is non-text content
+    that carries meaning, so WCAG 1.4.11 puts it at 3:1 against whatever it is
+    drawn on — and `outline-offset: 2px` draws it on the PAGE, not on the
+    control. On the dark shell --accent is #3DFF6E at 15.17:1 and there is
+    nothing to think about. In the Engine there is: see the override in
+    [data-mode="cardio"] .mode-content.
+
+    Follows --accent by default so a palette change carries through, and is
+    pinned only where following it would drop below the bar.
+  */
+  --focus-ring: var(--accent);
   --success: #22c55e;
   --warning: #eab308;
   --danger: #ef4444;
@@ -376,6 +390,30 @@ body {
   --muted-foreground: var(--cardio-muted);
   --accent: var(--cardio-accent);
   /*
+    The focus outline, pinned off --accent here.
+
+    --accent stays the brand #3BA6FF in this scope on purpose — it is a FILL,
+    and 2.50:1 does not matter for a fill nobody reads. The focus ring is the
+    one place that reasoning does not reach: it is a 2px line, offset onto the
+    near-white page behind the control, and at #3BA6FF it measured 2.50:1 on
+    --cardio-bg and 2.38:1 on --cardio-bg-elevated. WCAG 1.4.11 asks 3:1 of
+    anything non-text that carries meaning, and a focus ring is the clearest
+    example there is — so in the Engine the keyboard indicator was below the
+    bar on every control not sitting inside .glass-cardio or .bg-cardio-zone,
+    both of which already remap --accent to the readable ink.
+
+    --cardio-accent-strong, not --cardio-accent-text: the palette already
+    distinguishes an ink for words from a stronger blue for icons and borders,
+    and a focus ring belongs with the borders. It measures 3.52:1 on
+    --cardio-bg and 3.36:1 on --cardio-bg-elevated; both are pinned in
+    contrast.test.ts so a palette tweak has to argue with the number.
+
+    This is an addition to the WP12 work, not a correction of it. That pass
+    measured the text uses and the label-on-fill case and fixed both; the
+    outline is a third category it did not have a rule for.
+  */
+  --focus-ring: var(--cardio-accent-strong);
+  /*
     Dark text on the brand blue, not white.
 
     White on #3ba6ff is 2.60:1 — every default Button in cardio mode, the
@@ -590,7 +628,7 @@ body {
 }
 
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 

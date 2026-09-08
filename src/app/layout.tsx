@@ -5,6 +5,7 @@ import { ClientBootstrap } from "@/components/providers/client-bootstrap";
 import { LaunchOverlay } from "@/components/providers/launch-overlay";
 import { MotionProvider } from "@/components/providers/motion-provider";
 import { RouteRestore } from "@/components/providers/route-restore";
+import { SKIP_LINK_HREF } from "@/lib/a11y/main-content";
 import { getAppUrl } from "@/lib/app-url";
 
 const geistSans = Geist({
@@ -106,10 +107,14 @@ export default function RootLayout({
           sidebar and top bar on every page before reaching the content — this
           app's nav is around thirty stops. WCAG 2.2 2.4.1 (Bypass Blocks).
 
-          Targets #main-content, the <main> in app-shell.tsx.
+          This link is rendered on EVERY page, so every page owes it a target.
+          That was the bug: the id lived in app-shell.tsx, which only wraps the
+          authenticated routes, so the skip link went nowhere on the landing
+          page, /login, /signup and all four public documents. See
+          lib/a11y/main-content.ts, and skip-link.test.ts for the gate.
         */}
         <a
-          href="#main-content"
+          href={SKIP_LINK_HREF}
           className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-lg focus:bg-accent focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-accent-foreground focus:outline-2 focus:outline-offset-2 focus:outline-accent"
         >
           Skip to main content

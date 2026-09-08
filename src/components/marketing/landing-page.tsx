@@ -6,6 +6,7 @@ import { DataTiles } from "@/components/marketing/data-tiles";
 import { ProductShowcase } from "@/components/marketing/product-showcase";
 import { PricingSection, CtaStrip } from "@/components/marketing/pricing-cta";
 import { buttonVariants } from "@/components/ui/button";
+import { mainContentProps } from "@/lib/a11y/main-content";
 import { cn } from "@/lib/utils/cn";
 
 export function LandingPage() {
@@ -77,12 +78,20 @@ export function LandingPage() {
         </div>
       </header>
 
-      <HeroSplit />
-      <DataTicker />
-      <DataTiles />
-      <ProductShowcase />
-      <PricingSection />
-      <CtaStrip />
+      {/*
+        A `<main>` where there was none. The root layout's skip link points
+        here on every page, and this page had no target at all — so the first
+        thing in the tab order on the most-visited page in the product went
+        nowhere. It is also the landmark a screen reader jumps to.
+      */}
+      <main {...mainContentProps} className="focus:outline-none">
+        <HeroSplit />
+        <DataTicker />
+        <DataTiles />
+        <ProductShowcase />
+        <PricingSection />
+        <CtaStrip />
+      </main>
 
       <footer className="border-t border-white/[0.06] px-6 py-10 text-center text-xs text-white/55 md:px-[6vw]">
         <p>© {new Date().getFullYear()} Split Index · Strength & endurance scoring</p>

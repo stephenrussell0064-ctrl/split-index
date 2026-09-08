@@ -143,28 +143,102 @@ const PAIRINGS: Pairing[] = [
   { what: "Engine accent on the app background", fg: "cardio-accent", bg: "background", min: TEXT },
 ];
 
-/**
- * The light-mode remaps, which are scoped CSS rules rather than :root tokens.
+/*
+ * ── Reading the light-mode remaps ─────────────────────────────────────────
  *
+ * The remaps are scoped CSS rules rather than :root tokens.
  * `[data-mode="cardio"] .mode-content` and `.bg-cardio-zone` override the
  * dark-theme tokens so shared components stay legible on white. Three of those
  * overrides were themselves failures — including white-on-accent at 2.60:1,
  * which made the label of every primary button in cardio mode harder to read
  * than the button — so they are measured here too. Values are read out of the
  * rules rather than restated, for the same reason as the tokens above.
+ *
+ * The four helpers below do that reading. Two of them answer subtly different
+ * questions and the difference has already caused one wrong number, so they are
+ * named for the question rather than for the mechanism.
+ */
+
+/** A token as literally written inside one rule block, or null if that block does not set it. */
+function rawIn(selector: string, property: string): string | null {
+  const css = readFileSync(CSS, "utf8");
+  /*
+    Match the selector where it OPENS A RULE, not merely where the characters
+    appear. `indexOf(selector)` found the first mention anywhere in the file,
+    and a comment that names the selector it is describing — which is what a
+    useful comment does — silently won the race and made this read tokens out
+    of the wrong block. Same trap as the scanners in lib/testing/source-scan.ts:
+    prose about a thing is not the thing.
+  */
+  const opens = new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\{`);
+  const found = opens.exec(css);
+  if (!found) return null;
+  const block = css.slice(found.index, css.indexOf("}", found.index));
+  const match = block.match(
+    new RegExp(`--${property}:\\s*(#[0-9a-fA-F]{6}|var\\(--[a-z0-9-]+\\))`)
+  );
+  return match ? match[1]! : null;
+}
+
+/** The same, from :root. Sliced the way `tokens()` slices it, for the same reasons. */
+function rawInRoot(property: string): string | null {
+  const css = readFileSync(CSS, "utf8");
+  const root = css.slice(css.indexOf(":root"), css.indexOf("@theme"));
+  const match = root.match(
+    new RegExp(`--${property}:\\s*(#[0-9a-fA-F]{6}|var\\(--[a-z0-9-]+\\))`)
+  );
+  return match ? match[1]! : null;
+}
+
+/**
+ * Follow `var()` down to a hex, AS IT WOULD COMPUTE INSIDE `selector`.
+ *
+ * The scope is consulted before :root at every hop, because that is what custom
+ * property inheritance does, and getting it wrong is not a subtle error. Two
+ * earlier versions of this got it wrong in opposite directions: one stopped
+ * after a single hop, so `--gym-accent: var(--strength-accent)` resolved to
+ * undefined and failed on a NaN; the next resolved every hop against :root, so
+ * a scope that redefines --accent was read as though it had not, reporting a
+ * green ring at 1.28:1 on a branch whose ring is really the dark ink at 5.30:1.
+ *
+ * A NaN that happens to fail and a lookup that happens to agree with :root are
+ * the same bug wearing different clothes: the number in the message is not
+ * describing the CSS.
+ */
+function resolveIn(selector: string, raw: string, depth = 0): string {
+  if (!raw.startsWith("var(")) return raw.toUpperCase();
+  if (depth > 6) throw new Error(`--${raw} in ${selector} loops through var()`);
+  const name = raw.slice(6, -1);
+  const next = rawIn(selector, name) ?? rawInRoot(name);
+  if (!next) throw new Error(`--${name} (via ${selector}) is defined nowhere this test can see`);
+  return resolveIn(selector, next, depth + 1);
+}
+
+/**
+ * A token this scope sets ITSELF.
+ *
+ * Throws when the scope does not set it, and that guard is the point: the
+ * assertions below use this to check that a light-mode remap is present, so
+ * quietly falling back to the dark-theme value would turn a deleted remap into
+ * a pass.
  */
 function scopedValue(selector: string, property: string): string {
-  const css = readFileSync(CSS, "utf8");
-  const start = css.indexOf(selector);
-  if (start < 0) throw new Error(`no rule for ${selector}`);
-  const block = css.slice(start, css.indexOf("}", start));
-  const match = block.match(new RegExp(`--${property}:\\s*(#[0-9a-fA-F]{6}|var\\(--[a-z0-9-]+\\))`));
-  if (!match) throw new Error(`${selector} does not set --${property}`);
-  const raw = match[1];
-  // One level of var() indirection is all these rules use.
-  return raw.startsWith("var(")
-    ? T[raw.slice(6, -1)]
-    : raw.toUpperCase();
+  const raw = rawIn(selector, property);
+  if (raw === null) throw new Error(`${selector} does not set --${property}`);
+  return resolveIn(selector, raw);
+}
+
+/**
+ * A token as a control inside this scope would actually see it — set here, or
+ * inherited from :root and re-resolved against this scope.
+ *
+ * This is the one to use for anything a global rule draws, because a global
+ * rule does not know which scope it landed in.
+ */
+function inheritedValue(selector: string, property: string): string {
+  const raw = rawIn(selector, property) ?? rawInRoot(property);
+  if (raw === null) throw new Error(`--${property} is set neither in ${selector} nor :root`);
+  return resolveIn(selector, raw);
 }
 
 describe("measured contrast", () => {
@@ -259,6 +333,61 @@ describe("measured contrast", () => {
     // that a future "let's soften the green" change has to argue with a number.
     expect(contrastRatio(T["strength-accent"], T["gym-bg"])).toBeGreaterThan(10);
   });
+
+  /*
+   * THE KEYBOARD FOCUS OUTLINE — the gap in the pass above.
+   *
+   * That pass sorted the palette into two kinds of use and measured both: text,
+   * at 4.5:1, and a fill nobody reads, at nothing. The focus ring is neither. It
+   * is non-text content carrying meaning, so 1.4.11 asks 3:1 — and because
+   * `outline-offset: 2px` puts it OUTSIDE the control, the thing it must contrast
+   * with is the page behind, not the component.
+   *
+   * In the Engine that made `--accent`, deliberately left at the brand #3BA6FF
+   * as a fill, into a 2.50:1 focus indicator on --cardio-bg and 2.38:1 on
+   * --cardio-bg-elevated. Nothing about the palette was wrong; the outline was
+   * simply reading a token chosen for a different job.
+   *
+   * Resolved from the rule rather than from the token this fix happens to
+   * introduce. If someone points :focus-visible back at --accent, or invents a
+   * third token, the assertion follows them there instead of passing because
+   * --focus-ring still measures well while nothing uses it.
+   */
+  const FOCUS_SURFACES: Array<[string, string, string]> = [
+    // scope selector, background token, what it is
+    [":root", "background", "the dark app shell"],
+    ['[data-mode="cardio"] .mode-content', "cardio-bg", "the Engine's own page"],
+    ['[data-mode="cardio"] .mode-content', "cardio-bg-elevated", "an Engine card"],
+    ['[data-mode="gym"] .mode-content', "gym-bg", "the Lab's own page"],
+  ];
+
+  it.each(FOCUS_SURFACES)(
+    "%s draws a focus ring that clears 3:1 on --%s (%s)",
+    (selector, bg) => {
+      const css = readFileSync(CSS, "utf8");
+      const rule = css.match(/:focus-visible\s*\{([^}]*)\}/);
+      expect(rule, "globals.css no longer has a global :focus-visible outline").toBeTruthy();
+
+      const usesVar = rule![1].match(/outline:[^;]*var\(--([a-z0-9-]+)\)/);
+      expect(
+        usesVar,
+        `the focus outline is not drawn from a token: ${rule![1].trim()}`
+      ).toBeTruthy();
+      const property = usesVar![1]!;
+
+      // As a control inside this scope actually sees it: pinned here, or
+      // inherited from :root and re-resolved against this scope's own tokens.
+      // A global rule does not know which scope it landed in, which is the
+      // whole reason this assertion exists.
+      const colour = inheritedValue(selector, property);
+
+      const ratio = contrastRatio(colour, T[bg]!);
+      expect(
+        Number(ratio.toFixed(2)),
+        `focus ring in ${selector} is ${colour} on --${bg} (${T[bg]}) = ${ratio.toFixed(2)}:1`
+      ).toBeGreaterThanOrEqual(NON_TEXT);
+    }
+  );
 });
 
 describe("the ratio calculation itself", () => {
