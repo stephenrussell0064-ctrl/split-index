@@ -786,7 +786,23 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
   // after they had said 90 was their limit — a session they had already told
   // us they could not do.
   const capEnduranceMinutes = (m: number) => Math.min(m, constraints.maxSessionMin);
-  longMinutes = capEnduranceMinutes(longMinutes);
+  /**
+   * A SINGLE session may not be longer than the WHOLE WEEK's endurance budget.
+   *
+   * The race-distance branch above sets `longMinutes` from the event and the
+   * athlete's easy pace, and is bounded by the event, by LONG_RUN_MAX_MINUTES
+   * and by the athlete's own session ceiling — but never by the week it has to
+   * fit inside. Measured across a 32,400-week sweep, the worst case was a
+   * deload week budgeted 25 minutes carrying a 120-minute long run: 4.8x the
+   * volume the same week's note quotes back to the athlete.
+   *
+   * Capping at the budget can produce a "long run" far shorter than the event
+   * needs, and that is the honest output rather than a bug: an athlete whose
+   * whole week is 25 minutes is not a marathoner yet, and feasibility says so
+   * separately. What must not happen is the plan asserting both numbers at
+   * once.
+   */
+  longMinutes = Math.min(capEnduranceMinutes(longMinutes), Math.max(MIN_ENDURANCE_SESSION_MIN, Math.round(totalMinutes)));
 
   // ---- step 3: hard caps ---------------------------------------------------
   const qualityMinutes = capEnduranceMinutes(Math.round(totalMinutes * QUALITY_SESSION_MINUTE_SHARE));
@@ -997,6 +1013,107 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
         extra: stridesHere ? "Finish with 6x20s strides, walking back to full recovery between." : undefined,
       })
     );
+  }
+
+  /**
+   * ---- step 3b: the week may not prescribe more than it budgeted ----------
+   *
+   * Every duration above is floored — MIN_ENDURANCE_SESSION_MIN on easy runs,
+   * MIN_QUALITY_SESSION_MIN on quality, and the long run has floors of its
+   * own. Each floor is right on its own terms: a session below it is not a
+   * session. Nothing, however, was checking what they came to when ADDED UP,
+   * so a week whose budget could not pay for the sessions it had been given
+   * simply issued them anyway.
+   *
+   * Measured over 32,400 generated weeks before this existed, 28% of them
+   * prescribed more endurance than their own stated budget, the worst a
+   * deload week budgeted 25 minutes carrying 120 minutes of running. The
+   * week's note quotes that budget back to the athlete and the ACWR pass
+   * reasons about it, so this is not a display bug — it is the plan asserting
+   * two different numbers for the same week.
+   *
+   * TRIM BEFORE DROPPING. `affordableBySessionLength` already applies the
+   * file's "the COUNT gives way, never the duration" rule up front, and it
+   * cannot get this right because it has to assume every session costs
+   * MIN_ENDURANCE_SESSION_MIN when the long run and the quality sessions both
+   * cost more. But reaching for the same lever again here is too blunt: a week
+   * 5% over budget would lose an entire session and land far UNDER instead,
+   * which is how the first version of this fix turned a 28% overshoot into
+   * more undershoot than it removed. Shortening sessions that are above their
+   * own floor costs the week nothing it needs; deleting one costs it a
+   * session. So durations give way first, down to their floors and no
+   * further, and only a week that still does not fit loses a slot.
+   */
+  const enduranceTotal = () => sessions.reduce((s, x) => s + x.minutes, 0);
+  const budgetMinutes = Math.round(totalMinutes);
+  if (budgetMinutes > 0 && enduranceTotal() > budgetMinutes && sessions.length > 0) {
+    const floorFor = (kind: string) =>
+      kind === "long_run"
+        ? MIN_ENDURANCE_SESSION_MIN
+        : kind === "easy_run" || kind === "recovery_run"
+          ? MIN_ENDURANCE_SESSION_MIN
+          : MIN_QUALITY_SESSION_MIN;
+
+    // Pass 1 — take the excess off the longest sessions first, so a week
+    // shaves its biggest run rather than flattening a 30-minute interval
+    // session into nothing. Repeated until no session has room left.
+    let guard = 0;
+    while (enduranceTotal() > budgetMinutes && guard++ < 50) {
+      const excess = enduranceTotal() - budgetMinutes;
+      const trimmable = sessions
+        .map((x, i) => ({ i, room: x.minutes - floorFor(x.kind) }))
+        .filter((x) => x.room > 0)
+        .sort((a, b) => b.room - a.room);
+      if (trimmable.length === 0) break;
+      const take = Math.min(trimmable[0].room, excess);
+      const i = trimmable[0].i;
+      sessions[i] = { ...sessions[i], minutes: sessions[i].minutes - take };
+    }
+
+    // Pass 2 — everything is at its floor and the week still does not fit, so
+    // now the count genuinely has to give. Easy volume goes first and the long
+    // run last: the sessions that survive a short week should be the ones the
+    // block is built around.
+    const droppedForBudget: string[] = [];
+    const sacrifice = (): number => {
+      for (let i = sessions.length - 1; i >= 0; i--) {
+        if (sessions[i].kind === "easy_run" || sessions[i].kind === "recovery_run") return i;
+      }
+      for (let i = sessions.length - 1; i >= 0; i--) {
+        if (sessions[i].kind !== "long_run") return i;
+      }
+      return -1;
+    };
+    while (enduranceTotal() > budgetMinutes && sessions.length > 1) {
+      const idx = sacrifice();
+      if (idx < 0) break;
+      droppedForBudget.push(sessions[idx].kind);
+      sessions.splice(idx, 1);
+    }
+    if (droppedForBudget.length > 0) {
+      notes.push(
+        `${droppedForBudget.length} endurance session${droppedForBudget.length > 1 ? "s" : ""} dropped this week — ` +
+          `${budgetMinutes} minutes will not stretch to more without making each one too short to be worth doing.`
+      );
+    }
+
+    // Dropping is coarse, so anything the drop freed goes back into easy
+    // volume rather than being lost. Both ceilings that governed easy runs
+    // when they were built still bind — the athlete's own session limit, and
+    // staying below the long run so it remains the longest session.
+    const easyIdx = sessions
+      .map((x, i) => ({ x, i }))
+      .filter(({ x }) => x.kind === "easy_run" || x.kind === "recovery_run")
+      .map(({ i }) => i);
+    if (droppedForBudget.length > 0 && easyIdx.length > 0) {
+      const ceiling = Math.min(constraints.maxSessionMin, easyCeiling);
+      for (const i of easyIdx) {
+        const slack = budgetMinutes - enduranceTotal();
+        if (slack <= 0) break;
+        const give = Math.min(ceiling - sessions[i].minutes, slack);
+        if (give > 0) sessions[i] = { ...sessions[i], minutes: sessions[i].minutes + give };
+      }
+    }
   }
 
   // ---- build the strength sessions ----------------------------------------
