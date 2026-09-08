@@ -125,6 +125,17 @@ export function statements(sql) {
  */
 export function expectedState(files) {
   const views = new Set();
+  const tables = new Set();
+  /**
+   * Policies a migration explicitly dropped and nothing recreated.
+   *
+   * The difference between the two reasons a live policy can be unexpected,
+   * and it is the whole severity: one of them means a security fix did not
+   * land, and the other means somebody made a table in the dashboard.
+   * Collapsing them downgraded the 056 finding — the most serious of the week
+   * — to a shrug.
+   */
+  const dropped = new Set();
   const policies = new Set();
   const tableGrants = new Map();
   const functionGrants = new Map();
@@ -132,6 +143,21 @@ export function expectedState(files) {
   const viewBodies = new Map();
 
   const grantKey = (a, b) => `${a}${KEY_SEP}${b}`;
+
+  /**
+   * The table name if this policy targets the public schema, else null.
+   *
+   * 010 creates four avatar policies ON storage.objects. Those live in the
+   * `storage` schema, which schema_snapshot() does not read and should not —
+   * it is Supabase's, not ours. The first version of this recorded the target
+   * as "storage" and then reported all four as missing from the database,
+   * which is the kind of noise that gets a check like this switched off.
+   */
+  const publicTable = (target) => {
+    const parts = target.toLowerCase().split(".");
+    if (parts.length === 1) return parts[0];
+    return parts[0] === "public" ? parts[1] : null;
+  };
 
   /** Supabase grants every new table, view and function to these at creation. */
   const applyCreationDefaults = (name, kind) => {
@@ -180,17 +206,23 @@ export function expectedState(files) {
         continue;
       }
 
-      if (
-        (m = /^CREATE\s+POLICY\s+"([^"]+)"\s+ON\s+(?:public\.)?([a-z_][a-z0-9_]*)/i.exec(s))
-      ) {
-        policies.add(grantKey(m[2].toLowerCase(), m[1]));
+      if ((m = /^CREATE\s+POLICY\s+"([^"]+)"\s+ON\s+((?:[a-z_][a-z0-9_]*\.)?[a-z_][a-z0-9_]*)/i.exec(s))) {
+        const target = publicTable(m[2]);
+        if (target) {
+          policies.add(grantKey(target, m[1]));
+          dropped.delete(grantKey(target, m[1]));
+        }
         continue;
       }
 
       if (
-        (m = /^DROP\s+POLICY\s+(?:IF\s+EXISTS\s+)?"([^"]+)"\s+ON\s+(?:public\.)?([a-z_][a-z0-9_]*)/i.exec(s))
+        (m = /^DROP\s+POLICY\s+(?:IF\s+EXISTS\s+)?"([^"]+)"\s+ON\s+((?:[a-z_][a-z0-9_]*\.)?[a-z_][a-z0-9_]*)/i.exec(s))
       ) {
-        policies.delete(grantKey(m[2].toLowerCase(), m[1]));
+        const target = publicTable(m[2]);
+        if (target) {
+          policies.delete(grantKey(target, m[1]));
+          dropped.add(grantKey(target, m[1]));
+        }
         continue;
       }
 
@@ -203,7 +235,28 @@ export function expectedState(files) {
       // so an unexpected grant on a base table is visible; what actually keeps
       // athletes' rows private on these is RLS, which the policy check covers.
       if ((m = /^CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:public\.)?([a-z_][a-z0-9_]*)/i.exec(s))) {
+        tables.add(m[1].toLowerCase());
         applyCreationDefaults(m[1].toLowerCase(), "table");
+        continue;
+      }
+
+      if ((m = /^DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:public\.)?([a-z_][a-z0-9_]*)/i.exec(s))) {
+        const table = m[1].toLowerCase();
+        tables.delete(table);
+        /*
+          A dropped table takes its policies and grants with it, and the model
+          has to as well. 055 removes training_goals and training_goal_progress
+          on purpose; without this the policies 033 and 038 created stayed in
+          the expected state forever, and the checker reported them missing
+          from a database that is correct — two false alarms on its first real
+          run, pointing at the one thing that had been deliberately cleaned up.
+        */
+        for (const key of [...policies]) {
+          if (key.startsWith(`${table}${KEY_SEP}`)) policies.delete(key);
+        }
+        for (const key of [...tableGrants.keys()]) {
+          if (key.startsWith(`${table}${KEY_SEP}`)) tableGrants.delete(key);
+        }
         continue;
       }
 
@@ -232,7 +285,7 @@ export function expectedState(files) {
     }
   }
 
-  return { views, policies, tableGrants, functionGrants };
+  return { views, tables, policies, dropped, tableGrants, functionGrants };
 }
 
 export function readMigrations(dir = MIGRATIONS_DIR) {
@@ -247,6 +300,9 @@ export function liveState(snapshot) {
   const key = (a, b) => `${a}${KEY_SEP}${b}`;
   return {
     views: new Set((snapshot.views ?? []).map((v) => v.toLowerCase())),
+    // The RLS list enumerates every base table in the public schema, which is
+    // also the answer to "does this table exist".
+    tables: new Set((snapshot.rls ?? []).map((r) => r.table.toLowerCase())),
     policies: new Set((snapshot.policies ?? []).map((p) => key(p.table.toLowerCase(), p.name))),
     tableGrants: new Map(
       (snapshot.table_grants ?? []).map((g) => [key(g.object.toLowerCase(), g.role), g.can_select])
@@ -299,8 +355,26 @@ export function compare(expected, live) {
     });
   }
 
+  /*
+    Tables before policies, and policies on a missing table are not reported.
+
+    The first real run said five policies were missing and left it to a person
+    to notice that all five sat on tables that do not exist — five symptoms of
+    one cause, with the cause itself absent from the list. Naming the table
+    once is the finding; repeating it per policy is noise that buries the
+    other rows.
+  */
+  const missingTables = new Set();
+  for (const table of expected.tables ?? []) {
+    if (live.tables && !live.tables.has(table)) {
+      missingTables.add(table);
+      findings.push({ severity: "broken", what: `table ${table} is missing` });
+    }
+  }
+
   for (const k of expected.policies) {
     const [table, name] = split(k);
+    if (missingTables.has(table)) continue;
     if (!live.policies.has(k)) {
       findings.push({ severity: "broken", what: `policy "${name}" on ${table} is missing` });
     }
@@ -308,9 +382,28 @@ export function compare(expected, live) {
   for (const k of live.policies) {
     const [table, name] = split(k);
     if (!expected.policies.has(k)) {
+      /*
+        TWO REASONS, AND THEY ARE NOT THE SAME PROBLEM.
+
+        A migration explicitly DROPPED it and it is still there: that is a fix
+        that did not land, and it is exactly 056 — the policy letting anyone
+        read every column of profiles, removed in the repository and never in
+        the database. Exposed.
+
+        No migration mentions it at all: on the first real run these were
+        "Users can view their own race predictions" and friends, owner-scoped
+        policies on tables made through the dashboard. Calling those an
+        exposure is a false alarm, and a checker that cries wolf on its first
+        run does not get run twice. Still reported, because a policy nobody can
+        review is how a permissive one arrives unnoticed — but with a different
+        word, sorted last.
+      */
+      const wasDropped = expected.dropped?.has(k);
       findings.push({
-        severity: "exposed",
-        what: `policy "${name}" on ${table} exists and no migration creates it`,
+        severity: wasDropped ? "exposed" : "unmanaged",
+        what: wasDropped
+          ? `policy "${name}" on ${table} was dropped by a migration and is still live`
+          : `policy "${name}" on ${table} exists and no migration creates it`,
       });
     }
   }
@@ -321,7 +414,7 @@ export function compare(expected, live) {
     }
   }
 
-  const order = { exposed: 0, broken: 1 };
+  const order = { exposed: 0, broken: 1, unmanaged: 2 };
   return findings.sort((a, b) => order[a.severity] - order[b.severity] || a.what.localeCompare(b.what));
 }
 
@@ -418,8 +511,10 @@ async function main() {
     console.error(`  [${f.severity}] ${f.what}`);
   }
   console.error(
-    "\n'exposed' means the database is more permissive than the migrations say.\n" +
-      "'broken' means something the application expects is not there.\n"
+    "\n'exposed'   the database is more permissive than the migrations say.\n" +
+      "'broken'    something the application expects is not there.\n" +
+      "'unmanaged' exists in the database and in no migration — not necessarily\n" +
+      "            wrong, but not reproducible from this repository either.\n"
   );
   return 1;
 }

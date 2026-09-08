@@ -161,6 +161,7 @@ describe("the comparison", () => {
     expect(findings).toHaveLength(1);
     expect(findings[0].severity).toBe("exposed");
     expect(findings[0].what).toContain("Public profiles readable");
+    expect(findings[0].what).toContain("still live");
   });
 
   it("says nothing once that migration has been applied", () => {
@@ -218,6 +219,75 @@ describe("the comparison", () => {
       table_grants: [{ object: "some_supabase_view", role: "anon", can_select: true }],
     });
     expect(compare(expectedState([]), live)).toEqual([]);
+  });
+});
+
+describe("what the first real run got wrong", () => {
+  /*
+    Every case here is a false alarm the checker produced against the actual
+    database before it was trusted with a verdict. They are kept because a
+    checker that cries wolf on its first run does not get run twice, and each
+    of these buried a genuine finding under noise.
+  */
+
+  it("ignores a policy on another schema", () => {
+    // 010 creates four avatar policies ON storage.objects. That schema is
+    // Supabase's and the snapshot does not read it, so recording the target as
+    // "storage" reported all four as missing.
+    const state = expectedState([
+      migration("010_x.sql", `CREATE POLICY "Avatar images are publicly readable" ON storage.objects FOR SELECT USING (true);`),
+    ]);
+    expect(state.policies.size).toBe(0);
+  });
+
+  it("keeps a policy that names the public schema explicitly", () => {
+    const state = expectedState([
+      migration("001_x.sql", `CREATE POLICY "Own rows" ON public.profiles FOR SELECT USING (true);`),
+    ]);
+    expect([...state.policies]).toEqual([["profiles", "Own rows"].join(SEP)]);
+  });
+
+  it("lets a dropped table take its policies and grants with it", () => {
+    // 055 removes training_goals deliberately. Without this the policies 033
+    // created stayed expected forever, and the checker reported them missing
+    // from a database that was right.
+    const state = expectedState([
+      migration("033_x.sql", `CREATE TABLE IF NOT EXISTS training_goals (id UUID); CREATE POLICY "Users manage own training goals" ON training_goals FOR ALL USING (true);`),
+      migration("055_x.sql", `DROP TABLE IF EXISTS training_goals;`),
+    ]);
+    expect(state.tables.has("training_goals")).toBe(false);
+    expect([...state.policies]).toEqual([]);
+    expect([...state.tableGrants.keys()].filter((k: string) => k.startsWith("training_goals"))).toEqual([]);
+  });
+
+  it("names a missing table once, not once per policy on it", () => {
+    // Five findings on the first run, all symptoms, with the cause itself
+    // absent from the list.
+    const expected = expectedState([
+      migration("005_x.sql", `CREATE TABLE session_templates (id UUID); CREATE POLICY "Users manage own session templates" ON session_templates FOR ALL USING (true);`),
+    ]);
+    const findings = compare(expected, liveState({ views: [], policies: [], rls: [], table_grants: [], function_grants: [] }));
+    expect(findings.map((f: { what: string }) => f.what)).toEqual(["table session_templates is missing"]);
+  });
+
+  it("calls an unreviewable policy unmanaged rather than exposed", () => {
+    /*
+      The three it found were "Users can view their own race predictions" and
+      friends — owner-scoped policies on tables created through the dashboard.
+      Calling those an exposure is a false alarm; saying nothing hides the way
+      a permissive policy could arrive unnoticed. So: different word, sorts
+      last.
+    */
+    const live = liveState({
+      views: [],
+      rls: [],
+      policies: [{ table: "race_predictions", name: "Users can view their own race predictions" }],
+      table_grants: [],
+      function_grants: [],
+    });
+    const findings = compare(expectedState([]), live);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].severity).toBe("unmanaged");
   });
 });
 
