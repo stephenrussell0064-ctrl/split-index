@@ -102,10 +102,27 @@ const BANDS = [
   {
     what: 'FEMALE_CARDIO_FACTORS.cycle',
     read: (src) => number(src, /FEMALE_CARDIO_FACTORS[\s\S]*?\bcycle:\s*([\d.]+)/),
+    /*
+     * The widest band here, and deliberately so: it is the width of what is
+     * actually known. §5 calls cycling "by far the least calibratable", with
+     * two sourced numbers — 1.098 recreational, 1.126 elite — and no
+     * percentile structure between them.
+     *
+     * The floor is the recreational figure §2e recommends. The ceiling is the
+     * hour record. Anything inside is a defensible reading of the two; nothing
+     * outside is.
+     *
+     * The low end matters most. §2d derives 1.025-1.048 from a worked power
+     * model, which looks like the best-founded number in the section and is
+     * the one §2e forbids using — its female power sample is small and
+     * self-selected, so it under-predicts the observed race gap two- to
+     * four-fold. A constant below 1.09 almost certainly means somebody found
+     * §2d and thought they were tightening the calibration.
+     */
     min: 1.09,
     max: 1.13,
-    where: '§5 cycling — the only two sourced numbers are 1.126 (UCI Hour Record) and 1.098 (IM 70.3 bike mean)',
-    quote: 'SOURCED — UCI Hour Record, both sexes (§2a)',
+    where: '§2c/§2a — 1.098 (IM 70.3 bike, 823,459 finishers) to 1.126 (UCI Hour Record). NOT §2d, whose power model gives 1.025-1.048 and which §2e says must not be used for an anchor table',
+    quote: 'Do not use the §2d conversion as the basis for a cycling anchor table.',
   },
   {
     what: 'FEMALE_CARDIO_FACTORS.ski',

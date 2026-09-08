@@ -36,9 +36,11 @@ export const BENCHMARK_DISTANCE_METERS: Record<BenchmarkSport, number> = {
  *                       club swimmers to the general population and the sex
  *                       factor was left behind, so a median woman was scored
  *                       against an Olympic-final sex gap.
- *   cycle 1.219 → 1.10  §5: cycling has exactly two sourced numbers, 1.126
- *                       (UCI Hour Record) and 1.098 (IRONMAN 70.3 bike mean).
- *                       1.219 is outside both and its provenance is unknown.
+ *   cycle 1.219 → 1.098 The IRONMAN 70.3 bike leg: 625,393 men and 198,066
+ *                       women, directly measured, and what §2e explicitly
+ *                       recommends as the recreational anchor. 1.219 was
+ *                       outside every sourced number and its provenance is
+ *                       unknown. See the warning below before touching this.
  *   ski 1.187 → 1.1644  Inherited from rowing on the reasoning "same machine
  *                       family, no sex-specific ski data of its own". There is
  *                       ski data: §3b, the 2025 Concept2 logbook at 2000 m.
@@ -77,12 +79,57 @@ export const BENCHMARK_DISTANCE_METERS: Record<BenchmarkSport, number> = {
  * is no walking sex-ratio data in the research at all — §6 lists it among what
  * could not be found — so mirroring remains an assumption, just a better-
  * anchored one than before.
+ *
+ * ## Cycling: do not "improve" this with the power model in §2d
+ *
+ * §2d works the physics properly — drag, rolling resistance, real CdA and mass
+ * for each sex — and lands on 1.025, or 1.048 on a less aggressive female
+ * position. It is the most rigorous-looking number in the cycling section and
+ * it is the one number there that must not be used. §2e says so directly: "Do
+ * not use the §2d conversion as the basis for a cycling anchor table."
+ *
+ * The reason is upstream of the physics. It is driven by Cycling Analytics'
+ * finding that median W/kg is identical between the sexes (3.80 vs 3.80), and
+ * that dataset is cyclists who buy a power meter and pay for analytics — the
+ * most self-selected source in the document — with a female sample the
+ * publisher itself calls "particularly rough because of the lower number of
+ * people". If those women sit further up their own distribution than the men
+ * do up theirs, equal median W/kg is an artefact of unequal selection rather
+ * than a fact about cyclists, which is exactly why the model under-predicts
+ * the observed race gap by a factor of two to four.
+ *
+ * A physics derivation carries more authority than a mean of race results, and
+ * here it is the wrong answer. That is the whole reason this paragraph exists.
+ *
+ * ## What is still not known about cycling
+ *
+ * This is the weakest constant of the five and the research says so — "by far
+ * the least calibratable", with two sourced numbers and no percentile
+ * structure at all. Three specific caveats travel with it:
+ *
+ *   · §2e expects a 20 km solo TT — which is what this app benchmarks — to
+ *     show a slightly LARGER gap than the 90 km IRONMAN leg this figure comes
+ *     from, because that leg is paced to protect the run and a shorter effort
+ *     loads absolute power harder. "Slightly" is not quantified anywhere, so
+ *     1.098 is a floor rather than a point estimate, and inventing a bump
+ *     would be inventing precision.
+ *   · The elite ratio, 1.126 at the hour record, is LARGER than the
+ *     recreational one. Every other sport here widens the other way as ability
+ *     falls. §5 flags the inversion as unexplained, and it is a reason to
+ *     distrust both endpoints rather than to interpolate confidently between
+ *     them.
+ *   · Full-distance IRONMAN reports a ~15% cycling gap against the 70.3's
+ *     9.8%, which no mechanism in the document accounts for.
+ *
+ * The gap that would settle it is named in §2e: no UK CTT distribution has
+ * ever been published, and getting one means scraping event results directly.
+ * Until then this number should move only on new data, not on new reasoning.
  */
 export const FEMALE_CARDIO_FACTORS: Record<BenchmarkSport, number> = {
   run: 1.191, // §4a, RunRepeat 5 km — flat at 1.186-1.195 across the 30th-80th
   walk: 1.191, // mirrors running per instruction; no walking data exists (§6)
   swim: 1.14, // §5, 400 m freestyle, 50th percentile
-  cycle: 1.1, // §5, 20 km TT — the midpoint of 1.098 and 1.126, the only two sourced values
+  cycle: 1.098, // §2c, IM 70.3 bike leg, 823,459 finishers — a floor, see above
   row: 1.187, // unused for row's own scoring — row has sex-specific tables now
   ski: 1.1644, // §3b, C2 logbook 2025, 2000 m: 9:35.8 F / 8:14.5 M
 };
