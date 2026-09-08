@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 /**
@@ -25,10 +25,59 @@ import { join } from "node:path";
  * already pinned stays pinned.
  */
 
-const MIGRATION = readFileSync(
-  join(process.cwd(), "supabase/migrations/059_provisional_index_history.sql"),
-  "utf8"
+/*
+ * Migrations are resolved by what they contain, never named.
+ *
+ * A hardcoded filename is the failure mode migration-supersession.test.ts
+ * exists to catch: the moment a later migration supersedes the one named here,
+ * this test carries on asserting against SQL the database no longer runs, and
+ * it goes quiet rather than failing. That already happened once to
+ * leaderboard-brackets.test.ts, and it nearly happened here — 070 redefines the
+ * trigger and was first drafted without 059's `is_provisional` ordering.
+ */
+const MIGRATIONS_DIR = join(process.cwd(), "supabase/migrations");
+
+function migrationsSorted(): string[] {
+  return readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith(".sql")).sort();
+}
+
+/** The LAST migration matching `pattern` — later files supersede earlier ones. */
+function latestMigrationMatching(pattern: RegExp, what: string): string {
+  const hit = migrationsSorted()
+    .filter((f) => pattern.test(readFileSync(join(MIGRATIONS_DIR, f), "utf8")))
+    .pop();
+  if (!hit) throw new Error(`No migration ${what} — has it been renamed?`);
+  return readFileSync(join(MIGRATIONS_DIR, hit), "utf8");
+}
+
+/** The one-time column add, backfill and repair — not a definition, so not superseded. */
+const MIGRATION = latestMigrationMatching(
+  /ADD COLUMN IF NOT EXISTS is_provisional/i,
+  "adds split_index_history.is_provisional",
 );
+
+/*
+ * The trigger function is resolved, not named.
+ *
+ * 059 introduced the `is_provisional ASC` ordering, but 070 redefines the whole
+ * function to make account deletion work, and the last CREATE OR REPLACE is
+ * what actually runs. Asserting the ordering against 059 would keep passing
+ * while the live definition lost the term — which nearly happened: 070 was
+ * first drafted from 054's body, silently dropping it.
+ *
+ * Resolving the latest definition is the same pattern leaderboard-brackets.test.ts
+ * uses, and for the same reason migration-supersession.test.ts exists: a test
+ * that hardcodes a migration filename goes quiet the moment a later one
+ * supersedes it, rather than failing.
+ */
+function latestFunctionDefinition(fn: string): string {
+  return latestMigrationMatching(
+    new RegExp(`CREATE\\s+OR\\s+REPLACE\\s+FUNCTION\\s+(?:public\\.)?${fn}\\b`, "i"),
+    `defines ${fn}`,
+  );
+}
+
+const LIVE_TRIGGER = latestFunctionDefinition("sync_profile_current_index");
 
 describe("migration 059 — the estimate is ranked below every scored session", () => {
   it("adds the column that makes the estimate findable at all", () => {
@@ -50,10 +99,19 @@ describe("migration 059 — the estimate is ranked below every scored session", 
       which is exactly the shape of edit someone makes while "cleaning up" an
       ordering they do not have the context for.
     */
-    const orderBy = MIGRATION.match(
+    const orderBy = LIVE_TRIGGER.match(
       /ORDER BY h\.is_provisional ASC, h\.recorded_at DESC NULLS LAST, h\.id DESC/
     );
     expect(orderBy).not.toBeNull();
+  });
+
+  it("still skips the sync when the athlete is being deleted", () => {
+    // The guard added by 070. Without it a single history row makes account
+    // deletion fail outright, because the trigger updates a profiles row the
+    // same cascade is deleting — Guideline 5.1.1(v) territory.
+    expect(LIVE_TRIGGER).toMatch(
+      /NOT EXISTS \(SELECT 1 FROM auth\.users u WHERE u\.id = target_user\)/
+    );
   });
 
   it("re-syncs profiles with the corrected ordering, not the old one", () => {
