@@ -658,12 +658,20 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
     totalMinutes > 0 ? Math.max(1, Math.floor(totalMinutes / MIN_ENDURANCE_SESSION_MIN)) : 0;
   let enduranceSlots = Math.min(enduranceWanted, affordableBySessionLength);
   let strengthSlots = strengthWanted;
-  if (enduranceSlots < enduranceWanted) {
-    notes.push(
-      `Fewer, longer runs this week — ${Math.round(totalMinutes)} minutes split any further would be sessions too ` +
-        `short to be worth doing.`
-    );
-  }
+  /**
+   * Both of these notes quote the week's endurance minutes back to the
+   * athlete, and both used to be written HERE, from `totalMinutes` — the
+   * budget as it stood before the reconciliation further down had trimmed
+   * anything. Rebuilding two real plans and reading them is what caught it: a
+   * week that prescribed 63 minutes said "68 minutes split any further", and
+   * one that prescribed 105 said "at 113 weekly minutes".
+   *
+   * Five and eight minutes is not much. Quoting a number the plan below then
+   * contradicts is the entire defect class the reconciliation exists to close,
+   * so it is not much in the wrong direction. They are deferred to the end and
+   * written from what the week actually contains.
+   */
+  const fewerLongerRuns = enduranceSlots < enduranceWanted;
 
   // Fit inside the athlete's own stated ceiling, trimming whichever domain is
   // furthest above its minimum dose first.
@@ -851,16 +859,14 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
     return true;
   };
 
+  let oneQualitySessionOnly = false;
   // A quality session shorter than its own warm-up is not a quality session.
   if (qualityMinutes < MIN_QUALITY_SESSION_MIN) {
     while (qualityAllocated() > 1 && demote("")) {
       /* keep one, fold the rest into easy volume */
     }
     if (qualityAllocated() > 0) {
-      notes.push(
-        `One quality session this week rather than several — at ${Math.round(totalMinutes)} weekly minutes, ` +
-          `splitting the hard work further would leave none of it long enough to do anything.`
-      );
+      oneQualitySessionOnly = true;
     }
   }
 
@@ -1087,6 +1093,24 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
         `${fitted.dropped.length} endurance session${fitted.dropped.length > 1 ? "s" : ""} dropped this week — ` +
           `${Math.round(totalMinutes)} minutes will not stretch to more without making each one too short to be ` +
           `worth doing.`
+      );
+    }
+  }
+
+  // Written now rather than where the decisions were taken, so the minutes
+  // quoted are the minutes prescribed. See the note beside `fewerLongerRuns`.
+  {
+    const spent = sessions.reduce((sum, x) => sum + x.minutes, 0);
+    if (fewerLongerRuns) {
+      notes.push(
+        `Fewer, longer runs this week — ${spent} minutes split any further would be sessions too short to be ` +
+          `worth doing.`
+      );
+    }
+    if (oneQualitySessionOnly) {
+      notes.push(
+        `One quality session this week rather than several — at ${spent} weekly minutes, splitting the hard work ` +
+          `further would leave none of it long enough to do anything.`
       );
     }
   }

@@ -113,6 +113,31 @@ describe("a week spends the budget it advertises", () => {
     expect(slots, `peak week had ${slots} endurance slots`).toBeGreaterThan(2);
   });
 
+  it("quotes the minutes it prescribed, not the ones it started with", () => {
+    // Both of these notes read the endurance budget BEFORE the reconciliation
+    // trimmed it, so a week that prescribed 63 minutes told the athlete "68
+    // minutes split any further" and one that prescribed 105 said "at 113
+    // weekly minutes". Found by rebuilding two real athletes' plans and
+    // reading them, not by a failing assertion.
+    const p = plan(
+      state({ currentRunMinPerWeek: 68 }),
+      goal({ enduranceEventKm: 5, enduranceEventKey: "5k" }),
+      constraints({ maxSessionsPerWeek: 10, maxSessionMin: 150 })
+    );
+    const quoted = /(\d+) (?:minutes split any further|weekly minutes)/;
+    let checked = 0;
+    for (const w of p.weeks) {
+      const spent = enduranceMinutes(w);
+      for (const n of w.notes) {
+        const m = quoted.exec(n);
+        if (!m) continue;
+        checked++;
+        expect(Number(m[1]), `week ${w.week} quoted ${m[1]} and prescribed ${spent}`).toBe(spent);
+      }
+    }
+    expect(checked, "no week produced a minute-quoting note, so this proves nothing").toBeGreaterThan(0);
+  });
+
   it("names the intake answer that is holding the athlete back", () => {
     // The shortfall is reported because it is actionable in a way engine
     // internals are not: raising maxSessionMin is entirely in the athlete's gift.
