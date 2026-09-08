@@ -45,6 +45,9 @@ const PROJECTIONS = [
   "public_workout_scores",
   "public_index_history",
   "public_leaderboard_entries",
+  // Recreated by 075 after 056 — the migration that defined it — turned out
+  // never to have been applied.
+  "public_challenge_participation",
   // 073. Two columns over every profile, for the uniqueness check that cannot
   // use public_profiles because it must see unverified accounts too.
   "profile_usernames",
