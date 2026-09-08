@@ -315,13 +315,16 @@ export const PERSONAS: Persona[] = [
     who: "Rows and skis on the ergs four times a week, lifts twice, no outdoor training.",
     wants: "Her erg work scored against women who row, not against men who row.",
     covers:
-      "The women's rowing anchor table and the female SkiErg factor — the two erg numbers no female persona touched before 8 Sep 2026. Rowing is the one sport scored from its own sex-specific tables rather than a multiplier, so nothing else in this suite exercises that path for a woman.",
+      "The women's rowing anchor table and the female SkiErg factor — the two erg numbers no female persona touched before 8 Sep 2026. Rowing is the one sport scored from its own sex-specific tables rather than a multiplier, so nothing else in this suite exercises that path for a woman. Deliberately a controlled counterpart to `erg-athlete`: same weeks, same session types, same baseline pace, differing in sex. If the erg sex calibration drifts, these two stop scoring alike and the report says so.",
     weeks: 8,
     trajectory: "improving",
+    // Mirrors erg-athlete exactly. The first draft of this persona swapped the
+    // two session types round, which made the pair incomparable for no reason
+    // and left a 200-point row/ski gap that read like a calibration fault.
     pattern: [
-      { sport: "rowing", sessionType: "threshold", perWeek: 2 },
-      { sport: "ski_erg", sessionType: "interval", perWeek: 2 },
-      { sport: "gym", sessionType: "other", perWeek: 2 },
+      { sport: "rowing", sessionType: "interval", perWeek: 2 },
+      { sport: "ski_erg", sessionType: "threshold", perWeek: 2 },
+      { sport: "gym", sessionType: "other", perWeek: 3 },
     ],
     profile: {
       age: 31,
@@ -335,7 +338,7 @@ export const PERSONAS: Persona[] = [
       split_endurance_weight: 0.5,
     },
     baseline: {
-      easyPaceSecPerKm: 330,
+      easyPaceSecPerKm: 300,
       squat1RM: 90,
       bench1RM: 55,
       deadlift1RM: 115,
@@ -347,7 +350,7 @@ export const PERSONAS: Persona[] = [
     who: "Commutes by bike and races club time trials at the weekend.",
     wants: "The bike to be treated as her sport rather than as cross-training.",
     covers:
-      "The female cycling factor, which moved further on 8 Sep 2026 than any other cardio constant and rests on the weakest evidence of the five — the research calls cycling 'by far the least calibratable'. No female persona rode a bike before this one.",
+      "The female cycling factor, which moved further on 8 Sep 2026 than any other cardio constant and rests on the weakest evidence of the five — the research calls cycling 'by far the least calibratable'. No female persona rode a bike before this one. Deliberately a controlled counterpart to `cyclist`: same weeks, same session types, same baseline pace, differing in sex.",
     weeks: 9,
     trajectory: "improving",
     pattern: [
@@ -366,7 +369,9 @@ export const PERSONAS: Persona[] = [
       preferred_sports: ["outdoor_cycling", "indoor_cycling"],
       split_endurance_weight: 0.9,
     },
-    baseline: { easyPaceSecPerKm: 165 },
+    // Same as `cyclist`, so the pair differs in sex and nothing else that
+    // matters to the score. See female-erg-athlete's `covers`.
+    baseline: { easyPaceSecPerKm: 150 },
   },
 
   {

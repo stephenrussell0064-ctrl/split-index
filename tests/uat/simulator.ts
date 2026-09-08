@@ -168,6 +168,69 @@ function buildGymExercises(
 }
 
 /** Distance and duration for one endurance session, in the athlete's own terms. */
+/**
+ * Measured female:male time ratios, read from
+ * `docs/pre-launch/calibration-data.md` and deliberately NOT imported from
+ * `FEMALE_CARDIO_FACTORS`.
+ *
+ * ## Why this exists
+ *
+ * Until 8 September 2026 this file had no notion of sex anywhere in it. Every
+ * session time came from the persona's single `easyPaceSecPerKm` baseline times
+ * a sport scale, so a female persona was handed a performance generated as
+ * though she were a man with that baseline — and `timeToScore` then applied the
+ * female allowance on top. She was credited twice, worst in the sports with the
+ * largest sex factor.
+ *
+ * It surfaced when a female erg athlete was added and read 950 mean on the
+ * SkiErg against 703 rowing, where the male erg athlete read 746 against 794.
+ * Not a scoring fault — the constants check out against the C2 logbook medians
+ * — but it meant the absolute score of every female persona in this suite was
+ * inflated, and had been for as long as there had been female personas.
+ *
+ * A persona's `easyPaceSecPerKm` describes ability *within that athlete's own
+ * sex*: "advanced" means advanced for a woman if the persona is a woman. This
+ * converts that into the absolute clock time she would actually post.
+ *
+ * ## Why these are copied rather than imported
+ *
+ * Importing `FEMALE_CARDIO_FACTORS` would make the round trip exact by
+ * construction — the simulator would multiply by the same number the scorer
+ * divides by, the two would cancel, and every female persona would score
+ * identically no matter what the constant said. The suite would then be unable
+ * to see a miscalibrated sex factor at all, which is worse than the bug being
+ * fixed here, and is the same shape of error as a test that asserts a function
+ * against itself.
+ *
+ * So these come from the research and the app's constants come from the
+ * research, independently. They agree today because the constants were
+ * calibrated onto it on 8 September. If a constant later drifts, female
+ * personas start scoring away from their male counterparts of equal standing,
+ * and the report shows it — which is the whole point of having bots.
+ */
+const MEASURED_FEMALE_TIME_RATIO: Partial<Record<SportType, number>> = {
+  running: 1.191, // §4a RunRepeat 5 km, flat 1.186-1.195 across the 30th-80th
+  walking: 1.146, // §4e's walker-dominated bottom decile — the only handle there is
+  swimming: 1.14, // §5 400 m free, 50th; §1b's non-elite USMS tiers average 1.1454
+  outdoor_cycling: 1.098, // §2c IM 70.3 bike, 823,459 finishers
+  indoor_cycling: 1.098, // same basis
+  bike_erg: 1.098, // same basis
+  rowing: 1.143, // §3c logbook 2000 m, at the app's median male anchor
+  ski_erg: 1.164, // §3b logbook 2000 m — NOT §5's 1000 m figure of 1.246
+};
+
+/**
+ * How much slower this persona's clock time is than the equivalent male one.
+ *
+ * Returns 1 for men, and for any sport with no measured ratio — gym work is
+ * scored by its own sex-segregated tables (DOTS, Glossbrenner) rather than a
+ * time multiplier, so there is nothing to apply here.
+ */
+function sexPaceMultiplier(persona: Persona, sport: SportType): number {
+  if (persona.profile.gender !== "female") return 1;
+  return MEASURED_FEMALE_TIME_RATIO[sport] ?? 1;
+}
+
 function buildEnduranceSession(
   persona: Persona,
   pattern: WeeklyPattern,
@@ -178,6 +241,7 @@ function buildEnduranceSession(
   const basePace = persona.baseline.easyPaceSecPerKm ?? 300;
 
   // Session shape. Faster sessions are shorter; long runs are slower.
+  // (sexPaceMultiplier is applied to the finished pace below — see its comment.)
   const shape: Record<string, { paceMult: number; km: number }> = {
     easy: { paceMult: 1.0, km: 8 },
     recovery: { paceMult: 1.08, km: 6 },
@@ -204,7 +268,7 @@ function buildEnduranceSession(
   const km = s.km * (sportKmScale[pattern.sport] ?? 1) * volume * (1 + (rand() - 0.5) * 0.1);
 
   // Faster athlete = lower pace number, so improvement divides.
-  const pace = (basePace * s.paceMult) / factor;
+  const pace = (basePace * s.paceMult) / factor * sexPaceMultiplier(persona, pattern.sport);
   const durationSeconds = Math.round(km * pace);
 
   const maxHr = persona.profile.max_hr ?? 220 - persona.profile.age;
