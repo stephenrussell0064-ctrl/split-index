@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { AuthForm } from "@/components/auth/auth-form";
 import { resolveAuthPageError } from "@/lib/supabase/auth-page-errors";
 import { createClient } from "@/lib/supabase/server";
+import { mainContentProps } from "@/lib/a11y/main-content";
 
 export default async function LoginPage({
   searchParams,
@@ -27,12 +28,12 @@ export default async function LoginPage({
       <div aria-hidden className="landing-orb landing-orb-cardio opacity-50" />
       <div aria-hidden className="landing-hero-grid landing-hero-grid-lab" />
 
-      <div className="relative flex flex-1 items-center justify-center px-4">
+      <main {...mainContentProps} className="relative flex flex-1 items-center justify-center px-4 focus:outline-none">
         <AuthForm
           mode="login"
           initialError={resolveAuthPageError(error, reason, detail)}
         />
-      </div>
+      </main>
       <footer className="relative px-6 py-6 text-center text-sm text-muted">
         <span className="inline-flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
           <Link href="/privacy" className="hover:text-foreground transition-colors">

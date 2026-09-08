@@ -2,6 +2,7 @@ import Link from "next/link";
 import { CheckCircle2 } from "lucide-react";
 import { BrandMark } from "@/components/brand/brand-mark";
 import { Button } from "@/components/ui/button";
+import { mainContentProps } from "@/lib/a11y/main-content";
 
 export const metadata = {
   title: "Email confirmed — Split Index",
@@ -9,7 +10,7 @@ export const metadata = {
 
 export default function EmailConfirmedPage() {
   return (
-    <div className="min-h-dvh bg-ambient flex items-center justify-center px-4">
+    <main {...mainContentProps} className="min-h-dvh bg-ambient flex items-center justify-center px-4 focus:outline-none">
       <div className="w-full max-w-md text-center">
         <div className="mb-8 flex justify-center">
           <BrandMark variant="full" href="/" logoHeight={36} priority />
@@ -33,6 +34,6 @@ export default function EmailConfirmedPage() {
           </Link>
         </div>
       </div>
-    </div>
+    </main>
   );
 }

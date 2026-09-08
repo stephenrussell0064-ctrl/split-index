@@ -1,5 +1,6 @@
 "use client";
 
+import { useDialog } from "@/components/ui/use-dialog";
 import { useCallback, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, GitCompare } from "lucide-react";
@@ -65,6 +66,10 @@ export function CompareModal({
     return () => clearTimeout(timer);
   }, [open, initialUsername, initialUserId, metric, loadCompare]);
 
+  // See useDialog: Escape, a focus trap, and focus restored to whatever opened
+  // this. None of the app's four modals had any of it.
+  const { dialogRef, dialogProps } = useDialog(onClose, { label: "Compare index trends" });
+
   if (!open) return null;
 
   return (
@@ -77,6 +82,8 @@ export function CompareModal({
         onClick={onClose}
       >
         <motion.div
+          ref={dialogRef}
+          {...dialogProps}
           initial={{ opacity: 0, y: 24 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 24 }}
@@ -91,6 +98,7 @@ export function CompareModal({
             <button
               type="button"
               onClick={onClose}
+              aria-label="Close comparison"
               className="rounded-lg p-1.5 text-muted hover:bg-white/5 hover:text-foreground"
             >
               <X className="h-4 w-4" />
