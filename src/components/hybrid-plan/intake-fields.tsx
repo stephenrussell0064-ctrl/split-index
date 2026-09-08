@@ -178,7 +178,12 @@ export function SelectField({
       value={value ?? ""}
       aria-label={ariaLabel}
       onChange={(e) => onChange(e.target.value)}
-      className="min-h-11 rounded-xl border border-white/10 bg-white/[0.03] px-3 text-sm text-foreground focus:border-accent focus:outline-none"
+      /*
+        max-w-full because a select is as wide as its longest option, and the
+        options are content passed in by the caller — so nothing here bounds it.
+        One long label and the step scrolls sideways.
+      */
+      className="min-h-11 w-full max-w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 text-sm text-foreground focus:border-accent focus:outline-none sm:w-auto"
     >
       <option value="">Select…</option>
       {options.map((o) => (

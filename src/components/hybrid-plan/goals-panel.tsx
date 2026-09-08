@@ -286,12 +286,30 @@ export function GoalsPanel({ onSaved }: { onSaved: () => void }) {
             why="Given a date, phase lengths, the taper and the peak all measure back from it, and it overrides the block length below."
           >
             <div className="flex flex-wrap items-center gap-2">
+              {/*
+                `min-w-0 max-w-full` is what stops this scrolling the whole page
+                sideways on a phone.
+
+                Safari gives `input[type=date]` a large intrinsic width — it
+                sizes to the widest date the picker can render, not to its
+                container — and a flex item defaults to `min-width: auto`, so it
+                refuses to shrink below that. The input pushed this row wider
+                than the viewport, and because the row is inside the page's
+                normal flow the whole Goals tab gained a horizontal scrollbar:
+                every screen on the tab had to be dragged left and right, not
+                just this field.
+
+                The tab strip above already carries the same note for the same
+                reason (see the grid comment in hybrid-plan-screen.tsx). Any
+                fixed-width control dropped into a flex row here needs this
+                pair, or it will do it again.
+              */}
               <input
                 type="date"
                 value={eventDate ?? ""}
                 onChange={(e) => set("event_date", e.target.value || null)}
                 aria-label="Event date"
-                className="min-h-11 rounded-xl border border-white/10 bg-white/[0.03] px-3 text-sm text-foreground focus:border-accent focus:outline-none"
+                className="min-h-11 min-w-0 max-w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 text-sm text-foreground focus:border-accent focus:outline-none"
               />
               {eventDate && (
                 <button

@@ -605,12 +605,19 @@ export function IntakeWizard() {
                 </Field>
               </>
               <Field label="Do you have an event? When is it?" why="Optional, and most people do not. Given a date, phase lengths, the taper and the peak all measure back from it and it overrides the block length above.">
+                {/*
+                  min-w-0 max-w-full: Safari sizes input[type=date] to the
+                  widest date its picker can draw, not to the container, and a
+                  flex/grid child will not shrink below that on its own. Without
+                  this the whole step scrolls sideways on a phone — the same bug
+                  the Goals tab had.
+                */}
                 <input
                   type="date"
                   value={(get("event_date", intake.eventDate) as string | null) ?? ""}
                   onChange={(e) => set("event_date", e.target.value || null)}
                   aria-label="Event date"
-                  className="min-h-11 rounded-xl border border-white/10 bg-white/[0.03] px-3 text-sm text-foreground focus:border-accent focus:outline-none"
+                  className="min-h-11 min-w-0 max-w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 text-sm text-foreground focus:border-accent focus:outline-none"
                 />
               </Field>              {((get("events", intake.events) as string[]).length >= 2) && (
                 <>
