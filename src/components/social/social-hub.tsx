@@ -143,8 +143,26 @@ export function SocialHub({
         {tab === "squads" && <SquadsPanel initialSquads={squads} currentUserId={currentUserId} />}
 
         {tab === "leaderboards" && (
+          {/*
+            min-w-0 on the grid item, and it is the whole fix for the
+            leaderboard hanging off the right of the screen.
+
+            A grid item defaults to `min-width: auto`, which means it will not
+            shrink below its content's min-content width — the same rule that
+            makes flex children overflow, one level up. So a single wide
+            descendant anywhere inside the leaderboard grew THIS div past the
+            viewport, and the card, its header and every row inside were dragged
+            with it. Reading the DOM bottom-up is what made that hard to see:
+            eight elements report as too wide and only this one is the cause,
+            the rest merely inherit its width.
+
+            Two rounds were spent on the descendants — the period toggle's
+            wrapping, an unbounded exercise name — because each looked like the
+            offender from the screenshot. Both were real defects and neither was
+            this. `min-w-0` here is what lets any of those shrink at all.
+          */}
           <div className="grid gap-6 lg:grid-cols-3">
-            <div className="lg:col-span-2">
+            <div className="min-w-0 lg:col-span-2">
               <LeaderboardPanel
                 initialRows={leaderboard}
                 initialBracket={leaderboardBracket}
