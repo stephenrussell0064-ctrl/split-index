@@ -1,7 +1,8 @@
 import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { stripSqlComments } from "@/lib/testing/source-scan";
+import { stripComments, stripSqlComments } from "@/lib/testing/source-scan";
 
 /**
  * Every SECURITY DEFINER function must be revoked from `anon`, not only PUBLIC.
@@ -40,6 +41,8 @@ import { stripSqlComments } from "@/lib/testing/source-scan";
  * author was writing at the time, which is the argument for enumerating the
  * whole set rather than auditing the file in front of you.
  */
+
+const ROOT = fileURLToPath(new URL("../../..", import.meta.url)).replace(/\/$/, "");
 
 const MIGRATIONS = fileURLToPath(
   new URL("../../../supabase/migrations", import.meta.url)
@@ -200,5 +203,49 @@ describe("SECURITY DEFINER functions are not reachable by anon", () => {
       "sync_profile_current_index",
       "update_updated_at",
     ]);
+  });
+
+  /**
+   * No other test may assert a grant by reading one migration.
+   *
+   * THE CLASS THIS CLOSES, which cost a green test through a live exposure.
+   * `security-log.test.ts` had a case called "does not let any signed-in user
+   * run the prune" that asserted `REVOKE ALL ON FUNCTION
+   * prune_security_events() FROM PUBLIC` against 063. The line is there, so it
+   * passed — for the entire window in which `anon` could reach that function,
+   * because revoking from PUBLIC leaves Supabase's by-name grant to `anon`
+   * standing. It named a real property and checked a mechanism that does not
+   * provide it, which reads as coverage and is worse than no test.
+   *
+   * A peer session's guard (a043dda) catches a test watching a migration whose
+   * DEFINITIONS were superseded, and deliberately excludes GRANT and REVOKE
+   * from that rule — folding them in would fail on 060 and 063 the moment 067
+   * lands, which is a legitimate later tightening rather than a defect. That
+   * exclusion is correct and it leaves this gap, so this closes it from the
+   * other side: grants are asserted HERE, across every migration, or not at all.
+   */
+  it("keeps grant assertions out of single-migration tests", () => {
+    const GRANT_ASSERTION = /(REVOKE|GRANT)\s+(ALL|EXECUTE)[^\n]*ON FUNCTION/i;
+    const offenders: string[] = [];
+
+    for (const file of readdirSync(join(ROOT, "src"), { recursive: true }) as string[]) {
+      if (!/\.test\.tsx?$/.test(file)) continue;
+      const path = join(ROOT, "src", file);
+      if (path.endsWith("function-grants.test.ts")) continue;
+      const code = readFileSync(path, "utf8");
+      // Only a problem when the test is reading ONE named migration file.
+      if (!/supabase\/migrations\/\d{3}_/.test(code)) continue;
+      if (GRANT_ASSERTION.test(stripComments(code))) offenders.push(`src/${file}`);
+    }
+
+    expect(
+      offenders,
+      "these assert a GRANT or REVOKE while reading a single migration by name. " +
+        "A later migration can tighten the same function's grants and leave the " +
+        "assertion green describing a mechanism that no longer protects " +
+        "anything — which is exactly what happened to prune_security_events. " +
+        "Assert grants in function-grants.test.ts, which resolves them across " +
+        "every migration:\n  " + offenders.join("\n  ")
+    ).toEqual([]);
   });
 });

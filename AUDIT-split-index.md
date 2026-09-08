@@ -1916,6 +1916,29 @@ you.
 **Outstanding:** apply 069; then re-scope the 031 policies `TO authenticated` if
 `activity_is_visible_to` is to be closed.
 
+**A FALSE-GREEN TEST FOR THE SAME DEFECT, found by a peer session and fixed here.**
+`security-log.test.ts` had a case named "does not let any signed-in user run the prune"
+asserting that 063 contains `REVOKE ALL ON FUNCTION prune_security_events() FROM PUBLIC`.
+That line is there, so it passed — **for the entire window in which `anon` could reach that
+function**, because revoking from PUBLIC is exactly the mechanism this finding proved
+insufficient. It named a real property and checked something that does not provide it, which
+reads as coverage and is therefore worse than no test at all.
+
+It is deleted rather than re-pointed at 067: a regex over whichever migration happens to be
+latest is the same mistake with a newer number on it. `function-grants.test.ts` owns grants,
+resolves them across every migration, and asserts this function is revoked from `anon` **and**
+`authenticated` and never granted back. Verified the replacement actually covers it by
+weakening 067's revoke back to PUBLIC-only — two tests fail, naming the role.
+
+**And a guard for the class**, closing it from the side the peer's own guard deliberately
+leaves open. Their check (`a043dda`) fails a test that watches a migration whose
+*definitions* were superseded, and excludes GRANT and REVOKE on purpose — folding those in
+would fail on 060 and 063 the moment 067 lands, which is a legitimate later tightening
+rather than a defect. So the rule now is: **grants are asserted across every migration, or
+not at all.** Any other test that asserts a GRANT or REVOKE while reading a single migration
+by name fails, and the message says where to put it instead. Verified by restoring the
+original assertion: the guard fails and names the file.
+
 ---
 
 ## 4. Triage summary
