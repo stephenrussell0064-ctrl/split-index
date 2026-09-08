@@ -36,7 +36,12 @@ import {
   weightEntryLabel,
 } from "@/lib/scoring/weight-entry";
 import type { Gender } from "@/types";
-import { FieldError, GlassInput, UnitInput } from "./fields";
+import {
+  FieldError,
+  GlassInput,
+  UnitInput,
+  fieldErrorId,
+} from "./fields";
 import {
   bestSetRow,
   createExerciseRow,
@@ -293,6 +298,7 @@ export function GymExercises({
             unit="kg"
             placeholder="75"
             aria-label="Current bodyweight in kilograms"
+            aria-describedby={errors.bodyweight ? fieldErrorId("bodyweight") : undefined}
             invalid={!!errors.bodyweight}
             wrapperClassName="w-[92px] shrink-0"
             className="h-9 px-2.5"
@@ -313,7 +319,7 @@ export function GymExercises({
           }
           className="mt-1"
         />
-        <FieldError error={errors.bodyweight} />
+        <FieldError error={errors.bodyweight} id={fieldErrorId("bodyweight")} />
       </div>
 
       {/*

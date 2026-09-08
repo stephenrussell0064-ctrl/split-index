@@ -1548,14 +1548,32 @@ the semantically precise answer and reads better on paper; support is materially
 and a user on one of the pairings that ignores it gets nothing at all — which is the state
 being left behind. Revisit when support catches up: one line in each component.
 
-**NOT covered, which is why the published statement is unchanged.** Nine `<FieldError>`
-render at *block* level rather than beside a field — four in
-[interval-blocks.tsx](src/components/activities/interval-blocks.tsx) and five in
-[gym-form.tsx](src/components/activities/gym-form.tsx). `errors["ex.<id>.sets"]` describes
-a control somewhere inside a repeated row and is drawn after the whole row, so there is no
-single element to attach it to without restructuring how those forms report. That is a
-real piece of work, not an oversight, and until it is done the statement's wording — "Form
-errors are **not always** tied to their field" — is exactly true, so it stays as written.
+**THE BLOCK-LEVEL ERRORS: five of nine now tied, and the restructure was not needed.**
+
+The assumption above — that these need "restructuring how those forms report" — was wrong,
+and the correction is the useful part. `aria-describedby` is a REFERENCE, not a containment
+rule: the message can stay exactly where it reads best and still be announced on the input
+it belongs to. Nothing had to move.
+
+All four in [interval-blocks.tsx](src/components/activities/interval-blocks.tsx) are tied —
+reps, distance, work time and heart rate — plus `bodyweight` in
+[gym-form.tsx](src/components/activities/gym-form.tsx). `fieldErrorId(key)` derives the id
+from the same key the errors map uses, so the reference and the target cannot drift apart.
+`ClockInput` renders two boxes for one value and both point at the same message: "enter a
+work time" is not about the minutes specifically, and a reader landing on either half should
+hear it.
+
+**The remaining four are NOT a smaller version of the same job**, and are left deliberately.
+`errors.exercises`, `ex.<id>.name`, `.muscle` and `.sets` describe GROUPS — a session
+needing at least one exercise, an exercise picker that is a heading and a button rather than
+an input, a row of weight-convention buttons, and a list of sets. There is no single control
+to point at. The correct treatment is a named `role="group"` carrying the description, which
+changes how the whole form is announced — a design decision to make against a real screen
+reader rather than by reasoning about it. That is N7 item 4, still open, and it is the
+honest blocker here rather than effort.
+
+So "Form errors are **not always** tied to their field" remains true of four, and the
+published statement stays as written.
 
 Three further `role="alert"` sites were checked and are correctly out of scope:
 `article9-consent-card`, `goals-panel` and `upcoming-races-panel` render *form-level*

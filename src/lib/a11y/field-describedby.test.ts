@@ -182,4 +182,81 @@ describe("the activity form's Field wires its error the same way", () => {
     // is a reference to nothing.
     expect(source).toContain("if (!ctx?.hasError) return {};");
   });
+
+  /**
+   * N7 item 3's tail: the errors that render at BLOCK level, after a whole row
+   * of inputs, because that is where there is room for them.
+   *
+   * `Field` cannot help there — it wraps one control, and these sit beside a
+   * group with several. But `aria-describedby` is a REFERENCE, not a
+   * containment rule, so a message can stay where it reads best and still be
+   * announced on the input it belongs to. `fieldErrorId` exists so the two ends
+   * agree on the string instead of each writing a template.
+   */
+  it("ties every interval-block error to the control it describes", () => {
+    const source = stripComments(
+      readFileSync(
+        fileURLToPath(new URL("../../components/activities/interval-blocks.tsx", import.meta.url)),
+        "utf8"
+      )
+    );
+
+    // reps, distance, work time and HR — four errors, four references.
+    expect(source.match(/fieldErrorId\(key\(/g)?.length).toBe(8);
+    for (const field of ["reps", "distanceMeters", "workSeconds", "workHr"]) {
+      expect(source, field).toContain(`fieldErrorId(key("${field}"))`);
+    }
+  });
+
+  it("ties the gym form's bodyweight error to its input", () => {
+    const source = stripComments(
+      readFileSync(
+        fileURLToPath(new URL("../../components/activities/gym-form.tsx", import.meta.url)),
+        "utf8"
+      )
+    );
+    expect(source).toContain('fieldErrorId("bodyweight")');
+    expect(source).toMatch(/aria-describedby=\{errors\.bodyweight \?/);
+  });
+
+  /**
+   * `ClockInput` renders two boxes for one value, and both point at the same
+   * message: "enter a work time" is not about the minutes specifically, and a
+   * reader who lands on either half should hear it.
+   */
+  it("points both halves of a clock input at one message", () => {
+    const source = stripComments(
+      readFileSync(
+        fileURLToPath(new URL("../../components/activities/fields.tsx", import.meta.url)),
+        "utf8"
+      )
+    );
+    const start = source.indexOf("export function ClockInput");
+    const body = source.slice(start, source.indexOf("export function", start + 10));
+    expect(body.match(/aria-describedby=\{describedBy\}/g)?.length).toBe(2);
+  });
+
+  /**
+   * The four that are NOT tied, named with the reason.
+   *
+   * `errors.exercises`, `ex.<row>.name`, `.muscle` and `.sets` describe GROUPS
+   * — a session needing an exercise, a picker, a row of mode buttons, a list of
+   * sets. There is no single control to point at, and the correct treatment is
+   * a named `role="group"` carrying the description, which changes how the form
+   * is announced. That is a design decision to make against a real screen
+   * reader, and the manual pass is N7 item 4, still open.
+   */
+  it("leaves the group-level errors alone, deliberately", () => {
+    const source = stripComments(
+      readFileSync(
+        fileURLToPath(new URL("../../components/activities/gym-form.tsx", import.meta.url)),
+        "utf8"
+      )
+    );
+    for (const key of ["exercises", "name", "muscle", "sets"]) {
+      expect(source, `${key} unexpectedly tied`).toContain("<FieldError");
+    }
+    // Exactly one gym-form error is tied to a control: bodyweight.
+    expect(source.match(/fieldErrorId\(/g)?.length).toBe(2);
+  });
 });

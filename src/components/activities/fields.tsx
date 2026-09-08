@@ -40,6 +40,27 @@ export function MicroLabel({
  * the athlete just did, it is the reason the save did not happen, and waiting
  * politely for a gap means waiting behind whatever is already being read.
  */
+/**
+ * The id an error message gets when it is rendered away from its input.
+ *
+ * N7 item 3's tail. Nine errors in the gym and interval forms render at BLOCK
+ * level — after a whole row of inputs — because that is where there is room for
+ * them. `Field` cannot help there: it wraps one control, and these describe one
+ * control inside a group that has several.
+ *
+ * `aria-describedby` does not require the message to be adjacent, or even
+ * nearby: it is a reference, so the error can stay where it reads best and
+ * still be announced on the input it belongs to. What it does require is that
+ * the two agree on an id, which is why this function exists rather than the two
+ * ends each writing a template string.
+ *
+ * The key is the same one the errors map is keyed by — `reps`,
+ * `ex.<row>.sets` — so there is one source for both.
+ */
+export function fieldErrorId(key: string): string {
+  return `field-error-${key.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+}
+
 export function FieldError({ error, id }: { error?: string; id?: string }) {
   return (
     <AnimatePresence initial={false}>
@@ -477,6 +498,7 @@ export function ClockInput({
   secondsPlaceholder = "15",
   ariaPrefix,
   className,
+  describedBy,
 }: {
   value: string;
   onChange: (next: string) => void;
@@ -485,12 +507,19 @@ export function ClockInput({
   secondsPlaceholder?: string;
   ariaPrefix: string;
   className?: string;
+  /*
+    Both boxes point at it. One message describes the pair — "enter a work
+    time" is not about the minutes specifically — and a reference may be shared,
+    so a reader hears it whichever half they land on.
+  */
+  describedBy?: string;
 }) {
   const { minutes, seconds } = clockParts(value);
   return (
     <div className={cn("flex min-w-0 items-center gap-1", className)}>
       <UnitInput
         aria-label={`${ariaPrefix} minutes`}
+        aria-describedby={describedBy}
         inputMode="numeric"
         value={minutes}
         placeholder={minutesPlaceholder}
@@ -504,6 +533,7 @@ export function ClockInput({
       </span>
       <UnitInput
         aria-label={`${ariaPrefix} seconds`}
+        aria-describedby={describedBy}
         inputMode="numeric"
         value={seconds}
         placeholder={secondsPlaceholder}

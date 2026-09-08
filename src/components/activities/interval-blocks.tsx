@@ -9,6 +9,7 @@ import {
   FieldError,
   MicroLabel,
   UnitInput,
+  fieldErrorId,
 } from "./fields";
 import {
   createIntervalBlock,
@@ -310,6 +311,7 @@ function IntervalBlockCard({
           <MicroLabel htmlFor={`${block.id}-reps`}>Reps</MicroLabel>
           <UnitInput
             id={`${block.id}-reps`}
+            aria-describedby={errors[key("reps")] ? fieldErrorId(key("reps")) : undefined}
             inputMode="numeric"
             value={block.reps}
             placeholder="4"
@@ -322,6 +324,9 @@ function IntervalBlockCard({
           <MicroLabel htmlFor={`${block.id}-distance`}>Distance / rep</MicroLabel>
           <UnitInput
             id={`${block.id}-distance`}
+            aria-describedby={
+              errors[key("distanceMeters")] ? fieldErrorId(key("distanceMeters")) : undefined
+            }
             unit="m"
             value={block.distanceMeters}
             placeholder="400"
@@ -334,6 +339,9 @@ function IntervalBlockCard({
           <MicroLabel>Time / rep</MicroLabel>
           <ClockInput
             ariaPrefix={`Block ${index + 1} work time`}
+            describedBy={
+              errors[key("workSeconds")] ? fieldErrorId(key("workSeconds")) : undefined
+            }
             value={block.workSeconds}
             invalid={!!errors[key("workSeconds")]}
             onChange={(next) => onUpdate({ workSeconds: next })}
@@ -351,9 +359,21 @@ function IntervalBlockCard({
         </div>
       </div>
 
-      <FieldError error={errors[key("reps")]} />
-      <FieldError error={errors[key("distanceMeters")]} />
-      <FieldError error={errors[key("workSeconds")]} />
+      {/*
+        These render here, below the grid, because that is where there is room —
+        and they are tied to their inputs by id rather than by position. N7 item
+        3: aria-describedby is a reference, so a message can read well where it
+        sits and still be announced on the control it belongs to.
+      */}
+      <FieldError error={errors[key("reps")]} id={fieldErrorId(key("reps"))} />
+      <FieldError
+        error={errors[key("distanceMeters")]}
+        id={fieldErrorId(key("distanceMeters"))}
+      />
+      <FieldError
+        error={errors[key("workSeconds")]}
+        id={fieldErrorId(key("workSeconds"))}
+      />
 
       <div className="mt-2.5 flex min-w-0 items-center gap-2">
         <MicroLabel htmlFor={`${block.id}-hr`} className="shrink-0">
@@ -361,6 +381,7 @@ function IntervalBlockCard({
         </MicroLabel>
         <UnitInput
           id={`${block.id}-hr`}
+          aria-describedby={errors[key("workHr")] ? fieldErrorId(key("workHr")) : undefined}
           unit="bpm"
           value={block.workHr}
           placeholder="Optional"
@@ -370,7 +391,7 @@ function IntervalBlockCard({
           className="h-10"
         />
       </div>
-      <FieldError error={errors[key("workHr")]} />
+      <FieldError error={errors[key("workHr")]} id={fieldErrorId(key("workHr"))} />
 
       {repCount >= 2 && (
         <>
