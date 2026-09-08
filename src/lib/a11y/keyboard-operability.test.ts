@@ -246,8 +246,21 @@ describe("keyboard operability", () => {
     is writing the first half and not the second — which looks identical to
     anyone using a mouse. WCAG 2.4.7.
 
-    Not checked here, and not checkable here: whether the replacement has enough
-    contrast against this app's glass panels (2.4.11). That needs eyes.
+    Not checked HERE: whether the replacement has enough contrast to be seen.
+    That is WCAG 1.4.11 Non-text Contrast, which asks 3:1 of the visual
+    information identifying a state — a focus ring being the clearest case — and
+    it is measured in lib/design/contrast.test.ts, which resolves the colour the
+    :focus-visible rule actually draws in each mode scope and compares it with
+    the surface behind it. That check found the Engine's ring at 2.50:1.
+
+    This comment used to cite 2.4.11 and say the question needed eyes. Both were
+    wrong. 2.4.11 is Focus Not Obscured (Minimum) — whether something is covering
+    the focused control — and the 2px-perimeter rules people reach for are 2.4.13
+    Focus Appearance, which is AAA and not what the statement claims. Contrast is
+    1.4.11, it is arithmetic, and arithmetic does not need eyes.
+
+    What still does: whether a ring that clears 3:1 is COMFORTABLE to follow on
+    these glass panels, which no number answers.
   */
   it("never removes a focus indicator without replacing it", () => {
     const offenders: string[] = [];
