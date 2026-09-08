@@ -1519,17 +1519,45 @@ Writing them surfaced a small pre-existing inaccuracy: `cardioToStrength`'s two 
 `number | null` and were passed straight to recharts, which renders a gap. The table now
 says "no reading", which is the same gap said out loud.
 
-**STILL NOT COVERED — three charts, named with reasons in the test's allowlist.**
-`training-zones-chart` (a heart-rate zone histogram), `intensity-distribution` (two donuts
-side by side) and `compare-chart` (two athletes rather than one series over time). All three
-are categorical, so `describeSeries` does not fit and each needs a sentence written for it —
-the same reason the interference charts needed theirs, without the same shape to copy.
-`recovery-gauge` and `progress-ring` are single-value indicators rather than charts, and
-`hero-split`, `product-showcase` and `oauth-icons` are decoration.
+**ITEM 1 IS NOW CLOSED, AND THE PUBLISHED STATEMENT HAS CHANGED — the first time in this
+audit that it has.**
 
-So "Charts do not yet have a text equivalent" is still true of three surfaces, and the
-published statement stays as written. Checked before leaving it, rather than closing the
-finding from the register.
+The last three were the categorical ones, and each needed a sentence `describeSeries` could
+not write. That is the argument for the summary being a required prop, made concrete:
+
+- **A donut has no direction.** "Up from 40 to 60" is meaningless for a share of a total.
+  What a sighted reader takes from one is the ORDER OF SIZE, so `describeDistribution` leads
+  with the largest share regardless of the order the slices are drawn in — which is the one
+  thing the visual makes obvious and a screen reader could not otherwise get.
+- **A comparison has no single "the" value.** Two trend sentences side by side would give
+  both athletes' movement and never answer the question the chart exists for, so
+  `describeComparison` says who is ahead and whether the gap is opening or closing.
+
+`intensity-distribution` was wrapped inside its shared `DonutChart` rather than at each call
+site, so both donuts are covered by one change and a third cannot be added without one.
+`compare-chart` gets one row per date with a column per athlete rather than two tables —
+the question is who is ahead on a given day, which is a comparison across a row.
+
+**Sixteen chart surfaces in twelve files, no bare `role="img"` anywhere.** The allowlist is
+empty and kept, so a chart added without a data equivalent has to be declared with a reason
+rather than quietly not appearing.
+
+`recovery-gauge` and `progress-ring` are not charts and never were: both render their value,
+band and blurb as real text. The gauge's decorative arc is now `aria-hidden`, which is the
+one place in the app where hiding a graphic is the accessible choice — left exposed it
+announces as an unnamed graphic before the number it is drawing.
+
+**The statement.** "Charts do not yet have a text equivalent … the trend charts on the
+analytics page will not be readable" is now false in both halves, and a false claim on a
+public accessibility page is a defect even when it understates. It moved from Known issues to
+What we have fixed rather than being deleted, so the record of the change survives. The
+form-error item was softened to match reality too — four remain, described as a group
+problem, waiting on the manual pass rather than on effort.
+
+**What is NOT claimed:** that any of this reads well. The tests prove the table is emitted,
+sits outside the `role="img"` subtree and stays in the accessibility tree. They cannot prove
+it is usable, and item 4 — the manual walkthrough — is still open and still the honest
+caveat carried by the statement.
 
 **ITEM 3 — MOSTLY CLOSED, and deliberately not claimed as closed.**
 

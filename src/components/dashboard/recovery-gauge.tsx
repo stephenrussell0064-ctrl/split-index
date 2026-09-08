@@ -63,7 +63,16 @@ export function RecoveryGauge({ score, className }: RecoveryGaugeProps) {
   return (
     <div className={cn("flex flex-col items-center", className)}>
       <div className="relative" style={{ width: SIZE, height: SIZE }}>
+        {/*
+          Hidden from assistive technology, deliberately, and this is the one
+          case in the app where hiding a graphic is the ACCESSIBLE choice: the
+          number, the band label and the blurb are all real text directly
+          beneath it, so the arc is a second rendering of something already
+          readable. Left exposed it announces as an unnamed graphic before the
+          value it is drawing.
+        */}
         <svg
+          aria-hidden
           width={SIZE}
           height={SIZE}
           viewBox={`0 0 ${SIZE} ${SIZE}`}

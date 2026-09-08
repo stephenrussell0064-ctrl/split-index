@@ -60,3 +60,73 @@ export function describeSeries(name: string, points: SeriesPoint[]): string {
 
   return `${name}: ${movement}, across ${points.length} points from ${first.at} to ${last.at}.${range}`;
 }
+
+/**
+ * A share-of-total breakdown, said out loud.
+ *
+ * The other half of N7 item 1. `describeSeries` answers "which way did it go",
+ * which is the question a trend chart asks and exactly the wrong question for a
+ * donut: a pie has no direction, and reading its slices in chart order conveys
+ * nothing. What a sighted reader takes from one is the ORDER OF SIZE — which
+ * band dominates, and by how much — so that is what this produces.
+ *
+ * Sorted by share, largest first, regardless of the order the slices are drawn
+ * in. That is the one thing a screen-reader user cannot get from the visual and
+ * the one thing the visual makes obvious.
+ *
+ * Percentages, not raw values, because the raw numbers are minutes or session
+ * counts depending on the caller and the point is proportion either way. The
+ * table alongside carries the values.
+ */
+export function describeDistribution(
+  name: string,
+  slices: { name: string; value: number }[]
+): string {
+  const total = slices.reduce((sum, s) => sum + s.value, 0);
+  if (slices.length === 0 || total === 0) return `${name}: nothing logged yet.`;
+
+  const parts = [...slices]
+    .filter((s) => s.value > 0)
+    .sort((a, b) => b.value - a.value)
+    .map((s) => `${s.name} ${Math.round((s.value / total) * 100)}%`);
+
+  return `${name}, largest share first: ${parts.join(", ")}.`;
+}
+
+/**
+ * Two athletes' trends, compared.
+ *
+ * `describeSeries` does not fit either: there is no single "the" value, and the
+ * question a comparison chart answers is who is ahead and whether the gap is
+ * opening or closing — which needs both series in one sentence rather than two
+ * sentences side by side.
+ */
+export function describeComparison(
+  series: { label: string; data: SeriesPoint[] }[]
+): string {
+  const withData = series.filter((s) => s.data.length > 0);
+  if (withData.length < 2) return "Not enough history yet to compare.";
+
+  const ends = withData.map((s) => ({
+    label: s.label,
+    first: s.data[0].value,
+    last: s.data[s.data.length - 1].value,
+  }));
+
+  const each = ends
+    .map((e) => `${e.label} ${num(e.first)} to ${num(e.last)}`)
+    .join("; ");
+
+  const gapStart = Math.abs(ends[0].first - ends[1].first);
+  const gapEnd = Math.abs(ends[0].last - ends[1].last);
+  const ahead = ends[0].last === ends[1].last
+    ? "level"
+    : (ends[0].last > ends[1].last ? ends[0] : ends[1]).label;
+
+  const movement =
+    gapEnd > gapStart ? "widening" : gapEnd < gapStart ? "narrowing" : "unchanged";
+
+  return `${each}. ${
+    ahead === "level" ? "Level at the end" : `${ahead} ahead at the end`
+  }, gap ${movement} (${num(gapStart)} to ${num(gapEnd)}).`;
+}

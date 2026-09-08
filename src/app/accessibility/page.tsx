@@ -22,7 +22,7 @@ export const metadata: Metadata = {
  * edited.
  */
 
-const LAST_REVIEWED = "6 September 2026";
+const LAST_REVIEWED = "8 September 2026";
 
 export default function AccessibilityPage() {
   return (
@@ -76,6 +76,15 @@ export default function AccessibilityPage() {
             locked.
           </li>
           <li>
+            <strong>Charts now carry their figures.</strong> Every graph is
+            followed by a one-sentence summary and a data table, both readable by
+            a screen reader and hidden from the page. A trend chart says which way
+            the number went and by how much; a breakdown reads its bands largest
+            share first; a comparison says who is ahead and whether the gap is
+            opening. Long series list their first 40 rows, and the summary covers
+            the whole period. (WCAG 1.1.1.)
+          </li>
+          <li>
             <strong>Skip link.</strong> A &ldquo;Skip to main content&rdquo; link
             is the first thing you reach with the keyboard on every page, so you
             do not have to tab through the whole navigation.
@@ -98,13 +107,6 @@ export default function AccessibilityPage() {
         </p>
         <ul className="ml-5 list-disc space-y-2">
           <li>
-            <strong>Charts do not yet have a text equivalent.</strong> Our graphs
-            each have a plain-English explanation, but the underlying figures are
-            not exposed as a table to assistive technology. If you use a screen
-            reader, the trend charts on the analytics page will not be readable.
-            (WCAG 1.1.1.)
-          </li>
-          <li>
             <strong>Some states are still signalled by colour alone.</strong>{" "}
             Parts of the interface distinguish the strength and endurance sides
             of the app, and some status indicators, using colour without a
@@ -122,10 +124,15 @@ export default function AccessibilityPage() {
             those journeys are fully operable without a mouse.
           </li>
           <li>
-            <strong>Form errors are not always tied to their field.</strong> Some
-            validation messages are shown near a field without being
-            programmatically associated with it, so a screen reader may not
-            announce them when you reach the input. (WCAG 3.3.1.)
+            <strong>Four form errors are still not tied to their field.</strong>{" "}
+            Most now are: reach an input that has been rejected and your screen
+            reader will read the reason. The four that remain describe a group of
+            controls rather than a single box &mdash; needing at least one
+            exercise, the exercise picker, the weight-unit buttons, and the set
+            list &mdash; so there is no one input to attach them to. Tying those
+            correctly changes how the whole form is announced, which we want to
+            get right against a real screen reader rather than by guesswork, so
+            they are waiting on the manual pass described above. (WCAG 3.3.1.)
           </li>
         </ul>
       </section>

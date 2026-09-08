@@ -1,5 +1,7 @@
 "use client";
 
+import { ChartFigure } from "@/components/analytics/chart-figure";
+import { describeDistribution } from "@/lib/a11y/describe-series";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { motion, useReducedMotion } from "framer-motion";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -22,6 +24,25 @@ function DonutChart({ data, title }: { data: DistributionSlice[]; title: string 
         <ChartEmptyState message="Session intensity data builds from logged workouts" />
       ) : (
         <>
+          {/*
+            Wrapped inside DonutChart rather than at each call site, so both
+            donuts — session types and RPE bands — are covered by one change and
+            a third cannot be added without one.
+          */}
+          <ChartFigure
+            label={title}
+            summary={describeDistribution(title, data)}
+            columns={[
+              { header: "Band", cell: (d: DistributionSlice) => d.name },
+              { header: "Sessions", cell: (d: DistributionSlice) => String(Math.round(d.value)) },
+              {
+                header: "Share",
+                cell: (d: DistributionSlice) =>
+                  total > 0 ? `${Math.round((d.value / total) * 100)}%` : "0%",
+              },
+            ]}
+            rows={data.filter((d) => d.value > 0)}
+          >
           <ResponsiveContainer width="100%" height={180}>
             <PieChart>
               <Pie
@@ -45,6 +66,7 @@ function DonutChart({ data, title }: { data: DistributionSlice[]; title: string 
               />
             </PieChart>
           </ResponsiveContainer>
+          </ChartFigure>
           <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
             {data
               .filter((d) => d.value > 0)

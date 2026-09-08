@@ -1,7 +1,11 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { describeSeries } from "./describe-series";
+import {
+  describeComparison,
+  describeDistribution,
+  describeSeries,
+} from "./describe-series";
 import { stripComments } from "@/lib/testing/source-scan";
 
 /**
@@ -80,6 +84,87 @@ describe("describeSeries", () => {
   });
 });
 
+describe("describeDistribution — a pie has no direction", () => {
+  /**
+   * `describeSeries` answers "which way did it go", which is the wrong question
+   * for a donut. What a sighted reader takes from one is the ORDER OF SIZE, so
+   * that is what the sentence leads with — and it is the one thing a
+   * screen-reader user cannot get from the visual.
+   */
+  it("reads largest share first, not chart order", () => {
+    const s = describeDistribution("Time in zones", [
+      { name: "Zone 1", value: 10 },
+      { name: "Zone 2", value: 60 },
+      { name: "Zone 3", value: 30 },
+    ]);
+    expect(s.indexOf("Zone 2")).toBeLessThan(s.indexOf("Zone 3"));
+    expect(s.indexOf("Zone 3")).toBeLessThan(s.indexOf("Zone 1"));
+  });
+
+  it("gives shares, because the raw units differ by caller", () => {
+    const s = describeDistribution("Sessions", [
+      { name: "Easy", value: 3 },
+      { name: "Hard", value: 1 },
+    ]);
+    expect(s).toContain("Easy 75%");
+    expect(s).toContain("Hard 25%");
+  });
+
+  it("drops empty bands rather than reading a list of zeroes", () => {
+    const s = describeDistribution("Sessions", [
+      { name: "Easy", value: 5 },
+      { name: "Tempo", value: 0 },
+    ]);
+    expect(s).not.toContain("Tempo");
+  });
+
+  it("says so when nothing is logged, without dividing by zero", () => {
+    expect(describeDistribution("Sessions", [])).toContain("nothing logged");
+    const allZero = describeDistribution("Sessions", [{ name: "Easy", value: 0 }]);
+    expect(allZero).toContain("nothing logged");
+    expect(allZero).not.toContain("NaN");
+  });
+});
+
+describe("describeComparison — who is ahead, and is the gap moving", () => {
+  const a = { label: "You", data: [{ at: "Jan", value: 400 }, { at: "Feb", value: 460 }] };
+  const b = { label: "Rachel", data: [{ at: "Jan", value: 420 }, { at: "Feb", value: 430 }] };
+
+  it("names who ends ahead", () => {
+    expect(describeComparison([a, b])).toContain("You ahead at the end");
+  });
+
+  /**
+   * The question a comparison chart actually answers. Two separate trend
+   * sentences would give both athletes' movement and never say the thing the
+   * reader is looking for.
+   */
+  it("says whether the gap opened or closed", () => {
+    // 20 apart in January, 30 apart in February.
+    expect(describeComparison([a, b])).toContain("widening");
+    const closing = describeComparison([
+      { label: "You", data: [{ at: "Jan", value: 400 }, { at: "Feb", value: 425 }] },
+      { label: "Rachel", data: [{ at: "Jan", value: 450 }, { at: "Feb", value: 430 }] },
+    ]);
+    expect(closing).toContain("narrowing");
+  });
+
+  it("handles a dead heat without claiming somebody won", () => {
+    const level = describeComparison([
+      { label: "You", data: [{ at: "Jan", value: 400 }, { at: "Feb", value: 440 }] },
+      { label: "Rachel", data: [{ at: "Jan", value: 410 }, { at: "Feb", value: 440 }] },
+    ]);
+    expect(level).toContain("Level at the end");
+    expect(level).not.toContain("ahead");
+  });
+
+  it("refuses to compare when only one athlete has history", () => {
+    expect(describeComparison([a, { label: "Rachel", data: [] }])).toContain(
+      "Not enough history"
+    );
+  });
+});
+
 describe("charts expose their data, not only a name", () => {
   const ROOT = fileURLToPath(new URL("../../..", import.meta.url));
   const read = (rel: string) =>
@@ -96,24 +181,26 @@ describe("charts expose their data, not only a name", () => {
     "src/components/analytics/acwr-trend-chart.tsx",
     "src/components/analytics/interference-detail.tsx",
     "src/components/dashboard/engine-lab-trend-card.tsx",
+    "src/components/analytics/training-zones-chart.tsx",
+    "src/components/analytics/intensity-distribution.tsx",
+    "src/components/social/compare-chart.tsx",
   ];
 
   /**
-   * Charts that render no data equivalent yet, each with the reason. An
-   * allowlist so that adding to it is a decision rather than an omission —
-   * the same shape as SURVIVES_ERASURE and NOT_YET_REVOKED.
+   * Empty, and that is the point of keeping it.
    *
-   * All three are categorical rather than time series, so `describeSeries`
-   * does not fit them and each needs a sentence written for it.
+   * It held `training-zones-chart`, `intensity-distribution` and
+   * `compare-chart` — the three categorical charts, where `describeSeries` did
+   * not fit because a donut has no direction and a two-athlete comparison has
+   * no single "the" value. Each has its own sentence now:
+   * `describeDistribution` leads with the order of size, and
+   * `describeComparison` says who is ahead and whether the gap is moving.
+   *
+   * The list stays so that a chart added without a data equivalent has
+   * somewhere to be declared, with a reason, rather than quietly not appearing
+   * in CONVERTED.
    */
-  const NO_DATA_EQUIVALENT_YET: Record<string, string> = {
-    "src/components/analytics/training-zones-chart.tsx":
-      "a histogram of time in each heart-rate zone; needs a sentence naming the zones and their shares, not a trend",
-    "src/components/analytics/intensity-distribution.tsx":
-      "a donut of session intensities; same shape of problem, and it renders two of them side by side",
-    "src/components/social/compare-chart.tsx":
-      "compares two athletes rather than one series over time, so the summary has to name both and neither is 'the' value",
-  };
+  const NO_DATA_EQUIVALENT_YET: Record<string, string> = {};
 
   it.each(CONVERTED)("%s renders a data equivalent", (file) => {
     const code = read(file);
