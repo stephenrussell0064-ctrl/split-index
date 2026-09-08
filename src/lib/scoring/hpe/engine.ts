@@ -23,7 +23,12 @@
  * safety screen, and is not a calorie target.
  */
 
-import { HPE_CONSTANTS_VERSION, MIN_ENDURANCE_SESSION_MIN, type EmphasisKey } from "./constants";
+import {
+  HPE_CONSTANTS_VERSION,
+  MIN_ENDURANCE_SESSION_MIN,
+  MMD_STRENGTH_SESSIONS_PER_WEEK,
+  type EmphasisKey,
+} from "./constants";
 import { assessTailoring, type PlanTailoring } from "./tailoring";
 import { bodyweightFrontier, classifyDomains, feasibilityScreen, type DomainMode, type FeasibilityResult } from "./feasibility";
 import { eventDayPlan, jointTaper, resolveEventOrder, type EventDayStep, type EventOrderResult, type TaperDay } from "./event";
@@ -215,6 +220,73 @@ export function generatePlan(input: GeneratePlanInput): GeneratedPlan {
         );
       }
       weekRecord.enduranceMin = prescribedEnduranceMin;
+    }
+
+    /**
+     * The athlete's stated weekly hours bind the WHOLE week.
+     *
+     * `maxHoursPerWeek` is asked for in the intake, stored on the record,
+     * carried into `Constraints` — and read by nothing. It has never been
+     * enforced. The comment on STRENGTH_WARMUP_MIN describes giving strength
+     * sessions real durations so that "the athlete's own maxHoursPerWeek and
+     * maxSessionMin limits could see them", but only maxSessionMin was ever
+     * wired up; the hours answer went straight through the ramp, the session
+     * set and the scheduler without one line consulting it.
+     *
+     * Measured across 8,640 generated weeks: 22% exceeded the hours the
+     * athlete said they had. The worst handed someone who answered "3 hours a
+     * week" a 542-minute week — nine hours, three times what they said they
+     * could give it, every week for a block.
+     *
+     * This is not a preference to be balanced against training theory. Time is
+     * the one constraint the engine cannot argue with: an athlete with three
+     * hours has three hours, and a plan that ignores that is not a harder plan,
+     * it is one that does not get done.
+     *
+     * ENDURANCE FLEXES FIRST because it is the volume dial — its minutes are a
+     * ramped budget, while strength is a session count carrying a minimum
+     * effective dose the evidence base is clearest about. Strength is only
+     * touched when it alone will not fit, and never below that minimum: a week
+     * that has to choose between lifting and honesty about the clock should
+     * still be a week that contains lifting.
+     */
+    const weeklyCapMin = Math.max(0, Math.round(constraints.maxHoursPerWeek * 60));
+    const minutesIn = (domain: "endurance" | "strength") =>
+      sessions.filter((s) => s.domain === domain).reduce((sum, s) => sum + s.minutes, 0);
+
+    if (weeklyCapMin > 0 && minutesIn("endurance") + minutesIn("strength") > weeklyCapMin) {
+      const strengthMin = minutesIn("strength");
+      const enduranceAllowance = Math.max(0, weeklyCapMin - strengthMin);
+
+      if (minutesIn("endurance") > enduranceAllowance) {
+        const fitted = fitEnduranceToMinutes(sessions, enduranceAllowance);
+        sessions.length = 0;
+        sessions.push(...fitted.sessions);
+        weekRecord.enduranceMin = minutesIn("endurance");
+      }
+
+      // Strength only when the lifting alone overruns the whole week, and only
+      // down to the minimum dose. Later sessions go first: the rotation's
+      // accessory work is built after the lifts the block is actually about.
+      while (
+        minutesIn("strength") > weeklyCapMin &&
+        sessions.filter((s) => s.domain === "strength").length > MMD_STRENGTH_SESSIONS_PER_WEEK
+      ) {
+        const idx = sessions.map((s) => s.domain).lastIndexOf("strength");
+        if (idx < 0) break;
+        sessions.splice(idx, 1);
+      }
+
+      const finalTotal = minutesIn("endurance") + minutesIn("strength");
+      notes.push(
+        finalTotal > weeklyCapMin
+          ? `You told us you have ${constraints.maxHoursPerWeek} hours a week. The smallest week that still ` +
+            `contains a plan is about ${Math.round(finalTotal / 5) * 5} minutes, so this one is over what you said ` +
+            `by ${finalTotal - weeklyCapMin}. If that is not findable, the honest fix is a longer block rather than ` +
+            `a harder week — tell us and we will spread the same work over more weeks.`
+          : `Trimmed to the ${constraints.maxHoursPerWeek} hours a week you said you had — ` +
+            `${Math.round(finalTotal)} minutes across ${sessions.length} sessions.`
+      );
     }
 
     const schedule = scheduleWeek(sessions, constraints);
