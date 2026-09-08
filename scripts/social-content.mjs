@@ -166,8 +166,24 @@ const POSTS = [
   {
     day: 14,
     hook: 'It is live.',
-    body: 'Free to use. Premium is £29.99 a year and you will know inside a fortnight whether it is telling you something you did not already know.',
-    show: 'App Store page, then first run.',
+    /*
+     * The launch post carries more than the others on purpose. Most people
+     * seeing it will not have seen days 1 to 13, so it has to say what the app
+     * is before it asks for anything — and every feature named is taken from
+     * FREE_TIER_FEATURES and PREMIUM_TIER_FEATURES verbatim, because a launch
+     * post that oversells the tier is the one that gets refunded.
+     */
+    body:
+      'Split Index measures what hybrid training is actually costing you. Log your lifts and your runs. ' +
+      'It tells you where you are strong, where you are giving something up, and what your next block should do about it.\n\n' +
+      'Logging is free. So is your current index and your last seven days.\n\n' +
+      '£29.99 a year gets the rest. Injury risk before it becomes an injury. ' +
+      'Race predictions built from your own pace curve instead of a generic formula. ' +
+      'Eight week projections. The full strength index with DOTS and IPF GL.\n\n' +
+      'Built for people doing both. Link in bio.',
+    show:
+      'Open on the App Store page. Cut to logging a lift, then a run, then the index moving. ' +
+      'End on the report card so the last frame is the thing they are buying.',
     source: 'PRICING — src/lib/premium/features.ts',
     needsLiveApp: true,
   },
