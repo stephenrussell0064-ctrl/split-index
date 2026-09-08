@@ -323,3 +323,80 @@ describe("rejoining a recovered run", () => {
     expect(summary.durationSeconds).toBe(90);
   });
 });
+
+describe("location permission refused", () => {
+  /*
+    `addWatcher` RESOLVES WITH A WATCHER ID EITHER WAY. Permission being
+    refused is not a rejection and not a thrown error — it arrives later, as an
+    error argument to the same callback that delivers fixes. So `startGpsSession`
+    returns exactly as it does on a good run and the screen puts up the full
+    tracking HUD: ticking clock, Live Activity on the lock screen, 0.00 km.
+
+    The stored `permissionRevoked` flag was the only record of it, and it is
+    read by the summariser at the END, so the athlete found out after running.
+  */
+
+  it("tells the screen, not only the stored record", async () => {
+    let denied = 0;
+    await startGpsSession(undefined, () => {
+      denied += 1;
+    });
+
+    await watcher.callback!(undefined, { code: "NOT_AUTHORIZED", message: "denied" });
+
+    expect(denied).toBe(1);
+    expect(storedSession().permissionRevoked).toBe(true);
+  });
+
+  it("says nothing for an error that is not about permission", async () => {
+    // A dropped fix under a bridge is not a reason to tell someone their
+    // location is switched off; the run recovers from it on its own.
+    let denied = 0;
+    await startGpsSession(undefined, () => {
+      denied += 1;
+    });
+
+    await watcher.callback!(undefined, { code: "NOT_AVAILABLE", message: "no fix" });
+
+    expect(denied).toBe(0);
+    // Still false, as it was set at start — not merely absent.
+    expect(storedSession().permissionRevoked).toBe(false);
+  });
+
+  it("reports a revocation that happens mid-run", async () => {
+    // Permission turned off in Settings while running. The HUD otherwise keeps
+    // counting time against a distance that has stopped moving.
+    let denied = 0;
+    const t0 = Date.now();
+    await startGpsSession(undefined, () => {
+      denied += 1;
+    });
+    await watcher.callback!(fixAt(0, t0));
+    await watcher.callback!(fixAt(40, t0 + 30_000));
+
+    await watcher.callback!(undefined, { code: "NOT_AUTHORIZED", message: "revoked" });
+
+    expect(denied).toBe(1);
+    // The fixes already recorded are still there to be saved.
+    expect(storedSession().points).toHaveLength(2);
+  });
+
+  it("reports it to a run that was rejoined after a crash", async () => {
+    // The recovery path attaches its own watcher, and used to attach it
+    // without the callback — so a permission refusal on the rejoined run was
+    // invisible on the very screen most likely to be showing a stale HUD.
+    let denied = 0;
+    const startedAt = Date.now() - 200_000;
+    await rejoinGpsSession(
+      { points: [fixAt(0, startedAt)], pauses: [], startedAt },
+      undefined,
+      () => {
+        denied += 1;
+      }
+    );
+
+    await watcher.callback!(undefined, { code: "NOT_AUTHORIZED", message: "denied" });
+
+    expect(denied).toBe(1);
+  });
+});
