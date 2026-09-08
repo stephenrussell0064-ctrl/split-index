@@ -154,10 +154,27 @@ export const updateGoalSchema = z
   .object({
     id: z.string().uuid("That is not a valid goal id."),
     title: text(MAX_GOAL_TITLE_LENGTH, "Title").optional(),
+    /**
+     * NULL, NOT MERELY ABSENT — and this was wrong when it shipped.
+     *
+     * The goal editor sends `targetSplitIndex: target === "" ? null : ...`, so
+     * clearing the target field posts an explicit null, and `validateTarget`
+     * reads null as "no target" and writes null to the column. That is a
+     * supported edit, and a bare `z.number().optional()` rejected it with a
+     * 400 before the handler ever ran.
+     *
+     * The same reasoning was applied to `deadline` two fields down and not to
+     * this one. Both are handler-side validators that accept a null meaning
+     * "cleared"; the schema settles the type and leaves the meaning to them.
+     */
     targetSplitIndex: z
-      .number()
-      .min(MIN_TARGET_INDEX)
-      .max(MAX_TARGET_INDEX)
+      .union([
+        z
+          .number()
+          .min(MIN_TARGET_INDEX, `Target must be between ${MIN_TARGET_INDEX} and ${MAX_TARGET_INDEX}`)
+          .max(MAX_TARGET_INDEX, `Target must be between ${MIN_TARGET_INDEX} and ${MAX_TARGET_INDEX}`),
+        z.null(),
+      ])
       .optional(),
     deadline: z.union([z.string(), z.null()]).optional(),
     completed: z.boolean().optional(),
