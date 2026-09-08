@@ -95,13 +95,24 @@ const BANDS = [
   {
     what: 'FEMALE_CARDIO_FACTORS.ski',
     read: (src) => number(src, /FEMALE_CARDIO_FACTORS[\s\S]*?\bski:\s*([\d.]+)/),
-    // Ski inherits rowing's factor with the comment "no sex-specific ski data
-    // of its own". §5 says SkiErg is the ONE sport sourced at every requested
-    // percentile. The data exists and is not being used.
-    min: 1.21,
-    max: 1.28,
-    where: '§5 SkiErg — 1.216 (80th) to 1.273 (20th), 1.246 at the median; the only fully sourced sport here',
-    quote: "SOURCED — Concept2's own published 50th-percentile figures (§3a)",
+    /*
+     * The band that was nearly wrong, and would have been a worse error than
+     * the one it was written to catch.
+     *
+     * This first read 1.21-1.28, from §5's SkiErg table — the only fully
+     * sourced sport in that section, 1.246 at the median. But §5's SkiErg
+     * table is measured at 1000 m, and this app benchmarks SkiErg at 2000 m
+     * (BENCHMARK_DISTANCES.ski). The 2000 m ratio is in §3b and it is 1.164.
+     *
+     * Scoring a 2000 m effort with a 1000 m sex ratio puts a median female
+     * skier about 30 seconds fast on her row-equivalent — further from the
+     * truth than the inherited rowing factor of 1.187 it was meant to replace.
+     * The band has to come from the distance the anchor table actually scores.
+     */
+    min: 1.15,
+    max: 1.19,
+    where: '§3b SkiErg 2000 m, C2 logbook 2025 — 1.164 at the median, 1.171 at the 75th, 1.188 at the 90th; the app benchmarks ski at 2000 m, so §5 (1000 m) is the wrong table',
+    quote: '| 50th | 8:14.5 | 9:35.8 | 1.164 |',
   },
   {
     what: 'SKI_FROM_ROW_PACE',

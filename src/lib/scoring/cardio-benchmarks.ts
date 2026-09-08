@@ -24,30 +24,78 @@ export const BENCHMARK_DISTANCE_METERS: Record<BenchmarkSport, number> = {
 };
 
 /** Data-derived F/M time-ratio factors — a woman's time is divided by this before scoring on the male curve. Differ by sport; do not reuse the running factor elsewhere. Row uses its own sex-specific anchor tables instead of this factor for its own scoring — kept here because `ski` inherits it (same machine family, no sex-specific ski data of its own). Run is back on the multiplier (reverted to the male-only Motera table, no sex-specific Motera data available). */
+/*
+ * Calibrated 8 September 2026 against `docs/pre-launch/calibration-data.md`.
+ *
+ * Every factor below is now the female:male time ratio at the MEDIAN of the
+ * population the sport's own anchor table scores, and at that sport's own
+ * benchmark distance. Before this, three of them were not:
+ *
+ *   swim 1.073 → 1.14   1.073 is the ratio between two world records (§1a).
+ *                       The swim anchor table had already been rebased from
+ *                       club swimmers to the general population and the sex
+ *                       factor was left behind, so a median woman was scored
+ *                       against an Olympic-final sex gap.
+ *   cycle 1.219 → 1.10  §5: cycling has exactly two sourced numbers, 1.126
+ *                       (UCI Hour Record) and 1.098 (IRONMAN 70.3 bike mean).
+ *                       1.219 is outside both and its provenance is unknown.
+ *   ski 1.187 → 1.1644  Inherited from rowing on the reasoning "same machine
+ *                       family, no sex-specific ski data of its own". There is
+ *                       ski data: §3b, the 2025 Concept2 logbook at 2000 m.
+ *
+ * On the ski figure specifically, because it is easy to take the wrong one:
+ * §5's SkiErg table is measured at 1000 m and gives 1.246 at the median. This
+ * app benchmarks SkiErg at 2000 m (see BENCHMARK_DISTANCES above), and §3b
+ * gives the 2000 m ratio, 1.164. Using the 1000 m figure here would put a
+ * median female skier 30 seconds fast on a 2000 m row-equivalent — a second
+ * miscalibration wearing the first one's clothes. Same distance as the anchor
+ * table, or the number does not belong here.
+ *
+ * `run` is deliberately NOT changed. 1.152 sits inside its sourced band (§5
+ * cross-sport: 1.121 elite to 1.191 recreational median) but on a different
+ * basis from the three above — it is between the two rather than at the median.
+ * Moving it to 1.191 would make the basis uniform and would also move every
+ * score in the app's most-used sport, on the strength of a table the research
+ * labels "for sanity-checking a finished table" rather than a primary source.
+ * That is a separate decision and it has not been taken.
+ */
 export const FEMALE_CARDIO_FACTORS: Record<BenchmarkSport, number> = {
   run: 1.152,
   walk: 1.152, // mirrors running per instruction
-  swim: 1.073,
-  cycle: 1.219,
+  swim: 1.14, // §5, 400 m freestyle, 50th percentile
+  cycle: 1.1, // §5, 20 km TT — the midpoint of 1.098 and 1.126, the only two sourced values
   row: 1.187, // unused for row's own scoring — row has sex-specific tables now
-  ski: 1.187, // inherits rowing — same machine family
+  ski: 1.1644, // §3b, C2 logbook 2025, 2000 m: 9:35.8 F / 8:14.5 M
 };
 
 /**
- * SkiErg is ~10% less power than RowErg for equal effort; power ∝ pace^-3, so
- * ski pace is slower by this factor.
+ * How much slower a SkiErg 2000 m is than a RowErg 2000 m at equal standing.
  *
- * This said "Validated: 7:00 row ≈ 7:16 ski", which was not a validation:
- * 7:00 × 1.0357 = 7:14.9, so it restates the constant against itself. It is an
- * assumption, and `docs/pre-launch/calibration-data.md` §3d — the first actual
- * measurement — says it is too low: the 2025 Concept2 logbook gives a ski:row
- * pace ratio of 1.045–1.059 for men across the 75th–25th percentiles and
- * 1.070–1.085 for women, i.e. the real ratio is also sex-dependent, which a
- * single scalar cannot represent. Moving it changes every SkiErg score, so it
- * is a decision to take deliberately rather than a typo to correct;
- * `scripts/check-cardio-calibration-sourced.mjs` fails until it is taken.
+ * Measured, not assumed: the 2025 Concept2 logbook at the median, same season
+ * and same distance for both machines — 8:14.5 ski against 7:46.8 row for men
+ * (§3b, §3c), which is 1.0593.
+ *
+ * It was 1.0357, carrying the comment "Validated: 7:00 row ≈ 7:16 ski". That
+ * was not a validation: 7:00 × 1.0357 = 7:14.9, so it restated the constant
+ * against itself and any value would have "validated" the same way.
+ *
+ * ## This is the men's ratio, deliberately
+ *
+ * §3d notes the ski:row ratio is sex-dependent — 1.059 for men at the median
+ * and 1.085 for women — and that one scalar cannot represent both. It does not
+ * have to. A woman's ski time is divided by FEMALE_CARDIO_FACTORS.ski first,
+ * which puts her in male-ski units, and this constant then converts male ski
+ * to male row. The composition carries the sex dependence:
+ *
+ *     female ski 2000 m median   9:35.8  = 575.8 s
+ *       ÷ 1.1644 (F:M ski, §3b)          = 494.5 s   the median male skier
+ *       ÷ 1.0593 (ski:row men)           = 466.8 s   the median male rower ✓
+ *
+ * and 575.8 ÷ 530.7 = 1.085, §3d's women's figure, falls out of it rather than
+ * being set. Both sexes land on their own median. That is the whole test of
+ * whether these two numbers are right, and it is why they must move together.
  */
-export const SKI_FROM_ROW_PACE = 1.0357;
+export const SKI_FROM_ROW_PACE = 1.0593;
 
 type Anchor = [seconds: number, score: number];
 
