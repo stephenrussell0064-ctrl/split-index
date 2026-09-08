@@ -73,6 +73,25 @@ const MUTATIONS = [
     tests: 'src/lib/scoring/interference.test.ts',
     apply: (s) => s.replace(/MIN_PAIRED_SESSIONS: 3,/, 'MIN_PAIRED_SESSIONS: 1,'),
   },
+  /*
+   * The two App Store blockers themselves. Both were invisible to the type
+   * checker and to every test that existed at the time, which is why the
+   * routing decision was extracted into a pure function — so it could be
+   * tested without a React testing library this project does not have. These
+   * two mutations are the check on whether that worked.
+   */
+  {
+    what: 'B2 regression — "checking" falls through instead of refusing',
+    file: 'src/lib/native/use-checkout.ts',
+    tests: 'src/lib/native/use-checkout.test.ts',
+    apply: (s) => s.replace('if (platform === "checking") return { status: "not-ready" };', ''),
+  },
+  {
+    what: 'B1 regression — the native branch is skipped and everything goes to Stripe',
+    file: 'src/lib/native/use-checkout.ts',
+    tests: 'src/lib/native/use-checkout.test.ts',
+    apply: (s) => s.replace('if (platform === "native") {', 'if (false) {'),
+  },
 ];
 
 let caught = 0;
