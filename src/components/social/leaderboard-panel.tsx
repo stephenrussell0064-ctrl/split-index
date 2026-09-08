@@ -335,12 +335,26 @@ export function LeaderboardPanel({
     <Card glow="accent">
       <CardHeader>
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <Trophy className="h-4 w-4 text-warning" />
+          <div className="flex min-w-0 items-center gap-2">
+            <Trophy className="h-4 w-4 shrink-0 text-warning" />
             <CardTitle>Leaderboard</CardTitle>
           </div>
           {viewMode === "index" && (
-            <div className="flex gap-1 rounded-xl glass p-1">
+            /*
+              flex-wrap and min-w-0, matching the view-mode row directly below.
+
+              This was the one row in this file with a bare `flex`. Three
+              buttons that cannot break sit beside the title in a
+              justify-between header, and together they need more than a phone
+              has — so the row could neither wrap nor shrink and widened the
+              card instead. Everything inside the card then hung off the right
+              of the screen: the whole leaderboard scrolled sideways, and once
+              <main> started clipping it, "All Time" simply became unreachable.
+
+              The sibling row below it wraps "By Activity" onto a second line
+              and always looked right, which is the pattern this now follows.
+            */
+            <div className="flex min-w-0 flex-wrap gap-1 rounded-xl glass p-1">
               {LEADERBOARD_PERIODS.map((p) => (
                 <button
                   key={p.value}
