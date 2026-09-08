@@ -84,7 +84,7 @@ function cascadeDropsIn(file: string): string[] {
  */
 const REMEDIATED: Record<string, { restoredBy: string; views: string[] }> = {
   "064_display_name_is_never_an_email.sql": {
-    restoredBy: "070_restore_score_projections.sql",
+    restoredBy: "071_restore_score_projections.sql",
     views: [
       "public_strength_scores",
       "public_workout_scores",

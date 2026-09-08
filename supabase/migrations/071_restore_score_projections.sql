@@ -1,4 +1,8 @@
--- 070: Recreate the four score projections that 064 dropped with CASCADE.
+-- 071: Recreate the four score projections that 064 dropped with CASCADE.
+--
+-- Numbered 070 when written and renumbered on the way in: a peer session
+-- landed its own 070 the same afternoon. If you already ran the file when it
+-- was called 070, this is the same SQL and re-running it is a no-op.
 --
 -- WHAT HAPPENED
 -- -------------
