@@ -95,7 +95,37 @@ function build() {
   }
 }
 
-/** Capacitor 8 — the version the build actually resolved, not the range in package.json. */
+/**
+ * Capacitor 8, from the resolved package graph rather than the range in
+ * package.json.
+ *
+ * Split out as a pure function on purpose. This is the one assertion in the
+ * file that cannot be reached by mutating the repo: Package.swift pins
+ * `exact: "8.5.0"`, so editing Package.resolved is an equivalent mutant —
+ * xcodebuild re-resolves and overwrites it — and editing Package.swift makes
+ * resolution fail before this runs, which goes red for a different reason and
+ * with a misleading message.
+ *
+ * It is not dead code. It fires on a machine that can reach the network and
+ * resolves a genuine Capacitor 7, which is exactly the half-applied major
+ * upgrade this file exists to catch. But "cannot be exercised by mutation" and
+ * "works" are different claims, and the second was never demonstrated. Now it
+ * takes the parsed JSON and returns the problem or null, so
+ * `check-ios-app-built.test.mjs` can hand it a Capacitor 7 graph directly.
+ */
+export function capacitorMajorProblem(resolved) {
+  const pins = resolved?.pins ?? resolved?.object?.pins ?? [];
+  const cap = pins.find((p) => (p.identity ?? p.package ?? '').includes('capacitor-swift-pm'));
+  if (!cap) {
+    return 'capacitor-swift-pm is not in the resolved package graph — this is not a Capacitor app';
+  }
+  const version = cap.state?.version ?? '';
+  if (!/^8\./.test(version)) {
+    return `the title says Capacitor 8; the build resolved capacitor-swift-pm ${version || '(no version)'}`;
+  }
+  return null;
+}
+
 function checkCapacitorMajor() {
   const resolvedPath = join(
     IOS,
@@ -105,17 +135,8 @@ function checkCapacitorMajor() {
     fail('no Package.resolved — cannot tell which Capacitor the build linked');
     return;
   }
-  const resolved = JSON.parse(readFileSync(resolvedPath, 'utf8'));
-  const pins = resolved.pins ?? resolved.object?.pins ?? [];
-  const cap = pins.find((p) => (p.identity ?? p.package ?? '').includes('capacitor-swift-pm'));
-  if (!cap) {
-    fail('capacitor-swift-pm is not in the resolved package graph — this is not a Capacitor app');
-    return;
-  }
-  const version = cap.state?.version ?? '';
-  if (!/^8\./.test(version)) {
-    fail(`the title says Capacitor 8; the build resolved capacitor-swift-pm ${version || '(no version)'}`);
-  }
+  const problem = capacitorMajorProblem(JSON.parse(readFileSync(resolvedPath, 'utf8')));
+  if (problem) fail(problem);
 }
 
 function checkPlugins() {
@@ -215,4 +236,13 @@ function main() {
   process.exit(1);
 }
 
-main();
+/*
+ * Guarded so the module can be imported without building the iOS app.
+ *
+ * It was a bare `main()`. Importing `capacitorMajorProblem` from the test file
+ * therefore kicked off xcodebuild and called process.exit before a single
+ * assertion ran — the test "passed" by never executing. The same shape of bug
+ * bit the venture-control permission gate earlier today, where importing it for
+ * a test blocked on a stdin that never closed.
+ */
+if (import.meta.url === `file://${process.argv[1]}`) main();
