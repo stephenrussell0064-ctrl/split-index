@@ -26,11 +26,37 @@
  */
 
 /**
- * Bump on any change to a value in this file. Stamped onto every profile and
- * plan (see `constantsVersion` on AthleteProfile) — the audit trail for "why
- * did this athlete's plan change when their data didn't".
+ * Bump whenever the same inputs would now produce a different plan.
+ *
+ * That is broader than the rule this comment used to state — "bump on any
+ * change to a value in this file" — and the wording is corrected because the
+ * narrow reading let the field go stale precisely when it mattered most. Four
+ * consecutive changes to how weeks are built altered nearly every generated
+ * plan without touching a single number here, so by the letter of the old rule
+ * no bump was due, while the question the field exists to answer ("why did this
+ * athlete's plan change when their data didn't") had four new answers and no
+ * way to tell them apart. A version that only moves when constants move is not
+ * an audit trail for generation, it is an audit trail for this file.
+ *
+ * So: a change to a value here, or anywhere in the generation path that moves
+ * the output, moves this. Refactors that provably cannot change a plan do not.
+ *
+ * WHAT A BUMP DOES. `evaluateRerun` in persistence.ts treats a version change
+ * as grounds to regenerate — but only for an athlete whose diagnostic is
+ * already due (`due && (... || constantsChanged || ...)`), so a bump never
+ * rebuilds anyone's plan out from under them. When their next rerun does come
+ * around, they are told the constants moved and their plan was rebuilt under
+ * the current rules instead of being left on the old ones. That sentence is
+ * the whole point of the field.
+ *
+ * 2.2.0 — the four budget-honesty fixes. A week no longer prescribes more
+ * endurance than it budgeted (28% of weeks did, worst 4.8x), no longer
+ * advertises a budget it cannot spend (54% spent under 90%, median 84%), no
+ * longer exceeds the weekly hours the athlete gave (22% did, worst 3.0x), and
+ * the ACWR cap now trims the sessions rather than only the heading above them.
+ * Minor rather than major: plans change, the contract does not.
  */
-export const HPE_CONSTANTS_VERSION = "2.1.0";
+export const HPE_CONSTANTS_VERSION = "2.2.0";
 
 // ---------------------------------------------------------------------------
 // Fatigue resistance (Riegel exponent)
