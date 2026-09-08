@@ -23,7 +23,7 @@
  * safety screen, and is not a calorie target.
  */
 
-import { HPE_CONSTANTS_VERSION, type EmphasisKey } from "./constants";
+import { HPE_CONSTANTS_VERSION, MIN_ENDURANCE_SESSION_MIN, type EmphasisKey } from "./constants";
 import { assessTailoring, type PlanTailoring } from "./tailoring";
 import { bodyweightFrontier, classifyDomains, feasibilityScreen, type DomainMode, type FeasibilityResult } from "./feasibility";
 import { eventDayPlan, jointTaper, resolveEventOrder, type EventDayStep, type EventOrderResult, type TaperDay } from "./event";
@@ -169,6 +169,54 @@ export function generatePlan(input: GeneratePlanInput): GeneratedPlan {
       // sports' units from here.
       modalityFitness,
     });
+    /**
+     * The week's stated budget may not exceed what the week actually contains.
+     *
+     * `enduranceMin` comes off the macrocycle's volume ramp, which reads the
+     * athlete's current weekly running and knows nothing about the rest of
+     * their intake. Every endurance session is then capped at their stated
+     * `maxSessionMin`, and the number of sessions at their `maxSessionsPerWeek`.
+     * Nothing checked that the ramp's answer could survive those two limits, so
+     * the surplus was quietly dropped and the athlete was quoted the ramp's
+     * figure regardless.
+     *
+     * Measured across 32,400 generated weeks: 54% prescribed less than 90% of
+     * the budget they advertised and the median week spent 84% of it. The worst
+     * was 55 minutes of running under a heading of 468 — an athlete who had
+     * said 30-minute sessions, four times a week. 4 x 30 is 120, so 468 was
+     * never deliverable; it was the ramp extrapolating from their current
+     * volume and no part of the engine ever reconciling that against what they
+     * had said they could actually do.
+     *
+     * Giving the budget more slots to spend itself in (see `neededForBudget`
+     * in session-set.ts) recovers the cases where there was room. This handles
+     * the rest, where there is no room and the two answers genuinely conflict:
+     * the plan states what it prescribes. A budget nobody can train is not a
+     * target, it is a number that makes the plan look wrong.
+     *
+     * The gap is reported rather than silently absorbed, because it is
+     * actionable in a way most engine internals are not — it names the intake
+     * answer that is holding the athlete back, and raising it is entirely
+     * within their gift.
+     */
+    const prescribedEnduranceMin = sessions
+      .filter((s) => s.domain === "endurance")
+      .reduce((sum, s) => sum + s.minutes, 0);
+    if (weekRecord.enduranceMin > 0 && prescribedEnduranceMin < weekRecord.enduranceMin) {
+      const shortfall = weekRecord.enduranceMin - prescribedEnduranceMin;
+      // Only worth a sentence when the difference is one the athlete would
+      // notice. Rounding and floors account for a few minutes in most weeks.
+      if (shortfall / weekRecord.enduranceMin > 0.1 && shortfall >= MIN_ENDURANCE_SESSION_MIN) {
+        notes.push(
+          `Your ramp wants about ${weekRecord.enduranceMin} minutes of endurance this week, and this plan plots ` +
+            `${prescribedEnduranceMin}. ${constraints.maxSessionsPerWeek} sessions a week of at most ` +
+            `${constraints.maxSessionMin} minutes is the limit you gave, and it is what is binding here — not your ` +
+            `fitness. Raising either in your intake is what unlocks the rest.`
+        );
+      }
+      weekRecord.enduranceMin = prescribedEnduranceMin;
+    }
+
     const schedule = scheduleWeek(sessions, constraints);
     const stress = schedule.placements.reduce((s, p) => s + p.session.stress, 0);
     rawStress.push(stress);

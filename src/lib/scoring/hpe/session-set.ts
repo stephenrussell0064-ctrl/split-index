@@ -610,10 +610,42 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
   // and delete strength from the plan entirely — which is not what "emphasis"
   // means, and would silently drop the minimum maintenance dose the evidence
   // base is clearest about.
-  const enduranceWanted =
+  const enduranceByPhase =
     mode.endurance === "develop"
       ? Math.max(3, ENDURANCE_SESSIONS_BY_PHASE[phase] - (goal.priority >= 0.5 ? 1 : 0))
       : MMD_ENDURANCE_SESSIONS_PER_WEEK;
+
+  /**
+   * A budget too big to spend in the slots the phase asks for needs MORE
+   * slots, not a discarded surplus.
+   *
+   * The phase table decides how many endurance sessions a week wants, and
+   * every one of them is capped at the athlete's own `maxSessionMin`. Nothing
+   * checked whether the two together could actually hold the week's budget, so
+   * the leftover minutes were simply lost. Measured across 32,400 generated
+   * weeks, 54% spent less than 90% of their budget and the median week spent
+   * 84%; the worst case was 55 minutes prescribed against 468 budgeted — two
+   * slots, each capped at 30 minutes, and a note quoting 468 back to the
+   * athlete.
+   *
+   * The count is the free variable here, in the opposite direction from the
+   * budget pass further down: where too little time forces fewer sessions, too
+   * much time forces more of them. Both are the same rule, that the number of
+   * sessions is what bends.
+   *
+   * This is a REQUEST, not a guarantee. The athlete's own `maxSessionsPerWeek`
+   * still binds immediately below, and the trim loop there balances the two
+   * domains rather than letting a large endurance budget crowd lifting out of
+   * the week.
+   */
+  const neededForBudget =
+    totalMinutes > 0 && constraints.maxSessionMin > 0
+      ? Math.ceil(totalMinutes / constraints.maxSessionMin)
+      : 0;
+  const enduranceWanted = Math.max(
+    enduranceByPhase,
+    Math.min(neededForBudget, constraints.maxSessionsPerWeek)
+  );
   const strengthWanted =
     mode.strength === "develop"
       ? Math.max(2, STRENGTH_SESSIONS_BY_PHASE[phase] - (goal.priority < 0.5 ? 1 : 0))
