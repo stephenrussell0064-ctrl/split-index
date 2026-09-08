@@ -18,6 +18,8 @@ import {
   X,
 } from "lucide-react";
 import { BrandMark } from "@/components/brand/brand-mark";
+import { mainContentProps } from "@/lib/a11y/main-content";
+import { useDialog } from "@/components/ui/use-dialog";
 import { cn } from "@/lib/utils/cn";
 import { SidebarAccount } from "@/components/layout/sidebar-account";
 import { AppTopBar } from "@/components/layout/app-top-bar";
@@ -98,6 +100,84 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <ModeOverrideProvider>
       <AppShellContent>{children}</AppShellContent>
     </ModeOverrideProvider>
+  );
+}
+
+/**
+ * The mobile "More" sheet.
+ *
+ * Its own component only so that `useDialog` mounts and unmounts with the
+ * sheet — a hook cannot live inside the `{moreOpen && …}` it guards, and the
+ * focus work has to happen on open, not on every render of the shell.
+ *
+ * What was wrong with it: it dimmed the whole viewport behind a backdrop, which
+ * is a modal, and had none of a modal's behaviour. Focus stayed on the "More"
+ * button in the tab bar, so the first Tab after opening went to whatever
+ * followed that button rather than into the sheet; nothing stopped Tab
+ * continuing off the end of the sheet into the page underneath the dim; Escape
+ * did nothing; and it was announced as an anonymous group of links rather than
+ * as a dialog. The X is labelled and reachable, so it was operable — it was the
+ * ORIENTATION that was missing, which is the half a screenshot cannot show.
+ */
+function MoreNavSheet({
+  onClose,
+  isActive,
+}: {
+  onClose: () => void;
+  isActive: (href: string) => boolean;
+}) {
+  const { dialogRef, dialogProps } = useDialog(onClose, { label: "More" });
+
+  return (
+    <>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        onClick={onClose}
+        className="fixed inset-0 z-40 bg-black/50 lg:hidden"
+      />
+      <motion.div
+        id="more-nav-sheet"
+        ref={dialogRef}
+        {...dialogProps}
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: 16 }}
+        transition={{ type: "spring", bounce: 0.1, duration: 0.35 }}
+        className="fixed bottom-[calc(4.25rem+env(safe-area-inset-bottom))] left-3 right-3 z-40 rounded-2xl border border-white/10 glass-strong p-2 lg:hidden"
+      >
+        <div className="flex items-center justify-between px-2 pb-1 pt-0.5">
+          <p className="micro-label text-muted/60">More</p>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close menu"
+            className="-m-2 flex h-11 w-11 items-center justify-center rounded-lg text-muted hover:bg-white/5 hover:text-foreground"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        {secondaryNav.map((item) => {
+          const active = isActive(item.href);
+          const Icon = item.icon;
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              onClick={onClose}
+              className={cn(
+                "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
+                active ? "text-foreground bg-white/8" : "text-muted hover:text-foreground hover:bg-white/5"
+              )}
+            >
+              <Icon className="h-4 w-4" />
+              {item.label}
+            </Link>
+          );
+        })}
+      </motion.div>
+    </>
   );
 }
 
@@ -289,55 +369,7 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
         </aside>
 
         <AnimatePresence>
-          {moreOpen && (
-            <>
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                onClick={() => setMoreOpen(false)}
-                className="fixed inset-0 z-40 bg-black/50 lg:hidden"
-              />
-              <motion.div
-                id="more-nav-sheet"
-                initial={{ opacity: 0, y: 16 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 16 }}
-                transition={{ type: "spring", bounce: 0.1, duration: 0.35 }}
-                className="fixed bottom-[calc(4.25rem+env(safe-area-inset-bottom))] left-3 right-3 z-40 rounded-2xl border border-white/10 glass-strong p-2 lg:hidden"
-              >
-                <div className="flex items-center justify-between px-2 pb-1 pt-0.5">
-                  <p className="micro-label text-muted/60">More</p>
-                  <button
-                    type="button"
-                    onClick={() => setMoreOpen(false)}
-                    aria-label="Close menu"
-                    className="-m-2 flex h-11 w-11 items-center justify-center rounded-lg text-muted hover:bg-white/5 hover:text-foreground"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-                {secondaryNav.map((item) => {
-                  const active = isActive(item.href);
-                  const Icon = item.icon;
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      onClick={() => setMoreOpen(false)}
-                      className={cn(
-                        "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
-                        active ? "text-foreground bg-white/8" : "text-muted hover:text-foreground hover:bg-white/5"
-                      )}
-                    >
-                      <Icon className="h-4 w-4" />
-                      {item.label}
-                    </Link>
-                  );
-                })}
-              </motion.div>
-            </>
-          )}
+          {moreOpen && <MoreNavSheet onClose={() => setMoreOpen(false)} isActive={isActive} />}
         </AnimatePresence>
 
         <nav aria-label="Bottom tab bar" className="fixed bottom-0 left-0 right-0 z-40 flex items-center justify-around border-t border-white/5 glass-strong px-1 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] lg:hidden">
@@ -424,7 +456,7 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
         {/* tabIndex -1 so the skip link actually MOVES focus. Without it
             WebKit scrolls to the anchor and leaves focus in the nav, so the
             next Tab goes back to sidebar item two. */}
-        <main id="main-content" tabIndex={-1} className="lg:pl-64 focus:outline-none">
+        <main {...mainContentProps} className="lg:pl-64 focus:outline-none">
           {/* calc(env(...) + gap) rather than a bare max() — the status bar height alone with no breathing room left the top bar sitting flush against the battery/signal icons; adding a fixed gap on top of the real inset (now resolvable at all thanks to viewport-fit: cover in layout.tsx) gives real clearance instead. A no-op on web where env() resolves to 0. */}
           {/*
             pb-28, not pb-24. The bottom nav measures ~101px on a phone with a

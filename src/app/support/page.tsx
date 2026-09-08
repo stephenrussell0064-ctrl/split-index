@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { BrandMark } from "@/components/brand/brand-mark";
+import { mainContentProps } from "@/lib/a11y/main-content";
 
 export const metadata: Metadata = {
   title: "Support · Split Index",
@@ -44,7 +45,7 @@ export default function SupportPage() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-3xl px-6 py-12">
+      <main {...mainContentProps} className="mx-auto max-w-3xl px-6 py-12">
         <article className="glass-strong rounded-2xl border border-white/[0.08] p-8 md:p-10">
           <header className="mb-10 border-b border-white/[0.06] pb-8">
             <h1 className="text-3xl font-bold tracking-tight">Support</h1>
