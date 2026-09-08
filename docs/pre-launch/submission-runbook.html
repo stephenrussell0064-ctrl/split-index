@@ -180,7 +180,7 @@
   <!-- ============ PHASE 0 ============ -->
   <section class="phase">
     <div class="phase-head"><span class="phase-num">00</span><h2>Cleared on 8 Sept</h2></div>
-    <p class="phase-note">Everything in this phase is done and verified against production. Kept rather than deleted, because each entry is a thing that looked like a different problem first, and the wrong diagnosis is worth remembering.</p>
+    <p class="phase-note">Everything in this phase is done and verified against production. Kept rather than deleted, because each entry looked like a different problem first, and the wrong diagnosis is the transferable part. Worth noting what found them: <b>every one came from using the app on a device</b>. None would have surfaced by reading code, and three were diagnosed wrongly at least once before being reproduced.</p>
 
     <div class="done-block">
       <h3>Fixed and confirmed — no action</h3>
@@ -190,6 +190,9 @@
         <li><b>Sets scoring "—"</b> — chased through profile data, which was wrong. <code>scoreSet</code> bails on an empty exercise <b>name</b>; Est. 1RM, × BW and Volume need only weight, reps and the session-bar bodyweight, which is exactly why three stats fill in and the score does not. The card now says so (<code>ab9a88a</code>). An unrecognised name still scores — only an empty one blocks it.</li>
         <li><b>Paying and landing on the offline error page</b> — <code>window.location.reload()</code> fired while iOS was still restoring the app after the StoreKit sheet, the WebView load failed, and Capacitor fell back to <code>errorPath</code>. Replaced with a confirmation screen and <code>router.refresh()</code> (<code>501d33a</code>).</li>
         <li><b>Account deletion</b> — see Phase 3.</li>
+        <li><b>Paying and landing on the offline error page</b> — a real sandbox purchase ended on "No connection right now". <code>window.location.reload()</code> fired while iOS was still restoring the app after the StoreKit sheet, the WebView load failed, and Capacitor fell back to <code>errorPath</code>. Replaced with a confirmation screen and <code>router.refresh()</code> (<code>501d33a</code>).</li>
+        <li><b>Hybrid Plan → Goals scrolled sideways</b> — an <code>input[type=date]</code>. Safari sizes it to the widest date its picker can draw, and a flex child will not shrink below that, so it widened the page (<code>4988e0a</code>). The same input in the intake wizard is fixed too — that is the flow a reviewer completes before the plan renders at all.</li>
+        <li><b>The leaderboard scrolled sideways, then clipped</b> — the grid item holding the panel had no <code>min-w-0</code>. A grid item defaults to <code>min-width: auto</code> and will not shrink below its content, so one wide descendant dragged the card and every row with it (<code>044bab6</code>). Two earlier rounds went on descendants that looked like the cause from a screenshot; with <code>min-width:auto</code> above them, none of those could have shrunk even once fixed. The DOM named it in one line when finally asked.</li>
       </ul>
     </div>
   </section>
@@ -274,6 +277,8 @@ WHERE email = 'demo.athlete+splitindex@example.com';</code></pre>
           <li><b>Tap Share</b> on a report card once — the fallback can silently do nothing in a WebView.</li>
           <li><b>Delete an account</b> — on a throwaway signup, not the demo one. Verified through the admin API, but that skips the route's own auth and audit step, and a reviewer will press this exact button.</li>
         </ul>
+        <div class="warn"><b>Two screens were found broken this way today</b> — the Goals tab and the leaderboard both scrolled sideways, and neither showed up in any test. If a screen needs dragging left and right, or something is cut off at the edge, run this in Safari Web Inspector and it names the element outright:<br><br><code>[...document.querySelectorAll('*')].filter(e=&gt;e.getBoundingClientRect().right&gt;document.documentElement.clientWidth+1)</code><br><br>The outermost result is the cause; everything below it merely inherits the width.</div>
+
         <div class="warn"><b>The logbook is unverified by anyone.</b> The session that owned it had its context compacted, so its "no open bugs" is an absence of recollection rather than an absence of bugs. Its records show the logbook redesign, dark-UI-on-edit, hidden HR/RPE/elevation fields and a wrong 5k prediction all fixed and pushed — but nobody has re-opened that surface. Your taps are the only verification it will get.</div>
       </div>
     </div>
@@ -368,7 +373,8 @@ Premium analytics are already enabled on this account.</code></pre>
       <div class="step-body">
         <h3>Check screenshots are iPhone-only and current</h3>
         <span class="where"><b>Where:</b> App Store Connect → your 1.0 version → Previews and Screenshots</span>
-        <p>The app now ships iPhone-only, so no iPad screenshots are needed. But <code>main</code> moved 90 commits in 24 hours and 10 of them touched <code>src/lib/scoring/</code> — if your screenshots predate those, the UI in them may no longer match the app, which is Guideline 2.3.</p>
+        <p>The app now ships iPhone-only, so no iPad screenshots are needed. But the UI has moved a great deal in two days and Guideline 2.3 asks that screenshots match the app.</p>
+        <div class="warn"><b>Specifically changed on 8 Sept:</b> the leaderboard header now stacks the period toggle onto its own line; the Hybrid Plan Goals tab no longer overflows; the paywall gained its renewal terms and legal links; and the purchase flow ends on a "Welcome to Split Index Premium" screen that did not exist before. Any screenshot of those four predates the app.</div>
       </div>
     </div>
 
