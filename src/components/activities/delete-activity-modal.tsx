@@ -31,6 +31,28 @@ export function DeleteActivityModal({
 
   if (!open) return null;
 
+  /**
+   * Reported from a device as "deleting an entry takes a long time and is also
+   * very laggy".
+   *
+   * The delete itself is one request. What made it feel long was everything
+   * queued behind it while the modal sat there spinning: `router.push` fetches
+   * the logbook, `router.refresh` then re-fetches the same route on the server
+   * to bust the client cache, and `setDeleting(false)` was in a `finally` that
+   * only ran after both. So the confirmation stayed on screen, greyed and
+   * spinning, through two further network round trips — on a shell that loads
+   * every page from `server.url` over the athlete's own connection.
+   *
+   * The row is gone the moment the API says so. Closing the dialog there means
+   * the athlete sees the result at the speed of the delete rather than at the
+   * speed of the two navigations behind it, and `(app)/activities/loading.tsx`
+   * now covers the trip back with a skeleton instead of a frozen screen.
+   *
+   * `refresh()` stays, and stays AFTER the push: the logbook is a server
+   * component and the client router would otherwise serve a cached payload
+   * still listing the activity that was just deleted. Dropping it to save a
+   * round trip would trade this bug for a worse one.
+   */
   const handleDelete = async () => {
     setDeleting(true);
     setError(null);
@@ -38,12 +60,15 @@ export function DeleteActivityModal({
       const res = await fetch(`/api/activities/${activityId}`, { method: "DELETE" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to delete");
+
       onDeleted?.();
+      setDeleting(false);
+      onClose();
+
       router.push("/activities");
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete");
-    } finally {
       setDeleting(false);
     }
   };

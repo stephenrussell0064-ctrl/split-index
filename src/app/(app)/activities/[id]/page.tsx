@@ -3,7 +3,8 @@ import Link from "next/link";
 import { format } from "date-fns";
 import { Pencil } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils/cn";
 import { SportComparisonPanel } from "@/components/dashboard/sport-comparison";
 import { formatIndex, formatDuration, formatDistance } from "@/lib/utils/format";
 import { SPORT_INDEX_LABELS, SPORTS } from "@/lib/constants/sports";
@@ -159,11 +160,22 @@ export default async function ActivityDetailPage({
           </p>
         </div>
         <div className="flex gap-2">
-          <Link href={`/activities/${id}/edit`}>
-            <Button variant="secondary" size="sm">
-              <Pencil className="h-4 w-4" />
-              Edit
-            </Button>
+          {/*
+            One anchor styled as a button, not an anchor wrapping a <button>.
+            The latter emits `<a href="..."><button>Edit</button></a>` —
+            interactive content nested inside interactive content. WKWebView
+            declines to navigate it: the tap lands on the button, the button
+            has no form to submit, and Next's click handler on the anchor never
+            runs. A desktop browser bubbles the click and navigates, which is
+            why it survived every review. Reported from a device as taps that
+            do nothing the first time.
+          */}
+          <Link
+            href={`/activities/${id}/edit`}
+            className={cn(buttonVariants({ variant: "secondary", size: "sm" }))}
+          >
+            <Pencil className="h-4 w-4" />
+            Edit
           </Link>
           <ActivityDetailActions
             activityId={id}
