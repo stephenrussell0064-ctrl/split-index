@@ -181,7 +181,27 @@ export function authErrorMessage(
         error
       );
     }
-    if (mapped && (status === 500 || message === "{}")) {
+    /*
+      A MAPPED CODE WINS OVER THE PROVIDER'S OWN SENTENCE.
+
+      This used to be `mapped && (status === 500 || message === "{}")`, so the
+      map only applied when the provider had said nothing useful — and a real
+      AuthError always carries a message, so for every error that actually
+      happens the line below returned Supabase's wording and the map was
+      decoration.
+
+      That silently reopened the account-enumeration oracle the map exists to
+      close. `invalid_credentials` and `user_not_found` are both mapped to one
+      sentence on purpose, and both were answering with the provider's: "Invalid
+      login credentials" and "User not found" — two different sentences, which
+      is the whole oracle. Submit an address, read which one comes back, learn
+      whether that person has an account on an app holding health data.
+
+      Choosing the map wherever it has an entry is also what the rest of it is
+      for: every message in it was written to be read by an athlete, and the
+      raw provider strings were being preferred to all of them.
+    */
+    if (mapped) {
       return withDevAuthDetails(mapped, error);
     }
     return message;
