@@ -49,9 +49,9 @@ const POSTS = [
     day: 1,
     hook: 'Your training app is comparing you to strangers.',
     body:
-      'Every percentile you have ever been shown came from a population — people whose sleep, job, injury history and training age you know nothing about. ' +
-      'Split Index scores you against your own history first, and only then tells you where that sits.',
-    show: 'Two columns on screen: "vs 40,000 strangers" and "vs you, in March". Same athlete, different answer.',
+      'Every percentile you have been shown came from a population. People whose sleep, job, injury history and training age you know nothing about. ' +
+      'Split Index scores you against your own history first. Then it tells you where that sits.',
+    show: 'Two columns: "vs 40,000 strangers" and "vs you in March". Same athlete, different answer.',
     source: 'src/lib/scoring/percentile-framework.ts',
     needsLiveApp: false,
   },
@@ -59,104 +59,106 @@ const POSTS = [
     day: 2,
     hook: 'Leg day is costing you a minute a mile. Or it is not. Nobody has measured yours.',
     body:
-      'The interference effect is real and everyone quotes it at you as a fixed rule. It is not fixed — it varies enormously between people. ' +
-      'Split Index mines your own paired sessions: how your runs actually go one, two and three days after you squat. Yours, not a study population.',
-    show: 'A decay curve over three days post-leg-day, built from one athlete\'s real sessions.',
+      'Everyone quotes the interference effect at you like a fixed rule. It is not fixed. It varies hugely between people. ' +
+      'Split Index measures yours from your own sessions. How your runs actually go one, two and three days after you squat.',
+    show: 'A three-day decay curve built from one athlete\'s real sessions.',
     source: 'src/lib/scoring/interference.ts — LOOKBACK_DAYS_STRENGTH_EFFECT_ON_CARDIO',
     needsLiveApp: false,
   },
   {
     day: 3,
-    hook: 'Three sessions. That is all it takes to know your own interference number.',
+    hook: 'Three sessions and you know your own interference number.',
     body:
-      'Most analytics need a training block before they say anything useful. The threshold here is three paired sessions — low enough to see a real result in a fortnight, ' +
-      'high enough that it is not noise being read back to you as insight.',
-    show: 'The moment the number appears after the third session.',
+      'Most analytics want a full training block before they tell you anything. This needs three paired sessions. ' +
+      'Low enough to get a real answer in a fortnight. High enough that you are not reading noise.',
+    show: 'The number appearing after the third session.',
     source: 'src/lib/scoring/interference.ts — MIN_PAIRED_SESSIONS = 3',
     needsLiveApp: false,
   },
   {
     day: 4,
-    hook: 'A 21-minute 5k at 24 is not a 21-minute 5k at 52.',
+    hook: 'A 21 minute 5k at 24 is not a 21 minute 5k at 52.',
     body:
-      'Age grading is standard in athletics and almost absent from training apps. Every benchmark here is age-graded, which changes who is actually ahead in a way raw times never show.',
-    show: 'Same time, two ages, two very different standings.',
+      'Athletics has age graded results for decades. Training apps mostly ignore it. ' +
+      'Every benchmark here is age graded, which changes who is actually ahead.',
+    show: 'Same time, two ages, two completely different standings.',
     source: 'src/lib/scoring/cardio-benchmarks.ts — age grading',
     needsLiveApp: false,
   },
   {
     day: 5,
-    hook: 'Riegel\'s formula says your marathon from your 5k. It is wrong for most people.',
+    hook: 'Your marathon prediction is built on a formula about elite runners.',
     body:
-      'The exponent everyone uses is 1.06, taken from a paper about elite runners. Yours is not 1.06. ' +
-      'Split Index fits your own exponent from your own races, which is why its predictions stop drifting after your first long effort.',
-    show: 'Two predicted marathon times: textbook Riegel, and personalised.',
+      'Riegel\'s exponent is 1.06. That came from a paper about elites. Yours is not 1.06. ' +
+      'Split Index works out your exponent from your own races, so the prediction stops drifting after your first long effort.',
+    show: 'Two predicted marathon times. Textbook, and yours.',
     source: 'src/lib/scoring/riegel-k-personalization.test.ts',
     needsLiveApp: false,
   },
   {
     day: 6,
-    hook: 'Hybrid training has one honest question: what are you giving up?',
+    hook: 'Hybrid training has one honest question. What are you giving up?',
     body:
-      'Every hour of running is an hour not lifting. The point is not to pretend there is no trade — it is to see the size of yours, in numbers, and decide whether you want it.',
-    show: 'Strength and endurance indexes moving in opposite directions across one block.',
+      'Every hour running is an hour not lifting. You are always trading something. ' +
+      'Split Index puts a number on your trade so you can decide whether you want it.',
+    show: 'Strength and endurance moving opposite ways across one block.',
     source: 'src/lib/scoring/index-engine.ts — computeIndexes',
     needsLiveApp: false,
   },
   {
     day: 7,
-    hook: 'The app tells you when it does not know.',
+    hook: 'Most fitness apps give you a number no matter how little they have seen.',
     body:
-      'Most fitness apps give you a number whatever the evidence. This one weights by how much it has actually seen from you, and says so when a figure is thin. ' +
-      'A confident wrong answer is worse than an honest gap.',
-    show: 'A low-confidence badge on an early estimate, and the same figure firming up later.',
+      'Split Index weights every figure by how much of your training it has actually got. ' +
+      'You get a straight answer on what it knows and what it is still building, so you can trust the numbers it does give you.',
+    show: 'An early estimate marked as thin, then the same figure firming up.',
     source: 'src/lib/scoring/index-engine.ts — sideEvidence',
     needsLiveApp: false,
   },
   {
     day: 8,
-    hook: 'Day one of a hybrid block vs day forty.',
-    body: 'Same athlete, same app, six weeks apart. The interesting part is not that both went up — it is which one went up faster, and what that cost.',
-    show: 'Screen recording of the timeline view across the block.',
+    hook: 'Day one of a hybrid block against day forty.',
+    body: 'Same athlete, six weeks apart. Both went up. The interesting part is which one went up faster and what it cost.',
+    show: 'Screen recording of the timeline across the block.',
     source: 'src/lib/scoring/timeline.ts',
     needsLiveApp: true,
   },
   {
     day: 9,
-    hook: 'Readiness scores are usually a guess dressed as a number.',
-    body: 'This one is built from what you actually did — load, rest days, and the sessions you have historically performed badly after.',
-    show: 'The readiness figure, and the inputs it was computed from, side by side.',
+    hook: 'Readiness scores are usually a guess with a number on it.',
+    body: 'This one comes from what you actually did. Your load, your rest days, and the sessions you have historically performed badly after.',
+    show: 'The readiness figure next to the inputs behind it.',
     source: 'src/lib/scoring/readiness.ts',
     needsLiveApp: true,
   },
   {
     day: 10,
-    hook: 'Injury risk flags that are not just "you did a lot".',
-    body: 'Volume spikes are the easy signal and everyone uses them. The harder one is the shape of the ramp, which is what this looks at.',
-    show: 'A ramp that looks fine by weekly volume and flags on shape.',
+    hook: 'Injury flags that are more than "you did a lot".',
+    body: 'Volume spikes are the easy signal and everyone uses them. The shape of the ramp is the harder one, and that is what this watches.',
+    show: 'A ramp that passes on weekly volume and flags on shape.',
     source: 'src/lib/scoring/injury-risk.ts',
     needsLiveApp: true,
   },
   {
     day: 11,
-    hook: 'Your swim, bike, run and lift do not belong on the same scale. So they are not on one.',
-    body: 'Each discipline is benchmarked against its own standards, then combined. Flattening them into one number first is how you get nonsense.',
-    show: 'The per-discipline breakdown behind a single index.',
+    hook: 'Your swim, bike, run and lift do not belong on one scale.',
+    body: 'So they are not on one. Each is measured against its own standards first, then combined. Flatten them too early and the number means nothing.',
+    show: 'The per discipline breakdown behind a single index.',
     source: 'src/lib/scoring/cardio-benchmarks.ts',
     needsLiveApp: true,
   },
   {
     day: 12,
     hook: 'What a hybrid report card actually looks like.',
-    body: 'Not a dashboard of forty widgets. One page: where you are strong, where you are giving something up, and what the next block should probably do.',
-    show: 'The generated report card, scrolled through.',
+    body: 'Not forty widgets. One page. Where you are strong, what you are trading away, and what the next block should do about it.',
+    show: 'The report card, scrolled through.',
     source: 'src/lib/scoring/hybrid-report.ts',
     needsLiveApp: true,
   },
   {
     day: 13,
-    hook: 'Answering the comments: "is this just Strava with extra steps?"',
-    body: 'Strava tells you what you did. This tells you what it cost you and what it bought you. Different question.',
+    hook: 'Is this just Strava with extra steps?',
+    body: 'Strava tells you what you did. Split Index tells you what it cost you and what it bought you. Different question, different app.',
     show: 'Talking head, then the interference view.',
     source: 'src/lib/scoring/interference.ts',
     needsLiveApp: true,
@@ -164,8 +166,8 @@ const POSTS = [
   {
     day: 14,
     hook: 'It is live.',
-    body: 'Free to use. The premium tier is £29.99 a year and you will know within a fortnight whether it is telling you anything you did not know.',
-    show: 'App Store page, then the first-run experience.',
+    body: 'Free to use. Premium is £29.99 a year and you will know inside a fortnight whether it is telling you something you did not already know.',
+    show: 'App Store page, then first run.',
     source: 'PRICING — src/lib/premium/features.ts',
     needsLiveApp: true,
   },
