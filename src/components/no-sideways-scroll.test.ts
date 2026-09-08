@@ -27,7 +27,15 @@ import { join } from "node:path";
  * this. It is the unbounded, content-sized controls that need the guard.
  */
 
-const DIR = join(process.cwd(), "src/components/hybrid-plan");
+/*
+ * Widened beyond the hybrid plan after the same class of bug turned up on the
+ * social leaderboard. These are the screens built from athlete-supplied
+ * strings — exercise names, usernames, squad names — where nothing in the
+ * layout bounds the content.
+ */
+const DIRS = ["hybrid-plan", "social", "activities"].map((d) =>
+  join(process.cwd(), "src/components", d),
+);
 
 /** Controls whose natural width comes from content the layout does not bound. */
 const CONTENT_SIZED = new Set(["date", "time", "datetime-local", "month", "week", "select"]);
@@ -53,14 +61,23 @@ function elements(source: string, tag: string): { start: number; text: string }[
 
 function offenders(): string[] {
   const bad: string[] = [];
-  for (const file of readdirSync(DIR).filter((f) => f.endsWith(".tsx"))) {
-    const src = readFileSync(join(DIR, file), "utf8");
+  for (const dir of DIRS)
+  for (const file of readdirSync(dir).filter((f) => f.endsWith(".tsx"))) {
+    const src = readFileSync(join(dir, file), "utf8");
     for (const tag of ["input", "select"]) {
       for (const el of elements(src, tag)) {
         const type = el.text.match(/type="([a-z-]+)"/)?.[1] ?? tag;
         if (!CONTENT_SIZED.has(type)) continue;
 
-        const className = el.text.match(/className="([^"]*)"/)?.[1] ?? "";
+        /*
+         * className is written both ways in this codebase — a plain string and
+         * a cn(...) call — so every string literal inside the attribute counts.
+         * Reading only the quoted form flagged two gym-form selects that carry
+         * `w-full` inside cn(), and a guard that reports false positives gets
+         * deleted rather than obeyed.
+         */
+        const attr = el.text.match(/className=(?:"[^"]*"|\{[\s\S]*?\}(?=\s|$))/)?.[0] ?? "";
+        const className = [...attr.matchAll(/"([^"]*)"/g)].map((m) => m[1]).join(" ");
         const fixedWidth = /\bw-\d+\b/.test(className); // bounded by construction
         const canShrink = className.includes("min-w-0") || className.includes("w-full");
         if (!fixedWidth && !canShrink) {
@@ -73,7 +90,7 @@ function offenders(): string[] {
   return bad;
 }
 
-describe("content-sized controls in the hybrid plan", () => {
+describe("content-sized controls on athlete-facing screens", () => {
   it("can all shrink below their intrinsic width", () => {
     // Named rather than counted, because the fix is per-control: add `min-w-0`
     // so it may shrink, and `max-w-full` so it stops at the viewport.
@@ -84,9 +101,11 @@ describe("content-sized controls in the hybrid plan", () => {
     // Guards the parser above. If the element reader breaks, the test would
     // report zero offenders and pass for the wrong reason — which is the exact
     // failure mode this whole file exists to prevent elsewhere.
-    const dates = readdirSync(DIR)
-      .filter((f) => f.endsWith(".tsx"))
-      .flatMap((f) => elements(readFileSync(join(DIR, f), "utf8"), "input"))
+    const dates = DIRS.flatMap((dir) =>
+      readdirSync(dir)
+        .filter((f) => f.endsWith(".tsx"))
+        .flatMap((f) => elements(readFileSync(join(dir, f), "utf8"), "input")),
+    )
       .filter((el) => el.text.includes('type="date"'));
     expect(dates.length).toBeGreaterThan(0);
   });

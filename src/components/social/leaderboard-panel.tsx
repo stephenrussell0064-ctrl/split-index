@@ -62,9 +62,23 @@ function LeaderboardDetailCard({
           <p className="micro-label text-muted mb-1.5">Top lifts</p>
           <ul className="grid gap-1 sm:grid-cols-2">
             {content.topLifts.map((lift) => (
+              /*
+                min-w-0 + truncate on the name, shrink-0 on the figure.
+
+                Exercise names are athlete-supplied — the gym form takes a
+                custom name — so nothing bounds this string. A flex child will
+                not shrink below its content width on its own, so one long name
+                pushes the row past the card and the whole screen scrolls
+                sideways. The catalogue's longest today is "Incline Dumbbell
+                Press" at 22 characters, which fits; a custom name need not.
+
+                The figure keeps its full width because a truncated weight is
+                worse than a truncated name — "142." is wrong, "Incline
+                Dumbbell…" is merely shorter.
+              */
               <li key={lift.name} className="flex justify-between gap-2 glass rounded-lg px-2.5 py-1.5">
-                <span>{lift.name}</span>
-                <span className="tabular-nums font-medium">
+                <span className="min-w-0 truncate">{lift.name}</span>
+                <span className="shrink-0 tabular-nums font-medium">
                   {formatWeight(lift.estimated1RmKg)}
                   {lift.tier ? <span className="ml-1 text-[10px] text-muted">{lift.tier}</span> : null}
                 </span>
@@ -554,7 +568,7 @@ export function LeaderboardPanel({
                     </p>
                   </div>
 
-                  <div className="text-right">
+                  <div className="shrink-0 text-right">
                     <p className="text-lg font-bold tabular-nums">
                       {formatIndex(displayIndex)}
                     </p>

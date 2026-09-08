@@ -335,7 +335,13 @@ export function LogbookFeed({
               disabled={loading}
               onChange={(e) => applyFilters({ sport: e.target.value || null })}
               className={cn(
-                "h-9 rounded-xl border px-2.5 text-base font-medium leading-none disabled:opacity-60",
+                // min-w-0 max-w-full: a select is as wide as its longest
+                // option, and these are built from sport names plus a count.
+                // Today's longest is "Outdoor Cycling (1234)" and it fits, but
+                // nothing in the layout guarantees that — a longer sport added
+                // to the reference table would scroll the whole logbook
+                // sideways, which is what happened on the Goals tab.
+                "h-9 min-w-0 max-w-full rounded-xl border px-2.5 text-base font-medium leading-none disabled:opacity-60",
                 theme.border,
                 theme.fill,
                 theme.text
@@ -358,7 +364,13 @@ export function LogbookFeed({
               disabled={loading}
               onChange={(e) => applyFilters({ sort: e.target.value as LogbookSort })}
               className={cn(
-                "h-9 rounded-xl border px-2.5 text-base font-medium leading-none disabled:opacity-60",
+                // min-w-0 max-w-full: a select is as wide as its longest
+                // option, and these are built from sport names plus a count.
+                // Today's longest is "Outdoor Cycling (1234)" and it fits, but
+                // nothing in the layout guarantees that — a longer sport added
+                // to the reference table would scroll the whole logbook
+                // sideways, which is what happened on the Goals tab.
+                "h-9 min-w-0 max-w-full rounded-xl border px-2.5 text-base font-medium leading-none disabled:opacity-60",
                 theme.border,
                 theme.fill,
                 theme.text
