@@ -7,7 +7,7 @@ a training behaviour rather than a fixture, and the checks ask whether that
 person got something worth paying for, not whether a function returned the
 number it returned last time.
 
-**0 blocking · 0 degraded · 1 notes** across 10 athletes.
+**0 blocking · 0 degraded · 1 notes** across 12 athletes.
 
 ## Athletes
 
@@ -22,13 +22,13 @@ hyrox-hybrid — SERVED
     running           n= 48  mean  930  first3  873 → last3  955
   0 blocking, 0 degraded
 female-lifter — SERVED
-  50 sessions over 10 weeks · index 825 → 892 · ACWR 1.01–4.00
+  50 sessions over 10 weeks · index 825 → 896 · ACWR 1.01–4.00
     gym               n= 40  mean  861  first3  823 → last3  882
-    running           n= 10  mean  925  first3  896 → last3  950
+    running           n= 10  mean  945  first3  919 → last3  965
   0 blocking, 0 degraded
 swimmer — SERVED
-  56 sessions over 8 weeks · index 961 → 915 · ACWR 0.96–4.00
-    swimming          n= 40  mean  968  first3  961 → last3  972
+  56 sessions over 8 weeks · index 977 → 919 · ACWR 0.96–4.00
+    swimming          n= 40  mean  980  first3  977 → last3  983
     gym               n= 16  mean  500  first3  457 → last3  533
   0 blocking, 0 degraded
 cyclist — SERVED
@@ -37,10 +37,21 @@ cyclist — SERVED
     indoor_cycling    n= 18  mean  777  first3  619 → last3  846
   0 blocking, 0 degraded
 erg-athlete — SERVED
-  56 sessions over 8 weeks · index 650 → 765 · ACWR 0.97–4.00
+  56 sessions over 8 weeks · index 650 → 779 · ACWR 0.97–4.00
     rowing            n= 16  mean  794  first3  670 → last3  873
-    ski_erg           n= 16  mean  699  first3  585 → last3  781
+    ski_erg           n= 16  mean  746  first3  627 → last3  832
     gym               n= 24  mean  693  first3  643 → last3  718
+  0 blocking, 0 degraded
+female-erg-athlete — SERVED
+  48 sessions over 8 weeks · index 569 → 765 · ACWR 0.98–4.00
+    rowing            n= 16  mean  703  first3  604 → last3  776
+    ski_erg           n= 16  mean  950  first3  871 → last3  986
+    gym               n= 16  mean  570  first3  530 → last3  602
+  0 blocking, 0 degraded
+female-cyclist — SERVED
+  36 sessions over 9 weeks · index 455 → 761 · ACWR 1.09–4.00
+    outdoor_cycling   n= 18  mean  630  first3  465 → last3  737
+    indoor_cycling    n= 18  mean  675  first3  509 → last3  785
   0 blocking, 0 degraded
 masters-runner — SERVED
   50 sessions over 10 weeks · index 902 → 907 · ACWR 1.05–4.00
@@ -51,8 +62,8 @@ overreacher — SERVED
     running           n= 48  mean  844  first3  847 → last3  827
   0 blocking, 0 degraded
 returner — SERVED
-  50 sessions over 10 weeks · index 646 → 679 · ACWR 1.09–4.00
-    running           n= 30  mean  755  first3  645 → last3  825
+  50 sessions over 10 weeks · index 670 → 697 · ACWR 1.09–4.00
+    running           n= 30  mean  783  first3  669 → last3  854
     gym               n= 20  mean  425  first3  367 → last3  473
   0 blocking, 0 degraded
 sporadic — SERVED
@@ -68,7 +79,7 @@ Behaviour that is arithmetically correct and still worth a human look.
 
 ### swimmer — adding a discipline lowers the headline
 
-Every sport improved, but the headline index went 957 → 914 because a weaker second discipline entered the blend. Arithmetically correct; reads to the athlete as "I got worse".
+Every sport improved, but the headline index went 975 → 918 because a weaker second discipline entered the blend. Arithmetically correct; reads to the athlete as "I got worse".
 
 ## Personas, and why each is here
 
@@ -107,6 +118,18 @@ Every sport improved, but the headline index went 957 → 914 because a weaker s
 *Wants:* Erg work scored properly rather than lumped in with running.
 
 *Covers:* Rowing and SkiErg calibration. Both are distance sports with paces unlike running's, and the SkiErg has the thinnest reference data of any supported sport. Flagged as an open calibration gap.
+
+**female-erg-athlete** — Rows and skis on the ergs four times a week, lifts twice, no outdoor training.
+
+*Wants:* Her erg work scored against women who row, not against men who row.
+
+*Covers:* The women's rowing anchor table and the female SkiErg factor — the two erg numbers no female persona touched before 8 Sep 2026. Rowing is the one sport scored from its own sex-specific tables rather than a multiplier, so nothing else in this suite exercises that path for a woman.
+
+**female-cyclist** — Commutes by bike and races club time trials at the weekend.
+
+*Wants:* The bike to be treated as her sport rather than as cross-training.
+
+*Covers:* The female cycling factor, which moved further on 8 Sep 2026 than any other cardio constant and rests on the weakest evidence of the five — the research calls cycling 'by far the least calibratable'. No female persona rode a bike before this one.
 
 **masters-runner** — 52, runs five times a week, has been running for twenty years.
 

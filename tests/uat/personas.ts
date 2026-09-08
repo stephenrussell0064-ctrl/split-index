@@ -261,6 +261,114 @@ export const PERSONAS: Persona[] = [
     },
   },
 
+  /*
+   * The two personas below exist because of a gap found on 8 September 2026.
+   *
+   * Every sex-specific cardio constant in the app was recalibrated that day
+   * against `docs/pre-launch/calibration-data.md`, and three of the five
+   * changes could not have been seen by this suite. Coverage was:
+   *
+   *     men   gym, running, swimming*, rowing, ski_erg, cycling
+   *     women gym, running, swimming
+   *
+   * so rowing, the SkiErg and the bike were exercised only by male athletes.
+   * The women's rowing anchor table moved by up to 90 points that day and the
+   * female cycling factor by up to 137, and no bot in this suite would have
+   * registered either. A UAT set that reads male scoring end to end and female
+   * scoring in three sports out of six is not driving the app end to end; it is
+   * driving half of it twice.
+   *
+   * These two close that. They are deliberately ordinary athletes rather than
+   * edge cases — the point is that the routine female path through the erg and
+   * the bike gets walked at all.
+   *
+   * ## And adding them exposed a limitation of this suite worth knowing
+   *
+   * `female-erg-athlete` reads 950 mean on the SkiErg against 703 on the rower,
+   * while `erg-athlete` — same two machines, male — reads 746 against 794. The
+   * asymmetry is not a scoring fault. Checked directly against the C2 logbook
+   * medians, the constants are coherent: the median woman scores 547 rowing and
+   * 543 skiing, the median man 543 on both.
+   *
+   * It is `simulator.ts`. That file has no notion of sex anywhere in it — every
+   * session time comes from the persona's single `easyPaceSecPerKm` baseline
+   * multiplied by a sport scale. So a female persona is handed a performance
+   * generated as though she were a man with that baseline, and the scoring then
+   * applies the female allowance on top. She is credited twice, and the larger
+   * the sport's sex factor the further her score inflates — which is why the
+   * effect shows up worst on the SkiErg, whose composed female divisor is the
+   * largest in the app.
+   *
+   * So: this suite is sound for what it was built for — journeys, crashes,
+   * lurching, ACWR, whether a persona is served at all — and the ABSOLUTE
+   * scores of female personas cannot be read as realistic until the simulator
+   * models sex. That applies to the three female personas that predate these
+   * two as much as to them, and nothing here caught it before because no
+   * female persona had a male counterpart on the same machine to compare with.
+   *
+   * Deliberately not papered over by tuning these baselines downward until the
+   * numbers look plausible. That would hide the defect and leave the suite
+   * quietly wrong about every woman in it.
+   */
+  {
+    id: "female-erg-athlete",
+    who: "Rows and skis on the ergs four times a week, lifts twice, no outdoor training.",
+    wants: "Her erg work scored against women who row, not against men who row.",
+    covers:
+      "The women's rowing anchor table and the female SkiErg factor — the two erg numbers no female persona touched before 8 Sep 2026. Rowing is the one sport scored from its own sex-specific tables rather than a multiplier, so nothing else in this suite exercises that path for a woman.",
+    weeks: 8,
+    trajectory: "improving",
+    pattern: [
+      { sport: "rowing", sessionType: "threshold", perWeek: 2 },
+      { sport: "ski_erg", sessionType: "interval", perWeek: 2 },
+      { sport: "gym", sessionType: "other", perWeek: 2 },
+    ],
+    profile: {
+      age: 31,
+      gender: "female",
+      scoring_basis: "female",
+      weight_kg: 68,
+      max_hr: 189,
+      resting_hr: 56,
+      experience: "intermediate",
+      preferred_sports: ["rowing", "ski_erg", "gym"],
+      split_endurance_weight: 0.5,
+    },
+    baseline: {
+      easyPaceSecPerKm: 330,
+      squat1RM: 90,
+      bench1RM: 55,
+      deadlift1RM: 115,
+    },
+  },
+
+  {
+    id: "female-cyclist",
+    who: "Commutes by bike and races club time trials at the weekend.",
+    wants: "The bike to be treated as her sport rather than as cross-training.",
+    covers:
+      "The female cycling factor, which moved further on 8 Sep 2026 than any other cardio constant and rests on the weakest evidence of the five — the research calls cycling 'by far the least calibratable'. No female persona rode a bike before this one.",
+    weeks: 9,
+    trajectory: "improving",
+    pattern: [
+      { sport: "outdoor_cycling", sessionType: "long", perWeek: 1 },
+      { sport: "outdoor_cycling", sessionType: "tempo", perWeek: 1 },
+      { sport: "indoor_cycling", sessionType: "interval", perWeek: 2 },
+    ],
+    profile: {
+      age: 36,
+      gender: "female",
+      scoring_basis: "female",
+      weight_kg: 62,
+      max_hr: 184,
+      resting_hr: 50,
+      experience: "advanced",
+      preferred_sports: ["outdoor_cycling", "indoor_cycling"],
+      split_endurance_weight: 0.9,
+    },
+    baseline: { easyPaceSecPerKm: 165 },
+  },
+
   {
     id: "masters-runner",
     who: "52, runs five times a week, has been running for twenty years.",
