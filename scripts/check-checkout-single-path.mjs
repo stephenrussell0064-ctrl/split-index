@@ -51,10 +51,24 @@ const DECISION_POINT = 'src/lib/native/use-checkout.ts';
  * eslint-disable rather than a fix.
  */
 const PAYMENT_ENTRY_POINTS = [
-  ['startStripeCheckout', 'sends the user to Stripe, which is a 3.1.1 violation on iOS'],
-  ['purchaseNativeSku', 'starts a native purchase without the platform check'],
-  ['presentProPaywall', 'presents the native paywall without the platform check'],
+  ['startStripeCheckout', 'sends the user to Stripe, which is a 3.1.1 violation on iOS', 'src/lib/stripe/start-checkout.ts'],
+  ['purchaseNativeSku', 'starts a native purchase without the platform check', 'src/lib/native/billing.ts'],
+  ['presentProPaywall', 'presents the native paywall without the platform check', 'src/lib/native/paywall.ts'],
 ];
+
+/**
+ * Comments removed before matching.
+ *
+ * Both call sites discuss these functions by name in comments explaining why
+ * they do not call them, and the original guard worked around that by matching
+ * only `import { … }` — which is what let four ordinary import shapes through.
+ * Stripping the prose is the better way to spare the documentation.
+ *
+ * The `[^:]` guard keeps `https://` out of the line-comment rule.
+ */
+function stripComments(text) {
+  return text.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1 ');
+}
 
 function walk(dir, acc = []) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -76,13 +90,33 @@ export function offenders(root = SRC, projectRoot = ROOT) {
     // point itself is tested, and use-checkout.test.ts does exactly that.
     if (/\.test\.(ts|tsx)$/.test(rel)) continue;
 
-    const text = readFileSync(file, 'utf8');
-    for (const [symbol, consequence] of PAYMENT_ENTRY_POINTS) {
-      // An import, not a mention: both call sites discuss these by name in
-      // comments explaining why they do not call them, and flagging that would
-      // punish the documentation for being accurate.
-      const imported = new RegExp(`import\\s*\\{[^}]*\\b${symbol}\\b[^}]*\\}`, 's').test(text);
-      if (imported) found.push({ file: rel, symbol, consequence });
+    const text = stripComments(readFileSync(file, 'utf8'));
+    for (const [symbol, consequence, owner] of PAYMENT_ENTRY_POINTS) {
+      // The module that defines the function has to name it.
+      if (rel === owner) continue;
+      /*
+       * The bare name anywhere in the code, not an `import { … }`.
+       *
+       * This matched `import\s*\{[^}]*symbol[^}]*\}`, which requires a braced
+       * named import, and four perfectly ordinary shapes went straight past it
+       * — probed on 8 Sep 2026:
+       *
+       *   import * as pay from "…"; pay.startStripeCheckout()   namespace
+       *   import startStripeCheckout from "…"                   default
+       *   const { startStripeCheckout } = await import("…")     dynamic
+       *   export { startStripeCheckout } from "…"               re-export
+       *
+       * The last is the one that matters. A barrel re-exporting under a new
+       * name — `export { startStripeCheckout as beginUpgrade }` — launders the
+       * symbol completely: every consumer then imports `beginUpgrade`, which
+       * this file has never heard of, and the guard sees nothing. That is a
+       * 3.1.1 violation reachable by a refactor nobody would think twice
+       * about, in the check that exists to make 3.1.1 unreachable.
+       *
+       * Matching the name outside comments catches all four, and the alias
+       * cases too, because the aliasing statement itself still names it.
+       */
+      if (new RegExp(`\\b${symbol}\\b`).test(text)) found.push({ file: rel, symbol, consequence });
     }
   }
 

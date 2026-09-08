@@ -72,6 +72,44 @@ check('a comment naming the function is not an import', flagged(), []);
 file('lib/native/use-checkout.test.ts', 'import { startStripeCheckout } from "@/lib/stripe/start-checkout";');
 check('a test file may import it', flagged(), []);
 
+/*
+ * The four shapes that walked past this guard until 8 September 2026.
+ *
+ * It matched `import\s*\{[^}]*symbol[^}]*\}` — a braced named import — so
+ * anything else was invisible. None of these is an adversarial trick; they are
+ * how people ordinarily refactor, which is what made it worth fixing rather
+ * than noting.
+ */
+file('components/upsell/namespace.tsx', 'import * as pay from "@/lib/stripe/start-checkout";\nexport const A = () => pay.startStripeCheckout();');
+check('a namespace import is caught', flagged(), ['src/components/upsell/namespace.tsx']);
+rmSync(join(src, 'components/upsell'), { recursive: true, force: true });
+
+file('components/upsell/default.tsx', 'import startStripeCheckout from "@/lib/stripe/start-checkout";\nexport const A = () => startStripeCheckout();');
+check('a default import is caught', flagged(), ['src/components/upsell/default.tsx']);
+rmSync(join(src, 'components/upsell'), { recursive: true, force: true });
+
+file('components/upsell/dynamic.tsx', 'export const A = async () => { const { startStripeCheckout } = await import("@/lib/stripe/start-checkout"); return startStripeCheckout(); };');
+check('a dynamic import is caught', flagged(), ['src/components/upsell/dynamic.tsx']);
+rmSync(join(src, 'components/upsell'), { recursive: true, force: true });
+
+/*
+ * The one that mattered most. A barrel re-exporting under a new name launders
+ * the symbol: every consumer then imports `beginUpgrade`, a name this file has
+ * never heard of, and the guard sees nothing anywhere. A 3.1.1 violation
+ * reachable by a refactor nobody would think twice about, in the check whose
+ * entire job is to make 3.1.1 unreachable.
+ */
+file('lib/payments/index.ts', 'export { startStripeCheckout as beginUpgrade } from "@/lib/stripe/start-checkout";');
+check('a re-export, even renamed, is caught at the barrel', flagged(), ['src/lib/payments/index.ts']);
+rmSync(join(src, 'lib/payments'), { recursive: true, force: true });
+
+// The defining module must be allowed to name its own export, and only its own.
+file('lib/stripe/start-checkout.ts', 'export function startStripeCheckout() {}');
+check('the module that defines it may name it', flagged(), []);
+file('lib/stripe/start-checkout.ts', 'export function startStripeCheckout() {}\nimport { purchaseNativeSku } from "@/lib/native/billing";');
+check('but not a DIFFERENT payment entry point', flagged(), ['src/lib/stripe/start-checkout.ts']);
+rmSync(join(src, 'lib/stripe'), { recursive: true, force: true });
+
 rmSync(root, { recursive: true, force: true });
 process.stdout.write(`\n  ${failures ? `${failures} failed` : 'all passed'}\n\n`);
 process.exit(failures ? 1 : 0);
