@@ -424,7 +424,31 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
         {/* tabIndex -1 so the skip link actually MOVES focus. Without it
             WebKit scrolls to the anchor and leaves focus in the nav, so the
             next Tab goes back to sidebar item two. */}
-        <main id="main-content" tabIndex={-1} className="lg:pl-64 focus:outline-none">
+        {/*
+          overflow-x-clip is a safety net for horizontal overflow, not a fix for
+          it. Two screens have already had to be repaired one element at a time —
+          an input[type=date] on the Hybrid Plan Goals tab, an unbounded exercise
+          name on the social leaderboard — and each of those made the WHOLE page
+          scroll sideways, because an overflowing child in normal flow drags its
+          ancestors with it. This stops the next one reaching the athlete.
+
+          CLIP, NOT HIDDEN, and the difference matters here. `overflow-x: hidden`
+          makes this element a scroll container, and a scroll container breaks
+          `position: sticky` inside it — which would silently unstick the
+          "Score workout" bar in activity-form, the top bar in sport-form, and
+          the gym page's aside. `overflow-x: clip` does the same clipping
+          without becoming a scroll container, so all of those keep working.
+
+          What it does NOT do: fix the overflow. Clipped content is content the
+          athlete cannot reach, so a screen that trips this is still a bug —
+          it just stops being an unusable one. no-sideways-scroll.test.ts is
+          what actually catches the causes.
+
+          Safari gained overflow:clip in 16. On iOS 15, the app's floor, this
+          degrades to no protection rather than to broken sticky positioning,
+          which is the right way round.
+        */}
+        <main id="main-content" tabIndex={-1} className="overflow-x-clip lg:pl-64 focus:outline-none">
           {/* calc(env(...) + gap) rather than a bare max() — the status bar height alone with no breathing room left the top bar sitting flush against the battery/signal icons; adding a fixed gap on top of the real inset (now resolvable at all thanks to viewport-fit: cover in layout.tsx) gives real clearance instead. A no-op on web where env() resolves to 0. */}
           {/*
             pb-28, not pb-24. The bottom nav measures ~101px on a phone with a
