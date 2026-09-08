@@ -92,6 +92,31 @@ const MUTATIONS = [
     tests: 'src/lib/native/use-checkout.test.ts',
     apply: (s) => s.replace('if (platform === "native") {', 'if (false) {'),
   },
+  /*
+   * SkiErg had no test of its own until 8 Sep 2026 — the whole sport was
+   * covered by `benchmarkRiegelK("ski") === 1.06` and its name appearing in a
+   * sport list. This is the mutation that found that: it is one character,
+   * every athlete still gets a score, and it moves every SkiErg session by
+   * roughly 60 points in the wrong direction.
+   */
+  {
+    what: 'ski/row conversion inverted — a SkiErg time reads as an easier row',
+    file: 'src/lib/scoring/cardio-benchmarks.ts',
+    tests: 'src/lib/scoring/cardio-benchmarks-ski-and-female.test.ts',
+    apply: (s) => s.replace('return skiSeconds / SKI_FROM_ROW_PACE;', 'return skiSeconds * SKI_FROM_ROW_PACE;'),
+  },
+  /*
+   * The female factors had one test per sport, of the form "a woman's score at
+   * the same clock time is higher than a man's". That passes for 1.001 and for
+   * 1.5, so it pinned the sign and nothing else — while the source's own
+   * comment says the risk is reusing the running factor everywhere.
+   */
+  {
+    what: "cycling reuses running's female factor — every woman's cycling score shifts",
+    file: 'src/lib/scoring/cardio-benchmarks.ts',
+    tests: 'src/lib/scoring/cardio-benchmarks-ski-and-female.test.ts',
+    apply: (s) => s.replace('  cycle: 1.219,', '  cycle: 1.152,'),
+  },
 ];
 
 let caught = 0;

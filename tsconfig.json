@@ -30,5 +30,14 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules"]
+  "//exclude": [
+    "`include` is `**/*.ts`, so anything a build drops inside the repo becomes",
+    "the typechecker's problem. Xcode's SPM checkouts are the live example:",
+    "point -derivedDataPath at ios/DerivedData (which .gitignore already",
+    "expects) and SourcePackages/checkouts fills with third-party TypeScript —",
+    "purchases-hybrid-common ships its own Jest suite — and `npx tsc --noEmit`",
+    "starts reporting 'Cannot find name expect' in a vendored file nobody in",
+    "this project wrote. Build output is not source; list it here."
+  ],
+  "exclude": ["node_modules", "ios/DerivedData", "ios/App/CapApp-SPM/build", "android/build"]
 }

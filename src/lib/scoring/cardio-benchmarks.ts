@@ -33,7 +33,20 @@ export const FEMALE_CARDIO_FACTORS: Record<BenchmarkSport, number> = {
   ski: 1.187, // inherits rowing — same machine family
 };
 
-/** SkiErg is ~10% less power than RowErg for equal effort; power ∝ pace^-3, so ski pace is slower by this factor. Validated: 7:00 row ≈ 7:16 ski. */
+/**
+ * SkiErg is ~10% less power than RowErg for equal effort; power ∝ pace^-3, so
+ * ski pace is slower by this factor.
+ *
+ * This said "Validated: 7:00 row ≈ 7:16 ski", which was not a validation:
+ * 7:00 × 1.0357 = 7:14.9, so it restates the constant against itself. It is an
+ * assumption, and `docs/pre-launch/calibration-data.md` §3d — the first actual
+ * measurement — says it is too low: the 2025 Concept2 logbook gives a ski:row
+ * pace ratio of 1.045–1.059 for men across the 75th–25th percentiles and
+ * 1.070–1.085 for women, i.e. the real ratio is also sex-dependent, which a
+ * single scalar cannot represent. Moving it changes every SkiErg score, so it
+ * is a decision to take deliberately rather than a typo to correct;
+ * `scripts/check-cardio-calibration-sourced.mjs` fails until it is taken.
+ */
 export const SKI_FROM_ROW_PACE = 1.0357;
 
 type Anchor = [seconds: number, score: number];
