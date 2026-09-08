@@ -175,8 +175,10 @@ describe("female athletes — the factor applied is the calibrated one", () => {
      */
     const male50th = timeToScore("row", 483.1, "male");
     expect(timeToScore("row", 483.1 * FEMALE_CARDIO_FACTORS.row, "female")).not.toBe(male50th);
-    // Her own table's 50th percentile is 9:40.5, and it means the same thing
-    // his 8:03.1 does.
-    expect(timeToScore("row", 580.5, "female")).toBe(male50th);
+    // Her own table's 50th percentile means the same thing his 8:03.1 does.
+    // It was 9:40.5 and is now 9:12.0: the table was rebased onto the C2
+    // logbook, whose measured ratio at his time is 1.143 where the old
+    // ratio — "given in brief", per §4b — was 1.202.
+    expect(timeToScore("row", 552.0, "female")).toBe(male50th);
   });
 });

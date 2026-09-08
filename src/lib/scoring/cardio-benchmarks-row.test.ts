@@ -29,9 +29,11 @@ describe("timeToScore — row (general-population anchors)", () => {
   });
 
   it("matches the female percentile anchors", () => {
-    expect(timeToScore("row", 459.1, "female")).toBeCloseTo(850, 0); // 7:39.1, 95th
-    expect(timeToScore("row", 496.3, "female")).toBeCloseTo(725, 0); // 8:16.3, 80th
-    expect(timeToScore("row", 580.5, "female")).toBeCloseTo(475, 0); // 9:40.5, 50th
+    // Rebased 8 Sep 2026 onto the C2 logbook and the world-record pair; these
+    // were 7:39.1 / 8:16.3 / 9:40.5, from ratios §4b lists as "given in brief".
+    expect(timeToScore("row", 454.0, "female")).toBeCloseTo(850, 0); // 7:34.0, 95th
+    expect(timeToScore("row", 477.9, "female")).toBeCloseTo(725, 0); // 7:57.9, 80th
+    expect(timeToScore("row", 552.0, "female")).toBeCloseTo(475, 0); // 9:12.0, 50th
   });
 
   it("no longer lets a beginner (bottom 5%) score into Intermediate territory", () => {

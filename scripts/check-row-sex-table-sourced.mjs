@@ -27,29 +27,35 @@
  * sport. It is near flat, 1.127 to 1.152, about two points of widening across
  * its whole range. The app's tables imply 1.145 rising to 1.261.
  *
- * ## Why the band only covers the middle
+ * The table was rebased onto that data on 8 September 2026 and this now passes.
  *
- * The logbook spans roughly the 90th to the 25th percentile of its own
- * population. The app's table runs from the 99th to the 5th of a broader one,
- * so both tails sit outside anything measured. §5 is explicit that
- * extrapolating a sex gradient past its data is unsupported — for swimming it
- * notes two defensible extrapolations that disagree by six points — so this
- * asserts nothing about the 99th or the 5th.
+ * ## What it judges, and what it will not
  *
- * It checks the anchors whose male time falls inside the logbook's measured
- * male range, against the logbook ratio at that same male time. Comparing at
- * equal male time rather than equal percentile label is the point: the two
- * populations are different, and the percentile numbers are not comparable
- * while the times are.
+ * Every anchor is compared at equal MALE TIME rather than at the same
+ * percentile label. That is the point: the logbook population is
+ * fitness-enthusiast and the app's is general, so a "50th percentile" means
+ * different things in each, while a 7:46.8 row means the same thing in both.
+ *
+ * Four of the six anchors fall inside the measured range and are judged. The
+ * range reaches the fast end only because of the world-record pair — until
+ * that was added, the two quickest anchors were outside the data and went
+ * unjudged, which is how the fast end of a table nobody could see went
+ * unchecked.
+ *
+ * The 20th and 5th are slower than anything measured and are reported as
+ * unjudged rather than assessed. §5 is explicit that extrapolating a sex
+ * gradient past its data is unsupported — for swimming it notes two defensible
+ * extrapolations that disagree by six points — so this asserts nothing there.
+ * The source carries the extrapolation and says so on the line; a check that
+ * pretended to verify it would be inventing authority.
  *
  * ## What a failure means
  *
  * Not that the app is broken. It means women's rowing is being scored against
  * a standard the project's own measurement does not support, and the fix is
- * either to rebase the table or to write down why the logbook is being
- * overridden. A whole table is a bigger change than a scalar and its tails
- * cannot be sourced, which is why this reports rather than anybody having
- * quietly adjusted it.
+ * either to rebase the table or to write down why the measurement is being
+ * overridden. Both are real answers. The word "sourced" on an assumption was
+ * not.
  *
  *   node scripts/check-row-sex-table-sourced.mjs
  */
@@ -62,12 +68,22 @@ const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const SOURCE = join(ROOT, 'src/lib/scoring/cardio-benchmarks.ts');
 const RESEARCH = join(ROOT, 'docs/pre-launch/calibration-data.md');
 
-/** §3c, RowErg 2000 m, C2 logbook 2025. Male seconds → F:M ratio. */
-const LOGBOOK = [
-  { percentile: 90, male: 408.4, ratio: 1.131 },
-  { percentile: 75, male: 433.6, ratio: 1.127 },
-  { percentile: 50, male: 466.8, ratio: 1.137 },
-  { percentile: 25, male: 511.1, ratio: 1.152 },
+/**
+ * Measured F:M against male ability. Male seconds → ratio.
+ *
+ * §3c is the C2 logbook 2025 at 2000 m, 9,561 men and 2,545 women. The first
+ * row is the world-record pair, which was already sitting in
+ * WORLD_RECORD_SECONDS.row in the source and is what lets this judge the fast
+ * anchors at all — without it the two quickest were outside the range and went
+ * unjudged, which is how a table nobody could see got a fast end nobody
+ * checked.
+ */
+const MEASURED = [
+  { label: 'C2 2000 m world records', male: 333.4, ratio: 381.1 / 333.4 },
+  { label: '§3c logbook 90th', male: 408.4, ratio: 1.131 },
+  { label: '§3c logbook 75th', male: 433.6, ratio: 1.127 },
+  { label: '§3c logbook 50th', male: 466.8, ratio: 1.137 },
+  { label: '§3c logbook 25th', male: 511.1, ratio: 1.152 },
 ];
 
 /**
@@ -93,7 +109,7 @@ function anchors(src, name) {
 
 /** The logbook ratio at a given male time, interpolated within its range. */
 export function logbookRatioAt(maleSeconds) {
-  const sorted = [...LOGBOOK].sort((a, b) => a.male - b.male);
+  const sorted = [...MEASURED].sort((a, b) => a.male - b.male);
   const first = sorted[0];
   const last = sorted[sorted.length - 1];
   if (maleSeconds < first.male || maleSeconds > last.male) return null; // outside the data
@@ -136,7 +152,7 @@ function main() {
   if (!research.includes(QUOTE)) {
     process.stderr.write(
       `The §3c row this check is built on is no longer in calibration-data.md:\n  ${QUOTE}\n\n` +
-        `Re-read §3c and update LOGBOOK here, or this is asserting numbers nobody sourced.\n\n`,
+        `Re-read §3c and update MEASURED here, or this is asserting numbers nobody sourced.\n\n`,
     );
     process.exit(2);
   }

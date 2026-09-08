@@ -371,49 +371,67 @@ const ROW_2K_ANCHORS_MALE: Anchor[] = [
 ];
 
 /*
- * The sex ratios below were GIVEN, not measured, and the only measured rowing
- * distribution disagrees with them.
+ * Rebased 8 September 2026 onto measured data. What was here before was given,
+ * not measured.
  *
  * Each row used to be annotated "sourced sex ratio". §4b of
- * `docs/pre-launch/calibration-data.md` lists this exact column as "Existing
- * app calibration — given in brief". It is an assumption, and calling it
- * sourced in the code is the same fault SKI_FROM_ROW_PACE had when it claimed
- * to be "Validated".
+ * `docs/pre-launch/calibration-data.md` lists that exact column as "Existing
+ * app calibration — given in brief" — an assumption wearing the word sourced,
+ * the same fault SKI_FROM_ROW_PACE had when it claimed to be "Validated"
+ * against itself. Those ratios ran 1.145 to 1.261, rising monotonically.
  *
- * What the data says. §3c is the 2025 Concept2 logbook at 2000 m: 9,561 men
- * and 2,545 women, the best-sampled sex-split distribution anywhere in that
- * document. Its F:M ratios are near flat — 1.131 at the 90th, 1.127 at the
- * 75th, 1.137 at the 50th, 1.152 at the 25th, so about 2 points of widening
- * across the whole measured range. This table implies 1.145 rising to 1.261,
- * roughly six times that gradient.
+ * ## What the sex gap actually does in rowing
  *
- * The populations differ — the logbook is fitness-enthusiast, this table is
- * general — and §4 establishes that the sex gap does move with ability, so
- * some divergence is expected. It does not cover this much: the app's median
- * male, 8:03.1, sits near the logbook's 40th percentile, where the measured
- * ratio is about 1.143. This table uses 1.202 there. In real terms the female
- * median anchor is 9:40.5 where the measured ratio would put it at 9:12.2 —
- * 28 seconds more generous, so a median woman is scored against a standard
- * about 6% easier than the only measurement supports.
+ * Five measured points, plotted against male ability rather than against a
+ * percentile label — the populations differ, so labels are not comparable
+ * while times are:
  *
- * Left as it stands rather than quietly rebased, because a correction here is
- * a whole table and not a scalar, and the tails cannot be sourced: the app's
- * 99th and 5th percentiles fall outside the logbook's measured range at both
- * ends, and extrapolating the gradient there is exactly the unsupported move
- * §5 warns against for swimming. Fixing the middle three anchors alone would
- * leave a kinked table, which is worse than a consistent wrong one.
+ *     male 5:33.4   1.143   C2 2000 m world records, van Dorp / Mooney
+ *     male 6:48.4   1.131   §3c logbook 90th
+ *     male 7:13.6   1.127   §3c logbook 75th
+ *     male 7:46.8   1.137   §3c logbook 50th
+ *     male 8:31.1   1.152   §3c logbook 25th
  *
- * Tracked as its own milestone (`row-sex-table`) so it is visible rather than
- * buried here, with `scripts/check-row-sex-table-sourced.mjs` asserting only
- * over the range the logbook actually covers.
+ * §3c is 9,561 men and 2,545 women — the best-sampled sex-split distribution
+ * in that document for any sport. The world-record pair was already in this
+ * file, in WORLD_RECORD_SECONDS, and is what gives the fast end an anchor at
+ * all.
+ *
+ * The shape is a shallow U: elevated at the elite limit, narrowest around the
+ * 75th, widening as ability falls below it. The old table was monotonic, which
+ * is not this shape, and it was roughly six times steeper than the measured
+ * gradient.
+ *
+ * ## What is measured here and what is not
+ *
+ * Four of the six anchors now sit inside or between measurements. Two do not:
+ * the 20th and the 5th extrapolate the logbook's own 50th→25th slope by 26 and
+ * 86 seconds respectively, and each says so on its own line.
+ *
+ * That extrapolation is a real assumption, and it is the one direction the
+ * research does support for an erg. §4e: the widening pattern is "real and
+ * replicated" in both ergs, and where running *reverses* at the very bottom —
+ * because the slow tail of a road race is full of walkers — "the Concept2
+ * SkiErg data, by contrast, does widen monotonically to the 5th percentile
+ * (1.246 → 1.322), because an erg piece has no walking equivalent". There is
+ * no walking equivalent of a 2 km row either. The magnitude follows rowing's
+ * own measured slope rather than SkiErg's, which is five times steeper.
+ *
+ * Holding the tails flat at 1.152 was the alternative. It would assert no
+ * gradient where the erg evidence says there is one, so it is not the safer
+ * choice, only the one that looks safer.
+ *
+ * `scripts/check-row-sex-table-sourced.mjs` re-derives these ratios from the
+ * two tables and compares them against the measured points, judging the four
+ * that fall in range and reporting the two that do not.
  */
 const ROW_2K_ANCHORS_FEMALE: Anchor[] = [
-  [439.2, 925], // 7:19.2 — 99th percentile (was 6:52.2; assumed ratio 1.145)
-  [459.1, 850], // 7:39.1 — 95th percentile (was 7:03.9; assumed 1.145)
-  [496.3, 725], // 8:16.3 — 80th percentile (was 7:44.0; assumed 1.172)
-  [580.5, 475], // 9:40.5 — 50th percentile (was 8:30.2; assumed 1.202)
-  [661.4, 250], // 11:01.4 — 20th percentile (was 9:21.0; assumed 1.232)
-  [753.6, 125], // 12:33.6 — 5th percentile (was 10:14.2; assumed 1.261)
+  [435.3, 925], // 7:15.3 — 99th · ratio 1.135 · between the WR point and the logbook 90th
+  [454.0, 850], // 7:34.0 — 95th · 1.132 · between the WR point and the logbook 90th
+  [477.9, 725], // 7:57.9 — 80th · 1.129 · inside the logbook, between its 90th and 75th
+  [552.0, 475], // 9:12.0 — 50th · 1.143 · inside the logbook, between its 50th and 25th
+  [623.2, 250], // 10:23.2 — 20th · 1.161 · EXTRAPOLATED 26s past the last measurement
+  [705.7, 125], // 11:45.7 — 5th · 1.181 · EXTRAPOLATED 86s past the last measurement
 ];
 
 /**
