@@ -12,7 +12,8 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils/cn";
 import {
   PREMIUM_FEATURES,
   PREMIUM_PRICE_GBP,
@@ -277,15 +278,11 @@ export default function SettingsClient() {
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
-          <Link href="/profile">
-            <Button variant="secondary" className="w-full">
-              Edit profile & stats
-            </Button>
+          <Link href="/profile" className={cn(buttonVariants({ variant: "secondary" }), "w-full")}>
+            Edit profile & stats
           </Link>
-          <Link href="/onboarding">
-            <Button variant="ghost" className="w-full">
-              Redo onboarding
-            </Button>
+          <Link href="/onboarding" className={cn(buttonVariants({ variant: "ghost" }), "w-full")}>
+            Redo onboarding
           </Link>
         </CardContent>
       </Card>
@@ -354,10 +351,11 @@ export default function SettingsClient() {
               <p className="text-sm text-muted">
                 Premium active — AI Coach, full analytics, and leaderboards unlocked.
               </p>
-              <Link href="/settings/billing">
-                <Button variant="secondary" className="w-full">
-                  Manage billing
-                </Button>
+              <Link
+                href="/settings/billing"
+                className={cn(buttonVariants({ variant: "secondary" }), "w-full")}
+              >
+                Manage billing
               </Link>
             </div>
           ) : (
@@ -412,9 +410,7 @@ export default function SettingsClient() {
               <p className="text-xs text-muted mb-4">
                 {FREE_TRIAL_DAYS}-day free trial · cancel anytime
               </p>
-              <Link href="/settings/billing">
-                <Button className="w-full">Start {FREE_TRIAL_DAYS}-Day Free Trial</Button>
-              </Link>
+              <Link href="/settings/billing" className={cn(buttonVariants(), "w-full")}>Start {FREE_TRIAL_DAYS}-Day Free Trial</Link>
             </>
           )}
         </CardContent>
@@ -457,11 +453,12 @@ export default function SettingsClient() {
         </CardHeader>
         <CardContent className="space-y-3">
           {adminRole && (
-            <Link href="/admin/hpe-fleet">
-              <Button variant="outline" className="w-full">
-                <Shield className="h-4 w-4" />
-                Hybrid Plan fleet &amp; rollout
-              </Button>
+            <Link
+              href="/admin/hpe-fleet"
+              className={cn(buttonVariants({ variant: "outline" }), "w-full")}
+            >
+              <Shield className="h-4 w-4" />
+              Hybrid Plan fleet &amp; rollout
             </Link>
           )}
           <Button variant="destructive" className="w-full" onClick={handleSignOut}>

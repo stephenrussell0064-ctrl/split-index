@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Dumbbell, PlusCircle, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 import { formatIndex } from "@/lib/utils/format";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 
 interface GymZonePanelProps {
   strengthIndex: number | null;
@@ -88,16 +88,18 @@ export function GymZonePanel({
         </div>
 
         <div className="mt-6 flex flex-wrap gap-3">
-          <Link href="/gym/log">
-            <Button size="sm" className="bg-gym-accent hover:bg-gym-accent/90 text-white border-0">
-              <PlusCircle className="h-4 w-4" />
-              Log gym session
-            </Button>
+          <Link
+            href="/gym/log"
+            className={cn(buttonVariants({ size: "sm" }), "bg-gym-accent hover:bg-gym-accent/90 text-white border-0")}
+          >
+            <PlusCircle className="h-4 w-4" />
+            Log gym session
           </Link>
-          <Link href="/gym">
-            <Button variant="secondary" size="sm" className="border-gym-border text-gym-text">
-              Open The Lab
-            </Button>
+          <Link
+            href="/gym"
+            className={cn(buttonVariants({ variant: "secondary", size: "sm" }), "border-gym-border text-gym-text")}
+          >
+            Open The Lab
           </Link>
         </div>
       </div>
@@ -185,23 +187,18 @@ export function CardioZonePanel({
         </div>
 
         <div className="mt-6 flex flex-wrap gap-3">
-          <Link href="/cardio/log">
-            <Button
-              size="sm"
-              className="bg-cardio-accent hover:bg-cardio-accent/90 text-cardio-text border-0"
-            >
-              <PlusCircle className="h-4 w-4" />
-              Log cardio session
-            </Button>
+          <Link
+            href="/cardio/log"
+            className={cn(buttonVariants({ size: "sm" }), "bg-cardio-accent hover:bg-cardio-accent/90 text-cardio-text border-0")}
+          >
+            <PlusCircle className="h-4 w-4" />
+            Log cardio session
           </Link>
-          <Link href="/cardio">
-            <Button
-              variant="secondary"
-              size="sm"
-              className="border-cardio-border text-cardio-text bg-white/60"
-            >
-              Open The Engine
-            </Button>
+          <Link
+            href="/cardio"
+            className={cn(buttonVariants({ variant: "secondary", size: "sm" }), "border-cardio-border text-cardio-text bg-white/60")}
+          >
+            Open The Engine
           </Link>
         </div>
       </div>

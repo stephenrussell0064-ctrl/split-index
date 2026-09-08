@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Bookmark, ChevronRight, Dumbbell } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils/cn";
 import { WORKOUT_PLANS } from "@/lib/constants/workout-plans";
 import type { WorkoutFormState } from "@/components/activities/form-state";
 
@@ -87,11 +88,12 @@ export function GymQuickStart() {
         </div>
       )}
 
-      <Link href="/gym/log">
-        <Button className="w-full bg-gym-accent hover:bg-gym-accent/90 text-[#04120a] border-0 font-semibold h-12">
-          <Dumbbell className="h-4 w-4" />
-          Start blank session
-        </Button>
+      <Link
+        href="/gym/log"
+        className={cn(buttonVariants(), "w-full bg-gym-accent hover:bg-gym-accent/90 text-[#04120a] border-0 font-semibold h-12")}
+      >
+        <Dumbbell className="h-4 w-4" />
+        Start blank session
       </Link>
     </div>
   );

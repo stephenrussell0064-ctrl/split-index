@@ -3,7 +3,8 @@ import Link from "next/link";
 import { PlusCircle } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { TrainZoneSwipe } from "@/components/layout/train-zone-swipe";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils/cn";
 import { GymStrengthPanel } from "@/components/dashboard/gym-strength-panel";
 import { GymQuickStart } from "@/components/gym/gym-quick-start";
 import { WorkoutPlansDisclosure } from "@/components/gym/workout-plans-disclosure";
@@ -196,11 +197,12 @@ export default async function GymPage() {
               </h1>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Link href="/gym/log">
-                <Button className="bg-gym-accent hover:bg-gym-accent/90 text-[#04120a] border-0 font-semibold">
-                  <PlusCircle className="h-4 w-4" />
-                  Log session
-                </Button>
+              <Link
+                href="/gym/log"
+                className={cn(buttonVariants(), "bg-gym-accent hover:bg-gym-accent/90 text-[#04120a] border-0 font-semibold")}
+              >
+                <PlusCircle className="h-4 w-4" />
+                Log session
               </Link>
             </div>
           </div>

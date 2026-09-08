@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { BrandMark } from "@/components/brand/brand-mark";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import { mainContentProps } from "@/lib/a11y/main-content";
 
 export default function NotFound() {
@@ -13,12 +13,8 @@ export default function NotFound() {
         The page you&apos;re looking for doesn&apos;t exist or may have moved.
       </p>
       <div className="mt-8 flex flex-wrap justify-center gap-3">
-        <Link href="/dashboard">
-          <Button>Go to dashboard</Button>
-        </Link>
-        <Link href="/">
-          <Button variant="secondary">Back to home</Button>
-        </Link>
+        <Link href="/dashboard" className={buttonVariants()}>Go to dashboard</Link>
+        <Link href="/" className={buttonVariants({ variant: "secondary" })}>Back to home</Link>
       </div>
     </main>
   );

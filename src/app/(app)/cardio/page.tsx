@@ -3,7 +3,8 @@ import Link from "next/link";
 import { Activity, PlusCircle, MapPin } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { TrainZoneSwipe } from "@/components/layout/train-zone-swipe";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils/cn";
 import { LogbookFeed } from "@/components/activities/logbook-feed";
 import { fetchLogbookPage, LOGBOOK_ZONE_PAGE_SIZE } from "@/lib/activities/logbook-query";
 import { SportComparisonBars } from "@/components/activities/sport-comparison-bars";
@@ -96,17 +97,16 @@ export default async function CardioPage() {
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Link href="/cardio/log">
-                <Button variant="secondary">
-                  <PlusCircle className="h-4 w-4" />
-                  Log manually
-                </Button>
+              <Link href="/cardio/log" className={buttonVariants({ variant: "secondary" })}>
+                <PlusCircle className="h-4 w-4" />
+                Log manually
               </Link>
-              <Link href="/cardio/gps-run">
-                <Button className="bg-cardio-accent hover:bg-cardio-accent/90 text-cardio-text border-0">
-                  <MapPin className="h-4 w-4" />
-                  Start GPS tracking
-                </Button>
+              <Link
+                href="/cardio/gps-run"
+                className={cn(buttonVariants(), "bg-cardio-accent hover:bg-cardio-accent/90 text-cardio-text border-0")}
+              >
+                <MapPin className="h-4 w-4" />
+                Start GPS tracking
               </Link>
             </div>
           </div>

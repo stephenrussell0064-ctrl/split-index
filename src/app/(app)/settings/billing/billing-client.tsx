@@ -4,7 +4,7 @@ import { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import { PREMIUM_PRICE_GBP, FREE_TRIAL_DAYS } from "@/lib/stripe/config";
 import {
   FREE_TIER_FEATURES,
@@ -64,9 +64,7 @@ function BillingContent() {
           <p className="text-muted text-sm mb-6">
             Your subscription is active. AI coaching and advanced analytics are now unlocked.
           </p>
-          <Link href="/dashboard">
-            <Button>Go to Dashboard</Button>
-          </Link>
+          <Link href="/dashboard" className={buttonVariants()}>Go to Dashboard</Link>
         </CardContent>
       </Card>
     );

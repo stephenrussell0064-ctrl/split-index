@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Compass, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 
 const STORAGE_KEY = "split-index-complete-profile-dismissed";
 
@@ -48,10 +48,8 @@ export function CompleteProfileBanner({ needsProfile }: { needsProfile: boolean 
             sharper.
           </p>
         </div>
-        <Link href="/profile">
-          <Button variant="secondary" size="sm">
-            Complete profile
-          </Button>
+        <Link href="/profile" className={buttonVariants({ variant: "secondary", size: "sm" })}>
+          Complete profile
         </Link>
       </div>
     </div>

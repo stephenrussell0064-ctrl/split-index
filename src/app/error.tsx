@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { mainContentProps } from "@/lib/a11y/main-content";
 
 export default function Error({
@@ -26,9 +26,7 @@ export default function Error({
       </p>
       <div className="mt-8 flex flex-wrap justify-center gap-3">
         <Button onClick={reset}>Try again</Button>
-        <Link href="/dashboard">
-          <Button variant="secondary">Dashboard</Button>
-        </Link>
+        <Link href="/dashboard" className={buttonVariants({ variant: "secondary" })}>Dashboard</Link>
       </div>
     </main>
   );

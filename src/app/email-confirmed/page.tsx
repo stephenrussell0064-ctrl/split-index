@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { CheckCircle2 } from "lucide-react";
 import { BrandMark } from "@/components/brand/brand-mark";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils/cn";
 import { mainContentProps } from "@/lib/a11y/main-content";
 
 export const metadata = {
@@ -29,9 +30,7 @@ export default function EmailConfirmedPage() {
             logging your training and see where you rank.
           </p>
 
-          <Link href="/login" className="mt-6 block">
-            <Button className="w-full">Sign in to Split Index</Button>
-          </Link>
+          <Link href="/login" className={cn(buttonVariants(), "mt-6 w-full")}>Sign in to Split Index</Link>
         </div>
       </div>
     </main>
