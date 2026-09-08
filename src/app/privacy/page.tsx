@@ -114,14 +114,25 @@ export default function PrivacyPolicyPage() {
                   never see your card details, and Apple and Google do not give them to us.
                 </li>
                 <li>
-                  <strong>OAuth data:</strong> when you sign in with Google, we receive
-                  account identifiers authorised by you through that provider.
+                  <strong>OAuth data:</strong> when you sign in with Google or Apple, we
+                  receive account identifiers authorised by you through that provider. If
+                  you use Apple&apos;s Hide My Email, we only ever see the relay address
+                  Apple gives us, never your real one.
                 </li>
                 <li>
                   <strong>Social features and content you write:</strong> friend
                   connections, leaderboard participation, public profile information you
                   choose to share, and free text you enter yourself — your profile bio, and
                   comments you leave on activities shared with you.
+                </li>
+                <li>
+                  <strong>Blocks and reports:</strong> if you block another athlete we
+                  store that you did, so we can hide you from each other. If you report a
+                  comment or a profile we store what you reported, the reason you chose,
+                  and anything you typed in the box. Reports name the account they are
+                  about — so a report someone files about you is data we hold about you,
+                  and you can ask us for it like any other. We do not tell the person who
+                  was reported who reported them.
                 </li>
                 <li>
                   <strong>Technical and usage data:</strong> IP address, browser type,
@@ -355,6 +366,14 @@ export default function PrivacyPolicyPage() {
                 through Apple or Google. Those are managed by the store that sold them —
                 on iOS, through Manage Subscription in the app or in your Apple account
                 settings.
+              </p>
+              <p className="mt-3">
+                Reports are the one thing kept when the content they are about is gone.
+                If someone reports a comment and the comment is then deleted, the report
+                stays — otherwise anyone could clear their record by deleting the post,
+                and the pattern of reports about an account is the part that matters for
+                keeping people safe. A report is kept against the account it names, and
+                goes when that account is deleted.
               </p>
             </section>
 
