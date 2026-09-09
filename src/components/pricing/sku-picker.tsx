@@ -31,11 +31,30 @@ import type { SubscriptionSku } from "@/types";
  */
 const USE_DASHBOARD_PAYWALL = process.env.NEXT_PUBLIC_REVENUECAT_USE_PAYWALL === "true";
 
-const SKUS: Array<{
+/**
+ * `sub` is the web subtitle; `nativeSub` is the one shown in the app.
+ *
+ * They differ because the price above them comes from a different place in each
+ * case. On the web we set the price ourselves and it is always GBP, so a
+ * sterling per-month equivalent underneath it is accurate. On native the price
+ * comes from StoreKit in the viewer's own storefront currency — dollars in the
+ * US, euros in Ireland — and the two lines sit close enough together that a
+ * reader takes them as one statement about one price.
+ *
+ * The annual subtitle used to be `just £2.50/mo` in both. On a US storefront
+ * that rendered as $34.99/yr above just £2.50/mo: a sterling figure quoted under
+ * a dollar price, describing a saving in a currency the buyer is not paying in.
+ *
+ * So every `nativeSub` must be currency-neutral. `no-currency-in-native-sku-copy.test.ts`
+ * enforces that, because the failure is invisible from a UK device — which is
+ * every device this was ever tested on.
+ */
+export const SKUS: Array<{
   sku: SubscriptionSku;
   label: string;
   price: string;
   sub: string;
+  nativeSub: string;
   badge?: string;
 }> = [
   {
@@ -43,12 +62,14 @@ const SKUS: Array<{
     label: "Monthly",
     price: `£${PRICING.MONTHLY_GBP}/mo`,
     sub: "billed monthly",
+    nativeSub: "billed monthly",
   },
   {
     sku: "annual",
     label: "Annual",
     price: `£${PRICING.ANNUAL_GBP}/yr`,
     sub: `just £${ANNUAL_MONTHLY_EQUIVALENT_GBP.toFixed(2)}/mo`,
+    nativeSub: "billed annually",
     badge: "Best value",
   },
   {
@@ -56,6 +77,7 @@ const SKUS: Array<{
     label: "Lifetime",
     price: `£${PRICING.LIFETIME_GBP}`,
     sub: "one-time, forever",
+    nativeSub: "one-time, forever",
   },
 ];
 
@@ -225,8 +247,11 @@ export function SkuPicker({ ctaLabel, onError, className }: SkuPickerProps) {
                 {option.label}
               </p>
               <p className="text-lg font-bold">{nativePriceFor(option.sku) ?? option.price}</p>
+              {/* Native takes nativeSub, which carries no currency — see SKUS. */}
               <p className="text-xs text-muted mt-0.5">
-                {!native && option.sku === "annual" ? (
+                {native ? (
+                  option.nativeSub
+                ) : option.sku === "annual" ? (
                   <>
                     <span className="line-through opacity-60">
                       £{PRICING.MONTHLY_GBP}/mo billed monthly
