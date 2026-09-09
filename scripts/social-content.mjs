@@ -12,8 +12,8 @@
  * costs that money, and hid it from the ranking entirely.
  *
  * The other stated blocker was a paid ReelFarm subscription. That is a blocker
- * on *volume*, not on starting: fourteen posts written out in full can be
- * posted by hand during a two-week review at no cost. This generates those.
+ * on *volume*, not on starting: twenty posts written out in full can be
+ * posted by hand during a review window at no cost. This generates those.
  *
  * ## The rule every post obeys
  *
@@ -38,13 +38,14 @@ const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const QUEUE = join(homedir(), 'Projects', 'venture-projects', 'queue', 'social', 'split-index');
 
 /**
- * Fourteen posts — one per day of a typical review window.
+ * Twenty posts. Fourteen for a typical review window, then the calibration
+ * series added 9 Sep 2026 — see the comment above day 15.
  *
  * Ordered so the first week can run without the app being live: each of those
  * stands on the idea rather than on a screen recording, because there is no
  * approved build to record. The second week assumes there is.
  */
-const POSTS = [
+export const POSTS = [
   {
     day: 1,
     hook: 'Your training app is comparing you to strangers.',
@@ -187,6 +188,93 @@ const POSTS = [
     source: 'PRICING — src/lib/premium/features.ts',
     needsLiveApp: true,
   },
+  /*
+   * Days 15 to 20 — the calibration series.
+   *
+   * Added 9 Sep 2026 after two days spent measuring the female-male
+   * performance gap across six sports. Every one of these is a finding from
+   * `docs/pre-launch/calibration-data.md` and the audit that followed it, and
+   * three of them are admissions. That is deliberate: the app's whole claim is
+   * that its numbers are measured rather than assumed, and the only way to make
+   * that credible is to show the working including the parts where the working
+   * was wrong.
+   *
+   * None needs a live app. They run during review, or after it.
+   */
+  {
+    day: 15,
+    hook: 'Our app assumed women row 20% slower than men. The logbook says 14%. We had never checked.',
+    body:
+      'The 2025 Concept2 2k logbook — 9,561 men, 2,545 women — puts the median gap at 14%, and 18% at the slow end. ' +
+      'Our table said 20% and 26%. It had never been measured; it came from a brief. Corrected, the women\u2019s table ' +
+      'sits up to 107 points closer to the men\u2019s, which is a real cost to a real user\u2019s score. ' +
+      'We would rather be right than flattering.',
+    show: 'Old ratio and logbook ratio at each percentile, sample size under each.',
+    source: 'scripts/check-row-sex-table-sourced.mjs',
+    needsLiveApp: false,
+  },
+  {
+    day: 16,
+    hook: 'The male-female running gap does not widen as people get slower. It narrows.',
+    body:
+      '35 million race results. The gap sits flat at about 19% from the 30th percentile to the 80th, then narrows to ' +
+      '14.6% in the slowest tenth. Why? The back of a mass 5k is walkers of both sexes, and walking speed differs ' +
+      'between the sexes far less than running speed does. Most scoring assumes the gap keeps widening. ' +
+      'The largest dataset available says it does not.',
+    show: 'The percentile curve: flat through the middle, turning down at the left end.',
+    source: 'docs/pre-launch/calibration-data.md',
+    needsLiveApp: false,
+  },
+  {
+    day: 17,
+    hook: 'On a SkiErg the gap widens all the way down. On a road race it does not. Same people.',
+    body:
+      'Concept2 logbook 2025, SkiErg 1000 m: the female-male gap runs 1.216 at the 80th percentile to 1.322 at the 5th. ' +
+      'It widens the whole way down. Running reverses at the bottom. The difference is that the slow tail of a road race ' +
+      'is full of walkers and an erg piece has no walking equivalent — you cannot stroll a 1k. ' +
+      'If an app uses one sex factor for every sport, it is wrong in at least one of them.',
+    show: 'Two curves on one axis: SkiErg widening, running turning back.',
+    source: 'src/lib/scoring/cardio-benchmarks.ts',
+    needsLiveApp: false,
+  },
+  {
+    day: 18,
+    hook: 'Median watts per kilo is identical between men and women. Cycling speed is not.',
+    body:
+      'Cycling Analytics: 3.80 W/kg at twenty minutes for both sexes at the median. Identical. And yet women are ' +
+      'meaningfully slower over a flat 20k. Both are true, because flat time-trial speed is set by absolute power ' +
+      'against aerodynamic drag, not by power per kilo. The clearest example we found of a statistic that is correct ' +
+      'and answers a different question than the one being asked.',
+    show: 'Two riders, same W/kg, different finishing times, drag equation between them.',
+    source: 'docs/pre-launch/calibration-data.md',
+    needsLiveApp: false,
+  },
+  {
+    day: 19,
+    hook: 'We nearly shipped a number that was right about the wrong distance.',
+    body:
+      'Our SkiErg sex factor was wrong, so we replaced it with the best-sourced figure in our research: 1.246, ' +
+      'measured at every percentile. Then we noticed the app benchmarks the SkiErg at 2000 m and that figure was ' +
+      'measured at 1000 m. At 2000 m the logbook says 1.164. Using the 1000 m one sets a median woman\u2019s benchmark ' +
+      'at 10:16 when the median woman actually skis 9:36 — forty seconds of free credit, handed to her for being ' +
+      'exactly average, by a number that looked better sourced than the one it replaced.',
+    show: '1.246 and 1.164 with their distances stamped under them, and 10:16 against 9:36.',
+    source: 'scripts/check-cardio-calibration-sourced.mjs',
+    needsLiveApp: false,
+  },
+  {
+    day: 20,
+    hook: 'Cycling is the one sport where the elite gap is bigger than the recreational gap. Nobody knows why.',
+    body:
+      'Running, swimming, rowing and skiing all show the same shape: the sex gap is narrowest among elites and wider ' +
+      'among recreational athletes — running goes 12% at the top to 19% in the middle of the field. Cycling runs the ' +
+      'other way: 12.6% at the UCI hour record, 9.8% across 823,459 IRONMAN 70.3 bike splits. ' +
+      'We have no explanation, only two large well-measured numbers that disagree with every other sport. So our ' +
+      'cycling factor is the least certain thing in the app, and we say so in the code rather than in a footnote.',
+    show: 'Four sports pointing one way, cycling pointing the other.',
+    source: 'docs/pre-launch/calibration-data.md',
+    needsLiveApp: false,
+  },
 ];
 
 /**
@@ -278,7 +366,7 @@ function main() {
       `remaining ${afterLaunch.length} assume an approved build.`,
       '',
       'The ReelFarm subscription was recorded as the blocker. It is a blocker on volume,',
-      'not on starting: fourteen posts can be recorded and posted by hand for nothing.',
+      'not on starting: these posts can be recorded and posted by hand for nothing.',
       '',
       '## The rule these follow',
       '',
