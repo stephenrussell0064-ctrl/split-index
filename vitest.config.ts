@@ -27,6 +27,32 @@ export default defineConfig({
   },
   test: {
     /*
+      Capped below the machine's core count (10 here) rather than left at
+      Vitest's default of "one worker per core". Uncapped, the full suite
+      saturates every core at once, and leaves zero scheduling headroom for
+      anything else running on the same box — including another Claude
+      session working in a sibling repo, or this one's own tooling. That is
+      what turned the single heaviest test in the suite — the HPE scheduler's
+      randomised safety-property check, engine.test.ts, ~1.3M penalty
+      evaluations per seed across up to 47 weeks — into an intermittent
+      timeout: identical input took 383ms run alone, but ~930s inside a fully
+      saturated 10/10-core run (audited 9 Sep 2026, reproduced twice). The
+      computation itself is not the defect — confirmed by running the exact
+      failing seed standalone, and by running its whole file (all 88 tests)
+      alone, both well under a second either way. Leaving two cores free is
+      the fix that matches the actual mechanism, rather than papering over it
+      with a timeout large enough to hide a real future hang.
+
+      `maxWorkers` is the Vitest 4 option. An earlier version of this fix set
+      `poolOptions.forks.maxForks`, which Vitest 4 removed in favour of this
+      top-level setting — the old key is silently ignored rather than
+      rejected, so that first attempt capped nothing and the timeout kept
+      reproducing. `scripts/check-test-pool-headroom.test.ts` pins the
+      resolved value so a future edit can't reintroduce either mistake
+      unnoticed.
+    */
+    maxWorkers: 8,
+    /*
       The application's own tests, and nothing else.
 
       Vitest's default glob is unscoped, so it walked into `.claude/skills/`
