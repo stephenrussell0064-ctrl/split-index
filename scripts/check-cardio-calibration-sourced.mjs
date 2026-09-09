@@ -35,10 +35,16 @@
  *
  * ## Why this is a script and not a vitest file
  *
- * It fails today, on purpose. Put in the suite it would red-line the separate
- * `tests-green` milestone and CI with it, which would say "the code is broken"
- * about something that is a calibration decision nobody has taken yet. One
- * milestone should go red here, and it is this one.
+ * It failed on purpose when it was written: every constant it names was
+ * uncalibrated, and putting it in the suite would have red-lined the separate
+ * `tests-green` milestone and CI with it, saying "the code is broken" about a
+ * decision nobody had taken yet. One milestone should have gone red, and it
+ * was this one.
+ *
+ * It passes as of 9 Sep 2026 — the constants were moved onto the research over
+ * 8-9 Sep, which is what it existed to force. It stays a script rather than
+ * moving into the suite because the next uncalibrated constant should land
+ * here too, red, without taking CI down with it.
  */
 
 import { readFileSync } from 'node:fs';
