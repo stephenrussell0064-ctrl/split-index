@@ -9,6 +9,23 @@ interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   label?: string;
   error?: string;
   hint?: string;
+  /**
+   * Classes for the label+control+message wrapper, which is what a surrounding
+   * flex row or grid actually lays out.
+   *
+   * `className` goes to the `<input>` itself and always has. That is right for
+   * anything about the control — colour, height, text alignment — and wrong for
+   * anything about how the field is sized within a row, because the input is
+   * `w-full` inside its own column wrapper and never a child of the caller's
+   * row at all.
+   *
+   * Callers passed `flex-[2]`, `flex-1` and `flex-[1.3]` here expecting to set
+   * column widths. Those landed on the input, inside a `flex flex-col`, where
+   * `flex-[1.3]` means `flex-basis: 0%` on the HEIGHT — so the field silently
+   * kept its default width and lost its height instead. Visible in the
+   * onboarding cardio row as one input shorter than the two beside it.
+   */
+  wrapperClassName?: string;
 }
 
 const labelClass =
@@ -19,6 +36,7 @@ export function Input({
   error,
   hint,
   className,
+  wrapperClassName,
   id,
   "aria-describedby": describedBy,
   ...props
@@ -48,7 +66,7 @@ export function Input({
   const showHint = Boolean(hint) && !error;
 
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className={cn("flex flex-col gap-1.5", wrapperClassName)}>
       {label && (
         <label htmlFor={inputId} className={labelClass}>
           {label}
@@ -96,6 +114,8 @@ interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
   label?: string;
   error?: string;
   options: { value: string; label: string }[];
+  /** Classes for the field wrapper — see `Input`. */
+  wrapperClassName?: string;
 }
 
 export function Select({
@@ -103,6 +123,7 @@ export function Select({
   error,
   options,
   className,
+  wrapperClassName,
   id,
   "aria-describedby": describedBy,
   ...props
@@ -113,7 +134,7 @@ export function Select({
   const errorId = `${selectId}-error`;
 
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className={cn("flex flex-col gap-1.5", wrapperClassName)}>
       {label && (
         <label htmlFor={selectId} className={labelClass}>
           {label}
@@ -170,12 +191,15 @@ export function Select({
 interface TextareaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {
   label?: string;
   error?: string;
+  /** Classes for the field wrapper — see `Input`. */
+  wrapperClassName?: string;
 }
 
 export function Textarea({
   label,
   error,
   className,
+  wrapperClassName,
   id,
   "aria-describedby": describedBy,
   ...props
@@ -186,7 +210,7 @@ export function Textarea({
   const errorId = `${textareaId}-error`;
 
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className={cn("flex flex-col gap-1.5", wrapperClassName)}>
       {label && (
         <label htmlFor={textareaId} className={labelClass}>
           {label}

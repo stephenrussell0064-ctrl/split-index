@@ -90,7 +90,7 @@ export function FriendsPanel({
               placeholder="Search by @username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              className="flex-1"
+              wrapperClassName="flex-1"
             />
             <Button size="sm" loading={loading} onClick={sendRequest}>
               <UserPlus className="h-4 w-4" />

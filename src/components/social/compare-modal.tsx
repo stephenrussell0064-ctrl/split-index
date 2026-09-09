@@ -149,7 +149,7 @@ export function CompareModal({
               placeholder="@username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              className="flex-1"
+              wrapperClassName="flex-1"
             />
             <Button
               size="sm"

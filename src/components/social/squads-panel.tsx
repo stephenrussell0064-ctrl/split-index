@@ -165,6 +165,7 @@ export function SquadsPanel({ initialSquads, currentUserId }: SquadsPanelProps) 
             <div className="flex items-end gap-2">
               <Input
                 label="New squad name"
+                wrapperClassName="flex-1"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Saturday crew"
@@ -176,6 +177,7 @@ export function SquadsPanel({ initialSquads, currentUserId }: SquadsPanelProps) 
             <div className="flex items-end gap-2">
               <Input
                 label="Have an invite code?"
+                wrapperClassName="flex-1"
                 value={inviteCode}
                 onChange={(e) => setInviteCode(e.target.value)}
                 placeholder="ABCD123"

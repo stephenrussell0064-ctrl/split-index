@@ -132,14 +132,16 @@ export function AnalyticsFilters({
             value={periodA}
             onChange={(e) => onPeriodAChange(e.target.value as PeriodPreset)}
             options={PERIOD_PRESETS}
-            className="h-9 min-w-[130px] flex-1 sm:flex-none"
+            className="h-9"
+            wrapperClassName="min-w-[130px] flex-1 sm:flex-none"
           />
           <span className="text-xs text-muted">vs</span>
           <Select
             value={periodB}
             onChange={(e) => onPeriodBChange(e.target.value as PeriodPreset)}
             options={PERIOD_PRESETS}
-            className="h-9 min-w-[130px] flex-1 sm:flex-none"
+            className="h-9"
+            wrapperClassName="min-w-[130px] flex-1 sm:flex-none"
           />
           <button
             type="button"
