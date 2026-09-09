@@ -161,6 +161,60 @@
   box-sizing: border-box;
 }
 
+/*
+  Let every flex and grid child shrink below its content.
+
+  THE BUG THIS ENDS. A flex or grid item defaults to `min-width: auto`, which
+  means "never narrower than my content". One wide thing inside — a date input
+  Safari sizes to its picker, an exercise name nobody bounded, a long username,
+  a row of chips — pushes its parent past the viewport, and because the parent
+  sits in normal flow the WHOLE PAGE gains a horizontal scrollbar. Not the one
+  card: everything on the screen slides.
+
+  It kept coming back. The Goals tab, the leaderboard, and the target-lift rows
+  were each fixed one at a time by adding `min-w-0` at whichever level happened
+  to be the culprit, and each fix taught us nothing about the next one, because
+  the next one was a different element in a different file. Finding them by
+  reading code does not work either: the offending element is usually several
+  levels above the wide content and looks entirely innocent.
+
+  WHY THIS IS SAFE. `min-width: auto` only means anything for flex and grid
+  items. For every other element `auto` already computes to `0`, so this rule
+  is a no-op outside the exact cases it is meant to change.
+
+  `:where()` keeps the specificity at zero, so any explicit width or min-width
+  utility still wins — `min-w-32`, `min-w-min`, `w-32` all override it without
+  `!important`. Where an item genuinely must not shrink, say so with `flex-none`
+  or `min-w-min` and the intent is then visible in the markup instead of being
+  an accident of the initial value.
+
+  The attribute selectors catch Tailwind's variants — `md:flex`, `lg:grid`,
+  `sm:inline-flex` — which the plain class selectors would miss. They are
+  deliberately loose: they also match things like `flex-1` that are not
+  containers at all, and that costs nothing for the reason above.
+
+  IT MUST STAY INSIDE `@layer base`. Unlayered CSS beats layered CSS outright,
+  whatever the specificity, and Tailwind's utilities are layered. Written
+  outside a layer this rule silently flattens every deliberate `min-w-*` in the
+  app: measured in the browser, `min-w-11` resolved to 0px unlayered and to the
+  correct 44px from inside `@layer base`. The `:where()` then handles the rest,
+  keeping specificity at zero so a utility on the same element always wins.
+
+  WHAT THIS DOES NOT DO. It lets a box shrink; it cannot make content wrap that
+  has been told not to. A `whitespace-nowrap` child still overflows its parent
+  with this rule in force — measured, 358px of text in a 320px row. There are
+  three such places in the app and each is separately bounded. If a fourth
+  appears and drags the page sideways, this rule is not the thing that failed.
+
+  Guarded by no-sideways-scroll.test.ts, which fails if this rule is removed.
+*/
+@layer base {
+  :where(.flex, .inline-flex, .grid, .inline-grid) > *,
+  :where([class*=":flex"], [class*=":grid"], [class*="flex-"], [class*="grid-"]) > * {
+    min-width: 0;
+  }
+}
+
 html {
   color-scheme: dark;
   scroll-behavior: smooth;
