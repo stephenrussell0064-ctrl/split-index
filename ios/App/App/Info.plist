@@ -60,8 +60,11 @@
 	<key>UIMainStoryboardFile</key>
 	<string>Main</string>
 	<key>UIRequiredDeviceCapabilities</key>
+	<!-- arm64, not armv7. armv7 is the 32-bit capability, dropped by iOS 11 —
+	     Capacitor 8 targets far above that, so the old value described a device
+	     this app cannot run on. -->
 	<array>
-		<string>armv7</string>
+		<string>arm64</string>
 	</array>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
@@ -83,8 +86,23 @@
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>Split Index tracks your run in the background so tracking keeps going even with your phone locked.</string>
 	<key>UIBackgroundModes</key>
+	<!--
+	  Two modes, both of which this app actually uses.
+
+	  `location` for GPS recording with the screen locked, and
+	  `bluetooth-central` for a chest strap or a Concept2 PM5 during that same
+	  session. Without the BLE mode iOS silently stops delivering notifications
+	  once the screen locks, and the run is saved with an average heart rate
+	  that looks plausible and is wrong — the worst failure shape available.
+
+	  Both are justified by functionality the app ships, which is what
+	  Guideline 2.5.4 asks: it rejects a background mode declared without the
+	  feature that requires it. NSBluetoothAlwaysUsageDescription below names
+	  the same hardware.
+	-->
 	<array>
 		<string>location</string>
+		<string>bluetooth-central</string>
 	</array>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Split Index connects to your heart rate monitor or rowing machine (Garmin, Polar, Concept2, or other standard Bluetooth devices) during a session.</string>
