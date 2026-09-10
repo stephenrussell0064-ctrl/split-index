@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useKeyboardSafeFocus } from "@/components/activities/use-keyboard";
 import Link from "next/link";
 import { Card } from "@/components/ui/card";
+import { TimeOfDaySelect } from "@/components/ui/time-of-day-select";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils/cn";
@@ -744,23 +745,23 @@ export function IntakeWizard() {
                 <YesNo value={get("two_a_days_possible", intake.twoADaysPossible) as boolean} onChange={(v) => set("two_a_days_possible", v)} />
               </Field>
               <Field label="Roughly what times do you train?" why="The six-hour separation rule between a hard lift and a hard run is computed from these, not assumed. Training at 06:00 and 12:00 clears it; 12:00 and 17:00 does not.">
-                <div className="flex items-center gap-3">
-                  <NumberField
-                    value={get("am_hour", intake.amHour) as number}
-                    onChange={(v) => set("am_hour", v ?? 7)}
-                    min={0}
-                    max={23}
-                    suffix="morning"
-                    ariaLabel="Morning training hour"
-                  />
-                  <NumberField
-                    value={get("pm_hour", intake.pmHour) as number}
-                    onChange={(v) => set("pm_hour", v ?? 18)}
-                    min={0}
-                    max={23}
-                    suffix="evening"
-                    ariaLabel="Evening training hour"
-                  />
+                <div className="flex flex-wrap items-center gap-3">
+                  <label className="flex items-center gap-2 text-sm text-muted">
+                    Morning
+                    <TimeOfDaySelect
+                      value={get("am_hour", intake.amHour) as number}
+                      onChange={(v) => set("am_hour", v)}
+                      ariaLabel="Morning training time"
+                    />
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-muted">
+                    Evening
+                    <TimeOfDaySelect
+                      value={get("pm_hour", intake.pmHour) as number}
+                      onChange={(v) => set("pm_hour", v)}
+                      ariaLabel="Evening training time"
+                    />
+                  </label>
                 </div>
               </Field>
               <Field label="Most sessions you would realistically do in a week" why="A cap, not a target. The engine fits the plan inside it rather than assuming you will find extra time." required>

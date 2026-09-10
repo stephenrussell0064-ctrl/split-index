@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { cn } from "@/lib/utils/cn";
+import { TimeOfDaySelect } from "@/components/ui/time-of-day-select";
 
 /**
  * Intake form primitives.
@@ -382,26 +383,22 @@ export function DayWindowsEditor({
             {w.available && (
               <>
                 <div className="flex items-center gap-1">
-                  <input
-                    type="number"
-                    inputMode="numeric"
+                  {/* Same select as the flat morning/evening times. These had
+                      the same defect in a different form: Number("") is 0, so
+                      clearing the field to retype it snapped the value to
+                      midnight rather than letting you type. */}
+                  <TimeOfDaySelect
                     value={w.start_hour}
-                    min={0}
-                    max={23}
-                    aria-label={`${day} earliest start hour`}
-                    onChange={(e) => update(day, { start_hour: Math.min(23, Math.max(0, Number(e.target.value))) })}
-                    className="min-h-9 w-14 rounded-lg border border-white/10 bg-white/[0.03] px-2 text-base tabular-nums text-foreground focus:border-accent focus:outline-none"
+                    onChange={(v) => update(day, { start_hour: v })}
+                    ariaLabel={`${day} earliest start time`}
+                    className="min-h-9 px-2"
                   />
                   <span className="text-xs text-muted">to</span>
-                  <input
-                    type="number"
-                    inputMode="numeric"
+                  <TimeOfDaySelect
                     value={w.end_hour}
-                    min={0}
-                    max={23}
-                    aria-label={`${day} latest end hour`}
-                    onChange={(e) => update(day, { end_hour: Math.min(23, Math.max(0, Number(e.target.value))) })}
-                    className="min-h-9 w-14 rounded-lg border border-white/10 bg-white/[0.03] px-2 text-base tabular-nums text-foreground focus:border-accent focus:outline-none"
+                    onChange={(v) => update(day, { end_hour: v })}
+                    ariaLabel={`${day} latest end time`}
+                    className="min-h-9 px-2"
                   />
                 </div>
                 <button
