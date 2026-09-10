@@ -39,6 +39,9 @@ import {
   type TrainingAge,
 } from "./constants";
 import { totalKg, type AthleteState, type Goal } from "./intake";
+import { onRampStartingVolume } from "./macrocycle";
+import { requiredWeeklyMinutesFor5k } from "./diagnostics";
+import { ONRAMP_MAX_MULTIPLE } from "./constants";
 
 // ---------------------------------------------------------------------------
 // The bounded frontier (F7)
@@ -244,6 +247,33 @@ export function feasibilityScreen(state: AthleteState, goal: Goal): FeasibilityR
     MAX_STRENGTH_GAIN_PER_BLOCK * blocks,
     strengthRate * blocks * MAX_GAIN_MULTIPLE_OF_RATE
   );
+  /*
+   * The projection has to know how much running the plan actually prescribes.
+   *
+   * Everything above derives the endurance gain from training age, block
+   * length and the priority split, and nothing else — volume never entered it.
+   * So an athlete whose block tops out at two runs a week was told their 18:00
+   * target was "reachable", by the same plan that could not deliver it. The
+   * number was not wrong about their potential; it was answering a question
+   * nobody asked, and it was printed as a forecast.
+   *
+   * The block's ceiling is knowable here without building it: every week is a
+   * multiple of the on-ramp anchor and none exceeds `anchor *
+   * ONRAMP_MAX_MULTIPLE`. Measured against the volume the TARGET time is
+   * historically built on — the same lookup the diagnostic uses to tell an
+   * athlete whether volume is their limiting factor — that gives an honest
+   * attenuation.
+   *
+   * Capped at 1, so it can only hold a projection back, never inflate one, and
+   * applied only where there is a 5k target to measure against.
+   */
+  const peakWeeklyEnduranceMin = onRampStartingVolume(state) * ONRAMP_MAX_MULTIPLE;
+  const volumeSupport =
+    goal.target5kS != null
+      ? Math.min(1, peakWeeklyEnduranceMin / Math.max(requiredWeeklyMinutesFor5k(goal.target5kS), 1))
+      : 1;
+  enduranceGain *= volumeSupport;
+
   const cappedEnduranceGain = Math.min(
     enduranceGain,
     MAX_ENDURANCE_GAIN_PER_BLOCK * blocks,
