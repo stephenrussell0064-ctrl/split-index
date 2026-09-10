@@ -151,7 +151,7 @@ export function ActivityForm({
   activityId,
   initialEditState,
   editActivityTitle,
-  profileScoringSex = null,
+  profileScoringSex,
   profileExperience = null,
   zoneMode = "generic",
   enduranceOnly = false,
@@ -168,7 +168,20 @@ export function ActivityForm({
   activityId?: string;
   initialEditState?: WorkoutFormState;
   editActivityTitle?: string;
-  profileScoringSex?: Gender | null;
+  /*
+    REQUIRED, deliberately.
+
+    It used to default to null, and `activities/new/page.tsx` simply never
+    passed it — nor even selected `gender` and `scoring_basis` from the
+    profile. gym-form's scoreSet bails on a null sex, so every set logged
+    from that route scored "—" regardless of how complete the athlete's
+    profile was, and the on-screen hint stayed quiet because it deliberately
+    does not name sex as a possible cause.
+
+    A default of null let one call site opt out of scoring by omission. With
+    no default the compiler names every route that has to answer for it.
+  */
+  profileScoringSex: Gender | null;
   profileExperience?: ExperienceLevel | null;
   zoneMode?: "gym" | "cardio" | "generic";
   enduranceOnly?: boolean;

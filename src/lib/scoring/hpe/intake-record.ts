@@ -529,10 +529,24 @@ export function resolveSafetyFlags(
         },
         femaleQuestionApplies
       )
-    : // Not asked at all. Scoring an unasked screen as zero would silently
-      // clear the safeguard it exists to enforce, so it scores as unanswered
-      // — which is every question positive.
-      scoreLeaScreen({}, femaleQuestionApplies);
+    : /*
+       * Not asked at all — and now never asked, because the fuelling section
+       * has been removed from the intake.
+       *
+       * This used to score an unasked screen as every question positive, so
+       * that skipping it could not clear the safeguard. That was right while
+       * the questions existed and the athlete had chosen not to answer them.
+       * It is wrong now: with the section gone, EVERY athlete scores three
+       * flags, trips the `leaRiskFlags >= 2 && !leaScreenAnswered` branch in
+       * safetyScreen, and is told that "the fuelling questions have not been
+       * answered ... answering them takes a minute" — pointing at a section
+       * that no longer exists and that they cannot reach.
+       *
+       * A safeguard nobody can satisfy is not a safeguard; it is a permanent
+       * warning. Scoring zero here means bodyweight guidance is not suppressed
+       * by default. The BMI floor below is untouched and still applies.
+       */
+      0;
 
   if (!safetyDone) {
     assumed.push(
@@ -547,17 +561,21 @@ export function resolveSafetyFlags(
       parqPositive: record.parqPositive ?? false,
       chestPainOnExertion: record.chestPainOnExertion ?? false,
       currentInjuryLimiting: record.currentInjuryLimiting ?? false,
-      injuryLast12Weeks: conservative(
-        record.injuryLast12Weeks,
-        "A recent injury is assumed until you answer otherwise, which eases your volume ramp slightly.",
-        true
-      ),
+      /*
+       * No longer assumed true when unanswered.
+       *
+       * The health section has been removed from the intake, so "unanswered"
+       * is now the normal state rather than a skipped question. Left as it
+       * was, every athlete would be permanently treated as recently injured —
+       * intensity ceiling 0.95 and the ramp multiplied by 0.8 — for a question
+       * they are never given the chance to answer. An assumption that can no
+       * longer be corrected is not caution, it is a silent handicap.
+       */
+      injuryLast12Weeks: record.injuryLast12Weeks ?? false,
       injurySites: record.injurySites,
-      surgeryLast6Months: conservative(
-        record.surgeryLast6Months,
-        "Recent surgery is assumed until you answer otherwise, which adds a clearance prompt.",
-        true
-      ),
+      // Same reasoning as injuryLast12Weeks above: unanswerable, so not assumed.
+      // This one also raised a medical-clearance prompt on the plan.
+      surgeryLast6Months: record.surgeryLast6Months ?? false,
       pregnantOrPostpartum12wk: record.pregnantOrPostpartum12wk ?? false,
       under18: athlete.age < 18,
       leaRiskFlags: leaFlags,

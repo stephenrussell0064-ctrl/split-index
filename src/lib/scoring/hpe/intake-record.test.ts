@@ -70,20 +70,52 @@ function completeRecord(overrides: Partial<IntakeRecord> = {}): IntakeRecord {
 }
 
 describe("WP2 — unanswered is not 'no'", () => {
-  it("assumes a recent injury and recent surgery until answered", () => {
+  /*
+   * These three assertions were inverted when the health and fuelling sections
+   * were removed from the intake.
+   *
+   * The original rule was right for the product it was written for: the
+   * questions were on screen, so leaving them blank was a CHOICE, and the
+   * cautious reading of a choice not to answer is defensible. Once the
+   * sections were removed, "unanswered" stopped being a choice and became the
+   * only possible state — and an assumption an athlete cannot correct is not
+   * caution, it is a permanent handicap applied to everyone.
+   *
+   * Concretely, left as they were: every athlete would be treated as recently
+   * injured (intensity ceiling 0.95, ramp multiplied by 0.8) and recently
+   * operated on (ceiling 0.8, plus a medical-clearance prompt), and would trip
+   * the LEA branch that tells them to go and answer fuelling questions that no
+   * longer exist.
+   *
+   * The BMI floor in safetyScreen is untouched and still suppresses bodyweight
+   * guidance on its own evidence rather than on an absence of answers.
+   */
+  it("does not assume an injury or surgery that can no longer be asked about", () => {
     const { flags } = resolveSafetyFlags(parseIntakeRow(null), { age: 30, sex: "male" });
-    expect(flags.injuryLast12Weeks).toBe(true);
-    expect(flags.surgeryLast6Months).toBe(true);
+    expect(flags.injuryLast12Weeks).toBe(false);
+    expect(flags.surgeryLast6Months).toBe(false);
   });
 
-  it("scores every unanswered LEA question as positive", () => {
-    // Three scored questions, all unanswered, male athlete (the female-only
-    // one does not apply). Training fasted is collected but deliberately not
-    // scored — it is an ordinary practice, not a clinical finding, and it used
-    // to move an athlete a fifth of the way toward being told they were
-    // under-fuelling for eating breakfast after their run instead of before.
+  it("scores an unasked LEA screen as zero, not as every answer positive", () => {
+    // At 3 this tripped `leaRiskFlags >= 2 && !leaScreenAnswered`, whose whole
+    // message is an instruction to go and answer the fuelling section.
     const { flags } = resolveSafetyFlags(parseIntakeRow(null), { age: 30, sex: "male" });
-    expect(flags.leaRiskFlags).toBe(3);
+    expect(flags.leaRiskFlags).toBe(0);
+  });
+
+  it("still scores the LEA screen when the athlete did answer it", () => {
+    // The removal changes the default, not the scoring. An athlete with stored
+    // answers — from before the section was removed — is still read honestly.
+    const answered = parseIntakeRow({
+      lea_restricted_food: true,
+      lea_unintended_weight_loss: true,
+      lea_bone_stress_injury: false,
+      lea_trains_fasted: false,
+      lea_amenorrhoea: false,
+      sections_completed: ["health", "fuelling"],
+    } as Record<string, unknown>);
+    const { flags } = resolveSafetyFlags(answered, { age: 30, sex: "male" });
+    expect(flags.leaRiskFlags).toBe(2);
   });
 
   it("does not count training fasted as a risk flag", () => {
@@ -100,18 +132,39 @@ describe("WP2 — unanswered is not 'no'", () => {
   });
 
   it("includes the female-only LEA question only where it applies", () => {
-    const male = resolveSafetyFlags(parseIntakeRow(null), { age: 30, sex: "male" });
-    const female = resolveSafetyFlags(parseIntakeRow(null), { age: 30, sex: "female" });
+    // Asked of ANSWERED records now. An unasked screen scores zero for both
+    // sexes, so comparing two unasked records can no longer show the extra
+    // question — it would read 0 === 0 + 1 and fail for the wrong reason.
+    const positives = {
+      lea_restricted_food: true,
+      lea_unintended_weight_loss: true,
+      lea_bone_stress_injury: true,
+      lea_amenorrhoea: true,
+      sections_completed: ["health", "fuelling"],
+    } as Record<string, unknown>;
+    const male = resolveSafetyFlags(parseIntakeRow(positives), { age: 30, sex: "male" });
+    const female = resolveSafetyFlags(parseIntakeRow(positives), { age: 30, sex: "female" });
     expect(female.flags.leaRiskFlags).toBe(male.flags.leaRiskFlags + 1);
   });
 
-  it("does not score an unasked LEA screen as clear", () => {
-    // The failure this guards: treating "never asked" as zero flags silently
-    // clears the safeguard the screen exists to enforce.
+  it("scores an unasked LEA screen the same as an answered-clear one", () => {
+    /*
+     * The inverse of what this asserted before, and deliberately so.
+     *
+     * It used to require an unasked screen to score >= 2, so that skipping the
+     * section could not clear the safeguard. That held while the section was on
+     * screen and skipping was a choice. The fuelling section has been removed,
+     * so "unasked" is now every athlete, and >= 2 would mean every athlete
+     * permanently carries a flag they have no way to clear — and is told to go
+     * and answer questions that do not exist.
+     *
+     * Suppression now rests on evidence the engine actually has: the BMI floor
+     * in safetyScreen, and any stored answers from before the removal.
+     */
     const answeredClear = completeRecord();
     const neverAsked = completeRecord({ sectionsCompleted: ["goal"] });
     expect(resolveSafetyFlags(answeredClear, { age: 30, sex: "male" }).flags.leaRiskFlags).toBe(0);
-    expect(resolveSafetyFlags(neverAsked, { age: 30, sex: "male" }).flags.leaRiskFlags).toBeGreaterThanOrEqual(2);
+    expect(resolveSafetyFlags(neverAsked, { age: 30, sex: "male" }).flags.leaRiskFlags).toBe(0);
   });
 
   it("derives under-18 from the profile rather than trusting a stored answer", () => {
@@ -119,10 +172,12 @@ describe("WP2 — unanswered is not 'no'", () => {
     expect(flags.under18).toBe(true);
   });
 
-  it("says out loud what it assumed", () => {
+  it("no longer announces an injury assumption it does not make", () => {
+    // The note existed to explain a penalty. There is no penalty now, so the
+    // note would be describing something that is not happening.
     const { assumed } = resolveSafetyFlags(parseIntakeRow(null), { age: 30, sex: "male" });
-    expect(assumed.join(" ")).toMatch(/recent injury is assumed/i);
-    expect(assumed.join(" ")).toMatch(/eases your volume ramp/i);
+    expect(assumed.join(" ")).not.toMatch(/recent injury is assumed/i);
+    expect(assumed.join(" ")).not.toMatch(/recent surgery is assumed/i);
   });
 
   it("stops assuming once the athlete answers", () => {

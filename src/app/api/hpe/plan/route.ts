@@ -432,6 +432,20 @@ export async function GET(request: Request) {
 
   return NextResponse.json({
     ...plan,
+    /*
+     * Whether this athlete has ever answered the intake.
+     *
+     * The client has read `needsIntake` since WP2 and nothing ever sent it, so
+     * the "Complete your intake" route out of the empty screen was unreachable
+     * dead code. Meanwhile the engine happily builds a plan from
+     * parseIntakeRow(null) — every answer defaulted — so a first-time athlete
+     * was shown a generated plan derived entirely from assumptions, with no
+     * indication that the questions behind it existed.
+     *
+     * The row's absence is the only honest signal: an athlete who has answered
+     * has a row, and one who has not does not.
+     */
+    needsIntake: !intakeRow,
     weeks: weeksWithIds,
     assumptions,
     eventDate,

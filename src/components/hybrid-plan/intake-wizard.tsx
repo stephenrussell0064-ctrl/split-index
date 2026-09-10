@@ -102,9 +102,26 @@ const SECTION_META: Record<IntakeSection, { title: string; blurb: string; skipCo
   },
 };
 
+/*
+ * The health and fuelling sections are deliberately not here.
+ *
+ * They asked about injuries, surgery, chest pain, pregnancy, restricted
+ * eating and unintended weight loss. None of it decides what the athlete
+ * trains, how many exercises they get, or how the week is split — the four
+ * things this wizard exists to establish — and being asked all of it before
+ * a training plan is the reason people abandoned the form.
+ *
+ * Removing the questions is only half of it. Two of those answers defaulted
+ * to "assume the cautious thing until told otherwise", so simply deleting
+ * the section would have left every athlete permanently treated as recently
+ * injured and recently operated on: intensity capped and the volume ramp
+ * multiplied down, with a medical-clearance prompt on the plan. Those
+ * defaults are flipped in intake-record.ts alongside this.
+ *
+ * The sections remain defined in SECTION_META and still render if reached,
+ * so nothing is deleted that the record or the engine still reads.
+ */
 const ORDER: IntakeSection[] = [
-  "health",
-  "fuelling",
   "goal",
   "availability",
   "history",
@@ -617,7 +634,7 @@ export function IntakeWizard() {
                   value={(get("event_date", intake.eventDate) as string | null) ?? ""}
                   onChange={(e) => set("event_date", e.target.value || null)}
                   aria-label="Event date"
-                  className="min-h-11 min-w-0 max-w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 text-sm text-foreground focus:border-accent focus:outline-none"
+                  className="min-h-11 min-w-0 max-w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 text-base text-foreground focus:border-accent focus:outline-none"
                 />
               </Field>              {((get("events", intake.events) as string[]).length >= 2) && (
                 <>

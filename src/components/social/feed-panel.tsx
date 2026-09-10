@@ -229,7 +229,7 @@ function CommentsSection({ activityId, commentCount }: { activityId: string; com
               onKeyDown={(e) => e.key === "Enter" && submitComment()}
               placeholder="Add a comment…"
               maxLength={1000}
-              className="h-9 flex-1 rounded-lg glass px-3 text-xs text-foreground placeholder:text-muted/50"
+              className="h-9 flex-1 rounded-lg glass px-3 text-base text-foreground placeholder:text-muted/50"
             />
             <button
               type="button"

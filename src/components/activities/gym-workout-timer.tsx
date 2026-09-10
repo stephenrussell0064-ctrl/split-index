@@ -471,7 +471,7 @@ export function GymWorkoutTimer({
               value={customRestInput}
               onChange={(e) => setCustomRestInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && startCustomRest()}
-              className="h-7 w-24 shrink-0 rounded-full border border-gym-border/50 bg-white/[0.02] px-3 text-xs text-gym-text placeholder:text-gym-muted/60 focus:border-gym-accent/40 focus:outline-none"
+              className="h-7 w-24 shrink-0 rounded-full border border-gym-border/50 bg-white/[0.02] px-3 text-base text-gym-text placeholder:text-gym-muted/60 focus:border-gym-accent/40 focus:outline-none"
             />
             <button
               type="button"

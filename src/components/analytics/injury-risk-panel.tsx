@@ -134,7 +134,7 @@ function HrvInput({ hrvToday }: { hrvToday?: number | null }) {
         placeholder={hrvToday != null ? `Today: ${hrvToday} ms` : "Morning HRV (ms) — optional"}
         value={value}
         onChange={(e) => setValue(e.target.value)}
-        className="h-8 w-full max-w-[220px] rounded-lg glass px-3 text-xs text-foreground placeholder:text-muted"
+        className="h-8 w-full max-w-[220px] rounded-lg glass px-3 text-base text-foreground placeholder:text-muted"
       />
       <button
         type="button"

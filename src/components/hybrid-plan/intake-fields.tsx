@@ -119,7 +119,7 @@ export function NumberField({
         placeholder={placeholder}
         aria-label={ariaLabel}
         onChange={(e) => onChange(e.target.value === "" ? null : Number(e.target.value))}
-        className="min-h-11 w-32 rounded-xl border border-white/10 bg-white/[0.03] px-3 text-sm tabular-nums text-foreground focus:border-accent focus:outline-none"
+        className="min-h-11 w-32 rounded-xl border border-white/10 bg-white/[0.03] px-3 text-base tabular-nums text-foreground focus:border-accent focus:outline-none"
       />
       {suffix && <span className="text-sm text-muted">{suffix}</span>}
     </div>
@@ -183,7 +183,7 @@ export function SelectField({
         options are content passed in by the caller — so nothing here bounds it.
         One long label and the step scrolls sideways.
       */
-      className="min-h-11 w-full max-w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 text-sm text-foreground focus:border-accent focus:outline-none sm:w-auto"
+      className="min-h-11 w-full max-w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 text-base text-foreground focus:border-accent focus:outline-none sm:w-auto"
     >
       <option value="">Select…</option>
       {options.map((o) => (
@@ -390,7 +390,7 @@ export function DayWindowsEditor({
                     max={23}
                     aria-label={`${day} earliest start hour`}
                     onChange={(e) => update(day, { start_hour: Math.min(23, Math.max(0, Number(e.target.value))) })}
-                    className="min-h-9 w-14 rounded-lg border border-white/10 bg-white/[0.03] px-2 text-xs tabular-nums text-foreground focus:border-accent focus:outline-none"
+                    className="min-h-9 w-14 rounded-lg border border-white/10 bg-white/[0.03] px-2 text-base tabular-nums text-foreground focus:border-accent focus:outline-none"
                   />
                   <span className="text-xs text-muted">to</span>
                   <input
@@ -401,7 +401,7 @@ export function DayWindowsEditor({
                     max={23}
                     aria-label={`${day} latest end hour`}
                     onChange={(e) => update(day, { end_hour: Math.min(23, Math.max(0, Number(e.target.value))) })}
-                    className="min-h-9 w-14 rounded-lg border border-white/10 bg-white/[0.03] px-2 text-xs tabular-nums text-foreground focus:border-accent focus:outline-none"
+                    className="min-h-9 w-14 rounded-lg border border-white/10 bg-white/[0.03] px-2 text-base tabular-nums text-foreground focus:border-accent focus:outline-none"
                   />
                 </div>
                 <button
@@ -453,7 +453,7 @@ export function DurationField({
         min={0}
         aria-label="Minutes"
         onChange={(e) => update(e.target.value === "" ? null : Number(e.target.value), secs)}
-        className="min-h-11 w-20 rounded-xl border border-white/10 bg-white/[0.03] px-3 text-sm tabular-nums focus:border-accent focus:outline-none"
+        className="min-h-11 w-20 rounded-xl border border-white/10 bg-white/[0.03] px-3 text-base tabular-nums focus:border-accent focus:outline-none"
       />
       <span className="text-muted">:</span>
       <input
@@ -464,7 +464,7 @@ export function DurationField({
         max={59}
         aria-label="Seconds"
         onChange={(e) => update(mins, e.target.value === "" ? null : Number(e.target.value))}
-        className="min-h-11 w-20 rounded-xl border border-white/10 bg-white/[0.03] px-3 text-sm tabular-nums focus:border-accent focus:outline-none"
+        className="min-h-11 w-20 rounded-xl border border-white/10 bg-white/[0.03] px-3 text-base tabular-nums focus:border-accent focus:outline-none"
       />
     </div>
   );
@@ -608,7 +608,7 @@ export function CustomSplitEditor({
               onChange={(e) => update(i, { label: e.target.value })}
               placeholder="Day name, e.g. Chest and arms"
               aria-label={`Day ${i + 1} name`}
-              className="min-h-11 flex-1 rounded-xl border border-white/10 bg-white/[0.03] px-3 text-sm focus:border-accent focus:outline-none"
+              className="min-h-11 flex-1 rounded-xl border border-white/10 bg-white/[0.03] px-3 text-base focus:border-accent focus:outline-none"
             />
             <button
               type="button"

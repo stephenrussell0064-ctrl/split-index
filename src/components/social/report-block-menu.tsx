@@ -302,7 +302,7 @@ export function ReportBlockMenu({
                     value={details}
                     onChange={(e) => setDetails(e.target.value.slice(0, 1000))}
                     rows={3}
-                    className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-foreground outline-none focus:border-accent/50"
+                    className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-base text-foreground outline-none focus:border-accent/50"
                     placeholder="What happened?"
                   />
                 </div>

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ChevronDown, HeartPulse } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -199,6 +200,7 @@ export function HybridPlanScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("plan");
+  const router = useRouter();
   const [overrideOrder, setOverrideOrder] = useState(false);
 
   // Bumped to force a refetch after a failure, without duplicating the fetch
@@ -276,7 +278,28 @@ export function HybridPlanScreen() {
     };
   }, [overrideOrder, reloadKey]);
 
-  if (loading) {
+  /*
+   * A first plan starts with the questions, not with a refusal.
+   *
+   * With no intake on file the engine cannot build anything, and this screen
+   * used to say so: a "Not yet" header, a paragraph of explanation, and a
+   * "Complete your intake" link to press. That reads as a failure on the very
+   * first visit, when in fact nothing has gone wrong — the athlete simply has
+   * not answered the questions yet, and could not have.
+   *
+   * Consent is checked before this, deliberately, because permission has to
+   * come before the questions that rely on it. Everything else that stops a
+   * plan being generated still renders the explanation below; this branch is
+   * only for the one case whose whole answer is "go and fill this in".
+   */
+  const goStraightToIntake =
+    Boolean(data) && !data!.consentRequired && Boolean(data!.needsIntake);
+
+  useEffect(() => {
+    if (goStraightToIntake) router.replace("/hybrid-plan/intake");
+  }, [goStraightToIntake, router]);
+
+  if (loading || goStraightToIntake) {
     return (
       <div className="space-y-5">
         <Skeleton className="h-24 w-full rounded-[1.75rem]" />

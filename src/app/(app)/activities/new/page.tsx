@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { ActivityForm } from "@/components/activities/activity-form";
 import { SPORTS } from "@/lib/constants/sports";
 import { hasPaidAccess } from "@/lib/retention/trial";
+import { resolveScoringSex } from "@/lib/scoring/adapters";
 import type { SportType } from "@/types";
 
 function parseSportParam(value: string | undefined): SportType | null {
@@ -24,7 +25,18 @@ export default async function NewActivityPage({
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("onboarding_completed, weight_kg, subscription_tier, subscription_status")
+    /*
+      gender and scoring_basis are what resolveScoringSex needs, and experience
+      is what the recommendation uses. Without them this page passed
+      profileScoringSex={undefined}, and gym-form's scoreSet bails on a null
+      sex — so every set in the Lab showed "—" no matter how complete the
+      athlete's profile was, and the on-screen hint stayed silent because it
+      deliberately does not name sex as a cause. The other two callers of
+      ActivityForm already select these.
+    */
+    .select(
+      "onboarding_completed, weight_kg, gender, scoring_basis, experience, subscription_tier, subscription_status"
+    )
     .eq("user_id", user.id)
     .single();
 
@@ -44,6 +56,8 @@ export default async function NewActivityPage({
   return (
     <ActivityForm
       profileWeightKg={profile.weight_kg}
+      profileScoringSex={resolveScoringSex(profile)}
+      profileExperience={profile.experience}
       initialDrafts={initialDrafts}
       isPremium={premium}
       initialSport={parseSportParam(sportParam)}
