@@ -213,7 +213,13 @@ describe("WP2 — documented degradation", () => {
   it("reports every assumption rather than defaulting silently", () => {
     const resolved = resolveIntakeInputs(parseIntakeRow(null), prefilled({ restingHr: null, maxHr: null }), NOW);
     const text = resolved.assumed.join(" ");
-    expect(text).toMatch(/safety questionnaire has not been completed/i);
+    /*
+     * The safety-questionnaire note is deliberately gone. The health section
+     * was removed from the intake, so it fired for every athlete and told them
+     * to go and spend a minute on a screen that does not exist — while
+     * promising a volume-ramp unlock they already have unconditionally.
+     */
+    expect(text).not.toMatch(/safety questionnaire has not been completed/i);
     expect(text).toMatch(/Resting heart rate was assumed/i);
     expect(text).toMatch(/age-estimated/i);
     expect(resolved.missingSections.length).toBeGreaterThan(0);
@@ -489,7 +495,18 @@ describe("section regrouping", () => {
   });
 
   it("keeps the mandatory sections answerable without the optional ones", () => {
-    expect(MANDATORY_SECTIONS).toEqual(["health", "goal", "availability"]);
+    // "health" was mandatory until the section was removed from the wizard.
+    // A required step nobody can reach is a gate that never opens, so it went
+    // with the section rather than being left to fail quietly.
+    expect(MANDATORY_SECTIONS).toEqual(["goal", "availability"]);
+  });
+
+  it("does not report a withdrawn section as missing", () => {
+    // health and fuelling are no longer asked. Listing them as missing would
+    // be reporting a gap the athlete has no way to close.
+    const resolved = resolveIntakeInputs(parseIntakeRow(null), prefilled(), NOW);
+    expect(resolved.missingSections).not.toContain("health");
+    expect(resolved.missingSections).not.toContain("fuelling");
   });
 });
 

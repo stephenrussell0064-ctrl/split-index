@@ -1,6 +1,7 @@
 "use client";
 
 import { createClient } from "@/lib/supabase/client";
+import { notifyEntitlementChanged } from "@/lib/premium/entitlement-events";
 
 /**
  * Wait for the server to agree that this athlete is premium.
@@ -60,7 +61,12 @@ export async function waitForServerEntitlement(
       .eq("user_id", user.id)
       .maybeSingle();
 
-    if (!error && data?.subscription_tier === "premium") return "settled";
+    if (!error && data?.subscription_tier === "premium") {
+      // Announced here rather than at the call site, so every path that settles
+      // an entitlement — purchase and restore alike — updates the header.
+      notifyEntitlementChanged();
+      return "settled";
+    }
 
     if (Date.now() >= deadline) return "timeout";
     await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));

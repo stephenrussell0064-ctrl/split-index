@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { BrandMark } from "@/components/brand/brand-mark";
+import { LegalBackLink } from "@/components/legal/legal-back-link";
 import { mainContentProps } from "@/lib/a11y/main-content";
 
 export const metadata: Metadata = {
@@ -17,12 +18,7 @@ export default function TermsOfServicePage() {
       <header className="border-b border-white/[0.06] glass-strong">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-6 py-4">
           <BrandMark variant="compact" href="/" iconSize={30} wordmarkSize="sm" />
-          <Link
-            href="/"
-            className="text-sm text-muted transition-colors hover:text-foreground"
-          >
-            Back to home
-          </Link>
+          <LegalBackLink />
         </div>
       </header>
 

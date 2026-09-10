@@ -300,8 +300,20 @@ export const SECTION_FIELDS: Record<IntakeSection, string[]> = {
   recovery: ["sleep_hours_typical", "shift_work", "job_physicality", "life_stress_now"],
 };
 
-/** Sections the athlete cannot skip. Everything else degrades with a stated consequence. */
-export const MANDATORY_SECTIONS: IntakeSection[] = ["health", "goal", "availability"];
+/**
+ * Sections the athlete cannot skip. Everything else degrades with a stated
+ * consequence.
+ *
+ * "health" was here and had to go with the section itself — a mandatory step
+ * that has been removed from the wizard is one no athlete can ever satisfy.
+ */
+export const MANDATORY_SECTIONS: IntakeSection[] = ["goal", "availability"];
+
+/**
+ * Sections removed from the intake but kept in the type and the record, so
+ * that answers stored before the removal are still read rather than dropped.
+ */
+export const WITHDRAWN_SECTIONS: IntakeSection[] = ["health", "fuelling"];
 
 const ALL_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -548,12 +560,18 @@ export function resolveSafetyFlags(
        */
       0;
 
-  if (!safetyDone) {
-    assumed.push(
-      "The safety questionnaire has not been completed, so every screening question is treated as unanswered and " +
-        "resolved the cautious way. Answering it takes about a minute and unlocks the full volume ramp."
-    );
-  }
+  /*
+   * The "safety questionnaire has not been completed" note used to live here.
+   *
+   * It cannot be true any more and it cannot be acted on: the health section
+   * was removed from the intake, so `safetyDone` is false for everyone and
+   * every athlete was being told to go and spend a minute on a screen that
+   * does not exist — and promised a volume ramp unlock that has already been
+   * given to them unconditionally.
+   *
+   * `safetyDone` is kept because a stored record from before the removal can
+   * still legitimately report the section as completed.
+   */
 
   return {
     flags: {
@@ -897,7 +915,13 @@ export function resolveIntakeInputs(
       : record.equipmentUsed.filter((e) => e !== "barbell"),
   };
 
-  const missingSections = INTAKE_SECTIONS.filter((s) => !record.sectionsCompleted.includes(s));
+  /*
+   * Withdrawn sections are not "missing". health and fuelling are no longer
+   * asked, so listing them here would report a permanent, unfixable gap.
+   */
+  const missingSections = INTAKE_SECTIONS.filter(
+    (s) => !WITHDRAWN_SECTIONS.includes(s) && !record.sectionsCompleted.includes(s)
+  );
 
   return { state, goal, constraints, assumed, issues, missingSections };
 }
