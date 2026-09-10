@@ -510,7 +510,7 @@ export function IntakeWizard() {
               {/* Always shown. Training without a date is the ordinary case, not the
                   fallback — an event date simply overrides this when there is one. */}
               <>
-                <Field label="How long should this plan run?" why="Most people are training rather than counting down to a date, so this is the normal way to answer. Leave it on 'let the engine choose' for a standard 12-week block.">
+                <Field label="How long should this plan run?" why="Most people are training rather than counting down to a date, so this is the normal way to answer. Left alone it runs 24 weeks — twelve is rarely long enough for a trained athlete to move a 5k time by much.">
                   <div className="flex flex-wrap gap-2" role="group" aria-label="Planning horizon">
                     {PLANNING_HORIZONS.map((h) => (
                       <button

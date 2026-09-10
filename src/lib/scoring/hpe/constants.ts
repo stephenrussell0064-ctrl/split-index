@@ -1051,13 +1051,34 @@ export const EMPHASIS_DRIFT_REGENERATE_THRESHOLD = 0.1;
 
 /** [ASSURED] Offered timeframes when the athlete has no event, in weeks. */
 export const PLANNING_HORIZONS: readonly { weeks: number; label: string; blurb: string }[] = [
-  { weeks: 12, label: "3 months", blurb: "One full training block. Long enough to move a 5k time or a lift, short enough to stay committed to." },
-  { weeks: 24, label: "6 months", blurb: "Two blocks with a genuine base phase. The best choice if your aerobic base is the limiter." },
+  { weeks: 12, label: "3 months", blurb: "One full training block. Short enough to stay committed to, but a trained athlete will not move a 5k far in it." },
+  { weeks: 24, label: "6 months", blurb: "Two blocks with a genuine base phase, and the default. Twelve weeks is rarely long enough for a trained athlete to move a 5k time by much." },
   { weeks: 52, label: "A year", blurb: "Long-range. The later phases will be rebuilt as your data accumulates, so treat the back half as a sketch." },
 ];
 
-/** [ASSURED] Used when the athlete gives neither an event date nor a timeframe. Twelve weeks is the standard block length and the horizon every gain-rate constant in this file is expressed against. */
-export const DEFAULT_PLANNING_HORIZON_WEEKS = 12;
+/**
+ * [ASSURED] Used when the athlete gives neither an event date nor a timeframe.
+ *
+ * TWENTY-FOUR, not twelve. Twelve is still the block length every gain-rate
+ * constant in this file is expressed against — `weeksOut / 12` is how the
+ * engine counts blocks, and two blocks is exactly what this now is — but it is
+ * a poor DEFAULT for the athlete who has not expressed a preference.
+ *
+ * Measured across the projection: an advanced runner at 18:25 is projected to
+ * 18:04 over twelve weeks and 17:43 over twenty-four. The same athlete's 2-3%
+ * target reads "ambitious" on the short horizon and "reachable" on the long
+ * one, and that is not the projection being generous — it is twelve weeks
+ * genuinely being too short for a trained athlete to move a 5k by much.
+ *
+ * The on-ramp compounds it. Every week is a multiple of the anchor and the
+ * ceiling is `anchor * ONRAMP_MAX_MULTIPLE`; at the safe weekly ramp, twelve
+ * weeks with deloads does not come close to reaching that ceiling, so a short
+ * default also caps the volume an athlete is ever built up to.
+ *
+ * Someone counting down to a date still gets the weeks to that date, and the
+ * twelve-week option remains one tap away for anyone who wants it.
+ */
+export const DEFAULT_PLANNING_HORIZON_WEEKS = 24;
 
 /** [ASSURED] Bounds on any horizon, however it was arrived at. */
 export const MIN_HORIZON_WEEKS = 4;
