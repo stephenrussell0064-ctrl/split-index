@@ -113,6 +113,15 @@
 		     standards and cannot score anyone without them. -->
 		<dict>
 			<key>NSPrivacyCollectedDataType</key>
+			<!-- Squad names, duel messages and anything else an athlete types for
+			     other athletes to read. This entry covers them: Apple's
+			     user-content family is EmailsOrTextMessages, PhotosorVideos,
+			     AudioData, GameplayContent, CustomerSupport and OtherUserContent.
+			     There is no bare "UserContent", and a second dict declaring one
+			     sat here until it was removed — an identifier Apple does not
+			     define, beside the valid entry that already covered the same
+			     data. Xcode cannot generate a correct privacy report from a
+			     collected-data type you invent. -->
 			<string>NSPrivacyCollectedDataTypeOtherUserContent</string>
 			<key>NSPrivacyCollectedDataTypeLinked</key>
 			<true/>
@@ -128,21 +137,6 @@
 		<dict>
 			<key>NSPrivacyCollectedDataType</key>
 			<string>NSPrivacyCollectedDataTypePurchaseHistory</string>
-			<key>NSPrivacyCollectedDataTypeLinked</key>
-			<true/>
-			<key>NSPrivacyCollectedDataTypeTracking</key>
-			<false/>
-			<key>NSPrivacyCollectedDataTypePurposes</key>
-			<array>
-				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
-			</array>
-		</dict>
-
-		<!-- Squad names, duel messages and anything else an athlete types for
-		     other athletes to read. -->
-		<dict>
-			<key>NSPrivacyCollectedDataType</key>
-			<string>NSPrivacyCollectedDataTypeUserContent</string>
 			<key>NSPrivacyCollectedDataTypeLinked</key>
 			<true/>
 			<key>NSPrivacyCollectedDataTypeTracking</key>
