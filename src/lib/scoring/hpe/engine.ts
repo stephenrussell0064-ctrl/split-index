@@ -147,7 +147,7 @@ export function generatePlan(input: GeneratePlanInput): GeneratedPlan {
   const tailoring = assessTailoring(profile);
 
   // ---- 3. FEASIBILITY, MODE, MACROCYCLE -----------------------------------
-  const feasibility = feasibilityScreen(state, goal);
+  const feasibility = feasibilityScreen(state, goal, safety.rampMultiplier * tailoring.rampMultiplier);
   const mode = classifyDomains(state, goal, constraints.trainingSplit != null);
   // Both caution factors compound: a novice runner with no logged history gets
   // the halved novice ramp AND the halved provisional ramp, which is the

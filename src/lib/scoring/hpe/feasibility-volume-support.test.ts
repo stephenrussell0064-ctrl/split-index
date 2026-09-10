@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { feasibilityScreen } from "./feasibility";
+import { buildMacrocycle } from "./macrocycle";
 import { DEFAULT_SAFETY_FLAGS } from "./intake";
 import type { AthleteState, Goal } from "./intake";
 
@@ -97,5 +98,52 @@ describe("the projection is bounded by the volume the plan prescribes", () => {
     const thin = feasibilityScreen(state(25), noTarget);
     // Nothing to measure volume against, so the projection is untouched.
     expect(thin.projected5kS).toBeLessThan(1105);
+  });
+});
+
+describe("it says when volume is the thing holding the projection back", () => {
+  const volumeNote = (msgs: string[]) =>
+    msgs.find((m) => m.includes("limited by how much running this block contains"));
+
+  it("tells a thin block that the limit is volume, and where to change it", () => {
+    const thin = feasibilityScreen(state(25), goal());
+    const note = volumeNote(thin.messages);
+    expect(note, "no volume note on a block that cannot reach the target").toBeTruthy();
+    // It has to name the fix, not just the diagnosis. "Ambitious" alone reads
+    // as a verdict on the athlete rather than on a number they can correct.
+    expect(note).toMatch(/intake/i);
+    expect(note).toMatch(/not recorded/i);
+    // And quote both figures, so the gap is legible rather than asserted.
+    expect(note).toMatch(/min\/week/);
+  });
+
+  it("does not raise it when the block already carries the volume", () => {
+    // For this athlete the shortfall would be real, and blaming volume would
+    // send them to change a number that is already right.
+    const ample = feasibilityScreen(state(400), goal());
+    expect(volumeNote(ample.messages)).toBeUndefined();
+  });
+});
+
+describe("the figure it quotes is the figure the plan prescribes", () => {
+  it("quotes the block's real peak, not the ramp's ceiling", () => {
+    /*
+     * The first version multiplied the on-ramp anchor by ONRAMP_MAX_MULTIPLE.
+     * That is the cap the ramp may not pass, not the volume it reaches — over
+     * twelve weeks with deloads it gets nowhere near 2.6x. The message told the
+     * reported athlete their block built to 163 min/week when the plan
+     * prescribed 73, which is the whole defect class this engine's own
+     * comments keep warning about: quoting a number the plan then contradicts.
+     */
+    const s = state(25);
+    const g = goal();
+    const quoted = feasibilityScreen(s, g).messages
+      .find((m) => m.includes("It builds to about"))
+      ?.match(/It builds to about (\d+) min\/week/)?.[1];
+    expect(quoted, "no peak quoted").toBeTruthy();
+
+    const realPeak = Math.max(...buildMacrocycle(s, g).map((w) => w.enduranceMin));
+    // Same number, not merely the same order of magnitude.
+    expect(Number(quoted)).toBe(Math.round(realPeak));
   });
 });

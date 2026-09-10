@@ -39,9 +39,8 @@ import {
   type TrainingAge,
 } from "./constants";
 import { totalKg, type AthleteState, type Goal } from "./intake";
-import { onRampStartingVolume } from "./macrocycle";
+import { buildMacrocycle } from "./macrocycle";
 import { requiredWeeklyMinutesFor5k } from "./diagnostics";
-import { ONRAMP_MAX_MULTIPLE } from "./constants";
 
 // ---------------------------------------------------------------------------
 // The bounded frontier (F7)
@@ -214,7 +213,17 @@ export function inferredEnduranceTrainingAge(stated: TrainingAge, predicted5kS: 
   return order.indexOf(floor) > order.indexOf(stated) ? floor : stated;
 }
 
-export function feasibilityScreen(state: AthleteState, goal: Goal): FeasibilityResult {
+export function feasibilityScreen(
+  state: AthleteState,
+  goal: Goal,
+  /**
+   * The same ramp multiplier the macrocycle will be built with — safety x
+   * tailoring. Defaulted so existing callers and tests keep working, but the
+   * engine passes the real one: without it this function builds the block at
+   * full ramp and quotes a peak the athlete's actual plan never reaches.
+   */
+  rampMultiplier = 1
+): FeasibilityResult {
   const blocks = goal.weeksOut / 12.0;
   const strengthRate = STRENGTH_GAIN_PER_BLOCK[state.strengthTrainingAge];
   const enduranceRate = ENDURANCE_GAIN_PER_BLOCK[inferredEnduranceTrainingAge(state.enduranceTrainingAge, state.predicted5kS)];
@@ -267,7 +276,26 @@ export function feasibilityScreen(state: AthleteState, goal: Goal): FeasibilityR
    * Capped at 1, so it can only hold a projection back, never inflate one, and
    * applied only where there is a 5k target to measure against.
    */
-  const peakWeeklyEnduranceMin = onRampStartingVolume(state) * ONRAMP_MAX_MULTIPLE;
+  /*
+   * The peak the block ACTUALLY reaches, from the block itself.
+   *
+   * The first version of this multiplied the on-ramp anchor by
+   * ONRAMP_MAX_MULTIPLE. That is the ceiling the ramp is not allowed to pass,
+   * not the volume it gets to: at MAX_WEEKLY_VOLUME_RAMP, twelve weeks with
+   * deloads does not come close to 2.6x. For the reported athlete it claimed
+   * the block built to 163 min/week when the plan prescribed 73 — the
+   * attenuation was too generous, and worse, the message quoted the wrong
+   * figure back to them.
+   *
+   * `buildMacrocycle` is pure, so asking it is cheaper than restating its ramp
+   * here and cannot drift from it. The engine passes the same ramp multiplier
+   * it will build the real block with, so the peak quoted to the athlete is
+   * the peak they are actually prescribed.
+   */
+  const peakWeeklyEnduranceMin = Math.max(
+    0,
+    ...buildMacrocycle(state, goal, rampMultiplier).map((w) => w.enduranceMin)
+  );
   const volumeSupport =
     goal.target5kS != null
       ? Math.min(1, peakWeeklyEnduranceMin / Math.max(requiredWeeklyMinutesFor5k(goal.target5kS), 1))
@@ -359,6 +387,31 @@ export function feasibilityScreen(state: AthleteState, goal: Goal): FeasibilityR
           `best. Running does not improve in a straight line and a flat block happens to everyone, so this is a ` +
           `range rather than a promise. Worth knowing now rather than at the finish line.`
     );
+
+    /*
+     * When VOLUME is what is holding the projection back, say so.
+     *
+     * "Ambitious" on its own reads as a verdict on the athlete. It is not:
+     * the attenuation above may be entirely down to how little running the
+     * block contains, and the block contains that little because of one
+     * number the athlete typed — or did not type — on the intake. Told only
+     * that their target is out of reach, they have no way to know that the
+     * fix is a field on a form rather than a different body.
+     *
+     * Only raised when volume is actually binding. An athlete whose block
+     * already carries the volume their target is built on gets the message
+     * above and nothing else, because for them the shortfall is real.
+     */
+    if (!enduranceReachable && volumeSupport < 1) {
+      const requiredMin = requiredWeeklyMinutesFor5k(goal.target5kS);
+      messages.push(
+        `That projection is limited by how much running this block contains, not only by the time you have. ` +
+          `It builds to about ${Math.round(peakWeeklyEnduranceMin)} min/week, and an ${fmt(goal.target5kS)} 5k is ` +
+          `usually built on nearer ${requiredMin}. The block starts from the weekly running minutes you gave on ` +
+          `the intake — if that number is lower than what you actually run, correct it there (and say so if some ` +
+          `of your training is not recorded here), and the plan rebuilds around the real figure.`
+      );
+    }
   }
 
   return {
