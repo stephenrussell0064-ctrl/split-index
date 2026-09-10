@@ -88,6 +88,7 @@ export async function loadPrefilledIntake(
     maxHr: profileRow?.max_hr != null ? Number(profileRow.max_hr) : null,
     oneRms: diagnostic?.profile.oneRms ?? {},
     predicted5kS: diagnostic?.profile.predicted5kS ?? 1500,
+    predicted5kFromEffort: diagnostic?.profile.predicted5kFromEffort ?? false,
     loggedWeeklyRunMinutes: weeklyMinutes,
     // Seeds the ACWR denominator so week 1 is measured against reality rather
     // than zero — the F6 finding.

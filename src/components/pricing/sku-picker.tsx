@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils/cn";
+import { LegalLinks } from "@/components/pricing/legal-links";
 import { Button } from "@/components/ui/button";
 import { PRICING, ANNUAL_MONTHLY_EQUIVALENT_GBP } from "@/lib/pricing/config";
 import { startStripeCheckout } from "@/lib/stripe/start-checkout";
@@ -324,15 +324,7 @@ export function SkuPicker({ ctaLabel, onError, className }: SkuPickerProps) {
             current period. Manage or cancel it any time from Settings.
           </p>
         )}
-        <p>
-          <Link href="/terms" className="underline underline-offset-2 hover:text-foreground">
-            Terms of Use
-          </Link>
-          {" · "}
-          <Link href="/privacy" className="underline underline-offset-2 hover:text-foreground">
-            Privacy Policy
-          </Link>
-        </p>
+        <LegalLinks />
       </div>
     </div>
   );

@@ -35,6 +35,7 @@ function prefilled(overrides: Partial<PrefilledFromSplitIndex> = {}): PrefilledF
     maxHr: 190,
     oneRms: { squat: 150, bench: 110, deadlift: 190 },
     predicted5kS: 1200,
+    predicted5kFromEffort: true,
     loggedWeeklyRunMinutes: 90,
     chronicLoad: 400,
     ...overrides,

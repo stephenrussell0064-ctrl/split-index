@@ -26,7 +26,7 @@ import type { LiftSet, RunLog } from "./types";
 function state(o: Partial<AthleteState> = {}): AthleteState {
   return {
     bodyweightKg: 78, heightCm: 178, age: 32, sex: "male",
-    oneRms: { squat: 140, bench: 100, deadlift: 180 }, predicted5kS: 1400,
+    oneRms: { squat: 140, bench: 100, deadlift: 180 }, predicted5kS: 1400, predicted5kFromEffort: true,
     strengthTrainingAge: "intermediate", enduranceTrainingAge: "intermediate",
     strengthTrainingYears: 3, enduranceTrainingYears: 3,
     currentRunMinPerWeek: 150, currentStrengthSessionsPerWeek: 3,
@@ -147,7 +147,7 @@ describe("endurance quality is programmed, not just volume", () => {
 
 describe("projected improvement stays inside what a human can do", () => {
   it("does not project an 18:25 runner to 16:22 in eleven weeks", () => {
-    const s = state({ predicted5kS: 1105, enduranceTrainingAge: "novice" });
+    const s = state({ predicted5kS: 1105, predicted5kFromEffort: true, enduranceTrainingAge: "novice" });
     const f = feasibilityScreen(s, goal({ weeksOut: 11, target5kS: 1080, priority: 0 }));
     // Was 16:22 (982s) — a projection no 18:25 runner has any business being
     // shown. Now ~18:03, which is roughly 2% and is what the advanced rate
@@ -172,13 +172,13 @@ describe("projected improvement stays inside what a human can do", () => {
 
   it("still lets a genuine beginner improve like a beginner", () => {
     // The caps must not flatten everyone. A 30:00 runner really does move.
-    const s = state({ predicted5kS: 1800, enduranceTrainingAge: "novice" });
+    const s = state({ predicted5kS: 1800, predicted5kFromEffort: true, enduranceTrainingAge: "novice" });
     const f = feasibilityScreen(s, goal({ weeksOut: 11, priority: 0 }));
     expect(f.enduranceGainPct).toBeGreaterThan(3.5);
   });
 
   it("quotes a range and says plainly that progress is not linear", () => {
-    const s = state({ predicted5kS: 1105, enduranceTrainingAge: "novice" });
+    const s = state({ predicted5kS: 1105, predicted5kFromEffort: true, enduranceTrainingAge: "novice" });
     const f = feasibilityScreen(s, goal({ weeksOut: 11, target5kS: 1080, priority: 0 }));
 
     // The whole band is faster than where the athlete is today. Quoting their

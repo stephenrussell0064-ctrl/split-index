@@ -43,6 +43,7 @@ function calibrationState(overrides: Partial<AthleteState> = {}): AthleteState {
     sex: "male",
     oneRms: { squat: 160, bench: 140, deadlift: 200 },
     predicted5kS: 19 * 60 + 20,
+    predicted5kFromEffort: true,
     strengthTrainingAge: "advanced",
     enduranceTrainingAge: "intermediate",
     strengthTrainingYears: 6,

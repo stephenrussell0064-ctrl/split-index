@@ -22,7 +22,7 @@ import type { LiftSet, RunLog } from "./types";
 function state(o: Partial<AthleteState> = {}): AthleteState {
   return {
     bodyweightKg: 78, heightCm: 178, age: 32, sex: "male",
-    oneRms: {}, predicted5kS: 1400,
+    oneRms: {}, predicted5kS: 1400, predicted5kFromEffort: true,
     strengthTrainingAge: "intermediate", enduranceTrainingAge: "intermediate",
     strengthTrainingYears: 3, enduranceTrainingYears: 3,
     currentRunMinPerWeek: 120, currentStrengthSessionsPerWeek: 2,

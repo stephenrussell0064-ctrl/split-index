@@ -644,6 +644,7 @@ export interface PrefilledFromSplitIndex {
   maxHr: number | null;
   oneRms: Record<string, number>;
   predicted5kS: number;
+  predicted5kFromEffort: boolean;
   loggedWeeklyRunMinutes: number | null;
   chronicLoad: number;
 }
@@ -822,6 +823,7 @@ export function resolveIntakeInputs(
       deadlift: record.deadlift1rmOverride,
     }),
     predicted5kS: prefilled.predicted5kS,
+    predicted5kFromEffort: prefilled.predicted5kFromEffort,
     strengthTrainingAge: trainingAgeFromYears(strengthYears),
     enduranceTrainingAge: trainingAgeFromYears(enduranceYears),
     strengthTrainingYears: strengthYears,

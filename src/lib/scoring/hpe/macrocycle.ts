@@ -47,12 +47,14 @@ import {
   ONRAMP_MAX_MULTIPLE,
   ONRAMP_START_MULTIPLIER,
   PROVISIONAL_START_RUN_MIN_PER_WEEK,
+  ONRAMP_PERFORMANCE_FLOOR_SHARE,
   PHASE_SHARE,
   TAPER_DAYS,
   TAPER_ENDURANCE_VOLUME_REDUCTION,
   type Phase,
 } from "./constants";
 import type { AthleteState, Goal } from "./intake";
+import { requiredWeeklyMinutesFor5k } from "./diagnostics";
 
 export interface MacrocycleWeek {
   /** 1-indexed week of the block. */
@@ -134,8 +136,50 @@ export function buildMacrocycle(state: AthleteState, goal: Goal, rampMultiplier 
   // Starting from a low floor instead is the conservative reading of "week 1
   // is what you already do": what they already do is nothing, so week 1 is
   // deliberately small rather than absent.
-  const startingVolume =
+  const reportedVolume =
     state.currentRunMinPerWeek > 0 ? state.currentRunMinPerWeek : PROVISIONAL_START_RUN_MIN_PER_WEEK;
+
+  /*
+   * A floor set by what the athlete can already RUN, not only by what they
+   * reported doing.
+   *
+   * Every week of this block is a multiple of one number: week 1 is
+   * `startingVolume`, and the hard ceiling is `startingVolume *
+   * ONRAMP_MAX_MULTIPLE`. So an anchor that comes in ten times too low does
+   * not merely start the athlete slow — it caps them there for the whole
+   * block. Reported from a device by an athlete running 18:25 for 5k who was
+   * given a single 5k run per week, in week 1 and in the last week alike.
+   *
+   * The anchor is the lower of stated and logged minutes, which is the right
+   * default against optimism but has no floor under it. An 18:25 5k is not an
+   * opinion: `VOLUME_ADEQUACY_MIN_PER_WEEK` already records what weekly volume
+   * that level is historically built on, and the diagnostic already uses it to
+   * judge whether volume or intensity is an athlete's limiting factor. The
+   * on-ramp simply never consulted it.
+   *
+   * Set at a QUARTER of the table, not at the adequate level. This is a
+   * plausibility floor, not a prescription: it exists to catch an anchor that
+   * could not have produced the athlete's own race time, and nothing more. An
+   * athlete who genuinely trains light for their ability — they exist at every
+   * level — keeps the number they gave, which is what the "leaves a real volume
+   * untouched" case in onramp-floor.test.ts protects.
+   *
+   * The proper channel for an athlete whose logs understate them is the intake
+   * question about training that is not recorded here, which makes their own
+   * stated figure win outright. This floor is the safety net under that, for
+   * the case where nobody thought to say so.
+   *
+   * Guarded on `predicted5kFromEffort`. Without a real maximal effort the 5k is
+   * a placeholder, and flooring volume on a placeholder would invent a base the
+   * athlete has never shown. It only ever RAISES the anchor: an athlete already
+   * running more than the table asks keeps their own number.
+   */
+  const performanceFloor =
+    state.predicted5kFromEffort && state.predicted5kS > 0
+      ? ONRAMP_PERFORMANCE_FLOOR_SHARE * requiredWeeklyMinutesFor5k(state.predicted5kS)
+      : 0;
+
+  const startingVolume = Math.max(reportedVolume, performanceFloor);
   let volume = startingVolume * ONRAMP_START_MULTIPLIER;
   const ceiling = startingVolume * ONRAMP_MAX_MULTIPLE;
   let peakVolume = volume;

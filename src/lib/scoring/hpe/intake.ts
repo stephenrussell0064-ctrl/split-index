@@ -130,6 +130,8 @@ export interface AthleteState {
   sex: "male" | "female" | "other";
   oneRms: Record<string, number>;
   predicted5kS: number;
+  /** False when predicted5kS is the no-effort placeholder rather than a real prediction. */
+  predicted5kFromEffort: boolean;
   strengthTrainingAge: TrainingAge;
   enduranceTrainingAge: TrainingAge;
   strengthTrainingYears: number;

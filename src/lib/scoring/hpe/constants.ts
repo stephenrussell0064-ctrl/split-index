@@ -197,6 +197,22 @@ export const VOLUME_ADEQUACY_MIN_PER_WEEK: ReadonlyArray<readonly [number, numbe
 ];
 /** [EST] Below this ratio of actual to typical weekly minutes, volume — not intensity — is the highest-return lever. */
 export const VOLUME_ADEQUACY_LOW = 0.7;
+/**
+ * [EST] Share of the volume a 5k level is historically built on, below which
+ * the on-ramp anchor is treated as implausible rather than merely low.
+ *
+ * Not VOLUME_ADEQUACY_LOW. That threshold answers "is volume this athlete's
+ * limiting factor", which is a coaching judgement about someone whose number
+ * is believed. This one answers a narrower question: could this athlete have
+ * run that time off this volume at all? An 18:25 5k on 25 min/week is not a
+ * training choice, it is a number that has gone wrong somewhere — a week of
+ * sessions logged on another watch, or a figure typed into the wrong box.
+ *
+ * A quarter is deliberately far below anything a coach would prescribe, so it
+ * only ever catches the pathological case and leaves genuinely low-volume
+ * athletes — who do exist at every level — with the number they gave.
+ */
+export const ONRAMP_PERFORMANCE_FLOOR_SHARE = 0.25;
 /** [EST] Above this ratio, volume is ample and returns come from intensity quality instead. */
 export const VOLUME_ADEQUACY_HIGH = 1.4;
 

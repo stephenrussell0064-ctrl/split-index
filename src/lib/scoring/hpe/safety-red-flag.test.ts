@@ -30,6 +30,7 @@ function state(overrides: Partial<AthleteState> = {}): AthleteState {
     sex: "male",
     oneRms: { squat: 140, bench: 100, deadlift: 180 },
     predicted5kS: 20 * 60,
+    predicted5kFromEffort: true,
     strengthTrainingAge: "intermediate",
     enduranceTrainingAge: "intermediate",
     strengthTrainingYears: 4,

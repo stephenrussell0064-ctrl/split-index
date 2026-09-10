@@ -15,6 +15,7 @@ import { createClient } from "@/lib/supabase/client";
 import { ScoreDisclaimer } from "@/components/legal/score-disclaimer";
 import { SkuPicker } from "@/components/pricing/sku-picker";
 import { ManageSubscription } from "@/components/pricing/manage-subscription";
+import { LegalLinks } from "@/components/pricing/legal-links";
 import type { SubscriptionStatus, SubscriptionTier } from "@/types";
 
 function BillingContent() {
@@ -151,6 +152,10 @@ function BillingContent() {
               </p>
               {/* Native only — see the component for why web renders nothing. */}
               <ManageSubscription className="mt-4" />
+              {/* Guideline 3.1.2 lives on SkuPicker, which a subscriber never
+                  sees. Without this the app's only billing screen loses both
+                  links the moment someone pays. */}
+              <LegalLinks className="mt-4" />
             </>
           )}
         </CardContent>

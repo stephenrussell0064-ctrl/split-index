@@ -734,6 +734,29 @@ export function IntakeWizard() {
                   ariaLabel="Current weekly running minutes"
                 />
               </Field>
+              {/*
+                  Restored after being trimmed as low-value. It is not.
+
+                  The weekly-minutes figure above is reconciled against the
+                  athlete's logs and the LOWER of the two wins — the right
+                  default against optimism, and the reason a plan does not ramp
+                  someone into injury. This answer is the only way to say the
+                  gap is missing data rather than optimism, and without it an
+                  athlete whose training is logged elsewhere is anchored to a
+                  number they have already told us is incomplete, with no way
+                  to move it. Every week of the block is a multiple of that
+                  anchor, so the cost of removing one question was a whole
+                  block built at a fraction of the right volume.
+              */}
+              <Field
+                label="Is some of your training not recorded in Split Index?"
+                why="If yes, your figure above is used as-is. If no, the lower of your figure and your logs is used — starting a plan above where you actually are is the most common way generated plans cause injury."
+              >
+                <YesNo
+                  value={get("trains_outside_app", intake.trainsOutsideApp) as boolean}
+                  onChange={(v) => set("trains_outside_app", v)}
+                />
+              </Field>
               <Field label="How long have you been running consistently?" why="Under six months halves your ramp rate and caps endurance targets.">
                 <NumberField
                   value={get("endurance_training_years", intake.enduranceTrainingYears) as number | null}
