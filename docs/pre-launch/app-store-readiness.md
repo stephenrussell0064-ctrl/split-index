@@ -7,7 +7,43 @@
 
 ---
 
-## VERDICT
+## STATUS — read this before the verdict below
+
+**Updated 11 September 2026.** The review below is dated 6 September and its
+verdict is no longer the state of the build. It is kept unedited because the
+reasoning is the record of why each thing was done, and because CLAUDE.md rule 7
+sends every reader here first — a document that describes a build submitted
+three days ago as rejectable is worse than no document.
+
+| Blocker | Then | Now |
+|---|---|---|
+| B1 — Stripe upgrade button | blocker | **fixed**, `b1-iap` green |
+| B2 — SkuPicker falls through to Stripe | blocker | **fixed**, `b2-skupicker` green |
+| B3 — IAP not configured | blocker | **fixed**, `b3-iap-configured` green |
+| B4 — no Sign in with Apple | blocker | **half fixed** — see below |
+| B5 — no report/block controls | blocker | **fixed**, `b5-ugc-controls` green |
+| B6 — no privacy manifest | blocker | **fixed**, `b6-privacy-manifest` green |
+| B7 — privacy policy incomplete | blocker | **fixed**, `b7-privacy-policy` green |
+
+**The binary was submitted on 8 September 2026 and is in review.**
+
+### B4 is the one still open, and it is open in a way this review did not anticipate
+
+The UI half is done: Sign in with Apple is offered above Google, and
+`b4-apple-signin` checks the order. The backend half is not — Apple is **not
+enabled as a provider on the Supabase project**, so a reviewer who taps that
+button reaches an endpoint that refuses. `apple-provider-config` is red and has
+been since it was written.
+
+Guideline 4.8 makes removing the button a different rejection rather than a fix,
+because Google sign-in is offered. The only way out is to enable the provider —
+and because the whole flow runs through `supabase.auth.signInWithOAuth`, doing
+so **fixes the build already in review**, with no resubmission and no lost queue
+position. See `venture-projects/queue/decisions/split-index-apple-provider.md`.
+
+---
+
+## VERDICT — as of 6 September 2026, superseded above
 
 # REJECTED — iOS
 
