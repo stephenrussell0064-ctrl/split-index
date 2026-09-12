@@ -13,7 +13,14 @@ const DAY_MS = 86_400_000;
  */
 export function daysUntilDate(dateStr: string | null | undefined, now: Date = new Date()): number | null {
   if (!dateStr) return null;
-  const target = new Date(`${dateStr}T00:00:00Z`).getTime();
+  // A `DATE` column comes back as "YYYY-MM-DD" and `<input type="date">` gives
+  // the same, which is what this was written for. A caller holding a full
+  // timestamp is not passing rubbish, and appending "T00:00:00Z" to one
+  // produced NaN and therefore null — a silently dropped event date rather
+  // than a wrong answer, but dropped all the same. Take the date part.
+  const day = /^(\d{4}-\d{2}-\d{2})/.exec(dateStr)?.[1];
+  if (!day) return null;
+  const target = new Date(`${day}T00:00:00Z`).getTime();
   if (Number.isNaN(target)) return null;
   const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
   return Math.round((target - todayUtc) / DAY_MS);

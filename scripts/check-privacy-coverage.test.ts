@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-// @ts-expect-error — plain ESM script, no types, imported for its exports only.
+// Plain ESM script with no type declarations; imported for its exports only.
 import { tablesIn, TABLE_COVERAGE, GAPS } from "./check-privacy-coverage.mjs";
 
 /*

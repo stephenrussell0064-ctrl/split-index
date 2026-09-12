@@ -282,6 +282,77 @@ describe("WP2 — planning horizon without an event date", () => {
     expect(h.note).toMatch(/have not set an event date/i);
   });
 
+  /*
+   * Every test in this block used a NOW at T00:00:00Z, which is the one hour of
+   * the day at which the old calculation and the correct one agree — so the
+   * fault below survived a suite that covered the function well.
+   *
+   * `resolveHorizon` computed `new Date(eventDate) - now`. `event_date` is a
+   * DATE column, so the left side is UTC midnight and the right side is a
+   * wall-clock instant, and the difference therefore depended on what time of
+   * day the plan was generated. It now goes through `daysUntilDate`, which
+   * normalises both sides to UTC days and exists for exactly this reason —
+   * extracted during a QA pass, given tests, and never wired in until
+   * scripts/audit-reachability.mjs found it with no callers.
+   */
+  it("gives the same horizon whatever time of day the plan is generated", () => {
+    /*
+     * Scanned across a whole quarter rather than asserted at one date, because
+     * the first version of this test picked 2026-04-02 — 91 days out, exactly
+     * 13.0 weeks — which is the dead centre of a rounding bucket and therefore
+     * the one gap the fault cannot move. It passed against the broken
+     * implementation. Mutation testing is what said so.
+     *
+     * The flip happens where days / 7 sits just above a .5 boundary: at 88 days
+     * the old calculation gives 13 weeks at midnight and 12 by late afternoon,
+     * because it subtracted a wall-clock instant from a UTC midnight.
+     */
+    const hours = [0, 6, 9, 12, 15, 18, 23];
+    const drifting: string[] = [];
+
+    for (let offset = 60; offset <= 150; offset++) {
+      const event = new Date(Date.UTC(2026, 0, 1 + offset)).toISOString().slice(0, 10);
+      const answers = hours.map(
+        (h) => resolveHorizon(event, null, new Date(Date.UTC(2026, 0, 1, h, 30))).weeksOut,
+      );
+      if (new Set(answers).size !== 1) drifting.push(`${event} (${offset}d): ${answers.join("/")}`);
+    }
+
+    expect(drifting, "horizon depends on the time of day the plan was generated").toEqual([]);
+  });
+
+  it("does not move an athlete across the too-close boundary by the clock", () => {
+    /*
+     * The qualitative version of the same fault. Below MIN_HORIZON_WEEKS the
+     * athlete is told this is "a sharpening and taper block rather than a
+     * training block — the goal is arriving fresh, not fitter". Which of those
+     * they read must not depend on pressing the button after lunch.
+     *
+     * MIN_HORIZON_WEEKS is 4, so the crossing sits around 25 days out: the scan
+     * has to reach it. An earlier version started at 40 days and could never
+     * have failed.
+     */
+    const drifting: string[] = [];
+    for (let offset = 15; offset <= 45; offset++) {
+      const event = new Date(Date.UTC(2026, 0, 1 + offset)).toISOString().slice(0, 10);
+      const notes = [0, 9, 17, 23].map(
+        (h) => resolveHorizon(event, null, new Date(Date.UTC(2026, 0, 1, h, 30))).note ?? "",
+      );
+      if (new Set(notes).size !== 1) drifting.push(`${event} (${offset}d)`);
+    }
+    expect(drifting, "what the athlete is told depends on the clock").toEqual([]);
+  });
+
+  it("reads an event date that arrives as a full timestamp", () => {
+    // A DATE column gives "YYYY-MM-DD" today. A caller holding a timestamp is
+    // not passing rubbish, and the previous shape turned one into null — a
+    // silently dropped event date rather than a wrong answer, but dropped.
+    const a = resolveHorizon("2026-04-02", null, NOW);
+    const b = resolveHorizon("2026-04-02T14:30:00Z", null, NOW);
+    expect(b.horizonSource).toBe("event_date");
+    expect(b.weeksOut).toBe(a.weeksOut);
+  });
+
   it("clamps an event that is too close, and reframes what the block is for", () => {
     const h = resolveHorizon("2026-01-15", null, NOW);
     expect(h.weeksOut).toBe(MIN_HORIZON_WEEKS);

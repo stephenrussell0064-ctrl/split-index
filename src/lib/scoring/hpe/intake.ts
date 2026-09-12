@@ -37,6 +37,7 @@ import {
   MAX_HORIZON_WEEKS,
   MIN_HORIZON_WEEKS, MIN_HEALTHY_BMI, type SplitDay, type TrainingAge, type TrainingSplit } from "./constants";
 import type { CardioModality } from "./modality";
+import { daysUntilDate } from "@/lib/utils/date";
 
 // ---------------------------------------------------------------------------
 // Section A — safety and eligibility
@@ -444,7 +445,28 @@ export function resolveHorizon(
   now: Date = new Date()
 ): { weeksOut: number; horizonSource: HorizonSource; note: string | null } {
   if (eventDate) {
-    const weeks = Math.round((new Date(eventDate).getTime() - now.getTime()) / (7 * 86_400_000));
+    /*
+     * Through `daysUntilDate`, not `new Date(eventDate) - now`.
+     *
+     * `event_date` is a `DATE` column, so `new Date(eventDate)` is UTC
+     * midnight, and `now` is a wall-clock instant. Subtracting one from the
+     * other made the answer depend on the time of day the plan was generated:
+     * an event on 9 Dec, planned on 12 Sep, resolved to 13 weeks at 09:00 UTC
+     * and 12 weeks at 17:00 the same day. The athlete is then told "12 weeks
+     * puts you in the X range" or "13 weeks", and `macrocycle.ts` builds a
+     * different block, for pressing the button after lunch.
+     *
+     * `daysUntilDate` exists precisely for this — its header says it is
+     * "computed entirely in UTC on both sides so the result never drifts with
+     * the server's local timezone or the moment-of-day `now` happens to be
+     * called at", and that it is "the one piece of date math the Training
+     * Plan's tapering and feasibility logic both depend on". It was extracted
+     * during a QA pass, given tests, and never wired in; this line was its
+     * reachable twin, carrying the bug the extraction was written to remove.
+     * Found on 12 Sep 2026 by `scripts/audit-reachability.mjs`.
+     */
+    const days = daysUntilDate(eventDate, now);
+    const weeks = days === null ? NaN : Math.round(days / 7);
     if (Number.isFinite(weeks) && weeks >= MIN_HORIZON_WEEKS && weeks <= MAX_HORIZON_WEEKS) {
       return { weeksOut: weeks, horizonSource: "event_date", note: null };
     }
