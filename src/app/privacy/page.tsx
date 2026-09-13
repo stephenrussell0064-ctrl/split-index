@@ -135,6 +135,17 @@ export default function PrivacyPolicyPage() {
                   was reported who reported them.
                 </li>
                 <li>
+                  <strong>In-app notifications:</strong> the messages the app writes for
+                  you and shows behind the bell — currently a reminder that a training
+                  streak is about to end, and a welcome prompt if you have not logged a
+                  workout yet. We store the title, the text of the message, and whether you
+                  have read it. Some of that text is a fact about your training: a streak
+                  reminder names how many days your streak has run. Only you can read your
+                  notifications, and they are deleted with your account. We do not send
+                  push notifications to your device at all — the app does not ask for that
+                  permission and holds no device token.
+                </li>
+                <li>
                   <strong>Technical and usage data:</strong> IP address, browser type,
                   device information, cookies, and logs related to how you use the service.
                 </li>
@@ -332,6 +343,12 @@ export default function PrivacyPolicyPage() {
                   appropriate confidentiality protections.
                 </li>
               </ul>
+              <p className="mt-3">
+                People working on Split Index are not a fourth kind of sharing, but you
+                should know what they can reach. Section 11 sets out which of us can see
+                anything across accounts, what that view does and does not show, and what is
+                recorded every time somebody opens it.
+              </p>
             </section>
 
             <section>
@@ -366,6 +383,16 @@ export default function PrivacyPolicyPage() {
                 through Apple or Google. Those are managed by the store that sold them —
                 on iOS, through Manage Subscription in the app or in your Apple account
                 settings.
+              </p>
+              <p className="mt-3">
+                Two kinds of security record outlive a deletion, and they do it by ceasing
+                to name you rather than by being kept about you. If your account ever
+                reached an administrator surface, or triggered a security event, those rows
+                stay — but the reference to your account is set to empty, so what remains
+                says that something happened and no longer says who. An account being
+                erased must not be able to erase the record that it once read across the
+                fleet, or that it was refused repeatedly; that is the balance we have struck
+                between an audit trail and your right to erasure.
               </p>
               <p className="mt-3">
                 Reports are the one thing kept when the content they are about is gone.
@@ -408,6 +435,51 @@ export default function PrivacyPolicyPage() {
                 security on user data. No method of transmission or storage is completely
                 secure; please use a strong, unique password and keep your credentials
                 confidential.
+              </p>
+
+              <h3 className="mt-6 font-medium">
+                Who at Split Index can see your data, and what is recorded when they look
+              </h3>
+              <p className="mt-3">
+                You are entitled to know who sees your data and not only what we store, so
+                this says so plainly. Row-level security scopes every ordinary read in the
+                app to a single account: when the app asks the database for activities, it
+                can only be given yours. There is one route that steps outside that, and it
+                is worth describing exactly.
+              </p>
+              <p className="mt-3">
+                A small number of people running Split Index hold an administrator role. It
+                gives them one thing: an operations view used to decide whether a feature
+                being rolled out is behaving safely and whether to pause it. That view is
+                the only place in the service that reads across all accounts rather than
+                one. What it shows is aggregate only — counts, averages and distributions.
+                No account identifier, email address or individual athlete&apos;s row is
+                included in it, and the code checks its own output and refuses to return
+                anything containing an identifier. So an administrator can see that, for
+                example, a number of athletes recorded a particular kind of session last
+                week. They cannot use this view to look up you.
+              </p>
+              <p className="mt-3">
+                We store who holds an administrator role: the account, which of the two
+                roles it is, when it was granted, by whom, and a note. Nobody can give
+                themselves the role — there is no route through the app that grants it, and
+                it has to be done directly against the database by someone with that
+                access.
+              </p>
+              <p className="mt-3">
+                Every attempt to reach an administrator surface is recorded, whether or not
+                it succeeded. Administrator access is recorded as: the account that tried,
+                the role it held, which route it asked for, whether it was a read or a
+                change, whether it was allowed or refused, and the parameters of the request
+                — a number of days, a rollout percentage. It never holds health data, a
+                body measurement, a health-screening answer, an access token or an email
+                address. Refusals are kept deliberately: one account being refused
+                repeatedly is what tells us somebody is probing, and a record of successes
+                alone cannot show an attempt that failed.
+              </p>
+              <p className="mt-3">
+                If you are not an administrator, none of these records are about you. If you
+                are, they are your personal data and you can ask us for them like any other.
               </p>
             </section>
 

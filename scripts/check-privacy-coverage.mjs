@@ -48,7 +48,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
-const POLICY = join(ROOT, 'src', 'app', 'privacy', 'page.tsx');
+export const POLICY = join(ROOT, 'src', 'app', 'privacy', 'page.tsx');
 const MIGRATIONS = join(ROOT, 'supabase', 'migrations');
 
 /**
@@ -171,6 +171,19 @@ export const TABLE_COVERAGE = {
   hpe_rollout_audit: 'logs related to how you use the service',
   hpe_feature_flags: 'logs related to how you use the service',
 
+  // In-app messages — §2's own bullet, written 13 Sep 2026. Filed under the
+  // sentence about who can read them rather than under the heading, because the
+  // heading is a label and the disclosure is that only you see them.
+  notifications: 'only you can read your notifications',
+
+  // Administrator access — §11's subsection, written 13 Sep 2026. Two tables,
+  // two clauses, because they answer different questions and either could be
+  // deleted from the policy without the other: `admin_users` is *who holds the
+  // role*, `admin_access_log` is *what is written down when it is used*. Filing
+  // both under one phrase would let half the disclosure vanish silently.
+  admin_users: 'who holds an administrator role',
+  admin_access_log: 'administrator access is recorded',
+
   // No personal data. Reference and catalogue rows, listed so that "fine" is a
   // recorded decision rather than an omission.
   sports: null,
@@ -185,22 +198,66 @@ export const TABLE_COVERAGE = {
  * Tables the policy does not account for, found by enumerating rather than by
  * anyone noticing. Each fails until the paragraph exists.
  *
- * These are not wording quibbles. The policy's §2 is a list of what is
- * collected, and none of these appears anywhere in the document — "notification",
- * "admin" and "audit" are absent from all 13,375 characters of it.
+ * These are not wording quibbles. §2 is a list of what is collected, and a table
+ * absent from the whole document is a disclosure an athlete was owed and did not
+ * get.
+ *
+ * ## Emptied 13 Sep 2026, and what writing the paragraphs changed
+ *
+ * The three entries here — `notifications`, `admin_access_log`, `admin_users` —
+ * were written up on 12 Sep and are now in `TABLE_COVERAGE` above, against the
+ * clauses that cover them.
+ *
+ * Reading the schema before writing changed the wording materially in both
+ * directions, which is the argument for stating a gap as a question rather than
+ * as presumed wording:
+ *
+ *  - The note here said staff access to athlete data is recorded, "which means
+ *    staff can access it". True, and on its own it would have produced a
+ *    paragraph saying our staff can read your health data. They cannot, via that
+ *    route: `/api/hpe/admin/fleet` is aggregate-only and `assertNoIdentifiers`
+ *    rejects its own response if a UUID or an email address appears in it. The
+ *    honest disclosure is narrower and more useful than the gap implied — one
+ *    view, across all accounts, showing counts and averages and no rows.
+ *  - It is also WIDER in one place the gap did not reach. `admin_access_log` and
+ *    `security_events` are `ON DELETE SET NULL`, so they outlive a deletion
+ *    request by ceasing to name the account rather than by going. Nothing in §9
+ *    said so. That is an art. 17 disclosure found only by following the table
+ *    into `src/app/api/account/delete/route.ts`.
+ *
+ * An empty GAPS is the intended steady state. A table added without a paragraph
+ * lands in `unaccounted` above, not here — here is for a gap somebody has looked
+ * at and written down.
  */
-export const GAPS = {
-  notifications:
-    'The app stores notifications sent to an athlete, including their content. §2 lists what is ' +
-    'collected and says nothing about them; the word "notification" does not appear in the policy.',
-  admin_access_log:
-    'Staff access to athlete data is recorded, which means staff can access it. An athlete reading ' +
-    'this policy would not learn that. Art. 13 transparency is about who sees the data, not only ' +
-    'what is stored — and "admin" appears nowhere in the document.',
-  admin_users:
-    'The same question from the other side: a table of who holds that access. Either it belongs in ' +
-    'the same paragraph as admin_access_log, or somebody records here why it does not.',
-};
+export const GAPS = {};
+
+/**
+ * The policy as prose, for substring matching.
+ *
+ * Three transformations, each answering a way JSX hides a phrase that is on the
+ * page:
+ *
+ *   &apos; → '      "comments&apos; you leave" is the policy saying it
+ *   tags → space    a <strong> mid-sentence otherwise splits the phrase
+ *   whitespace      Prettier wraps prose at 90 columns, so any clause longer
+ *                   than a few words contains a newline and an indent run in the
+ *                   source and none on the page
+ *
+ * The third one is easy to forget and expensive to forget. On 13 Sep 2026 a
+ * mutation test tried to prove three new clauses were load-bearing by deleting
+ * each from the file with a literal `perl -0pi -e s///`. Two substitutions
+ * matched nothing — the phrases wrap across lines in the source — so the check
+ * passed, and the passing check read exactly like a clause that did not matter.
+ * The instrument was broken, not the check. Exported so a test can assert this
+ * directly rather than a later reader having to rediscover it.
+ */
+export function normalisePolicy(source) {
+  return source
+    .replace(/&apos;/g, "'")
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
+}
 
 function migrationsText() {
   let text = '';
@@ -231,13 +288,7 @@ export function tablesIn(schema) {
 
 function main() {
   const schema = migrationsText();
-  // Tag text and JSX entities would otherwise hide a phrase that is present:
-  // "comments&apos; you leave" is the policy saying it.
-  const policy = readFileSync(POLICY, 'utf8')
-    .replace(/&apos;/g, "'")
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/\s+/g, ' ')
-    .toLowerCase();
+  const policy = normalisePolicy(readFileSync(POLICY, 'utf8'));
 
   const gaps = [];
   let checked = 0;
