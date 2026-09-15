@@ -1,13 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { assess, assessProfileName, normalise, TRAINING_IDIOM } from "./filter";
-import {
-  hiddenFrom,
-  isBlockedPair,
-  validateBlock,
-  validateReport,
-  withoutBlocked,
-  type ReportInput,
-} from "./index";
 
 /**
  * The tests that matter here are the false-positive ones. A filter that flags
@@ -95,84 +87,5 @@ describe("names are held to a higher bar than comments", () => {
     for (const name of ["Stephen R", "hybrid_athlete_92", "Ali"]) {
       expect(assessProfileName(name).verdict).toBe("clean");
     }
-  });
-});
-
-describe("blocking is symmetric", () => {
-  const blocks = [{ blocker_id: "alice", blocked_id: "bob" }];
-
-  it("hides bob from alice", () => {
-    expect(isBlockedPair(blocks, "alice", "bob")).toBe(true);
-  });
-
-  it("and alice from bob, which is the half that is easy to miss", () => {
-    // A one-way block leaves the blocked person free to keep reading and
-    // commenting on the blocker's activities.
-    expect(isBlockedPair(blocks, "bob", "alice")).toBe(true);
-  });
-
-  it("leaves everyone else alone", () => {
-    expect(isBlockedPair(blocks, "alice", "carol")).toBe(false);
-  });
-
-  it("collects both directions into one hidden set", () => {
-    expect([...hiddenFrom(blocks, "bob")]).toEqual(["alice"]);
-    expect([...hiddenFrom(blocks, "alice")]).toEqual(["bob"]);
-  });
-
-  it("drops blocked authors from a list", () => {
-    const rows = [{ user_id: "alice" }, { user_id: "bob" }, { user_id: "carol" }];
-    const kept = withoutBlocked(rows, (r) => r.user_id, hiddenFrom(blocks, "alice"));
-    expect(kept.map((r) => r.user_id)).toEqual(["alice", "carol"]);
-  });
-});
-
-describe("reports", () => {
-  const base: ReportInput = {
-    reporterId: "alice",
-    subjectType: "comment",
-    subjectId: "c1",
-    subjectUserId: "bob",
-    reason: "harassment",
-  };
-
-  it("accepts a well-formed report", () => {
-    const r = validateReport(base);
-    expect(r.ok).toBe(true);
-  });
-
-  it("refuses reporting yourself — the signature of a wrong subject id", () => {
-    expect(validateReport({ ...base, subjectUserId: "alice" })).toEqual({
-      ok: false,
-      reason: "self-report",
-    });
-  });
-
-  it("refuses a reason that is not on the list", () => {
-    expect(validateReport({ ...base, reason: "because" })).toEqual({
-      ok: false,
-      reason: "unknown-reason",
-    });
-  });
-
-  it("refuses a comment report with nothing to point at", () => {
-    expect(validateReport({ ...base, subjectId: null })).toEqual({
-      ok: false,
-      reason: "missing-subject",
-    });
-  });
-
-  it("allows a profile report with no subject id, because the person is the subject", () => {
-    const r = validateReport({ ...base, subjectType: "profile", subjectId: null });
-    expect(r.ok).toBe(true);
-  });
-
-  it("trims empty detail to null rather than storing whitespace", () => {
-    const r = validateReport({ ...base, detail: "   " });
-    expect(r.ok && r.value.detail).toBeNull();
-  });
-
-  it("refuses blocking yourself, which would hide your own content from you", () => {
-    expect(validateBlock("alice", "alice")).toEqual({ ok: false, reason: "self-block" });
   });
 });

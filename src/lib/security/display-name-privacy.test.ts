@@ -9,7 +9,8 @@ import { stripSqlComments } from "@/lib/testing/source-scan";
  * `display_name` is published to `anon` through `public_profiles` (migration
  * 056), so anything stored there is readable from the internet with the key
  * that ships in the client bundle by design. `handle_new_user()` wrote
- * `NEW.email` into it from migration 007 until 061.
+ * `NEW.email` into it from migration 007 until 064; 070 closed the provider-name
+ * branch 064 left open and scrubbed what was already stored.
  *
  * The application-layer fix that landed on `main` (`publicDisplayName`) guards
  * every render site and cannot guard the view, because PostgREST does not run
@@ -28,7 +29,7 @@ const MIGRATIONS = fileURLToPath(
   new URL("../../../supabase/migrations", import.meta.url)
 );
 
-const FIX = "061_display_name_is_never_an_email.sql";
+const FIX = "070_display_name_never_an_email_at_source.sql";
 
 function migrationFiles(): string[] {
   return readdirSync(MIGRATIONS).filter((f) => f.endsWith(".sql")).sort();
@@ -41,7 +42,7 @@ function sqlOf(file: string): string {
 /**
  * Every `handle_new_user` body, in apply order, with SQL comments removed.
  *
- * Stripping is not optional: 061's header quotes the defective line verbatim in
+ * Stripping is not optional: 070's header quotes the defective line verbatim in
  * order to explain it, and 006 and 007 discuss it too. A scanner that read
  * comments would report the bug as present in the migration that fixes it —
  * which has now happened six times in this repository, and is why
@@ -111,7 +112,7 @@ describe("the signup trigger", () => {
   });
 });
 
-describe("the scrub in 061", () => {
+describe("the scrub in 070", () => {
   const sql = sqlOf(FIX);
 
   it("nulls the rows whose stored name is the athlete's own address", () => {
@@ -134,7 +135,7 @@ describe("the scrub in 061", () => {
     expect(
       update,
       "the scrub was widened to any name containing '@'. That irreversibly " +
-        "deletes names athletes chose for themselves. See the reasoning in 061."
+        "deletes names athletes chose for themselves. See the reasoning in 070."
     ).not.toMatch(/display_name\s+LIKE\s+'%@%'/i);
   });
 

@@ -7,6 +7,7 @@ import { MessageCircle, Star, Send, Loader2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { UserAvatar } from "@/components/social/user-avatar";
+import { ReportBlockMenu } from "@/components/social/report-block-menu";
 import { SPORTS } from "@/lib/constants/sports";
 import { formatDistance, formatDuration, formatPace, formatIndex } from "@/lib/utils/format";
 import { cn } from "@/lib/utils/cn";
@@ -246,7 +247,7 @@ function CommentsSection({ activityId, commentCount }: { activityId: string; com
   );
 }
 
-function FeedPost({ activity }: { activity: FeedActivity }) {
+function FeedPost({ activity, onBlocked }: { activity: FeedActivity; onBlocked?: () => void }) {
   const meta = sportMeta(activity.sport);
   const [reaction, setReaction] = useState({
     myReaction: activity.myReaction,
@@ -291,6 +292,22 @@ function FeedPost({ activity }: { activity: FeedActivity }) {
             </p>
             <p className="text-[9px] uppercase tracking-wider text-muted/70">score</p>
           </div>
+        )}
+        {/*
+          Report and block ON THE CONTENT, not only on the profile behind it.
+          Guideline 1.2 asks for "a mechanism for users to flag objectionable
+          content", and a feed post is the objectionable content — making
+          someone navigate to a profile first is the friction that stops it
+          being used. Absent on your own posts, where it would be nonsense.
+        */}
+        {!activity.isOwn && (
+          <ReportBlockMenu
+            userId={activity.author.userId}
+            displayName={authorName(activity)}
+            subjectType="feed_item"
+            subjectId={activity.id}
+            onBlocked={onBlocked}
+          />
         )}
       </div>
 
@@ -487,7 +504,17 @@ export function FeedPanel() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: Math.min(i * 0.04, 0.4) }}
         >
-          <FeedPost activity={activity} />
+          <FeedPost
+            activity={activity}
+            /* Drop them from the list immediately. The next fetch would exclude
+               them anyway — the block narrows the query scope server-side — but
+               leaving them on screen until then reads as the block not working. */
+            onBlocked={() =>
+              setActivities((prev) =>
+                (prev ?? []).filter((a) => a.author.userId !== activity.author.userId)
+              )
+            }
+          />
         </motion.div>
       ))}
       {hasMore && (

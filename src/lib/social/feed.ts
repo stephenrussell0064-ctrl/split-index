@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { fetchBlockedUserIds } from "@/lib/social/moderation";
 import type { SportType } from "@/types";
 
 /**
@@ -35,6 +36,8 @@ import type { SportType } from "@/types";
  * only ever under-fetch, never leak a private activity RLS would have
  * blocked.
  */
+
+import { publicDisplayName } from "@/lib/social/shareable-name";
 
 export interface FeedAuthor {
   userId: string;
@@ -236,6 +239,21 @@ export async function fetchActivityFeed(
   // actually answer it.
   const authorScope = [...new Set([userId, ...friendIds])];
 
+  /*
+    Blocked athletes are removed from the SCOPE, not from the results.
+
+    Filtering after the fact would still have fetched their sessions, sent them
+    over the wire and merely not painted them — one devtools panel away from
+    being read by the person they blocked. Narrowing `authorScope` means the
+    database never selects the rows at all.
+
+    Both directions: blocking is bidirectional in effect even though it is
+    stored one way round (see lib/social/moderation.ts). A block that only hid
+    one side would leave the person who was blocked still watching.
+  */
+  const blocked = await fetchBlockedUserIds(supabase, userId);
+  const visibleScope = authorScope.filter((id) => !blocked.has(id));
+
   // The sharing/friendship check is enforced by RLS (activity_is_visible_to),
   // not here — rows belonging to a friend who has gone private simply never
   // come back from this query. The viewer's OWN rows are unaffected by their
@@ -246,7 +264,7 @@ export async function fetchActivityFeed(
     .select(
       "id, user_id, sport, title, started_at, duration_seconds, distance_meters, elevation_meters, avg_heart_rate, max_heart_rate, avg_power_watts, avg_cadence, avg_pace_seconds_per_km, temperature_celsius, session_type, rpe, notes"
     )
-    .in("user_id", authorScope)
+    .in("user_id", visibleScope)
     .eq("is_draft", false)
     .order("started_at", { ascending: false })
     // Tiebreak on id so the sort is a total order. `range()` pagination over a
@@ -346,7 +364,7 @@ export async function fetchActivityFeed(
       author: {
         userId: row.user_id as string,
         username: (author?.username as string | null) ?? null,
-        displayName: (author?.display_name as string | null) ?? null,
+        displayName: publicDisplayName(author?.display_name as string | null),
         avatarUrl: (author?.avatar_url as string | null) ?? null,
       },
       isOwn: row.user_id === userId,

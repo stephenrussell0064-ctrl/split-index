@@ -30,7 +30,7 @@ import {
  */
 
 const MIGRATION = fileURLToPath(
-  new URL("../../../supabase/migrations/060_security_events.sql", import.meta.url)
+  new URL("../../../supabase/migrations/063_security_events.sql", import.meta.url)
 );
 
 const ALL_EVENT_TYPES: SecurityEventType[] = [
