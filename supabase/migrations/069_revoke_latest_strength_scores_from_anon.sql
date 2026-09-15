@@ -1,0 +1,51 @@
+-- ─────────────────────────────────────────────────────────────────────────────
+-- The fifth function. 067 and 068 fixed the four the audit introduced and the
+-- one 065 introduced; this is the one that predates both and was reachable the
+-- whole time.
+--
+-- `latest_strength_scores(p_user_id UUID)` takes an athlete's id as an
+-- ARGUMENT, which is the shape that leaks other people's data if the grant and
+-- the security model do not agree. Both the earlier sweeps looked only at the
+-- functions their own migrations had added, so neither of us looked at it.
+--
+-- MEASURED BEFORE WRITING THIS. Calling it with the anon key that ships in the
+-- client bundle, passing a REAL athlete's user_id read from the anon-readable
+-- `public_profiles` view:
+--
+--   anon          reachable, 0 rows
+--   service_role  1 row, same athlete, same call
+--
+-- So it is SECURITY INVOKER and RLS on `strength_scores` is what returns
+-- nothing — the same shape as `replace_personal_records` before 068. No data
+-- was exposed. What is wrong is only the grant, and a grant that is wrong for
+-- the third time in the same database is worth closing rather than reasoning
+-- about again.
+--
+-- Its only caller is `src/app/(app)/analytics/page.tsx`, which runs after
+-- `auth.getUser()` and passes the caller's own id, so it is the `authenticated`
+-- role. `service_role` is kept for the bulk scripts.
+--
+-- ─────────────────────────────────────────────────────────────────────────────
+-- DELIBERATELY NOT TOUCHED: activity_is_visible_to
+--
+-- The hardening-audit session left it out of 067 on the grounds that revoking
+-- EXECUTE could turn "returns no rows" into "the query errors" for an anonymous
+-- reader, and said that needed a database to settle. Settled, and they were
+-- right:
+--
+--   * The four policies in 031 that call it — "Friends view shared activities"
+--     and the reaction/comment SELECT policies — carry NO `TO` clause, so they
+--     apply to PUBLIC, which includes anon.
+--   * An anon SELECT on `activities` today returns HTTP 200 and `[]`, so the
+--     policy is being evaluated for anon, which means the function is being
+--     called as anon.
+--
+-- Revoking it would replace an empty result with a permission error on a table
+-- the app reads while logged out. Closing it properly means re-scoping those
+-- policies `TO authenticated` first, which is a change to social RLS and not
+-- something to do the day a submission goes in.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+REVOKE ALL ON FUNCTION public.latest_strength_scores(UUID) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.latest_strength_scores(UUID)
+  TO authenticated, service_role;
