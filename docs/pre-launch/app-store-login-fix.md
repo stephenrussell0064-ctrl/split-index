@@ -3,8 +3,9 @@
 **Diagnosed 15 September 2026.** Build 3, submitted 8 September, rejected on
 sign-in.
 
-**Short answer: there is nothing to merge to main, and no code change fixes
-this.** The cause is configuration — your Apple Developer account and the
+**Short answer: no code change fixes this, but there is one small branch worth
+taking — `tools/apple-client-secret`, which carries the tool that generates the
+value Supabase asks you for and had never reached main.** The cause is configuration — your Apple Developer account and the
 Supabase dashboard — and it is step 1 below. A separate code fix exists on
 `fix/app-store-login`, but it belongs to build 5 rather than to the build that
 was rejected; step 2 explains why.
@@ -69,10 +70,48 @@ handle, so nothing here has been done for you.
 4. Keys → create a **Sign in with Apple** key and download the `.p8`. Note the
    Key ID and your Team ID. **Keep the `.p8`; it downloads once.**
 
+> **Do not tick Sign in with Apple in Xcode.** Enabling the capability on the
+> App ID in the portal is required and harmless. Adding the
+> `com.apple.developer.applesignin` **entitlement to the app** is neither, and
+> `ios/App/App/App.entitlements` on main carries a long comment saying why: the
+> app has no native Apple sign-in — no `ASAuthorization` call, no
+> `AuthenticationServices` import — it uses Apple's *web* flow in an in-app
+> browser, authorized by the Services ID. The entitlement buys nothing and
+> breaks device signing, with *"Provisioning profile doesn't include the Sign In
+> with Apple capability"* and an opaque `APPLE_ID_AUTH` error. Simulator builds
+> keep passing throughout, because entitlements are only checked when signing
+> for a device.
+
+**Generate the client secret** — there is a tool for this, and you want it:
+
+```bash
+git checkout tools/apple-client-secret
+node scripts/apple-client-secret.mjs \
+  --key ~/Downloads/AuthKey_<KEYID>.p8 \
+  --team <TEAMID> \
+  --services-id <your Services ID>
+```
+
+Supabase's field is labelled **"Secret Key"** and does not want a key. It wants
+a JWT signed with the `.p8`, and pasting the `.p8` itself is the most common way
+this goes wrong — it fails with an error that explains nothing. The script also
+handles the two details hand-rolled versions miss: the signature must be raw
+r‖s rather than Node's default DER (Apple rejects DER without ever saying
+"encoding"), and Apple caps the token at six months, so it asks for just under
+and prints the expiry date.
+
+**That expiry is a diary entry.** Sign in with Apple stops working on that day
+with no warning; re-run the command and paste the new value, nothing else
+changes.
+
+The script was on `venture/b7-privacy-policy` and had never reached main. It is
+now on `tools/apple-client-secret`, cut from main, tests passing with no
+`node_modules` — verified end to end against a throwaway key, not assumed.
+
 **In the Supabase dashboard** (Authentication → Providers → Apple):
 
 5. Enable the provider. Client ID is the **Services ID** (not the bundle ID).
-   Secret key is generated from the `.p8` + Key ID + Team ID.
+   Secret Key is the JWT the command above printed.
 6. Authentication → URL Configuration → **Redirect URLs**: confirm
    `co.uk.splitindex.app://auth-callback` is allowed. The native flow redirects
    to that custom scheme rather than an https URL, and if it is not on the
