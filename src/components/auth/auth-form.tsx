@@ -14,8 +14,10 @@ import { authErrorMessage } from "@/lib/supabase/auth-errors";
 import { buildAuthCallbackUrl } from "@/lib/supabase/auth-callback-url";
 import { isNativePlatform } from "@/lib/native/platform";
 import {
+  beginNativeOAuth,
   nativeOAuthRedirectUrl,
   openNativeOAuthUrl,
+  registerNativeOAuthDismissListener,
   registerNativeOAuthRedirectListener,
 } from "@/lib/native/oauth";
 
@@ -252,6 +254,25 @@ export function AuthForm({
       }
 
       if (native && data?.url) {
+        /*
+         * `signInWithOAuth` builds the provider URL on the client and never
+         * contacts the server, so a provider that is not enabled on the
+         * Supabase project returns `error: null` and a URL exactly like one
+         * that works. The failure appears only when the browser loads it.
+         *
+         * So the sheet closing without a redirect is the only signal this
+         * screen gets that nothing happened — whether the user changed their
+         * mind or the provider is misconfigured — and without it both buttons
+         * stayed disabled until the app was restarted.
+         */
+        beginNativeOAuth();
+        const stopWatching = registerNativeOAuthDismissListener(() => {
+          stopWatching();
+          setOauthPending(null);
+          setError(
+            `${label} sign-in closed before it finished. Try again, or use another way in.`,
+          );
+        });
         await openNativeOAuthUrl(data.url);
       }
     } catch (err) {
