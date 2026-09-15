@@ -3,10 +3,11 @@
 **Diagnosed 15 September 2026.** Build 3, submitted 8 September, rejected on
 sign-in.
 
-The code half is committed on branch **`fix/app-store-login`** and is ready to
-push. **It does not clear the rejection on its own.** The cause is configuration
-that needs your Apple Developer account and the Supabase dashboard, and that is
-step 1 below.
+**Short answer: there is nothing to merge to main, and no code change fixes
+this.** The cause is configuration — your Apple Developer account and the
+Supabase dashboard — and it is step 1 below. A separate code fix exists on
+`fix/app-store-login`, but it belongs to build 5 rather than to the build that
+was rejected; step 2 explains why.
 
 ---
 
@@ -30,34 +31,27 @@ This was known and recorded at submission. `registry/confirmations.json`, on the
 `submitted` entry, 8 September: *"a reviewer who taps it hits a provider that is
 not configured — a Guideline 4.8 rejection and a likely one."* It went in anyway.
 
-### Why the reviewer could not just use Google instead
+### CORRECTION, same day: what this does NOT explain
 
-This is the part that turned a broken button into "login not working", and it is
-the part the commit fixes.
+An earlier version of this document said the reviewer was also locked out of
+Google and email, because `auth-form.tsx` disables both provider buttons for the
+duration of an attempt and never clears that when the browser sheet is
+dismissed. That is a real bug, and it is **not on the build that was rejected**.
 
-`supabase.auth.signInWithOAuth` builds the provider URL **on the client** and
-never contacts the server. An unconfigured provider therefore returns
-`error: null` and a URL indistinguishable from a working one. The failure only
-appears when the in-app browser loads it.
+Checked afterwards, which is the order it should have been done in:
 
-Meanwhile `auth-form.tsx` disabled **both** provider buttons for the duration of
-an attempt, and cleared that state only on an error from `signInWithOAuth` or on
-the redirect arriving. Dismissing the browser sheet does neither.
+| Branch | `CURRENT_PROJECT_VERSION` | Has `oauthPending` |
+| --- | --- | --- |
+| `main` | **3** — the build that was submitted and rejected | no |
+| `venture/b7-privacy-policy` | 5 — later work, never merged | yes |
 
-So the reviewer's session was:
+`main` has no pending state and no `disabled` on the provider buttons, so
+dismissing the sheet leaves the screen fully usable. On build 3 the reviewer
+could have signed in with Google or email. They rejected it anyway, which means
+the rejection is most likely about Sign in with Apple itself — Guideline 4.8
+requires it to work while Google is offered — rather than about being locked out.
 
-1. Tap **Continue with Apple** — which sits *above* Google deliberately, because
-   Guideline 4.8 asks for equivalent prominence.
-2. In-app browser opens showing raw JSON: `Unsupported provider…`.
-3. Dismiss the sheet.
-4. Google and email are now greyed out, and stay that way until the app is
-   force-quit.
-
-One tap killed the sign-in screen. A reviewer who could still tap Google would
-have got in and the rejection would probably have been about Apple specifically,
-not about login.
-
----
+So the whole of the cause is step 1, and nothing in code substitutes for it.
 
 ## Step 1 — Enable Sign in with Apple. Only you can do this.
 
@@ -98,15 +92,21 @@ turns green on its own when this is done.
 
 ---
 
-## Step 2 — Push the code fix
+## Step 2 — The code fix, and why it is NOT a merge to main
 
-```bash
-cd ~/Projects/split-index
-git checkout fix/app-store-login
-git push -u origin fix/app-store-login
-```
+**Do not merge `fix/app-store-login` into main.** It was cut from
+`venture/b7-privacy-policy`, and that branch and main have diverged badly: 106
+commits on the branch that are not on main, 113 on main that are not on the
+branch, with a good deal of equivalent work done twice under different commits.
+Reconciling them is a real job and it has nothing to do with this rejection.
 
-One commit, `c116a3d`, touching three files:
+Replaying it onto main was tried in a scratch worktree and **does not compile**:
+the fix calls `setOauthPending(null)`, and that state does not exist on main. Git
+merged it without a conflict, which is worth recording — a clean replay is not
+evidence of a working one.
+
+The fix belongs where the bug is: `venture/b7-privacy-policy`, build 5. It is
+committed on `fix/app-store-login` as `c116a3d`, touching three files:
 
 | File | Change |
 | --- | --- |
@@ -119,10 +119,12 @@ the same OS event and would otherwise flash an error over a working sign-in —
 and resets per attempt so a second sign-in is not permanently muted. Both are
 mutation-verified.
 
-**2,101 tests pass, tsc clean.** Note the branch was cut from
-`venture/b7-privacy-policy`; three files modified by another session
-(`sitemap.ts`, `app-shell.tsx`, `premium/features.test.ts`) plus a set of
-untracked files were in the tree and are untouched by the commit.
+**2,101 tests pass, tsc clean — on that branch.** Three files modified by
+another session (`sitemap.ts`, `app-shell.tsx`, `premium/features.test.ts`) plus
+a set of untracked files were in the tree and are untouched by the commit.
+
+Before build 5 ever goes near App Review this should land. On build 3 it is
+neither needed nor applicable.
 
 ---
 
@@ -166,9 +168,9 @@ before you resubmit.
 
 ## The order, in one line
 
-Enable Apple in Supabase and confirm the redirect allowlist → push
-`fix/app-store-login` → confirm the demo account in App Store Connect → rebuild
-and resubmit.
+Enable Apple in Supabase and confirm the redirect allowlist → confirm the demo
+account in App Store Connect → rebuild and resubmit. **Nothing needs to reach
+main for this.**
 
-Step 1 is the one that matters. Step 2 makes sure that if anything else about a
-provider ever breaks, a user still has the two ways in that work.
+Step 1 is the whole of it. Step 2 is for build 5, whenever the
+`venture/b7-privacy-policy` work is reconciled with main.
