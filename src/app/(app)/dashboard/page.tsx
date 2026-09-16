@@ -768,7 +768,13 @@ export default async function DashboardPage() {
               : 0.5
           }
           hasHistory={hasIndexHistory}
-          className="lg:col-span-2"
+          /* The 8-week projection sits beside this and only renders with
+             history behind it. Without that sibling a fixed 2-of-3 span
+             leaves a third of the row empty, which is what a new account
+             sees on its first visit. */
+          className={
+            hasIndexHistory && projection8Weeks !== null ? "lg:col-span-2" : "lg:col-span-3"
+          }
         />
 
         {hasIndexHistory && projection8Weeks !== null && (

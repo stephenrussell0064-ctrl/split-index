@@ -207,7 +207,7 @@ export default async function GymPage() {
             </div>
           </div>
 
-          <div className="grid gap-8 lg:grid-cols-[1fr_380px]">
+          <div className="grid gap-8 xl:grid-cols-[1fr_380px]">
             <div className="min-w-0">
               <GymStrengthPanel
                 strengthIndex={hasHistory ? strengthIndex : null}
@@ -243,7 +243,7 @@ export default async function GymPage() {
                 phone gets its own copy here and the aside is hidden below `lg`
                 — one of the two renders at any width, never both.
               */}
-              <div className="mb-8 lg:hidden">
+              <div className="mb-8 xl:hidden">
                 <GymQuickStart />
               </div>
 
@@ -263,7 +263,7 @@ export default async function GymPage() {
               )}
             </div>
 
-            <aside className="hidden min-w-0 lg:sticky lg:top-24 lg:block lg:self-start">
+            <aside className="hidden min-w-0 xl:sticky xl:top-24 xl:block xl:self-start">
               <GymQuickStart />
             </aside>
           </div>

@@ -88,7 +88,13 @@ export function Input({
           // full page reload on navigation) that zoom doesn't reset when
           // you leave the page, leaving the whole app looking "zoomed in
           // and not fitting" afterward.
-          "h-11 w-full rounded-xl glass px-4 text-base text-foreground placeholder:text-muted/40",
+          // min-w-0 alongside w-full, because `w-full` alone does not beat an
+          // intrinsic minimum. `input[type="date"]` carries one from the date
+          // format it renders, and on iPad that minimum is wider than the card
+          // the field sits in — the control drew ~15px past its own container
+          // while every text field beside it fitted. `w-full` sets the
+          // preferred width; min-w-0 is what allows it to actually shrink to it.
+          "h-11 w-full min-w-0 rounded-xl glass px-4 text-base text-foreground placeholder:text-muted/40",
           "border border-white/10 focus:border-accent/50 focus:ring-1 focus:ring-accent/30 focus:outline-none",
           "transition-all duration-200",
           error && "border-danger/50 focus:border-danger/50 focus:ring-danger/30",

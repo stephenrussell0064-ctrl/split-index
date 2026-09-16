@@ -270,7 +270,7 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
         )}
       />
       <div className="min-h-dvh">
-        <aside className="fixed left-0 top-0 z-40 hidden h-screen w-64 flex-col border-r border-white/5 glass-strong lg:flex">
+        <aside className="mode-content fixed left-0 top-0 z-40 hidden h-screen w-64 flex-col border-r border-white/5 glass-strong pt-[env(safe-area-inset-top)] lg:flex">
           <Link href="/dashboard" className="px-6 py-5 border-b border-white/5 block">
             <BrandMark variant="compact" iconSize={34} wordmarkSize="md" showTagline />
             <p className="mt-2.5 text-[11px] text-muted pl-[42px]">

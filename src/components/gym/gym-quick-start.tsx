@@ -49,7 +49,7 @@ export function GymQuickStart() {
         </div>
         {/* A grid, not a carousel. A row of 200px cards on a 358px phone shows
             one and a half plans and hides the rest behind a sideways swipe. */}
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3">
           {featuredPlans.map((plan) => (
             <Link
               key={plan.id}
