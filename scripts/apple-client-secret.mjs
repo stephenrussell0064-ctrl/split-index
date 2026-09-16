@@ -1,93 +1,133 @@
 #!/usr/bin/env node
 /**
- * Generate the "Secret Key" that Supabase's Apple provider asks for.
+ * Generate the Apple client secret that Supabase asks for.
  *
- * Supabase does not want the .p8 file itself. It wants a client secret, which
- * Apple defines as a short-lived ES256 JWT signed BY that .p8 — so the field in
- * the dashboard takes a token, not a key, and pasting the .p8 contents in is the
- * single most common reason Apple sign-in still fails after "enabling" it.
+ * Supabase's Apple provider has a field labelled "Secret Key". It is not a key
+ * and it is not a password: it is a **JWT you generate**, signed with the .p8
+ * private key Apple gave you, asserting that you are the team that owns the
+ * Services ID. Pasting the .p8 itself into that box is the single most common
+ * way this is got wrong, and it fails with an unhelpful error.
  *
- * Runs on Node's built-in crypto, no dependencies, and never transmits
- * anything. The alternative is one of the "paste your Apple private key here"
- * websites, which is a signing key for your entire developer account.
+ * Two details this gets right that hand-rolled versions usually do not:
  *
- * USAGE
+ *   · **The signature must be raw r‖s, not DER.** Node signs ECDSA in DER by
+ *     default, which is a valid signature of the right thing in the wrong
+ *     encoding — Apple rejects it, and the error says nothing about encoding.
+ *     `dsaEncoding: 'ieee-p1363'` is what JWS requires.
+ *   · **Apple caps the lifetime at six months.** Ask for a year and the token
+ *     is refused outright. This asks for just under the cap and prints the
+ *     expiry date, because the thing nobody plans for is that Sign in with
+ *     Apple silently stops working two quarters from now and by then everyone
+ *     has forgotten this file exists.
+ *
+ * Your private key is read at runtime and never stored, logged or transmitted.
+ * It does not appear in the output. Keep the .p8 out of the repository — Apple
+ * lets you download it exactly once.
+ *
+ * Usage:
  *   node scripts/apple-client-secret.mjs \
- *     --p8 ~/Downloads/AuthKey_ABC123XYZ.p8 \
- *     --key-id ABC123XYZ \
- *     --team-id PC423ABD82 \
- *     --services-id co.uk.splitindex.app.signin
+ *     --key ~/Downloads/AuthKey_ABC123XYZ.p8 \
+ *     --team 1A2B3C4D5E \
+ *     --services-id com.splitindex.signin
  *
- * The token Apple issues is capped at six months, so this has to be re-run and
- * the dashboard field re-pasted before it expires. The expiry is printed.
+ * The Key ID is read from the filename when it looks like Apple's
+ * `AuthKey_<KEYID>.p8`; pass --key-id to override.
  */
 
-import { createSign, createPrivateKey } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { createPrivateKey, createSign } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { basename } from 'node:path';
 
-const args = Object.fromEntries(
-  process.argv.slice(2).reduce((acc, arg, i, all) => {
-    if (arg.startsWith("--")) acc.push([arg.slice(2), all[i + 1]]);
-    return acc;
-  }, []),
-);
+/** Apple refuses anything longer. Just under, so clock skew cannot push it over. */
+const SIX_MONTHS_SECONDS = 15_777_000 - 3600;
 
-const required = ["p8", "key-id", "team-id", "services-id"];
-const missing = required.filter((k) => !args[k]);
-if (missing.length) {
-  console.error(`Missing: ${missing.map((m) => "--" + m).join(", ")}`);
-  console.error("\nUsage:\n  node scripts/apple-client-secret.mjs \\");
-  console.error("    --p8 ~/Downloads/AuthKey_XXXX.p8 --key-id XXXX \\");
-  console.error("    --team-id PC423ABD82 --services-id co.uk.splitindex.app.signin");
-  process.exit(2);
+const base64url = (buf) =>
+  Buffer.from(buf).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+export function appleClientSecret({ privateKeyPem, keyId, teamId, servicesId, now = new Date() }) {
+  for (const [name, value] of Object.entries({ privateKeyPem, keyId, teamId, servicesId })) {
+    if (!value) throw new Error(`Missing ${name}`);
+  }
+
+  const iat = Math.floor(now.getTime() / 1000);
+  const exp = iat + SIX_MONTHS_SECONDS;
+
+  const header = { alg: 'ES256', kid: keyId, typ: 'JWT' };
+  const claims = {
+    iss: teamId,
+    iat,
+    exp,
+    aud: 'https://appleid.apple.com',
+    // The Services ID, not the app's bundle ID. They look alike and are not
+    // interchangeable: the bundle ID identifies the app, the Services ID
+    // identifies the web sign-in configuration that Supabase redirects through.
+    sub: servicesId,
+  };
+
+  const signingInput = `${base64url(JSON.stringify(header))}.${base64url(JSON.stringify(claims))}`;
+
+  const signature = createSign('SHA256')
+    .update(signingInput)
+    .sign({
+      key: createPrivateKey(privateKeyPem),
+      // JWS wants the raw 64-byte r‖s pair. Node's default is DER, which Apple
+      // rejects without saying why.
+      dsaEncoding: 'ieee-p1363',
+    });
+
+  return { token: `${signingInput}.${base64url(signature)}`, expiresAt: new Date(exp * 1000) };
 }
 
-const b64url = (buf) =>
-  Buffer.from(buf).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-
-let pem;
-try {
-  pem = readFileSync(args.p8.replace(/^~/, process.env.HOME), "utf8");
-} catch (e) {
-  console.error(`Cannot read ${args.p8}: ${e.message}`);
-  process.exit(1);
+function arg(name) {
+  const i = process.argv.indexOf(`--${name}`);
+  return i === -1 ? undefined : process.argv[i + 1];
 }
 
-let privateKey;
-try {
-  privateKey = createPrivateKey(pem);
-} catch {
-  console.error("That file is not a readable private key. It should start with");
-  console.error("-----BEGIN PRIVATE KEY----- and be the .p8 Apple gave you.");
-  process.exit(1);
+function main() {
+  const keyPath = arg('key');
+  const teamId = arg('team');
+  const servicesId = arg('services-id');
+  const keyId = arg('key-id') ?? (keyPath ? /AuthKey_([A-Z0-9]+)\.p8$/i.exec(basename(keyPath))?.[1] : undefined);
+
+  if (!keyPath || !teamId || !servicesId || !keyId) {
+    process.stderr.write(
+      '\n  Usage: node scripts/apple-client-secret.mjs --key <AuthKey_XXX.p8> --team <TeamID> --services-id <com.example.signin>\n' +
+        '\n  --key-id is read from the filename when it looks like AuthKey_<KEYID>.p8.\n' +
+        '\n  Where each value comes from:\n' +
+        '    .p8 and Key ID   developer.apple.com → Certificates, Identifiers & Profiles → Keys\n' +
+        '    Team ID          top right of the Apple Developer portal, or Membership details\n' +
+        '    Services ID      the identifier you created of type "Services IDs"\n\n',
+    );
+    process.exitCode = 1;
+    return;
+  }
+
+  let privateKeyPem;
+  try {
+    privateKeyPem = readFileSync(keyPath, 'utf8');
+  } catch (err) {
+    process.stderr.write(`\n  Could not read ${keyPath}: ${err.message}\n\n`);
+    process.exitCode = 1;
+    return;
+  }
+
+  let result;
+  try {
+    result = appleClientSecret({ privateKeyPem, keyId, teamId, servicesId });
+  } catch (err) {
+    process.stderr.write(`\n  Could not sign: ${err.message}\n\n`);
+    process.exitCode = 1;
+    return;
+  }
+
+  process.stdout.write(
+    `\n${result.token}\n\n` +
+      `  Paste that into Supabase → Authentication → Providers → Apple → "Secret Key".\n` +
+      `  Client ID for that same form is the Services ID: ${servicesId}\n\n` +
+      `  EXPIRES ${result.expiresAt.toDateString()}. Sign in with Apple stops working\n` +
+      `  that day with no warning. Put it in the calendar now — re-run this command\n` +
+      `  and paste the new value; nothing else needs to change.\n\n`,
+  );
 }
-if (privateKey.asymmetricKeyType !== "ec") {
-  console.error(`Expected an EC key (Apple issues P-256); got ${privateKey.asymmetricKeyType}.`);
-  process.exit(1);
-}
 
-const now = Math.floor(Date.now() / 1000);
-const SIX_MONTHS = 15777000; // Apple's hard ceiling; anything larger is rejected.
-const exp = now + SIX_MONTHS;
-
-const header = { alg: "ES256", kid: args["key-id"] };
-const payload = {
-  iss: args["team-id"],
-  iat: now,
-  exp,
-  aud: "https://appleid.apple.com",
-  sub: args["services-id"], // the Services ID, NOT the app's bundle identifier
-};
-
-const signingInput = `${b64url(JSON.stringify(header))}.${b64url(JSON.stringify(payload))}`;
-
-// ES256 in a JWT is the raw r||s pair, not the DER envelope OpenSSL emits by
-// default — "ieee-p1363" is what asks for the former. A DER signature here
-// produces a token Apple rejects with an unhelpful invalid_client.
-const signature = createSign("SHA256").update(signingInput).sign({
-  key: privateKey,
-  dsaEncoding: "ieee-p1363",
-});
-
-console.log(`${signingInput}.${b64url(signature)}`);
-console.error(`\nExpires ${new Date(exp * 1000).toISOString().slice(0, 10)} — re-run before then.`);
+if (import.meta.url === `file://${process.argv[1]}`) main();
