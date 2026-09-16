@@ -523,7 +523,8 @@ body {
   never in the bare utility — and the variants get their own rules with the
   pseudo-class attached, which is what makes them states again.
 */
-[data-mode="cardio"] .mode-content [class*="border-white"] {
+[data-mode="cardio"] .mode-content [class*="border-white"],
+[data-mode="cardio"] .mode-content[class*="border-white"] {
   border-color: rgba(12, 26, 36, 0.12);
 }
 
@@ -601,7 +602,17 @@ body {
   color: var(--cardio-text);
 }
 
-[data-mode="cardio"] .mode-content .glass-strong {
+/*
+  Both a descendant AND a compound selector, because the element carrying
+  `mode-content` can itself be the themed surface. AppShell's sidebar is
+  `mode-content ... glass-strong` on ONE element, so the descendant form alone
+  never matched it: the text tokens flipped to the light cardio theme while the
+  panel behind them stayed dark, which is worse than not theming it at all.
+  Verified on an iPad, where the sidebar sits beside the light cardio content
+  and the two have to agree.
+*/
+[data-mode="cardio"] .mode-content .glass-strong,
+[data-mode="cardio"] .mode-content.glass-strong {
   background: rgba(255, 255, 255, 0.9);
   border-color: rgba(12, 26, 36, 0.1);
 }
