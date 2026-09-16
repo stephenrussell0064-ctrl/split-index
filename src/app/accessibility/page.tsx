@@ -27,7 +27,7 @@ const LAST_REVIEWED = "8 September 2026";
 
 export default function AccessibilityPage() {
   return (
-    <main {...mainContentProps} className="mx-auto max-w-3xl px-6 py-16">
+    <main {...mainContentProps} className="mx-auto max-w-3xl px-6 py-16 pt-[max(3rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))]">
       <h1 className="text-3xl font-bold tracking-tight">Accessibility statement</h1>
       <p className="mt-3 text-sm text-muted">Last reviewed: {LAST_REVIEWED}</p>
 

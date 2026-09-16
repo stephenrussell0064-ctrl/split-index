@@ -28,7 +28,22 @@ export default async function LoginPage({
       <div aria-hidden className="landing-orb landing-orb-cardio opacity-50" />
       <div aria-hidden className="landing-hero-grid landing-hero-grid-lab" />
 
-      <main {...mainContentProps} className="relative flex flex-1 items-center justify-center px-4 focus:outline-none">
+      {/*
+        Safe-area padding with a 3rem FLOOR, not a bare env() inset.
+
+        On iPhone env(safe-area-inset-top) reports the real notch height and
+        max() picks it, so nothing moves. The floor is for iPad: an iPhone-only
+        app (TARGETED_DEVICE_FAMILY = 1) runs there in compatibility mode, where
+        the inset reports 0 while iPadOS still paints its status bar across the
+        full width — including over the letterboxed app window. Reviewed on an
+        iPad Air, the brand mark landed underneath the clock.
+
+        This page looked correct on iPhone only by accident: the card is
+        vertically centred and there was enough spare height to clear the
+        island. The compatibility window is proportionally shorter, so centring
+        left no slack and the top slid under the status bar.
+      */}
+      <main {...mainContentProps} className="relative flex flex-1 items-center justify-center px-4 pt-[max(3rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))] focus:outline-none">
         <AuthForm
           mode="login"
           initialError={resolveAuthPageError(error, reason, detail)}

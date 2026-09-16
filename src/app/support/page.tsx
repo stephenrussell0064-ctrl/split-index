@@ -33,7 +33,7 @@ const RESPONSE_TARGET = "two working days";
 export default function SupportPage() {
   return (
     <div className="min-h-dvh bg-[#050508] text-foreground">
-      <header className="border-b border-white/[0.06] glass-strong">
+      <header className="border-b border-white/[0.06] glass-strong pt-[max(1rem,env(safe-area-inset-top))]">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-6 py-4">
           <BrandMark variant="compact" href="/" iconSize={30} wordmarkSize="sm" />
           <Link

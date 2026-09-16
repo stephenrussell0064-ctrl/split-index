@@ -11,7 +11,7 @@ export const metadata = {
 
 export default function EmailConfirmedPage() {
   return (
-    <main {...mainContentProps} className="min-h-dvh bg-ambient flex items-center justify-center px-4 focus:outline-none">
+    <main {...mainContentProps} className="min-h-dvh bg-ambient flex items-center justify-center px-4 pt-[max(3rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))] focus:outline-none">
       <div className="w-full max-w-md text-center">
         <div className="mb-8 flex justify-center">
           <BrandMark variant="full" href="/" logoHeight={36} priority />

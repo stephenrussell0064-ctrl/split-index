@@ -28,7 +28,7 @@ export function LandingPage() {
         button reachable; `h-16` stays the bar's own height so the layout is
         unchanged on the web, where the inset resolves to 0.
       */}
-      <header className="sticky top-0 z-50 border-b border-white/[0.06] bg-[#050605]/80 pt-[env(safe-area-inset-top)] backdrop-blur-md">
+      <header className="sticky top-0 z-50 border-b border-white/[0.06] bg-[#050605]/80 pt-[max(1rem,env(safe-area-inset-top))] backdrop-blur-md">
         <div className="flex h-16 items-center justify-between px-4 sm:px-6 md:px-[6vw]">
           <BrandMark variant="full" href="/" logoHeight={34} priority className="shrink-0" />
           <nav className="hidden items-center text-xs uppercase tracking-[0.18em] text-white/50 md:flex">

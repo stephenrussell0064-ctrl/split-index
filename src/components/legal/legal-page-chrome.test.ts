@@ -84,7 +84,17 @@ describe("the platform check survives hydration", () => {
 
 describe("the pages clear the iOS safe areas", () => {
   it.each(Object.entries(PAGES))("%s pads its header past the status bar", (_n, src) => {
-    expect(src).toContain("pt-[env(safe-area-inset-top)]");
+    /*
+     * This asserted the bare `pt-[env(safe-area-inset-top)]` and was right on a
+     * phone and wrong on the device App Review actually used. Measured inside
+     * iPad compatibility mode — where an iPhone-only app runs on iPad — the
+     * inset reports 0px while iPadOS still paints its status bar over the
+     * window, so the bare form expands to `padding-top: 0` and protects
+     * nothing. The floor is what does the work there; env() still wins on a
+     * phone, where it is larger.
+     */
+    expect(src).toContain("pt-[max(1rem,env(safe-area-inset-top))]");
+    expect(src).not.toContain("pt-[env(safe-area-inset-top)]");
   });
 
   it.each(Object.entries(PAGES))("%s pads its footer past the home indicator", (_n, src) => {

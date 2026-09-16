@@ -99,7 +99,7 @@ export default async function HowScoringWorksPage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: jsonLdScript(articleJsonLd) }}
       />
-      <header className="border-b border-white/[0.06] glass-strong">
+      <header className="border-b border-white/[0.06] glass-strong pt-[max(1rem,env(safe-area-inset-top))]">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-6 py-4">
           <BrandMark variant="compact" href={backHref} iconSize={30} wordmarkSize="sm" />
           <Link

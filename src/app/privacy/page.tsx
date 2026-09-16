@@ -29,7 +29,7 @@ export default function PrivacyPolicyPage() {
         back control was not merely awkward to hit: it was physically beneath
         the status bar and could not be tapped at all.
       */}
-      <header className="border-b border-white/[0.06] glass-strong pt-[env(safe-area-inset-top)]">
+      <header className="border-b border-white/[0.06] glass-strong pt-[max(1rem,env(safe-area-inset-top))]">
         <div className="mx-auto flex max-w-3xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
           <BrandMark variant="compact" href="/" iconSize={30} wordmarkSize="sm" />
           <LegalBackLink />

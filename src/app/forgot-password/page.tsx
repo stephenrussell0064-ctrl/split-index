@@ -5,7 +5,7 @@ import { mainContentProps } from "@/lib/a11y/main-content";
 export default function ForgotPasswordPage() {
   return (
     <div className="min-h-dvh bg-ambient flex flex-col">
-      <main {...mainContentProps} className="flex flex-1 items-center justify-center px-4 focus:outline-none">
+      <main {...mainContentProps} className="flex flex-1 items-center justify-center px-4 pt-[max(3rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))] focus:outline-none">
         <ForgotPasswordForm />
       </main>
       <footer className="px-6 py-6 text-center text-sm text-muted">
