@@ -10,6 +10,26 @@
 -- Do not renumber this down to follow this branch's own 062. That sequence is
 -- itself a renumbering of migrations already applied to production under
 -- different numbers, which the submission runbook defers to after approval.
+--
+-- ALREADY APPLIED TO PRODUCTION BY HAND, and not recorded as applied.
+--
+-- The body below was pasted into the Supabase SQL Editor and run against
+-- production before this file was renumbered, under its old 065 name. Both
+-- tables, both indexes, both policies and rank_best_efforts are live there
+-- now. Because it went through the SQL Editor rather than the CLI, no row was
+-- written to supabase_migrations.schema_migrations, so `db push` still reads
+-- 078 as pending and will run it again.
+--
+-- That is safe. Every statement here is re-runnable — CREATE TABLE / CREATE
+-- INDEX IF NOT EXISTS, ENABLE ROW LEVEL SECURITY, DROP POLICY IF EXISTS
+-- before each CREATE POLICY, CREATE OR REPLACE FUNCTION, and a GRANT — so the
+-- re-run changes nothing and simply records the version. Checked statement by
+-- statement rather than assumed.
+--
+-- Do NOT try to tidy this by inserting a ledger row by hand, and especially
+-- not under 065: that version belongs to main's
+-- 065_replace_personal_records_atomically.sql, and claiming it here would mark
+-- a migration this database has never run as done.
 
 -- Run analysis: per-sample streams and best efforts for GPS-tracked sessions.
 --
