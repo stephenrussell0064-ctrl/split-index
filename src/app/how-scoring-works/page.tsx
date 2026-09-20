@@ -321,8 +321,7 @@ export default async function HowScoringWorksPage() {
               <h2 className="text-lg font-semibold text-foreground">Lactate threshold and VO2max</h2>
               <p className="mt-3">
                 Neither of these is a lab measurement — no consumer wearable measures actual blood
-                lactate or gas exchange, Garmin included. Both are estimated from your own logged
-                training the same way every mainstream platform does it.
+                lactate or gas exchange. Both are estimated from your own logged training.
               </p>
               <p className="mt-3">
                 <strong className="text-foreground">Lactate threshold</strong> uses your own

@@ -96,8 +96,7 @@ export function FitnessEstimatesPanel({
           <CardTitle>Fitness Estimates</CardTitle>
           <p className="text-xs text-muted">
             Neither of these is a lab measurement — no wearable measures actual blood lactate or
-            gas exchange. Both are estimated the same way Garmin and every other platform does it,
-            from your own logged pace, heart rate, and effort.
+            gas exchange. Both are estimated from your own logged pace, heart rate, and effort.
           </p>
         </CardHeader>
         <CardContent>

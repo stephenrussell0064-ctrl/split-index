@@ -453,8 +453,8 @@ export function UpcomingRacesPanel() {
 
         <ScoringExplainerNote className="mt-4 text-muted">
           Elevation and weather adjustments are order-of-magnitude approximations, not a precise
-          simulation — nobody&apos;s model (Garmin included) can predict exactly how heat or wind
-          affects a specific athlete on a specific day.
+          simulation — no model can predict exactly how heat or wind affects a specific athlete on
+          a specific day.
         </ScoringExplainerNote>
       </CardContent>
     </Card>
