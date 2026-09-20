@@ -26,6 +26,7 @@ import { StoredPredictionsPanel } from "./stored-predictions-panel";
 import { FitnessEstimatesPanel } from "./fitness-estimates-panel";
 import { UpcomingRacesPanel } from "./upcoming-races-panel";
 import { RaceRecordsPanel } from "./race-records-panel";
+import { BestEffortsPanel } from "./best-efforts-panel";
 import { DotsGlPanel } from "./dots-gl-panel";
 import { PremiumGate } from "./premium-gate";
 import { PremiumTease } from "@/components/premium/premium-tease";
@@ -333,6 +334,22 @@ export function AnalyticsClient({ data }: { data: AnalyticsPayload }) {
         <RaceRecordsPanel records={data.raceRecords} />
         <DotsGlPanel result={data.overallDotsGl} hasAccess={data.showDotsGl} />
       </div>
+
+      {/* Sits under Race Records because it answers the neighbouring question
+          rather than the same one: Race Records is the best WHOLE logged
+          activity at a distance, this is the fastest STRETCH of that distance
+          found inside any session. A quick 5K in the middle of a long run
+          never appears above and is often the faster number. Premium, because
+          it is the same stream-derived data the per-session run analysis
+          charges for. */}
+      <PremiumGate
+        locked={!data.showBestEfforts}
+        feature="Best efforts"
+        description="Your fastest ever 1K, 5K, 10K and more, found anywhere inside a tracked run, ride or walk."
+        minHeight={200}
+      >
+        <BestEffortsPanel efforts={data.bestEfforts} />
+      </PremiumGate>
 
       {/* User feedback: "would it be possible to have a section where
           people can enter the run event they are doing... and Split Index

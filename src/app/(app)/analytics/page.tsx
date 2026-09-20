@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { AnalyticsClient } from "@/components/analytics/analytics-client";
 import { isPremiumUser } from "@/lib/retention/trial";
+import { fetchPersonalBestEfforts } from "@/lib/analysis/records";
 import { canAccessProfile } from "@/lib/premium/features";
 import { hasArticle9Consent } from "@/lib/consent/article9";
 import { resolveScoringSex } from "@/lib/scoring/adapters";
@@ -44,6 +45,7 @@ export default async function AnalyticsPage() {
     profile.subscription_status
   );
   const showDotsGl = canAccessProfile("strength_dots_gl", profile);
+  const showBestEfforts = canAccessProfile("run_analysis", profile);
   const historyCutoff = isoDaysAgo(premium ? HISTORY_DAYS : 7);
   const activityCutoff = isoDaysAgo(ACTIVITY_DAYS);
 
@@ -127,6 +129,18 @@ export default async function AnalyticsPage() {
     // activity ids first.
     fetchAllTimeLiftRows(supabase, user.id),
   ]);
+
+  /*
+   * Fastest ever at each distance, across every GPS session — the
+   * cross-activity half of run analysis (migration 079).
+   *
+   * Fetched only when the athlete is entitled to it, not fetched and then
+   * hidden: the per-session analysis is premium, so reading the same
+   * stream-derived numbers free on this page would hand over exactly what the
+   * activity page charges for. PremiumGate's own rule — an ungated value must
+   * be absent from the payload, not merely undrawn.
+   */
+  const bestEfforts = showBestEfforts ? await fetchPersonalBestEfforts(supabase) : [];
 
   /*
    * The injury Risk Index needs Article 9 consent, and the rest of this page
@@ -257,6 +271,8 @@ export default async function AnalyticsPage() {
     hrvBaseline,
     article9Consent,
     raceRecords,
+    bestEfforts,
+    showBestEfforts,
     overallDotsGl,
     showDotsGl,
   };

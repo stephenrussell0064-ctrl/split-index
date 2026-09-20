@@ -1,4 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { SportType } from "@/types";
+import { bestEffortLabel } from "./best-efforts";
 import { parseActivityStreams, type ActivityStreams } from "./streams";
 
 /**
@@ -52,6 +54,77 @@ export async function fetchBestEffortStandings(
     previousBestElapsedSeconds:
       row.previous_best_elapsed_seconds === null ? null : Number(row.previous_best_elapsed_seconds),
   }));
+}
+
+/**
+ * The athlete's fastest ever effort at one distance, wherever it happened.
+ *
+ * Deliberately a different thing from the race records already on the
+ * analytics page. Those are the best WHOLE logged activity at a distance: you
+ * ran a 5K race, that is your 5K. This is the fastest STRETCH of that distance
+ * inside any session, so the quick 5K buried in the middle of a long run
+ * counts. Most athletes' genuine best at a short distance is of the second
+ * kind, which is why it is worth showing both rather than folding one into the
+ * other.
+ */
+export interface PersonalBestEffort {
+  sport: SportType;
+  distanceMeters: number;
+  /** "5K", "1 mile", "Half marathon" — the same names the per-run panel uses. */
+  label: string;
+  elapsedSeconds: number;
+  paceSecondsPerKm: number;
+  activityId: string;
+  achievedAt: string;
+  /** Sessions containing an effort at this distance. One means this is a first, not yet a record. */
+  attempts: number;
+}
+
+interface BestEffortRow {
+  sport: string;
+  distance_meters: number;
+  elapsed_seconds: number | string;
+  activity_id: string;
+  achieved_at: string;
+  attempts: number;
+}
+
+/**
+ * Every distance the athlete has ever covered, with their fastest at each.
+ *
+ * Reads the personal_best_efforts SQL function (migration 079) rather than
+ * selecting and reducing, because PostgREST cannot express "one row per
+ * distance" and a row-limited fetch silently loses whole distances from a
+ * prolific athlete's history. Empty on any failure, including a database
+ * without the migration, so the panel renders its own empty state instead of
+ * the page failing.
+ */
+export async function fetchPersonalBestEfforts(
+  supabase: SupabaseClient
+): Promise<PersonalBestEffort[]> {
+  const { data, error } = await supabase.rpc("personal_best_efforts");
+  if (error || !Array.isArray(data)) {
+    if (error) console.error("[analysis] personal_best_efforts failed:", error.message);
+    return [];
+  }
+  return (data as BestEffortRow[])
+    .map((row) => {
+      const sport = row.sport as SportType;
+      const distanceMeters = Number(row.distance_meters);
+      const elapsedSeconds = Number(row.elapsed_seconds);
+      return {
+        sport,
+        distanceMeters,
+        label: bestEffortLabel(sport, distanceMeters),
+        elapsedSeconds,
+        paceSecondsPerKm:
+          distanceMeters > 0 ? Math.round((elapsedSeconds / distanceMeters) * 1000 * 10) / 10 : 0,
+        activityId: row.activity_id,
+        achievedAt: row.achieved_at,
+        attempts: Number(row.attempts),
+      };
+    })
+    .filter((e) => e.distanceMeters > 0 && e.elapsedSeconds > 0);
 }
 
 /**

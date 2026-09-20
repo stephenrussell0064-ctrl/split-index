@@ -5,6 +5,7 @@ import type {
   SportType,
 } from "@/types";
 import type { RaceRecord } from "@/lib/scoring/race-records";
+import type { PersonalBestEffort } from "@/lib/analysis/records";
 import type { OverallDotsGlResult } from "@/lib/scoring/strength/overall-dots-gl";
 
 export type SportFilter = "all" | SportType;
@@ -90,6 +91,9 @@ export interface AnalyticsPayload {
   article9Consent: boolean;
   /** Best-ever time per standard race distance, mined from the athlete's own logged activities (race-records.ts) — not gated by premium, same as the rest of Personal Records. */
   raceRecords: RaceRecord[];
+  /** Fastest ever at each distance across all GPS sessions — premium, so empty for a free account rather than fetched and hidden. */
+  bestEfforts: PersonalBestEffort[];
+  showBestEfforts: boolean;
   /** Profile-wide best-ever SBD DOTS/GL (overall-dots-gl.ts) — null until bodyweight is set. Gated by `showDotsGl`, same premium feature as the Lab page's own DOTS/GL card. */
   overallDotsGl: OverallDotsGlResult | null;
   showDotsGl: boolean;
