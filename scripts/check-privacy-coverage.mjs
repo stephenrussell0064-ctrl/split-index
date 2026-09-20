@@ -40,11 +40,24 @@
  *
  * Enumerating them found three things the policy is silent on. See `GAPS`.
  *
+ * ## Whose schema is this? — 20 Sep 2026
+ *
+ * Enumerating the working tree answers a slightly different question from the
+ * one the milestone asks, and the gap between them cost a day. This checkout is
+ * shared by several sessions, so "every table in supabase/migrations" includes
+ * tables that exist in no commit. The check went red on two of those and the
+ * dashboard reported the venture losing four points on a privacy failure that
+ * did not exist. See `draftOnly`: unaccounted tables whose migrations are all
+ * uncommitted exit 2 — cannot determine — instead of 1.
+ *
  *   node scripts/check-privacy-coverage.mjs
+ *
+ * Exit codes: 0 covered · 1 a gap in the committed schema · 2 cannot determine.
  */
 
+import { execFileSync } from 'node:child_process';
 import { readFileSync, readdirSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -259,12 +272,90 @@ export function normalisePolicy(source) {
     .toLowerCase();
 }
 
+/** Each migration file, in the order the database would apply them. */
+function migrationFiles() {
+  return readdirSync(MIGRATIONS)
+    .filter((f) => f.endsWith('.sql'))
+    .sort()
+    .map((file) => ({ path: join(MIGRATIONS, file), sql: readFileSync(join(MIGRATIONS, file), 'utf8') }));
+}
+
 function migrationsText() {
-  let text = '';
-  for (const file of readdirSync(MIGRATIONS).filter((f) => f.endsWith('.sql'))) {
-    text += readFileSync(join(MIGRATIONS, file), 'utf8') + '\n';
+  return migrationFiles()
+    .map((f) => f.sql)
+    .join('\n');
+}
+
+/**
+ * Every table, and the migration that first created it.
+ *
+ * The check used to report an unaccounted table by name alone, which is the
+ * question but not the place to answer it — and, more importantly, not enough
+ * for anyone to tell whether the table is part of the venture or part of
+ * somebody's afternoon. See `draftOnly` below for why that distinction is load
+ * bearing. First definition wins: a table created once and altered later is
+ * introduced by its CREATE, and that is the file a reader wants.
+ */
+export function tableSources(files) {
+  const source = new Map();
+  for (const { path, sql } of files) {
+    for (const table of tablesIn(sql).keys()) if (!source.has(table)) source.set(table, path);
   }
-  return text;
+  return source;
+}
+
+/**
+ * Files git reports as modified, added or untracked — absolute paths.
+ *
+ * Empty when this is not a repository or git is unavailable: we cannot
+ * attribute anything, so nothing is excused and the failure stands.
+ */
+function uncommittedFiles() {
+  try {
+    const root = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: ROOT, encoding: 'utf8' }).trim();
+    const status = execFileSync('git', ['status', '--porcelain', '-z', '-uall'], { cwd: ROOT, encoding: 'utf8' });
+    return new Set(
+      status
+        .split('\0')
+        .filter((entry) => /^[ MADRCU?!][ MADRCU?!] /.test(entry))
+        .map((entry) => join(root, entry.slice(3))),
+    );
+  } catch {
+    return new Set();
+  }
+}
+
+/**
+ * True only when there is something to report and EVERY table reported is
+ * defined in a file that is not committed.
+ *
+ * ## Why this exists, and why it does not weaken the check
+ *
+ * 20 Sep 2026. This check went red and the dashboard reported Split Index
+ * dropping four points on a privacy-policy failure. The policy had not changed
+ * and had no gap: at HEAD the check passed, accounting for all 45 user-linked
+ * tables. Both tables it named were defined only in an UNTRACKED migration that
+ * a concurrent session was still writing. The check was right about what it
+ * read and wrong about whose schema it was reading — the same fault, in the
+ * same week, that `tests-green` was red for twice.
+ *
+ * That matters more here than it looks. b7 is an App Store blocker at revenue
+ * proximity 5, and a red one is read as "the policy is inaccurate, submission
+ * is at risk". Spending an operator's attention on a disclosure for a table
+ * that exists in no commit is the expensive direction of this error.
+ *
+ * Unanimity, so a real omission can never hide behind a draft: one unaccounted
+ * table whose migration IS committed and the whole thing exits 1 as before. An
+ * empty working tree cannot trigger it — every path fails the membership test
+ * against an empty set. A table whose defining file cannot be identified at all
+ * counts as committed, which keeps the failure red; the safe direction.
+ *
+ * It says "don't know" (exit 2), not "fine" (exit 0). The registry opts in to
+ * that per check — see `unverifiedOn` in venture-projects/registry/ventures.mjs.
+ */
+export function draftOnly(tables, sources, uncommitted) {
+  if (!tables.length) return false;
+  return tables.every((t) => sources.has(t) && uncommitted.has(sources.get(t)));
 }
 
 /**
@@ -287,7 +378,9 @@ export function tablesIn(schema) {
 }
 
 function main() {
-  const schema = migrationsText();
+  const files = migrationFiles();
+  const schema = files.map((f) => f.sql).join('\n');
+  const sources = tableSources(files);
   const policy = normalisePolicy(readFileSync(POLICY, 'utf8'));
 
   const gaps = [];
@@ -352,7 +445,12 @@ function main() {
     out +=
       `${unaccounted.length} table(s) hold data keyed to a user and nothing here says what the\n` +
       `policy tells that person about them:\n\n` +
-      unaccounted.map((t) => `  · ${t}\n`).join('') +
+      unaccounted
+        .map((t) => {
+          const from = sources.get(t);
+          return `  · ${t}${from ? `\n    added by ${relative(ROOT, from)}` : ''}\n`;
+        })
+        .join('') +
       `\n  Add each to TABLE_COVERAGE in this script, naming the clause of §2 that covers it —\n` +
       `  or \`null\` if it holds no personal data, which is a decision worth recording either way.\n\n`;
   }
@@ -370,6 +468,26 @@ function main() {
       openGaps.map((t) => `  · ${t}\n    ${GAPS[t]}\n`).join('') +
       `\n  Write the paragraph, then delete the entry from GAPS and file the table in\n` +
       `  TABLE_COVERAGE under the clause you wrote.\n\n`;
+  }
+
+  /*
+   * Is this the venture's schema, or somebody's working copy?
+   *
+   * Only asked when the unaccounted tables are the ONLY complaint. A missing
+   * policy clause or a known gap is about the committed policy regardless of
+   * what is in the tree, and stays red.
+   */
+  const onlyUnaccounted = unaccounted.length > 0 && !gaps.length && !clauseMissing.length && !openGaps.length;
+  if (onlyUnaccounted && draftOnly(unaccounted, sources, uncommittedFiles())) {
+    process.stderr.write(
+      out +
+        `NOT A POLICY GAP — every table above is defined in a migration that is not\n` +
+        `committed in this checkout. This is a draft in the working tree, not the\n` +
+        `venture's schema, so the answer is "cannot determine" rather than "the policy\n` +
+        `is wrong". It goes red the moment the migration is committed, which is when\n` +
+        `the disclosure is owed and when the person who wrote it is there to write it.\n\n`,
+    );
+    process.exit(2);
   }
 
   out +=

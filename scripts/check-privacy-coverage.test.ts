@@ -4,6 +4,8 @@ import { describe, expect, it } from "vitest";
 // Plain ESM script with no type declarations; imported for its exports only.
 import {
   tablesIn,
+  tableSources,
+  draftOnly,
   normalisePolicy,
   POLICY,
   TABLE_COVERAGE,
@@ -92,6 +94,77 @@ describe("what the coverage map has to account for", () => {
       expect(why).not.toMatch(/^TODO/i);
       expect(table).toMatch(/^[a-z_]+$/);
     }
+  });
+});
+
+/*
+ * Whose schema the check is reading.
+ *
+ * 20 Sep 2026. The check went red on `activity_streams` and
+ * `activity_best_efforts` and the dashboard reported Split Index dropping four
+ * points on a privacy-policy failure. There was no gap: at HEAD the check
+ * passed on all 45 user-linked tables, and both named tables were defined only
+ * in an untracked migration a concurrent session was still writing.
+ *
+ * The assertions that matter here are the NEGATIVE ones. A guard that excuses a
+ * failure is only safe if it refuses to excuse the real thing, so each of these
+ * removes one leg of the excuse and expects the failure back.
+ */
+describe("a draft in the working tree is not a policy gap", () => {
+  const file = (n: string) => `/repo/supabase/migrations/${n}.sql`;
+  const sources = new Map([
+    ["activity_streams", file("065_activity_streams")],
+    ["sleep_logs", file("012_sleep")],
+  ]);
+
+  it("finds which migration introduced each table", () => {
+    const found = tableSources([
+      { path: file("012_sleep"), sql: table("sleep_logs", "id uuid, user_id uuid") },
+      { path: file("065_activity_streams"), sql: table("activity_streams", "user_id uuid") },
+    ]);
+    expect(found.get("sleep_logs")).toBe(file("012_sleep"));
+    expect(found.get("activity_streams")).toBe(file("065_activity_streams"));
+  });
+
+  it("credits the CREATE, not a later ALTER that re-declares it", () => {
+    // The file a reader wants is where the table came from.
+    const found = tableSources([
+      { path: file("012_sleep"), sql: table("t", "id uuid") },
+      { path: file("065_activity_streams"), sql: table("t", "id uuid, user_id uuid") },
+    ]);
+    expect(found.get("t")).toBe(file("012_sleep"));
+  });
+
+  it("excuses a table whose migration is uncommitted", () => {
+    expect(draftOnly(["activity_streams"], sources, new Set([file("065_activity_streams")]))).toBe(true);
+  });
+
+  it("THE FAULT IT MUST NOT CAUSE: a committed table stays a failure", () => {
+    // The whole risk of this guard. `sleep_logs` is in a committed migration,
+    // so a policy that says nothing about it is a real art. 13 omission and has
+    // to stay red however dirty the tree is.
+    expect(draftOnly(["sleep_logs"], sources, new Set([file("065_activity_streams")]))).toBe(false);
+  });
+
+  it("unanimity: one committed table among drafts keeps the whole thing red", () => {
+    // Otherwise a real omission hides behind whatever else is in the tree.
+    expect(
+      draftOnly(["activity_streams", "sleep_logs"], sources, new Set([file("065_activity_streams")])),
+    ).toBe(false);
+  });
+
+  it("a clean tree can never excuse anything", () => {
+    expect(draftOnly(["activity_streams"], sources, new Set())).toBe(false);
+  });
+
+  it("a table whose migration cannot be identified stays a failure", () => {
+    // Unknown provenance is not evidence of a draft. Red is the safe direction.
+    expect(draftOnly(["mystery_table"], sources, new Set([file("065_activity_streams")]))).toBe(false);
+  });
+
+  it("nothing to report is not something to excuse", () => {
+    // An empty list satisfies `every` vacuously; this is the guard against that.
+    expect(draftOnly([], sources, new Set([file("065_activity_streams")]))).toBe(false);
   });
 });
 
