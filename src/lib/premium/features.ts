@@ -79,7 +79,7 @@ export const FREE_TIER_FEATURES = [
 ] as const;
 
 export const PREMIUM_TIER_FEATURES = [
-  "Run analysis — splits, best efforts, heart-rate zones and elevation for every GPS session",
+  "Run, ride and walk analysis — splits, best efforts, heart-rate zones and elevation for every GPS session",
   "Injury Risk Index — know when to back off, before it becomes an injury",
   "GPT AI Coach — a concrete recommendation after every workout",
   "Race predictions personalized to your own pace curve, not a generic formula",

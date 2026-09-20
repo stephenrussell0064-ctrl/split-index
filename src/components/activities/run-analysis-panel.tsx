@@ -22,6 +22,7 @@ import type { HrZone, HrZoneModel } from "@/lib/analysis/heart-rate";
 import type { BestEffortStanding } from "@/lib/analysis/records";
 import type { RunAnalysis } from "@/lib/analysis/run-analysis";
 import type { Split } from "@/lib/analysis/splits";
+import { sportVocabulary, isSpeedBased } from "@/lib/analysis/vocabulary";
 import { cn } from "@/lib/utils/cn";
 
 /**
@@ -82,13 +83,17 @@ export function RunAnalysisPanel({ analysis, standings }: RunAnalysisPanelProps)
     analysis.elevation !== null;
   if (!hasAnything) return null;
 
+  // A walk is not a run and a ride is not a run. The analysis always covered
+  // every GPS sport; only the words were running-only.
+  const words = sportVocabulary(analysis.sport);
+
   return (
     <section
       className="rounded-2xl border border-cardio-border/40 bg-cardio-bg-elevated/10 p-5 mb-6"
-      aria-label="Run analysis"
+      aria-label={`${words.Noun} analysis`}
     >
       <div className="mb-4 flex items-center justify-between gap-3">
-        <p className="micro-label text-muted">Run analysis</p>
+        <p className="micro-label text-muted">{words.Noun} analysis</p>
         <span className="rounded-full border border-cardio-border/40 px-2 py-0.5 text-[10px] uppercase tracking-wider text-cardio-accent-text">
           Premium
         </span>
@@ -148,10 +153,14 @@ function BestEffortsSection({
   sport: RunAnalysis["sport"];
 }) {
   const unit = "km";
-  const isRide = sport === "outdoor_cycling";
+  const isRide = isSpeedBased(sport);
   return (
     <div>
-      <SectionTitle icon={Trophy} title="Best efforts" hint="fastest stretch of each distance inside this run" />
+      <SectionTitle
+        icon={Trophy}
+        title="Best efforts"
+        hint={`fastest stretch of each distance inside this ${sportVocabulary(sport).noun}`}
+      />
       <ul className="divide-y divide-white/[0.06] rounded-xl border border-white/[0.06]">
         {efforts.map((effort) => {
           const standing = standingFor(effort, standings);
@@ -192,7 +201,7 @@ function SplitsSection({ analysis }: { analysis: RunAnalysis }) {
   const slowest = paces.length > 0 ? Math.max(...paces) : null;
   const hasHr = splits.some((s) => s.avgHeartRate !== null);
   const hasClimb = splits.some((s) => s.elevationGainMeters !== null);
-  const isRide = analysis.sport === "outdoor_cycling";
+  const isRide = isSpeedBased(analysis.sport);
   const summary = analysis.pace;
 
   return (
@@ -392,15 +401,16 @@ function PaceChart({ analysis }: { analysis: RunAnalysis }) {
   const reducedMotion = useReducedMotion();
   const data = analysis.chart.filter((p) => p.paceSecondsPerKm !== null);
   if (data.length < 5) return null;
-  const isRide = analysis.sport === "outdoor_cycling";
+  const words = sportVocabulary(analysis.sport);
+  const isRide = isSpeedBased(analysis.sport);
   const series = isRide
     ? data.map((p) => ({ ...p, value: Math.round((3600 / (p.paceSecondsPerKm as number)) * 10) / 10 }))
     : data.map((p) => ({ ...p, value: p.paceSecondsPerKm as number }));
 
   return (
     <div>
-      <SectionTitle icon={Activity} title={isRide ? "Speed" : "Pace"} hint="over distance" />
-      <div role="img" aria-label={`${isRide ? "Speed" : "Pace"} over the run`}>
+      <SectionTitle icon={Activity} title={words.rateLabel} hint="over distance" />
+      <div role="img" aria-label={`${words.rateLabel} over the ${words.noun}`}>
         <ResponsiveContainer width="100%" height={180}>
           <LineChart data={series} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
             <CartesianGrid vertical={false} strokeDasharray="3 6" stroke={chartGridStroke} />
@@ -459,7 +469,7 @@ function HeartRateSection({ analysis }: { analysis: RunAnalysis }) {
       <SectionTitle icon={HeartPulse} title="Heart rate" hint={`avg ${hr.avgBpm} · max ${hr.maxBpm} bpm`} />
 
       {data.length >= 5 && (
-        <div role="img" aria-label="Heart rate over the run">
+        <div role="img" aria-label={`Heart rate over the ${sportVocabulary(analysis.sport).noun}`}>
           <ResponsiveContainer width="100%" height={160}>
             <AreaChart data={data} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
               <defs>

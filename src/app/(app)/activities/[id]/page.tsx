@@ -29,6 +29,7 @@ import {
   fetchActivityStreams,
   fetchBestEffortStandings,
 } from "@/lib/analysis/records";
+import { sportVocabulary } from "@/lib/analysis/vocabulary";
 import { MergedSessionBanner } from "@/components/activities/merged-session-banner";
 import { readMergeRecord } from "@/lib/activities/merge";
 import { SetActivityMode } from "@/components/layout/set-activity-mode";
@@ -152,6 +153,9 @@ export default async function ActivityDetailPage({
   const hasAnalysis =
     runAnalysis !== null ||
     (isGpsCardio && !showRunAnalysis && (await activityHasStreams(supabase, id)));
+  // The locked panel has no analysis to read the sport from, so the words come
+  // from the activity itself — a walk is offered "Walk analysis", not "Run".
+  const analysisWords = sportVocabulary(activity.sport as SportType);
 
   const meta = SPORTS.find((s) => s.id === activity.sport);
   const sportIndex = score?.sport_index as number | undefined;
@@ -254,8 +258,8 @@ export default async function ActivityDetailPage({
           <PremiumGate
             locked
             className="mb-6"
-            feature="Run analysis"
-            description="Splits, your fastest 1K/5K/10K inside this run, heart-rate zones and the elevation profile."
+            feature={`${analysisWords.Noun} analysis`}
+            description={`Splits, your fastest stretches at every standard distance inside this ${analysisWords.noun}, heart-rate zones and the elevation profile.`}
             minHeight={260}
           >
             {null}

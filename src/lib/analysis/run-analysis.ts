@@ -4,6 +4,7 @@ import { analyzeElevation, smoothedAltitudeSeries, type ElevationAnalysis } from
 import { analyzeHeartRate, type HeartRateAnalysis, type HrProfileInput } from "./heart-rate";
 import { computeSplits, METERS_PER_MILE, summarizePace, type PaceSummary, type Split } from "./splits";
 import { totalDistanceMeters, totalSeconds, type ActivityStreams } from "./streams";
+import { paceBandFor } from "./vocabulary";
 
 /**
  * Everything the activity page's run-analysis panel renders, computed once
@@ -26,7 +27,7 @@ export interface RunAnalysis {
   sampleCount: number;
   /** Per-kilometre splits. */
   splitsKm: Split[];
-  /** The same run cut per mile — runners on either convention get their own table. */
+  /** The same session cut per mile — athletes on either convention get their own table. */
   splitsMile: Split[];
   pace: PaceSummary | null;
   bestEfforts: BestEffort[];
@@ -45,13 +46,18 @@ export const CHART_CONFIG = {
   MAX_POINTS: 240,
   /** Window the rolling pace is measured over. Shorter than this and a 10m leg's timing jitter dominates; longer and a surge disappears. */
   PACE_WINDOW_METERS: 100,
-  /** Paces outside this band are a standing athlete or a GPS jump, not a pace; they are blanked so the axis is not stretched by them. */
-  MIN_PACE_SECONDS_PER_KM: 100,
-  MAX_PACE_SECONDS_PER_KM: 1800,
 } as const;
 
-/** Pace at each sample over the preceding PACE_WINDOW_METERS. */
-function rollingPace(streams: ActivityStreams): (number | null)[] {
+/**
+ * Pace at each sample over the preceding PACE_WINDOW_METERS.
+ *
+ * The plausibility band is per sport (see paceBandFor). It used to be one
+ * pair of constants tuned for running, whose fast end sat at 36 km/h — which
+ * meant every descent on a ride was judged impossible and blanked, and the
+ * fastest part of the ride was the part missing from the chart.
+ */
+function rollingPace(streams: ActivityStreams, sport: SportType): (number | null)[] {
+  const band = paceBandFor(sport);
   const { distance, time } = streams;
   const out: (number | null)[] = new Array(distance.length).fill(null);
   let j = 0;
@@ -63,14 +69,18 @@ function rollingPace(streams: ActivityStreams): (number | null)[] {
     const seconds = time[i] - time[from];
     if (meters < CHART_CONFIG.PACE_WINDOW_METERS * 0.5 || seconds <= 0) continue;
     const pace = (seconds / meters) * 1000;
-    if (pace < CHART_CONFIG.MIN_PACE_SECONDS_PER_KM || pace > CHART_CONFIG.MAX_PACE_SECONDS_PER_KM) continue;
+    if (pace < band.minSecondsPerKm || pace > band.maxSecondsPerKm) continue;
     out[i] = Math.round(pace);
   }
   return out;
 }
 
-function chartPoints(streams: ActivityStreams, altitude: number[] | null): RunAnalysisChartPoint[] {
-  const pace = rollingPace(streams);
+function chartPoints(
+  streams: ActivityStreams,
+  altitude: number[] | null,
+  sport: SportType
+): RunAnalysisChartPoint[] {
+  const pace = rollingPace(streams, sport);
   const n = streams.distance.length;
   const count = Math.min(n, CHART_CONFIG.MAX_POINTS);
   const step = count > 1 ? (n - 1) / (count - 1) : 0;
@@ -104,6 +114,6 @@ export function analyzeRun(streams: ActivityStreams, options: RunAnalysisOptions
     bestEfforts: computeBestEfforts(streams, bestEffortDistancesFor(options.sport)),
     heartRate: analyzeHeartRate(streams, options.profile),
     elevation: analyzeElevation(streams, smoothedAltitude),
-    chart: chartPoints(streams, smoothedAltitude),
+    chart: chartPoints(streams, smoothedAltitude, options.sport),
   };
 }
