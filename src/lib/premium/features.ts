@@ -19,7 +19,8 @@ export type PremiumFeature =
   | "oauth_sync"
   | "global_rank"
   | "csv_import"
-  | "manual_logging";
+  | "manual_logging"
+  | "run_analysis";
 
 type TierAccess = { free: boolean; premium: boolean };
 
@@ -43,6 +44,18 @@ export const PREMIUM_FEATURES: Record<PremiumFeature, TierAccess> = {
   data_export: { free: false, premium: true },
   oauth_sync: { free: false, premium: true },
   global_rank: { free: false, premium: true },
+  /*
+   * Per-run analysis: splits, best efforts against the athlete's own history,
+   * heart-rate zones and drift, the elevation profile. Paid, because it is the
+   * only feature here with a storage cost per session (activity_streams holds
+   * the per-sample series, migration 078) and because it is the one thing a
+   * runner compares this app against Strava on.
+   *
+   * What stays free is the run itself: recording it, its distance, duration,
+   * average pace, climb and heart rate, its map, and its score. Logging your
+   * own training is never paywalled — only the deeper reading of it is.
+   */
+  run_analysis: { free: false, premium: true },
 };
 
 /*
@@ -66,6 +79,7 @@ export const FREE_TIER_FEATURES = [
 ] as const;
 
 export const PREMIUM_TIER_FEATURES = [
+  "Run analysis — splits, best efforts, heart-rate zones and elevation for every GPS session",
   "Injury Risk Index — know when to back off, before it becomes an injury",
   "GPT AI Coach — a concrete recommendation after every workout",
   "Race predictions personalized to your own pace curve, not a generic formula",

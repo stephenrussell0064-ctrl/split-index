@@ -53,6 +53,7 @@ import {
   type PersonalRecordCandidate,
 } from "@/lib/activities/personal-records";
 import { fetchExerciseHistory } from "@/lib/activities/exercise-history";
+import { persistActivityStreams } from "@/lib/analysis/persist";
 import { defaultWeightEntryMode } from "@/lib/scoring/weight-entry";
 import type { WeightEntryMode } from "@/lib/scoring/weight-entry";
 import { fetchCurrentTemperatureCelsius } from "@/lib/weather/fetch-temperature";
@@ -769,6 +770,34 @@ export async function POST(request: Request) {
       : [];
   if (personalRecordCandidates.length > 0) {
     await upsertPersonalRecordsIfBetter(supabase, user.id, personalRecordCandidates);
+  }
+
+  /*
+   * The per-sample series behind run analysis — splits, best efforts,
+   * heart-rate zones, the elevation profile. Only a GPS session carries one;
+   * a manually logged run has nothing to analyse.
+   *
+   * Secondary on exactly the same terms as strength_scores and
+   * predicted_benchmarks above: the activity is saved and scored by now, and
+   * losing this costs the athlete a panel on one activity page, not the run.
+   * So it never rolls anything back, and a database that has not yet had
+   * migration 078 applied degrades to "no analysis" rather than "no logging".
+   *
+   * Written for every athlete regardless of tier. The analysis is premium to
+   * READ (see the run_analysis entitlement), but the streams are the
+   * athlete's own training data and are recorded either way — a subscriber
+   * who upgrades next month gets the analysis of the runs they logged this
+   * month, rather than a hole where their history should be.
+   */
+  const submittedStreams = (body as { streams?: unknown }).streams;
+  if (submittedStreams !== undefined) {
+    await persistActivityStreams(supabase, {
+      userId: user.id,
+      activityId: activity.id,
+      sport: body.sport,
+      achievedAt: body.started_at,
+      streams: submittedStreams,
+    });
   }
 
   let aiFeedback = null;

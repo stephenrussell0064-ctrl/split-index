@@ -10,6 +10,8 @@ interface PremiumGateProps {
   children: React.ReactNode;
   className?: string;
   feature?: string;
+  /** What unlocking gets them, in a sentence. Defaults to the general analytics pitch. */
+  description?: string;
   /** Roughly how tall the real panel is, so the locked state does not collapse the layout. */
   minHeight?: number;
 }
@@ -51,6 +53,7 @@ export function PremiumGate({
   children,
   className,
   feature = "Advanced analytics",
+  description = "Unlock historical comparisons, projections and deep performance insights.",
   minHeight = 180,
 }: PremiumGateProps) {
   const reducedMotion = useReducedMotion();
@@ -91,9 +94,7 @@ export function PremiumGate({
           <Lock className="h-4 w-4 text-accent" aria-hidden />
         </div>
         <p className="text-sm font-medium">{feature}</p>
-        <p className="mt-1 max-w-[260px] text-xs text-muted">
-          Unlock historical comparisons, projections and deep performance insights.
-        </p>
+        <p className="mt-1 max-w-[260px] text-xs text-muted">{description}</p>
         <Link
           href="/settings/billing"
           className="mt-4 rounded-lg px-3 py-2 text-sm font-medium text-accent transition-colors hover:text-accent/80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"

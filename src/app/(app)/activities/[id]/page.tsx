@@ -21,6 +21,14 @@ import {
 } from "@/lib/scoring/activity-insights";
 import { GymExerciseScoreList } from "@/components/activities/gym-exercise-score-list";
 import { RawStatsPanel } from "@/components/activities/raw-stats-panel";
+import { RunAnalysisPanel } from "@/components/activities/run-analysis-panel";
+import { PremiumGate } from "@/components/analytics/premium-gate";
+import { analyzeRun } from "@/lib/analysis/run-analysis";
+import {
+  activityHasStreams,
+  fetchActivityStreams,
+  fetchBestEffortStandings,
+} from "@/lib/analysis/records";
 import { MergedSessionBanner } from "@/components/activities/merged-session-banner";
 import { readMergeRecord } from "@/lib/activities/merge";
 import { SetActivityMode } from "@/components/layout/set-activity-mode";
@@ -72,7 +80,9 @@ export default async function ActivityDetailPage({
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("gender, experience, subscription_tier, subscription_status")
+    // max_hr and resting_hr are read for the run-analysis heart-rate zones
+    // below — without them a run's heart rate can be charted but not banded.
+    .select("gender, experience, subscription_tier, subscription_status, max_hr, resting_hr")
     .eq("user_id", user.id)
     .single();
 
@@ -82,6 +92,7 @@ export default async function ActivityDetailPage({
   const isPremium = profile
     ? isPremiumUser(profile.subscription_tier, profile.subscription_status)
     : false;
+  const showRunAnalysis = profile ? canAccessProfile("run_analysis", profile) : false;
 
   const [{ data: score }, { data: exercises }, { data: priorScores }, { data: strengthScores }] =
     await Promise.all([
@@ -107,6 +118,40 @@ export default async function ActivityDetailPage({
             .order("recorded_at")
         : Promise.resolve({ data: [] as never[] }),
     ]);
+
+  /*
+   * Run analysis — splits, best efforts, heart-rate zones, elevation profile.
+   *
+   * Fetched and computed ONLY when the athlete is entitled to it. That is the
+   * rule PremiumGate's own doc comment states and the reason it renders no
+   * children when locked: "the underlying value must be absent from the
+   * response payload entirely — a blurred number present in the JSON is not
+   * gated, it is decorated." Computing the analysis and then hiding it would
+   * ship every split inside the server-rendered HTML.
+   *
+   * Only a GPS session has streams at all. A manual entry has nothing
+   * per-sample to analyse, so it gets no panel and no upsell — there is
+   * nothing behind the lock for it.
+   */
+  const isGpsCardio = activity.source === "gps" && activity.sport !== "gym";
+  const streams = isGpsCardio && showRunAnalysis ? await fetchActivityStreams(supabase, id) : null;
+  const runAnalysis = streams
+    ? analyzeRun(streams, {
+        sport: activity.sport as SportType,
+        profile: { restingHr: profile?.resting_hr ?? null, maxHr: profile?.max_hr ?? null },
+      })
+    : null;
+  // How this run's efforts stand against the athlete's own history — the PB
+  // badges. Best efforts are stored per activity, so this is one query
+  // whatever the run's length.
+  const bestEffortStandings = runAnalysis ? await fetchBestEffortStandings(supabase, id) : [];
+  // Whether there is an analysis behind the lock at all, for a free account.
+  // An existence check rather than a read: it answers "is there something
+  // here" without handing over a single split. A run recorded before streams
+  // existed has nothing to sell, and gets no upsell.
+  const hasAnalysis =
+    runAnalysis !== null ||
+    (isGpsCardio && !showRunAnalysis && (await activityHasStreams(supabase, id)));
 
   const meta = SPORTS.find((s) => s.id === activity.sport);
   const sportIndex = score?.sport_index as number | undefined;
@@ -201,6 +246,21 @@ export default async function ActivityDetailPage({
           temperatureCelsius={(activity.temperature_celsius as number | null) ?? null}
         />
       )}
+
+      {hasAnalysis &&
+        (runAnalysis ? (
+          <RunAnalysisPanel analysis={runAnalysis} standings={bestEffortStandings} />
+        ) : (
+          <PremiumGate
+            locked
+            className="mb-6"
+            feature="Run analysis"
+            description="Splits, your fastest 1K/5K/10K inside this run, heart-rate zones and the elevation profile."
+            minHeight={260}
+          >
+            {null}
+          </PremiumGate>
+        ))}
 
       {sportIndex !== undefined && (
         <div

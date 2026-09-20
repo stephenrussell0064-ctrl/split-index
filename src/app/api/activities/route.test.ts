@@ -547,4 +547,115 @@ describe("POST /api/activities — route privacy zone", () => {
     expect(response.status).toBe(200);
     expect(storedRoute(calls)).toBeUndefined();
   });
+
+  /**
+   * Run analysis (migration 078) is computed from a per-sample stream that no
+   * summary column can stand in for. These pin where it goes, what happens
+   * when it cannot be written, and the two rules that decide both: streams are
+   * a SECONDARY write, and they never travel in `activities.metadata`.
+   */
+  describe("analysis streams", () => {
+    /** A 5km run at 5:00/km, sampled every 100m, with heart rate throughout. */
+    function streamsBody() {
+      const samples = 51;
+      return {
+        ...gpsRunBody(),
+        streams: {
+          time: Array.from({ length: samples }, (_, i) => i * 30),
+          distance: Array.from({ length: samples }, (_, i) => i * 100),
+          altitude: null,
+          heartRate: Array.from({ length: samples }, () => 150),
+          cadence: null,
+        },
+      };
+    }
+
+    function upsertedTo(calls: RecordedCall[], table: string): Record<string, unknown>[] {
+      return calls
+        .filter((c) => c.table === table && c.op === "upsert")
+        .flatMap((c) => (Array.isArray(c.payload) ? c.payload : [c.payload]) as Record<string, unknown>[]);
+    }
+
+    it("stores the stream and the run's best efforts", async () => {
+      const { response, calls } = await postWith(happyPathResults(), streamsBody());
+      expect(response.status).toBe(200);
+
+      const [stream] = upsertedTo(calls, "activity_streams");
+      expect(stream.activity_id).toBe(ACTIVITY_ID);
+      expect(stream.user_id).toBe(USER_ID);
+      expect(stream.sample_count).toBe(51);
+
+      // A 5km run contains a 400m, an 800m, a 1K, a mile, a 3K and a 5K.
+      const efforts = upsertedTo(calls, "activity_best_efforts");
+      expect(efforts.map((e) => e.distance_meters).sort((a, b) => Number(a) - Number(b))).toEqual([
+        400, 800, 1000, 1609, 3000, 5000,
+      ]);
+      // Even pace, so the 5K effort is the whole run.
+      const fiveK = efforts.find((e) => e.distance_meters === 5000)!;
+      expect(Number(fiveK.elapsed_seconds)).toBeCloseTo(1500, 0);
+      // Stamped with the run's own date, not insert time — "previous best"
+      // has to order by when the athlete ran, not when the row was written.
+      expect(fiveK.achieved_at).toBe("2026-01-05T18:00:00.000Z");
+      expect(fiveK.sport).toBe("running");
+    });
+
+    it("keeps streams out of the friend-readable metadata column", async () => {
+      // The route in `metadata` is privacy-trimmed precisely because RLS hands
+      // a friend every column of a visible row. A full time series must not be
+      // smuggled in beside it — it goes to its own owner-only table.
+      const { calls } = await postWith(happyPathResults(), streamsBody());
+      const metadata = insertedActivity(calls).metadata as Record<string, unknown>;
+
+      expect(metadata).not.toHaveProperty("streams");
+      expect(JSON.stringify(metadata)).not.toContain("heartRate");
+      expect(upsertedTo(calls, "activity_streams")).toHaveLength(1);
+    });
+
+    it("keeps the run when the stream cannot be stored", async () => {
+      // Secondary, exactly like strength_scores: a database without migration
+      // 078 costs the athlete an analysis panel, never their run.
+      const { response, body, calls } = await postWith({
+        ...happyPathResults(),
+        "activity_streams:upsert": {
+          data: null,
+          error: { code: "PGRST205", message: "Could not find the table 'public.activity_streams'" },
+        },
+      }, streamsBody());
+
+      expect(response.status).toBe(200);
+      expect(body.score).toEqual(WORKOUT_SCORE_ROW);
+      expect(deletedActivity(calls)).toBe(false);
+      // No best efforts either — they would point at a stream that is not there.
+      expect(upsertedTo(calls, "activity_best_efforts")).toHaveLength(0);
+    });
+
+    it("stores nothing and still saves when the stream is malformed", async () => {
+      // Distance going backwards is not a run. Same drop-don't-reject contract
+      // the route polyline has: it costs the analysis, not the session.
+      const { response, calls } = await postWith(happyPathResults(), {
+        ...gpsRunBody(),
+        streams: { time: [0, 10, 20], distance: [0, 100, 50], altitude: null, heartRate: null, cadence: null },
+      });
+
+      expect(response.status).toBe(200);
+      expect(deletedActivity(calls)).toBe(false);
+      expect(upsertedTo(calls, "activity_streams")).toHaveLength(0);
+    });
+
+    it("writes no stream for a session that sent none", async () => {
+      const { response, calls } = await postWith(happyPathResults(), gpsRunBody());
+      expect(response.status).toBe(200);
+      expect(upsertedTo(calls, "activity_streams")).toHaveLength(0);
+      expect(upsertedTo(calls, "activity_best_efforts")).toHaveLength(0);
+    });
+
+    it("records the stream for a free account too", async () => {
+      // PROFILE is free tier. Reading the analysis is premium; recording the
+      // athlete's own training data is not — otherwise upgrading would leave a
+      // hole where their history should be.
+      const { calls } = await postWith(happyPathResults(), streamsBody());
+      expect(upsertedTo(calls, "activity_streams")).toHaveLength(1);
+      expect(PROFILE.subscription_tier).toBe("free");
+    });
+  });
 });
