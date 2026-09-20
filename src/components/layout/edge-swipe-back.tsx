@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { motion, useMotionValue, useReducedMotion } from "framer-motion";
 import { navigateBack } from "@/lib/utils/navigate-back";
 
@@ -33,6 +33,7 @@ export function EdgeSwipeBack({
   children: React.ReactNode;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
   const reducedMotion = useReducedMotion();
   const x = useMotionValue(0);
   const stateRef = useRef<{ startX: number; startTime: number } | null>(null);
@@ -61,7 +62,7 @@ export function EdgeSwipeBack({
     const elapsed = Math.max(1, performance.now() - state.startTime);
     const velocity = delta / elapsed;
     if (delta > SWIPE_THRESHOLD_PX || velocity > VELOCITY_THRESHOLD) {
-      navigateBack(router);
+      navigateBack(router, pathname);
     }
   }
 

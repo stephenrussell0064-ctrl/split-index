@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Crown, ChevronLeft } from "lucide-react";
 import { NotificationBell } from "@/components/retention/notification-bell";
 import { PremiumBadge } from "@/components/retention/premium-badge";
@@ -12,11 +12,12 @@ import { navigateBack } from "@/lib/utils/navigate-back";
 
 function BackButton() {
   const router = useRouter();
+  const pathname = usePathname();
 
   return (
     <button
       type="button"
-      onClick={() => navigateBack(router)}
+      onClick={() => navigateBack(router, pathname)}
       aria-label="Back"
       className="-ml-2 flex h-9 w-9 items-center justify-center rounded-full text-foreground/80 transition-colors hover:bg-white/8 hover:text-foreground"
     >

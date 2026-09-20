@@ -99,6 +99,27 @@
 	  Guideline 2.5.4 asks: it rejects a background mode declared without the
 	  feature that requires it. NSBluetoothAlwaysUsageDescription below names
 	  the same hardware.
+
+	  DELIBERATELY NOT HERE YET: `audio`.
+
+	  SpeechPlugin.swift reads the per-kilometre split callouts aloud, and
+	  those are silenced the moment the phone locks without that third mode —
+	  which is the whole of the time an athlete is actually running. It is
+	  still held back, on purpose, until 1.0 (5) is approved:
+
+	    - The callouts cannot be heard during THIS review whatever this file
+	      says. The native shell loads production (capacitor.config.ts), main
+	      is frozen for the review, and the JS that calls the plugin is not on
+	      main. A background mode whose feature is unreachable is exactly the
+	      shape Guideline 2.5.4 rejects.
+	    - The app's largest structural risk is already Guideline 4.2 (a
+	      reviewer's first screen is web content). Adding a third background
+	      mode to the build that answers that is unpaid risk.
+
+	  Add the single `<string>audio</string>` line below, bump the build, and
+	  ship it together with the web deploy that turns the callouts on. See the
+	  "After you submit" phase of docs/pre-launch/submission-runbook.html,
+	  which carries the review-notes wording to go with it.
 	-->
 	<array>
 		<string>location</string>

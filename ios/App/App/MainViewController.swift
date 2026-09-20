@@ -16,5 +16,6 @@ class MainViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(LiveActivityPlugin())
         bridge?.registerPluginInstance(RacePredictionsPlugin())
         bridge?.registerPluginInstance(DailyTrainingPlugin())
+        bridge?.registerPluginInstance(SpeechPlugin())
     }
 }
