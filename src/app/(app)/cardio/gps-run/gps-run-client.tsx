@@ -1,10 +1,10 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import nextDynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
-import { MapPin, Square, AlertTriangle, Gauge, Mountain, HeartPulse, Zap, Flag, Thermometer, Footprints, TrendingUp, Pause, Play, Trash2 } from "lucide-react";
+import { MapPin, Square, AlertTriangle, Gauge, Mountain, HeartPulse, Zap, Flag, Thermometer, Footprints, TrendingUp, Pause, Play, Trash2, Volume2, VolumeX } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/input";
@@ -36,18 +36,20 @@ import {
   stopStepCadence,
 } from "@/lib/native/step-cadence";
 import { isLiveActivitySupported, startLiveActivity, updateLiveActivity, endLiveActivity } from "@/lib/native/live-activity";
+import { speak } from "@/lib/native/speech";
 import {
-  PARTIAL_REASON_LABEL,
   trackDistanceMeters,
   movingMillis,
   isPaused,
   elevationGainMeters,
+  type CadenceSample,
   type GpsTrackSummary,
   type GpsPoint,
   type HrReading,
   type RunSegment,
   type PauseInterval,
 } from "@/lib/scoring/gps-track";
+import { kilometreSplits, splitAnnouncement } from "@/lib/scoring/km-splits";
 import { buildGpsActivityPayload } from "./submission";
 import type { SessionType } from "@/types";
 
@@ -112,6 +114,53 @@ function scoreAccentClass(score: number): string {
   return "text-muted";
 }
 
+/** Where the spoken-splits preference is remembered between runs. */
+const VOICE_SPLITS_KEY = "gps-voice-splits";
+
+/**
+ * The preference as a tiny external store, read through
+ * `useSyncExternalStore`.
+ *
+ * Not `useState` plus a read in an effect: this project's lint rule forbids
+ * setState inside an effect, and it is right to — the value is not React
+ * state, it is a browser fact that React is reading. Not a lazy `useState`
+ * initialiser either, because that runs on the server too, where there is no
+ * localStorage, and an athlete who turned the voice off would hydrate a
+ * toggle whose markup says "on". `getServerSnapshot` makes that difference
+ * explicit instead of leaving it to a mismatch.
+ */
+const voiceSplitsListeners = new Set<() => void>();
+
+function subscribeVoiceSplits(listener: () => void): () => void {
+  voiceSplitsListeners.add(listener);
+  return () => {
+    voiceSplitsListeners.delete(listener);
+  };
+}
+
+/** Defaults to on. Guarded around the property access itself, not just the read: a browser with site data blocked throws on `window.localStorage`. */
+function readVoiceSplitsPreference(): boolean {
+  try {
+    return window.localStorage.getItem(VOICE_SPLITS_KEY) !== "off";
+  } catch {
+    return true;
+  }
+}
+
+/** The server has no preference to read, so it renders the default. */
+function serverVoiceSplitsPreference(): boolean {
+  return true;
+}
+
+function writeVoiceSplitsPreference(enabled: boolean): void {
+  try {
+    window.localStorage.setItem(VOICE_SPLITS_KEY, enabled ? "on" : "off");
+  } catch {
+    // Nothing to do — the preference simply won't outlive this run.
+  }
+  for (const listener of voiceSplitsListeners) listener();
+}
+
 type Phase = "idle" | "tracking" | "reviewing" | "overview";
 
 /**
@@ -160,7 +209,8 @@ function GpsRunScreen() {
   const [connectingHr, setConnectingHr] = useState<"ble" | "airpods" | null>(null);
   const [hrError, setHrError] = useState("");
   const [liveCadence, setLiveCadence] = useState<number | null>(null);
-  const [cadenceReadings, setCadenceReadings] = useState<number[]>([]);
+  /** Timestamped so run analysis can report cadence per split — the average alone cannot be laid against the track. */
+  const [cadenceSamples, setCadenceSamples] = useState<CadenceSample[]>([]);
   const [saving, setSaving] = useState(false);
   const [starting, setStarting] = useState(false);
   const [stopping, setStopping] = useState(false);
@@ -168,7 +218,6 @@ function GpsRunScreen() {
   /** User report: "No stop start button on GPS runs. Once paused you can only discard run." A paused run is not an abandoned run — everything recorded stays recorded, and this flips straight back. */
   const [paused, setPaused] = useState(false);
   const [pauses, setPauses] = useState<PauseInterval[]>([]);
-  const [pausing, setPausing] = useState(false);
   /** Discard is two-step on purpose: one mis-tap must never be able to destroy a recorded run. */
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
   const [error, setError] = useState("");
@@ -183,6 +232,21 @@ function GpsRunScreen() {
   const segmentStartRef = useRef<number>(0);
   /** Mirrors `pauses` so the once-a-second clock can read the current value without the interval being torn down and rebuilt on every pause. */
   const pausesRef = useRef<PauseInterval[]>([]);
+  /** How many whole kilometres have already been read aloud this run, so each split is announced exactly once. */
+  const announcedSplitsRef = useRef(0);
+  /**
+   * Whether to read the kilometre splits aloud. Remembered in localStorage
+   * rather than on the profile: it is a property of the phone in the
+   * athlete's pocket (which headphones, whether they are running with
+   * company), not of the account, and it must be readable synchronously at
+   * the moment a split lands with the screen locked — no round trip, and no
+   * migration against a production database mid-submission.
+   */
+  const voiceSplits = useSyncExternalStore(
+    subscribeVoiceSplits,
+    readVoiceSplitsPreference,
+    serverVoiceSplitsPreference
+  );
   /** The instant a still-running clock would have to have started from to show the correct *moving* time — what the lock-screen Live Activity ticks from, so paused seconds don't accumulate there either. */
   const [liveClockStartMs, setLiveClockStartMs] = useState(0);
 
@@ -270,6 +334,32 @@ function GpsRunScreen() {
   /** Avg Split — this run's average pace from the very start, same number as the whole-session average shown after saving. Kept as its own explicitly-labeled tile (user feedback: needs to be unambiguous this is the RUN's average, not the instantaneous pace below). */
   const livePaceSecondsPerKm =
     liveDistanceMeters > 0 ? elapsedSeconds / (liveDistanceMeters / 1000) : null;
+
+  /** Every whole kilometre completed so far — what the voice callouts read from, and what the "Last km" tile shows. Same distance the Distance tile is built on, so the two can never disagree about when a kilometre finished. */
+  const completedSplits = useMemo(
+    () => (phase === "tracking" ? kilometreSplits(livePoints, pauses, startedAtRef.current) : []),
+    [phase, livePoints, pauses]
+  );
+  const lastSplit = completedSplits.length > 0 ? completedSplits[completedSplits.length - 1] : null;
+
+  // Voice callout at every kilometre (user feedback: "call out the splits
+  // every 1km with how many km you are in"). Driven by the fixes arriving,
+  // not by a timer, so it fires the moment the boundary is crossed and keeps
+  // firing with the screen locked — native location callbacks still reach
+  // the WebView in the background, timers do not. Each split is read once:
+  // the ref remembers how many have been spoken, and if several complete at
+  // once (a burst of fixes after a signal gap) only the latest is read, so a
+  // backlog can't be recited on the athlete's ear one after another.
+  useEffect(() => {
+    if (phase !== "tracking" || paused) return;
+    if (completedSplits.length <= announcedSplitsRef.current) return;
+    // Still advanced when the voice is off, so turning it back on mid-run
+    // reads the NEXT kilometre rather than reciting the ones it missed.
+    const pending = completedSplits.length > announcedSplitsRef.current;
+    announcedSplitsRef.current = completedSplits.length;
+    if (!voiceSplits || !pending) return;
+    void speak(splitAnnouncement(completedSplits[completedSplits.length - 1]));
+  }, [phase, paused, completedSplits, voiceSplits]);
 
   /** Current Pace — a rolling last-60-seconds-of-*running* window, distinct from Avg Split above. Falls back to the whole-run average until there's at least 60s/two GPS fixes of recent data to compute a genuine rolling number from. */
   const currentPaceSecondsPerKm = useMemo(() => {
@@ -401,10 +491,11 @@ function GpsRunScreen() {
     setSegmentType("easy");
     setHrReadings([]);
     setLiveCadence(null);
-    setCadenceReadings([]);
+    setCadenceSamples([]);
     setPaused(false);
     setConfirmingDiscard(false);
     applyPauses([]);
+    announcedSplitsRef.current = 0;
     try {
       await startGpsSession((point) => setLivePoints((prev) => [...prev, point]));
       if (isOnFootSport && isStepCadenceSupported()) {
@@ -413,7 +504,7 @@ function GpsRunScreen() {
         // tile shows up later, never something that should block the run.
         startStepCadence((cadence) => {
           setLiveCadence(cadence);
-          setCadenceReadings((prev) => [...prev, cadence]);
+          setCadenceSamples((prev) => [...prev, { spm: cadence, time: Date.now() }]);
         }).catch(() => {});
       }
       startedAtRef.current = Date.now();
@@ -465,7 +556,7 @@ function GpsRunScreen() {
       if (isOnFootSport && isStepCadenceSupported()) {
         startStepCadence((cadence) => {
           setLiveCadence(cadence);
-          setCadenceReadings((prev) => [...prev, cadence]);
+          setCadenceSamples((prev) => [...prev, { spm: cadence, time: Date.now() }]);
         }).catch(() => {});
       }
       setLivePoints(recovered.points);
@@ -473,6 +564,14 @@ function GpsRunScreen() {
       setPaused(recovered.wasPaused);
       setConfirmingDiscard(false);
       startedAtRef.current = recovered.startedAt;
+      // Kilometres completed before the reload were announced by the JS
+      // context that died; the next callout is the next NEW kilometre, not a
+      // recap of every one so far.
+      announcedSplitsRef.current = kilometreSplits(
+        recovered.points,
+        recovered.livePauses,
+        recovered.startedAt
+      ).length;
       // Effort segments are not persisted, so a rejoined interval run starts a
       // fresh segment here rather than pretending one has been open since the
       // start of the run.
@@ -489,7 +588,7 @@ function GpsRunScreen() {
         );
       }
     } catch {
-      setError("Couldn't pick that run back up. You can still save it as a partial session below.");
+      setError("Couldn't pick that run back up. You can still save what was recorded below.");
     } finally {
       setRejoining(false);
     }
@@ -508,41 +607,50 @@ function GpsRunScreen() {
    * left running (see pauseGpsSession) — this only marks the stretch so that
    * distance, duration and climb all skip over it. Resuming picks the run back
    * up exactly where it stood.
+   *
+   * Pause and Resume are SYNCHRONOUS from the button's point of view. The
+   * earlier version set a `pausing` flag, disabled the button, awaited the
+   * write to native storage, and only then re-enabled it — so the Resume
+   * button was exactly as usable as that write was prompt. Every persistence
+   * call queues behind every other one (see withSessionLock in
+   * gps-tracking.ts, where each incoming fix serialises the whole run), and
+   * a queue that stalls — a bridge call left hanging while iOS suspended the
+   * WebView, a slow write on a long run — left the athlete looking at a
+   * greyed-out Play button with no way to carry on (user report: "Pause
+   * button still does not let you resume your run after pressing it").
+   *
+   * The screen's own state is what the clock, the distance and the map read
+   * from, so it flips here, immediately and unconditionally. Persisting the
+   * pause is for recovery after an app kill, and it happens in the
+   * background: if it is slow the run is still correct on screen, and if it
+   * fails the run still saves from the same state the athlete watched.
+   * Double-taps are guarded by the state itself — a second Pause while a
+   * pause is open is a no-op, as is Resume with none open.
    */
-  async function handlePause() {
-    if (pausing || paused) return;
-    setPausing(true);
+  function handlePause() {
+    if (paused || pausesRef.current.some((p) => p.endTime === null)) return;
     const now = Date.now();
-    try {
-      // Close the open hard/easy effort at the pause, so standing still never
-      // lands inside a rep and drags its pace and heart rate down.
-      if (isSegmentTracked && now > segmentStartRef.current) {
-        setSegments((prev) => [...prev, { type: segmentType, startTime: segmentStartRef.current, endTime: now }]);
-        segmentStartRef.current = now;
-      }
-      applyPauses([...pausesRef.current, { startTime: now, endTime: null }]);
-      setPaused(true);
-      await pauseGpsSession(now);
-    } finally {
-      setPausing(false);
+    // Close the open hard/easy effort at the pause, so standing still never
+    // lands inside a rep and drags its pace and heart rate down.
+    if (isSegmentTracked && now > segmentStartRef.current) {
+      setSegments((prev) => [...prev, { type: segmentType, startTime: segmentStartRef.current, endTime: now }]);
+      segmentStartRef.current = now;
     }
+    applyPauses([...pausesRef.current, { startTime: now, endTime: null }]);
+    setPaused(true);
+    void pauseGpsSession(now).catch(() => {});
   }
 
   /** Resume. The counterpart to the above — the run continues, with everything already recorded intact. */
-  async function handleResume() {
-    if (pausing || !paused) return;
-    setPausing(true);
+  function handleResume() {
+    if (!paused && !pausesRef.current.some((p) => p.endTime === null)) return;
     const now = Date.now();
-    try {
-      applyPauses(pausesRef.current.map((p) => (p.endTime === null ? { ...p, endTime: now } : p)));
-      // The next effort segment starts from the resume, not from the pause.
-      segmentStartRef.current = now;
-      setPaused(false);
-      setConfirmingDiscard(false);
-      await resumeGpsSession(now);
-    } finally {
-      setPausing(false);
-    }
+    applyPauses(pausesRef.current.map((p) => (p.endTime === null ? { ...p, endTime: now } : p)));
+    // The next effort segment starts from the resume, not from the pause.
+    segmentStartRef.current = now;
+    setPaused(false);
+    setConfirmingDiscard(false);
+    void resumeGpsSession(now).catch(() => {});
   }
 
   async function handleStop() {
@@ -602,12 +710,12 @@ function GpsRunScreen() {
     setHrDeviceName(null);
     setHrSource(null);
     setLiveCadence(null);
-    setCadenceReadings([]);
+    setCadenceSamples([]);
     setElapsedSeconds(0);
     setPaused(false);
-    setPausing(false);
     setConfirmingDiscard(false);
     applyPauses([]);
+    announcedSplitsRef.current = 0;
     setLiveClockStartMs(0);
     setError("");
   }
@@ -618,6 +726,7 @@ function GpsRunScreen() {
       sport,
       sportLabel: SPORT_INDEX_LABELS[sport],
       sportIndex,
+      personalIndex: (data.personalIndex as number | null | undefined) ?? null,
       splitIndex: (data.splitIndex as number | undefined) ?? 0,
       previousSplitIndex: (data.previousSplitIndex as number | undefined) ?? sportIndex,
       splitIndexDelta: (data.splitIndexDelta as number | undefined) ?? 0,
@@ -676,7 +785,7 @@ function GpsRunScreen() {
             points: sourcePoints,
             pauses: sourcePauses,
             hrReadings,
-            cadenceReadings,
+            cadenceSamples,
             segments,
           })
         ),
@@ -823,6 +932,17 @@ function GpsRunScreen() {
                   {formatPaceOrSpeed(sport, currentPaceSecondsPerKm)}
                 </p>
               </div>
+              {/* The most recent whole-kilometre split — the same number the
+                  voice callout just read, kept on screen for a glance-check
+                  when it was missed under traffic noise. */}
+              {lastSplit && (
+                <div className="rounded-xl border border-cardio-accent/25 bg-cardio-accent/10 py-2.5">
+                  <p className="micro-label text-white/50">Km {lastSplit.km} split</p>
+                  <p className="text-lg font-bold tabular-nums text-white">
+                    {formatPaceOrSpeed(sport, lastSplit.splitSeconds)}
+                  </p>
+                </div>
+              )}
               {liveBpm !== null && (
                 <div className="rounded-xl border border-danger/25 bg-danger/10 py-2.5">
                   <p className="micro-label text-danger/80">Heart rate</p>
@@ -887,7 +1007,7 @@ function GpsRunScreen() {
               <button
                 type="button"
                 onClick={paused ? handleResume : handlePause}
-                disabled={pausing || stopping}
+                disabled={stopping}
                 aria-label={paused ? "Resume run" : "Pause run"}
                 className={`flex h-20 w-20 items-center justify-center rounded-full shadow-lg transition-transform active:scale-95 disabled:opacity-60 ${
                   paused
@@ -904,7 +1024,7 @@ function GpsRunScreen() {
               <button
                 type="button"
                 onClick={handleStop}
-                disabled={stopping || pausing}
+                disabled={stopping}
                 aria-label="Finish run"
                 className="flex h-20 w-20 items-center justify-center rounded-full bg-danger text-white shadow-lg shadow-danger/30 transition-transform active:scale-95 disabled:opacity-60"
               >
@@ -1025,7 +1145,7 @@ function GpsRunScreen() {
                     .
                   </p>
                   <p className="mt-1 text-xs text-warning/80">
-                    It&apos;ll be saved as a partial/incomplete session, not a full clean effort.
+                    Everything recorded up to where it stopped can be saved as the finished run.
                   </p>
                 </>
               )}
@@ -1061,7 +1181,7 @@ function GpsRunScreen() {
                     )
                   }
                 >
-                  Save as partial
+                  Save run
                 </Button>
                 <Button size="sm" variant="ghost" onClick={() => setOrphaned(null)}>
                   Discard
@@ -1104,6 +1224,38 @@ function GpsRunScreen() {
                 pace and heart rate are captured separately for work vs. rest.
               </p>
             )}
+
+            {/* Spoken splits. On the GPS screen rather than buried in
+                Settings: it is a per-run decision (headphones in or not,
+                running alone or with someone) made in the ten seconds before
+                pressing Start, which is exactly here. */}
+            <button
+              type="button"
+              role="switch"
+              aria-checked={voiceSplits}
+              onClick={() => writeVoiceSplitsPreference(!voiceSplits)}
+              className="mb-6 mt-2 flex w-full max-w-xs items-center justify-between rounded-xl border border-white/15 bg-white/[0.06] px-4 py-2.5 text-left text-sm transition-colors hover:bg-white/10"
+            >
+              <span className="flex items-center gap-2 font-medium text-foreground/90">
+                {voiceSplits ? (
+                  <Volume2 className="h-4 w-4 text-cardio-accent" />
+                ) : (
+                  <VolumeX className="h-4 w-4 text-muted" />
+                )}
+                Call out every km
+              </span>
+              <span
+                className={`flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition-colors ${
+                  voiceSplits ? "bg-cardio-accent" : "bg-white/20"
+                }`}
+              >
+                <span
+                  className={`h-4 w-4 rounded-full bg-white transition-transform ${
+                    voiceSplits ? "translate-x-4" : "translate-x-0"
+                  }`}
+                />
+              </span>
+            </button>
 
             <div className="mb-8 w-full max-w-xs">
               {hrDeviceName ? (
@@ -1173,16 +1325,6 @@ function GpsRunScreen() {
             <GpsMap points={movingPoints} className="mb-6 h-48 w-full overflow-hidden rounded-2xl" />
           )}
 
-          {summary.isPartial && summary.partialReason && (
-            <div className="mb-4 flex items-start gap-2 rounded-xl border border-warning/30 bg-warning/5 p-3 text-xs text-warning">
-              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              <span>
-                {PARTIAL_REASON_LABEL[summary.partialReason]} — this will be saved as a partial
-                session, not scored as a complete effort.
-              </span>
-            </div>
-          )}
-
           {/* Stat grid — Distance and Avg Split are just tiles here like
               everything else (user feedback: Avg Split had a large box in a
               different font/color, wanted it styled the same as every other
@@ -1226,14 +1368,14 @@ function GpsRunScreen() {
                 </p>
               </div>
             )}
-            {cadenceReadings.length > 0 && (
+            {cadenceSamples.length > 0 && (
               <div className="flex flex-col items-center rounded-xl border border-white/15 bg-white/[0.06] py-3 text-center">
                 <div className="mb-1 flex items-center gap-1.5 text-white/60">
                   <Footprints className="h-4 w-4" />
                   <p className="micro-label">Avg cadence</p>
                 </div>
                 <p className="text-lg font-bold tabular-nums text-white">
-                  {Math.round(cadenceReadings.reduce((sum, c) => sum + c, 0) / cadenceReadings.length)} spm
+                  {Math.round(cadenceSamples.reduce((sum, c) => sum + c.spm, 0) / cadenceSamples.length)} spm
                 </p>
               </div>
             )}

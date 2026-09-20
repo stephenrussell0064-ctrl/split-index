@@ -1,22 +1,21 @@
 /**
  * Capacitor-conversion brief, Part 3 — pure GPS-track computation: distance,
- * pace, and elevation gain from a raw sequence of location fixes, plus
- * detection of whether background tracking was actually interrupted. Kept
+ * pace, and elevation gain from a raw sequence of location fixes. Kept
  * DB/plugin-independent on purpose (same pure-function-plus-thin-wrapper
  * pattern as the rest of this scoring pipeline) so it's directly testable
  * without a device.
  *
- * The core rule this file exists to enforce: a partial GPS track must never
- * be scored as if it were the full, clean effort — the same class of
- * "confidently wrong" bug already fixed once in this project (cardio
- * monotonicity). See GpsTrackSummary.isPartial/partialReason below.
+ * This file used to also classify a track as "partial" — a permission
+ * revoked mid-run, a gap between fixes wider than two minutes, a session the
+ * app was killed out of — and the run was then saved and scored as an
+ * incomplete effort. That is gone, on the athlete's instruction: a GPS run
+ * that has been ended is the run, complete, however it got there. Whatever
+ * the receiver recorded is what is scored; nothing is quietly downgraded.
  */
 
 export const GPS_TRACKING_CONFIG = {
   /** Passed straight to the native background-geolocation plugin — distance-filtered sampling (not fixed-time-interval) is how most running apps balance GPS accuracy against battery drain. */
   DISTANCE_FILTER_METERS: 10,
-  /** A gap between two consecutive accepted fixes wider than this is far more likely to mean background tracking was actually interrupted (permission revoked, OS killed the process under memory pressure) than an ordinary GPS reacquisition. */
-  MAX_ACCEPTABLE_GAP_SECONDS: 120,
   /** Fixes reported with worse horizontal accuracy than this are dropped rather than allowed to inflate distance (e.g. indoor multipath, GPS drift while stationary). */
   MAX_ACCURACY_METERS: 50,
 } as const;
@@ -62,15 +61,11 @@ export interface PauseInterval {
   endTime: number | null;
 }
 
-export type PartialReason = "permission_revoked" | "sampling_gap" | "ended_without_stopping" | null;
-
 export interface GpsTrackSummary {
   distanceMeters: number;
   durationSeconds: number;
   avgPaceSecondsPerKm: number | null;
   elevationGainMeters: number | null;
-  isPartial: boolean;
-  partialReason: PartialReason;
 }
 
 const EARTH_RADIUS_METERS = 6371000;
@@ -152,20 +147,49 @@ export function movingMillis(from: number, to: number, pauses: readonly PauseInt
  * with a straight line would invent distance they never ran.
  */
 export function trackDistanceMeters(points: GpsPoint[], pauses: readonly PauseInterval[] = []): number {
+  const cumulative = cumulativeTrackDistances(points, pauses);
+  return cumulative.length > 0 ? cumulative[cumulative.length - 1].meters : 0;
+}
+
+/** A usable fix paired with the distance covered up to and including it. */
+export interface CumulativeDistancePoint {
+  point: GpsPoint;
+  /** Metres run from the start of the track to this fix. */
+  meters: number;
+}
+
+/**
+ * The running total behind `trackDistanceMeters`, one entry per usable fix.
+ * Exposed so the per-kilometre split callouts (km-splits.ts) can find the
+ * instant each kilometre boundary was crossed using exactly the same
+ * filtering and pause rules as the distance on the HUD — a split computed
+ * from a different notion of distance would announce "3 km" while the screen
+ * still read 2.97.
+ */
+export function cumulativeTrackDistances(
+  points: GpsPoint[],
+  pauses: readonly PauseInterval[] = []
+): CumulativeDistancePoint[] {
   const usable = points.filter(
     (p) => p.accuracy <= GPS_TRACKING_CONFIG.MAX_ACCURACY_METERS && !isPaused(p.time, pauses)
   );
 
+  const out: CumulativeDistancePoint[] = [];
   let total = 0;
-  for (let i = 1; i < usable.length; i++) {
-    const prev = usable[i - 1];
-    const curr = usable[i];
-    // A pause that began after `prev` and ended before `curr` means the two
-    // fixes are not consecutive steps of the same effort.
-    if (pausedMillisBetween(prev.time, curr.time, pauses) > 0) continue;
-    total += haversineDistanceMeters(prev, curr);
+  for (let i = 0; i < usable.length; i++) {
+    if (i > 0) {
+      const prev = usable[i - 1];
+      const curr = usable[i];
+      // A pause that began after `prev` and ended before `curr` means the two
+      // fixes are not consecutive steps of the same effort, so that leg adds
+      // nothing.
+      if (pausedMillisBetween(prev.time, curr.time, pauses) === 0) {
+        total += haversineDistanceMeters(prev, curr);
+      }
+    }
+    out.push({ point: usable[i], meters: total });
   }
-  return total;
+  return out;
 }
 
 /**
@@ -430,9 +454,38 @@ export function elevationGainMeters(points: GpsPoint[]): number | null {
   return Math.round(gain * 10) / 10;
 }
 
+/**
+ * The altitude trace after stages 1-3 (despike, measure noise, smooth by as
+ * much as that measurement calls for), without the gain accumulation. Exposed
+ * for the run-analysis modules (lib/analysis) so the elevation profile they
+ * chart and split by is the same cleaned series the stored elevation gain was
+ * banked from — a per-kilometre climb figure computed from the raw trace
+ * would disagree with the run's own total.
+ */
+export function smoothAltitudeProfile(altitudes: number[]): number[] {
+  if (altitudes.length < 2) return [...altitudes];
+  const despiked = despike(altitudes);
+  return smooth(despiked, smoothingWindow(altitudeNoiseMeters(despiked), despiked.length));
+}
+
+/** Stage 4b on an already-cleaned series, for callers that need climb over a window of the run rather than the whole of it. Loss is the same accumulation on the negated series. */
+export function accumulateElevationGain(
+  series: number[],
+  threshold: number = ELEVATION_CONFIG.MIN_GAIN_THRESHOLD_METERS
+): number {
+  if (series.length === 0) return 0;
+  return accumulateGain(series, threshold);
+}
+
 /** A single heart-rate reading from a paired BLE device (lib/native/heart-rate.ts), timestamped so it can be matched against GPS points and hard/easy segment windows. */
 export interface HrReading {
   bpm: number;
+  time: number;
+}
+
+/** A cadence (steps/min) sample from the step counter (lib/native/step-cadence.ts), timestamped for the same reason as HrReading: so it can be laid against the GPS track. */
+export interface CadenceSample {
+  spm: number;
   time: number;
 }
 
@@ -528,24 +581,18 @@ export function summarizeFartlekSegments(
 }
 
 export interface SummarizeGpsTrackOptions {
-  /** True only when the user explicitly pressed "stop" and the app was still alive to record it — false covers both an app-kill recovery path and a still-in-progress session being summarized early. */
-  endedCleanly: boolean;
-  /** True when the native plugin's callback reported a permission error during the session. */
-  permissionRevoked: boolean;
   /** Stretches the athlete paused. Optional so a session recorded before pause existed — or by the offline fallback page, which has no pause control — summarizes exactly as it always did. */
   pauses?: readonly PauseInterval[];
 }
 
-/** Builds the final track summary from a raw point buffer — the one place distance/pace/partial-status are computed, so the UI, the activity submission, and any future recovery path all agree on the same number. */
-export function summarizeGpsTrack(points: GpsPoint[], options: SummarizeGpsTrackOptions): GpsTrackSummary {
+/** Builds the final track summary from a raw point buffer — the one place distance/pace/duration are computed, so the UI, the activity submission, and any future recovery path all agree on the same number. */
+export function summarizeGpsTrack(points: GpsPoint[], options: SummarizeGpsTrackOptions = {}): GpsTrackSummary {
   if (points.length < 2) {
     return {
       distanceMeters: 0,
       durationSeconds: 0,
       avgPaceSecondsPerKm: null,
       elevationGainMeters: null,
-      isPartial: true,
-      partialReason: options.permissionRevoked ? "permission_revoked" : "ended_without_stopping",
     };
   }
 
@@ -557,14 +604,6 @@ export function summarizeGpsTrack(points: GpsPoint[], options: SummarizeGpsTrack
 
   const distanceMeters = trackDistanceMeters(sorted, pauses);
 
-  let largestGapSeconds = 0;
-  for (let i = 1; i < accepted.length; i++) {
-    // Time the athlete deliberately paused is not a tracking failure, so it is
-    // deducted before deciding whether this looks like an interrupted session.
-    const gapSeconds = movingMillis(accepted[i - 1].time, accepted[i].time, pauses) / 1000;
-    if (gapSeconds > largestGapSeconds) largestGapSeconds = gapSeconds;
-  }
-
   // Altitude recorded while standing still at a pause is pure receiver drift,
   // never climbing, so elevation sees the same filtered points distance does.
   const elevationGain = elevationGainMeters(accepted);
@@ -573,28 +612,14 @@ export function summarizeGpsTrack(points: GpsPoint[], options: SummarizeGpsTrack
     movingMillis(sorted[0].time, sorted[sorted.length - 1].time, pauses) / 1000
   );
   const avgPaceSecondsPerKm = distanceMeters > 0 ? durationSeconds / (distanceMeters / 1000) : null;
-  const samplingGap = largestGapSeconds > GPS_TRACKING_CONFIG.MAX_ACCEPTABLE_GAP_SECONDS;
-
-  let partialReason: PartialReason = null;
-  if (options.permissionRevoked) partialReason = "permission_revoked";
-  else if (samplingGap) partialReason = "sampling_gap";
-  else if (!options.endedCleanly) partialReason = "ended_without_stopping";
 
   return {
     distanceMeters: Math.round(distanceMeters * 10) / 10,
     durationSeconds,
     avgPaceSecondsPerKm: avgPaceSecondsPerKm !== null ? Math.round(avgPaceSecondsPerKm * 100) / 100 : null,
     elevationGainMeters: elevationGain,
-    isPartial: partialReason !== null,
-    partialReason,
   };
 }
-
-export const PARTIAL_REASON_LABEL: Record<NonNullable<PartialReason>, string> = {
-  permission_revoked: "Location permission was turned off mid-run",
-  sampling_gap: "Tracking was interrupted for part of this run",
-  ended_without_stopping: "This run wasn't stopped normally — it may be incomplete",
-};
 
 // ---------------------------------------------------------------------------
 // Route polyline — what gets persisted so a run can be drawn again later

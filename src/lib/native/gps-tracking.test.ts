@@ -177,7 +177,7 @@ describe("recovering a session the WebView lost", () => {
     expect(recovered!.livePauses[0].endTime).toBeNull();
   });
 
-  it("closes the open pause at the last recorded fix for the save-as-partial path", async () => {
+  it("closes the open pause at the last recorded fix for the save path", async () => {
     const now = Date.now();
     const startedAt = now - 200_000;
     const lastFix = startedAt + 100_000;
@@ -254,8 +254,7 @@ describe("rejoining a recovered run", () => {
   it("saves a rejoined run as a complete effort, with the pause excluded from its duration", async () => {
     const startedAt = Date.now() - 400_000;
     const points = [fixAt(0, startedAt), fixAt(40, startedAt + 30_000), fixAt(80, startedAt + 60_000)];
-    // Five minutes standing still — comfortably past the acceptable-gap limit,
-    // so without deducting it the run would be flagged as an interrupted one.
+    // Five minutes standing still, which must come off the duration.
     const pauses = [{ startTime: startedAt + 60_000, endTime: startedAt + 360_000 }];
 
     await rejoinGpsSession({ points, pauses, startedAt });
@@ -263,7 +262,6 @@ describe("rejoining a recovered run", () => {
 
     const summary = await stopGpsSession();
 
-    expect(summary.isPartial).toBe(false);
     // 390s of wall clock less the 300s pause.
     expect(summary.durationSeconds).toBe(90);
   });

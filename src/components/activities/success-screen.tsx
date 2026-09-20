@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils/cn";
 import { CardioEnrichmentPanel } from "@/components/activities/cardio-enrichment-panel";
 import type { CardioEnrichment } from "@/lib/scoring/cardio";
 import { formatRiegelPrediction } from "@/lib/scoring/presentation";
+import { PersonalScoreLine } from "@/components/scoring/personal-score-badge";
 import { tier2IsCalibrating, TIER2_MIN_SAMPLES_TO_DISPLAY, type Tier1Prediction } from "@/lib/scoring/cardio/race-prediction";
 import type { BenchmarkSport } from "@/lib/scoring/cardio-benchmarks";
 
@@ -24,9 +25,6 @@ export interface PredictedBenchmarkAfterSession {
   benchmarkSeconds: number;
   sampleCount: number;
 }
-
-/** Session types scored relative to the athlete's own history — mirrors RELATIVE_EFFORT_SESSION_TYPES in cardio-predictions.ts (kept as a local literal set to avoid a server-only import chain from a "use client" component). */
-const RELATIVE_EFFORT_SESSION_TYPES = new Set<SessionType>(["easy", "recovery", "long"]);
 
 const TIER1_CONFIDENCE_LABEL: Record<Tier1Prediction["confidence"], string> = {
   high: "High confidence",
@@ -44,7 +42,10 @@ const TIER1_METHOD_LABEL: Record<Tier1Prediction["method"], string> = {
 export interface ScoreResultSummary {
   sport: SportType;
   sportLabel: string;
+  /** Against the sport's standards for this athlete's sex and age. */
   sportIndex: number;
+  /** Against this athlete's own recent history; 500 is their norm, null while calibrating. */
+  personalIndex?: number | null;
   splitIndex: number;
   previousSplitIndex: number;
   splitIndexDelta: number;
@@ -150,11 +151,19 @@ export function SuccessScreen({
             {formatIndex(sportIndex)}
           </p>
           <p className="mt-2 text-center text-sm font-medium">{result.sportLabel}</p>
-          {!isGym && result.sessionType && RELATIVE_EFFORT_SESSION_TYPES.has(result.sessionType) && (
-            <p className="mt-1 text-center text-xs italic text-muted">
-              Scored relative to your own recent easy-effort history, not absolute pace.
-            </p>
-          )}
+          <p className="mt-1 text-center text-[10px] uppercase tracking-wider text-muted">
+            vs everyone
+          </p>
+          {/* The second score. Deliberately directly under the first rather
+              than in a panel further down: "was that good for me" is the
+              question the athlete has the moment a session saves, and it is
+              the one the headline number cannot answer. */}
+          <div className="mt-3 border-t border-white/10 pt-3 text-center">
+            <PersonalScoreLine
+              score={result.personalIndex ?? null}
+              tone={isGym ? "gym" : "cardio"}
+            />
+          </div>
           {isGym && result.strengthContext && (
             <p className="mt-2 text-center text-sm text-muted">{result.strengthContext}</p>
           )}

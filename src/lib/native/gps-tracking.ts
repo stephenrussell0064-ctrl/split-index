@@ -21,9 +21,8 @@ import {
  * unlike an in-memory array or a WebView's own storage under memory
  * pressure) as it arrives, so a session interrupted mid-run — the OS
  * killing the background process, the user force-quitting, permission
- * getting revoked — can still be recovered and correctly flagged as
- * partial the next time the app opens, rather than silently vanishing or
- * silently being submitted as if it were complete.
+ * getting revoked — can still be recovered the next time the app opens,
+ * rather than silently vanishing.
  */
 
 const SESSION_KEY = "gps-tracking-session";
@@ -242,7 +241,7 @@ export async function resumeGpsSession(at: number = Date.now()): Promise<void> {
   });
 }
 
-/** Ends the session the user actually stopped themselves — the one path where `endedCleanly: true` is honest. */
+/** Ends the session the user stopped themselves and returns the finished track's summary. */
 export async function stopGpsSession(): Promise<GpsTrackSummary> {
   await detachWatcher();
 
@@ -253,12 +252,10 @@ export async function stopGpsSession(): Promise<GpsTrackSummary> {
   });
 
   if (!session) {
-    return summarizeGpsTrack([], { endedCleanly: true, permissionRevoked: false });
+    return summarizeGpsTrack([]);
   }
 
   return summarizeGpsTrack(session.points, {
-    endedCleanly: true,
-    permissionRevoked: session.permissionRevoked,
     // A run stopped while still paused leaves an open pause; closing it here
     // means those final standing-still seconds aren't billed as running.
     pauses: closeOpenPauses(session.pauses ?? []),
@@ -317,12 +314,9 @@ export interface RecoveredGpsSession {
    * precisely when the athlete stops looking at the screen, and with nothing
    * moving there are no fixes arriving to keep anything warm.
    *
-   * Honesty is not lost by offering to continue. Whether a rejoined run counts
-   * as a complete effort is still decided at save time by the gaps between its
-   * fixes: a genuine interruption leaves a hole and still saves as partial,
-   * while a pause leaves no hole because paused time is excluded from the gap
-   * (see summarizeGpsTrack). So the only thing this flag decides is whether
-   * the athlete is offered the choice at all.
+   * The only thing this flag decides is whether the athlete is offered the
+   * choice to carry on at all. Either way the run is saved as a complete
+   * effort — there is no partial classification any more (see gps-track.ts).
    */
   resumable: boolean;
 }
@@ -386,11 +380,7 @@ export async function recoverOrphanedSession(): Promise<RecoveredGpsSession | nu
   );
 
   return {
-    summary: summarizeGpsTrack(session.points, {
-      endedCleanly: false,
-      permissionRevoked: session.permissionRevoked,
-      pauses,
-    }),
+    summary: summarizeGpsTrack(session.points, { pauses }),
     points: session.points,
     pauses,
     livePauses,

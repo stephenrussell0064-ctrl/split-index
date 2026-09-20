@@ -24,6 +24,7 @@ import { AppTopBar } from "@/components/layout/app-top-bar";
 import { EdgeSwipeBack } from "@/components/layout/edge-swipe-back";
 import { ModeOverrideProvider, useModeOverride } from "@/components/layout/mode-override-context";
 import { NativeBillingBootstrap } from "@/components/layout/native-billing-bootstrap";
+import { StatusBarModeSync } from "@/components/layout/status-bar-mode-sync";
 
 type AppMode = "neutral" | "gym" | "cardio";
 
@@ -106,34 +107,31 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
   const logHref = logHrefForMode(mode);
   const [moreOpen, setMoreOpen] = useState(false);
   const [lastPathname, setLastPathname] = useState(pathname);
-  // User feedback: "when clicking off the lab onto the dashboard or engine
-  // whilst logging an activity, the logging page disappears and you have
-  // to back on and do it again... when you click back on the lab it takes
-  // you back to the page you left on." Tapping "Lab" always went to the
-  // bare /gym tab root, not back to /gym/log where an in-progress log
-  // actually lives — this remembers the last path visited under each
-  // primary-nav section (plain in-memory state, not persisted — this
-  // shell component stays mounted for the whole in-app session, the same
-  // way a native tab bar keeps each tab's own navigation stack without
-  // needing to write anything to disk) and routes the tab button there
-  // instead of the bare root. Updated here, during render when pathname
-  // actually changes — same "adjust state in response to a prop/pathname
-  // change" pattern lastPathname/setMoreOpen right below already use,
-  // deliberately not a useEffect (this project's own lint rule flags
-  // setState-in-effect, and there's no real external system to
-  // synchronize with here anyway).
-  const [lastTabPaths, setLastTabPaths] = useState<Record<string, string>>({});
+  // Adjust state in response to a pathname change during render, deliberately
+  // not in a useEffect (this project's own lint rule flags setState-in-effect,
+  // and there's no real external system to synchronize with here anyway).
   if (pathname !== lastPathname) {
     setLastPathname(pathname);
     setMoreOpen(false);
-    const match = primaryNav.find((item) => pathname === item.href || pathname.startsWith(`${item.href}/`));
-    if (match && lastTabPaths[match.href] !== pathname) {
-      setLastTabPaths({ ...lastTabPaths, [match.href]: pathname });
-    }
   }
 
-  /** Where tapping this primary-nav tab actually goes — the last path visited under it, if any, so an in-progress log (or anything else mid-flow) is exactly where it was left rather than resetting to the tab's bare root. */
-  const navHref = (item: (typeof primaryNav)[number]) => lastTabPaths[item.href] ?? item.href;
+  // Tapping a primary tab goes to that tab's HOME, every time.
+  //
+  // This is a reversal. An earlier round of feedback ("when you click back on
+  // the lab it takes you back to the page you left on") had the tab remember
+  // the last path visited under it — leave /gym/log mid-entry, tap Lab, land
+  // back on /gym/log. In practice it cut the other way: from the GPS tracking
+  // screen, tapping Engine kept the athlete ON the GPS screen, because that
+  // was the last path under /cardio, and there was no obvious way back to
+  // The Engine at all (user report: "when pressing back to go to the engine
+  // once clicking on gps run it does not let you go back to the engine
+  // screen. I also want it so that any time you press the engine or the lab
+  // at the bottom of the screen it takes you to the homepage"). A tab that
+  // sometimes goes home and sometimes doesn't is worse than one that always
+  // does, so it always does now. A log in progress survives this anyway: the
+  // activity form drafts itself server-side (PUT /api/activities/draft), so
+  // reopening it picks up where it was.
+  const navHref = (item: (typeof primaryNav)[number]) => item.href;
 
   const isActive = (href: string) =>
     pathname === href ||
@@ -148,6 +146,7 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
     // dvh (dynamic viewport height) tracks the real visible viewport.
     <div className="min-h-dvh" data-mode={mode}>
       <NativeBillingBootstrap />
+      <StatusBarModeSync mode={mode} />
       {/*
         Themed background lives on a FIXED, viewport-covering backdrop rather
         than on the growing content wrapper. A min-height wrapper's painted

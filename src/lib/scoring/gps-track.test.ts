@@ -15,7 +15,6 @@ import {
   trackDistanceMeters,
   movingMillis,
   isPaused,
-  GPS_TRACKING_CONFIG,
   type GpsPoint,
   type HrReading,
   type RunSegment,
@@ -70,49 +69,36 @@ function buildCleanTrack(steps: number, secondsPerStep: number): GpsPoint[] {
 }
 
 describe("summarizeGpsTrack", () => {
-  it("returns a partial, zero-distance summary for fewer than 2 points", () => {
-    const summary = summarizeGpsTrack([point()], { endedCleanly: true, permissionRevoked: false });
-    expect(summary.isPartial).toBe(true);
+  it("returns a zero-distance summary for fewer than 2 points", () => {
+    const summary = summarizeGpsTrack([point()]);
     expect(summary.distanceMeters).toBe(0);
+    expect(summary.durationSeconds).toBe(0);
+    expect(summary.avgPaceSecondsPerKm).toBeNull();
   });
 
   it("computes distance/pace/duration for a clean, evenly-sampled track", () => {
     // 11 points, 100m apart, 30s apart -> 1000m in 300s (5:00/km pace).
     const points = buildCleanTrack(11, 30);
-    const summary = summarizeGpsTrack(points, { endedCleanly: true, permissionRevoked: false });
+    const summary = summarizeGpsTrack(points);
 
-    expect(summary.isPartial).toBe(false);
-    expect(summary.partialReason).toBeNull();
     expect(summary.durationSeconds).toBe(300);
     expect(summary.distanceMeters).toBeCloseTo(1000, -1);
     expect(summary.avgPaceSecondsPerKm).toBeCloseTo(300, 0);
   });
 
-  it("flags a session ended without stopping cleanly as partial", () => {
-    const points = buildCleanTrack(11, 30);
-    const summary = summarizeGpsTrack(points, { endedCleanly: false, permissionRevoked: false });
-    expect(summary.isPartial).toBe(true);
-    expect(summary.partialReason).toBe("ended_without_stopping");
-  });
-
-  it("flags permission revocation as partial regardless of anything else", () => {
-    const points = buildCleanTrack(11, 30);
-    const summary = summarizeGpsTrack(points, { endedCleanly: true, permissionRevoked: true });
-    expect(summary.isPartial).toBe(true);
-    expect(summary.partialReason).toBe("permission_revoked");
-  });
-
-  it("flags a large sampling gap as partial even when the session was stopped cleanly (live-bug-class regression: never score a truncated track as complete)", () => {
+  it("never classifies a track as partial — a gap in tracking is still the athlete's finished run (user instruction: never save a run as partial)", () => {
     const before = buildCleanTrack(5, 10); // 0..40s
-    const gapSeconds = GPS_TRACKING_CONFIG.MAX_ACCEPTABLE_GAP_SECONDS + 60;
+    const gapSeconds = 180;
     const after: GpsPoint[] = [
       { latitude: 51.505, longitude: -0.12, accuracy: 5, altitude: 10, time: (40 + gapSeconds) * 1000 },
       { latitude: 51.506, longitude: -0.12, accuracy: 5, altitude: 10, time: (40 + gapSeconds + 30) * 1000 },
     ];
 
-    const summary = summarizeGpsTrack([...before, ...after], { endedCleanly: true, permissionRevoked: false });
-    expect(summary.isPartial).toBe(true);
-    expect(summary.partialReason).toBe("sampling_gap");
+    const summary = summarizeGpsTrack([...before, ...after]);
+    expect(summary).not.toHaveProperty("isPartial");
+    expect(summary).not.toHaveProperty("partialReason");
+    // The whole recorded span is the run's duration, gap included.
+    expect(summary.durationSeconds).toBe(40 + gapSeconds + 30);
   });
 
   it("discards fixes with poor accuracy rather than letting them inflate distance", () => {
@@ -122,7 +108,7 @@ describe("summarizeGpsTrack", () => {
       point({ latitude: 52.0, longitude: 0.5, accuracy: 500, time: 10_000 }),
       point({ latitude: 51.5009, longitude: -0.12, accuracy: 5, time: 20_000 }),
     ];
-    const summary = summarizeGpsTrack(points, { endedCleanly: true, permissionRevoked: false });
+    const summary = summarizeGpsTrack(points);
     // Only the two accurate fixes (~100m apart) should count.
     expect(summary.distanceMeters).toBeLessThan(200);
   });
@@ -134,7 +120,7 @@ describe("summarizeGpsTrack", () => {
       point({ latitude: 51.5018, longitude: -0.12, altitude: 105, time: 60_000 }),
       point({ latitude: 51.5027, longitude: -0.12, altitude: 120, time: 90_000 }),
     ];
-    const summary = summarizeGpsTrack(points, { endedCleanly: true, permissionRevoked: false });
+    const summary = summarizeGpsTrack(points);
     // +10 (100->110), -5 ignored, +15 (105->120) = 25m gain.
     expect(summary.elevationGainMeters).toBeCloseTo(25, 0);
   });
@@ -441,10 +427,7 @@ describe("pause handling", () => {
       point({ latitude: 51.5027, longitude: -0.12, accuracy: 5, time: 450_000 }),
       point({ latitude: 51.5036, longitude: -0.12, accuracy: 5, time: 500_000 }),
     ];
-    const summary = summarizeGpsTrack(points, {
-      endedCleanly: true,
-      permissionRevoked: false,
-      pauses: pause,
+    const summary = summarizeGpsTrack(points, { pauses: pause,
     });
     // 500s wall clock, 300s of it paused.
     expect(summary.durationSeconds).toBe(200);
@@ -456,38 +439,13 @@ describe("pause handling", () => {
     expect(summary.avgPaceSecondsPerKm).toBeLessThan(900);
   });
 
-  it("does not flag a deliberate pause as an interrupted session", () => {
-    // A five-minute pause is longer than MAX_ACCEPTABLE_GAP_SECONDS. Without
-    // deducting it, every paused run would be saved as a partial effort and
-    // scored as if tracking had failed.
-    const points: GpsPoint[] = [
-      point({ latitude: 51.5, longitude: -0.12, accuracy: 5, time: 0 }),
-      point({ latitude: 51.5009, longitude: -0.12, accuracy: 5, time: 100_000 }),
-      point({ latitude: 51.5018, longitude: -0.12, accuracy: 5, time: 450_000 }),
-    ];
-    const summary = summarizeGpsTrack(points, {
-      endedCleanly: true,
-      permissionRevoked: false,
-      pauses: pause,
-    });
-    expect(summary.isPartial).toBe(false);
-    expect(summary.partialReason).toBeNull();
-
-    // The same track with no pause recorded genuinely is an interrupted one.
-    const unpaused = summarizeGpsTrack(points, { endedCleanly: true, permissionRevoked: false });
-    expect(unpaused.partialReason).toBe("sampling_gap");
-  });
-
   it("keeps everything recorded before the pause — resuming is not a restart", () => {
     const before = buildCleanTrack(3, 30);
     const after: GpsPoint[] = [
       point({ latitude: 51.5027, longitude: -0.12, accuracy: 5, altitude: 10, time: 420_000 }),
       point({ latitude: 51.5036, longitude: -0.12, accuracy: 5, altitude: 10, time: 450_000 }),
     ];
-    const summary = summarizeGpsTrack([...before, ...after], {
-      endedCleanly: true,
-      permissionRevoked: false,
-      pauses: pause,
+    const summary = summarizeGpsTrack([...before, ...after], { pauses: pause,
     });
     // 200m from before the pause survives into the final total.
     expect(summary.distanceMeters).toBeGreaterThan(250);
@@ -502,10 +460,7 @@ describe("pause handling", () => {
       point({ altitude: 100, accuracy: 5, time: 300_000 }),
       point({ altitude: 101, accuracy: 5, time: 450_000 }),
     ];
-    const summary = summarizeGpsTrack(points, {
-      endedCleanly: true,
-      permissionRevoked: false,
-      pauses: pause,
+    const summary = summarizeGpsTrack(points, { pauses: pause,
     });
     expect(summary.elevationGainMeters).toBeLessThan(5);
   });
@@ -830,7 +785,7 @@ describe("route privacy zone", () => {
     const fixes: GpsPoint[] = Array.from({ length: 200 }, (_, i) =>
       point({ latitude: HOME[0] + i * 10 * DEG_PER_M, longitude: HOME[1], accuracy: 5, time: i * 5_000 })
     );
-    const summary = summarizeGpsTrack(fixes, { endedCleanly: true, permissionRevoked: false });
+    const summary = summarizeGpsTrack(fixes);
     const recordedDistance = summary.distanceMeters;
 
     const stored = applyRoutePrivacyZone(buildRoutePolyline(fixes));
@@ -839,7 +794,7 @@ describe("route privacy zone", () => {
     expect(recordedDistance).toBeCloseTo(1990, -1);
     expect(pathLengthMeters(stored!)).toBeCloseTo(recordedDistance - 400, -1);
     expect(
-      summarizeGpsTrack(fixes, { endedCleanly: true, permissionRevoked: false }).distanceMeters
+      summarizeGpsTrack(fixes).distanceMeters
     ).toBe(recordedDistance);
   });
 

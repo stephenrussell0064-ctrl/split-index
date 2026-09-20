@@ -5,6 +5,7 @@ import {
   type GpsPoint,
   type PauseInterval,
 } from "@/lib/scoring/gps-track";
+import { parseActivityStreams, totalDistanceMeters, totalSeconds } from "@/lib/analysis/streams";
 
 const HOME_LAT = 51.5;
 const HOME_LNG = -0.12;
@@ -29,11 +30,11 @@ function input(overrides: Partial<GpsSubmissionInput> = {}): GpsSubmissionInput 
     sport: "running",
     sessionType: "easy",
     startedAtIso: "2026-01-05T18:00:00.000Z",
-    summary: summarizeGpsTrack(points, { endedCleanly: true, permissionRevoked: false, pauses }),
+    summary: summarizeGpsTrack(points, { pauses }),
     points,
     pauses,
     hrReadings: [],
-    cadenceReadings: [],
+    cadenceSamples: [],
     segments: [],
     ...overrides,
   };
@@ -58,10 +59,7 @@ describe("buildGpsActivityPayload", () => {
     // temperature was looked up either, while its distance came through in
     // full from the summary alongside it. Nothing surfaced the loss.
     const recoveredPoints = track(3000);
-    const recoveredSummary = summarizeGpsTrack(recoveredPoints, {
-      endedCleanly: false,
-      permissionRevoked: false,
-    });
+    const recoveredSummary = summarizeGpsTrack(recoveredPoints, { });
 
     const payload = buildGpsActivityPayload(
       input({ points: recoveredPoints, summary: recoveredSummary })
@@ -71,14 +69,14 @@ describe("buildGpsActivityPayload", () => {
     expect((payload.route as [number, number][]).length).toBeGreaterThanOrEqual(2);
     expect(payload.start_latitude).toBeCloseTo(HOME_LAT, 6);
     expect(payload.start_longitude).toBeCloseTo(HOME_LNG, 6);
-    // A recovered run is still flagged as partial — recovering it must not
-    // launder it into a clean effort.
-    expect(payload.is_partial_track).toBe(true);
+    // A recovered run is saved as the finished run, same as any other
+    // (user instruction: never save a run as partial).
+    expect(payload.is_partial_track).toBe(false);
     expect(payload.distance_meters).toBeCloseTo(3000, -1);
   });
 
   it("has no route and no coordinate when there genuinely are no points", () => {
-    const empty = summarizeGpsTrack([], { endedCleanly: true, permissionRevoked: false });
+    const empty = summarizeGpsTrack([]);
     const payload = buildGpsActivityPayload(input({ points: [], summary: empty }));
 
     expect(payload.route).toBeUndefined();
@@ -92,7 +90,7 @@ describe("buildGpsActivityPayload", () => {
     // privacy; if these were ever recomputed from it, every athlete would
     // silently lose 400m a run.
     const points = track(5000);
-    const summary = summarizeGpsTrack(points, { endedCleanly: true, permissionRevoked: false });
+    const summary = summarizeGpsTrack(points);
     const payload = buildGpsActivityPayload(input({ points, summary }));
 
     expect(payload.distance_meters).toBe(summary.distanceMeters);
@@ -118,10 +116,7 @@ describe("buildGpsActivityPayload", () => {
       input({
         points,
         pauses,
-        summary: summarizeGpsTrack(points, {
-          endedCleanly: true,
-          permissionRevoked: false,
-          pauses,
+        summary: summarizeGpsTrack(points, { pauses,
         }),
       })
     );
@@ -130,5 +125,43 @@ describe("buildGpsActivityPayload", () => {
     // The drift sat 0.0003 degrees east of the road; nothing that far off the
     // line should have been drawn.
     expect(route.every(([, lng]) => Math.abs(lng - HOME_LNG) < 0.0001)).toBe(true);
+  });
+
+  it("carries the analysis streams, built from the same points as the summary", () => {
+    const points = track(3000);
+    const summary = summarizeGpsTrack(points, { pauses: [] });
+    const payload = buildGpsActivityPayload(
+      input({
+        points,
+        summary,
+        hrReadings: points.map((p, i) => ({ bpm: 140 + (i % 5), time: p.time })),
+        cadenceSamples: points.map((p) => ({ spm: 178, time: p.time })),
+      })
+    );
+
+    const streams = parseActivityStreams(payload.streams);
+    expect(streams).not.toBeNull();
+    // The whole contract: a split found in these streams lands where the
+    // saved distance and duration say it should.
+    expect(totalDistanceMeters(streams!)).toBeCloseTo(summary.distanceMeters, 0);
+    expect(totalSeconds(streams!)).toBeCloseTo(summary.durationSeconds, 0);
+    expect(streams!.heartRate).not.toBeNull();
+    expect(streams!.cadence).not.toBeNull();
+    expect(payload.avg_cadence).toBe(178);
+  });
+
+  it("builds streams for a recovered session too, not an empty live buffer", () => {
+    // Same regression as the route above: the recovery path passes its own
+    // points in, and the analysis must be built from those.
+    const recovered = track(4000);
+    const payload = buildGpsActivityPayload(
+      input({ points: recovered, summary: summarizeGpsTrack(recovered, { pauses: [] }) })
+    );
+    expect(totalDistanceMeters(parseActivityStreams(payload.streams)!)).toBeCloseTo(4000, -1);
+  });
+
+  it("sends no streams when there is no track to analyse", () => {
+    const empty = summarizeGpsTrack([], {});
+    expect(buildGpsActivityPayload(input({ points: [], summary: empty })).streams).toBeUndefined();
   });
 });

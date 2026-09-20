@@ -3,12 +3,14 @@ import {
   isPaused,
   summarizeFartlekSegments,
   summarizeIntervalSegments,
+  type CadenceSample,
   type GpsPoint,
   type GpsTrackSummary,
   type HrReading,
   type PauseInterval,
   type RunSegment,
 } from "@/lib/scoring/gps-track";
+import { buildActivityStreams } from "@/lib/analysis/streams";
 import type { SessionType } from "@/types";
 
 /**
@@ -34,14 +36,22 @@ export interface GpsSubmissionInput {
   sessionType: SessionType;
   /** ISO timestamp the run began. */
   startedAtIso: string;
-  /** The authoritative numbers: distance, duration, pace, climb, partial-ness. Computed from the full raw track by summarizeGpsTrack — never from the route polyline below. */
+  /** The authoritative numbers: distance, duration, pace, climb. Computed from the full raw track by summarizeGpsTrack — never from the route polyline below. */
   summary: GpsTrackSummary;
   /** The run's raw fixes. For a recovered session these are the RECOVERED points, not the live ones. */
   points: GpsPoint[];
   /** The run's pauses, with any open pause already closed. */
   pauses: readonly PauseInterval[];
   hrReadings: HrReading[];
-  cadenceReadings: number[];
+  /**
+   * Cadence samples, each carrying the instant it was measured.
+   *
+   * This used to be a bare `number[]` — enough for the one thing it was used
+   * for, the session average. It is timestamped now because run analysis lays
+   * cadence against the GPS track to report it per split, and an array of
+   * numbers with no times cannot be matched to anything.
+   */
+  cadenceSamples: CadenceSample[];
   segments: RunSegment[];
 }
 
@@ -91,10 +101,16 @@ export function buildGpsActivityPayload(input: GpsSubmissionInput): Record<strin
     avg_pace_seconds_per_km: input.summary.avgPaceSecondsPerKm ?? undefined,
     avg_heart_rate: mean(bpm),
     max_heart_rate: bpm.length > 0 ? Math.max(...bpm) : undefined,
-    avg_cadence: mean(input.cadenceReadings),
+    avg_cadence: mean(input.cadenceSamples.map((c) => c.spm)),
     session_type: input.sessionType,
     source: "gps",
-    is_partial_track: input.summary.isPartial,
+    // Always a complete effort. A GPS run used to be saved as partial when
+    // tracking had a gap, permission was pulled, or the app was killed before
+    // Stop — and the plan engine then discounted it. The athlete's instruction
+    // is that an ended run is the finished run, full stop, so this is pinned
+    // to false rather than left to the server's default: the intent has to be
+    // visible here, where the payload is built.
+    is_partial_track: false,
     // Starting coordinates only — used server-side to auto-fetch the
     // temperature at run time (no manual entry needed for GPS runs). Never
     // persisted as their own column, just consumed once.
@@ -110,6 +126,29 @@ export function buildGpsActivityPayload(input: GpsSubmissionInput): Record<strin
     // starting at an athlete's front door has to hold for every client that
     // ever posts to that endpoint, including builds already on phones.
     route: buildRoutePolyline(movingPoints) ?? undefined,
+    /*
+     * The per-sample series behind every piece of run analysis — splits, best
+     * efforts, heart-rate zones, the elevation profile.
+     *
+     * Built from the SAME points, pauses and sensor readings the summary above
+     * was built from, which is the whole reason it is assembled here rather
+     * than anywhere else: a stream derived from a different point buffer would
+     * put a "3 km" split somewhere the saved distance disagrees with. In
+     * particular the recovered-session path passes its recovered points in,
+     * exactly as it does for the route (see the note on this function).
+     *
+     * Unlike the route, this is NOT trimmed for privacy, because there is
+     * nothing to trim: streams carry distance-along-the-run and sensor values,
+     * never coordinates. They are also stored in their own owner-only table
+     * rather than in `activities.metadata`, which any accepted friend can read
+     * in full — see migration 078.
+     */
+    streams: buildActivityStreams({
+      points: input.points,
+      pauses: input.pauses,
+      hrReadings: input.hrReadings,
+      cadenceSamples: input.cadenceSamples,
+    }) ?? undefined,
     ...segmentFields(input),
   };
 }

@@ -175,6 +175,37 @@ export const activityFieldsSchema = z
       .catch(undefined),
 
     /*
+     * The per-sample series a GPS session carries for run analysis — splits,
+     * best efforts, heart-rate zones, the elevation profile. See
+     * lib/analysis/streams.ts for the shape and what is deliberately NOT in
+     * it (no coordinates: the route polyline is the only positional thing
+     * stored, and it is privacy-trimmed at both ends).
+     *
+     * Same drop-don't-reject contract as `route` above, and for the same
+     * reason: a malformed series should cost the athlete their analysis, not
+     * their run. The channels are checked here only for shape and length —
+     * parseActivityStreams in the analysis module does the real validation
+     * (monotonic time, non-decreasing distance, matching channel lengths)
+     * before anything is written, because those are invariants the analysis
+     * depends on rather than bounds a schema can express cheaply.
+     *
+     * The caps are what the request body can carry, not what is stored:
+     * STREAM_CONFIG.MAX_SAMPLES is 3000 and a longer array simply fails
+     * parseActivityStreams and stores nothing.
+     */
+    streams: z
+      .object({
+        time: z.array(z.number().finite()).max(20_000),
+        distance: z.array(z.number().finite()).max(20_000),
+        altitude: z.array(z.number().finite().nullable()).max(20_000).nullish(),
+        heartRate: z.array(z.number().finite().nullable()).max(20_000).nullish(),
+        cadence: z.array(z.number().finite().nullable()).max(20_000).nullish(),
+      })
+      .strict()
+      .optional()
+      .catch(undefined),
+
+    /*
      * The athlete's bodyweight at the time of the session. This is the field
      * WP3 is really about: it sits in a denominator in relative_strength, so a
      * 0 divides and a 1 produces a strength score two orders of magnitude
