@@ -293,6 +293,7 @@ export async function POST(request: Request) {
     sport: plan.merged.sport,
     sportLabel: SPORT_INDEX_LABELS[plan.merged.sport as keyof typeof SPORT_INDEX_LABELS],
     sportIndex: scored.result.sportIndex,
+    personalIndex: scored.result.personalIndex,
     splitIndex: scored.result.splitIndex,
     previousSplitIndex: scored.previousSplitIndex,
   });

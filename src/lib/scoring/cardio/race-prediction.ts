@@ -287,6 +287,22 @@ export interface HistorySession {
   startedAt: string | Date;
   elevationMeters?: number | null;
   temperatureCelsius?: number | null;
+  /**
+   * Read by the personal-score baseline (cardio-activity.ts), which shares
+   * this window — not by anything in this file. RPE stands in for effort on
+   * sessions without heart rate; the structured fields let an interval
+   * session in the history be read from its work pieces, the same way it was
+   * scored.
+   */
+  rpe?: number | null;
+  intervalReps?: number | null;
+  intervalWorkDistanceMeters?: number | null;
+  intervalWorkSeconds?: number | null;
+  intervalRestSeconds?: number | null;
+  intervalWorkAvgHr?: number | null;
+  fartlekOnDistanceMeters?: number | null;
+  fartlekOnSeconds?: number | null;
+  fartlekOnAvgHr?: number | null;
 }
 
 /** Distances must differ by at least this fraction to count as genuinely different (not noise around the same route). */

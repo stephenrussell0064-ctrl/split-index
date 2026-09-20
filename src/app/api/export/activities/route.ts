@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { databaseError } from "@/lib/api/errors";
+import { missingColumn } from "@/lib/activities/degradable-write";
 import { createClient } from "@/lib/supabase/server";
 import {
   PREMIUM_REQUIRED,
@@ -50,23 +51,53 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const format = searchParams.get("format") ?? "json";
 
-  const { data: activities, error } = await supabase
+  // Two literal selects rather than one interpolated string: the Supabase
+  // client parses the column list at the TYPE level, and a template literal
+  // defeats that parser, turning every field on the result into an error type.
+  //
+  // personal_index arrived with migration 077. An export is the athlete's own
+  // copy of their data and must not fail wholesale because one column is not
+  // there yet — it comes back without that field instead.
+  const withPersonal = await supabase
     .from("activities")
     .select(
-      "id, sport, title, started_at, duration_seconds, distance_meters, elevation_meters, avg_heart_rate, max_heart_rate, avg_power_watts, avg_pace_seconds_per_km, session_type, rpe, notes, source, created_at, workout_scores(sport_index, load_score, endurance_component, strength_component)"
+      "id, sport, title, started_at, duration_seconds, distance_meters, elevation_meters, avg_heart_rate, max_heart_rate, avg_power_watts, avg_pace_seconds_per_km, session_type, rpe, notes, source, created_at, workout_scores(sport_index, personal_index, load_score, endurance_component, strength_component)"
     )
     .eq("user_id", user.id)
     .eq("is_draft", false)
     .order("started_at", { ascending: false });
 
+  let activities = withPersonal.data as Record<string, unknown>[] | null;
+  let error = withPersonal.error;
+
+  if (error && missingColumn(error, ["personal_index"])) {
+    const fallback = await supabase
+      .from("activities")
+      .select(
+        "id, sport, title, started_at, duration_seconds, distance_meters, elevation_meters, avg_heart_rate, max_heart_rate, avg_power_watts, avg_pace_seconds_per_km, session_type, rpe, notes, source, created_at, workout_scores(sport_index, load_score, endurance_component, strength_component)"
+      )
+      .eq("user_id", user.id)
+      .eq("is_draft", false)
+      .order("started_at", { ascending: false });
+    activities = fallback.data as Record<string, unknown>[] | null;
+    error = fallback.error;
+  }
+
   if (error) {
     return databaseError(error, { operation: "GET /api/export/activities" });
   }
 
+  type ScoreRow = {
+    sport_index?: number | null;
+    personal_index?: number | null;
+    load_score?: number | null;
+    endurance_component?: number | null;
+    strength_component?: number | null;
+  };
+
   const exportRows = (activities ?? []).map((a) => {
-    const ws = Array.isArray(a.workout_scores)
-      ? a.workout_scores[0]
-      : a.workout_scores;
+    const raw = a.workout_scores;
+    const ws = (Array.isArray(raw) ? raw[0] : raw) as ScoreRow | undefined;
     return {
       id: a.id,
       sport: a.sport,
@@ -84,6 +115,7 @@ export async function GET(request: Request) {
       notes: a.notes,
       source: a.source,
       sport_index: ws?.sport_index ?? null,
+      personal_index: ws?.personal_index ?? null,
       load_score: ws?.load_score ?? null,
       endurance_component: ws?.endurance_component ?? null,
       strength_component: ws?.strength_component ?? null,

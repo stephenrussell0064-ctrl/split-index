@@ -344,6 +344,7 @@ export function ActivityForm({
       sport: currentSport,
       sportLabel: SPORT_INDEX_LABELS[currentSport],
       sportIndex,
+      personalIndex: (data.personalIndex ?? null) as number | null,
       splitIndex: (data.splitIndex ?? 0) as number,
       previousSplitIndex: (data.previousSplitIndex ?? data.splitIndex ?? 0) as number,
       splitIndexDelta: (data.splitIndexDelta ?? 0) as number,

@@ -20,9 +20,6 @@ import type { CardioResult } from "@/lib/scoring/cardio-activity";
 import type { ScoreStrengthResult } from "@/lib/scoring/split-strength-engine";
 import type { SessionType, SportType } from "@/types";
 
-/** Session types scored relative to the athlete's own history — mirrors RELATIVE_EFFORT_SESSION_TYPES in cardio-predictions.ts (kept as a local literal set to avoid a server-only import chain from a "use client" component). */
-const RELATIVE_EFFORT_SESSION_TYPES = new Set<SessionType>(["easy", "recovery", "long"]);
-
 /** The predictions ladder now covers row/ski/swim/walk too (previously running-only) — this verb keeps the header sport-accurate instead of hardcoding "run". */
 const PREDICTION_VERB: Record<SportType, string> = {
   running: "run",
@@ -36,67 +33,140 @@ const PREDICTION_VERB: Record<SportType, string> = {
   gym: "lift",
 };
 
-/** Explains the relative-effort scoring model — shown for every tier (session_type isn't premium-gated), since the score itself is affected by this regardless of tier. */
-function RelativeEffortNote({ sessionType, flags }: { sessionType?: SessionType | null; flags?: string[] }) {
-  if (!sessionType || !RELATIVE_EFFORT_SESSION_TYPES.has(sessionType)) return null;
+/**
+ * Says how this session's score was arrived at — what the athlete's heart
+ * rate, the hills and the weather did to it.
+ *
+ * This replaced a note that explained the old easy-run credit stack: which
+ * heart-rate zone the session landed in, whether the below-base guard had
+ * fired, whether a mistagged-hard-effort guard had. None of that exists any
+ * more. The session tag is not read by either score, and there is no stack of
+ * capped credits to explain — there is one number, the fitness equivalent,
+ * and a short list of what moved it.
+ */
+function ScoreBasisNote({ result }: { result: CardioResult }) {
+  const flags = result.flags ?? [];
+  const adjustments = result.adjustments;
 
-  let detail = "Scored relative to your own recent easy-effort history, not absolute pace.";
-  if (flags?.includes("easy-tag-pace-mismatch")) {
-    detail = "This pace looked more like a hard effort, so it was scored on the standard scale instead.";
-  } else if (flags?.includes("hr-zone-scored")) {
-    const estimatedNote = flags.includes("hr-zone-resting-hr-estimated")
-      ? " Your resting heart rate is estimated from your experience level — add the real value in Settings for more accurate scoring."
-      : "";
-    if (flags.includes("hr-zone-below-base-guard")) {
-      detail = `Your heart rate read very low for this effort — a partial credit applied since your pace didn't fully back it up.${estimatedNote}`;
-    } else if (flags.includes("hr-zone-penalty")) {
-      detail = `Your heart rate drifted well above your target zone for an easy effort — credit reduced.${estimatedNote}`;
-    } else if (flags.includes("hr-zone-above-target")) {
-      detail = `Your heart rate sat above your target zone — still credited, but less than a right-on-target effort.${estimatedNote}`;
-    } else if (flags.includes("hr-zone-at-or-below-target")) {
-      detail = `Right at or below your target heart rate — a well-executed easy effort, credited in full.${estimatedNote}`;
-    } else {
-      detail = `Scored on your personalized heart-rate zones.${estimatedNote}`;
+  const detail: string = (() => {
+    if (flags.includes("effort-from-hr")) {
+      const estimated = flags.includes("resting-hr-estimated")
+        ? " Your resting heart rate is estimated from your experience level — add the real one in Settings to sharpen this."
+        : "";
+      const stretched = flags.includes("effort-credit-extrapolated")
+        ? " This was well below race effort, so reading a maximal pace off it is more of a stretch than usual."
+        : "";
+      return `Scored on what this pace at this heart rate implies you could do flat out.${estimated}${stretched}`;
     }
-  } else if (flags?.includes("relative-effort-scored")) {
-    detail = "This session beat your recent easy-effort average — pace credit applied.";
-  } else if (flags?.includes("hr-zone-assumed-target")) {
-    detail = "No heart-rate data for this session — scored as if executed right at your target heart-rate zone. This is an assumption, not a measurement, so it may not be accurate.";
-  } else if (flags?.includes("hr-zone-data-missing")) {
-    detail = "Add your resting & max heart rate in Settings to unlock more accurate, personalized effort scoring.";
-  }
+    if (flags.includes("effort-from-rpe")) {
+      return "No heart rate for this session, so your effort rating was used instead — a rougher signal, and the score is less confident because of it.";
+    }
+    if (flags.includes("effort-not-scaled")) {
+      return "No heart rate or effort rating, so this was scored on pace alone. Adding either tells the engine how hard the session actually was.";
+    }
+    return "";
+  })();
 
-  return <ScoringExplainerNote>{detail}</ScoringExplainerNote>;
+  const conditions = [
+    adjustments && adjustments.elevationFraction > 0
+      ? `${Math.round(adjustments.elevationFraction * 1000) / 10}% credited for the climbing`
+      : null,
+    adjustments && adjustments.temperatureFraction > 0
+      ? `${Math.round(adjustments.temperatureFraction * 1000) / 10}% credited for the weather`
+      : null,
+    adjustments && adjustments.bodyweightFactor !== 1
+      ? `adjusted for your bodyweight on the erg`
+      : null,
+  ].filter(Boolean);
+
+  if (!detail && conditions.length === 0) return null;
+
+  return (
+    <ScoringExplainerNote href="/how-scoring-works#two-scores">
+      {detail}
+      {conditions.length > 0 ? ` ${conditions.join(", ")}.` : ""}
+    </ScoringExplainerNote>
+  );
+}
+
+/** How this session compared with the athlete's own recent ones. */
+function PersonalComparison({ result }: { result: CardioResult }) {
+  const personal = result.personal;
+  if (!personal || result.personalScore == null) return null;
+  const better = personal.deltaPct > 0;
+  return (
+    <div className="border-t border-white/5 pt-4">
+      <p className="text-[10px] uppercase tracking-wider text-muted">Against your own recent sessions</p>
+      <p className="mt-1 text-sm tabular-nums">
+        <span className={cn("font-semibold", better ? "text-success" : "text-warning")}>
+          {better ? "+" : ""}
+          {personal.deltaPct}%
+        </span>
+        <span className="text-muted">
+          {" "}
+          vs your normal, across {personal.sampleCount} session
+          {personal.sampleCount === 1 ? "" : "s"}
+        </span>
+      </p>
+      <ScoringExplainerNote href="/how-scoring-works#two-scores" className="mt-1">
+        {personal.comparedWith === "pace-only"
+          ? "Compared on pace alone, because too few of your recent sessions were recorded the same way as this one — so it cannot tell whether today was harder work for the same pace."
+          : personal.intensityMatch < 0.25
+            ? "You have not done a session at this heart rate lately, so this is compared across intensities and is rougher than usual."
+            : "Compared against your own sessions at a similar heart rate, so an easy run is judged against your easy runs."}
+      </ScoringExplainerNote>
+    </div>
+  );
 }
 
 function CardioFreeStats({
   result,
-  sessionType,
-  flags,
 }: {
   result: CardioResult;
   sessionType?: SessionType | null;
   flags?: string[];
 }) {
   return (
-    <dl className="grid gap-3 sm:grid-cols-2 text-sm">
-      <div>
-        <dt className="text-[10px] uppercase tracking-wider text-muted">Session score</dt>
-        <dd className="font-display text-xl font-bold text-cardio-accent tabular-nums">
-          {formatIndex(result.score)}
-        </dd>
-        <RelativeEffortNote sessionType={sessionType} flags={flags} />
-      </div>
-      {result.vo2max !== null && (
+    <div className="space-y-3">
+      <dl className="grid gap-3 sm:grid-cols-2 text-sm">
         <div>
-          <dt className="text-[10px] uppercase tracking-wider text-muted">VO2max estimate</dt>
-          <dd className="font-medium tabular-nums text-cardio-text">
-            {result.vo2max} ml/kg/min
-            <span className="ml-1 text-xs text-muted">({result.vo2maxMethod})</span>
+          <dt className="text-[10px] uppercase tracking-wider text-muted">Session score · vs everyone</dt>
+          <dd className="font-display text-xl font-bold text-cardio-accent tabular-nums">
+            {formatIndex(result.populationScore ?? result.score)}
           </dd>
         </div>
-      )}
-    </dl>
+        <div>
+          <dt className="text-[10px] uppercase tracking-wider text-muted">vs you</dt>
+          <dd
+            className={cn(
+              "font-display text-xl font-bold tabular-nums",
+              result.personalScore == null
+                ? "text-muted"
+                : result.personalScore >= 525
+                  ? "text-success"
+                  : result.personalScore <= 475
+                    ? "text-warning"
+                    : "text-cardio-text"
+            )}
+          >
+            {result.personalScore == null ? "—" : formatIndex(result.personalScore)}
+          </dd>
+          {result.personalScore == null && (
+            <p className="text-[10px] text-muted">calibrating</p>
+          )}
+        </div>
+        {result.vo2max !== null && (
+          <div>
+            <dt className="text-[10px] uppercase tracking-wider text-muted">VO2max estimate</dt>
+            <dd className="font-medium tabular-nums text-cardio-text">
+              {result.vo2max} ml/kg/min
+              <span className="ml-1 text-xs text-muted">({result.vo2maxMethod})</span>
+            </dd>
+          </div>
+        )}
+      </dl>
+      <ScoreBasisNote result={result} />
+    </div>
   );
 }
 
@@ -109,17 +179,20 @@ function CardioPremiumStats({
   sessionType?: SessionType | null;
   sport?: SportType | null;
 }) {
+  // Flags the notes above already say in words — listing them raw as well
+  // just repeats the explanation in engine vocabulary.
   const hiddenFlags = new Set([
-    "relative-effort-scored",
-    "easy-tag-pace-mismatch",
-    "hr-zone-scored",
-    "hr-zone-at-or-below-target",
-    "hr-zone-above-target",
-    "hr-zone-penalty",
-    "hr-zone-below-base-guard",
-    "hr-zone-data-missing",
-    "hr-zone-resting-hr-estimated",
-    "hr-zone-assumed-target",
+    "effort-from-hr",
+    "effort-from-rpe",
+    "effort-not-scaled",
+    "effort-credit-extrapolated",
+    "resting-hr-estimated",
+    "terrain-adjusted",
+    "weather-adjusted",
+    "bodyweight-adjusted",
+    "personal-calibrating",
+    "personal-baseline-pace-only",
+    "personal-baseline-intensity-stretched",
   ]);
   const remainingFlags = result.flags.filter((f) => !hiddenFlags.has(f));
   const predictionVerb = (sport && PREDICTION_VERB[sport]) || "run";
@@ -127,6 +200,7 @@ function CardioPremiumStats({
   return (
     <div className="space-y-4 text-sm">
       <CardioFreeStats result={result} sessionType={sessionType} flags={result.flags} />
+      <PersonalComparison result={result} />
       <dl className="grid gap-3 sm:grid-cols-2 border-t border-white/5 pt-4">
         {result.trimp !== null && (
           <div>
@@ -218,9 +292,29 @@ function StrengthRow({ result, liftName }: { result: ScoreStrengthResult; liftNa
             </span>
           )}
         </p>
-        <p className="font-display text-lg font-bold text-gym-accent tabular-nums">
-          {formatIndex(result.score)}
-        </p>
+        <div className="text-right">
+          <p className="font-display text-lg font-bold text-gym-accent tabular-nums">
+            {formatIndex(result.score)}
+          </p>
+          <p className="text-[9px] uppercase tracking-wider text-gym-muted">vs everyone</p>
+          {result.personalScore != null && (
+            <>
+              <p
+                className={cn(
+                  "mt-1 font-display text-base font-bold tabular-nums",
+                  result.personalScore >= 525
+                    ? "text-success"
+                    : result.personalScore <= 475
+                      ? "text-warning"
+                      : "text-gym-text"
+                )}
+              >
+                {formatIndex(result.personalScore)}
+              </p>
+              <p className="text-[9px] uppercase tracking-wider text-gym-muted">vs you</p>
+            </>
+          )}
+        </div>
       </div>
       <p className="mt-1 text-xs text-gym-muted tabular-nums">
         Current 1RM {formatWeight(currentOneRM)} · All-time best {formatWeight(allTimeOneRM)}
@@ -240,6 +334,14 @@ function StrengthRow({ result, liftName }: { result: ScoreStrengthResult; liftNa
           Both 1RM figures here are the added weight a weighted {liftName.toLowerCase()} would need
           to be equally hard for one rep — not your bodyweight, and not a literal weight you lifted.
         </ScoringExplainerNote>
+      )}
+      {result.personal && (
+        <p className="mt-1 text-xs text-gym-muted tabular-nums">
+          {result.personal.deltaPct > 0 ? "+" : ""}
+          {result.personal.deltaPct}% vs your recent {formatWeight(result.personal.baselineOneRM)} norm
+          {" "}across {result.personal.sampleCount} session
+          {result.personal.sampleCount === 1 ? "" : "s"}
+        </p>
       )}
       {result.nextTier && (
         <p className="mt-1 text-xs text-gym-accent/80 tabular-nums">

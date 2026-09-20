@@ -16,11 +16,8 @@ import {
   effectiveStoredPrediction,
   sessionCountsAsQuality,
   personalEasyEffortBaselineEF,
-  personalEasyEffortBaselinePaceSeconds,
-  personalRecentHardEffortBenchmarkSeconds,
   terrainAdjustedSessionEF,
   isDirectBenchmarkDistance,
-  RELATIVE_EFFORT_SESSION_TYPES,
 } from "@/lib/scoring/cardio-predictions";
 import {
   personalizeRiegelKFromWindow,
@@ -346,7 +343,6 @@ export function simulate(persona: Persona, now = Date.parse("2026-06-01T07:00:00
     string,
     {
       window: HistorySession[];
-      easyScores: number[];
       predictionSeconds: number | null;
       updatedAt: string;
       lastQualityAt: string;
@@ -410,7 +406,6 @@ export function simulate(persona: Persona, now = Date.parse("2026-06-01T07:00:00
         const benchmarkSport = mapSportToBenchmarkSport(pattern.sport);
         const state = (benchmarkState[benchmarkSport] ??= {
           window: [],
-          easyScores: [],
           predictionSeconds: null,
           updatedAt: startedAt,
           lastQualityAt: startedAt,
@@ -422,17 +417,9 @@ export function simulate(persona: Persona, now = Date.parse("2026-06-01T07:00:00
         state.window = state.window.filter((s) => new Date(s.startedAt).getTime() >= cutoff);
 
         const personalizedK = personalizeRiegelKFromWindow(state.window, state.riegelK);
+        // Feeds the race-prediction memory's relative-trend nudge only; the
+        // scores themselves read the window directly (recentSessions below).
         const easyEffortBaselineEF = personalEasyEffortBaselineEF(
-          benchmarkSport,
-          state.window,
-          personalizedK ?? undefined
-        );
-        const recentHardEffortBenchmarkSeconds = personalRecentHardEffortBenchmarkSeconds(
-          benchmarkSport,
-          state.window,
-          personalizedK ?? undefined
-        );
-        const easyEffortBaselinePaceSeconds = personalEasyEffortBaselinePaceSeconds(
           benchmarkSport,
           state.window,
           personalizedK ?? undefined
@@ -491,11 +478,10 @@ export function simulate(persona: Persona, now = Date.parse("2026-06-01T07:00:00
           avgHeartRate: e.avgHeartRate,
           sessionType: pattern.sessionType,
           storedPredictionSeconds: storedPredictionForScoring,
-          easyEffortBaselineEF,
-          recentHardEffortBenchmarkSeconds,
-          easyEffortBaselinePaceSeconds,
-          recentEasyEffortScores: state.easyScores.length ? state.easyScores : null,
           personalizedRiegelK: personalizedK,
+          // A copy: the window is appended to after scoring, and the engine
+          // must see exactly what the route would have read before the save.
+          recentSessions: [...state.window],
           isPremium: true,
           profile: persona.profile,
           recentLoads,
@@ -529,14 +515,7 @@ export function simulate(persona: Persona, now = Date.parse("2026-06-01T07:00:00
 
       // Feed the result back into the athlete's state, as the API does.
       if (pendingWindowEntry) {
-        const st = benchmarkState[pendingWindowEntry.benchmarkSport];
-        st.window.push(pendingWindowEntry.session);
-        if (
-          pendingWindowEntry.session.sessionType &&
-          RELATIVE_EFFORT_SESSION_TYPES.has(pendingWindowEntry.session.sessionType)
-        ) {
-          st.easyScores.push(output.sportIndex);
-        }
+        benchmarkState[pendingWindowEntry.benchmarkSport].window.push(pendingWindowEntry.session);
       }
       loadScores.push({ load_score: output.loadScore, created_at: startedAt });
       recentRows.unshift({

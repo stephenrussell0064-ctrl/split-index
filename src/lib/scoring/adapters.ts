@@ -1,6 +1,6 @@
 import type { SportType, Gender, ScoringBasis, ExperienceLevel, SessionType } from "@/types";
 import type { Profile as AthleteProfile } from "@/lib/scoring/index-engine";
-import type { CardioInput, CardioType, Sex } from "@/lib/scoring/cardio-activity";
+import type { CardioInput, CardioType, RecentCardioSession, Sex } from "@/lib/scoring/cardio-activity";
 import { DEFAULT_SCORING_BASIS } from "@/lib/scoring/constants";
 import { isValidIntervalWorkPiece, isValidFartlekOnPiece } from "@/lib/scoring/cardio/interval-scoring";
 import type { ActivityScore } from "@/lib/scoring/index-engine";
@@ -250,11 +250,13 @@ export function buildCardioInput(input: {
   fartlekOnDistanceMeters?: number | null;
   fartlekOnSeconds?: number | null;
   fartlekOnAvgHr?: number | null;
-  easyEffortBaselineEF?: number | null;
-  recentHardEffortBenchmarkSeconds?: number | null;
-  easyEffortBaselinePaceSeconds?: number | null;
-  recentEasyEffortScores?: number[] | null;
   personalizedRiegelK?: number | null;
+  /** The athlete's recent same-sport sessions, excluding this one — the personal score's baseline (see RecentCardioSession). */
+  recentSessions?: RecentCardioSession[] | null;
+  /** Athlete's bodyweight for the erg weight adjustment (row/ski). */
+  bodyweightKg?: number | null;
+  /** When this session happened — anchors the personal baseline window. */
+  startedAt?: string | null;
 }): CardioInput {
   const structuredInterval = {
     reps: input.intervalReps ?? 0,
@@ -290,11 +292,10 @@ export function buildCardioInput(input: {
     temperatureCelsius: input.temperatureCelsius ?? undefined,
     rpe: input.rpe ?? undefined,
     storedPredictionSeconds: input.storedPredictionSeconds ?? undefined,
-    easyEffortBaselineEF: input.easyEffortBaselineEF ?? undefined,
-    recentHardEffortBenchmarkSeconds: input.recentHardEffortBenchmarkSeconds ?? undefined,
-    easyEffortBaselinePaceSeconds: input.easyEffortBaselinePaceSeconds ?? undefined,
-    recentEasyEffortScores: input.recentEasyEffortScores ?? undefined,
     personalizedRiegelK: input.personalizedRiegelK ?? undefined,
+    recentSessions: input.recentSessions ?? undefined,
+    bodyweightKg: input.bodyweightKg ?? undefined,
+    startedAt: input.startedAt ?? undefined,
     structuredInterval: isValidIntervalWorkPiece(structuredInterval) ? structuredInterval : undefined,
     structuredFartlek: isValidFartlekOnPiece(structuredFartlek) ? structuredFartlek : undefined,
   };

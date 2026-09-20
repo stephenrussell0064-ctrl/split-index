@@ -2,11 +2,9 @@ import type { createClient } from "@/lib/supabase/server";
 import type { GymExerciseInput } from "@/types";
 import { bestSet, summarizeSets } from "@/lib/activities/gym-sets";
 import { computeExercise1RM } from "@/lib/scoring/service";
+import { missingColumn, type WriteError } from "@/lib/activities/degradable-write";
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>;
-
-/** The shape PostgREST hands back on a failed write — only the fields we branch on. */
-type WriteError = { message: string; code?: string } | null;
 
 /**
  * Columns that exist because an ADDITIVE migration added them, and which the
@@ -72,28 +70,6 @@ export function buildGymExerciseRows(
       attachment: ex.attachment ?? null,
     };
   });
-}
-
-/**
- * Does this error say the table has no such column?
- *
- * PostgREST reports an unknown column on a WRITE as PGRST204 ("Could not find
- * the 'attachment' column of 'gym_exercises' in the schema cache") and on a
- * READ as Postgres' own 42703 ("column gym_exercises.attachment does not
- * exist"). Both shapes are matched, and the message is checked too, because
- * which one comes back depends on the PostgREST version in front of the
- * database rather than on anything this code controls.
- */
-function missingColumn(error: WriteError, candidates: readonly string[]): string | null {
-  if (!error) return null;
-  const code = error.code ?? "";
-  const message = error.message ?? "";
-  const looksLikeMissingColumn =
-    code === "PGRST204" ||
-    code === "42703" ||
-    /schema cache|does not exist/i.test(message);
-  if (!looksLikeMissingColumn) return null;
-  return candidates.find((column) => new RegExp(`\\b${column}\\b`).test(message)) ?? null;
 }
 
 /**

@@ -73,6 +73,13 @@ import {
 } from "@/lib/scoring/weight-entry";
 import { resolveAttachmentMultiplierByKey } from "@/lib/scoring/strength/attachments";
 import { COMMON_EXERCISES } from "@/lib/constants/sports";
+import {
+  buildPersonalBaseline,
+  improvementDelta,
+  personalScoreFromDelta,
+  STRENGTH_PERSONAL_SLOPE,
+  type WeightedSample,
+} from "@/lib/scoring/personal-score";
 
 export type Sex = "male" | "female";
 
@@ -139,9 +146,30 @@ export interface NextTierTarget {
   kgNeeded: number;
 }
 
+/** This lift against the athlete's own recent sessions of it — see strengthPersonalComparison. */
+export interface StrengthPersonalComparison {
+  /** Recency-weighted median of recent session-best e1RMs, kg. */
+  baselineOneRM: number;
+  /** Best session e1RM in the window (excluding this session), kg. */
+  bestOneRM: number;
+  /** Signed percent, positive = heavier than the norm. */
+  deltaPct: number;
+  /** Prior sessions the baseline was drawn from. */
+  sampleCount: number;
+}
+
 export interface ScoreStrengthResult {
   liftKey: string;
+  /** The population score — this lift against sex/age-adjusted strength standards. */
   score: number;
+  /**
+   * The personal score — this session's best e1RM on this lift against the
+   * athlete's own recent sessions of it, 500 = their norm (personal-score.ts).
+   * Null until enough sessions exist to compare against. Optional because
+   * results persisted before it existed do not carry it.
+   */
+  personalScore?: number | null;
+  personal?: StrengthPersonalComparison | null;
   tier: StrengthTier;
   /** Scoring estimate — what `score` is derived from. Between the two below; see the file header. */
   oneRM: number;
@@ -187,6 +215,9 @@ export interface ScoreStrengthResult {
 export interface FreeStrengthResult {
   liftKey: string;
   score: number;
+  /** Not premium-gated: the personal score is one of the two headline numbers, not a feature of them. */
+  personalScore?: number | null;
+  personal?: StrengthPersonalComparison | null;
   tier: StrengthTier;
   oneRM: number;
   /** Not premium-gated: an achieved best is a personal record, and records are free here (same call as race records in race-records.ts). */
@@ -1459,6 +1490,56 @@ function splitOneRM(series: DatedEstimate[]): OneRMSplit {
   return { allTimeOneRM, currentOneRM };
 }
 
+/** Sessions older than this before the one being scored do not describe current form. */
+export const STRENGTH_PERSONAL_WINDOW_DAYS = 90;
+
+/**
+ * This session's best e1RM on a lift against the athlete's own recent
+ * sessions of it. The population score says how strong the lift is for a
+ * person of this sex, age and bodyweight; this says how it compares with
+ * what THIS athlete has been doing lately, on the same 0–1000 scale, 500 =
+ * their norm (personal-score.ts).
+ *
+ * Session bests, not every set — the same reasoning as currentOneRM: warm-ups
+ * and back-off sets say nothing about what the athlete could manage that
+ * day, and a baseline that included them would make every top set look like
+ * a breakthrough. Sets from the session being scored itself are skipped by
+ * `performedAt` (the create route fetches history after inserting the
+ * session's own rows, so they can be present), and sets logged AFTER it are
+ * skipped too — matters when an old session is edited and re-scored.
+ */
+function strengthPersonalComparison(
+  history: DatedEstimate[],
+  latest: DatedEstimate
+): { score: number | null; comparison: StrengthPersonalComparison | null } {
+  const bestPerSession = new Map<string, DatedEstimate>();
+  for (const s of history) {
+    if (s.performedAt === latest.performedAt) continue;
+    const daysBefore = s.daysAgo - latest.daysAgo;
+    if (daysBefore < 0 || daysBefore > STRENGTH_PERSONAL_WINDOW_DAYS) continue;
+    if (!(s.e1rm > 0)) continue;
+    const previous = bestPerSession.get(s.performedAt);
+    if (!previous || s.e1rm > previous.e1rm) bestPerSession.set(s.performedAt, s);
+  }
+  const samples: WeightedSample[] = [...bestPerSession.values()].map((s) => ({
+    value: s.e1rm,
+    daysBefore: s.daysAgo - latest.daysAgo,
+  }));
+  const baseline = buildPersonalBaseline(samples, false);
+  if (!baseline || !(latest.e1rm > 0)) return { score: null, comparison: null };
+
+  const delta = improvementDelta(latest.e1rm, baseline.baseline, false);
+  return {
+    score: personalScoreFromDelta(delta, STRENGTH_PERSONAL_SLOPE),
+    comparison: {
+      baselineOneRM: round1(baseline.baseline),
+      bestOneRM: round1(baseline.best),
+      deltaPct: Math.round(delta * 1000) / 10,
+      sampleCount: baseline.sampleCount,
+    },
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
@@ -1508,6 +1589,7 @@ export function scoreStrength(input: ScoreStrengthInput): ScoreStrengthResult {
   };
   const fullSeries = [...historySeries, latestEstimate];
   const split = splitOneRM(fullSeries);
+  const personal = strengthPersonalComparison(historySeries, latestEstimate);
 
   let oneRM: number;
   let oneRMConfidence: number;
@@ -1550,6 +1632,8 @@ export function scoreStrength(input: ScoreStrengthInput): ScoreStrengthResult {
     return {
       liftKey: resolvedKey,
       score: MIN_SCORE,
+      personalScore: null,
+      personal: null,
       tier: "Beginner",
       oneRM: 0,
       allTimeOneRM: 0,
@@ -1662,6 +1746,8 @@ export function scoreStrength(input: ScoreStrengthInput): ScoreStrengthResult {
   return {
     liftKey: resolvedKey,
     score,
+    personalScore: personal.score,
+    personal: personal.comparison,
     tier,
     oneRM: round1(oneRM),
     allTimeOneRM: round1(split.allTimeOneRM),
@@ -1700,6 +1786,8 @@ export function serializeStrengthResult(
   return {
     liftKey: result.liftKey,
     score: result.score,
+    personalScore: result.personalScore ?? null,
+    personal: result.personal ?? null,
     tier: result.tier,
     oneRM: result.oneRM,
     allTimeOneRM: result.allTimeOneRM,
@@ -1724,13 +1812,33 @@ export function labIndex(results: ScoreStrengthResult[]): number {
   const scored = results.filter((r) => r.oneRM > 0);
   if (scored.length === 0) return MIN_SCORE;
 
-  const weightFor = (r: ScoreStrengthResult) => {
-    const sourceWeight = r.source === "primary" ? 1.0 : r.source === "accessory" ? 0.7 : 0.45;
-    const confidenceWeight = 0.5 + r.oneRMConfidence * 0.5;
-    return sourceWeight * confidenceWeight;
-  };
-
-  const totalWeight = scored.reduce((sum, r) => sum + weightFor(r), 0);
-  const weightedSum = scored.reduce((sum, r) => sum + r.score * weightFor(r), 0);
+  const totalWeight = scored.reduce((sum, r) => sum + labWeightFor(r), 0);
+  const weightedSum = scored.reduce((sum, r) => sum + r.score * labWeightFor(r), 0);
   return clamp(Math.round(weightedSum / totalWeight), MIN_SCORE, MAX_SCORE);
+}
+
+/** Shared by labIndex and labPersonalIndex so the two headline numbers weigh the same lifts the same way. */
+function labWeightFor(r: ScoreStrengthResult): number {
+  const sourceWeight = r.source === "primary" ? 1.0 : r.source === "accessory" ? 0.7 : 0.45;
+  const confidenceWeight = 0.5 + r.oneRMConfidence * 0.5;
+  return sourceWeight * confidenceWeight;
+}
+
+/**
+ * The session's personal score: the per-exercise personal scores rolled up
+ * with labIndex's weights. Only lifts that HAVE a personal score contribute
+ * — a brand-new exercise has no history to compare against and must not
+ * drag the session toward 500 — and a session where nothing has history yet
+ * reads null rather than a fabricated "normal".
+ */
+export function labPersonalIndex(results: ScoreStrengthResult[]): number | null {
+  const scored = results.filter(
+    (r): r is ScoreStrengthResult & { personalScore: number } =>
+      r.oneRM > 0 && typeof r.personalScore === "number"
+  );
+  if (scored.length === 0) return null;
+
+  const totalWeight = scored.reduce((sum, r) => sum + labWeightFor(r), 0);
+  const weightedSum = scored.reduce((sum, r) => sum + r.personalScore * labWeightFor(r), 0);
+  return clamp(Math.round(weightedSum / totalWeight), 0, 1000);
 }

@@ -10,10 +10,12 @@ import type {
 import {
   scoreCardioActivity,
   type CardioResult,
+  type RecentCardioSession,
 } from "@/lib/scoring/cardio-activity";
 import {
   scoreStrength,
   labIndex,
+  labPersonalIndex,
   normalizeName as normalizeExerciseName,
   type ScoreStrengthResult,
   type LoggedSet,
@@ -62,18 +64,17 @@ export interface ActivityScoreContext {
   rpe?: number | null;
   elevationMeters?: number | null;
   temperatureCelsius?: number | null;
-  /** Multi-session memory (seconds at the sport's benchmark distance), already blended by the caller — see cardio-predictions.ts. */
+  /** Multi-session memory (seconds at the sport's benchmark distance), already blended by the caller — see cardio-predictions.ts. Confidence signal only. */
   storedPredictionSeconds?: number | null;
-  /** This athlete's own baseline efficiency factor from recent easy/recovery/long same-sport sessions — see personalEasyEffortBaselineEF in cardio-predictions.ts. */
-  easyEffortBaselineEF?: number | null;
-  /** Mistag guard reference — see personalRecentHardEffortBenchmarkSeconds in cardio-predictions.ts. */
-  recentHardEffortBenchmarkSeconds?: number | null;
-  /** This athlete's own HR-independent baseline pace from recent easy/recovery/long same-sport sessions — corroborates the HR-zone below-base guard, see personalEasyEffortBaselinePaceSeconds in cardio-predictions.ts. */
-  easyEffortBaselinePaceSeconds?: number | null;
-  /** This athlete's own recent ALREADY-SCORED easy/recovery/long same-sport session scores — sets a bonus-only floor under a well-executed easy effort's score, see EASY_SCORE_FLOOR_FRACTION in cardio-activity.ts. */
-  recentEasyEffortScores?: number[] | null;
   /** This athlete's own personal Riegel k from their cross-distance race/tempo history — see personalizeRiegelKFromWindow in cardio/race-prediction.ts. */
   personalizedRiegelK?: number | null;
+  /**
+   * The athlete's recent same-sport sessions, EXCLUDING the one being scored
+   * — the personal score's baseline (see RecentCardioSession in
+   * cardio-activity.ts). Callers already fetch this window for the
+   * race-prediction memory; pass it straight through.
+   */
+  recentSessions?: RecentCardioSession[] | null;
   /** Structured interval/fartlek work-piece data — optional; see cardio/interval-scoring.ts. */
   intervalReps?: number | null;
   intervalWorkDistanceMeters?: number | null;
@@ -108,7 +109,15 @@ export interface ActivityScoreContext {
 }
 
 export interface ActivityScoreOutput {
+  /** The population score — against the sport's standards. What the indexes and leaderboards roll up from. */
   sportIndex: number;
+  /**
+   * The personal score — this session against the athlete's own recent
+   * same-sport history, 500 = their norm. Null until enough history exists.
+   * Cardio: cardio-activity.ts personalScore. Gym: labPersonalIndex over the
+   * per-exercise personal scores.
+   */
+  personalIndex: number | null;
   enduranceComponent: number | null;
   strengthComponent: number | null;
   loadScore: number;
@@ -142,7 +151,10 @@ export interface ActivityScoreOutput {
     bodyweight_kg: number;
     relative_strength: number;
     volume_load_kg: number;
+    /** This lift against the population's standards. */
     strength_index: number;
+    /** This lift against the athlete's own recent sessions of it; null while calibrating. */
+    personal_index: number | null;
     score_breakdown: Record<string, unknown>;
   }>;
 }
@@ -182,6 +194,7 @@ function scoreGymSession(
 ): Pick<
   ActivityScoreOutput,
   | "sportIndex"
+  | "personalIndex"
   | "strengthComponent"
   | "loadScore"
   | "cardioActivity"
@@ -290,6 +303,9 @@ function scoreGymSession(
         relative_strength: metricResult.bodyweightRatio,
         volume_load_kg: Math.round(metricVolume * 10) / 10,
         strength_index: metricResult.score,
+        // Holds and carries have no per-exercise personal comparison yet —
+        // the accessory-metric model has no history series behind it.
+        personal_index: null,
         score_breakdown: { strength_result: metricResult },
       });
       continue;
@@ -338,6 +354,7 @@ function scoreGymSession(
       relative_strength: result.bodyweightRatio,
       volume_load_kg: volume,
       strength_index: result.score,
+      personal_index: result.personalScore ?? null,
       score_breakdown: { strength_result: result },
     });
   }
@@ -376,8 +393,15 @@ function scoreGymSession(
       ? contributing.reduce((sum, r) => sum + r.oneRMConfidence, 0) / contributing.length
       : 1;
 
+  // Personal side of the session: each rep-based lift against its own recent
+  // history, rolled up with the same weights as labIndex. Holds and carries
+  // have no per-exercise personal score yet, so a metric-only session reads
+  // null here rather than a fabricated comparison.
+  const personalIndex = repResults.length > 0 ? labPersonalIndex(repResults) : null;
+
   return {
     sportIndex,
+    personalIndex,
     strengthComponent: sportIndex,
     loadScore: Math.round((legacy.loadScore + accessoryVolumeKg / 800) * 10) / 10,
     strengthActivities: results,
@@ -406,6 +430,7 @@ function scoreEnduranceSession(
 ): Pick<
   ActivityScoreOutput,
   | "sportIndex"
+  | "personalIndex"
   | "enduranceComponent"
   | "loadScore"
   | "cardioActivity"
@@ -429,11 +454,10 @@ function scoreEnduranceSession(
     elevationMeters: input.elevationMeters,
     temperatureCelsius: input.temperatureCelsius,
     storedPredictionSeconds: input.storedPredictionSeconds,
-    easyEffortBaselineEF: input.easyEffortBaselineEF,
-    recentHardEffortBenchmarkSeconds: input.recentHardEffortBenchmarkSeconds,
-    easyEffortBaselinePaceSeconds: input.easyEffortBaselinePaceSeconds,
-    recentEasyEffortScores: input.recentEasyEffortScores,
     personalizedRiegelK: input.personalizedRiegelK,
+    recentSessions: input.recentSessions,
+    bodyweightKg: input.profile.weight_kg,
+    startedAt: input.startedAt,
     intervalReps: input.intervalReps,
     intervalWorkDistanceMeters: input.intervalWorkDistanceMeters,
     intervalWorkSeconds: input.intervalWorkSeconds,
@@ -452,6 +476,7 @@ function scoreEnduranceSession(
 
   return {
     sportIndex: cardioActivity.score,
+    personalIndex: cardioActivity.personalScore,
     enduranceComponent: cardioActivity.score,
     loadScore,
     cardioActivity,
@@ -518,8 +543,11 @@ export function scoreActivityWithEngines(
     : baseConfidence;
   const baseExplanation = partial.breakdown?.explanation ?? [];
 
+  const personalIndex = partial.personalIndex ?? null;
+
   return {
     sportIndex: partial.sportIndex!,
+    personalIndex,
     enduranceComponent: partial.enduranceComponent ?? null,
     strengthComponent: partial.strengthComponent ?? null,
     loadScore: partial.loadScore!,
@@ -529,6 +557,11 @@ export function scoreActivityWithEngines(
         ? { explanation: [...baseExplanation, UNSET_SCORING_BASIS_NOTE] }
         : {}),
       index_result: indexResult,
+      // Persisted next to the population score so every reader of a stored
+      // breakdown (logbook, feed, detail page) finds it in one place for
+      // both sports, instead of digging into cardio_activity or averaging
+      // strength_activities itself.
+      personal_index: personalIndex,
     },
     splitIndex,
     splitBreakdownLabel: `${Math.round(enduranceIndex)} cardio + ${Math.round(strengthIndex)} strength (${endPct}/${strPct})`,

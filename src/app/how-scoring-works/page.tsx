@@ -7,12 +7,15 @@ import { createClient } from "@/lib/supabase/server";
 
 const PAGE_TITLE = "How Scoring Works";
 const PAGE_DESCRIPTION =
-  "How Split Index scores easy/recovery/long sessions via personalized heart-rate zones, strength via DOTS/IPF GL, race predictions via a personalized Riegel exponent, and injury risk via ACWR — not generic population formulas.";
+  "How Split Index gives every session two scores — one against the population's standards and one against your own recent training — plus strength via DOTS/IPF GL, race predictions via a personalized Riegel exponent, and injury risk via ACWR.";
 
 export const metadata: Metadata = {
   title: PAGE_TITLE,
   description: PAGE_DESCRIPTION,
   keywords: [
+    "personal fitness score",
+    "heart rate adjusted pace",
+    "grade adjusted pace",
     "Riegel formula",
     "race time prediction",
     "personalized heart rate zones",
@@ -43,10 +46,11 @@ export const metadata: Metadata = {
 
 const TOC = [
   { id: "generic-vs-personalized", label: "Why generic predictions fall short" },
-  { id: "easy-runs-scored-differently", label: "Why easy runs are scored differently" },
-  { id: "personalized-hr-zones", label: "Your personalized heart-rate zones" },
-  { id: "credit-and-penalty", label: "Credit and penalty" },
-  { id: "noisy-readings", label: "Guarding against noisy readings" },
+  { id: "two-scores", label: "Every session gets two scores" },
+  { id: "fitness-equivalent", label: "The one number both scores read" },
+  { id: "effort", label: "How hard you were working" },
+  { id: "conditions", label: "Hills, weather and bodyweight" },
+  { id: "personal-score", label: "The score against yourself" },
   { id: "without-hr-data", label: "Without heart-rate data" },
   { id: "trimp", label: "TRIMP" },
   { id: "efficiency-factor", label: "Efficiency factor" },
@@ -85,7 +89,8 @@ export default async function HowScoringWorksPage() {
     },
     about: [
       "Riegel race time prediction",
-      "Personalized heart-rate-zone training",
+      "Heart-rate-adjusted performance scoring",
+      "Personal-baseline fitness comparison",
       "DOTS and IPF GL strength scoring",
       "Acute:Chronic Workload Ratio injury risk",
     ],
@@ -114,8 +119,9 @@ export default async function HowScoringWorksPage() {
           <header className="mb-8 border-b border-white/[0.06] pb-8">
             <h1 className="text-3xl font-bold tracking-tight">How Scoring Works</h1>
             <p className="mt-2 text-sm text-muted">
-              The methodology behind every number Split Index shows you — heart-rate-zone scoring,
-              DOTS/IPF GL strength, personalized race predictions, and ACWR injury risk.
+              The methodology behind every number Split Index shows you — the two scores every
+              session gets, DOTS/IPF GL strength, personalized race predictions, and ACWR injury
+              risk.
             </p>
           </header>
 
@@ -157,114 +163,200 @@ export default async function HowScoringWorksPage() {
               </p>
             </section>
 
-            <section id="easy-runs-scored-differently">
-              <h2 className="text-lg font-semibold text-foreground">Why easy runs are scored differently</h2>
+            <section id="two-scores">
+              <h2 className="text-lg font-semibold text-foreground">Every session gets two scores</h2>
               <p className="mt-3">
-                A race, tempo, or interval session is meant to test your absolute pace — so it&apos;s
-                scored against a fixed pace-vs-benchmark table. An easy, recovery, or long session is
-                designed to be run slow and controlled, at a deliberately low heart rate. Judging both
-                on the same absolute scale means a well-executed easy run — one that&apos;s doing exactly
-                what it&apos;s supposed to do — reads as a mediocre score. Split Index scores these session
-                types differently: on how appropriate your effort was, not on raw pace.
-              </p>
-            </section>
-
-            <section id="personalized-hr-zones">
-              <h2 className="text-lg font-semibold text-foreground">Your personalized heart-rate zones</h2>
-              <p className="mt-3">
-                If you provide your <strong>resting heart rate</strong> and <strong>max heart rate</strong> (in
-                onboarding or Settings), your easy/recovery/long sessions in running, rowing, swimming,
-                cycling, and SkiErg are scored against zones built entirely from your own physiology —
-                not a population average. Walking is excluded, since it&apos;s typically done at low,
-                non-zone-driven intensity.
-              </p>
-              <p className="mt-3">The zones are built like this:</p>
-              <ul className="mt-3 list-disc space-y-2 pl-5">
-                <li>
-                  <strong>Base</strong> = your max HR − your resting HR. This is your aerobic floor.
-                </li>
-                <li>
-                  Each <strong>zone</strong> spans 20% of your resting HR, stacked upward from base to
-                  max HR — five zones in total.
-                </li>
-                <li>
-                  <strong>Target</strong> = base + 30% of your resting HR. This sits in the lower half
-                  of zone 2 — a textbook, well-paced easy effort.
-                </li>
-              </ul>
-              <p className="mt-3">
-                Worked example — max HR 207, resting HR 50:
-              </p>
-              <ul className="mt-3 list-disc space-y-1 pl-5 font-mono text-xs">
-                <li>Base = 207 − 50 = 157</li>
-                <li>Zone 1: 157–167 · Zone 2: 167–177 · Zone 3: 177–187 · Zone 4: 187–197 · Zone 5: 197–207</li>
-                <li>Target = 157 + (0.30 × 50) = 172</li>
-              </ul>
-            </section>
-
-            <section id="credit-and-penalty">
-              <h2 className="text-lg font-semibold text-foreground">Credit and penalty</h2>
-              <p className="mt-3">
-                Landing right at your target heart rate means you&apos;ve executed a genuinely good easy
-                effort — so it earns a solid credit floor on its own, not a neutral, unrewarded score.
-                From there, your average heart rate for the session shifts that credit further up or
-                down:
+                One number cannot answer both of the questions you have about a session. &quot;Was
+                that any good?&quot; and &quot;was that any good <em>for me</em>?&quot; have
+                different answers, and forcing them into one number is how a scoring engine ends up
+                telling you nothing: your standing against everyone else barely moves between a good
+                easy run and a bad one, so a single score that tracks it barely moves either.
               </p>
               <ul className="mt-3 list-disc space-y-2 pl-5">
                 <li>
-                  <strong>At target</strong> — a flat credit floor, earned just for executing a
-                  well-paced, well-controlled easy effort.
+                  <strong>vs everyone</strong> — this session measured against calibrated
+                  population standards for your sex and age. It is what the Engine Index, the Lab
+                  Index and the leaderboards are built from, and it moves slowly on purpose.
                 </li>
                 <li>
-                  <strong>Below target</strong> — the lower your average HR (down to base), the more
-                  credit is added on top of that floor, up to <strong>+10%</strong> more. A lower heart
-                  rate at the same pace and distance means you&apos;re working less hard to produce the
-                  same result — genuine efficiency.
-                </li>
-                <li>
-                  <strong>Above target</strong> — the higher your average HR (up to max HR), the more
-                  that floor is eroded, by up to <strong>−10%</strong>. Drifting toward your max HR on a
-                  session tagged &quot;easy&quot; usually means overexertion, or the session wasn&apos;t
-                  really easy.
-                </li>
-                <li>
-                  Both effects clip at the base and max-HR boundaries — going even lower or higher
-                  doesn&apos;t change the adjustment further.
+                  <strong>vs you</strong> — the same session measured against your own recent
+                  sessions in that sport, at a comparable heart rate. 50.0 is your normal. Above it
+                  is a better day than usual, below it a worse one. This is the number that actually
+                  moves when a session goes well or badly.
                 </li>
               </ul>
               <p className="mt-3">
-                Elevation, temperature, distance, and pace still play a (smaller) role separately — a
-                hilly or hot session still earns its own modest credit, on top of the heart-rate-zone
-                adjustment above.
+                The second one needs three comparable sessions in the last 90 days before it says
+                anything. Until then it reads &quot;calibrating&quot; rather than inventing a
+                middle.
+              </p>
+              <p className="mt-3">
+                What neither score reads is the session type you tagged it with. Easy, tempo, race
+                — the tag says what you intended, your heart rate says what happened, and only the
+                second of those is evidence. An identical session scores identically under every
+                tag.
               </p>
             </section>
 
-            <section id="noisy-readings">
-              <h2 className="text-lg font-semibold text-foreground">Guarding against noisy readings</h2>
+            <section id="fitness-equivalent">
+              <h2 className="text-lg font-semibold text-foreground">The one number both scores read</h2>
               <p className="mt-3">
-                Heart-rate monitors aren&apos;t perfect, and different activities can read differently for
-                the same effort — rowing, for example, often reads lower than running at the same felt
-                exertion. If your average HR reads at or below your base value, Split Index cross-checks
-                it against your own typical easy-effort pace for that sport before granting the full
-                bonus. If your pace doesn&apos;t back up an unusually easy effort, the credit is scaled back
-                instead of applied in full — a single low reading can&apos;t award maximum credit on its
-                own.
+                Both scores come from a single intermediate figure: the time this session implies
+                you could post at your sport&apos;s benchmark distance — 5 km running, 2 km rowing,
+                400 m swimming, 20 km cycling, 2 km SkiErg, or per-kilometre pace for a walk — had
+                it been a maximal effort, on flat ground, in comfortable conditions.
+              </p>
+              <p className="mt-3">Building it takes five steps, in this order:</p>
+              <ol className="mt-3 list-decimal space-y-2 pl-5">
+                <li>Project the session to the benchmark distance (Riegel&apos;s formula, with your own exponent when there is enough evidence for one).</li>
+                <li>Take out the time the hills cost you.</li>
+                <li>Take out the time the heat or the cold cost you.</li>
+                <li>On an erg, re-reference the time to the bodyweight the standards assume.</li>
+                <li>Scale for how hard you were working.</li>
+              </ol>
+              <p className="mt-3">
+                The same figure anchors your race predictions, which is why a well-executed easy run
+                predicts sensible race times instead of stretching its deliberately slow pace out to
+                a marathon.
+              </p>
+            </section>
+
+            <section id="effort">
+              <h2 className="text-lg font-semibold text-foreground">How hard you were working</h2>
+              <p className="mt-3">
+                Your average heart rate is read as a fraction of your own heart-rate reserve — the
+                range between your resting and maximum heart rates — not as an absolute number. 150
+                bpm is an easy jog for one athlete and near-threshold for another, and the engine
+                should not confuse the two.
+              </p>
+              <p className="mt-3">
+                What your heart rate is compared against is the intensity a maximal effort{" "}
+                <em>of that session&apos;s own length</em> would be held at — not a fixed number. A
+                maximal 20-minute effort sits near 92% of your reserve; a maximal 90-minute one
+                nearer 84%. Judging a 95-minute run against a 20-minute bar reads it as far easier
+                than it was, and used to hand long steady runs a much larger advantage over shorter,
+                faster ones than they had earned.
+              </p>
+              <p className="mt-3">
+                A session run below that bar implies you could have gone faster, so it earns credit.
+                A session at or above it earns none and is never penalised: the average heart rate
+                of an all-out 5 km always sits well below your true maximum, because heart rate
+                ramps over minutes, and that gap is the effort rather than unused reserve.
+              </p>
+              <p className="mt-3">
+                How much pace a gap in effort buys is not constant either. Easing off buys
+                proportionally more the further below race intensity you already are, so the
+                conversion eases from about 2.2 at race-pace efforts to about 1.3 at easy-pace ones.
+                That is Daniels&apos; own pace table&apos;s shape, and it matters because easy pace
+                is not one pace: people run easy anywhere between 4:00 and 7:00 per kilometre, and a
+                model that reads every second of that spread as fitness over-reads it.
+              </p>
+              <p className="mt-3">
+                How much pace a given gap in effort buys depends on the sport, and the difference is
+                large. On an erg, in the pool and on a bike, power rises with the <em>cube</em> of
+                speed, so 20% more effort is only about 6% more speed. On the road the relationship
+                is much more direct. Scoring a rowing piece with running&apos;s conversion is what
+                used to let a steady 6 km row read as a near-elite 2 km.
+              </p>
+              <p className="mt-3">
+                There is no ceiling on what an easy run can be worth. Through the whole range that
+                has actually been measured, the credit is simply what the physiology says, so an
+                outstandingly well-executed easy run scores like one instead of stopping at an
+                arbitrary limit. Past that range the credit tapers, because beyond it the estimate
+                is a guess rather than a reading, and the session&apos;s confidence falls away over
+                the same stretch to say so. It never stops rising, so two sessions at different
+                heart rates always score differently however easy both of them were.
+              </p>
+              <p className="mt-3">
+                Rowing, the SkiErg, swimming and cycling are damped sooner, and the reason is their
+                scoring tables rather than their physiology. Erg pace compresses a wide range of
+                fitness into a narrow band of time, so a few percent is worth hundreds of points
+                there where the same few percent is worth tens on the road.
+              </p>
+              <p className="mt-3">
+                Walking is deliberately left unscaled: its economy changes sharply with speed and it
+                is rarely a maximal effort, so a low heart rate on a stroll is not evidence of a
+                fast benchmark walk.
+              </p>
+            </section>
+
+            <section id="conditions">
+              <h2 className="text-lg font-semibold text-foreground">Hills, weather and bodyweight</h2>
+              <p className="mt-3">
+                These adjust the score itself, not a separate secondary metric — the same pace on a
+                hilly, hot day is a better performance than on flat ground in comfortable air, and
+                the score should say so.
+              </p>
+              <ul className="mt-3 list-disc space-y-2 pl-5">
+                <li>
+                  <strong>Hills</strong> — only total ascent is recorded, so a route is treated as a
+                  loop: what goes up comes back down. The net cost is roughly 2% of your time per
+                  10 m of climb per kilometre for running, less for walking and cycling, nothing on
+                  an erg or in a pool. It saturates, so each further metre of climb is worth
+                  slightly less than the last.
+                </li>
+                <li>
+                  <strong>Weather</strong> — credited above about 15°C and below about 5°C, in both
+                  directions and for outdoor sports only. Cycling carries a slightly larger cold
+                  adjustment than running, because wind chill scales with speed.
+                </li>
+                <li>
+                  <strong>Bodyweight</strong> — applied to rowing and SkiErg only, where the machine
+                  carries your mass and the standards assume a reference weight. It uses the same
+                  relationship Concept2&apos;s own weight adjustment does. Running, cycling and
+                  swimming have no accepted weight grading, so none is invented for them.
+                </li>
+              </ul>
+            </section>
+
+            <section id="personal-score">
+              <h2 className="text-lg font-semibold text-foreground">The score against yourself</h2>
+              <p className="mt-3">
+                Your baseline is the recency-weighted median of your own recent sessions in that
+                sport, each read through the same five steps above. A median rather than an average,
+                so one mis-logged session or one race does not redefine what counts as normal for
+                you; weighted by recency, halving every 30 days, so this month&apos;s form counts
+                for more than a block you finished six weeks ago.
+              </p>
+              <p className="mt-3">
+                Sessions are compared at a comparable heart rate. Your recovery jogs are judged
+                against your recovery jogs and your tempos against your tempos, so a recovery jog
+                does not permanently read as a terrible day and a tempo does not permanently read as
+                a breakthrough. When you have not done a session at that intensity lately, the
+                comparison stretches across intensities and says so.
+              </p>
+              <p className="mt-3">
+                Roughly 1% of performance is worth 2 points on the 0–100 scale, and the scale
+                compresses smoothly at the extremes, so a genuine breakthrough still reads higher
+                than a merely good day without either of them pinning to the top.
+              </p>
+              <p className="mt-3">
+                Your lifts work the same way: each one is scored against published strength standards
+                for your sex, age and bodyweight, and separately against your own recent sessions of
+                that lift, using your best set from each session rather than every set — warm-ups
+                and back-off sets say nothing about what you could manage that day.
               </p>
             </section>
 
             <section id="without-hr-data">
               <h2 className="text-lg font-semibold text-foreground">Without heart-rate data</h2>
               <p className="mt-3">
-                If a session has an average HR reading but you haven&apos;t set up personalized zones yet,
-                it&apos;s scored against your own recent easy-effort history instead — still a real,
-                evidence-based signal, just less precise than your personalized zones.
+                If the session has no heart rate but you rated your effort, that rating is used
+                instead. It is a rougher signal than a measurement, so the session is scored with
+                visibly lower confidence, and it is never preferred over a real heart-rate reading
+                when both exist.
               </p>
               <p className="mt-3">
-                If there&apos;s no heart-rate data at all for a session — no reading logged, and no
-                history to compare against — Split Index assumes you executed it right at your target
-                heart-rate zone (a well-paced, well-controlled easy effort) and scores it accordingly.
-                This is a guess, not a measurement, so it&apos;s clearly flagged on the session, and it may
-                not be accurate for that specific run.
+                With neither, the session is scored on pace alone. That is honest rather than
+                generous: nothing is assumed about how hard you were working, so an easy run reads as
+                the modest performance its pace shows. The fix is a heart-rate strap or an effort
+                rating, and the session says which is missing.
+              </p>
+              <p className="mt-3">
+                Sessions recorded with and without heart rate are never compared against each other
+                in your personal score, since one carries effort credit the other cannot. When there
+                are too few of the same kind to form a baseline, the comparison widens to everything
+                and tells you it has.
               </p>
             </section>
 

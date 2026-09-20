@@ -5,6 +5,7 @@ import { estimate1RM } from "@/lib/scoring/engine";
 import type { IndexResult } from "@/lib/scoring/index-engine";
 import { assertScoringInput } from "@/lib/scoring/input-guards";
 import type { LoggedSet } from "@/lib/scoring/split-strength-engine";
+import type { RecentCardioSession } from "@/lib/scoring/cardio-activity";
 
 export { ScoringInputError } from "@/lib/scoring/input-guards";
 
@@ -21,18 +22,12 @@ interface ScoreActivityInput {
   temperatureCelsius?: number | null;
   sessionType?: SessionType | null;
   rpe?: number | null;
-  /** Multi-session memory (seconds at the sport's benchmark distance), already blended by the caller — see cardio-predictions.ts. */
+  /** Multi-session memory (seconds at the sport's benchmark distance), already blended by the caller — see cardio-predictions.ts. Confidence signal only. */
   storedPredictionSeconds?: number | null;
-  /** This athlete's own baseline efficiency factor from recent easy/recovery/long same-sport sessions — see personalEasyEffortBaselineEF in cardio-predictions.ts. */
-  easyEffortBaselineEF?: number | null;
-  /** Mistag guard reference — see personalRecentHardEffortBenchmarkSeconds in cardio-predictions.ts. */
-  recentHardEffortBenchmarkSeconds?: number | null;
-  /** This athlete's own HR-independent baseline pace from recent easy/recovery/long same-sport sessions — corroborates the HR-zone below-base guard, see personalEasyEffortBaselinePaceSeconds in cardio-predictions.ts. */
-  easyEffortBaselinePaceSeconds?: number | null;
-  /** This athlete's own recent ALREADY-SCORED easy/recovery/long same-sport session scores — sets a bonus-only floor under a well-executed easy effort's score, see EASY_SCORE_FLOOR_FRACTION in cardio-activity.ts. */
-  recentEasyEffortScores?: number[] | null;
   /** This athlete's own personal Riegel k from their cross-distance race/tempo history — see personalizeRiegelKFromWindow in cardio/race-prediction.ts. */
   personalizedRiegelK?: number | null;
+  /** The athlete's recent same-sport sessions, excluding this one — the personal score's baseline. See RecentCardioSession. */
+  recentSessions?: RecentCardioSession[] | null;
   intervalReps?: number | null;
   intervalWorkDistanceMeters?: number | null;
   intervalWorkSeconds?: number | null;
@@ -72,7 +67,10 @@ interface ScoreActivityInput {
 }
 
 export interface ScoreResult {
+  /** Population score — against the sport's standards. */
   sportIndex: number;
+  /** Personal score — against the athlete's own recent history, 500 = their norm; null while calibrating. */
+  personalIndex: number | null;
   enduranceComponent: number | null;
   strengthComponent: number | null;
   loadScore: number;
@@ -106,6 +104,7 @@ export interface ScoreResult {
     relative_strength: number;
     volume_load_kg: number;
     strength_index: number;
+    personal_index: number | null;
     score_breakdown: Record<string, unknown>;
   }>;
 }
@@ -150,11 +149,8 @@ export function scoreActivity(
       elevationMeters: input.elevationMeters,
       temperatureCelsius: input.temperatureCelsius,
       storedPredictionSeconds: input.storedPredictionSeconds,
-      easyEffortBaselineEF: input.easyEffortBaselineEF,
-      recentHardEffortBenchmarkSeconds: input.recentHardEffortBenchmarkSeconds,
-      easyEffortBaselinePaceSeconds: input.easyEffortBaselinePaceSeconds,
-      recentEasyEffortScores: input.recentEasyEffortScores,
       personalizedRiegelK: input.personalizedRiegelK,
+      recentSessions: input.recentSessions,
       intervalReps: input.intervalReps,
       intervalWorkDistanceMeters: input.intervalWorkDistanceMeters,
       intervalWorkSeconds: input.intervalWorkSeconds,
@@ -183,6 +179,7 @@ export function scoreActivity(
 
   return {
     sportIndex: result.sportIndex,
+    personalIndex: result.personalIndex,
     enduranceComponent: result.enduranceComponent,
     strengthComponent: result.strengthComponent,
     loadScore: result.loadScore,
@@ -248,6 +245,7 @@ export function buildStrengthScoreInserts(
   relative_strength: number;
   volume_load_kg: number;
   strength_index: number;
+  personal_index: number | null;
   score_breakdown: Record<string, unknown>;
   recorded_at: string;
 }> {
@@ -261,6 +259,7 @@ export function buildStrengthScoreInserts(
     relative_strength: row.relative_strength,
     volume_load_kg: row.volume_load_kg,
     strength_index: row.strength_index,
+    personal_index: row.personal_index,
     score_breakdown: row.score_breakdown,
     recorded_at: recordedAt,
   }));

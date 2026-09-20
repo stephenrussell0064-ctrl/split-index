@@ -266,15 +266,16 @@ describe("row — reported 6,000m at 1:56/500m scored 54.8, too low", () => {
 });
 
 /**
- * The relative-effort credit stack is capped in INDEX POINTS, not in percent
- * of time — see RELATIVE_EFFORT_CREDIT_KNEE_POINTS in cardio-activity.ts.
- * Percent-of-time is not portable across sports: the 20%-of-time cap is
- * worth a flat ~170-200 points anywhere on running's curve and up to ~630 on
- * rowing's, because erg pace goes as power^(-1/3) and so compresses the same
- * physiological range into a much narrower band of time.
+ * Session tags buy nothing. Before the two-score rewrite an identical 6,000 m
+ * row scored 403 untagged and 872 tagged "long" — a 469-point swing bought
+ * from a dropdown, landing exactly on what this athlete's real 18:25 5 k
+ * scores. Rowing was where it was worst (erg pace goes as power^(-1/3), so a
+ * fixed percentage of time covers far more of the table than it does on the
+ * road), but the mechanism was the same on every sport, and it is gone: the
+ * tag is not read by either score.
  */
-describe("row — relative-effort credit is capped in index points, not percent of time", () => {
-  const rowSession = (sessionType: "easy" | "long" | null) =>
+describe("row — the session-type tag cannot move a score", () => {
+  const rowSession = (sessionType: "easy" | "long" | "race" | null) =>
     scoreCardioActivity({
       type: "row",
       benchmarkSport: "row",
@@ -282,59 +283,38 @@ describe("row — relative-effort credit is capped in index points, not percent 
       durationSeconds: 12 * 116,
       sex: "male",
       age: 30,
+      restingHR: 50,
+      maxHR: 190,
+      avgHR: 152,
       sessionType,
     }).score;
 
-  it("no longer lets a session type alone swing a row by hundreds of points", () => {
+  it("scores the identical session identically however it is tagged", () => {
     const untagged = rowSession(null);
-    // Before the points cap this identical session scored 403 untagged and
-    // 872 tagged "long" — a 469-point swing bought by a dropdown, landing
-    // exactly on what the athlete's real 18:25 5k scores.
-    expect(rowSession("long") - untagged).toBeLessThan(280);
-    expect(rowSession("easy") - untagged).toBeLessThan(280);
+    expect(rowSession("long")).toBe(untagged);
+    expect(rowSession("easy")).toBe(untagged);
+    expect(rowSession("race")).toBe(untagged);
   });
 
-  it("compresses credit without flattening it — more credit still scores higher", () => {
-    // The failure mode a hard clip has, and the reason this taper is
-    // logarithmic rather than an asymptote toward a ceiling: two sessions
-    // that earned different credit must keep scoring differently, however
-    // far past the knee they both are.
-    const base = {
-      type: "row" as const,
-      benchmarkSport: "row" as const,
-      distanceMeters: 7000,
-      durationSeconds: 1800,
-      sex: "male" as const,
-      age: 30,
-      sessionType: "easy" as const,
-      restingHR: 50,
-      maxHR: 207,
-      avgHR: 152,
-    };
-    const corroborated = scoreCardioActivity({ ...base, easyEffortBaselinePaceSeconds: 420 }).score;
-    const uncorroborated = scoreCardioActivity(base).score;
-    expect(corroborated).toBeGreaterThan(uncorroborated);
-  });
-
-  it("leaves running untouched — the knee sits above what 20% of time is worth there", () => {
-    // Running's 20%-of-time cap is worth at most +197 points anywhere on its
-    // curve, and the knee is 200, so no running session reaches the taper.
-    for (const durationSeconds of [1800, 3600, 5400]) {
-      for (const distanceMeters of [6000, 10000, 15000, 20000]) {
-        const result = scoreCardioActivity({
-          type: "run",
-          benchmarkSport: "run",
-          distanceMeters,
-          durationSeconds,
-          sex: "male",
-          age: 30,
-          sessionType: "long",
-          restingHR: 50,
-          maxHR: 190,
-          avgHR: 140,
-        });
-        expect(result.flags).not.toContain("relative-effort-points-compressed");
-      }
+  it("heart rate, not the tag, is what separates two rows at the same split", () => {
+    const at = (avgHR: number) =>
+      scoreCardioActivity({
+        type: "row",
+        benchmarkSport: "row",
+        distanceMeters: 6000,
+        durationSeconds: 12 * 116,
+        sex: "male",
+        age: 30,
+        restingHR: 50,
+        maxHR: 190,
+        avgHR,
+        sessionType: "easy",
+      }).score;
+    // Same split, genuinely easier effort, materially better score — and the
+    // ordering is strict at every step, not three sessions tied on a cap.
+    const scores = [130, 145, 160, 175].map(at);
+    for (let i = 1; i < scores.length; i++) {
+      expect(scores[i]).toBeLessThan(scores[i - 1]);
     }
   });
 });

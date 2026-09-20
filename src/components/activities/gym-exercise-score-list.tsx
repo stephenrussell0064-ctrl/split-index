@@ -1,4 +1,5 @@
 import { formatIndex, formatWeight } from "@/lib/utils/format";
+import { cn } from "@/lib/utils/cn";
 import { setsForExercise } from "@/lib/activities/gym-sets";
 import type { GymExercise } from "@/types";
 import type { GatedStrengthInsight } from "@/lib/scoring/activity-insights";
@@ -109,7 +110,27 @@ export function GymExerciseScoreList({
                     {formatIndex(result.score)}
                   </p>
                   <p className="text-[10px] uppercase tracking-wider text-gym-muted">
-                    lift index
+                    vs everyone
+                  </p>
+                  {/* The same two-number treatment a run gets: how the lift
+                      stands against the standards, and how it stands against
+                      what this athlete has been lifting lately. */}
+                  <p
+                    className={cn(
+                      "mt-2 font-display text-lg font-bold tabular-nums",
+                      result.personalScore == null
+                        ? "text-gym-muted"
+                        : result.personalScore >= 525
+                          ? "text-success"
+                          : result.personalScore <= 475
+                            ? "text-warning"
+                            : "text-gym-text"
+                    )}
+                  >
+                    {result.personalScore == null ? "—" : formatIndex(result.personalScore)}
+                  </p>
+                  <p className="text-[10px] uppercase tracking-wider text-gym-muted">
+                    {result.personalScore == null ? "calibrating" : "vs you"}
                   </p>
                 </div>
               )}

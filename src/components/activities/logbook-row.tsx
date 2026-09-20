@@ -67,6 +67,13 @@ interface Metric {
   desktopOnly?: boolean;
 }
 
+/** 500 is the athlete's own normal — above reads as a good day, below as a bad one. */
+function personalClass(score: number): string {
+  if (score >= 525) return "text-success";
+  if (score <= 475) return "text-warning";
+  return "text-muted";
+}
+
 function metricsFor(entry: LogbookEntry): Metric[] {
   const metrics: Metric[] = [];
 
@@ -248,13 +255,24 @@ export function LogbookRow({
           )}
         </div>
 
-        <div className="w-12 shrink-0 text-right sm:w-14">
+        <div className="w-12 shrink-0 text-right sm:w-16">
           {entry.score !== null ? (
             <>
               <p className={cn("font-display text-xl font-bold leading-none tabular-nums", accent)}>
                 {formatIndex(entry.score)}
               </p>
-              <p className={cn("micro-label mt-1 text-[9px]", theme.faint)}>Index</p>
+              {/* Both scores, because the one that answers "was that a good
+                  session for me" is the personal one, and a list of sessions
+                  is exactly where that question gets asked. Kept to a single
+                  small line so the column stays scannable. */}
+              {entry.personalScore !== null ? (
+                <p className={cn("mt-1 text-[10px] tabular-nums", personalClass(entry.personalScore))}>
+                  {formatIndex(entry.personalScore)}
+                  <span className={cn("ml-1 text-[9px]", theme.faint)}>you</span>
+                </p>
+              ) : (
+                <p className={cn("micro-label mt-1 text-[9px]", theme.faint)}>Index</p>
+              )}
             </>
           ) : (
             <p className={cn("text-sm tabular-nums", theme.faint)} aria-label="Not scored">

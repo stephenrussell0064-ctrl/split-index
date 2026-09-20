@@ -22,13 +22,9 @@ import {
   effectiveStoredPrediction,
   sessionCountsAsQuality,
   personalEasyEffortBaselineEF,
-  personalEasyEffortBaselinePaceSeconds,
-  personalRecentHardEffortBenchmarkSeconds,
   terrainAdjustedSessionEF,
   isDirectBenchmarkDistance,
-  RELATIVE_EFFORT_SESSION_TYPES,
 } from "@/lib/scoring/cardio-predictions";
-import type { SessionType } from "@/types";
 import {
   computeWindowedTier2Seconds,
   personalizeRiegelKFromWindow,
@@ -38,6 +34,11 @@ import { BENCHMARK_DISTANCE_METERS, type BenchmarkSport } from "@/lib/scoring/ca
 import { isEnduranceSport } from "@/lib/scoring/engine";
 import type { GymExercise } from "@/types";
 import type { LoggedSet } from "@/lib/scoring/split-strength-engine";
+import {
+  writeTolerantly,
+  writeRowTolerantly,
+  DEGRADABLE_SCORE_COLUMNS,
+} from "@/lib/activities/degradable-write";
 import {
   enduranceRecordCandidates,
   gymRecordCandidates,
@@ -224,16 +225,9 @@ export async function recomputeUser(
   // above — each activity only ever sees its own 90-day trailing window of
   // previously-replayed same-sport sessions, never future ones.
   const predictedBenchmarkRiegelK: Partial<Record<BenchmarkSport, number>> = {};
+  // Also the personal score's baseline: each activity is compared only with
+  // already-replayed prior sessions, appended after (not before) it scores.
   const sessionsBySport: Partial<Record<BenchmarkSport, HistorySession[]>> = {};
-  // Easy-session score floor (user feedback: a well-executed easy run
-  // "should not deviate that far from my normal scores") — see
-  // EASY_SCORE_FLOOR_FRACTION's doc comment in cardio-activity.ts. Same
-  // oldest-first replay discipline as sessionsBySport/predictedBenchmark*
-  // above: each activity only ever sees ALREADY-REPLAYED prior sessions'
-  // real scores, appended after (not before) this activity is itself scored.
-  const easyEffortScoresBySport: Partial<
-    Record<BenchmarkSport, Array<{ sessionType: string | null; startedAt: string; score: number }>>
-  > = {};
 
   // Personal records (personal-records.ts) — recompute is the authoritative
   // full rebuild: replayed oldest-first, so the best-per-metric accumulated
@@ -282,9 +276,7 @@ export async function recomputeUser(
     // blend into yet, so it scores as session-only.
     let storedPredictionForScoring: number | null = null;
     let easyEffortBaselineEF: number | null = null;
-    let recentHardEffortBenchmarkSeconds: number | null = null;
-    let easyEffortBaselinePaceSeconds: number | null = null;
-    let recentEasyEffortScores: number[] | null = null;
+    let recentSessions: HistorySession[] | null = null;
     let sessionBenchmarkEquivalentSeconds: number | null = null;
     let personalizedK: number | null = null;
     if (isEnduranceSport(activity.sport)) {
@@ -306,29 +298,12 @@ export async function recomputeUser(
       const windowSessions = priorSessions.filter(
         (s) => new Date(s.startedAt).getTime() >= windowCutoff
       );
-      recentEasyEffortScores = (easyEffortScoresBySport[benchmarkSport] ?? [])
-        .filter(
-          (s) =>
-            new Date(s.startedAt).getTime() >= windowCutoff &&
-            s.sessionType &&
-            RELATIVE_EFFORT_SESSION_TYPES.has(s.sessionType as SessionType)
-        )
-        .map((s) => s.score);
+      recentSessions = windowSessions;
       personalizedK = personalizeRiegelKFromWindow(
         windowSessions,
         predictedBenchmarkRiegelK[benchmarkSport] ?? null
       );
       easyEffortBaselineEF = personalEasyEffortBaselineEF(
-        benchmarkSport,
-        windowSessions,
-        personalizedK ?? undefined
-      );
-      recentHardEffortBenchmarkSeconds = personalRecentHardEffortBenchmarkSeconds(
-        benchmarkSport,
-        windowSessions,
-        personalizedK ?? undefined
-      );
-      easyEffortBaselinePaceSeconds = personalEasyEffortBaselinePaceSeconds(
         benchmarkSport,
         windowSessions,
         personalizedK ?? undefined
@@ -386,6 +361,15 @@ export async function recomputeUser(
             startedAt: activity.started_at as string,
             elevationMeters: activity.elevation_meters ?? undefined,
             temperatureCelsius: activity.temperature_celsius ?? undefined,
+            rpe: activity.rpe ?? undefined,
+            intervalReps: activity.interval_reps ?? undefined,
+            intervalWorkDistanceMeters: activity.interval_work_distance_meters ?? undefined,
+            intervalWorkSeconds: activity.interval_work_seconds ?? undefined,
+            intervalRestSeconds: activity.interval_rest_seconds ?? undefined,
+            intervalWorkAvgHr: activity.interval_work_avg_hr ?? undefined,
+            fartlekOnDistanceMeters: activity.fartlek_on_distance_meters ?? undefined,
+            fartlekOnSeconds: activity.fartlek_on_seconds ?? undefined,
+            fartlekOnAvgHr: activity.fartlek_on_avg_hr ?? undefined,
           },
         ];
       }
@@ -407,11 +391,8 @@ export async function recomputeUser(
           sessionType: activity.session_type,
           rpe: activity.rpe,
           storedPredictionSeconds: storedPredictionForScoring,
-          easyEffortBaselineEF,
-          recentHardEffortBenchmarkSeconds,
-          easyEffortBaselinePaceSeconds,
-          recentEasyEffortScores,
           personalizedRiegelK: personalizedK,
+          recentSessions,
           intervalReps: activity.interval_reps,
           intervalWorkDistanceMeters: activity.interval_work_distance_meters,
           intervalWorkSeconds: activity.interval_work_seconds,
@@ -466,11 +447,13 @@ export async function recomputeUser(
         .eq("activity_id", activity.id);
       noteWrite("workout_scores delete", scoreDeleteError);
 
-      const { error: scoreInsertError } = await supabase.from("workout_scores").insert({
+      const { error: scoreInsertError, droppedColumns: scoreDropped } = await writeRowTolerantly(
+        {
         activity_id: activity.id,
         user_id: user.id,
         sport: activity.sport,
         sport_index: result.sportIndex,
+        personal_index: result.personalIndex,
         endurance_component: result.enduranceComponent,
         strength_component: result.strengthComponent,
         fatigue_impact: result.fatigueScore,
@@ -491,8 +474,20 @@ export async function recomputeUser(
         // this, recomputing collapses every activity's workout_scores row
         // onto "now", breaking ACWR/injury-risk history windows.
         created_at: activity.started_at,
-      });
+        },
+        DEGRADABLE_SCORE_COLUMNS,
+        (payload) => supabase.from("workout_scores").insert(payload)
+      );
       noteWrite("workout_scores insert", scoreInsertError);
+      // Not a per-activity failure — the score landed, one display column did
+      // not. Reported once per activity so the operator sees which migration
+      // is outstanding without the run being marked failed.
+      if (scoreDropped.length > 0) {
+        console.error(
+          "[recompute] workout_scores is missing column(s), saved without them:",
+          scoreDropped.join(", ")
+        );
+      }
 
       const { error: historyDeleteError } = await supabase
         .from("split_index_history")
@@ -549,13 +544,15 @@ export async function recomputeUser(
         // These are the per-lift rows the strength breakdown is read from, so
         // losing them shows as a scored session with no per-exercise detail —
         // the shape of the "strength score is missing again" report.
-        const { error: strengthInsertError } = await supabase.from("strength_scores").insert(
+        const { error: strengthInsertError } = await writeTolerantly(
           buildStrengthScoreInserts(
             user.id,
             activity.id,
             activity.started_at,
             result.strengthScoreRows
-          )
+          ),
+          DEGRADABLE_SCORE_COLUMNS,
+          (payload) => supabase.from("strength_scores").insert(payload)
         );
         noteWrite("strength_scores insert", strengthInsertError);
       }
@@ -566,16 +563,6 @@ export async function recomputeUser(
         started_at: activity.started_at,
         score_breakdown: result.breakdown as unknown as Record<string, unknown>,
       });
-      if (benchmarkSport) {
-        easyEffortScoresBySport[benchmarkSport] = [
-          ...(easyEffortScoresBySport[benchmarkSport] ?? []),
-          {
-            sessionType: activity.session_type,
-            startedAt: activity.started_at as string,
-            score: result.sportIndex,
-          },
-        ];
-      }
       if (result.enduranceComponent != null) enduranceIndices.push(result.enduranceComponent);
       if (result.strengthComponent != null) strengthIndices.push(result.strengthComponent);
       splitIndices.push(result.splitIndex);

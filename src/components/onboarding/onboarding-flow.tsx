@@ -584,7 +584,7 @@ export function OnboardingFlow() {
                     value={form.resting_hr}
                     error={errors.resting_hr}
                     onChange={(e) => update("resting_hr", e.target.value)}
-                    hint="Optional — with max HR above, unlocks personalized heart-rate-zone scoring on easy/recovery/long sessions"
+                    hint="Optional — with max HR above, lets every session be scored on how hard you were actually working, not just your pace"
                   />
                 </>
               )}

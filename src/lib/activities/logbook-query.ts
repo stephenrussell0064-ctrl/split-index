@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { parseRoutePolyline, type RoutePoint } from "@/lib/scoring/gps-track";
+import { missingColumn } from "@/lib/activities/degradable-write";
 
 /**
  * The logbook's single data source.
@@ -39,8 +40,14 @@ export interface LogbookEntry {
   sessionType: string | null;
   /** Which half of the app this session belongs to — everything non-gym is The Engine. */
   zone: ActivityZone;
-  /** Session index (0–1000 internal scale), or null when the session was never scored. */
+  /** Session index against the population (0–1000 internal scale), or null when the session was never scored. */
   score: number | null;
+  /**
+   * The same session against this athlete's own recent history in that sport
+   * — 500 is their norm. Null while calibrating (too little comparable
+   * history), and on every row scored before migration 077.
+   */
+  personalScore: number | null;
   /** Present only for runs recorded by Split Index's own GPS tracker. */
   route: RoutePoint[] | null;
   /** Gym sessions only — what was actually done, so a Lab row isn't just a date and a duration. */
@@ -204,7 +211,8 @@ export async function fetchLogbookPage(
       avgSplitSeconds: (a.avg_split_seconds as number | null) ?? null,
       sessionType: (a.session_type as string | null) ?? null,
       zone: zoneOf(sport),
-      score: scoreMap[id] ?? null,
+      score: scoreMap[id]?.score ?? null,
+      personalScore: scoreMap[id]?.personalScore ?? null,
       // Parsed server-side rather than in the client so a malformed stored
       // value can never reach a render, and null-checked so imported or
       // manually logged runs simply have no map rather than an empty box.
@@ -222,17 +230,39 @@ export async function fetchLogbookPage(
   return { entries, total, hasMore: nextOffset < total, nextOffset };
 }
 
+/**
+ * Both of a session's scores.
+ *
+ * `personal_index` arrived with migration 077, so the select is retried
+ * without it if the database has not caught up — a logbook that 500s because
+ * one additive column is missing is a worse outcome than a logbook without
+ * the second number on it. See lib/activities/degradable-write.ts for the
+ * same rule on the write side.
+ */
 async function fetchScoreMap(
   supabase: SupabaseClient,
   activityIds: string[]
-): Promise<Record<string, number>> {
+): Promise<Record<string, { score: number; personalScore: number | null }>> {
   if (activityIds.length === 0) return {};
-  const { data } = await supabase
-    .from("workout_scores")
-    .select("activity_id, sport_index")
-    .in("activity_id", activityIds);
+
+  const read = (columns: string) =>
+    supabase.from("workout_scores").select(columns).in("activity_id", activityIds);
+
+  const withPersonal = await read("activity_id, sport_index, personal_index");
+  let data = withPersonal.data;
+  if (withPersonal.error && missingColumn(withPersonal.error, ["personal_index"])) {
+    data = (await read("activity_id, sport_index")).data;
+  }
+
   return Object.fromEntries(
-    (data ?? []).map((s) => [s.activity_id as string, s.sport_index as number])
+    ((data ?? []) as unknown as Array<{
+      activity_id: string;
+      sport_index: number;
+      personal_index?: number | null;
+    }>).map((s) => [
+      s.activity_id,
+      { score: s.sport_index, personalScore: s.personal_index ?? null },
+    ])
   );
 }
 

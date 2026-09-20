@@ -12,11 +12,8 @@ import {
   effectiveStoredPrediction,
   sessionCountsAsQuality,
   personalEasyEffortBaselineEF,
-  personalEasyEffortBaselinePaceSeconds,
-  personalRecentHardEffortBenchmarkSeconds,
   terrainAdjustedSessionEF,
   isDirectBenchmarkDistance,
-  RELATIVE_EFFORT_SESSION_TYPES,
 } from "@/lib/scoring/cardio-predictions";
 import {
   computeTier1Prediction,
@@ -41,6 +38,11 @@ import {
   resolveEffectiveMaxHr,
 } from "@/lib/activities/bodyweight";
 import { fetchExerciseHistory } from "@/lib/activities/exercise-history";
+import {
+  writeTolerantly,
+  writeRowTolerantly,
+  DEGRADABLE_SCORE_COLUMNS,
+} from "@/lib/activities/degradable-write";
 
 /**
  * Re-score one already-existing activity and rewrite every row that depends on
@@ -240,9 +242,9 @@ export async function scoreAndPersist(
   let personalizedK: number | null = null;
   let tier1Prediction: ReturnType<typeof computeTier1Prediction> = null;
   let easyEffortBaselineEF: number | null = null;
-  let recentHardEffortBenchmarkSeconds: number | null = null;
-  let easyEffortBaselinePaceSeconds: number | null = null;
-  let recentEasyEffortScores: number[] | null = null;
+  // The 90-day same-sport window minus the excluded ids — the personal
+  // score's baseline (cardio-activity.ts personalOutcome).
+  let recentSessions: HistorySession[] | null = null;
   let sessionBenchmarkEquivalentSeconds: number | null = null;
   if (isEnduranceSport(body.sport)) {
     benchmarkSport = mapSportToBenchmarkSport(body.sport);
@@ -261,7 +263,7 @@ export async function scoreAndPersist(
     const { data: windowActivitiesRaw } = await supabase
       .from("activities")
       .select(
-        "id, sport, started_at, duration_seconds, distance_meters, avg_heart_rate, session_type, elevation_meters, temperature_celsius, workout_scores(sport_index)"
+        "id, sport, started_at, duration_seconds, distance_meters, avg_heart_rate, session_type, elevation_meters, temperature_celsius, rpe, interval_reps, interval_work_distance_meters, interval_work_seconds, interval_rest_seconds, interval_work_avg_hr, fartlek_on_distance_meters, fartlek_on_seconds, fartlek_on_avg_hr"
       )
       .eq("user_id", userId)
       .eq("is_draft", false)
@@ -285,32 +287,20 @@ export async function scoreAndPersist(
         startedAt: row.started_at,
         elevationMeters: row.elevation_meters ?? undefined,
         temperatureCelsius: row.temperature_celsius ?? undefined,
+        rpe: row.rpe ?? undefined,
+        intervalReps: row.interval_reps ?? undefined,
+        intervalWorkDistanceMeters: row.interval_work_distance_meters ?? undefined,
+        intervalWorkSeconds: row.interval_work_seconds ?? undefined,
+        intervalRestSeconds: row.interval_rest_seconds ?? undefined,
+        intervalWorkAvgHr: row.interval_work_avg_hr ?? undefined,
+        fartlekOnDistanceMeters: row.fartlek_on_distance_meters ?? undefined,
+        fartlekOnSeconds: row.fartlek_on_seconds ?? undefined,
+        fartlekOnAvgHr: row.fartlek_on_avg_hr ?? undefined,
       }));
-
-    // Easy-session score floor — see EASY_SCORE_FLOOR_FRACTION's doc comment
-    // in cardio-activity.ts. Reuses the same window/exclusion already
-    // fetched above (the exclusions keep this activity's OWN previous
-    // score from floor-ing its own re-score).
-    recentEasyEffortScores = sameSportWindowActivities
-      .filter((row) => row.session_type && RELATIVE_EFFORT_SESSION_TYPES.has(row.session_type))
-      .map((row) => {
-        const ws = Array.isArray(row.workout_scores) ? row.workout_scores[0] : row.workout_scores;
-        return ws?.sport_index as number | undefined;
-      })
-      .filter((s): s is number => s != null);
+    recentSessions = windowSessions;
 
     personalizedK = personalizeRiegelKFromWindow(windowSessions, priorPrediction?.riegel_k ?? null);
     easyEffortBaselineEF = personalEasyEffortBaselineEF(
-      benchmarkSport,
-      windowSessions,
-      personalizedK ?? undefined
-    );
-    recentHardEffortBenchmarkSeconds = personalRecentHardEffortBenchmarkSeconds(
-      benchmarkSport,
-      windowSessions,
-      personalizedK ?? undefined
-    );
-    easyEffortBaselinePaceSeconds = personalEasyEffortBaselinePaceSeconds(
       benchmarkSport,
       windowSessions,
       personalizedK ?? undefined
@@ -417,11 +407,8 @@ export async function scoreAndPersist(
       sessionType: body.session_type,
       rpe: body.rpe,
       storedPredictionSeconds: storedPredictionForScoring,
-      easyEffortBaselineEF,
-      recentHardEffortBenchmarkSeconds,
-      easyEffortBaselinePaceSeconds,
-      recentEasyEffortScores,
       personalizedRiegelK: personalizedK,
+      recentSessions,
       intervalReps: body.interval_reps,
       intervalWorkDistanceMeters: body.interval_work_distance_meters,
       intervalWorkSeconds: body.interval_work_seconds,
@@ -451,13 +438,14 @@ export async function scoreAndPersist(
   await supabase.from("workout_scores").delete().eq("activity_id", activityId);
   await supabase.from("split_index_history").delete().eq("activity_id", activityId);
 
-  const { data: workoutScore, error: workoutScoreError } = await supabase
-    .from("workout_scores")
-    .insert({
+  const { data: workoutScore, error: workoutScoreError, droppedColumns: scoreDropped } =
+    await writeRowTolerantly(
+      {
       activity_id: activityId,
       user_id: userId,
       sport: body.sport,
       sport_index: result.sportIndex,
+      personal_index: result.personalIndex,
       endurance_component: result.enduranceComponent,
       strength_component: result.strengthComponent,
       fatigue_impact: result.fatigueScore,
@@ -476,9 +464,16 @@ export async function scoreAndPersist(
       // Must reflect the activity's own date, not edit time — see the
       // matching comment on split_index_history.recorded_at below.
       created_at: body.started_at,
-    })
-    .select()
-    .single();
+      },
+      DEGRADABLE_SCORE_COLUMNS,
+      (payload) => supabase.from("workout_scores").insert(payload).select().single()
+    );
+  if (scoreDropped.length > 0) {
+    console.error(
+      "[score-and-persist] workout_scores is missing column(s), saved without them:",
+      scoreDropped.join(", ")
+    );
+  }
 
   // Rescoring DELETES the old score before writing the new one, so a failure
   // here does not leave the previous score standing — it leaves the session
@@ -520,13 +515,10 @@ export async function scoreAndPersist(
 
   if (body.sport === "gym" && result.strengthScoreRows?.length) {
     await supabase.from("strength_scores").delete().eq("activity_id", activityId);
-    const { error: strengthScoresError } = await supabase.from("strength_scores").insert(
-      buildStrengthScoreInserts(
-        userId,
-        activityId,
-        body.started_at,
-        result.strengthScoreRows
-      )
+    const { error: strengthScoresError } = await writeTolerantly(
+      buildStrengthScoreInserts(userId, activityId, body.started_at, result.strengthScoreRows),
+      DEGRADABLE_SCORE_COLUMNS,
+      (payload) => supabase.from("strength_scores").insert(payload)
     );
     // Same delete-then-insert shape, same silence: these are the per-lift rows
     // the strength breakdown is read from, so losing them shows up to the

@@ -46,6 +46,11 @@ function strengthResultFromScoreRow(row: StrengthScore): ScoreStrengthResult | n
   return {
     liftKey: row.exercise_name,
     score: row.strength_index,
+    // The column (migration 077). Rows written before it, or by a database
+    // still behind it, have no personal comparison — null, and the UI says
+    // "calibrating" rather than inventing one.
+    personalScore: row.personal_index ?? null,
+    personal: null,
     tier: tierForScore(row.strength_index),
     oneRM: row.estimated_1rm_kg,
     oneRMConfidence: 0.5,

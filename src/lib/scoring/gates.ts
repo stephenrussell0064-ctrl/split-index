@@ -15,7 +15,10 @@ export type LockedCardioFields =
   | "decouplingPct"
   | "predictions"
   | "confidence"
-  | "flags";
+  | "flags"
+  | "adjustments"
+  | "personal"
+  | "fitnessEquivalentSeconds";
 
 export type LockedIndexFields =
   | "labIndex"
@@ -25,7 +28,10 @@ export type LockedIndexFields =
 
 export type GatedCardioResult =
   | CardioResult
-  | (Pick<CardioResult, "score" | "paceScore" | "vo2max" | "vo2maxMethod"> & {
+  | (Pick<
+      CardioResult,
+      "score" | "paceScore" | "populationScore" | "personalScore" | "vo2max" | "vo2maxMethod"
+    > & {
       locked: LockedCardioFields[];
     });
 
@@ -37,16 +43,26 @@ export type GatedIndexResult =
       locked: LockedIndexFields[];
     });
 
-/** Gate cardio premium fields at the presentation/API layer. `score`/`paceScore` (identical, pure pace) stay free — `executionScore` (secondary "how well executed" metric) is premium, same as the other quality-signal fields. */
+/**
+ * Gate cardio premium fields at the presentation/API layer. Both headline
+ * numbers stay free — the population score and the personal score are the
+ * product, not a feature of it. The breakdown of HOW they were reached (the
+ * adjustments, the personal comparison detail, the fitness equivalent) is
+ * premium, same as the other quality-signal fields.
+ */
 export function gateCardioResult(
   result: CardioResult,
   isPremium: boolean
 ): GatedCardioResult {
   if (isPremium) return result;
-  const { score, paceScore, vo2max, vo2maxMethod } = result;
+  const { score, paceScore, populationScore, personalScore, vo2max, vo2maxMethod } = result;
   return {
     score,
     paceScore,
+    // Rows persisted before the two-score model carry neither field; fall
+    // back to the single score they do have rather than rendering undefined.
+    populationScore: populationScore ?? score,
+    personalScore: personalScore ?? null,
     vo2max,
     vo2maxMethod,
     locked: [
@@ -57,6 +73,9 @@ export function gateCardioResult(
       "predictions",
       "confidence",
       "flags",
+      "adjustments",
+      "personal",
+      "fitnessEquivalentSeconds",
     ],
   };
 }

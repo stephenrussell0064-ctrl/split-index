@@ -7,7 +7,7 @@ a training behaviour rather than a fixture, and the checks ask whether that
 person got something worth paying for, not whether a function returned the
 number it returned last time.
 
-**0 blocking · 0 degraded · 1 notes** across 12 athletes.
+**0 blocking · 0 degraded · 0 notes** across 12 athletes.
 
 ## Athletes
 
@@ -17,69 +17,61 @@ first-session — SERVED
     gym               n=  1  mean  361  first3  361 → last3  361
   0 blocking, 0 degraded
 hyrox-hybrid — SERVED
-  84 sessions over 12 weeks · index 709 → 874 · ACWR 0.98–4.00
+  84 sessions over 12 weeks · index 709 → 873 · ACWR 0.98–4.00
     gym               n= 36  mean  765  first3  710 → last3  792
-    running           n= 48  mean  930  first3  873 → last3  955
+    running           n= 48  mean  929  first3  899 → last3  944
   0 blocking, 0 degraded
 female-lifter — SERVED
-  50 sessions over 10 weeks · index 825 → 871 · ACWR 1.00–4.00
+  50 sessions over 10 weeks · index 825 → 881 · ACWR 1.00–4.00
     gym               n= 40  mean  861  first3  823 → last3  882
-    running           n= 10  mean  820  first3  783 → last3  850
+    running           n= 10  mean  866  first3  823 → last3  897
   0 blocking, 0 degraded
 swimmer — SERVED
-  56 sessions over 8 weeks · index 916 → 898 · ACWR 0.96–4.00
-    swimming          n= 40  mean  935  first3  916 → last3  937
+  56 sessions over 8 weeks · index 833 → 862 · ACWR 0.96–4.00
+    swimming          n= 40  mean  892  first3  835 → last3  916
     gym               n= 16  mean  500  first3  457 → last3  533
   0 blocking, 0 degraded
 cyclist — SERVED
-  36 sessions over 9 weeks · index 509 → 810 · ACWR 1.06–4.00
-    outdoor_cycling   n= 18  mean  657  first3  543 → last3  725
-    indoor_cycling    n= 18  mean  777  first3  619 → last3  846
+  36 sessions over 9 weeks · index 274 → 795 · ACWR 1.06–4.00
+    outdoor_cycling   n= 18  mean  519  first3  348 → last3  645
+    indoor_cycling    n= 18  mean  778  first3  619 → last3  846
   0 blocking, 0 degraded
 erg-athlete — SERVED
-  56 sessions over 8 weeks · index 650 → 779 · ACWR 0.97–4.00
-    rowing            n= 16  mean  794  first3  670 → last3  873
-    ski_erg           n= 16  mean  746  first3  627 → last3  832
+  56 sessions over 8 weeks · index 578 → 741 · ACWR 0.97–4.00
+    rowing            n= 16  mean  711  first3  599 → last3  797
+    ski_erg           n= 16  mean  679  first3  563 → last3  762
     gym               n= 24  mean  693  first3  643 → last3  718
   0 blocking, 0 degraded
 female-erg-athlete — SERVED
-  56 sessions over 8 weeks · index 613 → 697 · ACWR 0.96–4.00
-    rowing            n= 16  mean  741  first3  636 → last3  830
-    ski_erg           n= 16  mean  722  first3  615 → last3  815
+  56 sessions over 8 weeks · index 590 → 680 · ACWR 0.96–4.00
+    rowing            n= 16  mean  709  first3  607 → last3  795
+    ski_erg           n= 16  mean  695  first3  590 → last3  787
     gym               n= 24  mean  563  first3  530 → last3  597
   0 blocking, 0 degraded
 female-cyclist — SERVED
-  36 sessions over 9 weeks · index 458 → 764 · ACWR 1.09–4.00
-    outdoor_cycling   n= 18  mean  634  first3  469 → last3  740
+  36 sessions over 9 weeks · index 226 → 749 · ACWR 1.09–4.00
+    outdoor_cycling   n= 18  mean  541  first3  325 → last3  700
     indoor_cycling    n= 18  mean  680  first3  514 → last3  789
   0 blocking, 0 degraded
 masters-runner — SERVED
-  50 sessions over 10 weeks · index 902 → 907 · ACWR 1.05–4.00
-    running           n= 50  mean  895  first3  900 → last3  898
+  50 sessions over 10 weeks · index 949 → 924 · ACWR 1.05–4.00
+    running           n= 50  mean  907  first3  943 → last3  897
   0 blocking, 0 degraded
 overreacher — SERVED
-  48 sessions over 8 weeks · index 840 → 846 · ACWR 1.07–4.00
-    running           n= 48  mean  844  first3  847 → last3  827
+  48 sessions over 8 weeks · index 851 → 798 · ACWR 1.07–4.00
+    running           n= 48  mean  795  first3  848 → last3  760
   0 blocking, 0 degraded
 returner — SERVED
-  50 sessions over 10 weeks · index 533 → 606 · ACWR 1.08–4.00
-    running           n= 30  mean  642  first3  532 → last3  702
+  50 sessions over 10 weeks · index 609 → 629 · ACWR 1.08–4.00
+    running           n= 30  mean  692  first3  608 → last3  732
     gym               n= 20  mean  425  first3  367 → last3  473
   0 blocking, 0 degraded
 sporadic — SERVED
-  18 sessions over 12 weeks · index 258 → 458 · ACWR 0.23–4.00
+  18 sessions over 12 weeks · index 258 → 449 · ACWR 0.23–4.00
     gym               n= 12  mean  261  first3  258 → last3  266
-    running           n=  6  mean  649  first3  650 → last3  649
+    running           n=  6  mean  719  first3  722 → last3  716
   0 blocking, 0 degraded
 ```
-
-## Notes
-
-Behaviour that is arithmetically correct and still worth a human look.
-
-### swimmer — adding a discipline lowers the headline
-
-Every sport improved, but the headline index went 912 → 897 because a weaker second discipline entered the blend. Arithmetically correct; reads to the athlete as "I got worse".
 
 ## Personas, and why each is here
 

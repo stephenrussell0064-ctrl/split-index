@@ -352,9 +352,13 @@ const RUN_5K_ANCHORS: Anchor[] = [
  * spans 1.558x. It is still narrower than running's, and that part is real
  * physics rather than a calibration artefact — erg pace goes as
  * power^(-1/3), so a given physiological range always compresses into a
- * narrower pace range on the erg than on the road. That is precisely why
- * the relative-effort credits in cardio-activity.ts cannot be denominated
- * in percent-of-time across sports, and are capped in index points there.
+ * narrower pace range on the erg than on the road. That same fact is why the
+ * effort credit in cardio/fitness-equivalent.ts converts an intensity gap
+ * into a pace gap through a per-sport exponent — the cube root on an erg,
+ * where power goes as velocity cubed — rather than treating a percentage of
+ * time as if it meant the same thing in every sport. It does not: the older
+ * engine's percent-of-time credit was worth ~170-200 points anywhere on
+ * running's curve and up to ~630 on this one.
  *
  * The female table keeps the sourced male:female ratio at each anchor
  * (1.145 at the 99th rising to 1.261 at the 5th) applied to the rebased

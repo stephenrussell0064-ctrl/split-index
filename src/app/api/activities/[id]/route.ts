@@ -360,6 +360,7 @@ export async function PATCH(
     sport: body.sport,
     sportLabel: SPORT_INDEX_LABELS[body.sport],
     sportIndex: result.sportIndex,
+    personalIndex: result.personalIndex,
     splitIndex: result.splitIndex,
     previousSplitIndex,
     splitIndexDelta: result.splitIndex - previousSplitIndex,

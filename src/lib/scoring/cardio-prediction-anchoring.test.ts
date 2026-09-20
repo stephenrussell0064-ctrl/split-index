@@ -38,7 +38,7 @@ describe("scoreCardioActivity predictions — anchored on effort-adjusted equiva
   it("predicts materially faster half-marathon/marathon times than raw-pace Riegel would, for a genuinely easy HR-zone-scored run", () => {
     const rawPaceLadder = riegelPredictions(base.distanceMeters, base.durationSeconds, base.experience)!;
     const result = scoreCardioActivity(base);
-    expect(result.flags).toContain("hr-zone-scored");
+    expect(result.flags).toContain("effort-from-hr");
     expect(result.predictions).not.toBeNull();
 
     // The half-marathon/marathon entries should read meaningfully faster

@@ -5,7 +5,7 @@ import { Pencil } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { Button } from "@/components/ui/button";
 import { SportComparisonPanel } from "@/components/dashboard/sport-comparison";
-import { formatIndex, formatDuration, formatDistance } from "@/lib/utils/format";
+import { formatDuration, formatDistance } from "@/lib/utils/format";
 import { SPORT_INDEX_LABELS, SPORTS } from "@/lib/constants/sports";
 import { computeSportComparison } from "@/lib/utils/sport-comparison";
 import { ActivityDetailActions } from "@/components/activities/activity-detail-actions";
@@ -20,6 +20,7 @@ import {
   resolveStrengthInsights,
 } from "@/lib/scoring/activity-insights";
 import { GymExerciseScoreList } from "@/components/activities/gym-exercise-score-list";
+import { TwoScorePanel } from "@/components/scoring/personal-score-badge";
 import { RawStatsPanel } from "@/components/activities/raw-stats-panel";
 import { RunAnalysisPanel } from "@/components/activities/run-analysis-panel";
 import { PremiumGate } from "@/components/analytics/premium-gate";
@@ -159,6 +160,12 @@ export default async function ActivityDetailPage({
 
   const meta = SPORTS.find((s) => s.id === activity.sport);
   const sportIndex = score?.sport_index as number | undefined;
+  // The column (migration 077) is the fast path; the breakdown is where the
+  // engine also writes it, and is what a row scored before the migration —
+  // or on a database still behind it — still has.
+  const personalIndex =
+    (score?.personal_index as number | null | undefined) ??
+    ((score?.score_breakdown as ScoreBreakdown | null)?.personal_index ?? null);
   const comparison = sportIndex
     ? computeSportComparison(
         sportIndex,
@@ -274,14 +281,12 @@ export default async function ActivityDetailPage({
               : "border-cardio-border/40 bg-cardio-bg-elevated/10"
           }`}
         >
-          <p className="micro-label text-muted mb-2">Session index</p>
-          <p
-            className={`index-display text-5xl font-bold ${
-              zone === "gym" ? "text-gym-accent" : "text-cardio-accent"
-            }`}
-          >
-            {formatIndex(sportIndex)}
-          </p>
+          <p className="micro-label text-muted mb-4">Session index</p>
+          <TwoScorePanel
+            populationScore={sportIndex}
+            personalScore={personalIndex}
+            tone={zone}
+          />
           {comparison && (
             <div className="mt-6 border-t border-white/10 pt-6">
               <SportComparisonPanel

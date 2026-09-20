@@ -264,6 +264,14 @@ export interface ScoreBreakdown {
     { estimated1RM: number; relativeStrength: number } | undefined
   >;
   final_sport_index?: number;
+  /**
+   * The session's personal score — against the athlete's own recent history
+   * in this sport, 500 = their norm — written for every sport next to the
+   * population score in workout_scores.sport_index. Null while the athlete
+   * has too little history to compare against; absent on rows scored before
+   * it existed (run a recompute to fill them).
+   */
+  personal_index?: number | null;
   explanation: string[];
   /** V2 cardio engine output (full object persisted for re-runs) */
   cardio_activity?: import("@/lib/scoring/cardio-activity").CardioResult;
@@ -385,7 +393,10 @@ export interface StrengthScore {
   bodyweight_kg: number | null;
   relative_strength: number | null;
   volume_load_kg: number | null;
+  /** This lift against the population's sex/age-adjusted standards. */
   strength_index: number;
+  /** This lift against the athlete's own recent sessions of it; 500 = their norm, null while calibrating (migration 077). */
+  personal_index?: number | null;
   score_breakdown: Record<string, unknown>;
   recorded_at: string;
 }
