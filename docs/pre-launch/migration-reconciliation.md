@@ -138,46 +138,83 @@ worktree — 147 files, 2145 tests, `tsc` clean.
 decision, and it probably runs the other way — the app-store line into main,
 main being trunk.
 
-### 4.2 Repair the ledger
+### 4.2 The ledger did not exist — created and backfilled — DONE
 
-`078_activity_streams` reached production through the Supabase SQL editor,
-which writes **no row** to `supabase_migrations.schema_migrations`. A `db push`
-will therefore run it again. Its header records that it is re-runnable, but the
-ledger should say what is true:
+This section originally said "repair the ledger". There was no ledger to repair.
 
-```
-supabase migration repair --status applied 078
-```
+`supabase_migrations.schema_migrations` **did not exist on production.** A direct
+reference returned `42P01`, and scanning `information_schema.tables` for
+`%migration%` found only `auth.schema_migrations`, `realtime.schema_migrations`
+and `storage.migrations` — Supabase's own internal tables, none of them the
+project's.
 
-Check the others the same way before pushing anything. The ledger could not be
-read while writing this: it lives in the `supabase_migrations` schema, which
-PostgREST does not expose, and the CLI is not linked — linking needs an access
-token and a database password, which is not something to hand to an agent.
-**Read the ledger yourself before the first `db push`,** and treat §1 as
-evidence about the *schema*, which is a different question from what the ledger
-records.
+This database had **never been touched by `supabase db push`.** All 81
+migrations were applied by hand through the SQL editor. That single fact
+explains every "applied out of band" oddity recorded elsewhere in this file:
+nothing was out of band, because there was no band.
 
-### 4.3 Then apply 081
+It also meant `db push` was the most dangerous command available. With no
+history table the CLI treats every migration as unapplied, and would have
+re-run the lot against a live database — including `073`'s policy drops and
+`064`'s `DROP VIEW ... CASCADE`.
 
-`081` is additive, idempotent, and independent of the merge. It can go first if
-the merge is deferred.
+**What was done, 21 Sep 2026.** Two SQL-editor scripts, because `supabase db
+diff` needs Docker to build a shadow database and Docker is not installed on
+this machine:
+
+1. A schema check standing in for `db diff`: all 73 objects the migrations
+   create — 61 relations, 12 functions — probed against `to_regclass` and
+   `pg_proc`. Four relations came back missing. Two (`training_goals`,
+   `training_goal_progress`) were *correctly* absent, dropped by
+   `055_drop_training_goal_tables.sql`; their absence is evidence 055 ran. Two
+   (`import_jobs`, `integration_connections`) were real: **`003_integrations.sql`
+   never ran.** Harmless — no application code touches either table, and
+   `oauth_sync` is a gated feature key with no call sites and no line in the
+   advertised Premium list.
+2. The ledger created with the DDL copied verbatim out of the CLI binary
+   (v2.117.0), and the 81 migrations recorded as applied. Confirmed: 81 rows.
+
+`003` is recorded as applied deliberately. It creates three enum types with
+bare `CREATE TYPE` — Postgres has no `IF NOT EXISTS` for types — so letting
+`db push` run it would abort the whole push if those types already exist. **The
+integrations schema will therefore never be created by `db push`.** When
+Strava/Garmin sync is built it needs a fresh migration at 082 or above, not a
+revival of 003; delete `003_integrations.sql` at that point rather than leave a
+file that claims to have run.
+
+`002b_apply_missing.sql` is **not** in the ledger and cannot be. The CLI's
+version pattern is `/^([0-9]+)_(.*)\.sql$/` — digits only — so `002b` never
+parses as a version and the file is invisible to `db push` permanently. If its
+contents matter it must be renamed to a real version number.
+
+### 4.3 Apply 081 — DONE
+
+Applied by hand on 21 Sep 2026, before the ledger existed, and recorded in the
+backfill above.
 
 ---
 
-## 5. Order that avoids the known traps
+## 5. Where this leaves the project
 
-1. Read `supabase_migrations.schema_migrations` and write the real list down.
-   Nothing below is safe until this has been done by a person with the
-   credentials.
-2. `supabase migration repair --status applied` for anything applied out of
-   band — `078` at minimum.
-3. Take `integrate/main-and-app-store-line` (§4.1) onto whichever branch is
-   deploying. It is a renumbering only; no application code moves with it.
-4. Apply `081`. It is additive and idempotent, and its part 2 is expected to
-   update zero rows.
-5. Only then `supabase db push`, and read what it proposes before confirming.
-   If it offers to apply anything numbered 057–075, stop: the ledger and the
-   files still disagree and step 1 was skipped or misread.
+Steps 1 to 4 are done. The files are renumbered to match production, `081` is
+applied, and the ledger exists and records 81 migrations.
+
+**One step remains, and it needs the database password:**
+
+```
+supabase link --project-ref qoohyneotupuxrkwyeup
+supabase migration list
+```
+
+Every one of the 81 should show as applied on both the local and remote side.
+Only once that list reads clean is `db push` safe to use for new work — and the
+first time, run `db push --dry-run` and read what it proposes. It should propose
+nothing. Anything it offers to apply is a disagreement worth understanding
+before it runs.
+
+From here, new migrations follow the ordinary flow: write the file numbered
+above every branch and tag, then `db push`. The era of pasting into the SQL
+editor is over, and with it the class of problem this document records.
 
 Never renumber a migration that has already been applied, and never number new
 work off the current branch's highest — number it above every branch and tag.
