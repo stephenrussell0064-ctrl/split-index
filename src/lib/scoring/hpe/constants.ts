@@ -803,7 +803,21 @@ export const EVENT_DISTANCE_KM: Readonly<Record<string, number | null>> = {
   marathon: 42.195,
   "2k_row": null,
   powerlifting: null,
-  hyrox: null,
+  /**
+   * The RUNNING distance inside a HYROX race: eight kilometres, run as 8 x 1km
+   * between the eight stations.
+   *
+   * This was null, meaning "not a run", so HYROX was filtered out of the
+   * endurance-event resolution entirely: `enduranceEventKm` came back null,
+   * `classifyDomains` never saw a race, and an athlete who entered HYROX in
+   * the intake was put in endurance MAINTAIN — two sessions a week — for an
+   * event that is about half running by time. Brandt & Ebel 2025 timed a
+   * recreational field at 51.2 min running against 32.8 min on the stations,
+   * and the finish-time correlates were VO2max (rho -0.71) and weekly
+   * endurance volume (rho -0.68); grip strength and resistance-training
+   * volume did not predict it.
+   */
+  hyrox: 8,
 };
 
 /**
@@ -820,6 +834,13 @@ export const LONG_RUN_PEAK_FRACTION_OF_RACE: Readonly<Record<string, number>> = 
   "10k": 1.8,
   half: 0.95,
   marathon: 0.78,
+  /**
+   * HYROX is sized by DURATION rather than by its 8km of running. A
+   * recreational race is 85-120 minutes of continuous work, so the long run
+   * that prepares for it is the one that covers that clock — roughly 16km,
+   * about 90 minutes at easy pace — not the 8km the race actually runs.
+   */
+  hyrox: 2.0,
 };
 
 /**

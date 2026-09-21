@@ -787,6 +787,25 @@ export function resolveIntakeInputs(
     );
   }
 
+  // HYROX: say plainly what this plan covers and what it does not.
+  //
+  // The running half is programmed properly — the race is about half running
+  // by time, and VO2max and weekly endurance volume are what predict a finish
+  // time, so an aerobic block is the right answer to it. The stations are
+  // not: sled push and pull, wall balls, burpee broad jumps, the farmers
+  // carry and the sandbag lunges are muscular-endurance work this engine's
+  // barbell programming does not write. Claiming otherwise would be the same
+  // failure as prescribing a barbell to someone training in a bedroom.
+  if (record.events.includes("hyrox")) {
+    assumed.push(
+      "Your HYROX is programmed as the running race it half is: eight kilometres between stations, so the plan " +
+        "builds the aerobic base and the race-pace work that finish times actually track. It does NOT programme " +
+        "the stations — sled, wall balls, burpees, carries and lunges are muscular-endurance work this engine does " +
+        "not write, and you will need to add them yourself. What is here rests on race-demand data and coaching " +
+        "practice rather than on training trials; there are none for HYROX yet."
+    );
+  }
+
   if (record.exercisesByDay && Object.keys(record.exercisesByDay).length > 0) {
     assumed.push(
       "You picked your own exercises for some gym days, so those days are built from your list. The load, the reps " +
