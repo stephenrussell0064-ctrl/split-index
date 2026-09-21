@@ -40,6 +40,32 @@
 # `next build` here would double the minutes to learn the same thing. If the
 # Vercel connection is ever removed, add one.
 #
+# GREEN HERE PLUS A GREEN PREVIEW DOES NOT MEAN THE PRODUCTION BUILD PASSES.
+# Learned on 21 September 2026, at the cost of forty minutes reading a nine-
+# second failure as a broken build.
+#
+# `next.config.ts` calls `assertProductionCanTakeMoney()` at module load, and
+# `scripts/check-payment-env.mjs` scopes it to the platform doing the deploy:
+#
+#     env.VERCEL_ENV === 'production' || env.FORCE_PAYMENT_ENV_CHECK === 'true'
+#
+# So on a laptop and on every preview it returns no problems and the build
+# proceeds; only a production deploy evaluates it. Commit 3f4020e demonstrated
+# both halves at once — Ready as a preview on its branch, Error as production
+# on main, same tree, because REVENUECAT_{MONTHLY,ANNUAL}_PRODUCT_ID were set
+# for neither and only production asks.
+#
+# Adding a build job here would NOT have caught it: a runner has no VERCEL_ENV,
+# so the guard returns empty and the build goes green. Verified rather than
+# assumed, which is why there is still no build job above.
+#
+# Forcing it here with FORCE_PAYMENT_ENV_CHECK would mean giving the runner
+# REVENUECAT_WEBHOOK_SECRET and the SDK key, breaking the invariant at the
+# bottom of this comment for a check that belongs to the deploy and not to the
+# commit. The guard is right where it is. This paragraph exists so that the
+# next person to see a build die in under fifteen seconds reads the message it
+# printed instead of looking for what they broke.
+#
 # THAT MATTERS FOR WP2, SO BE CLEAR ABOUT WHERE THAT GATE LIVES. The
 # client-bundle secret scanner runs as part of `npm run build`, which means it
 # runs on Vercel — a deploy carrying a service-role key in a client chunk fails
