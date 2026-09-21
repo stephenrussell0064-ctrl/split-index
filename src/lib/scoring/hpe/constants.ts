@@ -55,8 +55,39 @@
  * longer exceeds the weekly hours the athlete gave (22% did, worst 3.0x), and
  * the ACWR cap now trims the sessions rather than only the heading above them.
  * Minor rather than major: plans change, the contract does not.
+ *
+ * 2.3.0 — the September evidence review. Six changes, every one of which
+ * moves generated plans, which is why this field moves with them:
+ *
+ *   - HYROX carries its 8km of running, so it resolves as an endurance event
+ *     instead of being filtered out and classified maintain. Anyone training
+ *     for it gets a materially different plan, not a tuned one.
+ *   - The long run is held to 10% past the longest of the last four weeks
+ *     (Frandsen 2025), and comes down on a deload instead of being the one
+ *     session the deload left alone.
+ *   - The taper follows the event: one week for a 5k or 10k, two for a half,
+ *     three for a marathon, monotone rather than flat.
+ *   - Concurrent interference lands on the lower-body share for men under
+ *     real running volume, rather than as a flat 18% on everyone including
+ *     women and bench presses.
+ *   - Strength training age is floored by relative strength, so an unanswered
+ *     history question no longer promises a beginner's rate to somebody
+ *     squatting twice bodyweight.
+ *   - Age eases the rate only past sixty.
+ *
+ * The projection also gained an 80% interval, a probability and a goal level
+ * alongside its existing point fields. Those are additive, so the contract
+ * holds and this stays a minor bump — but plans and the numbers quoted with
+ * them both change, which is the test this field is supposed to answer to.
+ *
+ * Bumped late, and that is the failure this comment warns about: the six
+ * commits went to main without moving it, so for a few hours the field said
+ * 2.2.0 over plans no 2.2.0 engine would have produced. `evaluateRerun` reads
+ * a version change as grounds to rebuild a plan at an athlete's next due
+ * rerun and tell them why, so leaving it stale would have quietly denied them
+ * both.
  */
-export const HPE_CONSTANTS_VERSION = "2.2.0";
+export const HPE_CONSTANTS_VERSION = "2.3.0";
 
 // ---------------------------------------------------------------------------
 // Fatigue resistance (Riegel exponent)
