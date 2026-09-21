@@ -103,17 +103,40 @@ recalled). It also re-asserts the revoke of `EXECUTE` from `PUBLIC`, `anon` and
 
 ## 4. What remains, and why it was not done automatically
 
-### 4.1 Bring main across
+### 4.1 Renumber to match production — DONE
 
-The branch needs main's 057–075. That is a merge of 201 commits into a branch
-other sessions are actively committing to, in a working tree all of them share.
-It is not something to run while three sessions are live in the checkout.
+Done on `integrate/main-and-app-store-line`, and **not** as the merge this
+section originally proposed.
 
-After merging, the six colliding files listed in §2 must be **deleted from the
-branch** — a merge keeps both, because the filenames differ, and `db push`
-would then try to apply `057_article9_consent` on a database that already ran
-it as `060`. Delete `057`, `058`, `059`, `060`, `062`; `061` is already
-superseded by `081`.
+The merge was attempted first, in a throwaway worktree so the shared checkout
+was never touched. It conflicts in **83 files and over 200 hunks** — both lines
+independently evolved `gps-run-client` (45 hunks), `settings-client` (15), the
+billing and auth screens, and the HPE engine. Resolving that blind would
+silently revert security work, so it was aborted.
+
+It is also more than this problem needs. The migrations directory describes the
+*database*, not the branch's features, and the database is main's. So the fix
+is a renumbering, not an integration:
+
+- main's 057–075 brought across, all 19 byte-identical to main;
+- four of the six collisions were the same file under a lower number and are
+  renames (`057→060`, `058→061`, `059→062`, `060→063`); `058` differed only in
+  a comment naming the renumber;
+- `062_blocks_and_reports` deleted — it creates `user_blocks`, a second answer
+  to blocking that production never took. Its only reader,
+  `api/moderation/block`, has no callers and now points at `blocked_users`,
+  whose `UNIQUE (blocker_id, blocked_id)` satisfies the same upsert;
+- `061` superseded by `081` (§3), and the tests that pinned the scrub repointed;
+- five tests that pin migration filenames updated, plus `profile_usernames`
+  added to the expected view set — it is main's seventh projection, added by
+  `073` rather than by `056` with the other six.
+
+Result: a gapless 001–081 matching production's numbering. Verified in the
+worktree — 147 files, 2145 tests, `tsc` clean.
+
+**Still open: main's 201 commits of application code.** That is a separate
+decision, and it probably runs the other way — the app-store line into main,
+main being trunk.
 
 ### 4.2 Repair the ledger
 
@@ -144,12 +167,17 @@ the merge is deferred.
 ## 5. Order that avoids the known traps
 
 1. Read `supabase_migrations.schema_migrations` and write the real list down.
+   Nothing below is safe until this has been done by a person with the
+   credentials.
 2. `supabase migration repair --status applied` for anything applied out of
    band — `078` at minimum.
-3. Apply `081`.
-4. Merge `main`, then delete the six superseded files in one commit that says
-   which and why.
+3. Take `integrate/main-and-app-store-line` (§4.1) onto whichever branch is
+   deploying. It is a renumbering only; no application code moves with it.
+4. Apply `081`. It is additive and idempotent, and its part 2 is expected to
+   update zero rows.
 5. Only then `supabase db push`, and read what it proposes before confirming.
+   If it offers to apply anything numbered 057–075, stop: the ledger and the
+   files still disagree and step 1 was skipped or misread.
 
 Never renumber a migration that has already been applied, and never number new
 work off the current branch's highest — number it above every branch and tag.
