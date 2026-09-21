@@ -160,11 +160,13 @@ export function generatePlan(input: GeneratePlanInput): GeneratedPlan {
 
   const weeks: PlanWeek[] = [];
   const rawStress: number[] = [];
+  /** The long runs already prescribed, most recent last — the spike rule's anchor. */
+  const longRunHistory: number[] = [];
 
   for (const weekRecord of macro) {
     const feedback = feedbackByWeek[weekRecord.week - 1] ?? [];
     const autoreg = autoregulate(feedback);
-    const { sessions, allocation, notes } = buildSessionSet({
+    const { sessions, allocation, notes, longRunMinutes } = buildSessionSet({
       profile,
       week: weekRecord,
       mode,
@@ -177,7 +179,12 @@ export function generatePlan(input: GeneratePlanInput): GeneratedPlan {
       // The athlete's chosen cardio modalities are prescribed in their own
       // sports' units from here.
       modalityFitness,
+      // The last four weeks of long runs, so no week may step more than 10%
+      // past the longest of the last month (Frandsen 2025).
+      recentLongRunsMin: longRunHistory.slice(-4),
+      longestRecentRunMin: state.longestRecentRunMin ?? null,
     });
+    if (longRunMinutes != null) longRunHistory.push(longRunMinutes);
     /**
      * The week's stated budget may not exceed what the week actually contains.
      *

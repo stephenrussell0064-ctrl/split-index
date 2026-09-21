@@ -61,6 +61,8 @@ import {
   LONG_RUN_PEAK_FRACTION_OF_RACE,
   LONG_RUN_MIN_MULTIPLE_OF_EASY,
   LONG_RUN_MINUTE_SHARE,
+  SESSION_SPIKE_MAX_MULTIPLE,
+  DELOAD_LONG_RUN_MULTIPLIER,
   LONG_RUN_QUALITY_THRESHOLD_MIN,
   MAX_QUALITY_ENDURANCE_SESSIONS,
   MIN_ENDURANCE_SESSION_MIN,
@@ -232,10 +234,21 @@ export interface SessionSetInput {
    * — the modality prescription then falls back to effort and says so.
    */
   modalityFitness?: Partial<Record<CardioModality, ModalityFitness>>;
+  /**
+   * The long runs of the weeks just gone, most recent last. Anchors the
+   * single-session spike rule: no long run more than 10% past the longest of
+   * the last month. Empty in week one, where `longestRecentRunMin` on the
+   * athlete's state stands in.
+   */
+  recentLongRunsMin?: readonly number[];
+  /** The longest run in the athlete's recent log, for week one, before the block has a long run of its own. */
+  longestRecentRunMin?: number | null;
 }
 
 export interface SessionSet {
   sessions: PlannedSession[];
+  /** The long run prescribed this week, for next week's spike rule. Null when there was none. */
+  longRunMinutes: number | null;
   /** How the week's slots were split across emphasis dimensions, after caps and TID reconciliation. Surfaced so the athlete can see the allocation, not just its output. */
   allocation: Record<EmphasisKey, number>;
   notes: string[];
@@ -844,6 +857,49 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
    */
   longMinutes = Math.min(capEnduranceMinutes(longMinutes), Math.max(MIN_ENDURANCE_SESSION_MIN, Math.round(totalMinutes)));
 
+  /*
+   * THE SINGLE-SESSION SPIKE RULE.
+   *
+   * Frandsen 2025, 5,205 runners and 588,071 sessions: a run more than 10%
+   * beyond the longest of the previous 30 days raised the overuse-injury
+   * hazard by 64% to 128% depending on the size of the jump. In the same
+   * cohort the week-to-week ratio predicted nothing and the acute:chronic
+   * ratio pointed the wrong way, so this is the progression control with the
+   * strongest evidence behind it and the engine had none of it.
+   *
+   * It binds the long run because the long run is the session that grows.
+   * Race-distance sizing above can ask for a step the athlete has never taken
+   * — a marathoner in week one being given the long run their race implies
+   * rather than the one their history supports — and this is what holds that
+   * to a ramp.
+   *
+   * On a deload the long run comes DOWN. It was the one session the deload
+   * never touched, which left the most fatiguing run of the week surviving
+   * the week meant to recover from it.
+   */
+  if (wantsLongRun) {
+    const recent = (input.recentLongRunsMin ?? []).filter((m) => m > 0);
+    const longestRecent = recent.length > 0 ? Math.max(...recent) : null;
+    const anchor = longestRecent ?? input.longestRecentRunMin ?? null;
+    if (anchor != null && anchor > 0) {
+      const spikeCap = Math.max(MIN_ENDURANCE_SESSION_MIN, Math.round(anchor * SESSION_SPIKE_MAX_MULTIPLE));
+      if (longMinutes > spikeCap) {
+        notes.push(
+          `Long run held to ${spikeCap} minutes — no more than 10% over your longest run of the last month. A ` +
+            `single run past that is the best-supported injury signal there is, so the long run builds in steps ` +
+            `rather than jumps.`
+        );
+        longMinutes = spikeCap;
+      }
+    }
+    if (deload && longestRecent != null) {
+      longMinutes = Math.min(
+        longMinutes,
+        Math.max(MIN_ENDURANCE_SESSION_MIN, Math.round(longestRecent * DELOAD_LONG_RUN_MULTIPLIER))
+      );
+    }
+  }
+
   // ---- step 3: hard caps ---------------------------------------------------
   const qualityMinutes = capEnduranceMinutes(Math.round(totalMinutes * QUALITY_SESSION_MINUTE_SHARE));
   const longRunCountsAsQuality = wantsLongRun && longMinutes >= LONG_RUN_QUALITY_THRESHOLD_MIN;
@@ -1357,7 +1413,12 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
     }
   }
 
-  return { sessions, allocation, notes };
+  return {
+    sessions,
+    allocation,
+    notes,
+    longRunMinutes: sessions.find((x) => x.kind === "long_run")?.minutes ?? null,
+  };
 }
 
 

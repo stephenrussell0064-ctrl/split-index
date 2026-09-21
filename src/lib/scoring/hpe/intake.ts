@@ -143,6 +143,13 @@ export interface AthleteState {
   chronicLoad: number;
   restingHr: number;
   maxHr: number | null;
+  /**
+   * Longest single run in the recent log, in minutes. Anchors the
+   * single-session spike rule in week one, before the block has a long run of
+   * its own to measure against. Null when unknown, and null means the rule
+   * does not fire rather than that it fires on a guess.
+   */
+  longestRecentRunMin?: number | null;
   safety: SafetyFlags;
   /** Which values had to be defaulted rather than known. Prescriptions widen their bands and label their source accordingly. */
   assumed: string[];

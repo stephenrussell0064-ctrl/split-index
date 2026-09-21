@@ -855,6 +855,9 @@ export function resolveIntakeInputs(
     // An estimated max HR is age arithmetic and is wrong for most people by a
     // wide margin, so a measured one the athlete typed beats it outright.
     maxHr: record.maxHrOverride ?? (record.maxHrKnown ? prefilled.maxHr : (prefilled.maxHr ?? null)),
+    // Asked by the intake since it was written; read by nothing until the
+    // spike rule needed an anchor for week one.
+    longestRecentRunMin: record.longestRecentRunMin,
     safety: flags,
     assumed,
   };

@@ -587,6 +587,31 @@ export const NOVICE_ENDURANCE_YEARS = 0.5;
 export const NOVICE_RAMP_MULTIPLIER = 0.5;
 /** [ASSURED] F4: deload every fourth week. Twenty-four weeks of uninterrupted progression appears in no credible programme in either sport. */
 export const DELOAD_EVERY_N_WEEKS = 4;
+/**
+ * [DATA] The single-session spike rule — the best-supported injury control in
+ * the running literature, and the one this engine did not have.
+ *
+ * Frandsen, Hulme, Parner ... Nielsen 2025 (Br J Sports Med), 5,205 runners
+ * and 588,071 sessions: a run more than 10% longer than the longest run of
+ * the previous 30 days raised the overuse-injury hazard by 64% (10-30% over),
+ * 52% (30-100%) and 128% (>100%). In the same cohort the week-to-week ratio
+ * showed no association at all, and the acute:chronic ratio ran the WRONG
+ * WAY — large "spikes" by that measure were associated with fewer injuries,
+ * not more.
+ *
+ * So the long run — the session this binds, because it is the one that grows
+ * — may not exceed this multiple of the longest run of the last month.
+ */
+export const SESSION_SPIKE_MAX_MULTIPLE = 1.1;
+
+/**
+ * [EST] The long run on a deload week, against the longest of the recent
+ * weeks. The deload cut volume and left the long run untouched, which is the
+ * single most fatiguing session of the week surviving the week meant to
+ * recover from it.
+ */
+export const DELOAD_LONG_RUN_MULTIPLIER = 0.75;
+
 /** [ASSURED] -40% volume with intensity HELD. Dropping both is detraining, not deloading. */
 export const DELOAD_VOLUME_MULTIPLIER = 0.6;
 
