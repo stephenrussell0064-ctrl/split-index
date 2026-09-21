@@ -4,14 +4,27 @@ import ActivityKit
 /**
  * Interactive Live Activity buttons for the gym workout timer (user
  * feedback: "add all the functions like pause, add rest and everything else
- * on to the widget on lock screen"). `LiveActivityIntent`-conforming types
- * run in the WIDGET EXTENSION's own process when tapped from the lock
- * screen / Dynamic Island — no need for the main app to be running — and
- * can mutate the Activity directly via `Activity<T>.activities`, since
- * ActivityKit's activity list is shared across an app's targets (no App
- * Group/shared UserDefaults needed just for this). iOS 17+ only: Button
- * (intent:) inside a Live Activity is an iOS 17 API — see
- * SplitIndexWidgetsLiveActivity.swift's `#available(iOS 17.0, *)` gate
+ * on to the widget on lock screen").
+ *
+ * THIS FILE MUST BE A MEMBER OF THE APP TARGET, NOT ONLY THE WIDGET
+ * EXTENSION. `SplitIndexWidgets/` is a file-system-synchronized group owned
+ * by SplitIndexWidgetsExtension, so every file in it joins the extension
+ * automatically and NOTHING joins the app unless it is added by hand — which
+ * is how this one was missed. The App target's Sources phase lists it
+ * explicitly, next to SplitIndexActivityAttributes.swift and the two stores,
+ * which are shared the same way.
+ *
+ * It matters because a `LiveActivityIntent` is performed in the APP's
+ * process, and because `Activity<T>.activities` is only populated there. An
+ * earlier version of this comment claimed the opposite — that these run in
+ * the extension and that ActivityKit's list is shared across targets — and
+ * that belief is precisely why the file was never added to the app. The
+ * symptom was silent: the buttons rendered, `gymTimerActivity()` returned
+ * nil against an empty list, the `guard` returned `.result()`, and Pause and
+ * Rest 90s did nothing at all on a shipped build.
+ *
+ * iOS 17+ only: Button(intent:) inside a Live Activity is an iOS 17 API —
+ * see SplitIndexWidgetsLiveActivity.swift's `#available(iOS 17.0, *)` gate
  * around every button that references these.
  *
  * The open app (if any) has no way to be notified synchronously when one of

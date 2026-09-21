@@ -12,16 +12,16 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/ionic-team/capacitor-swift-pm.git", exact: "8.5.0"),
-        .package(name: "CapacitorCommunityBackgroundGeolocation", path: "../../../node_modules/@capacitor-community/background-geolocation"),
-        .package(name: "CapacitorCommunityBluetoothLe", path: "../../../node_modules/@capacitor-community/bluetooth-le"),
-        .package(name: "CapacitorApp", path: "../../../node_modules/@capacitor/app"),
-        .package(name: "CapacitorBrowser", path: "../../../node_modules/@capacitor/browser"),
-        .package(name: "CapacitorGeolocation", path: "../../../node_modules/@capacitor/geolocation"),
-        .package(name: "CapacitorPreferences", path: "../../../node_modules/@capacitor/preferences"),
-        .package(name: "CapacitorSplashScreen", path: "../../../node_modules/@capacitor/splash-screen"),
-        .package(name: "CapacitorStatusBar", path: "../../../node_modules/@capacitor/status-bar"),
-        .package(name: "RevenuecatPurchasesCapacitor", path: "../../../node_modules/@revenuecat/purchases-capacitor"),
-        .package(name: "RevenuecatPurchasesCapacitorUi", path: "../../../node_modules/@revenuecat/purchases-capacitor-ui")
+        .package(name: "CapacitorCommunityBackgroundGeolocation", path: "../../../../../../../../../../Users/stephenrussell/Projects/split-index/node_modules/@capacitor-community/background-geolocation"),
+        .package(name: "CapacitorCommunityBluetoothLe", path: "../../../../../../../../../../Users/stephenrussell/Projects/split-index/node_modules/@capacitor-community/bluetooth-le"),
+        .package(name: "CapacitorApp", path: "../../../../../../../../../../Users/stephenrussell/Projects/split-index/node_modules/@capacitor/app"),
+        .package(name: "CapacitorBrowser", path: "../../../../../../../../../../Users/stephenrussell/Projects/split-index/node_modules/@capacitor/browser"),
+        .package(name: "CapacitorGeolocation", path: "../../../../../../../../../../Users/stephenrussell/Projects/split-index/node_modules/@capacitor/geolocation"),
+        .package(name: "CapacitorPreferences", path: "../../../../../../../../../../Users/stephenrussell/Projects/split-index/node_modules/@capacitor/preferences"),
+        .package(name: "CapacitorSplashScreen", path: "../../../../../../../../../../Users/stephenrussell/Projects/split-index/node_modules/@capacitor/splash-screen"),
+        .package(name: "CapacitorStatusBar", path: "../../../../../../../../../../Users/stephenrussell/Projects/split-index/node_modules/@capacitor/status-bar"),
+        .package(name: "RevenuecatPurchasesCapacitor", path: "../../../../../../../../../../Users/stephenrussell/Projects/split-index/node_modules/@revenuecat/purchases-capacitor"),
+        .package(name: "RevenuecatPurchasesCapacitorUi", path: "../../../../../../../../../../Users/stephenrussell/Projects/split-index/node_modules/@revenuecat/purchases-capacitor-ui")
     ],
     targets: [
         .target(
