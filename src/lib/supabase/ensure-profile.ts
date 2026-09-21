@@ -3,7 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 /** Ensures a profiles row exists (handles OAuth signups before migrations/trigger ran). */
 export async function ensureProfileForUser(user: User) {
-  const admin = createAdminClient();
+  const admin = createAdminClient("lib/supabase/ensure-profile");
   return admin.from("profiles").upsert(
     {
       user_id: user.id,

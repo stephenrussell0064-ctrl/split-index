@@ -22,6 +22,7 @@ const STATE = (oneRms: Record<string, number>): AthleteState =>
     sex: "male",
     oneRms,
     predicted5kS: 1105,
+    predicted5kFromEffort: true,
     strengthTrainingAge: "intermediate",
     enduranceTrainingAge: "intermediate",
     strengthTrainingYears: 5,

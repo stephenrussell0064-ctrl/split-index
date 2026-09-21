@@ -12,15 +12,15 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils/cn";
 import {
   PREMIUM_FEATURES,
   PREMIUM_PRICE_GBP,
   FREE_TRIAL_DAYS,
 } from "@/lib/stripe/config";
-import { useCheckout } from "@/lib/native/use-checkout";
 import { FREE_TIER_FEATURES } from "@/lib/retention/tiers";
-import { getTrialDaysRemaining, isPremiumUser } from "@/lib/retention/trial";
+import { getTrialDaysRemaining, hasPaidAccess } from "@/lib/retention/trial";
 import { SplitIndexSettings } from "@/components/settings/split-index-settings";
 import {
   ActivityPrivacySettings,
@@ -30,6 +30,8 @@ import { WidgetStatus } from "@/components/settings/widget-status";
 import { Article9ConsentCard } from "@/components/settings/article9-consent-card";
 import { PremiumBadge } from "@/components/retention/premium-badge";
 import { createClient } from "@/lib/supabase/client";
+import { clearRacePredictions } from "@/lib/native/race-predictions";
+import { clearDailyTraining } from "@/lib/native/daily-training";
 import type { SubscriptionStatus, SubscriptionTier } from "@/types";
 
 /*
@@ -43,12 +45,15 @@ import type { SubscriptionStatus, SubscriptionTier } from "@/types";
 
 export default function SettingsClient() {
   const router = useRouter();
-  const [loading, setLoading] = useState(false);
-  const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [recomputeLoading, setRecomputeLoading] = useState(false);
   const [recomputeResult, setRecomputeResult] = useState<string | null>(null);
+  /**
+   * Non-null only for admins. The fleet page is `notFound()` for everyone else,
+   * so this is what it looks like for everyone else too — see /api/admin/me.
+   */
+  const [adminRole, setAdminRole] = useState<string | null>(null);
   const [profile, setProfile] = useState<{
     tier: SubscriptionTier;
     status: SubscriptionStatus | null;
@@ -65,6 +70,20 @@ export default function SettingsClient() {
   const [authUserId, setAuthUserId] = useState<string | null>(null);
   const [profileLoadFailed, setProfileLoadFailed] = useState(false);
   const [privacy, setPrivacy] = useState<PrivacyState>({ status: "loading" });
+
+  useEffect(() => {
+    /*
+      The Hybrid Plan Engine's rollout switch lives at /admin/hpe-fleet, and
+      that page was reachable only by typing its URL. The feature ships
+      DISABLED (migration 040 seeds the flag off at 0%), so the control that
+      makes the app's flagship feature visible to any athlete had no route into
+      it from inside the app. A 404 for non-admins, so this reveals nothing.
+    */
+    void fetch("/api/admin/me")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => setAdminRole(data?.role ?? null))
+      .catch(() => setAdminRole(null));
+  }, []);
 
   useEffect(() => {
     const supabase = createClient();
@@ -133,50 +152,26 @@ export default function SettingsClient() {
   }, []);
 
   const premium = profile
-    ? isPremiumUser(profile.tier, profile.status)
+    ? hasPaidAccess({ subscription_tier: profile.tier, subscription_status: profile.status })
     : false;
   const trialDays = profile
     ? getTrialDaysRemaining(profile.createdAt, profile.tier, profile.status)
     : null;
 
 
-  /*
-   * This button used to call `startStripeCheckout()` directly, with no check
-   * for the native platform at all. Inside the iOS app that took the athlete
-   * out to checkout.stripe.com and asked for a card — App Store Guideline
-   * 3.1.1, on a UK storefront where the 3.1.1(a) external-link carve-out does
-   * not apply, in the most prominent upgrade button in the app.
-   *
-   * It goes through `useCheckout` now, which is the single place that decides
-   * between Apple/Google billing and Stripe. Do not reintroduce a direct
-   * `startStripeCheckout` call here: the last time this branch existed twice,
-   * one copy was migrated to RevenueCat and this one was forgotten.
-   */
-  const { resolving: checkoutResolving, checkout } = useCheckout();
-
-  const handleCheckout = async () => {
-    setLoading(true);
-    setCheckoutError(null);
-
-    const outcome = await checkout("annual");
-    switch (outcome.status) {
-      case "redirecting":
-        window.location.href = outcome.url;
-        return;
-      case "entitled":
-        window.location.reload();
-        return;
-      case "error":
-        setCheckoutError(outcome.message);
-        break;
-      case "not-ready":
-      case "cancelled":
-        break;
-    }
-    setLoading(false);
+  /** Both widgets, best-effort — no-ops off device. */
+  const clearNativeWidgets = async () => {
+    await clearRacePredictions().catch(() => {});
+    await clearDailyTraining().catch(() => {});
   };
 
   const handleSignOut = async () => {
+    // Same clearing the sidebar's sign-out does, and for the same reason: the
+    // home-screen widgets read an App Group container that outlives the
+    // webview, so without this the previous account's race times and named
+    // training block stay on the phone's home screen after they sign out.
+    // There were two sign-out buttons and only one of them did this.
+    await clearNativeWidgets();
     const supabase = createClient();
     await supabase.auth.signOut();
     router.push("/");
@@ -212,8 +207,20 @@ export default function SettingsClient() {
   };
 
   const handleDeleteAccount = async () => {
+    /*
+      The subscription sentence is not decoration. Deleting the account removes
+      the Split Index side of a subscription and nothing else — a recurring
+      charge lives with Apple, Google or Stripe, and an athlete who deletes their
+      account believing that cancelled the billing will be charged again. App
+      Store Guideline 5.1.1(v) asks that account deletion make the state of any
+      subscription clear rather than leaving someone to discover it.
+    */
     const confirmed = window.confirm(
-      "Delete your account permanently? All workouts, scores, and profile data will be removed. This cannot be undone."
+      "Delete your account permanently?\n\n" +
+        "All workouts, routes, scores, plans and profile data will be removed. This cannot be undone.\n\n" +
+        "This does NOT cancel a paid subscription. If you subscribed in the app, cancel it in your " +
+        "Apple or Google account settings; if you subscribed on the web, cancel it from Manage billing " +
+        "before deleting."
     );
     if (!confirmed) return;
 
@@ -226,6 +233,10 @@ export default function SettingsClient() {
         setDeleteError(data.error ?? "Failed to delete account");
         return;
       }
+      // Deleting the account and leaving its predictions on the home screen is
+      // the worst version of this: the data is gone from the server and still
+      // being displayed by the phone, with no account left to clear it.
+      await clearNativeWidgets();
       const supabase = createClient();
       await supabase.auth.signOut();
       router.push("/");
@@ -267,15 +278,11 @@ export default function SettingsClient() {
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
-          <Link href="/profile">
-            <Button variant="secondary" className="w-full">
-              Edit profile & stats
-            </Button>
+          <Link href="/profile" className={cn(buttonVariants({ variant: "secondary" }), "w-full")}>
+            Edit profile & stats
           </Link>
-          <Link href="/onboarding">
-            <Button variant="ghost" className="w-full">
-              Redo onboarding
-            </Button>
+          <Link href="/onboarding" className={cn(buttonVariants({ variant: "ghost" }), "w-full")}>
+            Redo onboarding
           </Link>
         </CardContent>
       </Card>
@@ -344,14 +351,35 @@ export default function SettingsClient() {
               <p className="text-sm text-muted">
                 Premium active — AI Coach, full analytics, and leaderboards unlocked.
               </p>
-              <Link href="/settings/billing">
-                <Button variant="secondary" className="w-full">
-                  Manage billing
-                </Button>
+              <Link
+                href="/settings/billing"
+                className={cn(buttonVariants({ variant: "secondary" }), "w-full")}
+              >
+                Manage billing
               </Link>
             </div>
           ) : (
             <>
+              {/*
+                THIS CARD DOES NOT TAKE PAYMENT ANY MORE.
+
+                It used to call `startStripeCheckout()` straight from a "Start
+                14-Day Free Trial" button, with no platform check anywhere in
+                this file. On an iPhone that is App Store Guideline 3.1.1 in its
+                plainest form — and worse than it sounds, because
+                `checkout.stripe.com` is not in capacitor.config.ts's
+                `allowNavigation`, so Capacitor punts the whole thing out to
+                Safari. An external browser opening a card form is precisely the
+                steering Apple prohibits, and the UK storefront gets no benefit
+                from the US external-link carve-out in 3.1.1(a).
+
+                The comparison table below is fine — describing what Premium
+                includes is not a purchase mechanism. Only the CTA changed: it
+                now goes to /settings/billing, which renders `SkuPicker`, the
+                one component that knows whether it is on a phone or the web.
+                One paywall, one code path, one place to get the platform branch
+                right.
+              */}
               <div className="grid sm:grid-cols-2 gap-4 mb-6">
                 <div className="rounded-xl border border-white/5 p-4">
                   <p className="text-xs font-medium uppercase tracking-wider text-muted mb-2">
@@ -382,17 +410,7 @@ export default function SettingsClient() {
               <p className="text-xs text-muted mb-4">
                 {FREE_TRIAL_DAYS}-day free trial · cancel anytime
               </p>
-              {checkoutError && (
-                <p className="text-sm text-warning mb-4">{checkoutError}</p>
-              )}
-              <Button
-                className="w-full"
-                loading={loading || checkoutResolving}
-                disabled={checkoutResolving}
-                onClick={handleCheckout}
-              >
-                Start {FREE_TRIAL_DAYS}-Day Free Trial
-              </Button>
+              <Link href="/settings/billing" className={cn(buttonVariants(), "w-full")}>Start {FREE_TRIAL_DAYS}-Day Free Trial</Link>
             </>
           )}
         </CardContent>
@@ -434,6 +452,15 @@ export default function SettingsClient() {
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
+          {adminRole && (
+            <Link
+              href="/admin/hpe-fleet"
+              className={cn(buttonVariants({ variant: "outline" }), "w-full")}
+            >
+              <Shield className="h-4 w-4" />
+              Hybrid Plan fleet &amp; rollout
+            </Link>
+          )}
           <Button variant="destructive" className="w-full" onClick={handleSignOut}>
             <LogOut className="h-4 w-4" />
             Sign out

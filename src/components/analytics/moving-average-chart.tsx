@@ -1,5 +1,7 @@
 "use client";
 
+import { ChartFigure } from "@/components/analytics/chart-figure";
+import { describeSeries } from "@/lib/a11y/describe-series";
 import {
   XAxis,
   YAxis,
@@ -41,6 +43,17 @@ export function MovingAverageChart({ data }: MovingAverageChartProps) {
           {data.length < 7 ? (
             <ChartEmptyState message="Need at least a week of data for moving averages" />
           ) : (
+              <ChartFigure
+                label="Split Index with its moving average"
+                summary={describeSeries("Split Index", data.map((d) => ({ at: d.date, value: d.split })))}
+                columns={[
+                { header: "Date", cell: (d: MovingAveragePoint) => d.date },
+                { header: "Split Index", cell: (d: MovingAveragePoint) => formatIndex(d.split) },
+                { header: "7-day average", cell: (d: MovingAveragePoint) => d.splitMa7 === null ? "not enough history" : formatIndex(d.splitMa7) },
+                { header: "28-day average", cell: (d: MovingAveragePoint) => d.splitMa28 === null ? "not enough history" : formatIndex(d.splitMa28) },
+                ]}
+                rows={data}
+              >
             <ResponsiveContainer width="100%" height={240}>
               <LineChart data={data} margin={{ top: 8, right: 4, left: -8, bottom: 0 }}>
                 <CartesianGrid vertical={false} strokeDasharray="3 6" strokeOpacity={0.15} />
@@ -104,6 +117,7 @@ export function MovingAverageChart({ data }: MovingAverageChartProps) {
                 />
               </LineChart>
             </ResponsiveContainer>
+              </ChartFigure>
           )}
         </CardContent>
       </Card>

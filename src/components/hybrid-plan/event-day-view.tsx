@@ -88,8 +88,15 @@ export function EventDayView({
         <Card>
           <h2 className="text-lg font-semibold tracking-tight">Attempt selection</h2>
           <p className="mt-1 text-sm text-muted">{attempts[0].note}</p>
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full min-w-[22rem] text-sm">
+          {/*
+            No `min-w`, no scroller. 22rem is 352px inside a Card whose content
+            box on a 390px phone is 318 — a guaranteed sideways swipe on the
+            screen an athlete reads while warming up for an opener. Four short
+            numeric columns fit 318px comfortably; the floor was never doing
+            anything but forcing the overflow.
+          */}
+          <div className="mt-4">
+            <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-white/[0.06] text-left text-xs uppercase tracking-wider text-muted">
                   <th className="pb-2 font-medium">Lift</th>
@@ -175,14 +182,16 @@ function RacePacingCard({ pacing, distanceKm }: { pacing: RacePacing; distanceKm
 
       <p className="mt-3 text-sm leading-relaxed text-muted">{meta.summary}</p>
 
-      <div className="mt-4 overflow-x-auto">
-        <table className="w-full min-w-[20rem] text-sm">
+      {/* 20rem is 320px inside 318px: it scrolled by two pixels — a scrollbar
+          and a jiggle for nothing. "On the clock" was what forced the width. */}
+      <div className="mt-4">
+        <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-white/[0.06] text-left text-xs uppercase tracking-wider text-muted">
               <th className="pb-2 font-medium">Split</th>
               <th className="pb-2 text-right font-medium">Time</th>
               <th className="pb-2 text-right font-medium">Pace</th>
-              <th className="pb-2 text-right font-medium">On the clock</th>
+              <th className="pb-2 text-right font-medium">Clock</th>
             </tr>
           </thead>
           <tbody>

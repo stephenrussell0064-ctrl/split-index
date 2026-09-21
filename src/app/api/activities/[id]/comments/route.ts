@@ -1,9 +1,12 @@
+import { parseQuery } from "@/lib/validation/boundary";
+import { commentIdQuerySchema } from "@/lib/validation/schemas/query";
+import { parseBody } from "@/lib/validation/boundary";
+import { commentSchema } from "@/lib/validation/schemas/social";
 import { NextResponse } from "next/server";
 import { databaseError } from "@/lib/api/errors";
 import { createClient } from "@/lib/supabase/server";
 import { assess } from "@/lib/moderation/filter";
 
-const MAX_COMMENT_LENGTH = 1000;
 
 /**
  * Comments on a friend's activity (Slice 1) — "similar to stravas concept."
@@ -67,17 +70,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await request.json().catch(() => ({}));
-  const text = String(body.body ?? "").trim();
-  if (!text) {
-    return NextResponse.json({ error: "Comment can't be empty" }, { status: 400 });
-  }
-  if (text.length > MAX_COMMENT_LENGTH) {
-    return NextResponse.json(
-      { error: `Comment must be ${MAX_COMMENT_LENGTH} characters or fewer` },
-      { status: 400 }
-    );
-  }
+  /*
+    N1. `String(body.body ?? "")` accepted anything: an object arrived as
+    "[object Object]", an array as its comma-joined contents, and both passed
+    the non-empty check and were stored as somebody's comment. The schema asks
+    whether it IS a string, and refuses unknown keys.
+  */
+  const parsed = await parseBody(request, commentSchema);
+  if (parsed.response) return parsed.response;
+  const text = parsed.data.body;
 
   /*
    * Guideline 1.2's first requirement: filter objectionable content. `reject`
@@ -120,11 +121,11 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { searchParams } = new URL(request.url);
-  const commentId = searchParams.get("commentId");
-  if (!commentId) {
-    return NextResponse.json({ error: "commentId is required" }, { status: 400 });
-  }
+  // N1. A malformed uuid in a WHERE clause is a Postgres cast error rather
+  // than a miss, so this rejects instead of falling back.
+  const q = parseQuery(request, commentIdQuerySchema);
+  if (q.response) return q.response;
+  const commentId = q.data.commentId;
 
   const { error } = await supabase
     .from("activity_comments")

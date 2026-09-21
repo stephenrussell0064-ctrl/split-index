@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { Sparkles, Dumbbell, Activity, Check, X, Loader2, Camera } from "lucide-react";
@@ -16,7 +16,8 @@ import {
 import { PRESET_AVATARS } from "@/lib/constants/avatars";
 import { createClient } from "@/lib/supabase/client";
 import { supabaseErrorMessage } from "@/lib/supabase/errors";
-import { validateUsernameFormat } from "@/lib/utils/username";
+import { validateDisplayText, validateUsernameFormat } from "@/lib/utils/username";
+import { useKeyboardSafeFocus } from "@/components/activities/use-keyboard";
 import { ageFromDateOfBirth, maxDobForMinAge, minDobForMaxAge } from "@/lib/utils/age";
 import { cn } from "@/lib/utils/cn";
 import { ScoreRevealSequence } from "@/components/onboarding/score-reveal";
@@ -58,6 +59,18 @@ function inRange(value: string, { min, max }: { min: number; max: number }) {
 
 export function OnboardingFlow() {
   const router = useRouter();
+  /*
+    On iOS the software keyboard does NOT resize the layout viewport, so a
+    field in the lower half of a step is typed into blind — it sits behind the
+    keyboard and nothing scrolls to reveal it. This is the very first form a
+    new athlete meets, and it is several fields long on every step.
+
+    Declared up here with the other hooks rather than beside the JSX, because
+    this component returns early for the score-reveal step and a hook after
+    that return would run conditionally.
+  */
+  const formRef = useRef<HTMLDivElement>(null);
+  useKeyboardSafeFocus(formRef);
   const reducedMotion = useReducedMotion();
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -293,12 +306,31 @@ export function OnboardingFlow() {
       avatarUrl = supabase.storage.from("avatars").getPublicUrl(path).data.publicUrl;
     }
 
+    /*
+      NEVER THE EMAIL ADDRESS.
+
+      This fell back to `user.email` when the identity provider gave no name —
+      which is every ordinary email/password signup. `display_name` is not
+      private: `PROFILE_SELECT` in social/leaderboard.ts returns it, the
+      leaderboard renders `displayName ?? username` as the athlete's name, and
+      both share-card routes print it onto an image made to be posted. So
+      signing up with an email address and tapping through onboarding put that
+      address on a public leaderboard and into a shareable PNG, with nothing
+      anywhere saying so.
+
+      Null instead. Every render site already falls back to the username the
+      athlete chose two steps earlier, which is the name they picked to be
+      known by. An OAuth-provided name is still used, trimmed and length-capped
+      the same way the profile form caps one typed by hand — a provider is not
+      a validated input either.
+    */
+    const providerName = (user.user_metadata?.full_name as string | undefined)?.trim();
     const profilePayload = {
       user_id: user.id,
       display_name:
-        (user.user_metadata?.full_name as string | undefined) ??
-        user.email ??
-        null,
+        providerName && validateDisplayText(providerName, { label: "Display name" }).valid
+          ? providerName
+          : null,
       username: username.trim(),
       avatar_url: avatarUrl,
       date_of_birth: form.date_of_birth,
@@ -383,7 +415,7 @@ export function OnboardingFlow() {
   }
 
   return (
-    <div className="mx-auto max-w-lg">
+    <div ref={formRef} className="mx-auto max-w-lg">
       <div className="mb-8">
         <div className="mb-4 flex gap-2">
           {STEPS.map((s, i) => (

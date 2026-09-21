@@ -3,49 +3,40 @@
  *
  * The stage order is not arbitrary and is not configurable:
  *
- *   1. HEALTH SCREEN. Runs first and shapes everything after it. It sets
- *      `intensityCeiling` and `rampMultiplier`, and produces the referrals.
- *   2. DATA SUFFICIENCY. Labelled, not refused — see `assessTailoring`.
- *   3. Feasibility (a first pass, on the priors), develop/maintain, the
- *      macrocycle, the session set week by week, the schedule.
- *   4. ACWR backstop across the finished block, with any capped week REBUILT
- *      so the cap reaches the sessions rather than a number beside them.
- *   5. Feasibility again, on the dose the plan actually delivers — the
- *      projection the athlete reads is for the plan they were given.
+ *   1. HEALTH SCREEN. Runs first and shapes everything after it, but no
+ *      longer refuses. It sets `intensityCeiling` and `rampMultiplier`, and
+ *      produces the referrals. See the note on `safetyScreen` for why the
+ *      brief's "can block, not bypassable" was reversed: a refusal does not
+ *      stop the training, it only strips the caps and the referral off it.
+ *   2. DATA SUFFICIENCY. Tier 0 returns no plan either — brief §0e — and
+ *      offers a two-week baseline block plus a time trial and a 3-5RM test.
+ *   3. Feasibility, develop/maintain, macrocycle, session set, schedule.
+ *   4. ACWR enforcement across the finished block (F6).
  *
  * Non-negotiable #2: generation is deterministic and stamped with the
- * constants version.
+ * constants version. Same inputs produce the same plan, byte for byte, and
+ * `constantsVersion` on the result says which numbers produced it.
  *
  * Non-negotiable #5: no calorie, macro or rate-of-loss output under any
- * configuration.
- *
- * Constants 3.0.0 adds BLOCK CONTINUITY. Every visit to the plan screen used
- * to regenerate the whole block from week one and anchor it to that Monday,
- * so the deload "at week 4", the ramp, the quality progression and the phase
- * ladder were all re-projected forward from today and never arrived — the
- * athlete was permanently in week one. A plan can now be continued: the weeks
- * already lived are carried through, the ramp from the current week restarts
- * at the athlete's real logged volume, and the phase structure keeps its
- * original calendar.
+ * configuration. The only nutrition string this engine emits is the taper's
+ * carbohydrate guidance, which is framed as normal eating, gated on the
+ * safety screen, and is not a calorie target.
  */
 
-import { HPE_CONSTANTS_VERSION, LIFE_LOAD_SLEEP_HOURS_THRESHOLD, LIFE_LOAD_STRESS_THRESHOLD, type EmphasisKey } from "./constants";
-import { assessTailoring, type PlanTailoring } from "./tailoring";
 import {
-  bodyweightFrontier,
-  classifyDomains,
-  feasibilityScreen,
-  type DeliveredDose,
-  type DomainMode,
-  type FeasibilityResult,
-} from "./feasibility";
+  HPE_CONSTANTS_VERSION,
+  MIN_ENDURANCE_SESSION_MIN,
+  MMD_STRENGTH_SESSIONS_PER_WEEK,
+  type EmphasisKey,
+} from "./constants";
+import { assessTailoring, type PlanTailoring } from "./tailoring";
+import { bodyweightFrontier, classifyDomains, feasibilityScreen, type DomainMode, type FeasibilityResult } from "./feasibility";
 import { eventDayPlan, jointTaper, resolveEventOrder, type EventDayStep, type EventOrderResult, type TaperDay } from "./event";
 import type { Constraints, Goal, AthleteState } from "./intake";
-import { buildMacrocycle, effectiveRamp, enforceAcwr, type AcwrEnforcement, type MacrocycleWeek } from "./macrocycle";
-import { applyLowCapacityDay, autoregulate, type SessionFeedback } from "./progression";
-import type { ObservedResponse } from "./response";
+import { buildMacrocycle, enforceAcwr, type AcwrEnforcement, type MacrocycleWeek } from "./macrocycle";
+import { autoregulate, type SessionFeedback } from "./progression";
 import { scheduleWeek, type Placement } from "./scheduler";
-import { buildSessionSet, easySwapFor, type PlannedSession, type SessionSet } from "./session-set";
+import { buildSessionSet, fitEnduranceToMinutes, type PlannedSession } from "./session-set";
 import {
   emptyModalityFitness,
   enduranceBenchmark,
@@ -71,16 +62,6 @@ export interface PlanWeek extends MacrocycleWeek {
   stressCapped: number;
   acwr: number;
   droppedSessions: PlannedSession[];
-  /** True when this week was carried over from the stored plan rather than generated in this run. */
-  carriedOver?: boolean;
-  /** What the week actually prescribes — the dose the feasibility model reads. */
-  delivered?: {
-    enduranceMin: number;
-    qualityCount: number;
-    longRunMinutes: number | null;
-    strengthSetsByLift: Record<string, number>;
-    heavyStrengthSessions: number;
-  };
 }
 
 export interface GeneratedPlan {
@@ -100,28 +81,32 @@ export interface GeneratedPlan {
   eventDay: EventDayStep[] | null;
   /** Every finding the plan's sessions cite, so the UI can render the trace. */
   findings: Finding[];
+  /** How individual this plan actually is, and what would make it more so. Never null on a generated plan. */
   tailoring: PlanTailoring | null;
+  /**
+   * Which cardio modalities this plan is written in, and the headline endurance
+   * number that goes with them.
+   *
+   * `profile.predicted5kS` is running's diagnostic and stays running's. An
+   * athlete who has told the intake they row and do not run must not be shown a
+   * predicted 5k — it is a number about a sport they do not do, and the
+   * diagnostic report already has a rule against presenting a number that is
+   * really about something else. `benchmark` is the same idea in their own
+   * sport: a projected 2k row, 400m swim or 20k ride, from their own logs,
+   * using their own sport's decay exponent.
+   *
+   * Null only when the plan was not generated.
+   */
   cardio: {
     modalities: CardioModality[];
     primary: CardioModality;
+    /** The modality quality sessions are prescribed in. */
     qualityModality: CardioModality;
     crossTrain: boolean;
+    /** True when running is not among the chosen modalities — the signal to suppress the 5k. */
     suppressRunningDiagnostics: boolean;
     benchmark: EnduranceBenchmark;
   } | null;
-  /** The first week generated in this run — 1 for a fresh block, the current week for a continuation. */
-  startWeek: number;
-  /** The average weekly dose across the development phases, as the feasibility model read it. */
-  dose: DeliveredDose | null;
-}
-
-export interface ContinueFrom {
-  /** The plan week the athlete is currently in (1-based). Weeks before it are carried from `priorWeeks`. */
-  week: number;
-  /** The stored weeks already lived, keyed by week number. Missing weeks are regenerated. */
-  priorWeeks: PlanWeek[];
-  /** The athlete's actual current weekly running minutes, which the ramp restarts from. */
-  currentVolumeMin: number;
 }
 
 export interface GeneratePlanInput {
@@ -130,141 +115,197 @@ export interface GeneratePlanInput {
   constraints: Constraints;
   /** From WP0. The caller runs `diagnose` and passes the result — the engine never re-derives it. */
   profile: AthleteProfile;
-  /**
-   * F16: logged feedback, keyed by the plan week it was logged FOR. Week W
-   * reads the feedback for week W−1 — a real coach adjusts Monday on what
-   * happened at the weekend.
-   */
+  /** F16: last week's logged feedback, per week index. */
   feedbackByWeek?: Record<number, SessionFeedback[]>;
   /** F11: the athlete has explicitly overridden the safety-constrained event order. */
   overrideEventOrder?: boolean;
+  /**
+   * Per-modality fitness for the cardio modalities the athlete chose, built by
+   * the caller from their activity rows (`ingestModalityFitness`).
+   *
+   * The engine never re-derives it, for the same reason it never re-derives
+   * the diagnostic: there is one reader of the activity table and it is not
+   * this module.
+   */
   modalityFitness?: Partial<Record<CardioModality, ModalityFitness>>;
-  /** Continue an existing block from its current week rather than starting a new one. */
-  continueFrom?: ContinueFrom;
-  /**
-   * This athlete's own measured rate of improvement, from their stored
-   * diagnostic history. Blended into the population prior — see `response.ts`.
-   */
-  observedResponse?: ObservedResponse | null;
-  /**
-   * F17: days the athlete has flagged as low capacity, as plan week and
-   * weekday. The hardest quality session on that day becomes an easy one.
-   */
-  lowCapacityDays?: { week: number; day: string }[];
-}
-
-/** Average weekly dose across the development phases — the numbers the feasibility model reads. */
-export function deliveredDose(weeks: PlanWeek[], goal: Goal): DeliveredDose | null {
-  const development = weeks.filter((w) => w.phase !== "taper" && w.delivered);
-  if (development.length === 0) return null;
-  const targetedLifts = (["squat", "bench", "deadlift"] as const).filter((lift) => {
-    const t = lift === "squat" ? goal.targetSquatKg : lift === "bench" ? goal.targetBenchKg : goal.targetDeadliftKg;
-    return t != null && t > 0;
-  });
-  const lifts: readonly string[] = targetedLifts.length > 0 ? targetedLifts : ["squat", "bench", "deadlift"];
-  let enduranceMin = 0;
-  let heavy = 0;
-  let sessions = 0;
-  let sets = 0;
-  for (const w of development) {
-    enduranceMin += w.delivered!.enduranceMin;
-    heavy += w.delivered!.heavyStrengthSessions;
-    sessions += w.placements.length;
-    sets += lifts.reduce((s: number, lift) => s + (w.delivered!.strengthSetsByLift[lift] ?? 0), 0) / lifts.length;
-  }
-  const n = development.length;
-  return {
-    enduranceMinPerWeek: enduranceMin / n,
-    heavyStrengthSessionsPerWeek: heavy / n,
-    setsPerLiftPerWeek: sets / n,
-    sessionsPerWeek: sessions / n,
-  };
 }
 
 export function generatePlan(input: GeneratePlanInput): GeneratedPlan {
-  const {
-    state,
-    goal,
-    constraints,
-    profile,
-    feedbackByWeek = {},
-    modalityFitness = {},
-    continueFrom,
-    observedResponse = null,
-    lowCapacityDays = [],
-  } = input;
+  const { state, goal, constraints, profile, feedbackByWeek = {}, modalityFitness = {} } = input;
 
   // ---- 1. HEALTH SCREEN, FIRST AND UNCONDITIONAL -------------------------
+  // Still first, still not skippable — it just sets the dial now instead of
+  // closing the door.
   const safety = safetyScreen(state, goal);
   // ---- 2. DATA SUFFICIENCY: LABEL IT, DO NOT REFUSE ----------------------
+  // The brief said "no plan" below tier 1. That has been overridden
+  // deliberately — see the module note on `assessTailoring`. Thin data now
+  // produces a conservative plan that says how provisional it is, because a
+  // refusal after eight sections of questions teaches the athlete nothing and
+  // loses them. Uncertainty is paid for in caution: the ramp multiplier below
+  // halves the progression when the engine is guessing at the starting point.
   const tailoring = assessTailoring(profile);
 
-  // ---- 3. FEASIBILITY (PRIORS), MODE, MACROCYCLE --------------------------
-  // The first pass has no dose yet. Its expected outcomes are what the
-  // quality-session paces progress toward and what the working max walks up
-  // with; the athlete-facing result is the second pass below.
-  const priorFeasibility = feasibilityScreen(state, goal, {
-    maxSessionsPerWeek: constraints.maxSessionsPerWeek,
-    observed: observedResponse,
-  });
+  // ---- 3. FEASIBILITY, MODE, MACROCYCLE -----------------------------------
+  const feasibility = feasibilityScreen(state, goal, safety.rampMultiplier * tailoring.rampMultiplier);
   const mode = classifyDomains(state, goal, constraints.trainingSplit != null);
-  const rampMultiplier = safety.rampMultiplier * tailoring.rampMultiplier;
-  const ramp = effectiveRamp(state, rampMultiplier);
-
-  const startWeek = continueFrom && continueFrom.week > 1 ? continueFrom.week : 1;
-  const priorByWeek = new Map((continueFrom?.priorWeeks ?? []).map((w) => [w.week, w]));
-  const macro = buildMacrocycle(state, goal, rampMultiplier, {
-    fromWeek: startWeek,
-    volumeAtFromWeek: continueFrom?.currentVolumeMin,
+  // Both caution factors compound: a novice runner with no logged history gets
+  // the halved novice ramp AND the halved provisional ramp, which is the
+  // correct direction to stack them.
+  const macro = buildMacrocycle(state, goal, safety.rampMultiplier * tailoring.rampMultiplier, {
+    // Declared travel weeks become reduced weeks rather than holes. Collected
+    // by the intake since it was written and read by nothing until now.
     travelWeeks: constraints.travelWeeks ?? [],
   });
 
-  const stress = state.lifeStressNow ?? 3;
-  const sleep = state.sleepHoursTypical ?? 7;
-  const lifeLoad = stress >= LIFE_LOAD_STRESS_THRESHOLD || sleep < LIFE_LOAD_SLEEP_HOURS_THRESHOLD;
-  const lastWeek = macro[macro.length - 1]?.week ?? goal.weeksOut;
+  const weeks: PlanWeek[] = [];
+  const rawStress: number[] = [];
+  /** The long runs already prescribed, most recent last — the spike rule's anchor. */
+  const longRunHistory: number[] = [];
 
-  // The projection the sessions are paced to. Starts at the prior; replaced
-  // by the dose-aware projection on the second pass below, so the athlete
-  // reads the same expected 5k the intervals are built toward.
-  let expected5kS = priorFeasibility.endurance.expected;
-  let expectedStrengthGain = priorFeasibility.strength.gainFraction;
-
-  const buildWeek = (weekRecord: MacrocycleWeek, recentLongRunsMin: number[], autoregMultiplier: number): SessionSet =>
-    buildSessionSet({
+  for (const weekRecord of macro) {
+    const feedback = feedbackByWeek[weekRecord.week - 1] ?? [];
+    const autoreg = autoregulate(feedback);
+    const { sessions, allocation, notes, longRunMinutes } = buildSessionSet({
       profile,
       week: weekRecord,
       mode,
       goal,
       constraints,
       suppressHeartRate: safety.suppressHeartRatePrescription,
-      autoregMultiplier,
+      autoregMultiplier: autoreg.volumeMultiplier,
+      // What the health screen decided instead of refusing.
       intensityCeiling: safety.intensityCeiling,
+      // The athlete's chosen cardio modalities are prescribed in their own
+      // sports' units from here.
       modalityFitness,
-      expected5kS,
-      expectedStrengthGain,
-      recentLongRunsMin,
+      // The last four weeks of long runs, so no week may step more than 10%
+      // past the longest of the last month (Frandsen 2025).
+      recentLongRunsMin: longRunHistory.slice(-4),
       longestRecentRunMin: state.longestRecentRunMin ?? null,
-      enduranceTrainingYears: state.enduranceTrainingYears,
-      strengthTrainingYears: state.strengthTrainingYears,
-      lifeLoad,
-      isFinalTaperWeek: weekRecord.week === lastWeek,
     });
+    if (longRunMinutes != null) longRunHistory.push(longRunMinutes);
+    /**
+     * The week's stated budget may not exceed what the week actually contains.
+     *
+     * `enduranceMin` comes off the macrocycle's volume ramp, which reads the
+     * athlete's current weekly running and knows nothing about the rest of
+     * their intake. Every endurance session is then capped at their stated
+     * `maxSessionMin`, and the number of sessions at their `maxSessionsPerWeek`.
+     * Nothing checked that the ramp's answer could survive those two limits, so
+     * the surplus was quietly dropped and the athlete was quoted the ramp's
+     * figure regardless.
+     *
+     * Measured across 32,400 generated weeks: 54% prescribed less than 90% of
+     * the budget they advertised and the median week spent 84% of it. The worst
+     * was 55 minutes of running under a heading of 468 — an athlete who had
+     * said 30-minute sessions, four times a week. 4 x 30 is 120, so 468 was
+     * never deliverable; it was the ramp extrapolating from their current
+     * volume and no part of the engine ever reconciling that against what they
+     * had said they could actually do.
+     *
+     * Giving the budget more slots to spend itself in (see `neededForBudget`
+     * in session-set.ts) recovers the cases where there was room. This handles
+     * the rest, where there is no room and the two answers genuinely conflict:
+     * the plan states what it prescribes. A budget nobody can train is not a
+     * target, it is a number that makes the plan look wrong.
+     *
+     * The gap is reported rather than silently absorbed, because it is
+     * actionable in a way most engine internals are not — it names the intake
+     * answer that is holding the athlete back, and raising it is entirely
+     * within their gift.
+     */
+    const prescribedEnduranceMin = sessions
+      .filter((s) => s.domain === "endurance")
+      .reduce((sum, s) => sum + s.minutes, 0);
+    if (weekRecord.enduranceMin > 0 && prescribedEnduranceMin < weekRecord.enduranceMin) {
+      const shortfall = weekRecord.enduranceMin - prescribedEnduranceMin;
+      // Only worth a sentence when the difference is one the athlete would
+      // notice. Rounding and floors account for a few minutes in most weeks.
+      if (shortfall / weekRecord.enduranceMin > 0.1 && shortfall >= MIN_ENDURANCE_SESSION_MIN) {
+        notes.push(
+          `Your ramp wants about ${weekRecord.enduranceMin} minutes of endurance this week, and this plan plots ` +
+            `${prescribedEnduranceMin}. ${constraints.maxSessionsPerWeek} sessions a week of at most ` +
+            `${constraints.maxSessionMin} minutes is the limit you gave, and it is what is binding here — not your ` +
+            `fitness. Raising either in your intake is what unlocks the rest.`
+        );
+      }
+      weekRecord.enduranceMin = prescribedEnduranceMin;
+    }
 
-  /** The long runs of the four weeks before `index`, oldest first, for the spike rule. */
-  const recentLongRuns = (index: number): number[] =>
-    weeks
-      .slice(Math.max(0, index - 4), index)
-      .map((w) => w.delivered?.longRunMinutes ?? 0)
-      .filter((m) => m > 0);
+    /**
+     * The athlete's stated weekly hours bind the WHOLE week.
+     *
+     * `maxHoursPerWeek` is asked for in the intake, stored on the record,
+     * carried into `Constraints` — and read by nothing. It has never been
+     * enforced. The comment on STRENGTH_WARMUP_MIN describes giving strength
+     * sessions real durations so that "the athlete's own maxHoursPerWeek and
+     * maxSessionMin limits could see them", but only maxSessionMin was ever
+     * wired up; the hours answer went straight through the ramp, the session
+     * set and the scheduler without one line consulting it.
+     *
+     * Measured across 8,640 generated weeks: 22% exceeded the hours the
+     * athlete said they had. The worst handed someone who answered "3 hours a
+     * week" a 542-minute week — nine hours, three times what they said they
+     * could give it, every week for a block.
+     *
+     * This is not a preference to be balanced against training theory. Time is
+     * the one constraint the engine cannot argue with: an athlete with three
+     * hours has three hours, and a plan that ignores that is not a harder plan,
+     * it is one that does not get done.
+     *
+     * ENDURANCE FLEXES FIRST because it is the volume dial — its minutes are a
+     * ramped budget, while strength is a session count carrying a minimum
+     * effective dose the evidence base is clearest about. Strength is only
+     * touched when it alone will not fit, and never below that minimum: a week
+     * that has to choose between lifting and honesty about the clock should
+     * still be a week that contains lifting.
+     */
+    const weeklyCapMin = Math.max(0, Math.round(constraints.maxHoursPerWeek * 60));
+    const minutesIn = (domain: "endurance" | "strength") =>
+      sessions.filter((s) => s.domain === domain).reduce((sum, s) => sum + s.minutes, 0);
 
-  const assemble = (
-    weekRecord: MacrocycleWeek,
-    set: SessionSet,
-    extraNotes: string[]
-  ): PlanWeek => {
-    const schedule = scheduleWeek(set.sessions, constraints);
-    const weekStress = schedule.placements.reduce((s, p) => s + p.session.stress, 0);
+    if (weeklyCapMin > 0 && minutesIn("endurance") + minutesIn("strength") > weeklyCapMin) {
+      const strengthMin = minutesIn("strength");
+      const enduranceAllowance = Math.max(0, weeklyCapMin - strengthMin);
+
+      if (minutesIn("endurance") > enduranceAllowance) {
+        const fitted = fitEnduranceToMinutes(sessions, enduranceAllowance);
+        sessions.length = 0;
+        sessions.push(...fitted.sessions);
+        weekRecord.enduranceMin = minutesIn("endurance");
+      }
+
+      // Strength only when the lifting alone overruns the whole week, and only
+      // down to the minimum dose. Later sessions go first: the rotation's
+      // accessory work is built after the lifts the block is actually about.
+      while (
+        minutesIn("strength") > weeklyCapMin &&
+        sessions.filter((s) => s.domain === "strength").length > MMD_STRENGTH_SESSIONS_PER_WEEK
+      ) {
+        const idx = sessions.map((s) => s.domain).lastIndexOf("strength");
+        if (idx < 0) break;
+        sessions.splice(idx, 1);
+      }
+
+      const finalTotal = minutesIn("endurance") + minutesIn("strength");
+      notes.push(
+        finalTotal > weeklyCapMin
+          ? `You told us you have ${constraints.maxHoursPerWeek} hours a week. The smallest week that still ` +
+            `contains a plan is about ${Math.round(finalTotal / 5) * 5} minutes, so this one is over what you said ` +
+            `by ${finalTotal - weeklyCapMin}. If that is not findable, the honest fix is a longer block rather than ` +
+            `a harder week — tell us and we will spread the same work over more weeks.`
+          : `Trimmed to the ${constraints.maxHoursPerWeek} hours a week you said you had — ` +
+            `${Math.round(finalTotal)} minutes across ${sessions.length} sessions.`
+      );
+    }
+
+    const schedule = scheduleWeek(sessions, constraints);
+    const stress = schedule.placements.reduce((s, p) => s + p.session.stress, 0);
+    rawStress.push(stress);
+    // The athlete said their week varies, so the week is delivered as an order
+    // as well as a shape. The intake has promised this since it was written and
+    // the scheduler never read the answer — see `ScheduleResult.prioritisedOrder`.
     const orderNote =
       schedule.prioritisedOrder && schedule.prioritisedOrder.length > 0
         ? [
@@ -276,176 +317,125 @@ export function generatePlan(input: GeneratePlanInput): GeneratedPlan {
               `apart and doing the ones near the top of this list.`,
           ]
         : [];
-    return {
+    weeks.push({
       ...weekRecord,
-      // What the athlete is told to do, not what the ramp budgeted. The two
-      // diverged by 30-55% for a race athlete and the screen showed the budget.
-      enduranceMin: set.deliveredEnduranceMin,
-      sessions: set.sessions,
+      sessions,
       placements: schedule.placements,
       prioritisedOrder: schedule.prioritisedOrder,
-      allocation: set.allocation,
-      notes: [...set.notes, ...orderNote, ...extraNotes],
+      allocation,
+      notes: [...notes, ...orderNote, ...autoreg.reasons],
       penalty: schedule.penalty,
       hardPenalty: schedule.hardPenalty,
-      stress: weekStress,
-      stressCapped: weekStress,
+      stress,
+      stressCapped: stress,
       acwr: 0,
       droppedSessions: schedule.droppedSessions,
-      delivered: {
-        enduranceMin: set.deliveredEnduranceMin,
-        qualityCount: set.qualityCount,
-        longRunMinutes: set.longRunMinutes,
-        strengthSetsByLift: set.strengthSetsByLift,
-        heavyStrengthSessions: set.heavyStrengthSessions,
-      },
-    };
-  };
-
-  const weeks: PlanWeek[] = [];
-  const buildAllWeeks = () => {
-    weeks.length = 0;
-    for (const weekRecord of macro) {
-      const prior = priorByWeek.get(weekRecord.week);
-      if (weekRecord.week < startWeek && prior) {
-        weeks.push({ ...prior, carriedOver: true });
-        continue;
-      }
-      const feedback = feedbackByWeek[weekRecord.week - 1] ?? [];
-      const autoreg = autoregulate(feedback);
-      const set = buildWeek(weekRecord, recentLongRuns(weeks.length), autoreg.volumeMultiplier);
-      const rampNotes =
-        weekRecord.week === startWeek && ramp.reasons.length > 0
-          ? [`Weekly volume ramps at ${Math.round(ramp.ramp * 100)}%: ${ramp.reasons.join("; ")}.`]
-          : [];
-      weeks.push(assemble(weekRecord, set, [...rampNotes, ...autoreg.reasons]));
-    }
-  };
-
-  // ---- 4. ACWR BACKSTOP -----------------------------------------------------
-  // Seeded from the athlete's real recent load in the same units, with the
-  // plan's own first generated week as a floor so an athlete with no history
-  // is measured against the week they are about to do rather than against
-  // nothing.
-  let acwr: AcwrEnforcement;
-  const enforceAndRebuild = () => {
-    const firstGenerated = weeks.find((w) => !w.carriedOver);
-    const chronicSeed = Math.max(state.chronicLoad, firstGenerated?.stress ?? 0);
-    acwr = enforceAcwr(macro, weeks.map((w) => w.stress), chronicSeed);
-    // Any capped week is REBUILT at the capped volume so the cap reaches the
-    // sessions. The old path scaled a number beside the sessions and left
-    // the prescriptions untouched — a control reported as present and not
-    // holding.
-    let rebuilt = false;
-    weeks.forEach((w, i) => {
-      if (w.carriedOver) return;
-      const capped = acwr.cappedStress[i];
-      if (capped < w.stress - 0.5 && w.stress > 0) {
-        const scale = capped / w.stress;
-        const record: MacrocycleWeek = { ...macro[i], enduranceMin: Math.round(macro[i].enduranceMin * scale) };
-        const feedback = feedbackByWeek[record.week - 1] ?? [];
-        const autoreg = autoregulate(feedback);
-        const set = buildWeek(record, recentLongRuns(i), autoreg.volumeMultiplier);
-        weeks[i] = assemble(record, set, [
-          ...autoreg.reasons,
-          "Volume trimmed this week to keep the jump in total training load inside the backstop.",
-        ]);
-        rebuilt = true;
-      }
     });
-    if (rebuilt) acwr = enforceAcwr(macro, weeks.map((w) => w.stress), chronicSeed);
-    weeks.forEach((w, i) => {
-      w.stressCapped = Math.min(w.stress, acwr.cappedStress[i]);
-      w.acwr = acwr.ratios[i];
-    });
-  };
-
-  buildAllWeeks();
-  enforceAndRebuild();
-
-  // ---- 4b. SECOND PASS ON THE DELIVERED DOSE --------------------------------
-  // The sessions were paced to the prior projection. The projection the
-  // athlete reads is scaled to the dose the plan delivers, and the two must
-  // agree — an interval paced to a 21:28 beside a card promising 21:39 is the
-  // engine contradicting itself. One rebuild closes the gap; the dose barely
-  // moves between passes because the paces do not change the minutes.
-  const firstPassDose = deliveredDose(weeks, goal);
-  if (firstPassDose) {
-    const doseAware = feasibilityScreen(state, goal, {
-      dose: firstPassDose,
-      maxSessionsPerWeek: constraints.maxSessionsPerWeek,
-      observed: observedResponse,
-    });
-    const moved =
-      Math.abs(doseAware.endurance.expected - expected5kS) / Math.max(1, expected5kS) > 0.002 ||
-      Math.abs(doseAware.strength.gainFraction - expectedStrengthGain) > 0.002;
-    if (moved) {
-      expected5kS = doseAware.endurance.expected;
-      expectedStrengthGain = doseAware.strength.gainFraction;
-      buildAllWeeks();
-      enforceAndRebuild();
-    }
   }
-  acwr = acwr!;
+
+  // ---- 4. ACWR ENFORCEMENT ------------------------------------------------
+  // An athlete with no comparable training history has no chronic load to
+  // measure against, and a near-zero denominator makes week 1 read as an
+  // infinite spike — which is what the fleet dashboard caught. Seeding from
+  // the plan's own first week instead means the ratio starts at 1.0 and the
+  // ramp itself becomes the protection, which is the honest reading: there is
+  // nothing to compare the first week to except the first week.
+  const chronicSeed = Math.max(state.chronicLoad, rawStress[0] ?? 0);
+  const acwr = enforceAcwr(macro, rawStress, chronicSeed);
+  weeks.forEach((w, i) => {
+    w.stressCapped = acwr.cappedStress[i];
+    w.acwr = acwr.ratios[i];
+    if (w.stressCapped < w.stress - 0.5) {
+      /**
+       * The week's stress was capped; the volume the athlete actually does
+       * must follow, or the cap is cosmetic.
+       *
+       * It was cosmetic. This scaled `enduranceMin` — the number quoted in the
+       * week's notes — and stopped there. The sessions had already been built
+       * and scheduled by the time this runs, and nothing came back to touch
+       * them, so the athlete was told their volume had been trimmed for their
+       * own safety and then handed the untrimmed sessions to do. The label
+       * moved; the training did not.
+       *
+       * Trimming really does mean endurance and not strength. Endurance stress
+       * is `BASE_STRESS_PER_MIN[kind] * minutes`, so minutes are the lever;
+       * strength stress is a flat per-kind constant that does not move with
+       * duration at all, so shortening a lifting session would cost the
+       * athlete training and reduce the week's load by nothing.
+       *
+       * `fitEnduranceToMinutes` is the same reconciliation the session set
+       * uses against its own budget — durations give way before the count
+       * does, floors hold, and the long run is the last thing to go.
+       *
+       * MEASURED: across 900 generated plans containing 92 ACWR-capped weeks,
+       * the reconciliation below currently changes NOTHING. Every capped week
+       * was already prescribing far less than its trimmed budget — 180 minutes
+       * against 543 in the worst example — because of the separate, unfixed
+       * undershoot where `maxSessionMin` caps every session while the slot
+       * count comes from the phase tables, so a high budget has nowhere to go.
+       *
+       * It is kept anyway, as the guard the comment above always claimed was
+       * here. The day the undershoot is fixed and weeks start spending their
+       * budgets, this becomes load-bearing immediately, and a safety cap that
+       * silently stops applying when the rest of the engine improves is the
+       * worst possible failure. What must NOT be inferred from it is that
+       * capped weeks are being trimmed today: they are not, because they do
+       * not need to be.
+       */
+      const enduranceMinutesOf = (ss: readonly PlannedSession[]) =>
+        ss.filter((s) => s.domain === "endurance").reduce((sum, s) => sum + s.minutes, 0);
+      const before = enduranceMinutesOf(w.sessions);
+
+      const scale = w.stressCapped / w.stress;
+      w.enduranceMin = Math.round(w.enduranceMin * scale);
+
+      const fitted = fitEnduranceToMinutes(w.sessions, w.enduranceMin);
+      // `placements` holds references to the very objects in `sessions`, and
+      // the reconciliation returns new ones. Rewiring both from the same map
+      // keeps the week's two views of a session from disagreeing about how
+      // long it is — the schedule the athlete reads is built from placements.
+      const replacement = new Map<PlannedSession, PlannedSession>();
+      fitted.keptIndices.forEach((srcIdx, i) => {
+        const old = w.sessions[srcIdx];
+        if (old) replacement.set(old, fitted.sessions[i]);
+      });
+      // A session with no replacement was dropped, and its placement goes with
+      // it — leaving the placement behind would put a session on the calendar
+      // that is no longer in the week.
+      w.placements = w.placements.flatMap((p) => {
+        const next = replacement.get(p.session);
+        return next ? [{ ...p, session: next }] : [];
+      });
+      w.sessions = fitted.sessions;
+      w.stress = w.placements.reduce((s, p) => s + p.session.stress, 0);
+
+      /**
+       * Only claim a trim when there was one.
+       *
+       * This note fired on the ratio alone, so in all 92 capped weeks measured
+       * it told the athlete their volume had been cut for their safety while
+       * handing them exactly the sessions they would otherwise have had. A
+       * plan that describes work it did not change is the same defect as one
+       * that changes work it did not describe — it just reads more reassuring.
+       */
+      const after = enduranceMinutesOf(w.sessions);
+      if (after < before) {
+        w.notes.push(
+          `Volume trimmed this week — ${before} minutes down to ${after} — to keep your acute:chronic load ` +
+            `inside a safe ramp.`
+        );
+      }
+    }
+  });
   for (const week of acwr.belowFloorWeeks) {
     const w = weeks.find((x) => x.week === week);
-    if (!w || w.phase === "taper" || w.carriedOver || w.deload) continue;
-    // Only a genuinely quiet on-ramp week gets the note: a week at or above
-    // the athlete's current volume is not an on-ramp whatever the ratio says.
-    if (w.delivered && w.delivered.enduranceMin < state.currentRunMinPerWeek * 0.9) {
-      w.notes.push("This week is deliberately easy — it is your on-ramp, not an error.");
-    }
-  }
-
-  // ---- 5. FEASIBILITY ON THE DELIVERED DOSE -------------------------------
-  const dose = deliveredDose(weeks, goal);
-  const feasibility = feasibilityScreen(state, goal, {
-    dose: dose ?? undefined,
-    maxSessionsPerWeek: constraints.maxSessionsPerWeek,
-    observed: observedResponse,
-  });
-
-  // ---- 6. F17: LOW-CAPACITY DAYS -------------------------------------------
-  // The athlete has said a given day is a bad one. The hardest quality
-  // session on it becomes an easy run of the same length, and the week says
-  // so. Applied last, to the scheduled week, because it is a response to a
-  // day rather than to the block — and applied to the PLACEMENTS, which is
-  // what the screen and the widget read.
-  for (const flag of lowCapacityDays) {
-    const week = weeks.find((w) => w.week === flag.week);
-    if (!week || week.carriedOver) continue;
-    const onDay = week.placements.filter((p) => p.day === flag.day);
-    if (onDay.length === 0) continue;
-    // The originals are captured BEFORE any placement is rewritten. A
-    // placement holds its session by reference, so reading `p.session` back
-    // after assigning to it finds the replacement and never the session being
-    // replaced — the week's own list then keeps the hard session the day was
-    // supposed to lose.
-    const originals = onDay.map((p) => p.session);
-    const swap = applyLowCapacityDay(originals, (original) =>
-      easySwapFor(original, profile, { suppressHeartRate: safety.suppressHeartRatePrescription })
-    );
-    if (!swap.swapped) continue;
-    onDay.forEach((placement, i) => {
-      const idx = week.sessions.indexOf(originals[i]);
-      placement.session = swap.sessions[i];
-      if (idx >= 0) week.sessions[idx] = swap.sessions[i];
-    });
-    // The week costs less than it did. `acwr` is left as computed: it
-    // described the week as planned, a swap only ever removes load, so the
-    // planned ratio is the conservative one and recomputing it here would
-    // report a ratio for a week nobody designed.
-    week.stress = week.placements.reduce((s, p) => s + p.session.stress, 0);
-    week.stressCapped = Math.min(week.stressCapped, week.stress);
-    if (week.delivered) {
-      week.delivered.qualityCount = week.placements.filter(
-        (p) => p.session.domain === "endurance" && p.session.isQuality && p.session.kind !== "long_run"
-      ).length;
-      week.delivered.enduranceMin = week.placements
-        .filter((p) => p.session.domain === "endurance")
-        .reduce((s, p) => s + p.session.minutes, 0);
-    }
-    if (swap.note) week.notes.push(swap.note);
+    // A taper is below the ACWR floor BY DESIGN — that is what tapering is —
+    // so calling the last week of a block "your on-ramp" was telling an athlete
+    // three days from their event that they were at the start of it. The note
+    // exists for the genuinely quiet weeks at the beginning; the taper explains
+    // itself through its own phase label.
+    if (w?.phase === "taper") continue;
+    w?.notes.push("This week is deliberately easy — it is your on-ramp, not an error.");
   }
 
   const eventOrder = goal.sameDay && !goal.eventOrderKnown ? resolveEventOrder(state, goal) : null;
@@ -462,6 +452,17 @@ export function generatePlan(input: GeneratePlanInput): GeneratedPlan {
     acwr,
     bodyweightFrontier: bodyweightFrontier(state, safety.showBodyweightGuidance),
     eventOrder,
+    // Fuelling guidance is gated on the SAME screen as bodyweight guidance.
+    //
+    // This previously passed `true` unconditionally, justified by a comment
+    // saying two or more LEA flags block the plan upstream. That justification
+    // was true when it was written and this engine then removed the block —
+    // so the one bodyweight-scaled quantity anywhere in the output ("around
+    // 498-581g, 6-7g/kg" for an 83kg athlete) became reachable by exactly the
+    // population the LEA screen exists to protect.
+    //
+    // Non-negotiable #5 forbids macro output under ANY configuration, and a
+    // per-kilogram gram target is a macro target whatever it is called.
     taper: jointTaper(state, safety.showBodyweightGuidance),
     eventDay: eventOrder ? eventDayPlan(goal, eventOrder) : null,
     findings: profile.findings,
@@ -483,7 +484,5 @@ export function generatePlan(input: GeneratePlanInput): GeneratedPlan {
         ),
       };
     })(),
-    startWeek,
-    dose,
   };
 }

@@ -14,10 +14,8 @@ import { authErrorMessage } from "@/lib/supabase/auth-errors";
 import { buildAuthCallbackUrl } from "@/lib/supabase/auth-callback-url";
 import { isNativePlatform } from "@/lib/native/platform";
 import {
-  beginNativeOAuth,
   nativeOAuthRedirectUrl,
   openNativeOAuthUrl,
-  registerNativeOAuthDismissListener,
   registerNativeOAuthRedirectListener,
 } from "@/lib/native/oauth";
 
@@ -81,9 +79,6 @@ export function AuthForm({
   const [resending, setResending] = useState(false);
   const [error, setError] = useState(initialError ?? "");
   const [message, setMessage] = useState("");
-  // Which social button is mid-flight, so the other one greys out rather than
-  // letting a second provider be started on top of the first.
-  const [oauthPending, setOauthPending] = useState<"google" | "apple" | null>(null);
 
   const authCallbackUrl = (nextPath = "/dashboard") => buildAuthCallbackUrl(undefined, nextPath);
 
@@ -211,21 +206,24 @@ export function AuthForm({
     setMessage("");
   };
 
-  /**
-   * Both social sign-in buttons run through here.
-   *
-   * Apple is not optional. Guideline 4.8 requires that an app offering a
-   * third-party social login also offer a login service that limits collection
-   * to name and email, lets the user keep their email private, and does not
-   * collect interactions for advertising — which in practice means Sign in with
-   * Apple. Email OTP does not satisfy it: 4.8 asks for a login *service*, and a
-   * self-hosted code is not one. Removing the Apple button without also
-   * removing Google puts the app back in automatic-rejection territory.
-   */
+  /*
+    Two providers, one handler.
+
+    APPLE IS NOT OPTIONAL. App Store Guideline 4.8 says that an app offering a
+    third-party social login to set up an account must also offer an equivalent
+    service that limits data collection to name and email, lets the user keep
+    their email private, and does not collect interactions for advertising.
+    Google is such a login; Sign in with Apple is the alternative that meets
+    those three properties. This is checked automatically and caught in seconds,
+    and email OTP does not satisfy it — the required alternative has to be a
+    login *service*, and a self-hosted email code is not one.
+
+    It is rendered ABOVE Google, at equal prominence, which is also what Apple's
+    own Human Interface Guidelines ask for.
+  */
   const handleOAuth = async (provider: "google" | "apple") => {
-    const label = provider === "apple" ? "Apple" : "Google";
-    setOauthPending(provider);
     setError("");
+    const label = provider === "apple" ? "Apple" : "Google";
     try {
       const supabase = createClient();
       const native = isNativePlatform();
@@ -234,8 +232,8 @@ export function AuthForm({
       // the app's own main webview is — on native, the OAuth screens run in
       // a separate in-app browser instead (see lib/native/oauth.ts), and
       // skipBrowserRedirect keeps this call from navigating the main webview
-      // itself away from the app. Apple's web flow behaves the same way, so it
-      // takes the identical path rather than a special case.
+      // itself away from the app. Apple's web flow has the same constraint, so
+      // both take the identical path.
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider,
         options: native
@@ -249,35 +247,14 @@ export function AuthForm({
 
       if (error) {
         setError(authErrorMessage(error, `${label} sign-in failed. Please try again.`));
-        setOauthPending(null);
         return;
       }
 
       if (native && data?.url) {
-        /*
-         * `signInWithOAuth` builds the provider URL on the client and never
-         * contacts the server, so a provider that is not enabled on the
-         * Supabase project returns `error: null` and a URL exactly like one
-         * that works. The failure appears only when the browser loads it.
-         *
-         * So the sheet closing without a redirect is the only signal this
-         * screen gets that nothing happened — whether the user changed their
-         * mind or the provider is misconfigured — and without it both buttons
-         * stayed disabled until the app was restarted.
-         */
-        beginNativeOAuth();
-        const stopWatching = registerNativeOAuthDismissListener(() => {
-          stopWatching();
-          setOauthPending(null);
-          setError(
-            `${label} sign-in closed before it finished. Try again, or use another way in.`,
-          );
-        });
         await openNativeOAuthUrl(data.url);
       }
     } catch (err) {
       setError(authErrorMessage(err, `${label} sign-in failed. Please try again.`));
-      setOauthPending(null);
     }
   };
 
@@ -361,19 +338,10 @@ export function AuthForm({
           </>
         ) : (
           <>
-            {/*
-              Apple sits above Google deliberately. Guideline 4.8 requires the
-              alternative to appear with equivalent prominence, and Apple's own
-              Sign in with Apple guidance asks for it to be at least as
-              prominent as the other options — top of the stack satisfies both
-              readings without argument.
-            */}
             <div className="space-y-3 mb-6">
               <Button
                 variant="secondary"
                 className="w-full gap-2"
-                loading={oauthPending === "apple"}
-                disabled={oauthPending !== null}
                 onClick={() => handleOAuth("apple")}
               >
                 <AppleIcon className="h-4 w-4" />
@@ -382,8 +350,6 @@ export function AuthForm({
               <Button
                 variant="secondary"
                 className="w-full gap-2"
-                loading={oauthPending === "google"}
-                disabled={oauthPending !== null}
                 onClick={() => handleOAuth("google")}
               >
                 <GoogleIcon className="h-4 w-4" />

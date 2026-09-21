@@ -64,6 +64,7 @@ export function InterferenceRadarCard({
               shareTitle="My Split Index Interference Report"
               shareText="Here's what leg day does to my running — tracked with Split Index."
               label="Share"
+            contentSummary="Your display name, and how your strength and cardio training affect each other. No scores, dates or individual sessions."
             />
           )}
         </div>

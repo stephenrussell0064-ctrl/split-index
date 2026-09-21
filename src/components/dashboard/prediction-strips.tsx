@@ -93,16 +93,25 @@ export function RacePredictionStrip({
           href="/cardio/log"
         />
       ) : (
-        <div className="grid grid-cols-5 gap-1">
+        <div className="grid grid-cols-5 gap-0.5 min-[360px]:gap-1">
           {predictions.map((p) => (
             <div
               key={p.label}
-              className="rounded-lg bg-white/[0.03] px-1 py-1.5 text-center"
+              className="rounded-lg bg-white/[0.03] px-0.5 py-1.5 text-center min-[360px]:px-1"
             >
               <p className="text-[9px] font-semibold uppercase tracking-wider text-muted">
                 {p.label}
               </p>
-              <p className="index-display mt-0.5 text-[13px] font-bold tabular-nums text-endurance sm:text-sm">
+              {/*
+                10px, with tighter gaps and padding, below 360px. Measured at
+                320px: the grid wanted 259px in 254, and the two longest
+                predictions — a half and a full marathon, "1:31:12" and
+                "3:10:48" — needed 45px of a 40px cell, so both were visually
+                truncated. All five distances stay. Seeing 1500m through to the
+                full is the whole point of the strip, so the type gives way
+                rather than the content; from 360px up nothing changes.
+              */}
+              <p className="index-display mt-0.5 text-[10px] font-bold tabular-nums text-endurance min-[360px]:text-[13px] sm:text-sm">
                 {formatRiegelPrediction(p.seconds)}
               </p>
             </div>

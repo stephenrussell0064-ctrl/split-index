@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { ArrowDown, ArrowUp, Minus, Trophy } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronDown, Minus, Trophy } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { UserAvatar } from "@/components/social/user-avatar";
 import { formatIndex, formatWeight } from "@/lib/utils/format";
@@ -62,9 +62,23 @@ function LeaderboardDetailCard({
           <p className="micro-label text-muted mb-1.5">Top lifts</p>
           <ul className="grid gap-1 sm:grid-cols-2">
             {content.topLifts.map((lift) => (
+              /*
+                min-w-0 + truncate on the name, shrink-0 on the figure.
+
+                Exercise names are athlete-supplied — the gym form takes a
+                custom name — so nothing bounds this string. A flex child will
+                not shrink below its content width on its own, so one long name
+                pushes the row past the card and the whole screen scrolls
+                sideways. The catalogue's longest today is "Incline Dumbbell
+                Press" at 22 characters, which fits; a custom name need not.
+
+                The figure keeps its full width because a truncated weight is
+                worse than a truncated name — "142." is wrong, "Incline
+                Dumbbell…" is merely shorter.
+              */
               <li key={lift.name} className="flex justify-between gap-2 glass rounded-lg px-2.5 py-1.5">
-                <span>{lift.name}</span>
-                <span className="tabular-nums font-medium">
+                <span className="min-w-0 truncate">{lift.name}</span>
+                <span className="shrink-0 tabular-nums font-medium">
                   {formatWeight(lift.estimated1RmKg)}
                   {lift.tier ? <span className="ml-1 text-[10px] text-muted">{lift.tier}</span> : null}
                 </span>
@@ -208,7 +222,12 @@ export function LeaderboardPanel({
   const [selectedMuscleGroup, setSelectedMuscleGroup] = useState(MUSCLE_GROUPS[0]);
   const [selectedActivity, setSelectedActivity] = useState<SportType>("running");
   const [dimensionRows, setDimensionRows] = useState<DimensionLeaderboardRow[]>([]);
-  const [dimensionLoading, setDimensionLoading] = useState(false);
+  /**
+   * Which selection `dimensionRows` currently holds, or null before the first
+   * load. Loading is DERIVED from this rather than stored — see the effect
+   * below for why that matters here.
+   */
+  const [loadedDimensionKey, setLoadedDimensionKey] = useState<string | null>(null);
 
   const toggleExpanded = useCallback(
     (userId: string) => {
@@ -258,39 +277,102 @@ export function LeaderboardPanel({
         ? selectedMuscleGroup
         : selectedActivity;
 
-  const fetchDimensionRows = useCallback(async () => {
-    if (viewMode === "index" || !dimensionValue) return;
-    setDimensionLoading(true);
-    try {
-      const params = new URLSearchParams({ type: viewMode, value: dimensionValue });
-      const res = await fetch(`/api/social/leaderboard/dimension?${params}`);
-      const data = await res.json();
-      if (res.ok) setDimensionRows(data.rows ?? []);
-    } finally {
-      setDimensionLoading(false);
-    }
-  }, [viewMode, dimensionValue]);
+  /**
+   * The selection this panel is currently meant to be showing — null whenever
+   * there is nothing to fetch (the Index tab, or no exercise chosen yet).
+   */
+  const dimensionKey =
+    viewMode === "index" || !dimensionValue ? null : `${viewMode}:${dimensionValue}`;
+
+  /*
+    Loading is DERIVED, not stored: we are loading exactly when the rows on
+    screen belong to a different selection from the one now chosen.
+
+    This replaces a `setDimensionLoading(true)` that ran synchronously in the
+    effect body, which is the pattern React's own lint rule flags — it triggers a
+    second render pass before the first has committed, on every selection change.
+    Deriving it removes the extra render and, more usefully, removes the state
+    that could disagree with reality: a `loading` boolean and a `rows` array are
+    two facts that have to be kept in step by hand, and this is one fact.
+  */
+  const dimensionLoading = dimensionKey !== null && dimensionKey !== loadedDimensionKey;
 
   useEffect(() => {
-    // fetchDimensionRows sets the loading flag synchronously, before its first
-    // await, and that is the point: without it the panel shows the previous
-    // dimension's rows with no loading state for a frame every time the filter
-    // changes. The cascading render the rule warns about is one extra render
-    // of a spinner.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void fetchDimensionRows();
-  }, [fetchDimensionRows]);
+    if (dimensionKey === null) return;
+
+    /*
+      Cancellation is not optional here. Tapping through the exercise list fires
+      a request per selection, and without this the responses race: a slow reply
+      for "Back Squat" landing after a fast one for "Bench Press" used to
+      overwrite Bench's rankings with Squat's, under Bench's heading. The flag
+      makes the last selection win rather than the last response.
+    */
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const params = new URLSearchParams({ type: viewMode, value: dimensionValue });
+        const res = await fetch(`/api/social/leaderboard/dimension?${params}`);
+        const data = await res.json();
+        if (cancelled) return;
+        // Cleared rather than left alone when the request fails, so a failed
+        // load shows this selection's empty state instead of the PREVIOUS
+        // selection's rankings mislabelled as this one's.
+        setDimensionRows(res.ok ? (data.rows ?? []) : []);
+      } catch {
+        if (!cancelled) setDimensionRows([]);
+      } finally {
+        if (!cancelled) setLoadedDimensionKey(dimensionKey);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [dimensionKey, viewMode, dimensionValue]);
 
   return (
     <Card glow="accent">
       <CardHeader>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <Trophy className="h-4 w-4 text-warning" />
+        {/*
+          Stacked on a phone, side by side from sm up — deliberately explicit
+          rather than left to flex-wrap.
+
+          This row was `flex flex-wrap justify-between` holding the title and
+          the Weekly/Monthly/All Time toggle. In principle the toggle should
+          have wrapped to a second line when the two did not fit. In practice it
+          did not: the toggle stayed beside the title and ran off the right of
+          the screen, widening the card so the whole leaderboard scrolled
+          sideways, and then — once <main> began clipping — simply lost "All
+          Time" off the edge. Adding flex-wrap and min-w-0 to the toggle itself
+          did not change what rendered either.
+
+          So the layout no longer depends on wrap behaviour at all. `flex-col`
+          below sm puts the toggle on its own line by construction, which is
+          where wrapping was supposed to put it, and there is nothing left for
+          the browser to decide.
+        */}
+        <div className="flex flex-col items-start gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-center gap-2">
+            <Trophy className="h-4 w-4 shrink-0 text-warning" />
             <CardTitle>Leaderboard</CardTitle>
           </div>
           {viewMode === "index" && (
-            <div className="flex gap-1 rounded-xl glass p-1">
+            /*
+              flex-wrap and min-w-0, matching the view-mode row directly below.
+
+              This was the one row in this file with a bare `flex`. Three
+              buttons that cannot break sit beside the title in a
+              justify-between header, and together they need more than a phone
+              has — so the row could neither wrap nor shrink and widened the
+              card instead. Everything inside the card then hung off the right
+              of the screen: the whole leaderboard scrolled sideways, and once
+              <main> started clipping it, "All Time" simply became unreachable.
+
+              The sibling row below it wraps "By Activity" onto a second line
+              and always looked right, which is the pattern this now follows.
+            */
+            <div className="flex min-w-0 flex-wrap gap-1 rounded-xl glass p-1">
               {LEADERBOARD_PERIODS.map((p) => (
                 <button
                   key={p.value}
@@ -347,7 +429,7 @@ export function LeaderboardPanel({
                   setScope(s.value);
                 }}
                 className={cn(
-                  "rounded-xl px-3 py-1.5 text-xs font-medium transition-colors glass",
+                  "inline-flex min-h-11 items-center rounded-xl px-3 py-1.5 text-xs font-medium transition-colors glass",
                   scope === s.value
                     ? "bg-white/10 text-foreground border border-white/15"
                     : "text-muted hover:text-foreground hover:bg-white/5",
@@ -376,7 +458,10 @@ export function LeaderboardPanel({
           />
         )}
 
-        {/* Free for everyone — Split / Endurance / Strength (Lab/Engine) metric toggle. */}
+        {/* Free for everyone — Split / Endurance / Strength (Lab/Engine) metric toggle.
+            min-h-11 on every filter chip on this screen: they were about 25px
+            tall, and a leaderboard is a screen made almost entirely of chips.
+            The height comes from min-height so the chip still LOOKS small. */}
         <div className="flex flex-wrap gap-2">
           {INDEX_METRICS.map((m) => (
             <button
@@ -384,7 +469,7 @@ export function LeaderboardPanel({
               type="button"
               onClick={() => setMetric(m.value)}
               className={cn(
-                "rounded-lg px-3 py-1 text-xs font-medium",
+                "inline-flex min-h-11 items-center rounded-lg px-3 py-1 text-xs font-medium",
                 metric === m.value ? "bg-accent/20 text-accent" : "text-muted"
               )}
             >
@@ -401,7 +486,7 @@ export function LeaderboardPanel({
                 type="button"
                 onClick={() => setAgeBracket(b.value)}
                 className={cn(
-                  "rounded-lg px-3 py-1 text-xs",
+                  "inline-flex min-h-11 items-center rounded-lg px-3 py-1 text-xs",
                   ageBracket === b.value ? "bg-accent/20 text-accent" : "text-muted"
                 )}
               >
@@ -419,7 +504,7 @@ export function LeaderboardPanel({
                 type="button"
                 onClick={() => setWeightClass(w.value)}
                 className={cn(
-                  "rounded-lg px-3 py-1 text-xs",
+                  "inline-flex min-h-11 items-center rounded-lg px-3 py-1 text-xs",
                   weightClass === w.value ? "bg-accent/20 text-accent" : "text-muted"
                 )}
               >
@@ -429,7 +514,7 @@ export function LeaderboardPanel({
           </div>
         )}
 
-        <div className={cn("space-y-1", loading && "opacity-50")}>
+        <div aria-busy={loading} className={cn("space-y-1", loading && "opacity-50")}>
           {rows.length === 0 ? (
             <p className="py-8 text-center text-sm text-muted">
               No rankings yet — log workouts to appear on the leaderboard
@@ -445,16 +530,28 @@ export function LeaderboardPanel({
 
               return (
                 <div key={entry.userId}>
+                {/*
+                  THE ROW IS NOT THE BUTTON ANY MORE.
+
+                  It carried `role="button"` and `tabIndex={0}` while containing
+                  a profile Link and a Compare button — interactive controls
+                  inside an interactive control, which is invalid, and the
+                  `stopPropagation` on each of them was papering over it. Space
+                  was handled without `preventDefault`, so expanding a row also
+                  scrolled the page out from under it, and nothing announced
+                  whether a row was open.
+
+                  The whole row still expands on tap, because that is the right
+                  target size on a phone. But the real control is the chevron
+                  button at the end: focusable, labelled with whose row it is,
+                  and carrying `aria-expanded`. The Link and Compare are now
+                  ordinary siblings.
+                */}
                 <motion.div
                   initial={{ opacity: 0, x: -8 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: i * 0.03 }}
-                  role="button"
-                  tabIndex={0}
                   onClick={() => toggleExpanded(entry.userId)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") toggleExpanded(entry.userId);
-                  }}
                   className={cn(
                     "flex items-center gap-3 rounded-xl p-3 transition-colors cursor-pointer",
                     isMe ? "bg-accent/10 ring-1 ring-accent/30" : "hover:bg-white/5",
@@ -503,7 +600,7 @@ export function LeaderboardPanel({
                     </p>
                   </div>
 
-                  <div className="text-right">
+                  <div className="shrink-0 text-right">
                     <p className="text-lg font-bold tabular-nums">
                       {formatIndex(displayIndex)}
                     </p>
@@ -544,12 +641,31 @@ export function LeaderboardPanel({
                       Compare
                     </button>
                   )}
+
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleExpanded(entry.userId);
+                    }}
+                    aria-expanded={isExpanded}
+                    aria-controls={`leaderboard-detail-${entry.userId}`}
+                    aria-label={`Details for ${entry.displayName ?? entry.username ?? "this athlete"}`}
+                    className="-mr-1 shrink-0 rounded-lg p-1.5 text-muted transition-colors hover:bg-white/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  >
+                    <ChevronDown
+                      className={cn("h-4 w-4 transition-transform", isExpanded && "rotate-180")}
+                      aria-hidden
+                    />
+                  </button>
                 </motion.div>
                 {isExpanded && (
-                  <LeaderboardDetailCard
-                    detail={detailCache[entry.userId] ?? null}
-                    isPremium={isPremium}
-                  />
+                  <div id={`leaderboard-detail-${entry.userId}`}>
+                    <LeaderboardDetailCard
+                      detail={detailCache[entry.userId] ?? null}
+                      isPremium={isPremium}
+                    />
+                  </div>
                 )}
                 </div>
               );
@@ -657,7 +773,7 @@ function DimensionLeaderboard({
         </div>
       )}
 
-      <div className={cn("space-y-1", loading && "opacity-50")}>
+      <div aria-busy={loading} className={cn("space-y-1", loading && "opacity-50")}>
         {rows.length === 0 ? (
           <p className="py-8 text-center text-sm text-muted">
             {loading ? "Loading…" : "No rankings yet for this selection — log a matching session to appear here"}

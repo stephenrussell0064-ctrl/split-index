@@ -1,3 +1,5 @@
+import { parseBody } from "@/lib/validation/boundary";
+import { updateActivitySchema } from "@/lib/validation/schemas/activity";
 import { NextResponse } from "next/server";
 import { databaseError, serverError } from "@/lib/api/errors";
 import { createClient } from "@/lib/supabase/server";
@@ -8,11 +10,12 @@ import { enrichCardioScore } from "@/lib/scoring/cardio";
 import { cardioResultToEnrichment } from "@/lib/scoring/adapters";
 import type { CardioResult } from "@/lib/scoring/cardio-activity";
 import { isEnduranceSport } from "@/lib/scoring/engine";
-import { isPremiumUser } from "@/lib/retention/trial";
+import { hasPaidAccess } from "@/lib/retention/trial";
 import { serializeScoreBreakdown } from "@/lib/scoring/presentation";
 import type { WeightEntryMode } from "@/lib/scoring/weight-entry";
 import { defaultWeightEntryMode } from "@/lib/scoring/weight-entry";
 import { buildGymExerciseRows, insertGymExercises } from "@/lib/activities/gym-exercise-rows";
+import { resolveScoringBodyweightKg } from "@/lib/activities/bodyweight";
 import {
   scoreAndPersist,
   type ScoreAndPersistBody,
@@ -84,7 +87,7 @@ export async function GET(
     ]);
 
   const premium = profile
-    ? isPremiumUser(profile.subscription_tier, profile.subscription_status)
+    ? hasPaidAccess(profile)
     : false;
 
   const score = scoreRaw
@@ -114,7 +117,20 @@ export async function PATCH(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body: ActivityBody = await request.json();
+  /*
+    N1. This was `const body: ActivityBody = await request.json()` — a type
+    ASSERTION, which is a promise to the compiler and nothing whatever to the
+    runtime. Seventeen fields were then read off it and handed to the scoring
+    engine.
+
+    updateActivitySchema already existed and was never wired up: it is
+    activityFieldsSchema.partial(), the same shape POST validates, with the
+    cross-field rules deliberately not reapplied because a partial update that
+    touches only `notes` has no exercises in the payload.
+  */
+  const parsed = await parseBody(request, updateActivitySchema);
+  if (parsed.response) return parsed.response;
+  const body = parsed.data as ActivityBody;
 
   const { data: existing, error: fetchError } = await supabase
     .from("activities")
@@ -142,9 +158,40 @@ export async function PATCH(
     body
   );
 
+  const { data: priorStrength } = await supabase
+    .from("strength_scores")
+    .select("bodyweight_kg")
+    .eq("activity_id", id)
+    .limit(1)
+    .maybeSingle();
+
+  /*
+    JUDGE THE EDIT AGAINST THE BODYWEIGHT THE SESSION WAS LIFTED AT.
+
+    This passed the raw `profile`, so the "is this load plausible for this
+    athlete" check used `profiles.weight_kg` — today's weight — against a
+    session that may be a year old. An athlete who has since lost 15kg could
+    not open an old gym session and fix a typo in it: the lift they genuinely
+    performed now read as implausible for a person who no longer weighs that
+    much, and the edit came back 400.
+
+    `resolveScoringBodyweightKg` already encodes the right precedence and POST
+    already uses it — what the athlete submitted with this edit, then the
+    session's own recorded bodyweight, then the profile. The only thing wrong
+    here was the order of two reads: the anchored weight was fetched twenty
+    lines BELOW the guard that needed it.
+  */
+  const editBodyweightKg = resolveScoringBodyweightKg(body.sport, {
+    submittedBodyweight: body.bodyweight_kg,
+    activityMetadata: existing.metadata as Record<string, unknown>,
+    strengthScoreBodyweight: priorStrength?.bodyweight_kg,
+    profileWeightKg: profile.weight_kg,
+  });
+
   try {
     assertScoringInput({
       sport: body.sport,
+      startedAt: body.started_at,
       durationSeconds: body.duration_seconds,
       distanceMeters: body.distance_meters,
       avgHeartRate: body.avg_heart_rate,
@@ -155,7 +202,7 @@ export async function PATCH(
       elevationMeters: body.elevation_meters,
       rpe: body.rpe,
       exercises: body.exercises,
-      profile,
+      profile: { ...profile, weight_kg: editBodyweightKg ?? profile.weight_kg },
     });
   } catch (err) {
     if (err instanceof ScoringInputError) {
@@ -163,13 +210,6 @@ export async function PATCH(
     }
     throw err;
   }
-
-  const { data: priorStrength } = await supabase
-    .from("strength_scores")
-    .select("bodyweight_kg")
-    .eq("activity_id", id)
-    .limit(1)
-    .maybeSingle();
 
   const { data: activity, error: updateError } = await supabase
     .from("activities")
@@ -312,10 +352,7 @@ export async function PATCH(
     );
   }
 
-  const premium = isPremiumUser(
-    profile.subscription_tier,
-    profile.subscription_status
-  );
+  const premium = hasPaidAccess(profile);
 
   let cardioEnrichment = null;
   if (isEnduranceSport(body.sport)) {
@@ -407,7 +444,40 @@ export async function DELETE(
     return NextResponse.json({ error: "Activity not found" }, { status: 404 });
   }
 
+  /*
+    EVERYTHING THAT POINTS AT THIS SESSION, not just the index history.
+
+    Both of the tables below are `ON DELETE SET NULL`, so deleting the activity
+    does not delete them — it orphans them. The merge route already cleans up
+    exactly these two and explains why; delete was written first and never
+    caught up.
+
+    A personal record is the one that bites. Its row survives with a null
+    activity_id, still occupying the UNIQUE(user_id, sport, metric) slot, and
+    because records are upserted only when the new value is BETTER, nothing can
+    ever displace it. The athlete deletes a mistyped 4:02 mile and is congratulated
+    on it forever, with no session behind it to open.
+  */
   await supabase.from("split_index_history").delete().eq("activity_id", id);
+  await supabase
+    .from("personal_records")
+    .delete()
+    .eq("user_id", user.id)
+    .eq("activity_id", id);
+
+  /*
+    The stored race prediction is different: it is not deleted, it is
+    invalidated. `predicted_benchmarks.last_activity_id` is the marker saying
+    "the prediction already contains this session's evidence" — SET NULL erases
+    the marker while leaving the prediction, so the next run would be blended
+    into a base that silently still includes the deleted one. Clearing the base
+    makes the next scored session rebuild it honestly.
+  */
+  await supabase
+    .from("predicted_benchmarks")
+    .delete()
+    .eq("user_id", user.id)
+    .eq("last_activity_id", id);
 
   const { error } = await supabase.from("activities").delete().eq("id", id);
 

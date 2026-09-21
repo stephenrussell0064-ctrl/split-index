@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SportType } from "@/types";
 import { isStateDirty, type WorkoutFormState } from "./form-state";
+import { mirrorDraft } from "./draft-mirror";
 
 export type DraftStatus = "idle" | "saving" | "saved" | "error";
 
@@ -35,6 +36,20 @@ export function useDraftAutosave(
 
   const persist = useCallback(async (saveSport: SportType, saveState: WorkoutFormState) => {
     setStatus("saving");
+    /*
+      The device copy first, and unconditionally.
+
+      This used to be a network PUT and nothing else, so offline the request
+      threw, the indicator said "error", and the half-typed session existed
+      only in React state — kill the app and every set logged that session was
+      gone. `retry` re-attempts the same call, so it could not help: it is the
+      network that is missing.
+
+      Written before the fetch rather than in its catch, because the case that
+      loses the work is the app being killed while the request is still in
+      flight, which reaches neither branch.
+    */
+    mirrorDraft(saveSport, saveState);
     try {
       const res = await fetch("/api/activities/draft", {
         method: "PUT",

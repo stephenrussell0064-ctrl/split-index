@@ -215,6 +215,22 @@ export const activityFieldsSchema = z
     bodyweight_kg: numberFields.bodyweightKg.optional(),
 
     exercise_notes: z.record(z.string(), textFields.notes).optional(),
+
+    /*
+     * The offline queue's idempotency key (src/lib/activities/offline-queue.ts).
+     * A session logged with no signal is replayed on reconnect carrying the
+     * same id, and the route looks for an existing row with it before
+     * inserting, so one run cannot be saved twice.
+     *
+     * It must be declared here precisely because this object is `.strict()`:
+     * an undeclared key is rejected, not stripped, so leaving it out would
+     * turn every replayed submission into a 400 and break offline sync
+     * outright — silently for anyone who logs on a bad connection.
+     *
+     * The 100-character bound matches the length the route already checks
+     * before trusting the value.
+     */
+    client_request_id: z.string().max(100).optional(),
   })
   .strict();
 

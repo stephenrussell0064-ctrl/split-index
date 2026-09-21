@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { ChevronDown, HeartPulse } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
@@ -41,6 +43,8 @@ interface PlanResponse {
     offerGeneralPreparationInstead: boolean;
     /** Below 1 when the health answers capped how hard the plan may be. */
     intensityCeiling: number;
+    /** Possible cardiac symptoms or a positive PAR-Q+, and nothing else — the one banner this screen still shows. See `SafetyResult.medicalRedFlag`. */
+    medicalRedFlag?: { message: string; referral: string } | null;
   };
   profile?: AthleteProfile;
   diagnostic?: AthleteProfile | null;
@@ -55,6 +59,8 @@ interface PlanResponse {
     placements: {
       day: string;
       slot: string;
+      /** The stored `hpe_sessions` id, so the feedback control has something to post against. Null before the plan is persisted. */
+      sessionId?: string | null;
       session: {
         kind: string;
         domain: "endurance" | "strength";
@@ -83,7 +89,7 @@ interface PlanResponse {
       };
     }[];
   }[];
-  feasibility?: { messages: string[]; doseWarnings?: string[] } | null;
+  feasibility?: { messages: string[] } | null;
   eventOrder?: EventOrderResult | null;
   eventDay?: EventDayStep[] | null;
   taper?: TaperDay[];
@@ -119,11 +125,16 @@ interface PlanResponse {
   premiumRequired?: boolean;
   /** Explanation that accompanies `consentRequired`. Not the same field as `refusal.reason`. */
   message?: string;
-  storedPlan?: { generatedAt: string; constantsVersion: string } | null;
-  /** Monday of week one, yyyy-MM-dd. Present on every generated plan. */
-  startsOn?: string | null;
-  currentWeek?: number;
-  continued?: boolean;
+  /**
+   * When the block the athlete is currently on was created.
+   *
+   * Sent on BOTH paths now. It always came back on the paused branch; on the
+   * generated one it did not, so `planStart` below fell back to today and week
+   * 1 was re-dated to the moment of every visit — the athlete never advanced
+   * past week 1. `constantsVersion` is only carried by the paused branch, which
+   * is the one place it is displayed.
+   */
+  storedPlan?: { generatedAt: string; constantsVersion?: string } | null;
   tailoring?: {
     level: string;
     confidence: number;
@@ -174,6 +185,7 @@ function toPlanWeeks(raw: NonNullable<PlanResponse["weeks"]>): PlanWeekView[] {
     stressCapped: w.stressCapped,
     notes: w.notes,
     sessions: w.placements.map((p) => ({
+      sessionId: p.sessionId ?? null,
       kind: p.session.kind,
       domain: p.session.domain,
       day: p.day,
@@ -200,6 +212,7 @@ export function HybridPlanScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("plan");
+  const router = useRouter();
   const [overrideOrder, setOverrideOrder] = useState(false);
 
   // Bumped to force a refetch after a failure, without duplicating the fetch
@@ -221,18 +234,11 @@ export function HybridPlanScreen() {
    * slide the whole block forward and tell an athlete in week 4 they were in
    * week 1.
    */
-  // A live plan carries `startsOn`, the Monday its week one began on. That
-  // is the block's own calendar: a continued block keeps the Monday it
-  // started on, so the athlete in week five is shown week five.
   const generatedAt = data?.storedPlan?.generatedAt ?? null;
-  const startsOn = data?.startsOn ?? null;
-  const planStart = useMemo(() => {
-    if (startsOn) {
-      const [y, m, d] = startsOn.split("-").map(Number);
-      return new Date(y, m - 1, d);
-    }
-    return generatedAt ? new Date(generatedAt) : new Date();
-  }, [startsOn, generatedAt]);
+  const planStart = useMemo(
+    () => (generatedAt ? new Date(generatedAt) : new Date()),
+    [generatedAt]
+  );
 
   /**
    * What the iOS home-screen widget will show.
@@ -284,7 +290,28 @@ export function HybridPlanScreen() {
     };
   }, [overrideOrder, reloadKey]);
 
-  if (loading) {
+  /*
+   * A first plan starts with the questions, not with a refusal.
+   *
+   * With no intake on file the engine cannot build anything, and this screen
+   * used to say so: a "Not yet" header, a paragraph of explanation, and a
+   * "Complete your intake" link to press. That reads as a failure on the very
+   * first visit, when in fact nothing has gone wrong — the athlete simply has
+   * not answered the questions yet, and could not have.
+   *
+   * Consent is checked before this, deliberately, because permission has to
+   * come before the questions that rely on it. Everything else that stops a
+   * plan being generated still renders the explanation below; this branch is
+   * only for the one case whose whole answer is "go and fill this in".
+   */
+  const goStraightToIntake =
+    Boolean(data) && !data!.consentRequired && Boolean(data!.needsIntake);
+
+  useEffect(() => {
+    if (goStraightToIntake) router.replace("/hybrid-plan/intake");
+  }, [goStraightToIntake, router]);
+
+  if (loading || goStraightToIntake) {
     return (
       <div className="space-y-5">
         <Skeleton className="h-24 w-full rounded-[1.75rem]" />
@@ -434,8 +461,11 @@ export function HybridPlanScreen() {
           <p className="mt-1 text-sm leading-relaxed text-muted">{data.refusal?.reason}</p>
           {data.storedPlan && (
             <p className="mt-2 text-xs text-muted/70">
-              Built {new Date(data.storedPlan.generatedAt).toLocaleDateString()} under constants v
-              {data.storedPlan.constantsVersion}. Nothing about it has changed.
+              Built {new Date(data.storedPlan.generatedAt).toLocaleDateString()}
+              {data.storedPlan.constantsVersion
+                ? ` under constants v${data.storedPlan.constantsVersion}`
+                : ""}
+              . Nothing about it has changed.
             </p>
           )}
         </Card>
@@ -561,41 +591,6 @@ export function HybridPlanScreen() {
           without this, which left a provisional plan looking identical to a
           fully-diagnosed one — the refusal removed and nothing put in its
           place. */}
-      {data.tailoring && (
-        <Card glow={data.tailoring.isProvisional ? "none" : "accent"}>
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className="text-xs font-medium uppercase tracking-widest text-muted">How tailored this is</p>
-              <h2 className="mt-1 text-lg font-semibold tracking-tight">{data.tailoring.headline}</h2>
-            </div>
-            <span
-              className={cn(
-                "rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wider",
-                data.tailoring.isProvisional ? "bg-warning/15 text-warning" : "bg-endurance/15 text-endurance"
-              )}
-            >
-              {Math.round(data.tailoring.confidence * 100)}% confidence
-            </span>
-          </div>
-          <p className="mt-3 text-sm leading-relaxed text-foreground/85">{data.tailoring.explanation}</p>
-
-          {data.tailoring.unlocks.length > 0 && (
-            <div className="mt-4 rounded-2xl border border-accent/20 bg-accent/[0.06] p-4">
-              <p className="text-xs font-semibold uppercase tracking-widest text-accent">
-                What your next sessions unlock
-              </p>
-              <ul className="mt-2.5 space-y-3">
-                {data.tailoring.unlocks.slice(0, 3).map((u) => (
-                  <li key={u.action}>
-                    <p className="text-sm font-medium text-foreground/90">{u.action}</p>
-                    <p className="mt-0.5 text-sm leading-relaxed text-muted">{u.unlocks}</p>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </Card>
-      )}
 
       {/*
         REMOVED FROM THIS SCREEN — the "Read this first" and "Before you start"
@@ -620,7 +615,32 @@ export function HybridPlanScreen() {
         plan and still does not. What changed is only that the caveats are no
         longer printed on top of it; `data.safety` is still returned by the API
         for whoever wants to render it somewhere calmer.
+
+        AND ONE THING CAME BACK: the banner directly below. Deleting the cards
+        also deleted the only render site for the cardiac / PAR-Q+ referral,
+        which meant an athlete who ticked "I get chest pain during exercise"
+        received a full training block and never saw a word about it — the
+        engine went on generating the referral and showing it to nobody. That
+        was not what the removal was for. It is one line, it fires on that
+        answer alone, and nothing about injuries or fuelling rides along with
+        it.
       */}
+      {data.safety?.medicalRedFlag && (
+        <Card className="border-danger/30 bg-danger/[0.06]">
+          <div className="flex items-start gap-3">
+            <HeartPulse className="mt-0.5 h-5 w-5 shrink-0 text-danger" aria-hidden />
+            <div>
+              <p className="text-sm font-semibold text-danger">Worth a GP appointment this week</p>
+              <p className="mt-1 text-sm leading-relaxed text-foreground/85">
+                {data.safety.medicalRedFlag.message}
+              </p>
+              <p className="mt-1.5 text-xs text-muted">
+                Who to see: {data.safety.medicalRedFlag.referral}
+              </p>
+            </div>
+          </div>
+        </Card>
+      )}
 
       {(data.feasibility?.messages.length ?? 0) > 0 && (
         <Card>
@@ -632,22 +652,29 @@ export function HybridPlanScreen() {
               </li>
             ))}
           </ul>
-          {(data.feasibility!.doseWarnings?.length ?? 0) > 0 && (
-            <div className="mt-3 border-t border-border/60 pt-3">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted">What this plan can deliver</p>
-              <ul className="mt-1 space-y-2">
-                {data.feasibility!.doseWarnings!.map((m) => (
-                  <li key={m} className="text-sm leading-relaxed text-foreground/80">
-                    {m}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
         </Card>
       )}
 
-      <div className="flex gap-1.5 rounded-2xl bg-white/[0.03] p-1.5">
+      {/*
+        A GRID, NOT A FLEX ROW. Flex items default to `min-width: auto`, so
+        these four never shrink below their own text: "Plan Goals Diagnostic
+        Event day" is about 320px of content plus 24px of gaps and padding.
+        At 390px that fits by roughly 13px; at 320px it overflowed the
+        container and gave the whole PAGE a horizontal scrollbar. Four equal
+        columns that can actually shrink cannot do that at any width.
+
+        Two rows on phones, four across from `sm` up. Measured: "Diagnostic"
+        is 86px at text-sm and one word, so it cannot wrap. A quarter of the
+        row leaves it a 66px content box at 390px and 48px at 320px — it
+        truncated to "Diagnos…" on both, and a navigation label that no longer
+        names anything is not a fix. Two columns give it 170px at 390px and
+        137px at 320px. The second row costs 56px, and the fold measurement
+        below has 221px to spare.
+
+        `py-3` rather than `py-2.5` takes the tap target from 40px to 44,
+        which is the minimum a finger should be asked to hit.
+      */}
+      <div className="grid grid-cols-2 gap-1.5 rounded-2xl bg-white/[0.03] p-1.5 sm:grid-cols-4">
         {TABS.map((t) => (
           <button
             key={t.id}
@@ -655,7 +682,7 @@ export function HybridPlanScreen() {
             onClick={() => setTab(t.id)}
             aria-current={tab === t.id ? "page" : undefined}
             className={cn(
-              "flex-1 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
+              "min-w-0 truncate rounded-xl px-2 py-3 text-sm font-medium transition-colors",
               tab === t.id ? "bg-white/[0.08] text-foreground" : "text-muted hover:text-foreground"
             )}
           >
@@ -686,6 +713,67 @@ export function HybridPlanScreen() {
             pacing={data.pacing ?? null}
           />
         </div>
+      )}
+
+      {/*
+        MOVED BELOW THE PLAN, AND FOLDED SHUT.
+
+        This was between the page header and the tabs: an eyebrow, a heading, a
+        confidence pill, an explanation paragraph and a three-item "what your
+        next sessions unlock" box — about 320px. With the header above it, the
+        first thing on this screen was 420px of preamble and `DayDetail`, whose
+        own comment calls it "first on screen, biggest thing on it", started
+        roughly 90px above the bottom nav. The screen that exists to answer
+        "what do I do today" made you scroll to find out.
+
+        It is context for the plan, not a gate in front of it, so it goes after
+        it and opens on request. A native `<details>` rather than state: it
+        needs no JavaScript, it is keyboard-operable and screen-reader-legible
+        for free, and it survives a re-render.
+      */}
+      {data.tailoring && (
+        <Card glow={data.tailoring.isProvisional ? "none" : "accent"}>
+          <details className="group">
+            <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
+              <div className="min-w-0">
+                <p className="text-xs font-medium uppercase tracking-widest text-muted">How tailored this is</p>
+                <h2 className="mt-1 text-base font-semibold tracking-tight">{data.tailoring.headline}</h2>
+              </div>
+              <span className="flex shrink-0 items-center gap-2">
+                <span
+                  className={cn(
+                    "rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wider",
+                    data.tailoring.isProvisional ? "bg-warning/15 text-warning" : "bg-endurance/15 text-endurance"
+                  )}
+                >
+                  {Math.round(data.tailoring.confidence * 100)}% confidence
+                </span>
+                <ChevronDown
+                  className="h-4 w-4 text-muted transition-transform group-open:rotate-180"
+                  aria-hidden
+                />
+              </span>
+            </summary>
+
+            <p className="mt-3 text-sm leading-relaxed text-foreground/85">{data.tailoring.explanation}</p>
+
+            {data.tailoring.unlocks.length > 0 && (
+              <div className="mt-4 rounded-2xl border border-accent/20 bg-accent/[0.06] p-4">
+                <p className="text-xs font-semibold uppercase tracking-widest text-accent">
+                  What your next sessions unlock
+                </p>
+                <ul className="mt-2.5 space-y-3">
+                  {data.tailoring.unlocks.slice(0, 3).map((u) => (
+                    <li key={u.action}>
+                      <p className="text-sm font-medium text-foreground/90">{u.action}</p>
+                      <p className="mt-0.5 text-sm leading-relaxed text-muted">{u.unlocks}</p>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </details>
+        </Card>
       )}
 
       <p className="px-1 text-xs text-muted/60">

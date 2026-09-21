@@ -36,7 +36,12 @@ import {
   weightEntryLabel,
 } from "@/lib/scoring/weight-entry";
 import type { Gender } from "@/types";
-import { FieldError, GlassInput, UnitInput } from "./fields";
+import {
+  FieldError,
+  GlassInput,
+  UnitInput,
+  fieldErrorId,
+} from "./fields";
 import {
   bestSetRow,
   createExerciseRow,
@@ -293,6 +298,7 @@ export function GymExercises({
             unit="kg"
             placeholder="75"
             aria-label="Current bodyweight in kilograms"
+            aria-describedby={errors.bodyweight ? fieldErrorId("bodyweight") : undefined}
             invalid={!!errors.bodyweight}
             wrapperClassName="w-[92px] shrink-0"
             className="h-9 px-2.5"
@@ -313,7 +319,7 @@ export function GymExercises({
           }
           className="mt-1"
         />
-        <FieldError error={errors.bodyweight} />
+        <FieldError error={errors.bodyweight} id={fieldErrorId("bodyweight")} />
       </div>
 
       {/*
@@ -542,6 +548,31 @@ function ExerciseRow({
   const topSet = bestSetRow(row.sets);
   const scoringSex =
     profileScoringSex === "female" || profileScoringSex === "male" ? profileScoringSex : null;
+
+  /*
+   * Why a set can be unscoreable, in the athlete's words rather than ours.
+   *
+   * The symptom that led here: a completed set showed "—" under Top set while
+   * Est. 1RM, × BW and Volume all filled in beside it, which reads as a broken
+   * scorer rather than a missing input. The asymmetry is the whole explanation
+   * — those three need only weight, reps and the bodyweight from the session
+   * bar, while scoreSet needs the exercise NAME, because the name is what
+   * resolves the anchor table and the weight convention. No name, no standard
+   * to score against, so scoreSet returns null at its first guard.
+   *
+   * Note what is deliberately NOT checked here: sex. resolveScoringSex never
+   * returns null — it falls back to DEFAULT_SCORING_BASIS — so a `!scoringSex`
+   * branch is unreachable, and an earlier version of this hint that led with it
+   * silently never rendered. If that fallback ever becomes nullable, this needs
+   * a branch for it.
+   *
+   * Ordered by what the athlete can fix fastest: both inputs are on this screen.
+   */
+  const unscoreableReason: string | null = !row.name.trim()
+    ? "Pick an exercise above to score these sets — the score is set against that lift's standard."
+    : !bodyweight
+      ? "Enter your bodyweight in the session bar to score these sets."
+      : null;
 
   /**
    * Score ONE set, exactly the way the saved score does.
@@ -1220,6 +1251,15 @@ function ExerciseRow({
             className="items-end text-right"
           />
         </div>
+
+        {/* Only once they have actually logged something. Explaining why a set
+            did not score before there is a set to score would be noise on an
+            empty card. */}
+        {unscoreableReason && topSet ? (
+          <p className="mt-1.5 px-2.5 text-[11px] leading-snug text-muted/70">
+            {unscoreableReason}
+          </p>
+        ) : null}
 
         {noteOpen || row.notes ? (
           <GlassInput

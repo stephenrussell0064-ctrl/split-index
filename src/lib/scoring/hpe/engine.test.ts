@@ -12,7 +12,7 @@ import { describe, expect, it } from "vitest";
 import { diagnose } from "./diagnostics";
 import { generatePlan } from "./engine";
 import { bodyweightFrontier, classifyDomains, frontierPoint } from "./feasibility";
-import { acwrSeries, buildMacrocycle, effectiveRamp, enforceAcwr } from "./macrocycle";
+import { acwrSeries, buildMacrocycle, enforceAcwr } from "./macrocycle";
 import { hrBandFor, paceBandFor } from "./prescription";
 import { applyLowCapacityDay, autoregulate, compareEmphasis, qualityProgressionFor, racePacing, selectAttempts } from "./progression";
 import { hardViolations } from "./scheduler";
@@ -24,7 +24,6 @@ import {
   DELOAD_EVERY_N_WEEKS,
   EMPHASIS_KEYS,
   MAX_QUALITY_ENDURANCE_SESSIONS,
-  MAX_WEEKLY_VOLUME_RAMP,
   MIN_ENDURANCE_SESSION_MIN,
   MIN_HEALTHY_BMI,
   MIN_QUALITY_SESSION_MIN,
@@ -44,6 +43,7 @@ function calibrationState(overrides: Partial<AthleteState> = {}): AthleteState {
     sex: "male",
     oneRms: { squat: 160, bench: 140, deadlift: 200 },
     predicted5kS: 19 * 60 + 20,
+    predicted5kFromEffort: true,
     strengthTrainingAge: "advanced",
     enduranceTrainingAge: "intermediate",
     strengthTrainingYears: 6,
@@ -263,15 +263,7 @@ describe("WP3 — safety screen blocks and is not bypassable", () => {
   });
 
   it("halves the ramp for a novice runner, and only eases it for a recent injury", () => {
-    // The novice halving lives in the macrocycle's `effectiveRamp` now, applied
-    // ONCE. The safety screen used to halve it as well for the same answer,
-    // which compounded to a 2% weekly ramp for anyone who skipped the history
-    // section. The screen still warns; the macrocycle does the halving.
-    const novice = calibrationState({ enduranceTrainingYears: 0.2 });
-    expect(safetyScreen(novice, calibrationGoal()).warnings.join(" ")).toMatch(/Under 6 months of running/);
-    expect(safetyScreen(novice, calibrationGoal()).rampMultiplier).toBe(1);
-    expect(effectiveRamp(novice, 1).ramp).toBeCloseTo(MAX_WEEKLY_VOLUME_RAMP * 0.5, 6);
-    expect(effectiveRamp(calibrationState({ enduranceTrainingYears: 3 }), 1).ramp).toBeCloseTo(MAX_WEEKLY_VOLUME_RAMP, 6);
+    expect(safetyScreen(calibrationState({ enduranceTrainingYears: 0.2 }), calibrationGoal()).rampMultiplier).toBe(0.5);
     // A recent injury moves the ramp but no longer halves it. This branch
     // also fires for every athlete who has not filled in the health section
     // (unanswered resolves to true), so it must not be able to reshape a

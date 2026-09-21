@@ -1029,7 +1029,54 @@ const MIN_SCORE = 1;
 const MAX_SCORE = 999;
 /** Only a genuinely exceptional (record-approaching) ratio should ever read this high. */
 const NEAR_RECORD_THRESHOLD = 970;
+
+/**
+ * [EST] Ceiling for a lift scored against a GENERIC anchor rather than a
+ * calibrated one.
+ *
+ * 724 is the top of the Semi-Pro band — the highest tier that does not claim
+ * the athlete is exceptional. An unrecognised movement can be scored as a good
+ * lift and cannot be scored as a world-class one, because nothing in the engine
+ * knows what the movement is.
+ */
+const GENERIC_ANCHOR_MAX_SCORE = 724;
 const MIN_RATIO = 0.01;
+
+/**
+ * THE BOTTOM OF THE BODYWEIGHT CURVE WAS A CLIFF, NOT A SLOPE.
+ *
+ * Pull-ups, dips and push-ups are scored on ADDED load: the anchor says
+ * "+0.33 x bodyweight scores 500". That is the right basis — it is the only
+ * one with enough resolution to separate a +40kg pull-up from a +5kg one —
+ * but it has a singularity exactly where beginners live. Added load goes to
+ * zero as the set approaches a single bodyweight rep, the log curve dives,
+ * and everything below the clamp lands on the same number. Measured, 80kg
+ * male, no added weight:
+ *
+ *     pull-up  x1 x2 x3 x4      1  1  1  1      (x5 = 119)
+ *     push-up  x1 .. x5         1  1  1  1  1   (x10 = 362)
+ *     dip      x1 .. x5         1  1  1  1  1
+ *
+ * Three sets of eight push-ups — the most commonly performed exercise there
+ * is, and for many people their whole first month of training — scored 1 out
+ * of 1000, indistinguishable from having done nothing. A single pull-up did
+ * worse still: added load of exactly zero tripped the `no-valid-set` guard
+ * meant for sets with no load logged at all, so a real rep was recorded as
+ * an absence.
+ *
+ * Below the floor the score therefore comes from TOTAL load — the bodyweight
+ * fraction the movement actually carries, plus whatever was added. That is a
+ * poorer discriminator than added load, which is why it is not used above the
+ * floor, but down here it is the only thing that still varies: it keeps the
+ * band strictly increasing with reps, keeps a pull-up (hanging all of
+ * bodyweight) above a push-up (0.64 of it), and joins the main curve at the
+ * floor without a step.
+ *
+ * The floor is set at 120 so the join sits below every score the curve
+ * already produced with any confidence; above it nothing changes at all.
+ */
+const BODYWEIGHT_FLOOR_SCORE = 120;
+const BODYWEIGHT_FLOOR_CURVATURE = 3;
 
 /**
  * Lifts where the logged weight is *added* load on top of bodyweight, not
@@ -1206,6 +1253,38 @@ function scoreFromRatio(ratio: number, effectiveAnchor: number): number {
   const safeRatio = Math.max(ratio, MIN_RATIO);
   const raw = 500 + SLOPE * Math.log(safeRatio / effectiveAnchor);
   return clamp(Math.round(raw), MIN_SCORE, MAX_SCORE);
+}
+
+/**
+ * Keep the bottom of a bodyweight-relative curve monotonic instead of flat.
+ * See BODYWEIGHT_FLOOR_SCORE. Returns `score` untouched above the floor.
+ *
+ * `addedRatio` and the bodyweight portion are both put through
+ * `relativeStrengthRatio` so they are in the same allometric currency — mixing
+ * a raw bodyweight fraction into an allometrically scaled ratio would compare
+ * two different things and misorder athletes by size.
+ */
+function applyBodyweightFloor(
+  score: number,
+  addedRatio: number,
+  effectiveAnchor: number,
+  bodyweightKg: number,
+  loadFraction: number
+): number {
+  // The added-load ratio at which the main curve equals the floor score.
+  const floorRatio = effectiveAnchor * Math.exp((BODYWEIGHT_FLOOR_SCORE - 500) / SLOPE);
+  const added = Math.max(0, addedRatio);
+  if (added >= floorRatio) return score;
+
+  const carried = relativeStrengthRatio(loadFraction * bodyweightKg, bodyweightKg);
+  if (carried <= 0) return score;
+
+  const atFloor = carried + floorRatio;
+  const here = carried + added;
+  const decayed =
+    MIN_SCORE +
+    (BODYWEIGHT_FLOOR_SCORE - MIN_SCORE) * (here / atFloor) ** BODYWEIGHT_FLOOR_CURVATURE;
+  return clamp(Math.round(decayed), MIN_SCORE, BODYWEIGHT_FLOOR_SCORE);
 }
 
 function computeNextTier(
@@ -1628,7 +1707,18 @@ export function scoreStrength(input: ScoreStrengthInput): ScoreStrengthResult {
     flags.push("1rm-set-variance");
   }
 
-  if (oneRM <= 0 || bodyweightKg <= 0) {
+  /*
+    A completed bodyweight rep is a set, not an absence.
+
+    For these lifts `oneRM` is ADDED load, so a single strict pull-up resolves
+    to exactly 0 and fell into this guard — which exists for sets with no load
+    logged at all — and came back "no-valid-set", score 1. The athlete did the
+    hardest rep they own and the app recorded nothing.
+  */
+  const performedBodyweightRep =
+    isBodyweightRelative && latestSet.reps > 0 && bodyweightKg > 0;
+
+  if ((oneRM <= 0 && !performedBodyweightRep) || bodyweightKg <= 0) {
     return {
       liftKey: resolvedKey,
       score: MIN_SCORE,
@@ -1725,7 +1815,43 @@ export function scoreStrength(input: ScoreStrengthInput): ScoreStrengthResult {
     );
   } else {
     score = scoreFromRatio(ratio, effectiveAnchor);
+    if (isBodyweightRelative) {
+      score = applyBodyweightFloor(
+        score,
+        ratio,
+        effectiveAnchor,
+        bodyweightKg,
+        loadFraction
+      );
+    }
     nextTier = computeNextTier(score, effectiveAnchor, bodyweightKg, oneRM);
+  }
+
+  /*
+    AN EXERCISE WE CANNOT IDENTIFY CANNOT EARN A WORLD-CLASS SCORE.
+
+    A free-text name that matches nothing in the catalogue falls through to
+    DEFAULT_GENERIC_ANCHOR — ratio 0.35, i.e. "0.35 x bodyweight scores 500".
+    That is a deliberately soft standard for an unknown movement, and combined
+    with an uncapped curve it meant ANY invented string scored 999 at an
+    ordinary load. Measured, 80 kg lifter, one exercise, 100 kg x 5:
+
+        "unknown 500-character name"   999   "World Class"
+        emoji name                     999   "World Class"
+        "squat\n\n\nDROP TABLE"          999   "World Class"
+
+    So the top of the strength scale was reachable by typing nonsense, and the
+    leaderboards read these numbers directly.
+
+    The cap is the honest reading of what a generic anchor supports: it is a
+    guess at a standard, so it can say "this is a solid lift" and must not say
+    "this is among the best in the world". Calibrated primary and accessory
+    lifts are untouched and can still reach 999. The flag saying the standard
+    was estimated was already there — this makes the score agree with it.
+  */
+  if (source === "generic" && score > GENERIC_ANCHOR_MAX_SCORE) {
+    score = GENERIC_ANCHOR_MAX_SCORE;
+    flags.push("capped-unrecognised-exercise");
   }
 
   const tier = tierForScore(score);

@@ -35,6 +35,7 @@ function prefilled(overrides: Partial<PrefilledFromSplitIndex> = {}): PrefilledF
     maxHr: 190,
     oneRms: { squat: 150, bench: 110, deadlift: 190 },
     predicted5kS: 1200,
+    predicted5kFromEffort: true,
     loggedWeeklyRunMinutes: 90,
     chronicLoad: 400,
     ...overrides,
@@ -70,20 +71,52 @@ function completeRecord(overrides: Partial<IntakeRecord> = {}): IntakeRecord {
 }
 
 describe("WP2 — unanswered is not 'no'", () => {
-  it("assumes a recent injury and recent surgery until answered", () => {
+  /*
+   * These three assertions were inverted when the health and fuelling sections
+   * were removed from the intake.
+   *
+   * The original rule was right for the product it was written for: the
+   * questions were on screen, so leaving them blank was a CHOICE, and the
+   * cautious reading of a choice not to answer is defensible. Once the
+   * sections were removed, "unanswered" stopped being a choice and became the
+   * only possible state — and an assumption an athlete cannot correct is not
+   * caution, it is a permanent handicap applied to everyone.
+   *
+   * Concretely, left as they were: every athlete would be treated as recently
+   * injured (intensity ceiling 0.95, ramp multiplied by 0.8) and recently
+   * operated on (ceiling 0.8, plus a medical-clearance prompt), and would trip
+   * the LEA branch that tells them to go and answer fuelling questions that no
+   * longer exist.
+   *
+   * The BMI floor in safetyScreen is untouched and still suppresses bodyweight
+   * guidance on its own evidence rather than on an absence of answers.
+   */
+  it("does not assume an injury or surgery that can no longer be asked about", () => {
     const { flags } = resolveSafetyFlags(parseIntakeRow(null), { age: 30, sex: "male" });
-    expect(flags.injuryLast12Weeks).toBe(true);
-    expect(flags.surgeryLast6Months).toBe(true);
+    expect(flags.injuryLast12Weeks).toBe(false);
+    expect(flags.surgeryLast6Months).toBe(false);
   });
 
-  it("scores every unanswered LEA question as positive", () => {
-    // Three scored questions, all unanswered, male athlete (the female-only
-    // one does not apply). Training fasted is collected but deliberately not
-    // scored — it is an ordinary practice, not a clinical finding, and it used
-    // to move an athlete a fifth of the way toward being told they were
-    // under-fuelling for eating breakfast after their run instead of before.
+  it("scores an unasked LEA screen as zero, not as every answer positive", () => {
+    // At 3 this tripped `leaRiskFlags >= 2 && !leaScreenAnswered`, whose whole
+    // message is an instruction to go and answer the fuelling section.
     const { flags } = resolveSafetyFlags(parseIntakeRow(null), { age: 30, sex: "male" });
-    expect(flags.leaRiskFlags).toBe(3);
+    expect(flags.leaRiskFlags).toBe(0);
+  });
+
+  it("still scores the LEA screen when the athlete did answer it", () => {
+    // The removal changes the default, not the scoring. An athlete with stored
+    // answers — from before the section was removed — is still read honestly.
+    const answered = parseIntakeRow({
+      lea_restricted_food: true,
+      lea_unintended_weight_loss: true,
+      lea_bone_stress_injury: false,
+      lea_trains_fasted: false,
+      lea_amenorrhoea: false,
+      sections_completed: ["health", "fuelling"],
+    } as Record<string, unknown>);
+    const { flags } = resolveSafetyFlags(answered, { age: 30, sex: "male" });
+    expect(flags.leaRiskFlags).toBe(2);
   });
 
   it("does not count training fasted as a risk flag", () => {
@@ -100,18 +133,39 @@ describe("WP2 — unanswered is not 'no'", () => {
   });
 
   it("includes the female-only LEA question only where it applies", () => {
-    const male = resolveSafetyFlags(parseIntakeRow(null), { age: 30, sex: "male" });
-    const female = resolveSafetyFlags(parseIntakeRow(null), { age: 30, sex: "female" });
+    // Asked of ANSWERED records now. An unasked screen scores zero for both
+    // sexes, so comparing two unasked records can no longer show the extra
+    // question — it would read 0 === 0 + 1 and fail for the wrong reason.
+    const positives = {
+      lea_restricted_food: true,
+      lea_unintended_weight_loss: true,
+      lea_bone_stress_injury: true,
+      lea_amenorrhoea: true,
+      sections_completed: ["health", "fuelling"],
+    } as Record<string, unknown>;
+    const male = resolveSafetyFlags(parseIntakeRow(positives), { age: 30, sex: "male" });
+    const female = resolveSafetyFlags(parseIntakeRow(positives), { age: 30, sex: "female" });
     expect(female.flags.leaRiskFlags).toBe(male.flags.leaRiskFlags + 1);
   });
 
-  it("does not score an unasked LEA screen as clear", () => {
-    // The failure this guards: treating "never asked" as zero flags silently
-    // clears the safeguard the screen exists to enforce.
+  it("scores an unasked LEA screen the same as an answered-clear one", () => {
+    /*
+     * The inverse of what this asserted before, and deliberately so.
+     *
+     * It used to require an unasked screen to score >= 2, so that skipping the
+     * section could not clear the safeguard. That held while the section was on
+     * screen and skipping was a choice. The fuelling section has been removed,
+     * so "unasked" is now every athlete, and >= 2 would mean every athlete
+     * permanently carries a flag they have no way to clear — and is told to go
+     * and answer questions that do not exist.
+     *
+     * Suppression now rests on evidence the engine actually has: the BMI floor
+     * in safetyScreen, and any stored answers from before the removal.
+     */
     const answeredClear = completeRecord();
     const neverAsked = completeRecord({ sectionsCompleted: ["goal"] });
     expect(resolveSafetyFlags(answeredClear, { age: 30, sex: "male" }).flags.leaRiskFlags).toBe(0);
-    expect(resolveSafetyFlags(neverAsked, { age: 30, sex: "male" }).flags.leaRiskFlags).toBeGreaterThanOrEqual(2);
+    expect(resolveSafetyFlags(neverAsked, { age: 30, sex: "male" }).flags.leaRiskFlags).toBe(0);
   });
 
   it("derives under-18 from the profile rather than trusting a stored answer", () => {
@@ -119,10 +173,12 @@ describe("WP2 — unanswered is not 'no'", () => {
     expect(flags.under18).toBe(true);
   });
 
-  it("says out loud what it assumed", () => {
+  it("no longer announces an injury assumption it does not make", () => {
+    // The note existed to explain a penalty. There is no penalty now, so the
+    // note would be describing something that is not happening.
     const { assumed } = resolveSafetyFlags(parseIntakeRow(null), { age: 30, sex: "male" });
-    expect(assumed.join(" ")).toMatch(/recent injury is assumed/i);
-    expect(assumed.join(" ")).toMatch(/eases your volume ramp/i);
+    expect(assumed.join(" ")).not.toMatch(/recent injury is assumed/i);
+    expect(assumed.join(" ")).not.toMatch(/recent surgery is assumed/i);
   });
 
   it("stops assuming once the athlete answers", () => {
@@ -158,7 +214,13 @@ describe("WP2 — documented degradation", () => {
   it("reports every assumption rather than defaulting silently", () => {
     const resolved = resolveIntakeInputs(parseIntakeRow(null), prefilled({ restingHr: null, maxHr: null }), NOW);
     const text = resolved.assumed.join(" ");
-    expect(text).toMatch(/safety questionnaire has not been completed/i);
+    /*
+     * The safety-questionnaire note is deliberately gone. The health section
+     * was removed from the intake, so it fired for every athlete and told them
+     * to go and spend a minute on a screen that does not exist — while
+     * promising a volume-ramp unlock they already have unconditionally.
+     */
+    expect(text).not.toMatch(/safety questionnaire has not been completed/i);
     expect(text).toMatch(/Resting heart rate was assumed/i);
     expect(text).toMatch(/age-estimated/i);
     expect(resolved.missingSections.length).toBeGreaterThan(0);
@@ -280,77 +342,6 @@ describe("WP2 — planning horizon without an event date", () => {
     expect(h.weeksOut).toBe(DEFAULT_PLANNING_HORIZON_WEEKS);
     // It must not imply the athlete committed to a date they never entered.
     expect(h.note).toMatch(/have not set an event date/i);
-  });
-
-  /*
-   * Every test in this block used a NOW at T00:00:00Z, which is the one hour of
-   * the day at which the old calculation and the correct one agree — so the
-   * fault below survived a suite that covered the function well.
-   *
-   * `resolveHorizon` computed `new Date(eventDate) - now`. `event_date` is a
-   * DATE column, so the left side is UTC midnight and the right side is a
-   * wall-clock instant, and the difference therefore depended on what time of
-   * day the plan was generated. It now goes through `daysUntilDate`, which
-   * normalises both sides to UTC days and exists for exactly this reason —
-   * extracted during a QA pass, given tests, and never wired in until
-   * scripts/audit-reachability.mjs found it with no callers.
-   */
-  it("gives the same horizon whatever time of day the plan is generated", () => {
-    /*
-     * Scanned across a whole quarter rather than asserted at one date, because
-     * the first version of this test picked 2026-04-02 — 91 days out, exactly
-     * 13.0 weeks — which is the dead centre of a rounding bucket and therefore
-     * the one gap the fault cannot move. It passed against the broken
-     * implementation. Mutation testing is what said so.
-     *
-     * The flip happens where days / 7 sits just above a .5 boundary: at 88 days
-     * the old calculation gives 13 weeks at midnight and 12 by late afternoon,
-     * because it subtracted a wall-clock instant from a UTC midnight.
-     */
-    const hours = [0, 6, 9, 12, 15, 18, 23];
-    const drifting: string[] = [];
-
-    for (let offset = 60; offset <= 150; offset++) {
-      const event = new Date(Date.UTC(2026, 0, 1 + offset)).toISOString().slice(0, 10);
-      const answers = hours.map(
-        (h) => resolveHorizon(event, null, new Date(Date.UTC(2026, 0, 1, h, 30))).weeksOut,
-      );
-      if (new Set(answers).size !== 1) drifting.push(`${event} (${offset}d): ${answers.join("/")}`);
-    }
-
-    expect(drifting, "horizon depends on the time of day the plan was generated").toEqual([]);
-  });
-
-  it("does not move an athlete across the too-close boundary by the clock", () => {
-    /*
-     * The qualitative version of the same fault. Below MIN_HORIZON_WEEKS the
-     * athlete is told this is "a sharpening and taper block rather than a
-     * training block — the goal is arriving fresh, not fitter". Which of those
-     * they read must not depend on pressing the button after lunch.
-     *
-     * MIN_HORIZON_WEEKS is 4, so the crossing sits around 25 days out: the scan
-     * has to reach it. An earlier version started at 40 days and could never
-     * have failed.
-     */
-    const drifting: string[] = [];
-    for (let offset = 15; offset <= 45; offset++) {
-      const event = new Date(Date.UTC(2026, 0, 1 + offset)).toISOString().slice(0, 10);
-      const notes = [0, 9, 17, 23].map(
-        (h) => resolveHorizon(event, null, new Date(Date.UTC(2026, 0, 1, h, 30))).note ?? "",
-      );
-      if (new Set(notes).size !== 1) drifting.push(`${event} (${offset}d)`);
-    }
-    expect(drifting, "what the athlete is told depends on the clock").toEqual([]);
-  });
-
-  it("reads an event date that arrives as a full timestamp", () => {
-    // A DATE column gives "YYYY-MM-DD" today. A caller holding a timestamp is
-    // not passing rubbish, and the previous shape turned one into null — a
-    // silently dropped event date rather than a wrong answer, but dropped.
-    const a = resolveHorizon("2026-04-02", null, NOW);
-    const b = resolveHorizon("2026-04-02T14:30:00Z", null, NOW);
-    expect(b.horizonSource).toBe("event_date");
-    expect(b.weeksOut).toBe(a.weeksOut);
   });
 
   it("clamps an event that is too close, and reframes what the block is for", () => {
@@ -505,6 +496,71 @@ describe("section regrouping", () => {
   });
 
   it("keeps the mandatory sections answerable without the optional ones", () => {
-    expect(MANDATORY_SECTIONS).toEqual(["health", "goal", "availability"]);
+    // "health" was mandatory until the section was removed from the wizard.
+    // A required step nobody can reach is a gate that never opens, so it went
+    // with the section rather than being left to fail quietly.
+    expect(MANDATORY_SECTIONS).toEqual(["goal", "availability"]);
+  });
+
+  it("does not report a withdrawn section as missing", () => {
+    // health and fuelling are no longer asked. Listing them as missing would
+    // be reporting a gap the athlete has no way to close.
+    const resolved = resolveIntakeInputs(parseIntakeRow(null), prefilled(), NOW);
+    expect(resolved.missingSections).not.toContain("health");
+    expect(resolved.missingSections).not.toContain("fuelling");
+  });
+});
+
+/**
+ * A NUMBER THAT IS NOT A NUMBER USED TO BECOME NaN, NOT "UNANSWERED".
+ *
+ * `parseIntakeRow` reads about twenty numeric fields through one helper, and
+ * that helper was a bare `Number(row[key])`. NaN does not throw in the plan
+ * engine — it propagates silently through the ramp, the ACWR and the
+ * prescriptions, and the athlete is shown a block full of NaN.
+ *
+ * It also defeated the defaults on the very lines that read these fields:
+ * `n("priority") ?? 0.5` gives 0.5 for null and NaN for NaN, and the engine
+ * has no idea which of those it is looking at.
+ */
+describe("an intake value that is not a number", () => {
+  it("is treated as unanswered rather than as NaN", () => {
+    const parsed = parseIntakeRow({ max_hr_override: "not a number" });
+    expect(parsed.maxHrOverride).toBeNull();
+  });
+
+  it("lets the field's own default apply, which NaN never did", () => {
+    // `n("priority") ?? 0.5` — the default was written for exactly this case
+    // and could not fire, because NaN is not null.
+    expect(parseIntakeRow({ priority: "high" }).priority).toBe(0.5);
+    expect(parseIntakeRow({ am_hour: "" }).amHour).toBe(7);
+  });
+
+  it("does not read an empty answer as zero", () => {
+    // `Number("")` is 0, and 0 is a real answer to several of these fields —
+    // an unanswered `am_hour` came back as midnight rather than as the default.
+    expect(parseIntakeRow({ am_hour: "   " }).amHour).toBe(7);
+    expect(parseIntakeRow({ strength_training_years: "" }).strengthTrainingYears).toBeNull();
+  });
+
+  it("keeps a real zero, which is not the same thing", () => {
+    expect(parseIntakeRow({ am_hour: 0 }).amHour).toBe(0);
+    expect(parseIntakeRow({ strength_training_years: 0 }).strengthTrainingYears).toBe(0);
+  });
+
+  it("still reads the numbers people actually answer with", () => {
+    const parsed = parseIntakeRow({
+      max_hr_override: 188,
+      strength_training_years: "3",
+      priority: 0.8,
+    });
+    expect(parsed.maxHrOverride).toBe(188);
+    expect(parsed.strengthTrainingYears).toBe(3);
+    expect(parsed.priority).toBe(0.8);
+  });
+
+  it("keeps a genuinely absent answer absent", () => {
+    const parsed = parseIntakeRow({ max_hr_override: null });
+    expect(parsed.maxHrOverride).toBeNull();
   });
 });

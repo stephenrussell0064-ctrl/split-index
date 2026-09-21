@@ -24,6 +24,7 @@ const STATE = (currentRunMinPerWeek: number): AthleteState =>
     sex: "male",
     oneRms: {},
     predicted5kS: 1105,
+    predicted5kFromEffort: true,
     strengthTrainingAge: "intermediate",
     enduranceTrainingAge: "intermediate",
     strengthTrainingYears: 5,
@@ -100,5 +101,44 @@ describe("weekly endurance budget floor", () => {
     // start already covers the genuine no-history athlete.
     const weeks = buildMacrocycle(STATE(0), GOAL);
     expect(weeks[0].enduranceMin).toBeGreaterThan(0);
+  });
+});
+
+describe("an anchor its own race time contradicts", () => {
+  /*
+   * Reported from a device: an athlete running 18:25 for 5k, working toward
+   * 18:00, was given ONE run of about 5km a week — in week 1 and in the final
+   * week alike. Every week of a block is a multiple of the on-ramp anchor and
+   * the hard ceiling is 2.6x it, so an anchor ten times too low does not start
+   * the athlete slow, it caps them there for the whole block.
+   *
+   * 1105s is 18:25. VOLUME_ADEQUACY_MIN_PER_WEEK puts that level on 250
+   * min/week, and the engine has always known this — the diagnostic uses the
+   * same table to decide whether volume or intensity is an athlete's limiting
+   * factor. The on-ramp simply never asked.
+   */
+  it("raises a volume that could not have produced the athlete's own 5k", () => {
+    const weeks = buildMacrocycle(STATE(25), GOAL);
+    // A quarter of the 250 min/week that an 18:25 is built on.
+    expect(weeks[0].enduranceMin).toBeGreaterThanOrEqual(62);
+    // And enough minutes to be more than a single session.
+    expect(weeks[0].enduranceMin).toBeGreaterThan(MIN_ENDURANCE_SESSION_MIN * 2);
+  });
+
+  it("does not raise it on a placeholder 5k", () => {
+    /*
+     * Without a logged maximal effort the 5k is NO_MAXIMAL_EFFORT_5K_S, not a
+     * prediction. Flooring volume on it would invent an aerobic base the
+     * athlete has never demonstrated — the opposite failure, and the more
+     * dangerous one, because it ramps a beginner.
+     */
+    const noEffort = { ...STATE(25), predicted5kFromEffort: false };
+    const weeks = buildMacrocycle(noEffort, GOAL);
+    expect(weeks[0].enduranceMin).toBeCloseTo(25, 0);
+  });
+
+  it("never lowers an athlete already running more than the floor", () => {
+    const weeks = buildMacrocycle(STATE(300), GOAL);
+    expect(weeks[0].enduranceMin).toBeCloseTo(300, 0);
   });
 });

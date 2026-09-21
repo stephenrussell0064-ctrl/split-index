@@ -1,5 +1,7 @@
 "use client";
 
+import { ChartFigure } from "@/components/analytics/chart-figure";
+import { describeComparison } from "@/lib/a11y/describe-series";
 import {
   LineChart,
   Line,
@@ -46,6 +48,30 @@ export function CompareChart({ series, height = 260 }: CompareChartProps) {
   });
 
   return (
+    <ChartFigure
+      label="Split Index over time, both athletes"
+      summary={describeComparison(
+        series.map((s) => ({
+          label: s.label,
+          data: s.data.map((d) => ({ at: d.date, value: d.value })),
+        }))
+      )}
+      /*
+        One row per date with a column per athlete, rather than two tables. The
+        question this chart answers is who is ahead on a given day, and that is
+        a comparison across a row — two separate tables would make a reader hold
+        one series in their head while reading the other.
+      */
+      columns={[
+        { header: "Date", cell: (r: Record<string, string | number>) => String(r.date) },
+        ...series.map((s, i) => ({
+          header: s.label,
+          cell: (r: Record<string, string | number>) =>
+            r[`v${i}`] === undefined ? "no reading" : String(r[`v${i}`]),
+        })),
+      ]}
+      rows={merged}
+    >
     <ResponsiveContainer width="100%" height={height}>
       <LineChart data={merged} margin={{ top: 8, right: 8, left: -8, bottom: 0 }}>
         <CartesianGrid vertical={false} strokeDasharray="3 6" stroke="rgba(148,163,184,0.12)" />
@@ -90,5 +116,6 @@ export function CompareChart({ series, height = 260 }: CompareChartProps) {
         ))}
       </LineChart>
     </ResponsiveContainer>
+    </ChartFigure>
   );
 }

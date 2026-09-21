@@ -46,8 +46,49 @@ export function PersonalRecordsTable({ records }: PersonalRecordsTableProps) {
           {sorted.length === 0 ? (
             <ChartEmptyState message="Personal bests appear here as you set new records" />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+            <>
+              {/*
+                TWO LINES PER RECORD ON A PHONE, a table from `sm` up.
+
+                This was one table wrapped in `overflow-x-auto`, which does
+                nothing: the table is `w-full`, so it never exceeds its
+                container and the wrapper never scrolls. What actually happened
+                at 390px is that four columns — Sport, Metric, Value and a
+                "MMM d, yyyy" date — squeezed into 318px and the metric column
+                wrapped to three lines, so every row was three rows tall and
+                none of the columns lined up with their headers any more.
+
+                A record is two facts and two qualifiers: what you did and how
+                much, then which metric and when. That is a list on a phone,
+                not a table. The table is right at `sm` and up and is kept
+                exactly as it was, minus the wrapper that was doing nothing.
+              */}
+              <ul className="sm:hidden">
+                {sorted.map((pr, i) => (
+                  <motion.li
+                    key={pr.id}
+                    initial={{ opacity: 0, x: -8 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: i * 0.03 }}
+                    className="flex flex-col gap-0.5 border-b border-white/[0.03] py-3 last:border-0"
+                  >
+                    <div className="flex items-baseline justify-between gap-3">
+                      <span className="text-sm font-medium">{sportLabel(pr.sport)}</span>
+                      <span className="shrink-0 text-sm font-semibold tabular-nums text-accent">
+                        {formatRecordValue(pr)}
+                      </span>
+                    </div>
+                    <div className="flex items-baseline justify-between gap-3 text-xs text-muted">
+                      <span className="capitalize">{pr.metric.replace(/_/g, " ")}</span>
+                      <span className="shrink-0 tabular-nums">
+                        {format(new Date(pr.achieved_at), "MMM d, yyyy")}
+                      </span>
+                    </div>
+                  </motion.li>
+                ))}
+              </ul>
+
+              <table className="hidden w-full text-sm sm:table">
                 <thead>
                   <tr className="border-b border-white/5 text-left text-[10px] uppercase tracking-wider text-muted">
                     <th className="pb-3 pr-4 font-medium">Sport</th>
@@ -79,7 +120,7 @@ export function PersonalRecordsTable({ records }: PersonalRecordsTableProps) {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </>
           )}
         </CardContent>
       </Card>

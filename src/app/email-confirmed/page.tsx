@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { CheckCircle2 } from "lucide-react";
 import { BrandMark } from "@/components/brand/brand-mark";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils/cn";
+import { mainContentProps } from "@/lib/a11y/main-content";
 
 export const metadata = {
   title: "Email confirmed — Split Index",
@@ -9,7 +11,7 @@ export const metadata = {
 
 export default function EmailConfirmedPage() {
   return (
-    <div className="min-h-dvh bg-ambient flex items-center justify-center px-4">
+    <main {...mainContentProps} className="min-h-dvh bg-ambient flex items-center justify-center px-4 pt-[max(3rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))] focus:outline-none">
       <div className="w-full max-w-md text-center">
         <div className="mb-8 flex justify-center">
           <BrandMark variant="full" href="/" logoHeight={36} priority />
@@ -28,11 +30,9 @@ export default function EmailConfirmedPage() {
             logging your training and see where you rank.
           </p>
 
-          <Link href="/login" className="mt-6 block">
-            <Button className="w-full">Sign in to Split Index</Button>
-          </Link>
+          <Link href="/login" className={cn(buttonVariants(), "mt-6 w-full")}>Sign in to Split Index</Link>
         </div>
       </div>
-    </div>
+    </main>
   );
 }

@@ -40,7 +40,6 @@ import {
   INTERVAL_REPS_MIN,
   INTERVAL_REP_METERS,
   INTERVAL_WORK_FRACTION,
-  QUALITY_WARMUP_COOLDOWN_MIN,
   GREY_ZONE_EASY_BIAS,
   LONG_RUN_VS_EASY,
   RECOVERY_VS_EASY,
@@ -192,8 +191,6 @@ export interface EndurancePrescriptionOptions {
   thresholdBlockMin?: number;
   /** Overrides the derived pace band — used by the F15 progression to move rep pace from current toward target 5k pace. */
   paceOverride?: { lo: number; hi: number };
-  /** The longest the session may grow to fit its own reps before the reps come down. Defaults to `minutes`. */
-  maxMinutes?: number;
   /** Beta blockers and similar: drop HR, prescribe by pace and RPE. */
   suppressHeartRate?: boolean;
   /** Appended verbatim — e.g. the strides that close a long run (F13). */
@@ -235,34 +232,21 @@ export function prescribeEndurance(
 
   const paceText = `${mmss(band.lo)}-${mmss(band.hi)}/km`;
 
-  // The session has to CONTAIN the work it prescribes. "6 x 1000m in 3:55
-  // ... inside a 30min session" was 23.5 minutes of reps plus 6 of recovery
-  // with no warm-up — the F21 class of contradiction, one step milder. The
-  // reps and recoveries plus a warm-up and cool-down must fit inside the
-  // session; the session grows to its ceiling first, then the reps come down.
-  const warmupS = QUALITY_WARMUP_COOLDOWN_MIN * 60;
-  const ceilingS = Math.max(minutes, options.maxMinutes ?? minutes) * 60;
-
   if (kind === "interval_run") {
-    let reps = Math.min(
+    const reps = Math.min(
       INTERVAL_REPS_MAX,
       Math.max(INTERVAL_REPS_MIN, options.intervalReps ?? Math.round((minutes * 60 * INTERVAL_WORK_FRACTION) / mid))
     );
-    if (options.intervalReps != null) reps = Math.min(INTERVAL_REPS_MAX, Math.max(3, options.intervalReps));
     const recovery = options.intervalRecoveryS ?? INTERVAL_RECOVERY_S;
     const repTime = (INTERVAL_REP_METERS / 1000) * mid;
-    const needS = (r: number) => r * repTime + Math.max(0, r - 1) * recovery + warmupS;
-    while (reps > 3 && needS(reps) > ceilingS) reps--;
-    const totalMin = Math.ceil(Math.max(minutes * 60, needS(reps)) / 60);
     return {
       text:
         `${reps} x ${INTERVAL_REP_METERS}m in ${mmss(repTime)} each (${paceText}), ${recovery}s jog recovery. ` +
-        `${hrText} on the reps. About ${((reps * INTERVAL_REP_METERS) / 1000).toFixed(1)}km of work; ` +
-        `${totalMin}min including a ${QUALITY_WARMUP_COOLDOWN_MIN}min warm-up and cool-down.` +
-        `${options.extra ? ` ${options.extra}` : ""}`,
+        `${hrText} on the reps. About ${((reps * INTERVAL_REP_METERS) / 1000).toFixed(1)}km of work inside a ` +
+        `${Math.round(minutes)}min session.${options.extra ? ` ${options.extra}` : ""}`,
       findingId,
       distanceKm: (reps * INTERVAL_REP_METERS) / 1000,
-      minutes: totalMin,
+      minutes,
       paceLoSPerKm: band.lo,
       paceHiSPerKm: band.hi,
       hrLo: hr?.lo,
@@ -272,24 +256,17 @@ export function prescribeEndurance(
   }
 
   if (kind === "threshold_run") {
-    let blocks = minutes < THRESHOLD_BLOCK_SPLIT_MINUTES ? THRESHOLD_BLOCKS_SHORT : THRESHOLD_BLOCKS_LONG;
-    let perBlockMin = Math.round(options.thresholdBlockMin ?? (minutes * THRESHOLD_WORK_FRACTION) / blocks);
-    const needS = (b: number, m: number) => (b * m * 60) + Math.max(0, b - 1) * THRESHOLD_RECOVERY_S + warmupS;
-    while (needS(blocks, perBlockMin) > ceilingS) {
-      if (blocks > 2) blocks--;
-      else if (perBlockMin > 4) perBlockMin--;
-      else break;
-    }
-    const totalMin = Math.ceil(Math.max(minutes * 60, needS(blocks, perBlockMin)) / 60);
+    const blocks = minutes < THRESHOLD_BLOCK_SPLIT_MINUTES ? THRESHOLD_BLOCKS_SHORT : THRESHOLD_BLOCKS_LONG;
+    const perBlockMin = options.thresholdBlockMin ?? (minutes * THRESHOLD_WORK_FRACTION) / blocks;
     const perBlockKm = (perBlockMin * 60) / mid;
     return {
       text:
         `${blocks} x ${perBlockMin.toFixed(0)}min at ${paceText} (about ${perBlockKm.toFixed(1)}km per block), ` +
-        `${THRESHOLD_RECOVERY_S / 60}min jog between. ${hrText}. ${totalMin}min total including a ` +
-        `${QUALITY_WARMUP_COOLDOWN_MIN}min warm-up and cool-down.${options.extra ? ` ${options.extra}` : ""}`,
+        `${THRESHOLD_RECOVERY_S / 60}min jog between. ${hrText}. ${Math.round(minutes)}min total including ` +
+        `warm-up and cooldown.${options.extra ? ` ${options.extra}` : ""}`,
       findingId,
       distanceKm: blocks * perBlockKm,
-      minutes: totalMin,
+      minutes,
       paceLoSPerKm: band.lo,
       paceHiSPerKm: band.hi,
       hrLo: hr?.lo,
@@ -508,45 +485,6 @@ export interface LiftPrescriptionOptions {
   variant?: string;
   /** Accessory lines appended after the main lift. */
   accessories?: string[];
-  /**
-   * The working maximum the loads are written against, as a multiple of the
-   * logged 1RM. Above 1 late in a block that is expected to add strength —
-   * the loads walk up with the projection rather than sitting on a number
-   * that was true in week one. Stated in the line so the athlete can see it.
-   */
-  workingMaxMultiplier?: number;
-  /**
-   * A second competition lift trained on the same day at reduced sets and
-   * load — how a peaking athlete on three gym days meets each lower lift
-   * twice a week. Inserted directly after the primary line.
-   */
-  secondary?: { lift: string; sets: number; reps: readonly [number, number]; intensity: readonly [number, number]; rir: readonly [number, number] };
-}
-
-/**
- * One competition-lift line — "Squat 4x3-6 @ 105-120kg (75-85% 1RM), RIR 1-3"
- * — priced off the athlete's own 1RM and the block's working-max multiplier.
- * Shared by the primary and the secondary so both are written the same way.
- */
-export function liftLine(
-  profile: AthleteProfile,
-  lift: string,
-  sets: number,
-  reps: readonly [number, number],
-  intensity: readonly [number, number],
-  rir: readonly [number, number],
-  workingMaxMultiplier = 1,
-  displayName?: string
-): string {
-  const oneRm = (profile.oneRms[lift] ?? 0) * workingMaxMultiplier;
-  const name = displayName ?? lift.charAt(0).toUpperCase() + lift.slice(1);
-  const pctText = `${Math.round(intensity[0] * 100)}-${Math.round(intensity[1] * 100)}%`;
-  const loadText =
-    oneRm > 0
-      ? `${roundToPlate(oneRm * intensity[0]).toFixed(0)}-${roundToPlate(oneRm * intensity[1]).toFixed(0)}kg (${pctText}` +
-        `${Math.round((workingMaxMultiplier - 1) * 100) >= 1 ? ` 1RM, working max ${Math.round((workingMaxMultiplier - 1) * 100)}% above your logged best` : " 1RM"})`
-      : `${pctText} 1RM (no logged 1RM yet — work to the RIR)`;
-  return `${name} ${sets}x${reps[0]}-${reps[1]} @ ${loadText}, RIR ${rir[0]}-${rir[1]}`;
 }
 
 /**
@@ -640,8 +578,7 @@ export function prescribeLift(
   options: LiftPrescriptionOptions
 ): Prescription {
   const { lift, sets, reps, intensity, rir } = options;
-  const workingMax = options.workingMaxMultiplier ?? 1;
-  const oneRm = (profile.oneRms[lift] ?? 0) * workingMax;
+  const oneRm = profile.oneRms[lift] ?? 0;
   const stalled = profile.stalledLifts.includes(lift);
   const variation = stalled ? STALL_VARIATIONS[lift] : null;
 
@@ -683,12 +620,7 @@ export function prescribeLift(
         ? percentOf(variantOneRm, ` of your logged ${rotationVariant.toLowerCase()}`)
         : "a load you can hold for the reps"
       : oneRm > 0
-      ? percentOf(
-          oneRm,
-          Math.round((workingMax - 1) * 100) >= 1
-            ? ` 1RM, working max ${Math.round((workingMax - 1) * 100)}% above your logged best`
-            : " 1RM"
-        )
+      ? percentOf(oneRm, " 1RM")
       : `${Math.round(intensity[0] * 100)}-${Math.round(intensity[1] * 100)}% 1RM (no logged 1RM yet — work to the RIR)`;
 
   // Precedence, most specific first. A stall variation beats the hypertrophy
@@ -706,23 +638,6 @@ export function prescribeLift(
   // though it were an exercise, and counted as one of the session's six.
   const exercises = [`${name} ${sets}x${reps[0]}-${reps[1]} @ ${loadText}, RIR ${rir[0]}-${rir[1]}`];
   const notes: string[] = [];
-  if (options.secondary && !options.substitution) {
-    const s = options.secondary;
-    exercises.push(
-      liftLine(
-        profile,
-        s.lift,
-        s.sets,
-        s.reps,
-        s.intensity,
-        s.rir,
-        workingMax,
-        COMPETITION_LIFT_DISPLAY_NAME[s.lift]
-          ? COMPETITION_LIFT_DISPLAY_NAME[s.lift].charAt(0).toUpperCase() + COMPETITION_LIFT_DISPLAY_NAME[s.lift].slice(1)
-          : undefined
-      )
-    );
-  }
   if (options.substitution) {
     notes.push(
       `Substituted for the ${lift} because you have no gym access. This trains the same pattern and it is not the ` +

@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/ui/page-header";
 import { HybridReportView } from "@/components/analytics/hybrid-report-view";
 import { fetchLatestHybridReport } from "@/lib/scoring/hybrid-report-data";
-import { isPremiumUser, hasSoftTrialAccess } from "@/lib/retention/trial";
+import { hasShowcaseAccess } from "@/lib/retention/trial";
 
 export default async function ReportsPage() {
   const supabase = await createClient();
@@ -22,8 +22,7 @@ export default async function ReportsPage() {
   if (!profile?.onboarding_completed) redirect("/onboarding");
 
   const premium =
-    isPremiumUser(profile.subscription_tier, profile.subscription_status) ||
-    hasSoftTrialAccess(profile.created_at, profile.subscription_tier, profile.subscription_status);
+    hasShowcaseAccess(profile);
 
   const report = premium ? await fetchLatestHybridReport(supabase, user.id, "monthly") : null;
 

@@ -11,6 +11,8 @@
  * same tier.
  */
 
+import { MIN_INDEX } from "@/lib/scoring/constants";
+
 export type BenchmarkSport = "run" | "walk" | "row" | "swim" | "cycle" | "ski";
 
 /** Canonical benchmark distance in meters for each sport (walk is scored on pace, not projected distance). */
@@ -23,256 +25,55 @@ export const BENCHMARK_DISTANCE_METERS: Record<BenchmarkSport, number> = {
   ski: 2000,
 };
 
-/** Data-derived F/M time-ratio factors — a woman's time is divided by this before scoring on the male curve. Differ by sport; do not reuse the running factor elsewhere. Row uses its own sex-specific anchor tables instead of this factor for its own scoring — kept here because `ski` inherits it (same machine family, no sex-specific ski data of its own). Run is back on the multiplier (reverted to the male-only Motera table, no sex-specific Motera data available). */
-/*
- * Calibrated 8 September 2026 against `docs/pre-launch/calibration-data.md`.
+/**
+ * The last two sports still scored as "one male curve plus a multiplier".
  *
- * Every factor below is now the female:male time ratio at the MEDIAN of the
- * population the sport's own anchor table scores, and at that sport's own
- * benchmark distance. Before this, three of them were not:
+ * Row, swim, cycle and ski all have their own sex-specific anchor tables now
+ * (below), which is strictly better: a single scalar asserts the sex gap is the
+ * same for a beginner and a national-class athlete, and no sport where the
+ * question has been measured behaves that way.
  *
- *   swim 1.073 → 1.14   1.073 is the ratio between two world records (§1a).
- *                       The swim anchor table had already been rebased from
- *                       club swimmers to the general population and the sex
- *                       factor was left behind, so a median woman was scored
- *                       against an Olympic-final sex gap. 1.14 is §5's 50th,
- *                       derived from the USMS mid-pack tiers; re-checked
- *                       against §1b directly, whose five non-elite tiers
- *                       average 1.1454, so the two agree to within half a
- *                       point. See the two warnings below — swimming has the
- *                       weakest foundation of the five and it is not the one
- *                       most people would guess.
- *   cycle 1.219 → 1.098 The IRONMAN 70.3 bike leg: 625,393 men and 198,066
- *                       women, directly measured, and what §2e explicitly
- *                       recommends as the recreational anchor. 1.219 was
- *                       outside every sourced number and its provenance is
- *                       unknown. See the warning below before touching this.
- *   ski 1.187 → 1.1644  Inherited from rowing on the reasoning "same machine
- *                       family, no sex-specific ski data of its own". There is
- *                       ski data: §3b, the 2025 Concept2 logbook at 2000 m.
- *
- * On the ski figure specifically, because it is easy to take the wrong one:
- * §5's SkiErg table is measured at 1000 m and gives 1.246 at the median. This
- * app benchmarks SkiErg at 2000 m (see BENCHMARK_DISTANCES above), and §3b
- * gives the 2000 m ratio, 1.164. Using the 1000 m figure here would put a
- * median female skier 30 seconds fast on a 2000 m row-equivalent — a second
- * miscalibration wearing the first one's clothes. Same distance as the anchor
- * table, or the number does not belong here.
- *
- *   run 1.152 → 1.191   §4a, and this one has the best evidence of the four.
- *                       RunRepeat's 5 km percentile table is 35 million race
- *                       results at this table's own benchmark distance, and the
- *                       F:M ratio is flat across the entire middle of the
- *                       distribution: 1.195 at the 80th, 1.191 at the 70th,
- *                       60th and 50th, 1.189 at the 40th, 1.186 at the 30th.
- *                       It moves only at the extremes — 1.237 at the 99th,
- *                       1.146 at the 10th. So 1.191 is not a median cherry-
- *                       picked from a curve; it is the value for almost every
- *                       runner this app will score. parkrun's ~1.19 and a
- *                       separate 736,928-result dataset both agree.
- *
- *                       1.152 matched no percentile in that table. The nearest
- *                       is the 10th-20th (1.146-1.179): the sex gap of the
- *                       slowest runners, applied to everyone, which under-
- *                       credited every woman through the middle of the field.
- *
- *                       This one carries the furthest. The run table is the
- *                       reference population the other anchor tables were
- *                       rebased onto, so it is the table the rest are read
- *                       against.
- *
- *   walk 1.191 → 1.146  and it should never have been 1.191. This mirrored
- *                       `run` "per instruction", so when run moved from 1.152
- *                       to 1.191 walk was carried along with it. The research
- *                       contradicts the mirror directly. §4e, explaining why
- *                       the running ratio *narrows* to 1.146 at the 10th
- *                       percentile after sitting flat at ~1.19 through the
- *                       middle: "the slow tail of a mass road race is
- *                       dominated by walkers of both sexes, and walking speed
- *                       differs between the sexes far less than running speed
- *                       does."
- *
- *                       So walking's sex gap is not running's — it is
- *                       materially smaller, and mirroring pushed it the wrong
- *                       way. 1.146 is that walker-dominated tail figure, which
- *                       is the closest thing to a measurement of walking in
- *                       the document.
- *
- * ## Walking is the least-evidenced constant here, and it is worth saying why
- *
- * 1.146 is a proxy, not a walking measurement. It is the F:M ratio of the
- * bottom decile of a mass 5 km road race — a field that is *dominated by*
- * walkers, not made only of them. A pure walking population would sit lower
- * still, since the slow runners mixed into that decile are the ones carrying
- * the larger gap.
- *
- * It is also not the app's distance: walk benchmarks at 2500 m against a 5 km
- * running field, and §4e's own data-quality note treats RunRepeat as "one good
- * estimate, not ground truth".
- *
- * Note what §6 does *not* say. Its eight-item list of what could not be found
- * has no walking entry — not because walking data was searched for and missing,
- * but because walking was never in scope. That is a different and weaker
- * position than the other four sports, all of which were looked for
- * deliberately, and it is why the band on this one only asserts the direction
- * the evidence gives: below running, not equal to it.
- *
- * ## Cycling: do not "improve" this with the power model in §2d
- *
- * §2d works the physics properly — drag, rolling resistance, real CdA and mass
- * for each sex — and lands on 1.025, or 1.048 on a less aggressive female
- * position. It is the most rigorous-looking number in the cycling section and
- * it is the one number there that must not be used. §2e says so directly: "Do
- * not use the §2d conversion as the basis for a cycling anchor table."
- *
- * The reason is upstream of the physics. It is driven by Cycling Analytics'
- * finding that median W/kg is identical between the sexes (3.80 vs 3.80), and
- * that dataset is cyclists who buy a power meter and pay for analytics — the
- * most self-selected source in the document — with a female sample the
- * publisher itself calls "particularly rough because of the lower number of
- * people". If those women sit further up their own distribution than the men
- * do up theirs, equal median W/kg is an artefact of unequal selection rather
- * than a fact about cyclists, which is exactly why the model under-predicts
- * the observed race gap by a factor of two to four.
- *
- * A physics derivation carries more authority than a mean of race results, and
- * here it is the wrong answer. That is the whole reason this paragraph exists.
- *
- * ## What is still not known about cycling
- *
- * This is the weakest constant of the five and the research says so — "by far
- * the least calibratable", with two sourced numbers and no percentile
- * structure at all. Three specific caveats travel with it:
- *
- *   · §2e expects a 20 km solo TT — which is what this app benchmarks — to
- *     show a slightly LARGER gap than the 90 km IRONMAN leg this figure comes
- *     from, because that leg is paced to protect the run and a shorter effort
- *     loads absolute power harder. "Slightly" is not quantified anywhere, so
- *     1.098 is a floor rather than a point estimate, and inventing a bump
- *     would be inventing precision.
- *   · The elite ratio, 1.126 at the hour record, is LARGER than the
- *     recreational one. Every other sport here widens the other way as ability
- *     falls. §5 flags the inversion as unexplained, and it is a reason to
- *     distrust both endpoints rather than to interpolate confidently between
- *     them.
- *   · Full-distance IRONMAN reports a ~15% cycling gap against the 70.3's
- *     9.8%, which no mechanism in the document accounts for.
- *
- * The gap that would settle it is named in §2e: no UK CTT distribution has
- * ever been published, and getting one means scraping event results directly.
- * Until then this number should move only on new data, not on new reasoning.
- *
- * ## Swimming: the IRONMAN split is the wrong dataset here, unlike cycling
- *
- * §1c is the largest sex-split adult swimming dataset in the document —
- * 823,459 IRONMAN 70.3 finishers, a general population rather than a
- * competitive one — and it gives 1.0573. It is exactly the source that ought
- * to be used, by the same reasoning that makes the equivalent bike figure the
- * right anchor for cycling, and §1d says specifically not to:
- *
- *     "For a 400 m pool event, the USMS-family ratios are the relevant ones
- *      and the 70.3 ratio should not be used."
- *
- * A 70.3 swim is 1.9 km of open water, wetsuit-legal, mass start with
- * drafting, and a cut-off that truncates the slow tail. Neoprene removes much
- * of the buoyancy advantage women hold in a pool and drafting compresses the
- * field, so that 5.7% gap is a fact about that race format, not about swimming
- * 400 m. The two source families disagree by a factor of two — 5.7% against
- * USMS's 13-17% — and both are right about their own population.
- *
- * So cycling and swimming take opposite answers from the same study, and the
- * reason is the format rather than the sample size. Reaching for the bigger
- * dataset is the mistake here.
- *
- * ## Swimming: the population this table scores has never been measured
- *
- * §1d calls this "the single biggest gap in this whole document": no published
- * percentile distribution of 400 m pool freestyle for a general adult
- * population, split by sex, appears to exist.
- *
- * The size of the extrapolation is worth seeing plainly. USMS's slowest
- * published tier is the 45th percentile *of people who entered a sanctioned
- * masters meet*, about 6:10 for 400 m. This table's 50th percentile is 9:20.
- * The median swimmer it scores is three minutes slower than the slowest
- * swimmer anyone has measured a sex ratio for.
- *
- * 1.14 is therefore the mid-pack ratio of the nearest measured population, not
- * of the scored one, and §5 is explicit that extrapolating further is
- * unsupported: the running pattern would give ~1.13 at the 20th percentile and
- * the SkiErg pattern ~1.19, "and the choice is unsupported". Six points apart,
- * with no way to choose. The cells are noisy too — 83 women and 99 men — which
- * is why the tier shape is used rather than any single cell.
+ * Run and walk stay on a multiplier because the sex-resolved running evidence
+ * points the OPPOSITE way to the erg evidence and cannot be reconciled into a
+ * table yet. RunRepeat's 5 km distribution (34M results) has the gap widest at
+ * the fast end and narrowest at the slow end — 1.237 at the 99th, ~1.19 through
+ * the middle, 1.146 at the 10th — because at the slow end of a running dataset
+ * both sexes are walking, and walking has almost no sex gap. An erg has no
+ * walking equivalent, so the ergs widen instead. Until there is a running
+ * dataset that resolves this, a flat factor is the honest shape for run and
+ * walk, and 1.152 sits inside RunRepeat's own range.
  */
-export const FEMALE_CARDIO_FACTORS: Record<BenchmarkSport, number> = {
-  run: 1.191, // §4a, RunRepeat 5 km — flat at 1.186-1.195 across the 30th-80th
-  walk: 1.146, // §4e's walker-dominated tail — NOT run's figure, see below
-  swim: 1.14, // §5, 400 m freestyle, 50th percentile
-  cycle: 1.098, // §2c, IM 70.3 bike leg, 823,459 finishers — a floor, see above
-  // Dead. Row is scored from ROW_2K_ANCHORS_MALE/FEMALE and never reaches the
-  // multiplier path; ski used to inherit this value, which was the stated
-  // reason for keeping it, and no longer does. The Record type requires every
-  // sport to have an entry, so it stays as a placeholder rather than a number
-  // anyone should read or maintain.
-  row: 1.187,
-  ski: 1.1644, // §3b, C2 logbook 2025, 2000 m: 9:35.8 F / 8:14.5 M
+export const FEMALE_CARDIO_FACTORS: Record<"run" | "walk", number> = {
+  run: 1.152,
+  walk: 1.152, // mirrors running — see above; walking's own sex gap is smaller still, and unmeasured here
 };
 
 /**
- * How much slower a SkiErg 2000 m is than a RowErg 2000 m at equal standing.
+ * How much slower the same athlete is on a SkiErg than on a RowErg, per sex.
  *
- * Measured, not assumed: the 2025 Concept2 logbook at the median, same season
- * and same distance for both machines — 8:14.5 ski against 7:46.8 row for men
- * (§3b, §3c), which is 1.0593.
+ * WAS a single 1.0357 for everyone, sourced from nothing this file recorded.
+ * Measured against the Concept2 logbook, 2025 season, 2000 m, matched
+ * percentiles — the same population on both machines, so population selection
+ * cancels out and what is left is the machine difference:
  *
- * It was 1.0357, carrying the comment "Validated: 7:00 row ≈ 7:16 ski". That
- * was not a validation: 7:00 × 1.0357 = 7:14.9, so it restated the constant
- * against itself and any value would have "validated" the same way.
+ *            90th    75th    50th    25th
+ *   men     1.028   1.045   1.059   1.058
+ *   women   1.079   1.085   1.085   1.070
  *
- * ## This is the men's ratio, deliberately
+ * (https://log.concept2.com/rankings/2025/skierg/2000 and .../rower/2000, both
+ * sexes, read 2026-09-06.) The median is taken as the operating point.
  *
- * §3d notes the ski:row ratio is sex-dependent — 1.059 for men at the median
- * and 1.085 for women — and that one scalar cannot represent both. It does not
- * have to. A woman's ski time is divided by FEMALE_CARDIO_FACTORS.ski first,
- * which puts her in male-ski units, and this constant then converts male ski
- * to male row. The composition carries the sex dependence:
- *
- *     female ski 2000 m median   9:35.8  = 575.8 s
- *       ÷ 1.1644 (F:M ski, §3b)          = 494.5 s   the median male skier
- *       ÷ 1.0593 (ski:row men)           = 466.8 s   the median male rower ✓
- *
- * and 575.8 ÷ 530.7 = 1.085, §3d's women's figure, falls out of it rather than
- * being set. Both sexes land on their own median, and that is why the two must
- * move together or not at all.
- *
- * ## How much that composition actually proves — less than it looks
- *
- * Both constants are read from the same two tables, §3b and §3c, so the medians
- * landing on each other is guaranteed by construction. It shows the pair is
- * coherent; it does not show either is true of a real population. Stated here
- * because the first pass presented it as validation, and it is weaker than
- * that.
- *
- * ## The open question on ski, which is a real one
- *
- * §3g prefers the 1000 m tables to the 2000 m ones, and says the 2000 m
- * women's ratios — 1.164 to 1.188, which is exactly the range these constants
- * come from — are "too noisy to contradict the 1000 m pattern". Women's n at
- * 2000 m is 129. At 1000 m the median ratio is 1.246, and the gap widens as
- * ability falls (1.216 at the 80th to 1.322 at the 5th) where the 2000 m table
- * shows it flat.
- *
- * The 2000 m numbers are used anyway, for a reason that is structural rather
- * than a preference: the ski:row conversion only exists at 2000 m. §3c is a
- * RowErg 2000 m table, there is no 1000 m rowing distribution here, and this
- * app's rowing anchors are 2 km. A 1000 m F:M ratio has nothing at its own
- * distance to compose with, and pairing it with the 2000 m pace conversion
- * scores a median female skier 30 seconds faster than the median male rower.
- *
- * So this is the best available coherent pair, not the best available data. If
- * ski ever gets its own anchor table instead of borrowing rowing's, the 1000 m
- * distribution becomes usable and both of these should be revisited together.
+ * Two things this fixes. The old figure was low enough to flatter every ski
+ * session — the PM5 uses an identical pace-to-watts formula on both machines,
+ * so the whole difference is physiological, and forum reports of +5 to +15 s
+ * per 500 m bracket 1.06 comfortably while 1.0357 sits at the very edge. And
+ * it cannot be one number: the machine difference is measurably larger for
+ * women, which a single scalar has no way to say.
  */
-export const SKI_FROM_ROW_PACE = 1.0593;
+export const SKI_FROM_ROW_PACE: Record<"male" | "female", number> = {
+  male: 1.059,
+  female: 1.085,
+};
 
 type Anchor = [seconds: number, score: number];
 
@@ -352,13 +153,9 @@ const RUN_5K_ANCHORS: Anchor[] = [
  * spans 1.558x. It is still narrower than running's, and that part is real
  * physics rather than a calibration artefact — erg pace goes as
  * power^(-1/3), so a given physiological range always compresses into a
- * narrower pace range on the erg than on the road. That same fact is why the
- * effort credit in cardio/fitness-equivalent.ts converts an intensity gap
- * into a pace gap through a per-sport exponent — the cube root on an erg,
- * where power goes as velocity cubed — rather than treating a percentage of
- * time as if it meant the same thing in every sport. It does not: the older
- * engine's percent-of-time credit was worth ~170-200 points anywhere on
- * running's curve and up to ~630 on this one.
+ * narrower pace range on the erg than on the road. That is precisely why
+ * the relative-effort credits in cardio-activity.ts cannot be denominated
+ * in percent-of-time across sports, and are capped in index points there.
  *
  * The female table keeps the sourced male:female ratio at each anchor
  * (1.145 at the 99th rising to 1.261 at the 5th) applied to the rebased
@@ -374,68 +171,13 @@ const ROW_2K_ANCHORS_MALE: Anchor[] = [
   [597.4, 125], // 9:57.4 — 5th percentile (was 8:06.9)
 ];
 
-/*
- * Rebased 8 September 2026 onto measured data. What was here before was given,
- * not measured.
- *
- * Each row used to be annotated "sourced sex ratio". §4b of
- * `docs/pre-launch/calibration-data.md` lists that exact column as "Existing
- * app calibration — given in brief" — an assumption wearing the word sourced,
- * the same fault SKI_FROM_ROW_PACE had when it claimed to be "Validated"
- * against itself. Those ratios ran 1.145 to 1.261, rising monotonically.
- *
- * ## What the sex gap actually does in rowing
- *
- * Five measured points, plotted against male ability rather than against a
- * percentile label — the populations differ, so labels are not comparable
- * while times are:
- *
- *     male 5:33.4   1.143   C2 2000 m world records, van Dorp / Mooney
- *     male 6:48.4   1.131   §3c logbook 90th
- *     male 7:13.6   1.127   §3c logbook 75th
- *     male 7:46.8   1.137   §3c logbook 50th
- *     male 8:31.1   1.152   §3c logbook 25th
- *
- * §3c is 9,561 men and 2,545 women — the best-sampled sex-split distribution
- * in that document for any sport. The world-record pair was already in this
- * file, in WORLD_RECORD_SECONDS, and is what gives the fast end an anchor at
- * all.
- *
- * The shape is a shallow U: elevated at the elite limit, narrowest around the
- * 75th, widening as ability falls below it. The old table was monotonic, which
- * is not this shape, and it was roughly six times steeper than the measured
- * gradient.
- *
- * ## What is measured here and what is not
- *
- * Four of the six anchors now sit inside or between measurements. Two do not:
- * the 20th and the 5th extrapolate the logbook's own 50th→25th slope by 26 and
- * 86 seconds respectively, and each says so on its own line.
- *
- * That extrapolation is a real assumption, and it is the one direction the
- * research does support for an erg. §4e: the widening pattern is "real and
- * replicated" in both ergs, and where running *reverses* at the very bottom —
- * because the slow tail of a road race is full of walkers — "the Concept2
- * SkiErg data, by contrast, does widen monotonically to the 5th percentile
- * (1.246 → 1.322), because an erg piece has no walking equivalent". There is
- * no walking equivalent of a 2 km row either. The magnitude follows rowing's
- * own measured slope rather than SkiErg's, which is five times steeper.
- *
- * Holding the tails flat at 1.152 was the alternative. It would assert no
- * gradient where the erg evidence says there is one, so it is not the safer
- * choice, only the one that looks safer.
- *
- * `scripts/check-row-sex-table-sourced.mjs` re-derives these ratios from the
- * two tables and compares them against the measured points, judging the four
- * that fall in range and reporting the two that do not.
- */
 const ROW_2K_ANCHORS_FEMALE: Anchor[] = [
-  [435.3, 925], // 7:15.3 — 99th · ratio 1.135 · between the WR point and the logbook 90th
-  [454.0, 850], // 7:34.0 — 95th · 1.132 · between the WR point and the logbook 90th
-  [477.9, 725], // 7:57.9 — 80th · 1.129 · inside the logbook, between its 90th and 75th
-  [552.0, 475], // 9:12.0 — 50th · 1.143 · inside the logbook, between its 50th and 25th
-  [623.2, 250], // 10:23.2 — 20th · 1.161 · EXTRAPOLATED 26s past the last measurement
-  [705.7, 125], // 11:45.7 — 5th · 1.181 · EXTRAPOLATED 86s past the last measurement
+  [439.2, 925], // 7:19.2 — 99th percentile (was 6:52.2; sourced sex ratio 1.145)
+  [459.1, 850], // 7:39.1 — 95th percentile (was 7:03.9; 1.145)
+  [496.3, 725], // 8:16.3 — 80th percentile (was 7:44.0; 1.172)
+  [580.5, 475], // 9:40.5 — 50th percentile (was 8:30.2; 1.202)
+  [661.4, 250], // 11:01.4 — 20th percentile (was 9:21.0; 1.232)
+  [753.6, 125], // 12:33.6 — 5th percentile (was 10:14.2; 1.261)
 ];
 
 /**
@@ -444,10 +186,18 @@ const ROW_2K_ANCHORS_FEMALE: Anchor[] = [
  * confidence for the 5/20/50/80/95th percentile points; the 99th-percentile
  * anchor uses a separately-sourced elite/pro estimate (~22:00) since that
  * page had no WR column of its own — flagged lower confidence for that one
- * point only. Female table not captured this pass — the existing female
- * cardio factor (1.219) is still applied on top of this male curve.
+ * point only.
+ *
+ * KNOWN GAP, STATED RATHER THAN PAPERED OVER: this table has never been
+ * rebased onto the general population the way run, row and swim were. It is
+ * still cyclingregimen's club distribution, which is the population the other
+ * three were deliberately moved away from, so a cycling score means something
+ * slightly different from a running score on the same 0-1000 ruler. Fixing it
+ * needs a general-population 20 km TT distribution and no such dataset was
+ * found — UK CTT publishes results but no distribution, and every power-based
+ * proxy is drawn from people who own a power meter.
  */
-const CYCLE_20K_ANCHORS: Anchor[] = [
+const CYCLE_20K_ANCHORS_MALE: Anchor[] = [
   [1833.8, 925], // 30:33.8 — 99th percentile (30% of gap toward ~22:00 elite/pro estimate)
   [2054, 850], // 34:14 — 95th percentile
   [2202, 725], // 36:42 — 80th percentile
@@ -455,6 +205,39 @@ const CYCLE_20K_ANCHORS: Anchor[] = [
   [2698, 250], // 44:58 — 20th percentile
   [3118, 125], // 51:58 — 5th percentile
 ];
+
+/**
+ * Cycling's female curve — the weakest of the four, and flat on purpose.
+ *
+ * The old treatment was a flat 1.219 multiplier with no source recorded, which
+ * said women are 22% slower over 20 km. The two real numbers that exist say
+ * nothing of the kind:
+ *
+ *   1.126  UCI Hour Record, both sexes (56.792 km Ganna 2022 / 50.455 km
+ *          Bussi 2023) — elite.
+ *   1.098  IRONMAN 70.3 90 km bike split, pooled means over 823,459 race
+ *          records 2004-2020 — recreational, and the largest cycling dataset
+ *          with a sex split that could be found. Drafting is illegal in that
+ *          format, so unlike its swim split this figure is not compressed by
+ *          pack riding.
+ *
+ * 1.10 is the recreational figure, and 1.10 is what nearly everyone scored
+ * here is. This lowers women's cycling scores relative to the old 1.219, which
+ * was over-crediting them by roughly twelve percent.
+ *
+ * WHY FLAT, when row, swim and ski all vary by percentile: cycling's two data
+ * points run the WRONG WAY round. Every other sport measured has the sex gap
+ * narrower at the elite end and wider through the population; cycling's elite
+ * figure (1.126) is WIDER than its recreational one (1.098). Nobody has an
+ * explanation, the elite number rests on two individual rides, and a shaped
+ * table would be picking a direction the evidence contradicts. Flat is the
+ * only honest reading of two points that disagree about the slope.
+ */
+const CYCLE_FEMALE_RATIO = 1.1;
+
+const CYCLE_20K_ANCHORS_FEMALE: Anchor[] = CYCLE_20K_ANCHORS_MALE.map(
+  ([seconds, score]) => [Math.round(seconds * CYCLE_FEMALE_RATIO * 10) / 10, score]
+);
 
 /** Seconds per km — lower is better, same monotonic direction as the time tables above. */
 /**
@@ -537,11 +320,9 @@ const WALK_PACE_ANCHORS: Anchor[] = [
  * slowest anchor, so an ordinary swim fell off the bottom of it and
  * extrapolated straight past zero.
  *
- * Female table not captured this pass — the existing female cardio factor
- * (1.073, the narrowest sex gap of any sport here, which matches swimming's
- * real male/female spread) is still applied on top of this male curve.
+ * The female curve is now a table of its own — see SWIM_400M_ANCHORS_FEMALE.
  */
-const SWIM_400M_ANCHORS: Anchor[] = [
+const SWIM_400M_ANCHORS_MALE: Anchor[] = [
   [320, 925], // 5:20 — 1:20/100m — 99th percentile (was 4:29.5 on club percentiles)
   [360, 850], // 6:00 — 1:30/100m — 95th percentile (was 4:50.7)
   [440, 725], // 7:20 — 1:50/100m — 80th percentile (was 5:04.0)
@@ -550,12 +331,62 @@ const SWIM_400M_ANCHORS: Anchor[] = [
   [960, 125], // 16:00 — 4:00/100m — 5th percentile (was 6:10.1)
 ];
 
-/** Sports scored via a single male curve + FEMALE_CARDIO_FACTORS multiplier (no sex-specific source data captured for these) — row and, indirectly through row, ski are the exceptions (sex-specific tables). */
-const ANCHOR_TABLES: Record<Exclude<BenchmarkSport, "ski" | "row">, Anchor[]> = {
+/**
+ * Swimming's female curve. Sourced in its top half, held flat below it.
+ *
+ * Replaces a flat 1.073 multiplier. Swimming genuinely has the narrowest sex
+ * gap of any sport in this file — the physiology is well documented and the
+ * old number was in the right neighbourhood — but flat was still an assertion
+ * nobody had checked, and the top of the range is measurably narrower than the
+ * middle:
+ *
+ *   99th  1.065  400 m freestyle long-course world records, 3:39.96 Maertens
+ *                2025 / 3:54.18 McIntosh 2025.
+ *   95th  1.090  US Masters Swimming 500 free SCY, 18-24, "Top 2%" tier —
+ *                the nearest published tier to this anchor.
+ *   80th  1.145  USMS, interpolated between the Top 15% (1.165) and Top 35%
+ *                (1.144) tiers.
+ *   50th  1.140  USMS "Top 55%" tier (1.133), which is the 45th percentile of
+ *                MEET swimmers, carried across.
+ *
+ * BELOW THE MEDIAN THERE IS NOTHING, and the 20th and 5th anchors therefore
+ * repeat the 50th's ratio rather than continuing a trend. That is a decision,
+ * not an oversight: the two sports where the bottom of the distribution HAS
+ * been measured disagree about its direction. Running narrows (both sexes end
+ * up walking); the ergs widen. Swimming's floor is set by technique rather
+ * than by fitness, which resembles neither, so extrapolating either pattern
+ * would be inventing a number and picking a side. Flat is the only extension
+ * that asserts nothing.
+ *
+ * Confidence: MEDIUM at the top, LOW below the median — worse than row or ski,
+ * better than cycle. The USMS sample is small (83 women, 99 men) and is a meet
+ * population; its tiers are also mildly non-monotonic, which is why the 80th
+ * is smoothed to the midpoint of the two tiers that bracket it.
+ */
+const SWIM_FEMALE_RATIOS = [1.065, 1.09, 1.145, 1.14, 1.14, 1.14];
+
+const SWIM_400M_ANCHORS_FEMALE: Anchor[] = SWIM_400M_ANCHORS_MALE.map(
+  ([seconds, score], i) => [Math.round(seconds * SWIM_FEMALE_RATIOS[i] * 10) / 10, score]
+);
+
+/** The two sports still scored on one curve plus a population multiplier — see FEMALE_CARDIO_FACTORS for why running and walking are the holdouts. */
+const ANCHOR_TABLES: Record<"run" | "walk", Anchor[]> = {
   run: RUN_5K_ANCHORS,
   walk: WALK_PACE_ANCHORS,
-  swim: SWIM_400M_ANCHORS,
-  cycle: CYCLE_20K_ANCHORS,
+};
+
+/**
+ * Sports with a curve per sex, which is every sport where the sex gap has
+ * actually been measured across the distribution rather than assumed constant.
+ *
+ * Ski is absent because it does not have a table of its own: a SkiErg time is
+ * converted to the row-equivalent for that sex and then scored on rowing's
+ * curve. See `timeToScore`.
+ */
+const SEX_SPECIFIC_ANCHORS: Record<"row" | "swim" | "cycle", Record<"male" | "female", Anchor[]>> = {
+  row: { male: ROW_2K_ANCHORS_MALE, female: ROW_2K_ANCHORS_FEMALE },
+  swim: { male: SWIM_400M_ANCHORS_MALE, female: SWIM_400M_ANCHORS_FEMALE },
+  cycle: { male: CYCLE_20K_ANCHORS_MALE, female: CYCLE_20K_ANCHORS_FEMALE },
 };
 
 /** Linear interpolation across an anchor table, with gentle (slope-continued) extrapolation at both ends. */
@@ -585,9 +416,9 @@ function interpolateAnchors(anchors: Anchor[], x: number): number {
   return last[1];
 }
 
-/** Ski reuses the rowing curve after converting to a row-equivalent time. */
-export function skiToRowEquivalentSeconds(skiSeconds: number): number {
-  return skiSeconds / SKI_FROM_ROW_PACE;
+/** Ski reuses the rowing curve after converting to a row-equivalent time — per sex, because the machine difference is measurably larger for women (see SKI_FROM_ROW_PACE). */
+export function skiToRowEquivalentSeconds(skiSeconds: number, sex: "male" | "female"): number {
+  return skiSeconds / SKI_FROM_ROW_PACE[sex];
 }
 
 function clampScore(x: number): number {
@@ -662,6 +493,55 @@ function clamp01(x: number): number {
   return Math.max(0, Math.min(1, x));
 }
 
+/**
+ * The slow end of the curve, which used to fall off a cliff into zero.
+ *
+ * Below the slowest anchor, `interpolateAnchors` continues the last segment's
+ * straight line — and a straight line through a 5th-percentile anchor crosses
+ * zero almost immediately, where `clampScore`'s `Math.max(0, …)` caught it. The
+ * consequence was not a cosmetic off-by-one: EVERY slow session in every sport
+ * scored exactly 0, so they all scored the SAME. Measured before this existed:
+ *
+ *   5 km in 60:00          0
+ *   5 km in 75:00          0
+ *   400 m swim in 25:00    0
+ *   2 km row in 20:00      0
+ *   20 km ride in 2 hours  0
+ *
+ * A beginner who took ten minutes off their 5k saw no change at all, which is
+ * precisely the athlete for whom the number needed to move. Zero also reads as
+ * "not scored" rather than "scored low", and the scale this app documents
+ * everywhere else starts at 1, not 0.
+ *
+ * So the slow end decays toward the floor instead of running into it — the
+ * mirror of `applyWorldRecordCeiling` at the fast end, which asymptotes toward
+ * 999 rather than extrapolating past it. Ordering is preserved all the way
+ * down: slower is always lower, and the floor is approached but never reached.
+ */
+function applyFloorDecay(
+  linearScore: number,
+  seconds: number,
+  slowestAnchorSeconds: number,
+  slowestAnchorScore: number
+): number {
+  if (seconds <= slowestAnchorSeconds) return linearScore;
+
+  // How much slower than the slowest anchor, as a ratio — scale-free, so the
+  // same constant works for a 400m swim and a 20km ride.
+  const over = seconds / slowestAnchorSeconds;
+  const decayed =
+    MIN_INDEX + (slowestAnchorScore - MIN_INDEX) * Math.exp(-(over - 1) * FLOOR_DECAY_RATE);
+  return decayed;
+}
+
+/** [EST] Tuned so that half again the slowest anchor's time scores roughly a third of its score, and twice its time roughly a seventh — steep enough to say "this is well off the scale", shallow enough that improvement is always visible. */
+const FLOOR_DECAY_RATE = 2;
+
+/** The [seconds, score] pair with the highest seconds (slowest time / lowest score) in an anchor table. */
+function slowestAnchorIn(anchors: Anchor[]): Anchor {
+  return anchors.reduce((a, b) => (a[0] > b[0] ? a : b));
+}
+
 /** The [seconds, score] pair with the lowest seconds (fastest time / highest score) in an anchor table. */
 function fastestAnchorIn(anchors: Anchor[]): Anchor {
   return anchors.reduce((a, b) => (a[0] < b[0] ? a : b));
@@ -712,36 +592,28 @@ export function enduranceAgeGradeFactor(age: number | null | undefined): number 
 export function timeToScore(sport: BenchmarkSport, seconds: number, sex: "male" | "female"): number {
   if (!Number.isFinite(seconds) || seconds <= 0) return 0;
 
-  if (sport === "row") {
-    const table = sex === "female" ? ROW_2K_ANCHORS_FEMALE : ROW_2K_ANCHORS_MALE;
-    const linear = interpolateAnchors(table, seconds);
-    const wr = WORLD_RECORD_SECONDS.row;
-    if (!wr) return clampScore(linear);
-    const [anchorSeconds, anchorScore] = fastestAnchorIn(table);
-    return clampScore(
-      applyWorldRecordCeiling(linear, seconds, anchorSeconds, anchorScore, sex === "female" ? wr.female : wr.male)
-    );
+  // Ski has no curve of its own. Convert to the row-equivalent for THIS sex,
+  // then score on rowing's own sex-specific table — which also means a woman's
+  // ski time is now measured against the women's rowing curve and the women's
+  // rowing record, where it used to be folded into a male-equivalent through a
+  // borrowed multiplier and compared against the men's record.
+  if (sport === "ski") {
+    return scoreOnSexTable("row", skiToRowEquivalentSeconds(seconds, sex), sex);
   }
 
-  if (sport === "ski") {
-    // Ski reuses the male rowing curve after converting to a row-equivalent
-    // time, then applies its own (rowing-inherited) female multiplier — ski
-    // doesn't have its own sex-specific percentile data the way row now does.
-    const rowEquivalent = skiToRowEquivalentSeconds(seconds);
-    const adjusted = sex === "female" ? rowEquivalent / FEMALE_CARDIO_FACTORS.ski : rowEquivalent;
-    const linear = interpolateAnchors(ROW_2K_ANCHORS_MALE, adjusted);
-    const wr = WORLD_RECORD_SECONDS.row;
-    if (!wr) return clampScore(linear);
-    // `adjusted` is already a male-row-equivalent value (sex folded in
-    // above), so it's compared directly against row's own male record —
-    // no separate ski world record on file.
-    const [anchorSeconds, anchorScore] = fastestAnchorIn(ROW_2K_ANCHORS_MALE);
-    return clampScore(applyWorldRecordCeiling(linear, adjusted, anchorSeconds, anchorScore, wr.male));
+  if (sport === "row" || sport === "swim" || sport === "cycle") {
+    return scoreOnSexTable(sport, seconds, sex);
   }
 
   const factor = FEMALE_CARDIO_FACTORS[sport];
   const adjusted = sex === "female" ? seconds / factor : seconds;
-  const linear = interpolateAnchors(ANCHOR_TABLES[sport], adjusted);
+  const [slowSeconds, slowScore] = slowestAnchorIn(ANCHOR_TABLES[sport]);
+  const linear = applyFloorDecay(
+    interpolateAnchors(ANCHOR_TABLES[sport], adjusted),
+    adjusted,
+    slowSeconds,
+    slowScore
+  );
   const wr = WORLD_RECORD_SECONDS[sport];
   if (!wr) return clampScore(linear);
   // Checked against RAW seconds (this sex's own actual clock time), not the
@@ -753,5 +625,34 @@ export function timeToScore(sport: BenchmarkSport, seconds: number, sex: "male" 
   const realAnchorSeconds = sex === "female" ? anchorSeconds * factor : anchorSeconds;
   return clampScore(
     applyWorldRecordCeiling(linear, seconds, realAnchorSeconds, anchorScore, sex === "female" ? wr.female : wr.male)
+  );
+}
+
+/**
+ * Score against this sex's own curve and this sex's own world record.
+ *
+ * Simpler than the multiplier path above and strictly more correct: nothing is
+ * converted into male-equivalent units, so the anchor times and the record are
+ * already in the athlete's real clock time and the two sides of the
+ * world-record comparison cannot drift apart.
+ */
+function scoreOnSexTable(
+  sport: "row" | "swim" | "cycle",
+  seconds: number,
+  sex: "male" | "female"
+): number {
+  const table = SEX_SPECIFIC_ANCHORS[sport][sex];
+  const [slowSeconds, slowScore] = slowestAnchorIn(table);
+  const linear = applyFloorDecay(
+    interpolateAnchors(table, seconds),
+    seconds,
+    slowSeconds,
+    slowScore
+  );
+  const wr = WORLD_RECORD_SECONDS[sport];
+  if (!wr) return clampScore(linear);
+  const [anchorSeconds, anchorScore] = fastestAnchorIn(table);
+  return clampScore(
+    applyWorldRecordCeiling(linear, seconds, anchorSeconds, anchorScore, sex === "female" ? wr.female : wr.male)
   );
 }

@@ -142,14 +142,32 @@ export async function POST(
     return databaseError(restoreSurvivorError, { operation: "POST /api/activities/[id]/unmerge" });
   }
 
+  /*
+    UPSERT, because the legs come back under their ORIGINAL ids.
+
+    Two concurrent unmerges of the same session both read the merge record and
+    both try to restore it. The second one's insert hits the activities primary
+    key and was reported as "we restored the first session but could not bring
+    the others back" — alarming, and untrue: the rows are there, put back by the
+    request that got in first, and the athlete was being told to go and check a
+    logbook that is correct.
+
+    `ignoreDuplicates` makes the loser a no-op instead of a false alarm. It is
+    safe precisely because the ids are the originals: a row that already exists
+    under one of these ids IS this restore, not a different session that happens
+    to collide.
+  */
   const { error: reinsertError } = await supabase
     .from("activities")
-    .insert(absorbedSnapshots.map((s) => restoredRow(s, user.id)));
+    .upsert(absorbedSnapshots.map((s) => restoredRow(s, user.id)), {
+      onConflict: "id",
+      ignoreDuplicates: true,
+    });
 
   if (reinsertError) {
-    // The survivor is already back to half a run and the other half did not
-    // reappear. Say so plainly rather than reporting a success the logbook
-    // will contradict.
+    // A genuine failure now, not a lost race. The survivor is already back to
+    // half a run and the other half did not reappear — say so plainly rather
+    // than reporting a success the logbook will contradict.
     console.error("[activities/unmerge] restore failed:", reinsertError.message);
     return NextResponse.json(
       {

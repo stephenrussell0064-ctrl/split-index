@@ -2,6 +2,7 @@ import { ImageResponse } from "next/og";
 import { createClient } from "@/lib/supabase/server";
 import { fetchInterferenceReport } from "@/lib/scoring/interference-data";
 import { hasShareableFinding, pickInterferenceHeadline } from "@/lib/scoring/interference";
+import { shareableAthleteName } from "@/lib/social/shareable-name";
 
 const CARD_WIDTH = 1200;
 const CARD_HEIGHT = 630;
@@ -42,7 +43,7 @@ export async function GET() {
     return new Response("Not enough paired training data yet", { status: 404 });
   }
 
-  const name = profile?.display_name ?? profile?.username ?? "This athlete";
+  const name = shareableAthleteName(profile?.display_name, profile?.username);
   const headline = pickInterferenceHeadline(report);
   const secondary =
     !report.strengthToCardio.calibrating && !report.cardioToStrength.calibrating

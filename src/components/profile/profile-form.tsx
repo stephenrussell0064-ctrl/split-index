@@ -1,12 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Check, User, Ruler, Dumbbell, Compass } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Select, Textarea } from "@/components/ui/input";
+import { validateDisplayText } from "@/lib/utils/username";
+import { useKeyboardSafeFocus } from "@/components/activities/use-keyboard";
 import {
   EXPERIENCE_LEVELS,
   GENDERS,
@@ -83,6 +85,29 @@ export function ProfileForm({ profile }: ProfileFormProps) {
     setSaving(true);
     setError("");
 
+    /*
+      A display name is read by every other athlete — on the feed, on
+      leaderboards, in squads and duels — and it went through no content check
+      at all, while the username right beside it did. App Store Guideline 1.2
+      asks for a filter on objectionable material posted to the app, and half a
+      filter is the same as none when the unfiltered field is the one shown
+      largest.
+
+      Client-side here because this component writes to Supabase directly rather
+      than through an API route; the blocked-term list itself lives in
+      lib/utils/username.ts alongside the username check, so the two cannot
+      drift apart.
+    */
+    const displayName = form.display_name.trim();
+    if (displayName) {
+      const check = validateDisplayText(displayName, { label: "Display name" });
+      if (!check.valid) {
+        setError(check.reason ?? "That display name isn't available");
+        setSaving(false);
+        return;
+      }
+    }
+
     const supabase = createClient();
     const { error: updateError } = await supabase
       .from("profiles")
@@ -126,8 +151,17 @@ export function ProfileForm({ profile }: ProfileFormProps) {
     setSaving(false);
   };
 
+  /*
+    On iOS the software keyboard does NOT resize the layout viewport, so a
+    field in the lower half of a long form is typed into blind — it sits behind
+    the keyboard and nothing scrolls to reveal it. `use-keyboard.ts` exists for
+    exactly this and, until now, only the activity form called it.
+  */
+  const formRef = useRef<HTMLFormElement>(null);
+  useKeyboardSafeFocus(formRef);
+
   return (
-    <form onSubmit={handleSave} className="space-y-6">
+    <form ref={formRef} onSubmit={handleSave} className="space-y-6">
       <Card>
         <CardHeader>
           <div className="flex items-center gap-2">

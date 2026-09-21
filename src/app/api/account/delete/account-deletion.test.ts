@@ -35,7 +35,9 @@ const { createClientMock, adminClientMock, deleteUserMock, tableOps } = vi.hoist
 }));
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => createClientMock() }));
-vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => adminClientMock() }));
+vi.mock("@/lib/supabase/admin", () => ({
+  createAdminClient: (source: string, context?: unknown) => adminClientMock(source, context),
+}));
 
 const ROOT = fileURLToPath(new URL("../../../../..", import.meta.url));
 const MIGRATIONS = `${ROOT}/supabase/migrations`;
@@ -259,19 +261,32 @@ describe("the route deletes in one statement", () => {
     expect(body).toContain("ref ");
   });
 
+  /**
+   * The record moved, and the test moved with it.
+   *
+   * It used to read the console for an `elevated_query` line. N9 made `source` a
+   * required argument of `createAdminClient` and put the record inside it, so
+   * that line is now emitted by the real client — which this file mocks. Reading
+   * stdout would prove nothing here.
+   *
+   * Asserting the ARGUMENTS is stronger anyway: it pins the source, the user id
+   * and the reason, and it pins the ordering that matters, because obtaining the
+   * client is what happens before the delete. After it there is no user id left
+   * to record, and an erasure with no record that it was requested is
+   * indistinguishable from data loss.
+   */
   it("records the erasure before the id stops referring to anybody", async () => {
-    const logged: string[] = [];
-    vi.spyOn(console, "log").mockImplementation((line) => logged.push(String(line)));
-
     const { DELETE } = await import("./route");
     await DELETE();
 
-    const record = logged.map((l) => JSON.parse(l)).find((r) => r.event === "elevated_query");
-    expect(record, "no erasure event was logged").toBeDefined();
-    expect(record.userId).toBe("user-1");
-    // An erasure with no record that it was requested is indistinguishable
-    // from data loss.
-    expect(record.detail.action).toBe("account_erasure_requested");
-    expect(record.retention).toBe("audit");
+    expect(adminClientMock).toHaveBeenCalledWith("/api/account/delete", {
+      userId: "user-1",
+      detail: { action: "account_erasure_requested" },
+    });
+
+    // And it is obtained before the delete is attempted, not after.
+    expect(adminClientMock.mock.invocationCallOrder[0]).toBeLessThan(
+      deleteUserMock.mock.invocationCallOrder[0]
+    );
   });
 });

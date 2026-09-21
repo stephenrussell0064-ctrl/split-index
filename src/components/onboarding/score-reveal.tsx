@@ -158,7 +158,7 @@ export function ScoreRevealSequence({ onDone }: ScoreRevealSequenceProps) {
                   placeholder="Weight (kg)"
                   value={sbd[key].weightKg}
                   onChange={(e) => updateSbd(key, "weightKg", e.target.value)}
-                  className="flex-[2]"
+                  wrapperClassName="flex-[2]"
                 />
                 <Input
                   label="Reps"
@@ -166,7 +166,7 @@ export function ScoreRevealSequence({ onDone }: ScoreRevealSequenceProps) {
                   min={1}
                   value={sbd[key].reps}
                   onChange={(e) => updateSbd(key, "reps", e.target.value)}
-                  className="flex-1"
+                  wrapperClassName="flex-1"
                 />
               </div>
             ))}
@@ -208,7 +208,7 @@ export function ScoreRevealSequence({ onDone }: ScoreRevealSequenceProps) {
                     placeholder="5"
                     value={entry.distanceKm}
                     onChange={(e) => updateCardioEntry(entry.id, { distanceKm: e.target.value })}
-                    className="flex-[1.3]"
+                    wrapperClassName="flex-[1.3]"
                   />
                   <Input
                     label="Minutes"
@@ -217,6 +217,7 @@ export function ScoreRevealSequence({ onDone }: ScoreRevealSequenceProps) {
                     placeholder="25"
                     value={entry.minutes}
                     onChange={(e) => updateCardioEntry(entry.id, { minutes: e.target.value })}
+                    wrapperClassName="flex-1"
                   />
                   <Input
                     label="Seconds"
@@ -226,6 +227,7 @@ export function ScoreRevealSequence({ onDone }: ScoreRevealSequenceProps) {
                     placeholder="00"
                     value={entry.seconds}
                     onChange={(e) => updateCardioEntry(entry.id, { seconds: e.target.value })}
+                    wrapperClassName="flex-1"
                   />
                 </div>
                 {i === cardioEntries.length - 1 && (

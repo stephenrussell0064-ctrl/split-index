@@ -6,9 +6,11 @@ import { isBodyweightOnlyExercise } from "@/lib/scoring/weight-entry";
 import { cn } from "@/lib/utils/cn";
 import { formatIndex, formatWeight } from "@/lib/utils/format";
 import {
-  describeAgeStandard,
+  formatAgeAdjustmentNote,
   formatPredictionLabel,
   formatRiegelPrediction,
+  readAgeAdjustment,
+  readCardioAgeGrade,
   type GatedCardioResult,
   type GatedStrengthResult,
 } from "@/lib/scoring/presentation";
@@ -193,8 +195,23 @@ function CardioPremiumStats({
     "personal-calibrating",
     "personal-baseline-pace-only",
     "personal-baseline-intensity-stretched",
+    /*
+     * The ten `hr-zone-*` and `relative-effort-*` flags that main lists here
+     * are deliberately absent: the two-score model deleted the credit stack
+     * that raised them, and nothing emits them any more. Reinstating them
+     * would put dead strings in front of a reader looking for what the engine
+     * can actually say.
+     */
+    // Rendered as a sentence below instead of as a raw "· age graded"
+    // bullet — the same adjustment the strength side now names outright.
+    "age-graded",
   ]);
   const remainingFlags = result.flags.filter((f) => !hiddenFlags.has(f));
+  const isAgeGraded = result.flags.includes("age-graded");
+  // Null for a session scored before `ageGradeFactor` was reported. Those
+  // results carry the flag but no magnitude, so they keep the numberless
+  // wording rather than showing a fabricated or defaulted figure.
+  const cardioAgeGrade = readCardioAgeGrade(result.ageGradeFactor);
   const predictionVerb = (sport && PREDICTION_VERB[sport]) || "run";
 
   return (
@@ -231,6 +248,25 @@ function CardioPremiumStats({
           heartbeat, best read as a trend against your own history; decoupling is how much your
           heart rate drifted upward relative to pace.
         </ScoringExplainerNote>
+      )}
+      {isAgeGraded && (
+        <>
+          {cardioAgeGrade && (
+            <p className="mt-3 text-xs text-cardio-accent/80 tabular-nums">
+              {cardioAgeGrade.label}
+            </p>
+          )}
+          <ScoringExplainerNote href="/how-scoring-works#age-grading">
+            {cardioAgeGrade
+              ? // The label line above already carries the "Age-graded:" term
+                // and the figures, so the sentence explains rather than repeats.
+                `Your benchmark-equivalent time was compared against a standard ${cardioAgeGrade.percentMoved}% ${cardioAgeGrade.direction} than the open-class one, so the same finish time scores higher than it would for an open-class athlete.`
+              : // No label line for a pre-`ageGradeFactor` result, so this
+                // sentence must still name the adjustment itself.
+                "Age-graded: your benchmark-equivalent time was compared against a standard adjusted for your age, so the same finish time scores higher than it would for an open-class athlete."}{" "}
+            The times shown here — including the predictions — are your real, un-graded times.
+          </ScoringExplainerNote>
+        </>
       )}
       {result.predictions && (
         <div className="border-t border-white/5 pt-4">
@@ -272,15 +308,16 @@ function StrengthRow({ result, liftName }: { result: ScoreStrengthResult; liftNa
     result.flags?.includes("sex-factor-beta") ||
     result.appliedFactors?.some((f) => f.includes("beta"));
   const isEstimated = result.source === "generic";
+  // The age curve has always been computed, applied and gated correctly — it
+  // just had no reader. `isBeta` above collapses the whole appliedFactors
+  // array into a badge, so a masters athlete paying for premium could see
+  // "(beta)" next to their tier and never learn what was adjusted or by how
+  // much, while the pricing page sold "published age-graded standards".
+  const ageAdjustment = readAgeAdjustment(result.appliedFactors);
   // Results persisted before the 1RM split existed carry only the single
   // blended figure — show it as both rather than a blank or a zero.
   const currentOneRM = result.currentOneRM ?? result.oneRM;
   const allTimeOneRM = result.allTimeOneRM ?? result.oneRM;
-  // The engine has always computed this and always carried it here; nothing
-  // rendered it, so an athlete whose score was age-adjusted had no way to see
-  // that it was. Null for free results (premium-gated) and for the flat 23–35
-  // band, so this line simply does not appear rather than reading "×1.000".
-  const ageStandard = describeAgeStandard(result.appliedFactors);
   return (
     <div className="rounded-lg border border-gym-border/20 bg-gym-bg/40 p-3">
       <div className="flex items-baseline justify-between gap-2">
@@ -323,11 +360,13 @@ function StrengthRow({ result, liftName }: { result: ScoreStrengthResult; liftNa
         {result.tier}
         {isBeta ? " (beta)" : ""} · {result.bodyweightRatio}× bodyweight
       </p>
-      {ageStandard && (
-        <p className="mt-1 text-xs text-gym-muted tabular-nums">
-          Age {ageStandard.age} · standard {ageStandard.easedPct.toFixed(1)}% easier · your lift is
-          not adjusted (beta)
-        </p>
+      {ageAdjustment && (
+        <>
+          <p className="mt-1 text-xs text-gym-accent/80 tabular-nums">{ageAdjustment.label}</p>
+          <ScoringExplainerNote href="/how-scoring-works#age-grading" className="text-gym-muted">
+            {formatAgeAdjustmentNote(ageAdjustment)}
+          </ScoringExplainerNote>
+        </>
       )}
       {isBodyweightOnlyExercise(liftName) && (
         <ScoringExplainerNote className="text-gym-muted">
@@ -449,7 +488,13 @@ export function SessionScoreInsights({
             <PremiumTease
               key={name}
               title={`${name}: ${formatIndex(free.score)} · ${free.tier} · confidence & trend locked`}
-              subtitle="Premium unlocks the adaptive 1RM confidence band, trend, and a suggestion when the estimate is uncertain."
+              // `appliedFactors` is premium-gated, so the age readout is
+              // correctly absent from the blurred preview below (which passes
+              // an empty array rather than inventing an age for this athlete).
+              // Naming it here is the honest way to advertise it: it is what
+              // the pricing page already promises, and a masters athlete on
+              // the free tier otherwise has no way to learn the feature exists.
+              subtitle="Premium unlocks the adaptive 1RM confidence band, trend, the age-graded standard behind your score, and a suggestion when the estimate is uncertain."
             >
               <StrengthRow
                 result={{

@@ -98,7 +98,6 @@ export function SocialHub({
       <PageHeader
         eyebrow="Community"
         title="Social"
-        subtitle="Compete, connect, and challenge"
       />
 
       {/*
@@ -145,7 +144,23 @@ export function SocialHub({
 
         {tab === "leaderboards" && (
           <div className="grid gap-6 lg:grid-cols-3">
-            <div className="lg:col-span-2">
+            {/*
+              min-w-0 on the grid item, and it is the whole fix for the
+              leaderboard hanging off the right of the screen.
+
+              A grid item defaults to `min-width: auto` and will not shrink
+              below its content's min-content width — the same rule that makes
+              flex children overflow, one level up. So a wide descendant grew
+              this div past the viewport and dragged the card, its header and
+              every row inside along with it.
+
+              Eight elements reported as wider than the viewport and only this,
+              the outermost, was the cause; the rest merely inherit its width.
+              Two rounds went on descendants that looked like the offender from
+              a screenshot, and with min-width:auto above them none of those
+              could have shrunk even once fixed.
+            */}
+            <div className="min-w-0 lg:col-span-2">
               <LeaderboardPanel
                 initialRows={leaderboard}
                 initialBracket={leaderboardBracket}

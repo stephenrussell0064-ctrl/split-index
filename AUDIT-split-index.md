@@ -43,8 +43,14 @@ its current status inline; this table is the summary.
 | M8 no HSTS | **CLOSED** | `6b6aebf` |
 | L4 `geolocation=()` undocumented | **CLOSED** | `6b6aebf` |
 | M12 index gaps | **OPEN — deliberately.** No index added, because no query plan could be produced. Diagnostic shipped instead; needs an operator to run it | `7893c0c` |
-| M9 CSP allows `'unsafe-inline'` | **CLOSED on the authenticated surface** — public pages keep it, deliberately; see the finding | `695c2d3` |
-| N10 email addresses in an anon-readable column | **OPEN — High.** Migration 061 written and tested; stays open until an operator runs the impact query and applies it | `eff60ac` |
+| M9 CSP allows `'unsafe-inline'` | **CLOSED on the authenticated surface** — public pages keep it, deliberately; see the finding | `3e8994d` |
+| N10 email addresses in an anon-readable column | **CLOSED** by a peer session's migration 064, which masks the column in both views rather than scrubbing rows — a better fix than my 061, which never landed | `ff0ab52` |
+| M6 `CRON_SECRET` accepted from the query string | **CLOSED** | see finding |
+| N11 `REVOKE FROM PUBLIC` leaves anon's direct grant | **OPEN — High.** 067 written, not applied; `prune_security_events` is the one with teeth | `067` |
+| M10 share card content and per-share consent | **CLOSED** — and the finding's "Tier 2" claim corrected; see the finding | see finding |
+| M14 username reserved words and lookalikes | **CLOSED** | see finding |
+| N9 elevated queries unrecorded | **CLOSED** — the record moved into `createAdminClient`, whose `source` argument is required | see finding |
+| N8 entitlement resolved per call site | **CLOSED** — the two questions are named; the finding's "accidental coexistence" was wrong and the split is documented | see finding |
 | Everything else | **OPEN** | — |
 
 Zero Critical findings remain open. The brief's gate for a growth push is WP1,
@@ -708,6 +714,38 @@ would actually matter.
 
 Same pattern in `cron/hybrid-reports`.
 
+**CLOSED.** Both routes now call one shared
+[verifyCronRequest](src/lib/security/cron-auth.ts), which reads the `Authorization`
+header and nothing else. The query parameter is gone rather than validated harder — the
+value being correct is precisely why it worked, so tightening it was never the fix.
+
+Removing it is safe because nothing ever asked for it, which was checked rather than
+assumed: `vercel.json` schedules only `hybrid-reports` and Vercel Cron sends the Bearer
+header unprompted; `/api/cron/leaderboard` is scheduled nowhere at all; and `?secret=`
+appears in no config, script, workflow or document in the repository. `.env.example:32`
+and `README.md:265` both document the header and only the header.
+
+**A caller still using it gets a 401 and a log line, not silence.** A scheduled job that
+stops running looks like nothing until somebody notices a stale leaderboard, so a request
+carrying `?secret=` is recorded as an `auth.failure` naming the parameter and what to send
+instead. The value is never read — logging it would put the secret in the log this change
+exists to keep it out of, and there is a test asserting the secret does not appear in the
+output.
+
+The `&& !!process.env.CRON_SECRET` guard is preserved as an explicit early return with its
+own test. It is the one branch where a refactor is catastrophic rather than merely wrong:
+an unset variable must not make a job that walks every athlete's row public.
+
+**A correction to this finding, and to my own first draft of the fix.** The finding called
+the comparison "non-constant-time … listed only for completeness", and that was fair. What
+it did not mention, and what I initially wrote up as a second security weakness, is the
+`.replace("Bearer ", "")` substring replace. Measured, it is **not** a bypass:
+`xBearer <token>` becomes `x<token>` and is refused. Its entire effect was rejecting
+requests it should have accepted — a lowercase `bearer`, which HTTP explicitly permits
+since the scheme token is case-insensitive, and `Bearer  <token>` with two spaces. That is
+a correctness fix wearing security clothing, and it is recorded that way in the module
+rather than left implying a hole that was never there.
+
 ---
 
 #### M7 — Session lifetime and refresh behaviour are Supabase defaults, not decisions
@@ -823,7 +861,7 @@ Not decided here. A change that makes the landing page dynamic, or that puts an 
 flag in the production build, is a product call. Option 4 looks like it gets most of the
 security benefit for none of the rendering cost, and is where I would spend the time.
 
-**CLOSED `695c2d3` — option 4, chosen by Stephen.** The authenticated surface gets a
+**CLOSED `695c2d3`, on `main` as `3e8994d` — option 4, chosen by Stephen.** The authenticated surface gets a
 per-request nonce with `'strict-dynamic'`; the public surface keeps the previous policy and
 stays static. Static routes went from 13 to 10, and the three that moved — `/settings`,
 `/settings/billing`, `/cardio/gps-run` — are behind a login. `/`, `/privacy`, `/terms` and
@@ -877,6 +915,54 @@ authenticated, and it renders only the requesting user's own report.
 
 `src/app/api/interference/report-card/route.tsx` needs the same review; I have not read it in
 detail.
+
+**CLOSED — and the finding was half wrong, which is recorded because the wrong half would
+have sent the next person hunting the wrong thing.**
+
+**The correction first.** "A Tier 2-derived value" is false. Readiness on that card comes
+from `computeReadiness(params.sessions, …)`, which derives an acute:chronic workload ratio
+from training load. It reads no health table, no PAR-Q answer, no HRV row and no sleep row
+— traced from `hybrid-report.ts:65` through `readiness.ts:61`. It is **Tier 1 training
+data held on contract necessity**, not Article 9 special category data. I wrote the
+finding from the word "readiness" rather than from the call graph.
+
+**It came off the card anyway**, for the reason that survives the correction: D4 permits
+the username, the score, the tier and the interference finding, and readiness is outside
+that list. A readiness figure printed beside somebody's name on an image built to be posted
+publicly is an inference about their physical condition, and the allowlist exists precisely
+so that judgement is not made field by field by whoever is adding a line to a PNG.
+
+**The per-share opt-in is now real.** D4 asks for opt-in per share with the exact content
+shown first. Neither path did that:
+
+- The Hybrid report was a bare `<a href="/api/reports/hybrid/card" target="_blank">`, so
+  the card was generated and opened before the athlete had seen anything. That is
+  disclosure, not consent.
+- The Interference path went through `ShareImageButton`, which fetched the PNG and handed
+  it straight to the OS share sheet. The sheet's thumbnail appears *after* the decision and
+  is the size of a stamp, and the desktop fallback had no preview at all.
+
+Both now fetch the image, render **the actual PNG** at a readable size in a focus-trapped
+dialog with a plain-English line naming what is on it, and share nothing until the athlete
+presses Share there. Cancel discards the blob and revokes the object URL. `contentSummary`
+is a required prop, so a new card cannot be wired up without someone writing down what it
+carries.
+
+One thing that looks like a risk and is the opposite: `navigator.share` needs transient
+activation, and the old code spent the click's activation on a `fetch` before calling it.
+The confirm press is a fresh gesture, so sharing is now more reliable, not less.
+
+**A judgement call, stated rather than buried.** `targetPaceLabel` is also outside D4's
+literal allowlist and is **kept**. It is a training target the athlete set for themselves,
+carries no inference about their physical condition, and reads as the kind of thing the
+feature exists to let people post. If that reading is wrong it is one line to remove — but
+removing it silently under cover of a privacy fix would be the wrong way to decide it.
+
+**What is NOT verified:** the dialog has not been exercised in a browser. Reaching it needs
+a signed-in premium account with a generated report, which is not available from here. The
+tests assert the source — that the preview renders the fetched blob, that `nav.share` is
+reachable only from the confirm handler, that no raw link to a card route remains — and
+that is weaker than clicking it. Worth ten minutes on the deployed app.
 
 ---
 
@@ -990,6 +1076,50 @@ write happens later. `profiles.username` is `UNIQUE` at the database level, so t
 closes as a constraint violation — surfacing as a 500 with Postgres text (M1) instead of "that
 username is taken". The two findings should be fixed together.
 
+**CLOSED.** Three parts, and the first one had to happen before the second or the second
+would have made things worse.
+
+**The lists are split.** Profanity stays substring-matched (a shipped decision, kept:
+for slurs a false positive is the better error). Impersonation terms move to
+`RESERVED_NAMES`, matched as a WHOLE username and by WORD in a display name — never as a
+substring of a word.
+
+That was not a tidy-up. The old rule was refusing real names, demonstrated before changing
+anything: `badminton`, `grapes`, `scunthorpe`, `shitake` and the surname `Rapetti` could not
+be registered. Adding WP3.3's list to a substring test would have added `rapid`,
+`therapist`, `capital`, `rooted`, `staffordshire` and `Rapinoe` to that. A short exception
+list covers the demonstrated innocent words; the general Scunthorpe problem has no fix and
+is not claimed to have one.
+
+**All nine reserved words WP3.3 named are added**, plus `administrator`, `sysadmin`,
+`helpdesk`, `team`, `payments`, `noreply`, `webmaster` and `abuse`. `admin7`, `ad_min`,
+`adm1n` and `4dm1n` are refused; `badminton` is not.
+
+**A lookalike hole the finding did not know about**, because it predates
+`validateDisplayText`. The finding credits the ASCII-only username pattern with ruling out
+homoglyphs "by construction", and it does — for usernames. Display names permit unicode and
+are what appears beside a score on a leaderboard, and `Аdmin` with a Cyrillic А matched
+nothing at all. Confusables are now folded before the reserved check.
+
+**The race is closed at the message, which is the only place it can be closed.**
+`username-check` reads and the write happens later, so two athletes can pass the check and
+one loses at the constraint — no amount of checking harder changes that. What was wrong is
+what the loser was told: `profiles_username_key` was mapped on the server, but onboarding
+writes with the BROWSER client, so it surfaced as "Could not save your profile. Please try
+again." That is not merely vague, it is wrong advice — trying again with the same username
+fails identically. The map moved to
+[unique-violations.ts](src/lib/api/unique-violations.ts), dependency-free so both paths
+share it and cannot drift, and the browser now says "That username is taken." without ever
+repeating the conflicting value, which belongs to somebody else.
+
+**A bug I introduced and caught before committing**, recorded because the interaction is
+not obvious: folding digits to letters (`7`→`t`) before stripping trailing digits turned
+`admin7` into `admint`, which matches nothing — so the folding I added to catch `adm1n`
+silently broke every case the trailing-digit strip existed to catch. `admin7`, `admin1`,
+`adm1n` and `4dm1n` all slipped through. The two rules need opposite treatments of a digit,
+so the implementation generates candidate spellings and checks them all rather than
+computing one canonical form. There is a test named for exactly that.
+
 ---
 
 ### LOW
@@ -1038,6 +1168,147 @@ Medium rather than High because the write paths that reach the scoring engine
 are covered and the scoring guard still backstops the rest — but the fuzz sweep
 cannot claim "every route" until this is finished, and the brief's acceptance
 criterion says every route.
+
+**PARTIALLY CLOSED — 7 routes done, 14 body-taking routes remain.** Measured rather than
+estimated: at the start of this pass 6 of 52 route files validated anything; 12 do now.
+Body-taking routes with no schema went from 20 to 14.
+
+Done: `activities/[id]/comments`, `squads`, `squads/join`, `duels`, `recovery/hrv`,
+`profile/timezone` — plus the three that already parsed, and three a peer session added
+(`hpe/session-feedback`, `social/report`, `social/block`).
+
+**None of these routes was unguarded, and the finding's phrasing "no schema" was fair but
+undersold what was there.** What the ad-hoc guards actually got wrong, each now a named
+test case:
+
+- `String(body.name ?? "")` coerces an object to `"[object Object]"` and an array to its
+  comma-joined contents. Both are non-empty, both passed the length check, and both were
+  stored as somebody's comment.
+- `.slice(0, MAX_NAME_LENGTH)` silently truncated a squad name. The athlete got a shorter
+  name back with nothing saying so.
+- `duels` clamped and defaulted: an out-of-range `days` became 30, an unknown `metric`
+  became `"sessions"`, an unknown `sport` became null. A malformed request produced a
+  working duel nobody asked for, so a client bug looked like a feature.
+
+Absent is still distinguished from invalid — a missing `metric` still means "sessions", so
+the defaults survive and only present-but-wrong values are refused.
+
+**A mistake worth recording, because it would have created N2 out of the fix for N1.** The
+first draft of the schema module invented its own limits — 500 characters for a comment,
+50 for a squad name — against the 1000 and 40 the routes were using. That is precisely
+"two sets of bounds coexisting". The constants moved into the schema module instead, the
+routes import them, and a test asserts both values so the next person cannot drift them
+apart. `hrvSchema` is asserted against `BOUND_HRV_MS` from the central config rather than
+against a literal, for the same reason.
+
+**BODY VALIDATION COMPLETE except three, which need a decision rather than a schema.**
+23 of 52 route files now validate; body-taking routes with no schema went 20 → 14 → **3**.
+
+The second batch's gaps were mostly type ASSERTIONS, which are a promise to the compiler
+and nothing whatever to the runtime:
+
+- `const body: ActivityBody = await request.json()` — the PATCH handler then read seventeen
+  fields off it and handed them to the scoring engine. `updateActivitySchema` already
+  existed from WP3 and had never been wired up.
+- `body.action as "accept" | "decline" | "cancel"` in two routes — any string reached the
+  switch below, and only the absent case was caught.
+- `const { sport, formData } = await request.json()` in `activities/draft` — no check of any
+  kind, and the only route storing an unbounded payload straight to the database.
+
+**Three things this batch got wrong first, all caught before commit**, recorded because each
+is a way a schema can be worse than the guard it replaces:
+
+1. `.strict()` on the merge schema would have rejected `dryRun` and returned 400 on every
+   merge preview. Being strict about unknown keys means knowing all the known ones.
+2. The goals schema used `targetDate`; the client sends `deadline`.
+3. The races schema used `z.number()` for elevation, but the handler treats `""` as "not
+   given" — so a form posting an empty optional field works today and would have started
+   getting a 400. Those fields stay loose deliberately, and the comment says why.
+
+**A finding inside the test suite.** Fifteen merge tests failed on the new uuid check because
+their fixtures used `"leg-a"` and `"leg-b"`. `activities.id` is `UUID PRIMARY KEY` (001:46),
+so those are ids the database cannot produce — the tests were describing a request that
+cannot happen, and a query filtering on one would fail with a Postgres cast error rather
+than a miss. The fixtures are real uuids now, with a note saying why they stopped being
+readable.
+
+**The three remaining, and why each needs you rather than a schema:**
+
+- ~~`onboarding/calibrate`~~ **DONE — Stephen's decision, to reject.** `validLift` and
+  `validCardioStat` were predicates fed to `.filter()`, so a bad entry was dropped and the
+  request carried on with whatever survived. An athlete who typed 600kg for their deadlift
+  finished onboarding scored off two lifts, was told it worked, and never learned the third
+  had been discarded. It refuses now and the error names the lift.
+
+  **Safe for the shipped form, checked rather than assumed:** `score-reveal.tsx` builds its
+  payload from `filledLifts` and `completeCardioEntries`, which already require a non-zero
+  weight, reps, distance and duration. It never sends an untouched lift, so nothing that
+  works today starts failing — what changes is only the filled-but-out-of-range case, which
+  is exactly what was being thrown away in silence.
+
+  **Bounds preserved to the comparison operator.** `validLift` used `weightKg > 0` strictly,
+  so the schema is `.gt(0)` and not `.min(0)` — `.min(0)` would have accepted a zero-kilo
+  squat the old code refused.
+
+  **Two things deliberately NOT tightened, named rather than smuggled in.** Reps still allow
+  a fraction, because `validLift` never required an integer and rejecting one would be a
+  second behaviour change nobody asked for; a fractional rep is nonsense and is left as an
+  open question. And one thing that IS newly rejected: `weightKg: "140"` was coerced by
+  `Number()` and accepted before, and the schema refuses it — consistent with every other
+  body schema here, and with what the form sends, but a real change to what the endpoint
+  accepts.
+- `revenuecat/webhook` and `stripe/checkout` are signature-verified, which is a different
+  kind of guard. A body schema may be redundant there rather than missing, and adding one
+  to a payment webhook without understanding the provider's payload versioning is how you
+  start rejecting real events.
+
+**QUERY PARAMETERS DONE TOO.** 14 of the 19 read routes now parse; the five that do not
+each validate by their own means and are listed below. 33 of 52 route files validate
+something.
+
+**Two rules here are the opposite of the body schemas, and both are load-bearing:**
+
+1. **Not `.strict()`.** A body with an unknown key means the caller and the server disagree
+   about a contract. A URL with an unknown key means somebody shared a link — `utm_source`,
+   `fbclid` and `gclid` are appended by mail clients, ad platforms and social apps to URLs
+   nobody controls. Rejecting them would turn a shared logbook link into a 400.
+2. **Bad values fall back**, wherever the route already had a default, because a schema that
+   started returning 400 would break links that work today. Ids are the exception and do
+   reject: a malformed uuid in a WHERE clause is a Postgres cast error rather than a miss,
+   so a 400 naming the parameter beats a 500 from the driver.
+
+**What was actually wrong**, since "no schema" undersells it a third time:
+
+- `Number(x) || DEFAULT` treats 0 as absent, so `?limit=0` silently became a full page, and
+  passes NEGATIVES through because `-5` is truthy. `?limit=-5` reached the query builder.
+- The logbook's `limit` had **no upper bound at all** — `?limit=100000` was passed as
+  written. That is the one deliberate behaviour change in the pass; it is capped now.
+- `social/compare` did `Number(searchParams.get("days") ?? 30)` with no `||`, so `?days=abc`
+  produced **NaN**, and NaN reached a date computation. The one genuine bug rather than a
+  missing guard.
+
+**A trap that would have broken the logbook, caught before commit.** The obvious move is to
+validate `?sport=` with `sportSchema`. The logbook filters against `SPORTS` from
+`constants/sports.ts`, which carries `all`, `legs`, `arms`, `chest`, `back`, `core` and
+`shoulders` alongside the nine real sports — it is the FILTER catalog, not the sport enum.
+`sportSchema` is the nine, so that change would have answered `?sport=all`, the default
+view, with a 400. The route keeps its own catalog check, for the same reason `zone` and
+`sort` keep `parseZone` and `parseSort`.
+
+**Clamping was preserved where it existed.** Several routes do
+`Math.min(365, Math.max(7, ...))`, which answers `?days=500` with 365; a fallback to 30
+would have quietly changed what a bookmarked link returns. `clampedIntParam` mirrors the
+expression it replaces, and a test compares the two across a range of inputs.
+
+**A second unrealistic fixture, same class as the merge one.** The entitlement matrix asked
+`/api/social/leaderboard/detail?userId=someone`. `profiles.user_id` is a uuid column, so
+that is an id the database cannot hold.
+
+**The five read routes not using `parseQuery`, and why each is fine:** `social/block` and
+`social/leaderboard/dimension` validate with their own schema or set;
+`profile/username-check` is deliberately loose so the form can explain WHY a name is
+invalid; `hpe/plan` reads one `=== "true"` boolean; `activities/draft`'s remaining
+`searchParams` reference is gone.
 
 #### N2 — Two sets of plausibility bounds now coexist
 **WP3 · Low · Evidence: `src/lib/security/config.ts` and `src/lib/scoring/input-guards.ts`.**
@@ -1149,6 +1420,204 @@ The published statement therefore stays accurate as written and needs no edit. R
 in full because "we did some accessibility work, can the finding close" is a question
 that will be asked again, and the answer needs to be checkable rather than remembered.
 
+**CORRECTION to item 1, 2026-09-07 — measured, after a peer session reported a ~1-in-10
+rate of audit findings that were wrong or misdirected on measurement rather than on
+reading.** They named four of their own. I re-measured mine, since the published
+accessibility statement names these four and a wrong finding here is a public one.
+
+Item 1 said charts have "no text or table equivalent **exposed to assistive
+technology**". That phrasing is wrong, and wrong in the direction that misdirects the
+work. Measured on `9a1ac02`, there are two distinct populations:
+
+- **Eight chart surfaces already carry `role="img"` with a descriptive `aria-label`** —
+  the three in [analytics/charts.tsx](src/components/analytics/charts.tsx) (line, index
+  trend, sport-balance radar), [engine-lab-trend-card.tsx](src/components/dashboard/engine-lab-trend-card.tsx),
+  the three in [interference-detail.tsx](src/components/analytics/interference-detail.tsx),
+  and [acwr-trend-chart.tsx](src/components/analytics/acwr-trend-chart.tsx). Something
+  *is* exposed.
+- **Eight have nothing at all**: `compare-chart`, `moving-average-chart`, `volume-chart`,
+  `training-zones-chart`, `trend-panel`, `fatigue-recovery-chart`, `projection-chart`,
+  `intensity-distribution`.
+- **None of the sixteen has a data equivalent.** No `<table>`, no `sr-only` value list,
+  anywhere among them.
+
+So the *published statement* — "Charts do not yet have a text equivalent" — is accurate
+and needs no edit: `aria-label="Index trend chart showing split, endurance and strength
+over 20 data points"` announces that a chart exists and what it is about, and conveys
+none of what it says. A label is not an equivalent, and WCAG 1.1.1 asks for one that
+serves the equivalent purpose.
+
+The *finding* was the imprecise thing, and the imprecision has a cost: it describes one
+undifferentiated problem where there are two, with different fixes. Half need a data
+equivalent added alongside a label that already exists; the other half need the label
+first. Anyone working from the finding as written would do the same work in both places.
+
+Items 2, 3 and 4 re-checked at the same time and all three stand:
+
+- **Item 2 confirmed.** [engine-lab-trend-card.tsx:69-71](src/components/dashboard/engine-lab-trend-card.tsx#L69)
+  ties each legend entry to its line with a coloured dot and no second cue — no dash
+  pattern, no marker shape. The series *names* are in text, so this is narrower than
+  "signalled by colour alone" implies, but the legend-to-line mapping is colour-only and
+  that is the 1.4.1 failure.
+- **Item 3 confirmed** (see the entry above): `role="alert"` present, `aria-describedby`
+  / `aria-errormessage` / `aria-invalid` absent.
+- **Item 4 is not falsifiable from code** — it asserts that no manual walkthrough has been
+  done, and no walkthrough has been done.
+
+One of four needed correcting, and it was a precision error rather than a false claim.
+Recorded anyway: this document is used to decide what to build, and a finding that sends
+someone to do unnecessary work costs the same whether it is wrong or merely vague.
+
+**ITEM 1 — EIGHT CHART SURFACES NOW CARRY THEIR DATA. Not closed; the remainder is named.**
+
+[ChartFigure](src/components/analytics/chart-figure.tsx) renders two siblings: the chart in
+a `role="img"` wrapper with its name, and an `sr-only` region holding a one-sentence summary
+and a real `<table>` of the values, with `<caption>`, `scope="col"` headers and the first
+cell of each row as `scope="row"` so a reader hears "week 3, load 412" rather than a bare
+number.
+
+**Siblings and not nested, which is the whole trick.** `role="img"` makes its subtree
+presentational, so a table inside it is invisible to a screen reader — the fix would render,
+look correct in the DOM, and do nothing. There is a test asserting the table appears after
+the `role="img"` element closes.
+
+The summary is a required prop rather than something derived, because
+[describeSeries](src/lib/a11y/describe-series.ts) cannot know which number matters: "Split
+Index rose from 412 to 448" and "your acute:chronic ratio stayed in the optimal band" are
+the same shape of data and different sentences. It is a pure function with real tests —
+one point is reported as a reading and not a trend, a flat line is "unchanged" without
+dividing by a zero delta, and the range clause appears only when the line moved and came
+back, which is the case where endpoints alone are true and useless.
+
+**Long series are capped at 40 rows** with the table saying so. A year of daily points is
+365 rows, and handing a screen-reader user that is a worse problem than the one being fixed;
+at that length the summary is what carries the meaning, which is also what a sighted reader
+takes from the shape of the line.
+
+**Covered (8):** the three in [charts.tsx](src/components/analytics/charts.tsx) — index
+trend, split/endurance/strength trend, sport-balance radar — plus `trend-panel`,
+`moving-average-chart`, `volume-chart`, `fatigue-recovery-chart` and `projection-chart`.
+
+**The remaining five time series are now done too.** `acwr-trend-chart`, the three in
+`interference-detail`, and `engine-lab-trend-card`. **Thirteen chart surfaces carry their
+data, and no chart anywhere is left with a bare `role="img"`** — there is a test asserting
+that, because reverting one to a label-only wrapper looks entirely reasonable in a diff and
+is exactly the state this finding describes.
+
+Two of the five needed a sentence `describeSeries` could not have written, which is the
+argument for the summary being a required prop rather than derived:
+
+- **ACWR** is not about the shape of the line but which *band* the ratio sits in — the plot
+  draws optimal (0.8–1.3) and danger (>1.5) as shaded regions. The summary names the band
+  in words and the table carries a Zone column, so "1.12, in the optimal band" survives
+  instead of "up from 0.94 to 1.12", which reports the movement and loses the meaning.
+- **The interference charts** are categorical comparisons — weeks with a strength session
+  against weeks without, efficiency by days since the last one — so each got its own
+  sentence naming both sides.
+
+Writing them surfaced a small pre-existing inaccuracy: `cardioToStrength`'s two averages are
+`number | null` and were passed straight to recharts, which renders a gap. The table now
+says "no reading", which is the same gap said out loud.
+
+**ITEM 1 IS NOW CLOSED, AND THE PUBLISHED STATEMENT HAS CHANGED — the first time in this
+audit that it has.**
+
+The last three were the categorical ones, and each needed a sentence `describeSeries` could
+not write. That is the argument for the summary being a required prop, made concrete:
+
+- **A donut has no direction.** "Up from 40 to 60" is meaningless for a share of a total.
+  What a sighted reader takes from one is the ORDER OF SIZE, so `describeDistribution` leads
+  with the largest share regardless of the order the slices are drawn in — which is the one
+  thing the visual makes obvious and a screen reader could not otherwise get.
+- **A comparison has no single "the" value.** Two trend sentences side by side would give
+  both athletes' movement and never answer the question the chart exists for, so
+  `describeComparison` says who is ahead and whether the gap is opening or closing.
+
+`intensity-distribution` was wrapped inside its shared `DonutChart` rather than at each call
+site, so both donuts are covered by one change and a third cannot be added without one.
+`compare-chart` gets one row per date with a column per athlete rather than two tables —
+the question is who is ahead on a given day, which is a comparison across a row.
+
+**Sixteen chart surfaces in twelve files, no bare `role="img"` anywhere.** The allowlist is
+empty and kept, so a chart added without a data equivalent has to be declared with a reason
+rather than quietly not appearing.
+
+`recovery-gauge` and `progress-ring` are not charts and never were: both render their value,
+band and blurb as real text. The gauge's decorative arc is now `aria-hidden`, which is the
+one place in the app where hiding a graphic is the accessible choice — left exposed it
+announces as an unnamed graphic before the number it is drawing.
+
+**The statement.** "Charts do not yet have a text equivalent … the trend charts on the
+analytics page will not be readable" is now false in both halves, and a false claim on a
+public accessibility page is a defect even when it understates. It moved from Known issues to
+What we have fixed rather than being deleted, so the record of the change survives. The
+form-error item was softened to match reality too — four remain, described as a group
+problem, waiting on the manual pass rather than on effort.
+
+**What is NOT claimed:** that any of this reads well. The tests prove the table is emitted,
+sits outside the `role="img"` subtree and stays in the accessibility tree. They cannot prove
+it is usable, and item 4 — the manual walkthrough — is still open and still the honest
+caveat carried by the statement.
+
+**ITEM 3 — MOSTLY CLOSED, and deliberately not claimed as closed.**
+
+Every input that lives inside a `Field` or one of the `components/ui` controls now points
+at its own error with `aria-describedby`, and carries `aria-invalid` when it has one.
+`role="alert"` stays: announcing the error when it appears and being reachable from the
+field afterwards are two different requirements, and the app now meets both.
+
+Covered: **78 `<Field>` call sites** — the whole activity-logging surface, through a
+`FieldErrorContext` that gives the message an id and hands the reference to `GlassInput`,
+`UnitInput` and `HeroInput` — plus `Input`, `Select` and `Textarea` in
+[components/ui/input.tsx](src/components/ui/input.tsx).
+
+`aria-describedby` rather than `aria-errormessage`, deliberately. `aria-errormessage` is
+the semantically precise answer and reads better on paper; support is materially worse,
+and a user on one of the pairings that ignores it gets nothing at all — which is the state
+being left behind. Revisit when support catches up: one line in each component.
+
+**THE BLOCK-LEVEL ERRORS: five of nine now tied, and the restructure was not needed.**
+
+The assumption above — that these need "restructuring how those forms report" — was wrong,
+and the correction is the useful part. `aria-describedby` is a REFERENCE, not a containment
+rule: the message can stay exactly where it reads best and still be announced on the input
+it belongs to. Nothing had to move.
+
+All four in [interval-blocks.tsx](src/components/activities/interval-blocks.tsx) are tied —
+reps, distance, work time and heart rate — plus `bodyweight` in
+[gym-form.tsx](src/components/activities/gym-form.tsx). `fieldErrorId(key)` derives the id
+from the same key the errors map uses, so the reference and the target cannot drift apart.
+`ClockInput` renders two boxes for one value and both point at the same message: "enter a
+work time" is not about the minutes specifically, and a reader landing on either half should
+hear it.
+
+**The remaining four are NOT a smaller version of the same job**, and are left deliberately.
+`errors.exercises`, `ex.<id>.name`, `.muscle` and `.sets` describe GROUPS — a session
+needing at least one exercise, an exercise picker that is a heading and a button rather than
+an input, a row of weight-convention buttons, and a list of sets. There is no single control
+to point at. The correct treatment is a named `role="group"` carrying the description, which
+changes how the whole form is announced — a design decision to make against a real screen
+reader rather than by reasoning about it. That is N7 item 4, still open, and it is the
+honest blocker here rather than effort.
+
+So "Form errors are **not always** tied to their field" remains true of four, and the
+published statement stays as written.
+
+Three further `role="alert"` sites were checked and are correctly out of scope:
+`article9-consent-card`, `goals-panel` and `upcoming-races-panel` render *form-level*
+failures ("that save did not work"), which belong to no field and have nothing to be tied
+to.
+
+The testable half is a real unit test rather than a source scan:
+[field-describedby.ts](src/lib/a11y/field-describedby.ts) exists as its own module so the
+merging rules can be executed — that a caller's existing `aria-describedby` is preserved
+and read first, that the hint reference is dropped while the error is showing (the
+components swap one for the other, so pointing at the hint would dangle), and that both
+attributes are omitted rather than emitted empty or `false`. The component wiring is
+checked by reading the source, which is weaker and is labelled as such in the file: this
+project has no React testing library, which is the reason the logic worth testing was
+moved out of the component to begin with.
+
 #### N8 — Seventeen call sites still resolve entitlement themselves
 **WP6.2 · Low · Evidence: `grep -rln isPremiumUser src` — 21 sites, 4 migrated.**
 
@@ -1160,6 +1629,42 @@ the other.
 
 Low because nothing is currently wrong, and worth doing because the next
 divergence will be silent in exactly the same way.
+
+**CLOSED — and the finding's diagnosis was wrong, which changed the fix.**
+
+N8 read the coexistence of `isPremiumUser` and `hasSoftTrialAccess` as accidental: "two
+entitlement concepts came to coexist without either knowing about the other". They know
+about each other. `trial.ts` says the soft trial is for surfaces where showing the premium
+experience up front is the point, and explicitly **"not a substitute for real entitlement
+checks on paid-feature gates like data export or leaderboards"**.
+
+Measured: **2 of 16 sites fold in the soft trial and 14 do not** — the dashboard and the
+report view against everything else. That is the documented split, not drift. Doing what the
+finding implies, migrating all sixteen onto one answer, would either give every paid feature
+away to every new signup or take the trial away from the dashboard it was built for.
+
+**What was actually wrong is that the CHOICE was invisible.** Every site wrote the
+expression out, so which question was being asked could only be inferred from whether
+somebody had remembered a second clause. A new page copying the dashboard extends the trial
+to a paid gate; one copying analytics denies it on a showcase surface. Both look right in
+review.
+
+`hasPaidAccess` and `hasShowcaseAccess` now name the two questions, and all sixteen sites
+call the one matching **their existing behaviour** — no answer changed anywhere. The
+migration is asserted rather than assumed: a test checks each function against the exact
+expression it replaced, across a paid athlete, a lapsed free athlete and one inside the
+trial window.
+
+The test that matters most asserts the two functions **disagree** for a new free athlete. If
+they ever agree there, either the trial has been taken from the dashboard or every paid gate
+has been opened to every signup, and that is the one change here that would cost money.
+
+Two parameter types rather than one, because a shared `PremiumSubject` would have forced
+eleven pages to select `created_at` for a function that never reads it: a paid gate asks
+about the subscription, and only the showcase question needs the signup date.
+
+A guard keeps the primitives to the three modules that define the policy — `trial.ts`,
+`entitlements.ts` and `features.ts` — as a named allowlist, so a fourth is a decision.
 
 #### N9 — `elevated_query` has an event type and ten missing call sites
 **WP7 · Low · Evidence: `createAdminClient` is called in 12 places; 2 record it.**
@@ -1173,6 +1678,36 @@ audit writer itself — do not.
 Worth doing with the N8 entitlement migration rather than separately: both are
 the same sweep through overlapping call sites, and doing them together means
 reading each one once.
+
+**CLOSED — and not by the sweep this finding proposed.**
+
+Adding a `logSecurityEvent` call to the other eleven sites was the obvious fix and the wrong
+one: it records the eleven that exist today and says nothing about the thirteenth, which
+will be written by somebody who has never opened `admin.ts`. The finding itself notes that
+"adding a thirteenth means adding it to that list" — a rule enforced by hope.
+
+So the record moved INTO `createAdminClient`, and `source` became a **required argument**.
+The compiler now refuses a call that does not say where it is from, so the event cannot be
+forgotten — it can only be wrong, and a wrong one is visible in review in a way a missing
+one is not. Making the change produced twelve compile errors naming every site, which is
+the property the sweep would not have had.
+
+**What it records, precisely:** that an elevated client was *obtained* here, not that a
+query was made with it. A handler that builds one and returns early still logs. That is the
+deliberate trade — over-recording the availability of a service-role client is the cheap
+error, and wrapping every query method is a large surface for a smaller gain. The event says
+`service_role_client_obtained` so nobody reads it as more than it is.
+
+**The recursion question, asked once so nobody rediscovers it:** `admin-audit` uses this
+client to write `admin_access_log`, so logging from inside the factory would loop if the
+logger touched a table. It does not — `logSecurityEvent` writes to stdout — and there is a
+test asserting the logger references neither `createAdminClient` nor `.from(`.
+
+`account/delete` had the only pre-existing record, as a separate call beside the client.
+The two collapsed into one, keeping its richer detail, and its test now asserts the call
+ARGUMENTS rather than reading stdout — stronger, because it pins the source, the user id,
+the reason, and the ordering that matters: the client is obtained before the delete, and
+after it there is no user id left to record.
 
 #### N10 — Email addresses sit in a column the anon key can read
 
@@ -1221,40 +1756,69 @@ view until they pick a username. The exposed set is **existing athletes who comp
 onboarding before `8623658` and whose `display_name` still holds an address**. That is
 readable from the internet right now.
 
-**PARTIALLY ADDRESSED `eff60ac` — migration 061 written, not applied.**
-[061_display_name_is_never_an_email.sql](supabase/migrations/061_display_name_is_never_an_email.sql)
-redefines `handle_new_user()` to drop the `NEW.email` fallback (and to discard a
-provider-supplied name that is itself an address, since some OAuth providers return the
-email in the name field), then scrubs the stored rows, both in one transaction.
+**CLOSED `ff0ab52` — migration
+[064_display_name_is_never_an_email.sql](supabase/migrations/064_display_name_is_never_an_email.sql),
+by a peer session, and by a better route than the one I proposed.**
 
-The scrub is deliberately narrow: it nulls rows where `display_name` **is** the athlete's
-own address, not every name containing `@`. The broad predicate reads as the safer one
-and is not — `@rachelruns` is a plausible chosen name, a hand-typed `display_name` has no
-copy anywhere to restore from, and deleting somebody's chosen name to fix a bug we caused
-would be a second wrong. The narrow bucket is also the only recoverable one, since every
-row it nulls equalled `auth.users.email` and that row still exists. The impact query
-surfaces the remainder for a person to look at.
+It does two things. `handle_new_user()` stops writing the address — a provider-supplied
+name is still used, and absent one the column stays NULL, which every render site
+already falls back from. That covers Gap 1, including the abandoned-onboarding case.
+And **both** views mask an address that is already stored:
 
-**The finding stays OPEN until an operator applies it.** A migration in the repository
-changes nothing in the database. Specifically outstanding:
+```sql
+CASE WHEN p.display_name LIKE '%@%' THEN NULL ELSE p.display_name END
+```
 
-1. Run the impact query at the top of 061 and read `exposed_via_view` — that is the count
-   of addresses readable from the internet right now.
-2. Apply the migration, then run the two verification queries at the bottom. Both must
-   return zero.
-3. Re-ask the WP1 question about every remaining column in `public_profiles`, since the
+**Where my own proposal was worse, recorded because the reasoning is the useful part.**
+I wrote migration 061 (on `venture/b1-b2-iap-routing`, now dead and never landed) to fix
+the trigger and then *scrub* the stored rows with an `UPDATE`. I explicitly rejected
+masking at the view, on the grounds that it would overrule a self-chosen disclosure —
+citing 056's own line about `injury_status`, that "self-chosen disclosure is a different
+thing from inferred health data". That was too clever for the situation. The column was
+full of addresses **nobody chose**; the self-disclosure case was the rare one, and I let
+it drive the design for the common one.
+
+Masking is strictly better here on two counts:
+
+1. **It is not destructive.** The exposure closes while the value stays intact and
+   recoverable, so the `UPDATE` stops being load-bearing for privacy and becomes a
+   separate question — whether the app should hold the address in that column at all.
+   That decision can now be made with numbers and without pressure; the impact query and
+   the `UPDATE` are in 064 as comments.
+2. **It covers `leaderboard_profiles`, which my 061 did not touch at all.** I scoped to
+   `public_profiles` because `anon` was the headline, and missed that the same column is
+   served to every authenticated athlete. Smaller blast radius than the internet, still
+   every athlete on the platform reading every other athlete's address. That is a
+   straightforward miss on my part and the second one in this finding.
+
+**A history hazard this created, which the tree does not show.** 064 landed as two
+commits. `da224f7` added it as `062`, rebuilt from 056 — which silently dropped
+`AND u.email_confirmed_at IS NOT NULL` and would have re-exposed every unverified
+account, a worse leak than the one being closed. `ff0ab52` renamed it to 064 and
+regenerated it from 061 with the gate intact. Both went up in one push, so main's tip was
+never in the flawed state and Vercel only ever built the good one. Verified here:
+`git show da224f7:supabase/migrations/062_display_name_is_never_an_email.sql | grep -c
+email_confirmed_at` returns **0**; main's current 064 returns **3**. That tree also
+carried a duplicate `062`, since `062_admin_access_log.sql` already existed.
+
+The practical consequence is narrow but sharp: **`git revert ff0ab52` restores the flawed
+migration**, and so does cherry-picking `da224f7` onto another branch. Anyone undoing the
+rename must undo both commits or neither. If those views are ever rebuilt, rebuild from
+064 — never from 056.
+
+**Still outstanding, and no longer urgent:**
+
+1. Decide whether to run the `UPDATE` in 064's comments. This is now data minimisation
+   under the storage-limitation principle, not exposure — the addresses are masked either
+   way. Run the impact query first for the count.
+2. Re-ask the WP1 question about every remaining column in `public_profiles`, since the
    process failure was mine and column-by-column is the only way to find another. `bio` is
    the next one to look at: also free text, also published to `anon`, and nothing has ever
    audited what people put in it.
 
-Two fixes considered and rejected, with the reasoning recorded in the migration rather
-than only here: a CHECK constraint (it would be evaluated inside the trigger's INSERT, so
-one unexpected provider payload takes down signup entirely — a privacy defect traded for
-an outage), and a `CASE` filter on `display_name` inside `public_profiles` (it would close
-the class permanently, including for an address somebody types into their own profile, and
-would silently overrule a deliberate choice; 056 draws exactly that line for
-`injury_status`). The second is genuinely arguable and should be its own migration if taken.
-
+A CHECK constraint was considered and rejected by both sessions independently: it would be
+evaluated inside the trigger's INSERT, so one unexpected provider payload would fail signup
+entirely — a privacy defect traded for an outage.
 A CHECK constraint on `display_name` was considered and rejected: it would make the
 signup trigger's INSERT fail, turning a privacy defect into a total signup outage.
 
@@ -1287,6 +1851,124 @@ button.
 
 ---
 
+#### N11 — `REVOKE ... FROM PUBLIC` does not revoke from `anon`
+
+**WP1 / WP7 · High · Raised 2026-09-07, from a peer session's probe against production.**
+
+A Supabase project bootstraps with `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON
+FUNCTIONS TO anon, authenticated, service_role`. Every function created afterwards is
+therefore granted to `anon` **by name**, at creation. `REVOKE ALL ON FUNCTION f() FROM
+PUBLIC` removes only the implicit PUBLIC grant and leaves that direct one standing.
+
+Found twice on the same day, from opposite directions, and neither was visible in review
+because both lines look exactly like the correct thing:
+
+- A peer's 065 wrote `GRANT ... TO authenticated, service_role` believing it restricted.
+  It added. Fixed in their 066.
+- My 060, 061 and 063 each wrote `REVOKE ... FROM PUBLIC` believing it removed. It removed
+  half.
+
+**Which of mine actually mattered, measured rather than assumed.** The peer flagged
+`withdraw_article9_health_data` — an unauthenticated caller reaching a function whose job
+is to purge Article 9 health data, which sounds like the worst of them. It is not
+exploitable, and the reason is worth stating precisely: it is SECURITY DEFINER, so it can
+reach the tables, but every statement is scoped `WHERE user_id = auth.uid()`, and an anon
+JWT carries no `sub` claim, so `auth.uid()` is NULL. `user_id = NULL` is NULL, never TRUE.
+Zero rows updated, zero deleted. A no-op by construction rather than by permission.
+
+**The one that matters is `prune_security_events`, which nobody was looking at.** Also
+SECURITY DEFINER, and it selects rows **by date** — there is no `auth.uid()` in it, so
+there is no NULL to save it. If `anon` holds EXECUTE, an unauthenticated request can make
+the security and audit log prune itself on demand. The blast radius today is small because
+it deletes only rows already past 90 or 365 days and this database is young — but that is
+an accident of the calendar, not a property of the design.
+
+**ADDRESSED `067`, not applied.**
+[067_revoke_execute_from_anon.sql](supabase/migrations/067_revoke_execute_from_anon.sql)
+revokes `PUBLIC, anon` explicitly on all four functions the audit introduced, keeps
+`authenticated` on the Article 9 withdrawal path (removing it would swap a permissions
+defect for a compliance one), and carries a `pg_proc.proacl` query to run before and after.
+Checked before writing that revoking cannot break an anonymous read: `caller_email_verified`
+is referenced only in the `WITH CHECK` of three RESTRICTIVE **INSERT** policies, and anon
+does not insert.
+
+**Three pre-existing functions are deliberately left alone**, recorded in
+`function-grants.test.ts` as a named allowlist with reasons rather than silently skipped.
+`sync_profile_current_index` and `update_updated_at` both `RETURNS TRIGGER`, which Postgres
+refuses to invoke directly and PostgREST does not expose. `activity_is_visible_to` is
+referenced by a SELECT policy on `activities`, so revoking EXECUTE could turn "returns no
+rows" into "the query errors" for an anonymous reader — that needs a database to settle and
+was not guessed at with a submission pending.
+
+**APPLIED AND VERIFIED 2026-09-07.** A peer session probed production with the anon key
+after Stephen applied 067 and 068. `prune_security_events`,
+`withdraw_article9_health_data`, `caller_email_verified` and `replace_personal_records` all
+return 42501 permission denied; `handle_new_user` returns 404, because PostgREST does not
+expose trigger functions. What must still work does: `service_role` still reaches
+`replace_personal_records`, and an anonymous read of `public_profiles` still returns 200, so
+the logged-out profile page is intact. (A trap for whoever repeats this: PostgREST maps
+42501 to **401**, not 403 — easy to misread as the anon key itself being broken.)
+
+**`activity_is_visible_to` is now SETTLED, and the answer is do not revoke.** I had left it
+in the allowlist as "needs a database to settle"; a peer settled it. The four policies in
+031 that call it carry no `TO` clause, so they apply to PUBLIC — which includes anon — and
+an anonymous `SELECT` on `activities` returns 200 with an empty array today, which proves
+the policy is evaluated and the function called as anon. Revoking EXECUTE would turn that
+empty result into a permission error on a table the app reads while logged out. Closing it
+properly means re-scoping those policies `TO authenticated` first, which is a behaviour
+change and belongs in its own migration.
+
+**A FIFTH FUNCTION, AND A FLAW IN MY OWN GUARD.** `latest_strength_scores(p_user_id UUID)`
+from migration 019 was also executable by anon. Measured with a real user id lifted from
+the anon-readable view: anon reaches it and gets zero rows, `service_role` gets the row —
+SECURITY INVOKER with RLS doing the work, so no exposure, same wrong grant. Fixed by a peer
+in 069.
+
+`function-grants.test.ts` did not catch it, and the reason is worth recording because the
+test looked right. It filtered to SECURITY DEFINER functions, and **that is the wrong
+axis**: the grant defect is independent of the security mode. INVOKER limits the damage —
+RLS still applies — it does not make the grant intended, and a function flipped from INVOKER
+to DEFINER later gains its privileges with no grant statement in the diff to review. The
+test now checks **every** function any migration defines. Verified it fails, naming
+`latest_strength_scores` and `replace_personal_records`, against the tree my earlier version
+passed.
+
+**The generalisable finding, now three for three.** The defect is not in any one migration.
+It is that on Supabase neither `GRANT ... TO authenticated` nor `REVOKE ... FROM PUBLIC`
+means what it reads as, and both failure modes are invisible in review because both lines
+look exactly like the correct thing. None of the three was found in the migration its author
+was writing at the time. The only reliable check is enumerating `CREATE FUNCTION` across
+**all** migrations and probing each with the anon key — not auditing the file in front of
+you.
+
+**Outstanding:** apply 069; then re-scope the 031 policies `TO authenticated` if
+`activity_is_visible_to` is to be closed.
+
+**A FALSE-GREEN TEST FOR THE SAME DEFECT, found by a peer session and fixed here.**
+`security-log.test.ts` had a case named "does not let any signed-in user run the prune"
+asserting that 063 contains `REVOKE ALL ON FUNCTION prune_security_events() FROM PUBLIC`.
+That line is there, so it passed — **for the entire window in which `anon` could reach that
+function**, because revoking from PUBLIC is exactly the mechanism this finding proved
+insufficient. It named a real property and checked something that does not provide it, which
+reads as coverage and is therefore worse than no test at all.
+
+It is deleted rather than re-pointed at 067: a regex over whichever migration happens to be
+latest is the same mistake with a newer number on it. `function-grants.test.ts` owns grants,
+resolves them across every migration, and asserts this function is revoked from `anon` **and**
+`authenticated` and never granted back. Verified the replacement actually covers it by
+weakening 067's revoke back to PUBLIC-only — two tests fail, naming the role.
+
+**And a guard for the class**, closing it from the side the peer's own guard deliberately
+leaves open. Their check (`a043dda`) fails a test that watches a migration whose
+*definitions* were superseded, and excludes GRANT and REVOKE on purpose — folding those in
+would fail on 060 and 063 the moment 067 lands, which is a legitimate later tightening
+rather than a defect. So the rule now is: **grants are asserted across every migration, or
+not at all.** Any other test that asserts a GRANT or REVOKE while reading a single migration
+by name fails, and the message says where to put it instead. Verified by restoring the
+original assertion: the guard fails and names the file.
+
+---
+
 ## 4. Triage summary
 
 **As found in Phase 0 (`adb35c5`):**
@@ -1306,16 +1988,16 @@ during remediation:
 | Severity | Open | Partial | Closed | Total | Which |
 |---|---|---|---|---|---|
 | Critical | **0** | 0 | 4 | 4 | All four were one defect in four places. |
-| High | 2 | 1 | 7 | 10 | Closed H1, H3–H8. Partial H2. Open H9 (DPIA — Stephen's) and N10 (raised 2026-09-07). |
-| Medium | 7 | 2 | 8 | 17 | Closed M1–M5, M8, M9, M13. Partial M7, M11. Open M6, M10, M12, M14, N1, N5, N7. |
+| High | 2 | 1 | 8 | 11 | Closed H1, H3–H8 and N10. Partial H2. Open H9 (DPIA — Stephen's) and N11. |
+| Medium | 4 | 2 | 11 | 17 | Closed M1–M6, M8, M9, M10, M13, M14. Partial M7, M11. Open M12, N1, N5, N7. |
 | Low | 5 | 0 | 7 | 12 | Closed L1–L6, N4. Open N2, N3, N6, N8, N9. |
-| **Total** | **14** | **3** | **26** | **43** | |
+| **Total** | **11** | **3** | **30** | **44** | |
 
 **Correction to this table's arithmetic.** Earlier revisions reported "41 findings
 raised" and columns that did not sum to it: partially-closed findings were counted
 in neither the open nor the closed column, so the rows silently lost them. Counted
-by hand off the headings — C1–C4 (4), H1–H9 (9), M1–M14 (14), L1–L6 (6), N1–N10 (10)
-— the total is **43**, and partials now have a column of their own so the rows add
+by hand off the headings — C1–C4 (4), H1–H9 (9), M1–M14 (14), L1–L6 (6), N1–N11 (11)
+— the total is **44**, and partials now have a column of their own so the rows add
 up. The finding text was always right; only the summary was wrong.
 
 One of the thirteen is open on purpose rather than for want of effort: **M12**
@@ -1423,10 +2105,9 @@ blocked on engineering judgement alone.
 
 **Remaining High findings:** H2 (most routes still unparsed — N1) and M7/N5
 (GoTrue session behaviour unverifiable without an integration environment), both
-partially addressed and neither closable from here alone — plus **N10**, raised
-2026-09-07, which is neither. N10 is a live exposure of personal data to the
-public anon key and is closable: it needs a trigger change and a scrub of stored
-rows, both written as a migration and both requiring an operator to apply.
+partially addressed and neither closable from here alone. **N10 is closed** — see
+the finding; it was raised and closed on the same day, by two sessions, and the
+version that landed was not mine.
 
 **Eight operator items outstanding** (this heading read "Four" while listing
 five; corrected, and two more added by the WP8/WP11 batch):
@@ -1440,14 +2121,16 @@ five; corrected, and two more added by the WP8/WP11 batch):
    per-user rate limits are advisory and only the per-instance burst guard
    applies.
 4. Set the GoTrue rate limits and confirm email confirmation is enabled — the
-   table is in SECURITY.md. **Run the impact query at the top of migration 058
+   table is in SECURITY.md. **Run the impact query at the top of migration 061
    before applying it**; it can otherwise stop every athlete logging.
 5. Create `accessibility@splitindex.co.uk`, the contact on the published
    accessibility statement, which promises a reply within 5 working days.
-6. **Run the impact query in migration 061, then apply it** (N10). It reports
-   `exposed_via_view` — the number of athletes whose email address is readable
-   from the internet through `public_profiles` right now. The migration also
-   contains two verification queries to run afterwards; both must return zero.
+6. **Decide whether to run the `UPDATE` in migration 064's comments** (N10).
+   No longer urgent and no longer about exposure: 064 masks the column in both
+   views, so the addresses are already private. What remains is whether the app
+   should still be storing them at all — data minimisation under the
+   storage-limitation principle. Run the impact query in that file first, so the
+   decision is made with a count rather than a guess.
 7. Run [wp8_hot_query_plans.sql](supabase/diagnostics/wp8_hot_query_plans.sql)
    against production or a restored copy, with a heavy user substituted for
    `ATHLETE_UUID`. Ten plans and an unused-index sweep. M12 cannot close without

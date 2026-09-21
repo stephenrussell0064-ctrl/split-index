@@ -29,11 +29,9 @@ describe("timeToScore — row (general-population anchors)", () => {
   });
 
   it("matches the female percentile anchors", () => {
-    // Rebased 8 Sep 2026 onto the C2 logbook and the world-record pair; these
-    // were 7:39.1 / 8:16.3 / 9:40.5, from ratios §4b lists as "given in brief".
-    expect(timeToScore("row", 454.0, "female")).toBeCloseTo(850, 0); // 7:34.0, 95th
-    expect(timeToScore("row", 477.9, "female")).toBeCloseTo(725, 0); // 7:57.9, 80th
-    expect(timeToScore("row", 552.0, "female")).toBeCloseTo(475, 0); // 9:12.0, 50th
+    expect(timeToScore("row", 459.1, "female")).toBeCloseTo(850, 0); // 7:39.1, 95th
+    expect(timeToScore("row", 496.3, "female")).toBeCloseTo(725, 0); // 8:16.3, 80th
+    expect(timeToScore("row", 580.5, "female")).toBeCloseTo(475, 0); // 9:40.5, 50th
   });
 
   it("no longer lets a beginner (bottom 5%) score into Intermediate territory", () => {
@@ -266,16 +264,15 @@ describe("row — reported 6,000m at 1:56/500m scored 54.8, too low", () => {
 });
 
 /**
- * Session tags buy nothing. Before the two-score rewrite an identical 6,000 m
- * row scored 403 untagged and 872 tagged "long" — a 469-point swing bought
- * from a dropdown, landing exactly on what this athlete's real 18:25 5 k
- * scores. Rowing was where it was worst (erg pace goes as power^(-1/3), so a
- * fixed percentage of time covers far more of the table than it does on the
- * road), but the mechanism was the same on every sport, and it is gone: the
- * tag is not read by either score.
+ * The relative-effort credit stack is capped in INDEX POINTS, not in percent
+ * of time — see RELATIVE_EFFORT_CREDIT_KNEE_POINTS in cardio-activity.ts.
+ * Percent-of-time is not portable across sports: the 20%-of-time cap is
+ * worth a flat ~170-200 points anywhere on running's curve and up to ~630 on
+ * rowing's, because erg pace goes as power^(-1/3) and so compresses the same
+ * physiological range into a much narrower band of time.
  */
-describe("row — the session-type tag cannot move a score", () => {
-  const rowSession = (sessionType: "easy" | "long" | "race" | null) =>
+describe("row — relative-effort credit is capped in index points, not percent of time", () => {
+  const rowSession = (sessionType: "easy" | "long" | null) =>
     scoreCardioActivity({
       type: "row",
       benchmarkSport: "row",
@@ -283,38 +280,44 @@ describe("row — the session-type tag cannot move a score", () => {
       durationSeconds: 12 * 116,
       sex: "male",
       age: 30,
-      restingHR: 50,
-      maxHR: 190,
-      avgHR: 152,
       sessionType,
     }).score;
 
-  it("scores the identical session identically however it is tagged", () => {
+  it("no longer lets a session type alone swing a row by hundreds of points", () => {
     const untagged = rowSession(null);
-    expect(rowSession("long")).toBe(untagged);
-    expect(rowSession("easy")).toBe(untagged);
-    expect(rowSession("race")).toBe(untagged);
+    // Before the points cap this identical session scored 403 untagged and
+    // 872 tagged "long" — a 469-point swing bought by a dropdown, landing
+    // exactly on what the athlete's real 18:25 5k scores.
+    expect(rowSession("long") - untagged).toBeLessThan(280);
+    expect(rowSession("easy") - untagged).toBeLessThan(280);
   });
 
-  it("heart rate, not the tag, is what separates two rows at the same split", () => {
-    const at = (avgHR: number) =>
-      scoreCardioActivity({
-        type: "row",
-        benchmarkSport: "row",
-        distanceMeters: 6000,
-        durationSeconds: 12 * 116,
-        sex: "male",
-        age: 30,
-        restingHR: 50,
-        maxHR: 190,
-        avgHR,
-        sessionType: "easy",
-      }).score;
-    // Same split, genuinely easier effort, materially better score — and the
-    // ordering is strict at every step, not three sessions tied on a cap.
-    const scores = [130, 145, 160, 175].map(at);
-    for (let i = 1; i < scores.length; i++) {
-      expect(scores[i]).toBeLessThan(scores[i - 1]);
+  /*
+   * A test for the retired easy-effort corroboration bonus lived here: it
+   * asserted that passing `easyEffortBaselinePaceSeconds` raised the score.
+   * The two-score model deleted that input along with the rest of the
+   * credit stack, so there is no longer a behaviour to assert.
+   */
+
+  it("leaves running untouched — the knee sits above what 20% of time is worth there", () => {
+    // Running's 20%-of-time cap is worth at most +197 points anywhere on its
+    // curve, and the knee is 200, so no running session reaches the taper.
+    for (const durationSeconds of [1800, 3600, 5400]) {
+      for (const distanceMeters of [6000, 10000, 15000, 20000]) {
+        const result = scoreCardioActivity({
+          type: "run",
+          benchmarkSport: "run",
+          distanceMeters,
+          durationSeconds,
+          sex: "male",
+          age: 30,
+          sessionType: "long",
+          restingHR: 50,
+          maxHR: 190,
+          avgHR: 140,
+        });
+        expect(result.flags).not.toContain("relative-effort-points-compressed");
+      }
     }
   });
 });

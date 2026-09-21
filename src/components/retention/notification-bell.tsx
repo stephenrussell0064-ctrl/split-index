@@ -60,6 +60,8 @@ export function NotificationBell({ className }: { className?: string }) {
       <button
         type="button"
         aria-label={`Notifications${unread ? `, ${unread} unread` : ""}`}
+        aria-expanded={open}
+        aria-controls="notifications-popover"
         onClick={() => {
           setOpen((v) => !v);
           if (!open && unread > 0) void markAllRead();
@@ -82,7 +84,7 @@ export function NotificationBell({ className }: { className?: string }) {
             className="fixed inset-0 z-40"
             onClick={() => setOpen(false)}
           />
-          <div className="absolute right-0 top-full z-50 mt-2 w-80 rounded-2xl border border-white/10 glass-strong p-2 shadow-xl">
+          <div id="notifications-popover" className="absolute right-0 top-full z-50 mt-2 w-80 rounded-2xl border border-white/10 glass-strong p-2 shadow-xl">
             <p className="px-3 py-2 text-xs font-medium uppercase tracking-wider text-muted">
               Notifications
             </p>

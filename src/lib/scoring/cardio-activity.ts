@@ -210,6 +210,18 @@ export interface CardioResult {
   /** Against this athlete's own recent same-sport sessions. 500 = their norm. Null until three comparable sessions exist. */
   personalScore: number | null;
   personal: CardioPersonalComparison | null;
+  /**
+   * The endurance age-grade factor actually used to score this session, so
+   * the UI can tell the athlete BY HOW MUCH their standard moved rather than
+   * only that it did (the `age-graded` flag alone carries no magnitude).
+   *
+   * Reports the value; does not change how it is computed or applied.
+   *
+   * Optional, and null when no grading applied. Results persisted before this
+   * field existed genuinely do not have it, and readers must fall back to the
+   * flag rather than trust a missing value as "1.0".
+   */
+  ageGradeFactor?: number | null;
   /** The one number both scores are read from — seconds at the benchmark distance (walk: per km). Null when there was nothing to project. */
   fitnessEquivalentSeconds: number | null;
   adjustments: CardioAdjustments | null;
@@ -774,7 +786,12 @@ export function scoreCardioActivity(input: CardioInput): CardioResult {
   if (seededFrom === 'fartlek') flags.push('fartlek-work-piece-scored');
 
   const ageFactor = enduranceAgeGradeFactor(input.age);
-  if (ageFactor !== 1) flags.push('age-graded');
+  /** Reported on the result so the UI can name the magnitude, not just the fact. Stays null when nothing was graded. */
+  let appliedAgeGradeFactor: number | null = null;
+  if (ageFactor !== 1) {
+    flags.push('age-graded');
+    appliedAgeGradeFactor = ageFactor;
+  }
 
   let populationScore = 0;
   let personal: PersonalOutcome = { score: null, comparison: null, flags: [] };
@@ -864,6 +881,7 @@ export function scoreCardioActivity(input: CardioInput): CardioResult {
     populationScore: rounded,
     personalScore: personal.score,
     personal: personal.comparison,
+    ageGradeFactor: appliedAgeGradeFactor,
     fitnessEquivalentSeconds: equivalent === null ? null : Math.round(equivalent * 10) / 10,
     adjustments,
     executionScore,

@@ -79,8 +79,19 @@ function createFakeSupabase(results: Record<string, QueryResult>) {
     return chain;
   }
 
+  /*
+    `rpc` is its own shape, not a chain. The personal-record rebuild is a single
+    `replace_personal_records` call now rather than a delete followed by an
+    insert — see migration 065 — so a test that wants to fail that rebuild names
+    `rpc:replace_personal_records`.
+  */
+  function rpc(fn: string, args?: unknown) {
+    calls.push({ table: "rpc", op: fn, terminal: null, payload: args });
+    return Promise.resolve(results[`rpc:${fn}`] ?? OK);
+  }
+
   return {
-    client: { from: (table: string) => chainFor(table) } as unknown as RecomputeClient,
+    client: { from: (table: string) => chainFor(table), rpc } as unknown as RecomputeClient,
     calls,
   };
 }
@@ -193,20 +204,20 @@ describe("recomputeUser", () => {
   });
 
   it("reports a failed personal-record rebuild separately from the activity tally", async () => {
-    // personal_records is deleted in full before being re-inserted, so this is
+    // personal_records is replaced wholesale in one transaction, so this is
     // the most destructive write in the function: unchecked, a rejected insert
     // took the athlete's entire PR history with it and still reported a clean
     // run. It is not attributable to one activity, which is why the per-activity
     // count stays honest at 1 of 1 while this is reported alongside it.
     const { client } = createFakeSupabase({
       ...baseResults(),
-      "personal_records:insert": { data: null, error: { message: "records blocked" } },
+      "rpc:replace_personal_records": { data: null, error: { message: "records blocked" } },
     });
     const result = await recomputeUser(client, USER_ID);
 
     expect(result.recomputed).toBe(1);
     expect(result.failed).toBe(0);
-    expect(result.rebuildFailures).toEqual(["personal_records insert: records blocked"]);
+    expect(result.rebuildFailures).toEqual(["personal_records rebuild: records blocked"]);
   });
 
   it("keeps going after one activity fails, so one bad session cannot end the pass", async () => {

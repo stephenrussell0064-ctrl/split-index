@@ -1,0 +1,575 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Split Index Submission Runbook</title>
+</head>
+<body>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root{
+    --ground:#F6F7F5; --surface:#FFFFFF; --surface-2:#EFF1EE;
+    --ink:#161B22; --body:#39424E; --muted:#6E7A89;
+    --rule:#DDE1DC; --rule-strong:#C3CAC4;
+    --go:#118B52; --go-soft:#E4F4EA;
+    --hold:#9A6206; --hold-soft:#FBF0DC;
+    --stop:#B4242A; --stop-soft:#FBE7E7;
+    --accent:#0F6E44;
+    --shadow:0 1px 2px rgba(22,27,34,.06),0 8px 24px -16px rgba(22,27,34,.30);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ground:#0E1116; --surface:#161B22; --surface-2:#1C222B;
+      --ink:#E9EDF2; --body:#B9C2CD; --muted:#818D9C;
+      --rule:#252D38; --rule-strong:#38424F;
+      --go:#2FD980; --go-soft:#0F2A1D;
+      --hold:#E8A33D; --hold-soft:#2B1F0C;
+      --stop:#F2565B; --stop-soft:#2C1214;
+      --accent:#2FD980;
+      --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px -18px rgba(0,0,0,.8);
+    }
+  }
+  :root[data-theme="dark"]{
+    --ground:#0E1116; --surface:#161B22; --surface-2:#1C222B;
+    --ink:#E9EDF2; --body:#B9C2CD; --muted:#818D9C;
+    --rule:#252D38; --rule-strong:#38424F;
+    --go:#2FD980; --go-soft:#0F2A1D;
+    --hold:#E8A33D; --hold-soft:#2B1F0C;
+    --stop:#F2565B; --stop-soft:#2C1214;
+    --accent:#2FD980;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px -18px rgba(0,0,0,.8);
+  }
+
+  *{box-sizing:border-box}
+  body{
+    background:var(--ground); color:var(--body);
+    font-family:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    font-size:15.5px; line-height:1.62; margin:0;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:820px; margin:0 auto; padding:48px 22px 96px}
+  h1,h2,h3{font-family:Archivo,"IBM Plex Sans",sans-serif; color:var(--ink); text-wrap:balance; margin:0}
+  code,kbd,.mono{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace}
+
+  /* ---- masthead ---- */
+  .mast{border-bottom:2px solid var(--ink); padding-bottom:22px; margin-bottom:14px}
+  .eyebrow{
+    font-family:"IBM Plex Mono",monospace; font-size:11.5px; letter-spacing:.14em;
+    text-transform:uppercase; color:var(--muted); margin:0 0 12px
+  }
+  h1{font-size:clamp(30px,5.6vw,44px); font-weight:700; letter-spacing:-.02em; line-height:1.08}
+  .standfirst{margin:14px 0 0; font-size:17px; color:var(--body); max-width:62ch}
+
+  /* ---- progress ---- */
+  .progress{
+    position:sticky; top:0; z-index:20; background:var(--ground);
+    border-bottom:1px solid var(--rule); padding:12px 0 13px; margin-bottom:34px;
+    display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+  }
+  .bar{flex:1 1 190px; height:7px; background:var(--surface-2); border-radius:99px; overflow:hidden; border:1px solid var(--rule)}
+  .bar span{display:block; height:100%; width:0%; background:var(--go); transition:width .25s ease}
+  .count{font-family:"IBM Plex Mono",monospace; font-size:12.5px; color:var(--muted); font-variant-numeric:tabular-nums; white-space:nowrap}
+  .reset{
+    font:inherit; font-size:12.5px; background:none; border:1px solid var(--rule-strong);
+    color:var(--muted); padding:3px 11px; border-radius:6px; cursor:pointer;
+  }
+  .reset:hover{color:var(--ink); border-color:var(--ink)}
+  .reset:focus-visible,input:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+
+  /* ---- phases ---- */
+  .phase{margin:0 0 46px}
+  .phase-head{display:flex; gap:14px; align-items:baseline; margin-bottom:6px}
+  .phase-num{
+    font-family:"IBM Plex Mono",monospace; font-size:12px; font-weight:600; color:var(--muted);
+    border:1px solid var(--rule-strong); border-radius:5px; padding:2px 7px; flex:none;
+    letter-spacing:.04em;
+  }
+  h2{font-size:23px; font-weight:700; letter-spacing:-.012em}
+  .phase-note{margin:0 0 20px 0; color:var(--muted); font-size:14.5px; max-width:64ch}
+
+  /* ---- steps ---- */
+  .step{
+    background:var(--surface); border:1px solid var(--rule); border-radius:9px;
+    padding:16px 18px 17px; margin-bottom:12px; box-shadow:var(--shadow);
+    display:grid; grid-template-columns:auto 1fr; gap:0 13px; align-items:start;
+  }
+  .step.gate{border-left:4px solid var(--hold)}
+  .step.never{border-left:4px solid var(--stop); background:var(--stop-soft)}
+  .step input[type=checkbox]{
+    width:18px; height:18px; margin:3px 0 0; accent-color:var(--go); cursor:pointer; flex:none;
+  }
+  .step-body{min-width:0}
+  .step h3{font-size:15.5px; font-weight:600; letter-spacing:-.005em; line-height:1.4}
+  .step.done h3{text-decoration:line-through; text-decoration-color:var(--rule-strong); color:var(--muted)}
+  .where{
+    font-family:"IBM Plex Mono",monospace; font-size:12px; color:var(--muted);
+    margin:6px 0 0; display:block; word-break:break-word;
+  }
+  .where b{color:var(--body); font-weight:600}
+  .step p{margin:9px 0 0; font-size:14.5px}
+  .step ul,.step ol{margin:9px 0 0; padding-left:19px; font-size:14.5px}
+  .step li{margin:4px 0}
+  .step ol li{margin:7px 0; padding-left:2px}
+  .step ol li::marker{font-family:"IBM Plex Mono",monospace; font-size:12.5px; color:var(--muted)}
+  /* Field-by-field forms, where "type this into that box" is the whole instruction. */
+  .fields{margin:10px 0 0; font-size:14px; border-collapse:collapse; width:100%}
+  .fields th,.fields td{text-align:left; vertical-align:top; padding:6px 10px 6px 0; border-bottom:1px solid var(--rule)}
+  .fields th{font-weight:600; white-space:nowrap; width:33%}
+  .fields tr:last-child th,.fields tr:last-child td{border-bottom:0}
+  .step p:first-of-type{margin-top:9px}
+
+  .tag{
+    display:inline-block; font-family:"IBM Plex Mono",monospace; font-size:10.5px;
+    letter-spacing:.09em; text-transform:uppercase; padding:2px 7px; border-radius:4px;
+    vertical-align:2px; margin-left:8px; font-weight:600;
+  }
+  .tag.gate{background:var(--hold-soft); color:var(--hold)}
+  .tag.never{background:var(--stop-soft); color:var(--stop)}
+  .tag.done{background:var(--go-soft); color:var(--go)}
+
+  code{
+    background:var(--surface-2); border:1px solid var(--rule); border-radius:4px;
+    padding:1px 5px; font-size:.87em; color:var(--ink); word-break:break-word;
+  }
+  pre{
+    background:var(--surface-2); border:1px solid var(--rule); border-radius:7px;
+    padding:12px 14px; margin:11px 0 0; overflow-x:auto; font-size:13px; line-height:1.55;
+  }
+  pre code{background:none; border:none; padding:0; font-size:13px; white-space:pre}
+
+  .expect{
+    margin:11px 0 0; padding:9px 12px; border-radius:6px; font-size:13.5px;
+    background:var(--go-soft); color:var(--go); border:1px solid transparent;
+  }
+  .expect b{font-weight:600}
+  .warn{
+    margin:11px 0 0; padding:9px 12px; border-radius:6px; font-size:13.5px;
+    background:var(--hold-soft); color:var(--hold);
+  }
+
+  .done-block{
+    border:1px dashed var(--rule-strong); border-radius:9px; padding:16px 18px; margin-bottom:12px;
+    background:transparent;
+  }
+  .done-block h3{font-size:15px; font-weight:600; color:var(--muted)}
+  .done-block ul{margin:9px 0 0; padding-left:19px; font-size:14px; color:var(--muted)}
+
+  footer{margin-top:56px; padding-top:22px; border-top:1px solid var(--rule); font-size:13.5px; color:var(--muted)}
+  footer p{margin:0 0 8px; max-width:64ch}
+  a{color:var(--accent)}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+
+  <header class="mast">
+    <p class="eyebrow">Split Index · iOS 1.0 (build 3) · App Review</p>
+    <h1>Submission Runbook</h1>
+    <p class="standfirst">Everything seven working sessions and two days of device testing turned up, in the order it has to happen. Amber steps are gates — do not pass one until it reads green. Red steps are things that will cost you the review if you do them. Phases 0 and 1 are complete; what remains is the walkthrough, App Store Connect, and the button.</p>
+  </header>
+
+  <div class="progress">
+    <span class="count" id="count">0 / 0 complete</span>
+    <div class="bar"><span id="fill"></span></div>
+    <button class="reset" id="reset" type="button">Reset</button>
+  </div>
+
+  <!-- ============ PHASE 0 ============ -->
+  <section class="phase">
+    <div class="phase-head"><span class="phase-num">00</span><h2>Cleared on 8 Sept</h2></div>
+    <p class="phase-note">Everything in this phase is done and verified against production. Kept rather than deleted, because each entry looked like a different problem first, and the wrong diagnosis is the transferable part. Worth noting what found them: <b>every one came from using the app on a device</b>. None would have surfaced by reading code, and three were diagnosed wrongly at least once before being reproduced.</p>
+
+    <div class="done-block">
+      <h3>Fixed and confirmed — no action</h3>
+      <ul>
+        <li><b>Saving a workout</b> — returned a 500 for everyone. Migration <b>058</b> adds <code>activities.client_request_id</code> and had never been applied, so every insert failed on a column that did not exist. Applied. The route no longer reports an RLS refusal as a server fault either (<code>4636076</code>).</li>
+        <li><b>Migration 057</b> — could never run at all: its dedupe index used <code>created_at::date</code>, which is STABLE not IMMUTABLE, so Postgres rejected it with <code>42P17</code> every time. Pinned to UTC and applied (<code>ab29539</code>).</li>
+        <li><b>Sets scoring "—"</b> — chased through profile data, which was wrong. <code>scoreSet</code> bails on an empty exercise <b>name</b>; Est. 1RM, × BW and Volume need only weight, reps and the session-bar bodyweight, which is exactly why three stats fill in and the score does not. The card now says so (<code>ab9a88a</code>). An unrecognised name still scores — only an empty one blocks it.</li>
+        <li><b>Paying and landing on the offline error page</b> — <code>window.location.reload()</code> fired while iOS was still restoring the app after the StoreKit sheet, the WebView load failed, and Capacitor fell back to <code>errorPath</code>. Replaced with a confirmation screen and <code>router.refresh()</code> (<code>501d33a</code>).</li>
+        <li><b>Account deletion</b> — see Phase 3.</li>
+        <li><b>Paying and landing on the offline error page</b> — a real sandbox purchase ended on "No connection right now". <code>window.location.reload()</code> fired while iOS was still restoring the app after the StoreKit sheet, the WebView load failed, and Capacitor fell back to <code>errorPath</code>. Replaced with a confirmation screen and <code>router.refresh()</code> (<code>501d33a</code>).</li>
+        <li><b>Hybrid Plan → Goals scrolled sideways</b> — an <code>input[type=date]</code>. Safari sizes it to the widest date its picker can draw, and a flex child will not shrink below that, so it widened the page (<code>4988e0a</code>). The same input in the intake wizard is fixed too — that is the flow a reviewer completes before the plan renders at all.</li>
+        <li><b>The leaderboard scrolled sideways, then clipped</b> — the grid item holding the panel had no <code>min-w-0</code>. A grid item defaults to <code>min-width: auto</code> and will not shrink below its content, so one wide descendant dragged the card and every row with it (<code>044bab6</code>). Two earlier rounds went on descendants that looked like the cause from a screenshot; with <code>min-width:auto</code> above them, none of those could have shrunk even once fixed. The DOM named it in one line when finally asked.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ============ PHASE 1 ============ -->
+  <section class="phase">
+    <div class="phase-head"><span class="phase-num">01</span><h2>RevenueCat — complete</h2></div>
+    <p class="phase-note">Proven end to end against production on 8 Sept, in both directions. This phase needs nothing further; it is kept as the record of what was verified and how, because almost every step of it was diagnosed by inference first and inference was wrong more than once.</p>
+
+    <div class="done-block">
+      <h3>Verified working — do not change</h3>
+      <ul>
+        <li><b>A real sandbox purchase granted premium</b> — <code>subscription_tier: premium</code>, <code>subscription_source: revenuecat</code>, written by the webhook. Purchase → Apple → RevenueCat → webhook → Supabase.</li>
+        <li><b>And revoked it on expiry</b> — the sandbox subscription lapsed minutes later, RevenueCat sent EXPIRATION, and the webhook correctly matched its <code>subscription_source = 'revenuecat'</code> guard and downgraded. The full lifecycle, not just the happy path.</li>
+        <li><b>Real store prices on device</b> — £4.99 / £29.99 / £79.99 from StoreKit. Apple's propagation completed roughly 18 hours after the Paid Apps Agreement activated; nothing configured after the first evening changed the outcome.</li>
+        <li><b>Webhook URL</b> — the <code>www</code> host. The apex 308-redirects and the setup doc pointed at it (since corrected, <code>4be5574</code>).</li>
+        <li><b>Authorization header</b> — <code>Bearer &lt;secret&gt;</code>, matching <code>REVENUECAT_WEBHOOK_SECRET</code> in Vercel.</li>
+        <li><b>Offering, packages, entitlement, bundle ID, API key, SDK</b> — all confirmed, several of them by querying RevenueCat's API directly rather than reading the dashboard.</li>
+      </ul>
+    </div>
+
+    <div class="step">
+      <input type="checkbox" data-id="1-8">
+      <div class="step-body">
+        <h3>Leave <code>NEXT_PUBLIC_REVENUECAT_USE_PAYWALL</code> set to <code>false</code></h3>
+        <span class="where"><b>Where:</b> Vercel → Environment Variables → Production</span>
+        <p>The built-in picker now shows real store prices and carries the Guideline 3.1.2 renewal terms and legal links. The dashboard paywall was the one path still throwing Error 23 while products were unresolved; it may work now, but it is untested and there is nothing to gain by finding out during review.</p>
+        <p>Turn it on after approval: a Vercel env change and a redeploy, no rebuild and no resubmission.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ PHASE 2 ============ -->
+  <section class="phase">
+    <div class="phase-head"><span class="phase-num">02</span><h2>The reviewer's account</h2></div>
+    <p class="phase-note">The account is <code>demo.athlete+splitindex@example.com</code> / <code>@demo_masters_hybrid</code>. It currently holds 94 activities, 94 scores and 59 personal records — healthy data you do not want to lose. Both gates that stood against it on 7 Sept are now closed: it is premium again, and the Hybrid Plan consent and intake rows exist.</p>
+
+    <div class="done-block">
+      <h3>Closed on 8 Sept — no action</h3>
+      <ul>
+        <li><b>Premium restored</b> — <code>subscription_tier: premium</code>, <code>subscription_status: active</code>, and <code>subscription_source</code> deliberately <b>NULL</b>. That NULL is what makes it durable: the RevenueCat revoke path filters on <code>subscription_source = 'revenuecat'</code>, so no expiry can downgrade the reviewer's account mid-review. Watched exactly that happen to the sandbox test account hours later.</li>
+        <li><b>Hybrid Plan gates</b> — the Article 9 consent event and the <code>hpe_intake</code> row both exist now, so the flagship feature renders instead of meeting a consent wall and a wizard.</li>
+      </ul>
+    </div>
+
+    <div class="step gate">
+      <input type="checkbox" data-id="2-2">
+      <div class="step-body">
+        <h3>Confirm the demo account's email is verified</h3>
+        <span class="where"><b>Where:</b> Supabase → SQL Editor</span>
+        <p>The seed script sets <code>email_confirm: true</code>, so it should be fine — but an account created by hand would not be, and <code>@example.com</code> can never confirm by clicking a link. Verify rather than assume:</p>
+        <pre><code>SELECT email_confirmed_at FROM auth.users
+WHERE email = 'demo.athlete+splitindex@example.com';</code></pre>
+        <div class="expect"><b>Expect:</b> a timestamp, not NULL.</div>
+      </div>
+    </div>
+
+    <div class="step gate">
+      <input type="checkbox" data-id="2-5">
+      <div class="step-body">
+        <h3>Clear the two gates in front of the Hybrid Plan<span class="tag gate">Gate</span></h3>
+        <span class="where"><b>Where:</b> the app, signed in as the demo account → Hybrid Plan</span>
+        <p>Verified directly against production: the demo account has <b>zero</b> Article 9 consent events and <b>no</b> <code>hpe_intake</code> row at all. A reviewer tapping Hybrid Plan — the flagship feature — meets a consent screen, then a mandatory intake wizard asking for health, goal and availability. Two unguessable gates before anything renders.</p>
+        <p>Do it through the app rather than by inserting rows: signing in as the demo account, accepting consent and completing the wizard both clears the gates and proves the flow works.</p>
+        <div class="expect"><b>Then:</b> Hybrid Plan generates a real plan. A correct run produces roughly 7 weeks, ~18 strength and ~15 endurance sessions.</div>
+      </div>
+    </div>
+
+    <div class="step gate">
+      <input type="checkbox" data-id="2-3">
+      <div class="step-body">
+        <h3>Walk the reviewer's path yourself, on the device<span class="tag gate">Gate</span></h3>
+        <span class="where"><b>Where:</b> the app on a physical iPhone</span>
+        <p>Sign in as the demo account and confirm all of these in one pass:</p>
+        <ul>
+          <li><b>Log one activity</b> — not just reaching the dashboard. This is the single genuine Guideline 2.1 risk.</li>
+          <li><b>Open the logbook and edit an entry.</b> No session has verified this surface — see the note below.</li>
+          <li><b>Hybrid Plan → Goals.</b> New UI that has never been rendered against a real logged-in account, only a stubbed harness.</li>
+          <li><b>Settings → Billing</b> — "Terms of Use · Privacy Policy" appear under the button, and both open.</li>
+          <li><b>Premium surfaces render</b> — Analytics, Injury Risk Index, Interference Radar, race predictions.</li>
+          <li><b>Settings → Recompute scores</b> — completes, rather than the partial-failure message.</li>
+          <li><b>Tap Share</b> on a report card once — the fallback can silently do nothing in a WebView.</li>
+          <li><b>Delete an account</b> — on a throwaway signup, not the demo one. Verified through the admin API, but that skips the route's own auth and audit step, and a reviewer will press this exact button.</li>
+        </ul>
+        <div class="warn"><b>Two screens were found broken this way today</b> — the Goals tab and the leaderboard both scrolled sideways, and neither showed up in any test. If a screen needs dragging left and right, or something is cut off at the edge, run this in Safari Web Inspector and it names the element outright:<br><br><code>[...document.querySelectorAll('*')].filter(e=&gt;e.getBoundingClientRect().right&gt;document.documentElement.clientWidth+1)</code><br><br>The outermost result is the cause; everything below it merely inherits the width.</div>
+
+        <div class="warn"><b>The logbook is unverified by anyone.</b> The session that owned it had its context compacted, so its "no open bugs" is an absence of recollection rather than an absence of bugs. Its records show the logbook redesign, dark-UI-on-edit, hidden HR/RPE/elevation fields and a wrong 5k prediction all fixed and pushed — but nobody has re-opened that surface. Your taps are the only verification it will get.</div>
+      </div>
+    </div>
+
+    <div class="step never">
+      <input type="checkbox" data-id="2-4">
+      <div class="step-body">
+        <h3>Never run <code>seed-demo-athlete.ts</code><span class="tag never">Do not</span></h3>
+        <span class="where"><b>Applies to:</b> every flag, including <code>--delete</code> and a plain re-seed</span>
+        <p><code>--delete --apply</code> destroys <code>demo.athlete+splitindex@example.com</code> and cascades its rows — that is the App Review login, and the marketing account <code>@demo_masters_hybrid</code> is the same row. The reviewer could not sign in at all.</p>
+        <p>A re-seed catches only <code>RecomputeError</code>, so an RPC failure passes through silently and you get 94 workouts with an empty personal-record list, reported as success.</p>
+        <p>To change the password instead, use <code>scripts/demo-account-info.ts --set-password</code>, which touches no activity data.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ PHASE 3 ============ -->
+  <section class="phase">
+    <div class="phase-head"><span class="phase-num">03</span><h2>Confirm the migrations took</h2></div>
+    <p class="phase-note">056 through 070 are applied and verified against production. 057 and 058 were missing until 8 Sept — 058 is why saving a workout returned a 500, and 057 could never run until its index was pinned to UTC. <b>070 is the newest and the most important:</b> without it, account deletion failed for every athlete who had ever been scored, which is a Guideline 5.1.1(v) rejection.</p>
+
+    <div class="done-block">
+      <h3>Migration 070 — account deletion</h3>
+      <ul>
+        <li>"Delete account and all data" returned a 500 for anyone who had ever been scored. Reproduced exactly: no history rows deletes fine, <b>one</b> <code>split_index_history</code> row fails.</li>
+        <li>Migration 054 widened the profile-sync trigger to fire on DELETE, so it ran during the cascade from <code>auth.users</code> and tried to <code>UPDATE profiles</code> — a row the same cascade was deleting. Postgres refuses that and the whole delete aborts.</li>
+        <li>Nothing was ever half-deleted: the error is raised inside the single statement, so the account was left intact rather than partly erased with a working login.</li>
+        <li>Applied and verified 500 → 200 on the same user with the same data (<code>6b79c20</code>).</li>
+      </ul>
+    </div>
+
+    <div class="step">
+      <input type="checkbox" data-id="3-1">
+      <div class="step-body">
+        <h3>Check no function is executable by <code>anon</code></h3>
+        <span class="where"><b>Where:</b> Supabase → SQL Editor — the query is in migration 067's header comment</span>
+        <p>Supabase grants EXECUTE to <code>anon</code> by name, so <code>REVOKE ... FROM PUBLIC</code> never removed it. Without 067, an unauthenticated caller could make the security and audit log prune its own aged rows — an anti-forensics hole rather than a data leak, but it matters most exactly when you'd want that log.</p>
+        <div class="expect"><b>Expect:</b> no <code>anon=</code> entry in <code>proacl</code> on any of the four functions.</div>
+      </div>
+    </div>
+
+    <div class="step">
+      <input type="checkbox" data-id="3-2">
+      <div class="step-body">
+        <h3>Confirm Recompute now succeeds</h3>
+        <span class="where"><b>Where:</b> the app → Settings → Recompute scores</span>
+        <p>Covered by step 2.3 if you did it there. Before 065 this returned a 207 with "Your personal records or predictions could not be rebuilt" — a visible partial failure on a screen a reviewer opens.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ PHASE 4 ============ -->
+  <section class="phase">
+    <div class="phase-head"><span class="phase-num">04</span><h2>App Store Connect</h2></div>
+    <p class="phase-note">Your draft submission already holds iOS App 1.0 (3), two subscriptions, the Lifetime IAP and the subscription group. All three IAPs are purchasable in the app, so the submission set is coherent.</p>
+
+    <div class="step gate">
+      <input type="checkbox" data-id="4-1">
+      <div class="step-body">
+        <h3>Turn on "Sign-in required" and fill in the credentials<span class="tag gate">Gate</span></h3>
+        <span class="where"><b>Where:</b> App Store Connect → your 1.0 version → App Review Information</span>
+        <p>The app opens on a login wall. No credentials is the most common first-submission rejection there is.</p>
+        <p>Username <code>demo.athlete+splitindex@example.com</code>, plus the password. If it has been lost, reset it with <code>scripts/demo-account-info.ts --set-password</code> — it cannot be read back, only replaced.</p>
+      </div>
+    </div>
+
+    <div class="step gate">
+      <input type="checkbox" data-id="4-2">
+      <div class="step-body">
+        <h3>Write the review notes<span class="tag gate">Gate</span></h3>
+        <span class="where"><b>Where:</b> App Store Connect → App Review Information → Notes</span>
+        <p>Your largest structural risk is Guideline 4.2 — the app loads <code>www.splitindex.co.uk</code>, so a reviewer's first screen is web content and the pattern gets rejected routinely. Your defence is strong but invisible unless you write it down. Paste something like:</p>
+        <pre><code>Split Index is a native fitness tracker, not a web wrapper.
+Native features: background GPS run tracking that continues
+with the phone locked; Bluetooth heart-rate monitors and
+Concept2 PM5 rowing machines; Apple Health / AirPods heart
+rate; step cadence; home-screen widgets; Live Activities.
+
+Background location is required to record a run while the
+screen is off — this is the app's core function.
+
+Demo account: demo.athlete+splitindex@example.com
+Password: [password]
+
+To see GPS tracking: sign in, tap the + button, Start run.
+Premium analytics are already enabled on this account.</code></pre>
+      </div>
+    </div>
+
+    <div class="step">
+      <input type="checkbox" data-id="4-3">
+      <div class="step-body">
+        <h3>Check screenshots are iPhone-only and current</h3>
+        <span class="where"><b>Where:</b> App Store Connect → your 1.0 version → Previews and Screenshots</span>
+        <p>The app now ships iPhone-only, so no iPad screenshots are needed. But the UI has moved a great deal in two days and Guideline 2.3 asks that screenshots match the app.</p>
+        <div class="warn"><b>Specifically changed on 8 Sept:</b> the leaderboard header now stacks the period toggle onto its own line; the Hybrid Plan Goals tab no longer overflows; the paywall gained its renewal terms and legal links; and the purchase flow ends on a "Welcome to Split Index Premium" screen that did not exist before. Any screenshot of those four predates the app.</div>
+      </div>
+    </div>
+
+    <div class="step">
+      <input type="checkbox" data-id="4-4">
+      <div class="step-body">
+        <h3>Complete the App Privacy questionnaire and the two URLs</h3>
+        <span class="where"><b>Where:</b> App Store Connect → App Privacy · and → App Information</span>
+        <p>Privacy Policy URL and Support URL must both be set and resolve. Your privacy policy already states explicitly that health data is never used for advertising and never sold — which is what Apple checks for a HealthKit app.</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <input type="checkbox" data-id="4-5">
+      <div class="step-body">
+        <h3>Put the auto-renew disclosure in the App Store description</h3>
+        <span class="where"><b>Where:</b> App Store Connect → your 1.0 version → Description</span>
+        <p>Apple wants the renewal terms in the metadata as well as in the app. The in-app half is done. Add price, duration, and that subscriptions renew unless cancelled at least 24 hours before the period ends.</p>
+      </div>
+    </div>
+
+    <div class="done-block">
+      <h3>Already handled — no action</h3>
+      <ul>
+        <li><b>Export compliance</b> — <code>ITSAppUsesNonExemptEncryption</code> is in the plist, so build 3 uploads without the question. Build 2's warning can be ignored.</li>
+        <li><b>Guideline 3.1.2</b> — renewal terms and Terms/Privacy links are live on the paywall, confirmed on device.</li>
+        <li><b>Guideline 3.1.1</b> — no purchase CTA bypasses the native billing path; verified on <code>main</code>, and independently by two other sessions.</li>
+        <li><b>Guideline 4.8</b> — Sign in with Apple is offered, above Google.</li>
+        <li><b>Guideline 5.1.1(v)</b> — in-app account deletion exists.</li>
+        <li><b>Privacy manifests, SDK signatures, icons</b> — all passed Apple's automated checks when build 3 processed.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ============ PHASE 5 ============ -->
+  <section class="phase">
+    <div class="phase-head"><span class="phase-num">05</span><h2>Freeze <code>main</code></h2></div>
+    <p class="phase-note">The reviewer loads production live. Anything you deploy during review is what they see, mid-review.</p>
+
+    <div class="step never">
+      <input type="checkbox" data-id="5-1">
+      <div class="step-body">
+        <h3>Do not merge <code>695c2d3</code>, the strict-CSP commit<span class="tag never">Do not</span></h3>
+        <p>It extracts 1,307 lines from <code>gps-run/page.tsx</code> while <code>main</code> has five newer commits in that same file. Merging as-is risks silently reverting GPS fixes. <code>8d5f1fa</code> depends on it. It needs redoing, not merging.</p>
+      </div>
+    </div>
+
+    <div class="step never">
+      <input type="checkbox" data-id="5-2">
+      <div class="step-body">
+        <h3>Do not merge <code>venture/b1-b2-iap-routing</code> or <code>hardening/audit-and-ci</code><span class="tag never">Do not</span></h3>
+        <p>The venture branch is 59 commits ahead and 90 behind, and carries duplicate migrations under different numbers (<code>057_article9_consent</code> here vs <code>060_</code> on main). Merging would try to re-apply live migrations. <code>hardening/audit-and-ci</code> is behind rewritten history — reset it onto current <code>main</code> rather than merging.</p>
+        <p>Nothing on either branch is needed for this submission. Sort the renumbering after approval.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ PHASE 6 ============ -->
+  <section class="phase">
+    <div class="phase-head"><span class="phase-num">06</span><h2>Submit</h2></div>
+    <p class="phase-note">Only once every gate above reads green.</p>
+
+    <div class="step">
+      <input type="checkbox" data-id="6-1">
+      <div class="step-body">
+        <h3>Click Submit for Review</h3>
+        <span class="where"><b>Where:</b> App Store Connect → Distribution → the draft submission panel</span>
+        <p>Five items: iOS App 1.0 (3), two subscriptions, the Lifetime IAP, and the subscription group. They are reviewed together.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ AFTER ============ -->
+  <section class="phase">
+    <div class="phase-head"><span class="phase-num">07</span><h2>After you submit</h2></div>
+    <p class="phase-note">Real findings that are not worth holding the button for. None of them blocks review.</p>
+
+    <div class="step">
+      <input type="checkbox" data-id="7-1">
+      <div class="step-body">
+        <h3>Soften the Riegel claim on the pricing page</h3>
+        <span class="where"><b>Where:</b> <code>src/components/marketing/pricing-cta.tsx</code></span>
+        <p>Marketing says predictions are "personalized to your own pace curve — not a generic, one-size-fits-all exponent". A brand-new account sees the Analytics page say "Uses Riegel's formula with a population-average exponent". Both are true at different times; four words ("once you've logged two distances") close the gap. Guideline 2.3, low risk.</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <input type="checkbox" data-id="7-2">
+      <div class="step-body">
+        <h3>Add per-share confirmation to the report card</h3>
+        <span class="where"><b>Where:</b> the Hybrid report share card, and <code>src/app/api/interference/report-card/route.tsx</code></span>
+        <p>The card renders a readiness value — health-derived — on a plain GET with no preview step. It is authenticated, premium-gated, and only ever renders the requesting athlete's own report, so nothing leaks. Given the app declares HealthKit, an explicit per-share step is still the right shape.</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <input type="checkbox" data-id="7-3">
+      <div class="step-body">
+        <h3>Fix the webhook URL in the setup doc</h3>
+        <span class="where"><b>Where:</b> <code>docs/native-billing-setup.md</code>, step 7.1</span>
+        <p>It still says to register the apex domain. Left alone, the next person re-registers it wrong and rediscovers step 1.1 the hard way.</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <input type="checkbox" data-id="7-5">
+      <div class="step-body">
+        <h3>Reconcile the weekly endurance budget with what's prescribed</h3>
+        <span class="where"><b>Where:</b> Hybrid Plan → Plan · documented in <code>adb35c5</code></span>
+        <p>The weekly endurance budget and the sessions actually prescribed disagree by 1.25×–1.90×. Not reviewer-visible, but it means the plan promises one volume and schedules another.</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <input type="checkbox" data-id="7-4">
+      <div class="step-body">
+        <h3>Renumber the migrations on the venture branch</h3>
+        <span class="where"><b>Where:</b> <code>supabase/migrations/</code> on <code>venture/b1-b2-iap-routing</code></span>
+        <p>Five migrations exist under two different numbers across the branches. Resolve before the branches ever join.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <p>Collated from seven working sessions: SKU definition, homepage &amp; activity logging, RevenueCat SDK integration, age-graded adjustment, ReelFarm marketing, cross-project hardening audit, logbook &amp; prediction bugs, and this one. Where sessions disagreed, claims were checked against the code, the database or the live site, and the verified answer is what appears above.</p>
+    <p>All seven have now reported: six AGREE, one HOLD on RevenueCat production configuration. Two carry caveats recorded above — the demo account's Hybrid Plan gates, verified empty against production, and the logbook, which no session has actually exercised.</p>
+    <p>Progress is saved in this browser only.</p>
+  </footer>
+</div>
+
+<script>
+  (function () {
+    var boxes = Array.prototype.slice.call(document.querySelectorAll('input[type=checkbox][data-id]'));
+    var KEY = 'split-index-submission-runbook-v1';
+    var countEl = document.getElementById('count');
+    var fillEl = document.getElementById('fill');
+
+    function load() {
+      try {
+        var raw = localStorage.getItem(KEY);
+        return raw ? JSON.parse(raw) : {};
+      } catch (e) { return {}; }
+    }
+    function save(state) {
+      try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { /* private mode */ }
+    }
+    function paint() {
+      var done = 0;
+      boxes.forEach(function (b) {
+        var step = b.closest('.step');
+        if (b.checked) { done++; step.classList.add('done'); }
+        else { step.classList.remove('done'); }
+      });
+      countEl.textContent = done + ' / ' + boxes.length + ' complete';
+      fillEl.style.width = (boxes.length ? (done / boxes.length) * 100 : 0) + '%';
+    }
+
+    var state = load();
+    boxes.forEach(function (b) {
+      if (state[b.dataset.id]) b.checked = true;
+      b.addEventListener('change', function () {
+        state[b.dataset.id] = b.checked;
+        save(state);
+        paint();
+      });
+
+      /*
+       * Each step used to be a <label>, so its whole card was a click target.
+       * That is invalid HTML — a label may only hold phrasing content, and
+       * these hold divs, paragraphs, lists and pre blocks — so the steps are
+       * plain divs now. This puts the convenient part of the label back on the
+       * heading alone, without wrapping block content in something that cannot
+       * legally contain it.
+       */
+      var step = b.closest('.step');
+      var heading = step && step.querySelector('h3');
+      if (heading) {
+        heading.style.cursor = 'pointer';
+        heading.addEventListener('click', function () {
+          b.checked = !b.checked;
+          b.dispatchEvent(new Event('change'));
+        });
+      }
+    });
+
+    document.getElementById('reset').addEventListener('click', function () {
+      boxes.forEach(function (b) { b.checked = false; });
+      state = {};
+      save(state);
+      paint();
+    });
+
+    paint();
+  })();
+</script>
+
+</body>
+</html>

@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { PlusCircle } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import { LogbookFeed } from "@/components/activities/logbook-feed";
 import {
   fetchLogbookPage,
@@ -56,11 +56,9 @@ export default async function ActivitiesPage({
           <p className="micro-label text-muted mb-2">Logbook</p>
           <h1 className="page-title">Activities</h1>
         </div>
-        <Link href="/activities/new">
-          <Button size="sm">
-            <PlusCircle className="h-4 w-4" />
-            Log new
-          </Button>
+        <Link href="/activities/new" className={buttonVariants({ size: "sm" })}>
+          <PlusCircle className="h-4 w-4" />
+          Log new
         </Link>
       </div>
 

@@ -26,7 +26,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  */
 
 const SECRET = "rc-shared-secret";
-const USER_ID = "user-1";
+/*
+ * A real UUID, not "user-1".
+ *
+ * The route rejects a non-UUID app_user_id outright: RevenueCat sends
+ * `$RCAnonymousID:…` for a device it has not identified yet, and those used to
+ * match no profile, grant nothing, and still return 200. This test was written
+ * before that guard existed, so every case here posted an id the route now
+ * refuses and asserted on the 200 it used to get.
+ */
+const USER_ID = "3f2504e0-4f89-41d3-9a0c-0305e82c3301";
 
 interface RecordedUpdate {
   table: string;
@@ -55,8 +64,21 @@ function fakeAdminClient() {
         record.filters.push([column, value]);
         return chain;
       },
+      /*
+       * The grant path reads its own write back — `.select("user_id")` — and
+       * treats an empty result as "that UUID matched no profile", answering
+       * 200 with matched:false and granting nothing. The mock had no select at
+       * all, because it was written before the route read anything back.
+       */
+      select() {
+        return chain;
+      },
       then(resolve: (v: { data: unknown; error: null }) => unknown) {
-        return Promise.resolve(resolve({ data: null, error: null }));
+        // One matched row, so the grant path proceeds. The revoke path
+        // destructures only `error` and ignores this.
+        const userIdFilter = record.filters.find(([column]) => column === "user_id");
+        const matched = userIdFilter ? [{ user_id: userIdFilter[1] }] : [];
+        return Promise.resolve(resolve({ data: matched, error: null }));
       },
     };
     return chain;

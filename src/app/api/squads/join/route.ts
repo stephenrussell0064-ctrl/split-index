@@ -1,3 +1,5 @@
+import { parseBody } from "@/lib/validation/boundary";
+import { joinSquadSchema } from "@/lib/validation/schemas/social";
 import { NextResponse } from "next/server";
 import { databaseError } from "@/lib/api/errors";
 import { createClient } from "@/lib/supabase/server";
@@ -15,8 +17,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await request.json();
-  const inviteCode = normalizeInviteCode(String(body.inviteCode ?? ""));
+  // N1. Same shape as the others: String(...) of an object is a string, and
+  // was reaching normalizeInviteCode as one.
+  const parsed = await parseBody(request, joinSquadSchema);
+  if (parsed.response) return parsed.response;
+  const inviteCode = normalizeInviteCode(parsed.data.inviteCode);
   if (!inviteCode) {
     return NextResponse.json({ error: "Invite code required" }, { status: 400 });
   }
@@ -24,7 +29,7 @@ export async function POST(request: Request) {
   // Squads are only SELECT-able by existing members, so the code -> id lookup
   // needs the admin client — the code itself is the trust boundary, and the
   // membership insert right below still runs through the user's own client.
-  const admin = createAdminClient();
+  const admin = createAdminClient("/api/squads/join");
   const { data: squad } = await admin
     .from("squads")
     .select("id")

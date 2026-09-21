@@ -1,19 +1,60 @@
 "use client";
 
-import { useState } from "react";
-import Link from "next/link";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils/cn";
+import { LegalLinks } from "@/components/pricing/legal-links";
 import { Button } from "@/components/ui/button";
 import { PRICING, ANNUAL_MONTHLY_EQUIVALENT_GBP } from "@/lib/pricing/config";
-import { restoreNativePurchases } from "@/lib/native/billing";
-import { useCheckout } from "@/lib/native/use-checkout";
+import { startStripeCheckout } from "@/lib/stripe/start-checkout";
+import { isNativePlatform } from "@/lib/native/platform";
+import {
+  fetchNativeOfferings,
+  purchaseNativeSku,
+  restoreNativePurchases,
+  type NativeOfferingPackage,
+} from "@/lib/native/billing";
+import { presentProPaywall } from "@/lib/native/paywall";
+import { waitForServerEntitlement } from "@/lib/native/entitlement-settle";
+import { PremiumWelcome } from "@/components/pricing/premium-welcome";
 import type { SubscriptionSku } from "@/types";
 
-const SKUS: Array<{
+/**
+ * Whether the native checkout hands off to the RevenueCat dashboard paywall
+ * instead of the inline picker below.
+ *
+ * Behind a flag rather than always-on because presenting a paywall that has
+ * not been built in the dashboard yet returns an error and leaves the athlete
+ * with no way to pay at all. Turning this on is the last step of the paywall
+ * setup, after the Offering has a paywall attached — see
+ * docs/native-billing-setup.md.
+ */
+const USE_DASHBOARD_PAYWALL = process.env.NEXT_PUBLIC_REVENUECAT_USE_PAYWALL === "true";
+
+/**
+ * `sub` is the web subtitle; `nativeSub` is the one shown in the app.
+ *
+ * They differ because the price above them comes from a different place in each
+ * case. On the web we set the price ourselves and it is always GBP, so a
+ * sterling per-month equivalent underneath it is accurate. On native the price
+ * comes from StoreKit in the viewer's own storefront currency — dollars in the
+ * US, euros in Ireland — and the two lines sit close enough together that a
+ * reader takes them as one statement about one price.
+ *
+ * The annual subtitle used to be `just £2.50/mo` in both. On a US storefront
+ * that rendered as $34.99/yr above just £2.50/mo: a sterling figure quoted under
+ * a dollar price, describing a saving in a currency the buyer is not paying in.
+ *
+ * So every `nativeSub` must be currency-neutral. `no-currency-in-native-sku-copy.test.ts`
+ * enforces that, because the failure is invisible from a UK device — which is
+ * every device this was ever tested on.
+ */
+export const SKUS: Array<{
   sku: SubscriptionSku;
   label: string;
   price: string;
   sub: string;
+  nativeSub: string;
   badge?: string;
 }> = [
   {
@@ -21,12 +62,14 @@ const SKUS: Array<{
     label: "Monthly",
     price: `£${PRICING.MONTHLY_GBP}/mo`,
     sub: "billed monthly",
+    nativeSub: "billed monthly",
   },
   {
     sku: "annual",
     label: "Annual",
     price: `£${PRICING.ANNUAL_GBP}/yr`,
     sub: `just £${ANNUAL_MONTHLY_EQUIVALENT_GBP.toFixed(2)}/mo`,
+    nativeSub: "billed annually",
     badge: "Best value",
   },
   {
@@ -34,6 +77,7 @@ const SKUS: Array<{
     label: "Lifetime",
     price: `£${PRICING.LIFETIME_GBP}`,
     sub: "one-time, forever",
+    nativeSub: "one-time, forever",
   },
 ];
 
@@ -46,44 +90,139 @@ interface SkuPickerProps {
 export function SkuPicker({ ctaLabel, onError, className }: SkuPickerProps) {
   const [selected, setSelected] = useState<SubscriptionSku>("annual");
   const [loading, setLoading] = useState(false);
+  const [nativeOfferings, setNativeOfferings] = useState<NativeOfferingPackage[]>([]);
+  const [offeringsLoaded, setOfferingsLoaded] = useState(false);
+  const router = useRouter();
 
-  // Apple and Google both require in-app subscriptions to go through their own
-  // billing, so the checkout path branches on platform. That branch lives in
-  // `useCheckout` and nowhere else — it used to be duplicated here and in the
-  // Settings screen, they drifted, and the Settings copy shipped a Guideline
-  // 3.1.1 rejection.
-  const { platform, resolving, priceFor, checkout } = useCheckout();
-  const native = platform === "native";
+  /*
+    What replaced `window.location.reload()` on every success path.
+
+    Reloading was wrong twice over. It raced the RevenueCat webhook, so the page
+    came back before the server knew about the purchase and the athlete saw the
+    paywall they had just paid to leave. And reloading a Capacitor WebView while
+    iOS is still restoring the app after the StoreKit sheet often fails the load
+    entirely, at which point Capacitor falls back to `errorPath` — someone paid
+    and landed on "No connection right now", which is exactly what happened in
+    testing.
+
+    So: no reload. Show the confirmation immediately (the purchase is already
+    real at this point — Apple has the money and RevenueCat has the receipt),
+    poll for the server to catch up behind it, and hand over with
+    `router.refresh()`, which re-renders the server components in place without
+    the WebView ever navigating.
+  */
+  const [welcome, setWelcome] = useState<null | "purchase" | "restore">(null);
+  const [settling, setSettling] = useState(false);
+
+  const celebrate = async (variant: "purchase" | "restore") => {
+    setWelcome(variant);
+    setLoading(false);
+    setSettling(true);
+    await waitForServerEntitlement();
+    setSettling(false);
+    // Refreshed while the overlay is still up, so the screen behind it is
+    // already premium by the time they tap through.
+    router.refresh();
+  };
+
+  /*
+    WHICH BILLING PATH THIS IS, DECIDED BY THE DEVICE — not by a network call.
+
+    `native` used to be state, initialised false and set true only once
+    RevenueCat's offerings resolved. That made "is this an iPhone?" the RESULT
+    OF A FETCH, and it opened a window between mount and resolution — long
+    enough on a cold SDK start, indefinitely long on a flaky connection — in
+    which the CTA below fell through to Stripe on a native device. That is App
+    Store Guideline 3.1.1, reachable by anyone who taps quickly.
+
+    `isNativePlatform()` is a synchronous property of the runtime, correct from
+    the very first render. The offerings fetch stays, but it now does the one
+    job it is actually for: fetching localised price strings. It cannot decide
+    which store takes the money.
+
+    This is a client component and `isNativePlatform()` reads Capacitor's
+    global, so it is evaluated per render rather than hoisted — on the server
+    pass it is false, which is correct there too.
+  */
+  const native = isNativePlatform();
+
+  useEffect(() => {
+    if (!native) return;
+    fetchNativeOfferings()
+      .then(setNativeOfferings)
+      .catch(() => setNativeOfferings([]))
+      .finally(() => setOfferingsLoaded(true));
+  }, [native]);
 
   const handleCheckout = async () => {
     setLoading(true);
     onError?.("");
 
-    const outcome = await checkout(selected);
-    switch (outcome.status) {
-      case "redirecting":
-        window.location.href = outcome.url;
+    if (native) {
+      // The dashboard paywall runs the whole flow itself — selection, purchase,
+      // restore — so the SKU chosen above is only a fallback path's input.
+      if (USE_DASHBOARD_PAYWALL) {
+        const outcome = await presentProPaywall();
+        if (outcome.entitled) {
+          await celebrate(outcome.via === "restore" ? "restore" : "purchase");
+          return;
+        }
+        // A dismissed paywall is not an error and gets no message; a genuinely
+        // failed one does, because otherwise the button just silently stops
+        // working and there is nothing on screen to explain it.
+        if (outcome.reason === "error") {
+          onError?.("Couldn't open checkout. Please try again.");
+        }
+        setLoading(false);
         return;
-      case "entitled":
-        window.location.reload();
+      }
+
+      const result = await purchaseNativeSku(selected);
+      if (result.ok) {
+        await celebrate("purchase");
         return;
-      case "error":
-        onError?.(outcome.message);
-        break;
-      case "not-ready":
-      case "cancelled":
-        break;
+      }
+      // `pending` is neither: the purchase is alive and awaiting approval, so
+      // the message is shown but it is not framed as a failure.
+      if (!result.cancelled) onError?.(result.message);
+      setLoading(false);
+      return;
     }
+
+    // Web only. Deliberately unreachable above: there is no fallback from the
+    // native path to this one, so a RevenueCat failure surfaces as an error the
+    // athlete can see rather than as a Stripe checkout Apple would reject.
+    const result = await startStripeCheckout(selected);
+    if (result.ok) {
+      window.location.href = result.url;
+      return;
+    }
+    onError?.(result.message);
     setLoading(false);
   };
 
-  const nativePriceFor = priceFor;
+  const nativePriceFor = (sku: SubscriptionSku) =>
+    nativeOfferings.find((o) => o.sku === sku)?.priceString;
 
   const defaultCta = (sku: SubscriptionSku) =>
     sku === "lifetime" ? `Get lifetime access — £${PRICING.LIFETIME_GBP}` : `Start your ${PRICING.TRIAL_DAYS}-day free trial`;
 
   return (
     <div className={className}>
+      {/*
+        Rendered over the picker rather than replacing it. The purchase is done
+        by the time this appears, so there is nothing behind it left to do —
+        but keeping the tree mounted means dismissing it cannot land on a blank
+        screen if the refresh is still in flight.
+      */}
+      {welcome && (
+        <PremiumWelcome
+          variant={welcome}
+          settling={settling}
+          onContinue={() => setWelcome(null)}
+        />
+      )}
+
       <div className="grid grid-cols-3 gap-3 mb-6">
         {SKUS.map((option) => {
           const isSelected = option.sku === selected;
@@ -108,8 +247,11 @@ export function SkuPicker({ ctaLabel, onError, className }: SkuPickerProps) {
                 {option.label}
               </p>
               <p className="text-lg font-bold">{nativePriceFor(option.sku) ?? option.price}</p>
+              {/* Native takes nativeSub, which carries no currency — see SKUS. */}
               <p className="text-xs text-muted mt-0.5">
-                {!native && option.sku === "annual" ? (
+                {native ? (
+                  option.nativeSub
+                ) : option.sku === "annual" ? (
                   <>
                     <span className="line-through opacity-60">
                       £{PRICING.MONTHLY_GBP}/mo billed monthly
@@ -125,16 +267,12 @@ export function SkuPicker({ ctaLabel, onError, className }: SkuPickerProps) {
         })}
       </div>
 
-      {/*
-        Disabled until the platform is known. Without this the button is live
-        during the window where the app has not yet established that it is
-        running natively, and a fast tap there took the Stripe path inside the
-        native app — a Guideline 3.1.1 rejection triggered by tapping quickly.
-      */}
+      {/* Disabled until the store has answered, so a fast tap cannot buy a
+          package whose price this screen has not yet shown. */}
       <Button
         className="w-full"
-        loading={loading || resolving}
-        disabled={resolving}
+        loading={loading || (native && !offeringsLoaded)}
+        disabled={native && !offeringsLoaded}
         onClick={handleCheckout}
       >
         {(ctaLabel ?? defaultCta)(selected)}
@@ -148,7 +286,7 @@ export function SkuPicker({ ctaLabel, onError, className }: SkuPickerProps) {
             setLoading(true);
             const result = await restoreNativePurchases();
             if (result.ok) {
-              window.location.reload();
+              await celebrate("restore");
               return;
             }
             onError?.(result.message);
@@ -186,15 +324,7 @@ export function SkuPicker({ ctaLabel, onError, className }: SkuPickerProps) {
             current period. Manage or cancel it any time from Settings.
           </p>
         )}
-        <p>
-          <Link href="/terms" className="underline underline-offset-2 hover:text-foreground">
-            Terms of Use
-          </Link>
-          {" · "}
-          <Link href="/privacy" className="underline underline-offset-2 hover:text-foreground">
-            Privacy Policy
-          </Link>
-        </p>
+        <LegalLinks />
       </div>
     </div>
   );

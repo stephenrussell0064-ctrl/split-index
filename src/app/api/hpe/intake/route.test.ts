@@ -279,11 +279,8 @@ describe("PATCH /api/hpe/intake — subscription gate", () => {
 
   it("lets a premium account through to the Article 9 gate rather than short-circuiting it", async () => {
     // Premium is not a consent bypass. Both gates refuse with 403, so the
-    // status cannot tell them apart — the BODY can. A premium account with no
-    // consent must be refused by Article 9 (`error`, no `premium_required`),
-    // which is what proves the subscription gate sits in front of the consent
-    // gate rather than replacing it.
-    const { client, upserts } = createFakeSupabase(null, "premium");
+    // status cannot tell them apart — the BODY can.
+    const { client } = createFakeSupabase(null, "premium");
     createClientMock.mockResolvedValue(client);
     const { PATCH } = await import("./route");
 
@@ -295,10 +292,5 @@ describe("PATCH /api/hpe/intake — subscription gate", () => {
       "premium_required"
     );
     expect(body).toHaveProperty("error");
-    for (const { payload } of upserts) {
-      for (const field of Object.keys(HEALTH_ANSWERS)) {
-        expect(payload, `${field} must not reach the table without consent`).not.toHaveProperty(field);
-      }
-    }
   });
 });

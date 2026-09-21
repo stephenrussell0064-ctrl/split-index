@@ -64,8 +64,12 @@ This is also the app's answer to Apple's expectation that an auto-renewing subsc
 
 ## 7. Webhook
 
-1. In RevenueCat, go to **Integrations → Webhooks** and add: `https://splitindex.co.uk/api/revenuecat/webhook`.
-2. Set an authorization header value and put the same value in the `REVENUECAT_WEBHOOK_SECRET` env var (the route checks `Authorization: Bearer <secret>`).
+1. In RevenueCat, go to **Integrations → Webhooks** and add: `https://www.splitindex.co.uk/api/revenuecat/webhook`.
+
+   **The `www.` is not optional.** This line used to give the bare apex, and that is what the project was configured with. The apex answers a POST with `308 → https://www.splitindex.co.uk/...`, never a 200. A 308 does preserve the method and body, so a sender that follows redirects still delivers — but RevenueCat logs the status it actually received, and a non-2xx is a failed delivery to be retried against a URL that will redirect again.
+
+   The failure is silent and looks exactly like a broken purchase: the buyer pays, StoreKit is happy, and `profiles.subscription_*` never changes. Point it at the canonical host and the question never arises.
+2. Set an authorization header value and put the same value in the `REVENUECAT_WEBHOOK_SECRET` env var (the route checks `Authorization: Bearer <secret>`). Changing it in Vercel is not enough on its own — **redeploy**, or the running deployment keeps the old value.
 3. Set these env vars to match the product IDs from step 2, if different from the suggested defaults:
    - `REVENUECAT_MONTHLY_PRODUCT_ID`
    - `REVENUECAT_ANNUAL_PRODUCT_ID`

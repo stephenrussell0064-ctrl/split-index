@@ -1,3 +1,7 @@
+import { parseQuery } from "@/lib/validation/boundary";
+import { idQuerySchema } from "@/lib/validation/schemas/query";
+import { parseBody } from "@/lib/validation/boundary";
+import { sessionTemplateSchema } from "@/lib/validation/schemas/routes";
 import { NextResponse } from "next/server";
 import { databaseError } from "@/lib/api/errors";
 import { createClient } from "@/lib/supabase/server";
@@ -45,19 +49,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await request.json();
-  const { name, sport, template_data } = body as {
-    name?: string;
-    sport?: SportType;
-    template_data?: Record<string, unknown>;
-  };
-
-  if (!name?.trim() || !sport || !template_data) {
-    return NextResponse.json(
-      { error: "name, sport, and template_data are required" },
-      { status: 400 }
-    );
-  }
+  // N1. Another assertion: `sport` was typed as SportType and checked only for
+  // truthiness, so any non-empty string reached the insert.
+  const parsed = await parseBody(request, sessionTemplateSchema);
+  if (parsed.response) return parsed.response;
+  const { name, sport, template_data } = parsed.data;
 
   const { data, error } = await supabase
     .from("session_templates")
@@ -87,12 +83,11 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { searchParams } = new URL(request.url);
-  const id = searchParams.get("id");
-
-  if (!id) {
-    return NextResponse.json({ error: "id required" }, { status: 400 });
-  }
+  // N1. A malformed uuid in a WHERE clause is a Postgres cast error rather
+  // than a miss, so this rejects instead of falling back.
+  const q = parseQuery(request, idQuerySchema);
+  if (q.response) return q.response;
+  const id = q.data.id;
 
   const { error } = await supabase
     .from("session_templates")

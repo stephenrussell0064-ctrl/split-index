@@ -1,5 +1,6 @@
 "use client";
 
+import { createContext, useContext, useId } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { cn } from "@/lib/utils/cn";
 import { parseSeconds } from "./form-state";
@@ -27,11 +28,46 @@ export function MicroLabel({
   );
 }
 
-export function FieldError({ error }: { error?: string }) {
+/**
+ * A field's validation message — spoken, not only drawn.
+ *
+ * This rendered a bare `motion.p`. An athlete filling in a session with a
+ * screen reader pressed Save, the form refused, and nothing said why: the
+ * message appeared on screen and the announcement queue stayed empty. WCAG
+ * 4.1.3 Status Messages, and in practice a form that cannot be completed.
+ *
+ * `role="alert"` rather than a polite region: this is the answer to something
+ * the athlete just did, it is the reason the save did not happen, and waiting
+ * politely for a gap means waiting behind whatever is already being read.
+ */
+/**
+ * The id an error message gets when it is rendered away from its input.
+ *
+ * N7 item 3's tail. Nine errors in the gym and interval forms render at BLOCK
+ * level — after a whole row of inputs — because that is where there is room for
+ * them. `Field` cannot help there: it wraps one control, and these describe one
+ * control inside a group that has several.
+ *
+ * `aria-describedby` does not require the message to be adjacent, or even
+ * nearby: it is a reference, so the error can stay where it reads best and
+ * still be announced on the input it belongs to. What it does require is that
+ * the two agree on an id, which is why this function exists rather than the two
+ * ends each writing a template string.
+ *
+ * The key is the same one the errors map is keyed by — `reps`,
+ * `ex.<row>.sets` — so there is one source for both.
+ */
+export function fieldErrorId(key: string): string {
+  return `field-error-${key.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+}
+
+export function FieldError({ error, id }: { error?: string; id?: string }) {
   return (
     <AnimatePresence initial={false}>
       {error && (
         <motion.p
+          id={id}
+          role="alert"
           initial={{ opacity: 0, height: 0, y: -2 }}
           animate={{ opacity: 1, height: "auto", y: 0 }}
           exit={{ opacity: 0, height: 0, y: -2 }}
@@ -54,14 +90,91 @@ interface FieldProps {
   className?: string;
 }
 
+/**
+ * The id this field's label points at, handed down to whichever input is inside
+ * it.
+ *
+ * `Field` has always accepted an `htmlFor`, and NONE of its 73 call sites
+ * passed one — so the label was a floating `<p>` next to an unnamed `<input>`,
+ * and VoiceOver announced every weight, rep and distance field in the app as
+ * "text field, blank". Requiring 73 hand-written ids to fix that is how it
+ * stayed broken; generating one here fixes all of them at once, and an explicit
+ * `htmlFor` still wins where a caller wants to name its own.
+ */
+const FieldIdContext = createContext<string | undefined>(undefined);
+
+/**
+ * The surrounding Field's error message, for the inputs inside it to point at.
+ *
+ * Separate from FieldIdContext because the rule is the opposite one. An input
+ * that names itself must NOT adopt the field's `id` — that would put duplicate
+ * ids in the document, which is why useFieldId excludes it. But it SHOULD point
+ * at the field's error: `aria-describedby` is a reference, not an identifier,
+ * and several elements referring to one message is both legal and what a
+ * composite needs. DurationInput's three boxes are each rejected by the same
+ * message, so each of them has to be able to say so.
+ */
+const FieldErrorContext = createContext<
+  { errorId: string; hasError: boolean } | undefined
+>(undefined);
+
+/**
+ * `aria-invalid` and `aria-describedby` for an input inside a Field.
+ *
+ * Returns nothing at all when there is no error: `aria-invalid="false"` claims
+ * the field was checked and passed, and `aria-describedby=""` is a reference to
+ * an element with no id.
+ */
+function useFieldErrorProps(): {
+  "aria-invalid"?: true;
+  "aria-describedby"?: string;
+} {
+  const ctx = useContext(FieldErrorContext);
+  if (!ctx?.hasError) return {};
+  return { "aria-invalid": true, "aria-describedby": ctx.errorId };
+}
+
+/**
+ * Adopt the surrounding Field's id — unless this input already carries its own
+ * name.
+ *
+ * The `aria-label` check is what keeps the composites safe. DurationInput and
+ * SplitInput put THREE and TWO inputs inside one Field, each already labelled
+ * ("Duration hr", "Duration min"), and if all of them adopted the same id the
+ * document would carry duplicates — a worse defect than the one being fixed.
+ * An input that names itself does not need the field's id, so it does not take
+ * it.
+ */
+function useFieldId(props: { id?: string; "aria-label"?: string }): string | undefined {
+  const fieldId = useContext(FieldIdContext);
+  if (props.id) return props.id;
+  if (props["aria-label"]) return undefined;
+  return fieldId;
+}
+
 export function Field({ label, error, hint, htmlFor, children, className }: FieldProps) {
+  const generatedId = useId();
+  const id = htmlFor ?? generatedId;
+  /*
+    N7 item 3. role="alert" announces the message when it appears and says
+    nothing on the way back to the field — so the message gets an id and every
+    input inside this Field points at it, which is what survives a re-render and
+    a second visit.
+  */
+  const errorId = `${id}-error`;
   return (
-    <div className={cn("flex min-w-0 flex-col gap-1.5", className)}>
-      <MicroLabel htmlFor={htmlFor}>{label}</MicroLabel>
-      {children}
-      {hint && !error && <p className="text-xs text-muted/70">{hint}</p>}
-      <FieldError error={error} />
-    </div>
+    <FieldIdContext.Provider value={id}>
+      <FieldErrorContext.Provider
+        value={{ errorId, hasError: Boolean(error) }}
+      >
+        <div className={cn("flex min-w-0 flex-col gap-1.5", className)}>
+          <MicroLabel htmlFor={id}>{label}</MicroLabel>
+          {children}
+          {hint && !error && <p className="text-xs text-muted/70">{hint}</p>}
+          <FieldError error={error} id={errorId} />
+        </div>
+      </FieldErrorContext.Provider>
+    </FieldIdContext.Provider>
   );
 }
 
@@ -78,13 +191,19 @@ export function GlassInput({
   invalid,
   ...props
 }: React.InputHTMLAttributes<HTMLInputElement> & { invalid?: boolean }) {
+  const id = useFieldId(props);
+  const errorProps = useFieldErrorProps();
   return (
     <input
+      // The surrounding Field's label points here — see useFieldId. Without it
+      // every one of these was an unnamed text field to a screen reader.
+      id={id}
       // aria-invalid, not just a red border. Two reasons: a screen reader has
       // no way to perceive the border, and the submit-time error summary finds
       // the first bad field with `[aria-invalid="true"]` so it can take the
       // athlete straight to it.
       aria-invalid={invalid || undefined}
+      {...errorProps}
       className={cn(
         inputBase,
         invalid && "border-danger/50 focus:border-danger/50 focus:ring-danger/30",
@@ -115,13 +234,17 @@ export function UnitInput({
   invalid?: boolean;
   wrapperClassName?: string;
 }) {
+  const id = useFieldId(props);
+  const errorProps = useFieldErrorProps();
   return (
     <div className={cn("relative min-w-0", wrapperClassName)}>
       <input
+        id={id}
         type="text"
         inputMode="decimal"
         autoComplete="off"
         aria-invalid={invalid || undefined}
+        {...errorProps}
         className={cn(
           inputBase,
           unit && "pr-9",
@@ -157,13 +280,17 @@ export function HeroInput({
   invalid?: boolean;
   wrapperClassName?: string;
 }) {
+  const id = useFieldId(props);
+  const errorProps = useFieldErrorProps();
   return (
     <div className={cn("relative min-w-0", wrapperClassName)}>
       <input
+        id={id}
         type="text"
         inputMode="decimal"
         autoComplete="off"
         aria-invalid={invalid || undefined}
+        {...errorProps}
         className={cn(
           "h-16 w-full rounded-2xl glass px-4 text-3xl font-semibold tracking-tight text-foreground",
           "placeholder:text-muted/30 placeholder:font-normal border border-white/10",
@@ -371,6 +498,7 @@ export function ClockInput({
   secondsPlaceholder = "15",
   ariaPrefix,
   className,
+  describedBy,
 }: {
   value: string;
   onChange: (next: string) => void;
@@ -379,12 +507,19 @@ export function ClockInput({
   secondsPlaceholder?: string;
   ariaPrefix: string;
   className?: string;
+  /*
+    Both boxes point at it. One message describes the pair — "enter a work
+    time" is not about the minutes specifically — and a reference may be shared,
+    so a reader hears it whichever half they land on.
+  */
+  describedBy?: string;
 }) {
   const { minutes, seconds } = clockParts(value);
   return (
     <div className={cn("flex min-w-0 items-center gap-1", className)}>
       <UnitInput
         aria-label={`${ariaPrefix} minutes`}
+        aria-describedby={describedBy}
         inputMode="numeric"
         value={minutes}
         placeholder={minutesPlaceholder}
@@ -398,6 +533,7 @@ export function ClockInput({
       </span>
       <UnitInput
         aria-label={`${ariaPrefix} seconds`}
+        aria-describedby={describedBy}
         inputMode="numeric"
         value={seconds}
         placeholder={secondsPlaceholder}

@@ -1,7 +1,9 @@
+import { parseBody } from "@/lib/validation/boundary";
+import { timezoneSchema } from "@/lib/validation/schemas/social";
 import { NextResponse } from "next/server";
 import { databaseError } from "@/lib/api/errors";
 import { createClient } from "@/lib/supabase/server";
-import { detectBrowserTimezone } from "@/lib/utils/timezone";
+import { detectBrowserTimezone, isValidTimezone } from "@/lib/utils/timezone";
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -13,11 +15,25 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await request.json().catch(() => ({}));
-  const timezone =
-    typeof body.timezone === "string" && body.timezone.trim()
-      ? body.timezone.trim()
-      : detectBrowserTimezone();
+  // N1. The zone check below is unchanged and stays where it is —
+  // isValidTimezone asks the runtime, which a regex can only approximate. This
+  // adds the body size cap and refuses unknown keys.
+  const parsed = await parseBody(request, timezoneSchema);
+  if (parsed.response) return parsed.response;
+  const submitted = parsed.data.timezone;
+
+  /*
+    Rejected rather than stored, because an unknown zone is not a cosmetic
+    problem. `Intl.DateTimeFormat` throws on one, and `localDateKeyInTz` runs
+    inside the dashboard and analytics server components — so a single POST of
+    `{"timezone":"Not/AZone"}` used to 500 the athlete's own home page
+    permanently, with nothing in the app able to undo it.
+  */
+  if (submitted && !isValidTimezone(submitted)) {
+    return NextResponse.json({ error: "Unrecognised time zone" }, { status: 400 });
+  }
+
+  const timezone = submitted || detectBrowserTimezone();
 
   const { error } = await supabase
     .from("profiles")

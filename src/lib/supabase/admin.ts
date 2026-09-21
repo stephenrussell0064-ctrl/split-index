@@ -1,5 +1,7 @@
 import "server-only";
 import { createClient } from "@supabase/supabase-js";
+import { logSecurityEvent, type LogValue } from "@/lib/observability/security-log";
+import { correlationId } from "@/lib/api/errors";
 
 /**
  * The service-role Supabase client. This key bypasses row level security
@@ -52,8 +54,46 @@ import { createClient } from "@supabase/supabase-js";
  *
  * Adding a thirteenth means adding it to that list and to SECURITY.md. If the
  * reason is "it was easier", it is the wrong client.
+ *
+ * N9 — WHY THE RECORD IS MADE HERE AND NOT AT EACH CALL SITE
+ * ---------------------------------------------------------
+ * WP7 lists elevated-credential queries among the events to record, and one of
+ * twelve sites was recording one. The obvious fix is to add a `logSecurityEvent`
+ * call to the other eleven, and it is the wrong fix: it records the eleven that
+ * exist today and nothing about the thirteenth, which will be added by somebody
+ * who has never read this file.
+ *
+ * So `source` is a REQUIRED argument. The compiler now refuses a call that does
+ * not say where it is from, which means the record cannot be forgotten — it can
+ * only be wrong, and a wrong one is visible in review in a way a missing one is
+ * not.
+ *
+ * WHAT THIS RECORDS, PRECISELY
+ * ---------------------------
+ * That an elevated client was OBTAINED here, not that a query was made with it.
+ * A handler that builds one and then returns early still logs. That is
+ * deliberate: over-recording the availability of a service-role client is the
+ * cheap error, and the alternative — wrapping every query method — is a large
+ * surface for a smaller gain. The log line says "obtained", not "queried", so
+ * nobody reads it as more than it is.
+ *
+ * There is no recursion risk in logging from here even though `admin-audit`
+ * uses this client: `logSecurityEvent` writes to stdout and touches no table.
  */
-export function createAdminClient() {
+export function createAdminClient(
+  source: string,
+  context: { userId?: string | null; detail?: Record<string, LogValue> } = {}
+) {
+  logSecurityEvent({
+    type: "elevated_query",
+    correlationId: correlationId(),
+    userId: context.userId ?? null,
+    source,
+    outcome: "allowed",
+    retention: "audit",
+    detail: { action: "service_role_client_obtained", ...context.detail },
+  });
+
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Sparkles, BedDouble } from "lucide-react";
 import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils/cn";
 import type { GymSplitRecommendation } from "@/lib/scoring/gym-recommendation";
 
@@ -58,10 +58,11 @@ export function RecommendedSplitCard({
             ))}
           </div>
 
-          <Link href="/gym/log?recommend=1" className="mt-4 inline-block">
-            <Button size="sm" className="bg-gym-accent hover:bg-gym-accent/90 text-[#04120a] border-0 font-semibold">
-              Start this session
-            </Button>
+          <Link
+            href="/gym/log?recommend=1"
+            className={cn(buttonVariants({ size: "sm" }), "bg-gym-accent hover:bg-gym-accent/90 text-[#04120a] border-0 font-semibold", "mt-4")}
+          >
+            Start this session
           </Link>
         </div>
       </div>

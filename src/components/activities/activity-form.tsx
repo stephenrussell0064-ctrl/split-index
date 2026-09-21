@@ -40,7 +40,9 @@ import { submitActivityRequest } from "@/lib/activities/submit-activity";
 import type { CardioEnrichment } from "@/lib/scoring/cardio";
 import { useSetModeOverride } from "@/components/layout/mode-override-context";
 import { endLiveActivity } from "@/lib/native/live-activity";
-import { clearPersistedGymTimerState } from "./gym-workout-timer";
+import { clearPersistedGymTimerState } from "./gym-timer-storage";
+import { clearMirroredDraft, preferredDraft, readMirroredDraft } from "./draft-mirror";
+import { queuedSportsOnDevice } from "@/lib/activities/offline-queue";
 
 type View = "picker" | "form" | "success";
 
@@ -141,6 +143,7 @@ const slideVariants = {
 export function ActivityForm({
   profileWeightKg,
   initialDrafts,
+  draftUpdatedAt,
   isPremium = false,
   initialSport = null,
   initialRepeatState,
@@ -148,7 +151,7 @@ export function ActivityForm({
   activityId,
   initialEditState,
   editActivityTitle,
-  profileScoringSex = null,
+  profileScoringSex,
   profileExperience = null,
   zoneMode = "generic",
   enduranceOnly = false,
@@ -156,6 +159,8 @@ export function ActivityForm({
 }: {
   profileWeightKg?: number | null;
   initialDrafts?: Partial<Record<SportType, unknown>>;
+  /** `workout_drafts.updated_at` per sport, so a newer offline mirror can win. See draft-mirror.ts. */
+  draftUpdatedAt?: Partial<Record<SportType, string | null>>;
   isPremium?: boolean;
   initialSport?: SportType | null;
   initialRepeatState?: WorkoutFormState;
@@ -163,7 +168,20 @@ export function ActivityForm({
   activityId?: string;
   initialEditState?: WorkoutFormState;
   editActivityTitle?: string;
-  profileScoringSex?: Gender | null;
+  /*
+    REQUIRED, deliberately.
+
+    It used to default to null, and `activities/new/page.tsx` simply never
+    passed it — nor even selected `gender` and `scoring_basis` from the
+    profile. gym-form's scoreSet bails on a null sex, so every set logged
+    from that route scored "—" regardless of how complete the athlete's
+    profile was, and the on-screen hint stayed quiet because it deliberately
+    does not name sex as a possible cause.
+
+    A default of null let one call site opt out of scoring by omission. With
+    no default the compiler names every route that has to answer for it.
+  */
+  profileScoringSex: Gender | null;
   profileExperience?: ExperienceLevel | null;
   zoneMode?: "gym" | "cardio" | "generic";
   enduranceOnly?: boolean;
@@ -199,6 +217,24 @@ export function ActivityForm({
   const [restoredSport, setRestoredSport] = useState<SportType | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  /*
+    A QUEUED SAVE IS A SUCCESS, AND THE FORM HAS TO STOP BEING ARMED.
+
+    The queued branch used to `setSubmitError(result.message)` and return early:
+    the message went out through the ERROR channel, red and alarming, while the
+    draft stayed put, the gym Live Activity kept running, the timer state was
+    kept, and the `finally` re-enabled Save.
+
+    So an athlete reading "saved on this device" as a failure — which is what
+    red text under a Save button means — taps Save again. Every submit mints
+    its own client_request_id, so the second tap is a second queue entry that
+    the server cannot recognise as a repeat, and both flush on reconnect. Two
+    identical workouts, both scored, both in the logbook.
+
+    That got more likely, not less, when the submit path gained a timeout: a
+    flaky connection now queues where it used to hang.
+  */
+  const [queuedMessage, setQueuedMessage] = useState<string | null>(null);
   const [result, setResult] = useState<ScoreResultSummary | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   /**
@@ -261,12 +297,32 @@ export function ActivityForm({
       flush();
       setDirection(sport ? (sportIndexOf(next) >= sportIndexOf(sport) ? 1 : -1) : 1);
       if (!stateMap[next]) {
-        const draft = serverDrafts[next];
-        const hydrated = draft
-          ? restoreDraftState(next, draft, profileWeightKg)
-          : createDefaultState(next, profileWeightKg);
+        /*
+          The newer of the two drafts, not simply the server's.
+
+          The server copy is what follows an athlete to another device and is
+          still the default. The local mirror only wins when it is provably
+          newer, which is exactly the case the server cannot cover: work typed
+          while offline, where the PUT never landed. Without this the mirror
+          would be written and never read.
+        */
+        const { source, draft } = preferredDraft(
+          serverDrafts[next],
+          draftUpdatedAt?.[next],
+          // A mirror for a sport still in the queue is a COPY of a workout
+          // already handed over, not work in progress. Offering it back would
+          // invite a second submit under a different idempotency key, which is
+          // the same session in the logbook twice. It stays on disk as the
+          // safety net for the queue giving up; it just is not editable while
+          // the queue still holds it.
+          queuedSportsOnDevice().includes(next) ? null : readMirroredDraft(next)
+        );
+        const hydrated =
+          source === "none"
+            ? createDefaultState(next, profileWeightKg)
+            : restoreDraftState(next, draft, profileWeightKg);
         setStateMap((prev) => ({ ...prev, [next]: hydrated }));
-        if (draft) setRestoredSport(next);
+        if (source !== "none") setRestoredSport(next);
       }
       setErrors({});
       setSubmitError(null);
@@ -274,7 +330,7 @@ export function ActivityForm({
       setSport(next);
       setView("form");
     },
-    [flush, sport, stateMap, serverDrafts, profileWeightKg]
+    [flush, sport, stateMap, serverDrafts, draftUpdatedAt, profileWeightKg]
   );
 
   useEffect(() => {
@@ -434,8 +490,25 @@ export function ActivityForm({
     }
   };
 
+  /**
+   * Forget the in-memory and server draft. Deliberately leaves the device
+   * mirror alone — see the queued branch in handleSubmit for why that matters.
+   */
+  function clearFormFor(saved: SportType) {
+    setStateMap((prev) => {
+      const next = { ...prev };
+      delete next[saved];
+      return next;
+    });
+    setServerDrafts((prev) => {
+      const next = { ...prev };
+      delete next[saved];
+      return next;
+    });
+  }
+
   const handleSubmit = async () => {
-    if (!sport || !currentState || submitting) return;
+    if (!sport || !currentState || submitting || queuedMessage) return;
     setSubmitError(null);
 
     const { errors: validationErrors, payload } = validateAndBuildPayload(
@@ -460,23 +533,41 @@ export function ActivityForm({
       }
 
       if (result.queued) {
-        setSubmitError(result.message);
+        // Everything the success path does except show a score, because there
+        // is no score yet — the server has not seen this session. What the
+        // athlete has is a saved workout, and the form must not offer to save
+        // it a second time.
+        /*
+          The FORM is cleared, the device mirror is NOT.
+
+          I got this wrong when I wrote it: the queued branch called
+          `clearDraftFor`, which takes the mirror with it. A queued workout is
+          not a saved one — `flushActivityQueue` gives up after five attempts
+          or on an answer that will not change, and at that point the activity
+          had never reached the server, the draft was gone and the mirror was
+          gone too. The banner said "you will need to log it again", and it was
+          telling the truth.
+
+          So the mirror survives until the SERVER has the workout, which is
+          what `flushedSports` reports. If the queue gives up instead, the
+          session is still on the phone.
+        */
+        clearFormFor(sport);
+        if (sport === "gym") {
+          void endLiveActivity();
+          clearPersistedGymTimerState();
+        }
+        setQueuedMessage(result.message);
         return;
       }
 
       const data = result.data;
       setResult(buildScoreSummary(data, sport, currentState));
-      // Server deletes the draft on successful submit; mirror that locally.
-      setStateMap((prev) => {
-        const next = { ...prev };
-        delete next[sport];
-        return next;
-      });
-      setServerDrafts((prev) => {
-        const next = { ...prev };
-        delete next[sport];
-        return next;
-      });
+      // The server has it, so the mirror is redundant — and a mirror that
+      // outlived its session would hydrate the next visit with a workout
+      // already in the logbook.
+      clearFormFor(sport);
+      clearMirroredDraft(sport);
       // User feedback: "the widget timer for the lab does not stop when
       // the timer is stopped in app, i want the widget to be removed once
       // it's finished being used in app" — a gym workout just got
@@ -510,6 +601,9 @@ export function ActivityForm({
     });
     setErrors({});
     setSubmitError(null);
+    // Locally too, and first — the server DELETE is best-effort and may not
+    // land, and a discard the athlete asked for must not come back on relaunch.
+    clearMirroredDraft(sport);
     void fetch(`/api/activities/draft?sport=${sport}`, { method: "DELETE" });
   };
 
@@ -816,6 +910,32 @@ export function ActivityForm({
                     </div>
                   </motion.div>
                 )}
+                {queuedMessage && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 6, height: 0 }}
+                    animate={{ opacity: 1, y: 0, height: "auto" }}
+                    exit={{ opacity: 0, y: 6, height: 0 }}
+                    className="overflow-hidden"
+                  >
+                    {/*
+                      The accent channel, not the danger one. This is a saved
+                      workout, and the previous version said so in red under a
+                      Save button — which reads as "that did not work, try
+                      again", and trying again queued it twice.
+                    */}
+                    <div
+                      role="status"
+                      className="rounded-lg border border-accent/30 bg-accent/10 px-2.5 py-1.5 text-[12px] leading-snug text-accent"
+                    >
+                      <div className="flex items-start gap-2">
+                        <Check className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                        <span>
+                          {queuedMessage} You can leave this screen — it will upload on its own.
+                        </span>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
               </AnimatePresence>
               {/* size="sm" is h-11 — 44px, still a full tap target, where
                   size="lg" was a fixed h-14. A 56px button is right when it is
@@ -825,10 +945,20 @@ export function ActivityForm({
                 className="w-full text-[15px]"
                 size="sm"
                 loading={submitting}
+                disabled={queuedMessage !== null}
                 onClick={handleSubmit}
               >
-                <Zap className="h-4 w-4" />
-                {isEdit ? "Save changes" : "Score workout"}
+                {queuedMessage ? (
+                  <>
+                    <Check className="h-4 w-4" />
+                    Saved on this phone
+                  </>
+                ) : (
+                  <>
+                    <Zap className="h-4 w-4" />
+                    {isEdit ? "Save changes" : "Score workout"}
+                  </>
+                )}
               </Button>
               {/* Fixed height, so the draft line moving between "Saving…",
                   "Draft saved 40s ago" and nothing at all doesn't resize the

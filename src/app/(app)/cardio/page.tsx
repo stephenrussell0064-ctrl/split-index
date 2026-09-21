@@ -3,7 +3,8 @@ import Link from "next/link";
 import { Activity, PlusCircle, MapPin } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { TrainZoneSwipe } from "@/components/layout/train-zone-swipe";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils/cn";
 import { LogbookFeed } from "@/components/activities/logbook-feed";
 import { fetchLogbookPage, LOGBOOK_ZONE_PAGE_SIZE } from "@/lib/activities/logbook-query";
 import { SportComparisonBars } from "@/components/activities/sport-comparison-bars";
@@ -76,39 +77,45 @@ export default async function CardioPage() {
   return (
     <TrainZoneSwipe mode="cardio">
       <div className="bg-cardio-zone rounded-2xl overflow-hidden border border-cardio-border/40">
-        <div className="p-6 sm:p-10">
-          <div className="flex flex-wrap items-start justify-between gap-4 mb-8">
+        <div className="p-4 sm:p-10">
+          <div className="flex flex-wrap items-start justify-between gap-4 mb-5">
             <div>
               <p className="micro-label text-cardio-accent mb-2">The Engine</p>
               <h1 className="headline-tight text-3xl font-bold text-cardio-text sm:text-4xl">
                 Endurance HQ
               </h1>
-              <p className="mt-2 max-w-lg text-sm text-cardio-muted leading-relaxed">
+              {/*
+                Hidden on phones. This is product copy on a screen the athlete
+                opens daily, and at 390px it wrapped to five lines — about
+                115px, which is a seventh of the visible screen spent telling a
+                returning user what the tab they just tapped is for. It stays
+                for the wider layouts, where it costs nothing.
+              */}
+              <p className="mt-2 hidden max-w-lg text-sm text-cardio-muted leading-relaxed sm:block">
                 Pace, split, and W/kg vs sport-specific benchmarks — ranked against your
                 own session history.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Link href="/cardio/log">
-                <Button variant="secondary">
-                  <PlusCircle className="h-4 w-4" />
-                  Log manually
-                </Button>
+              <Link href="/cardio/log" className={buttonVariants({ variant: "secondary" })}>
+                <PlusCircle className="h-4 w-4" />
+                Log manually
               </Link>
-              <Link href="/cardio/gps-run">
-                <Button className="bg-cardio-accent hover:bg-cardio-accent/90 text-white border-0">
-                  <MapPin className="h-4 w-4" />
-                  Start GPS tracking
-                </Button>
+              <Link
+                href="/cardio/gps-run"
+                className={cn(buttonVariants(), "bg-cardio-accent hover:bg-cardio-accent/90 text-cardio-text border-0")}
+              >
+                <MapPin className="h-4 w-4" />
+                Start GPS tracking
               </Link>
             </div>
           </div>
 
-          <div className="glass-cardio rounded-2xl p-8 mb-8">
+          <div className="glass-cardio rounded-2xl p-5 mb-5 sm:p-8">
             <p className="micro-label text-cardio-muted mb-2">Endurance Blend</p>
             {hasHistory && enduranceIndex !== null ? (
               <>
-                <p className="index-display text-6xl font-bold text-cardio-accent sm:text-7xl">
+                <p className="index-display text-5xl font-bold text-cardio-accent sm:text-7xl">
                   {formatIndex(enduranceIndex)}
                 </p>
                 <p className="mt-2 text-sm text-cardio-muted">

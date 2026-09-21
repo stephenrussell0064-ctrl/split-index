@@ -1,3 +1,10 @@
+import { parseQuery } from "@/lib/validation/boundary";
+import { idQuerySchema } from "@/lib/validation/schemas/query";
+import { parseBody } from "@/lib/validation/boundary";
+import {
+  friendActionSchema,
+  friendRequestSchema,
+} from "@/lib/validation/schemas/routes";
 import { NextResponse } from "next/server";
 import { databaseError } from "@/lib/api/errors";
 import { createClient } from "@/lib/supabase/server";
@@ -27,17 +34,27 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await request.json();
-  const username = String(body.username ?? "")
-    .trim()
-    .replace(/^@/, "");
+  // N1. A leading "@" is still stripped, so pasting "@rachel" works.
+  const parsed = await parseBody(request, friendRequestSchema);
+  if (parsed.response) return parsed.response;
+  const username = parsed.data.username.replace(/^@/, "");
 
   if (!username) {
     return NextResponse.json({ error: "Username required" }, { status: 400 });
   }
 
   const { data: target } = await supabase
-    .from("profiles")
+    /*
+      `public_profiles`, not `profiles`. The base-table read worked through a
+      001 policy that let any caller read any named profile in full, which 073
+      removes.
+
+      The view is the right answer here rather than a workaround: it gates on a
+      confirmed email address, so an account that cannot receive mail is not
+      discoverable by username — which is what 061 decided about public
+      visibility generally, and a friend request is exactly that.
+    */
+    .from("public_profiles")
     .select("user_id, username")
     .eq("username", username)
     .single();
@@ -94,12 +111,10 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await request.json();
-  const { id, action } = body as { id?: string; action?: "accept" | "decline" };
-
-  if (!id || !action) {
-    return NextResponse.json({ error: "id and action required" }, { status: 400 });
-  }
+  // N1. Another assertion — any string was reaching the branch below.
+  const parsed = await parseBody(request, friendActionSchema);
+  if (parsed.response) return parsed.response;
+  const { id, action } = parsed.data;
 
   const { data: row } = await supabase
     .from("friends")
@@ -138,12 +153,11 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { searchParams } = new URL(request.url);
-  const id = searchParams.get("id");
-
-  if (!id) {
-    return NextResponse.json({ error: "id required" }, { status: 400 });
-  }
+  // N1. A malformed uuid in a WHERE clause is a Postgres cast error rather
+  // than a miss, so this rejects instead of falling back.
+  const q = parseQuery(request, idQuerySchema);
+  if (q.response) return q.response;
+  const id = q.data.id;
 
   const { data: row } = await supabase
     .from("friends")

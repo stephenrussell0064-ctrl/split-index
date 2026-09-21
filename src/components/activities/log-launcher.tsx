@@ -52,9 +52,16 @@ export function GpsRecordRow() {
         <Link
           key={sport}
           href={`/cardio/gps-run?sport=${sport}`}
-          className="flex flex-col items-center justify-center gap-0.5 rounded-2xl bg-cardio-accent px-2 py-2.5 text-white transition-opacity hover:opacity-90"
+          /*
+            text-cardio-text, not text-white. White on the Engine's blue is
+            2.60:1 — below AA and below the 3:1 large-text floor. The dark
+            label on the same blue is 6.80:1, so the brand fill is unchanged
+            and the words on it are legible. The global [data-mode="cardio"]
+            override cannot help here: the launcher renders in neutral mode.
+          */
+          className="flex flex-col items-center justify-center gap-0.5 rounded-2xl bg-cardio-accent px-2 py-2.5 text-cardio-text transition-opacity hover:opacity-90"
         >
-          <span className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider opacity-90">
+          <span className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider opacity-80">
             <MapPin className="h-3 w-3" />
             GPS
           </span>

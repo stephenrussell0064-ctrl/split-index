@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { publicDisplayName } from "@/lib/social/shareable-name";
 import type {
   AchievementBadge,
   ChallengeWithProgress,
@@ -21,7 +22,7 @@ function mapFriendProfile(row: {
   return {
     userId: row.user_id,
     username: row.username,
-    displayName: row.display_name,
+    displayName: publicDisplayName(row.display_name),
     avatarUrl: row.avatar_url,
     currentSplitIndex: row.current_split_index,
     // Through parseInjuryStatus, never straight from the row: this string is
@@ -232,7 +233,7 @@ export async function fetchDuels(
       return {
         userId: id,
         username: p?.username ?? null,
-        displayName: p?.display_name ?? null,
+        displayName: publicDisplayName(p?.display_name),
         avatarUrl: p?.avatar_url ?? null,
         score,
       };
@@ -303,7 +304,7 @@ export async function fetchSquads(
           return {
             userId: id,
             username: p?.username ?? null,
-            displayName: p?.display_name ?? null,
+            displayName: publicDisplayName(p?.display_name),
             avatarUrl: p?.avatar_url ?? null,
             currentSplitIndex: p?.current_split_index ?? null,
           };
@@ -390,7 +391,9 @@ export async function fetchPublicProfile(
     ownActivities && ownActivities.length > 0
       ? ownActivities.map((a) => a.started_at)
       : (recentHistory ?? []).map((h) => h.recorded_at);
-  const streak = computeTrainingStreak(streakSource);
+  // This athlete's own zone, not the server's — a streak is a count of THEIR
+  // days. See computeTrainingStreak.
+  const streak = computeTrainingStreak(streakSource, new Date(), profile.timezone);
 
   const recentActivityCount =
     (recentScores ?? []).length ||
@@ -409,7 +412,7 @@ export async function fetchPublicProfile(
   return {
     userId: profile.user_id,
     username: profile.username!,
-    displayName: profile.display_name,
+    displayName: publicDisplayName(profile.display_name),
     avatarUrl: profile.avatar_url,
     bio: profile.bio,
     country: profile.country,

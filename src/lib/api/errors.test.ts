@@ -140,6 +140,32 @@ describe("databaseError", () => {
     expect(disclosures(JSON.stringify(body))).toEqual([]);
   });
 
+  it("answers 403 when RLS refused the row, not 409 and not 500", async () => {
+    // A session that would not save was reported to the athlete as "something
+    // went wrong on our side" with a correlation id pointing at no outage,
+    // because migration 061's verified-email policy is a RESTRICTIVE policy and
+    // an RLS refusal was never a recognised outcome here. It is the caller's
+    // problem, it is not a conflict, and it is emphatically not a 5xx.
+    const res = databaseError(
+      { code: "42501", message: "new row violates row-level security policy for table \"activities\"" },
+      { operation: "POST /api/activities" }
+    );
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("You do not have access to that.");
+    expect(disclosures(JSON.stringify(body))).toEqual([]);
+  });
+
+  it("keeps 409 for the unique violation the helper was written around", async () => {
+    // Guarding the default: the status map must not regress the case that
+    // motivated returning anything other than 500 in the first place.
+    const res = databaseError(
+      { code: "23505", message: 'duplicate key value violates unique constraint "profiles_username_key"' },
+      { operation: "PATCH /api/profile" }
+    );
+    expect(res.status).toBe(409);
+  });
+
   it("falls back to generic for an unrecognised failure", async () => {
     const res = databaseError(
       { code: "XX000", message: "internal error: something about /var/lib/postgresql" },

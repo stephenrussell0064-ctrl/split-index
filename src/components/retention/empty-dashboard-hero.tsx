@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { PlusCircle, Sparkles, Target, Zap } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 
 interface EmptyDashboardHeroProps {
   displayName?: string | null;
@@ -50,17 +50,13 @@ export function EmptyDashboardHero({ displayName }: EmptyDashboardHeroProps) {
         </div>
 
         <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
-          <Link href="/gym/log">
-            <Button size="lg" variant="secondary">
-              <PlusCircle className="h-4 w-4" />
-              Log gym
-            </Button>
+          <Link href="/gym/log" className={buttonVariants({ variant: "secondary", size: "lg" })}>
+            <PlusCircle className="h-4 w-4" />
+            Log gym
           </Link>
-          <Link href="/cardio/log">
-            <Button size="lg">
-              <PlusCircle className="h-4 w-4" />
-              Log cardio
-            </Button>
+          <Link href="/cardio/log" className={buttonVariants({ size: "lg" })}>
+            <PlusCircle className="h-4 w-4" />
+            Log cardio
           </Link>
           <Link href="/activities/new" className="text-xs text-muted hover:text-foreground">
             All sports →

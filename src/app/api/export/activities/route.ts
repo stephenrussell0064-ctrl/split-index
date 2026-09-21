@@ -1,3 +1,5 @@
+import { parseQuery } from "@/lib/validation/boundary";
+import { exportQuerySchema } from "@/lib/validation/schemas/query";
 import { NextResponse } from "next/server";
 import { databaseError } from "@/lib/api/errors";
 import { missingColumn } from "@/lib/activities/degradable-write";
@@ -48,8 +50,11 @@ export async function GET(request: Request) {
     return NextResponse.json(PREMIUM_REQUIRED, { status: 403 });
   }
 
-  const { searchParams } = new URL(request.url);
-  const format = searchParams.get("format") ?? "json";
+  // N1. Was `?? "json"`, so `?format=xml` fell through as "xml" and whatever
+  // read it decided what that meant. The enum falls back to json instead.
+  const q = parseQuery(request, exportQuerySchema);
+  if (q.response) return q.response;
+  const format = q.data.format;
 
   // Two literal selects rather than one interpolated string: the Supabase
   // client parses the column list at the TYPE level, and a template literal

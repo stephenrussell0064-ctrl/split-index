@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { fetchBlockedUserIds, withoutBlocked } from "@/lib/social/moderation";
 import { createClient } from "@/lib/supabase/server";
 import { fetchLeaderboardWithBracket } from "@/lib/social/leaderboard";
 import { canAccessLeaderboardScope } from "@/lib/premium/features";
@@ -24,6 +25,8 @@ export async function GET(request: Request) {
   if (!profile) {
     return NextResponse.json({ error: "Profile not found" }, { status: 404 });
   }
+
+  const blocked = await fetchBlockedUserIds(supabase, user.id);
 
   /*
    * Parsed, not cast. These used to be `as LeaderboardPeriod` and friends —
@@ -52,7 +55,7 @@ export async function GET(request: Request) {
       {
         error: "Global leaderboards require Premium",
         premium_required: true,
-        rows: fallback.rows,
+        rows: withoutBlocked(fallback.rows, blocked, (row) => row.userId),
         bracket: fallback.bracket,
       },
       { status: 403 }
@@ -72,5 +75,16 @@ export async function GET(request: Request) {
     user.id
   );
 
-  return NextResponse.json(result);
+  /*
+    A blocked athlete is removed from the board before it is sent.
+
+    Ranks are deliberately NOT renumbered afterwards: they are this athlete's
+    real position among everyone, and resequencing them would quietly tell a
+    blocker they are higher up than they are. A gap in the numbering is the
+    honest rendering of "someone is there and you have chosen not to see them".
+  */
+  return NextResponse.json({
+    ...result,
+    rows: withoutBlocked(result.rows, blocked, (row) => row.userId),
+  });
 }

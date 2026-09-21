@@ -1,10 +1,15 @@
+import { parseBody } from "@/lib/validation/boundary";
+import {
+  MAX_SQUAD_NAME_LENGTH,
+  createSquadSchema,
+} from "@/lib/validation/schemas/social";
 import { NextResponse } from "next/server";
+import { validateDisplayText } from "@/lib/utils/username";
 import { databaseError, serverError } from "@/lib/api/errors";
 import { createClient } from "@/lib/supabase/server";
 import { fetchSquads } from "@/lib/social/queries";
 import { generateInviteCode } from "@/lib/social/squads";
 
-const MAX_NAME_LENGTH = 40;
 
 export async function GET() {
   const supabase = await createClient();
@@ -30,10 +35,29 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await request.json();
-  const name = String(body.name ?? "").trim().slice(0, MAX_NAME_LENGTH);
-  if (!name) {
-    return NextResponse.json({ error: "Squad name required" }, { status: 400 });
+  /*
+    N1. This used to `.slice(0, MAX_NAME_LENGTH)`, which silently truncated: an
+    athlete who typed a long squad name got a shorter one back with nothing
+    saying so. The schema refuses and names the field, which is not stricter —
+    it is honest about what happened.
+
+    The length itself is unchanged. MAX_SQUAD_NAME_LENGTH is the same 40 that
+    was here, moved into the schema module so the validator and the content
+    check below cannot drift apart.
+  */
+  const parsed = await parseBody(request, createSquadSchema);
+  if (parsed.response) return parsed.response;
+  const name = parsed.data.name;
+  /*
+    A squad name is user-generated content every member and every invitee reads,
+    and it went through no filter at all — App Store Guideline 1.2 requires "a
+    method for filtering objectionable material from being posted to the app",
+    and the app's only filter ran on usernames. Server-side because a client
+    check is a suggestion.
+  */
+  const nameCheck = validateDisplayText(name, { label: "Squad name", maxLength: MAX_SQUAD_NAME_LENGTH });
+  if (!nameCheck.valid) {
+    return NextResponse.json({ error: nameCheck.reason }, { status: 400 });
   }
 
   let squad, error;

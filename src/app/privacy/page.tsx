@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { BrandMark } from "@/components/brand/brand-mark";
+import { LegalBackLink } from "@/components/legal/legal-back-link";
+import { LegalHomeLink } from "@/components/legal/legal-home-link";
+import { mainContentProps } from "@/lib/a11y/main-content";
 
 export const metadata: Metadata = {
   title: "Privacy Policy",
@@ -14,19 +17,18 @@ const CONTACT_EMAIL = "privacy@splitindex.co.uk";
 export default function PrivacyPolicyPage() {
   return (
     <div className="min-h-dvh bg-[#050508] text-foreground">
-      <header className="border-b border-white/[0.06] glass-strong">
-        <div className="mx-auto flex max-w-3xl items-center justify-between px-6 py-4">
+      {/*
+        Padded past the status bar: inside the app this header sits under it,
+        and a back control that cannot be tapped is not a way out.
+      */}
+      <header className="border-b border-white/[0.06] glass-strong pt-[max(1rem,env(safe-area-inset-top))]">
+        <div className="mx-auto flex max-w-3xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
           <BrandMark variant="compact" href="/" iconSize={30} wordmarkSize="sm" />
-          <Link
-            href="/"
-            className="text-sm text-muted transition-colors hover:text-foreground"
-          >
-            Back to home
-          </Link>
+          <LegalBackLink />
         </div>
       </header>
 
-      <main className="mx-auto max-w-3xl px-6 py-12">
+      <main {...mainContentProps} className="mx-auto max-w-3xl px-4 py-10 sm:px-6 sm:py-12">
         <article className="glass-strong rounded-2xl border border-white/[0.08] p-8 md:p-10">
           <header className="mb-10 border-b border-white/[0.06] pb-8">
             <h1 className="text-3xl font-bold tracking-tight">Privacy Policy</h1>
@@ -114,7 +116,7 @@ export default function PrivacyPolicyPage() {
                 <li>
                   <strong>Connected Bluetooth equipment (mobile apps):</strong> readings
                   from heart rate monitors and rowing machines you choose to pair, such as
-                  Garmin, Polar or Concept2 devices. We use Bluetooth to talk to the
+                  heart-rate straps and compatible equipment such as the Concept2 PM5. We use Bluetooth to talk to the
                   equipment in front of you; we do not use it to detect your location or
                   nearby devices for any other purpose.
                 </li>
@@ -540,13 +542,17 @@ export default function PrivacyPolicyPage() {
         </article>
       </main>
 
-      <footer className="border-t border-white/[0.06] px-6 py-8 text-center text-sm text-muted">
-        <p>© {new Date().getFullYear()} Split Index. All rights reserved.</p>
-        <p className="mt-2 flex justify-center gap-4">
-          <Link href="/terms" className="hover:text-foreground transition-colors">
+      <footer className="border-t border-white/[0.06] px-4 pt-8 pb-[max(2rem,calc(env(safe-area-inset-bottom)+1rem))] text-center text-sm text-muted sm:px-6">
+        <p className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
+          <Link
+            href="/terms"
+            className="inline-flex min-h-11 items-center px-2 transition-colors hover:text-foreground"
+          >
             Terms of Service
           </Link>
+          <LegalHomeLink />
         </p>
+        <p className="mt-2">© {new Date().getFullYear()} Split Index. All rights reserved.</p>
       </footer>
     </div>
   );

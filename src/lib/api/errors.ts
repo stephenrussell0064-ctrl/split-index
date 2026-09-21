@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { logSecurityEvent } from "@/lib/observability/security-log";
+import {
+  UNIQUE_VIOLATION,
+  uniqueViolationMessage,
+} from "@/lib/api/unique-violations";
 
 /**
  * WP5 — one place where a server-side failure becomes a response.
@@ -61,19 +65,6 @@ export interface DatabaseErrorLike {
  * rewords an error, and would silently fall through to a generic message
  * rather than failing loudly.
  */
-const UNIQUE_VIOLATION_MESSAGES: Record<string, string> = {
-  profiles_username_key: "That username is taken.",
-  profiles_user_id_key: "That profile already exists.",
-  profiles_stripe_customer_id_key: "That billing account is already linked.",
-  activities_user_id_source_external_id_key:
-    "That session has already been imported.",
-  activity_reactions_activity_id_user_id_key: "You have already scored this session.",
-  squad_members_squad_id_user_id_key: "You are already in that squad.",
-  friends_user_id_friend_id_key: "You are already connected to that athlete.",
-  leaderboard_entries_period_period_start_user_id_key:
-    "That leaderboard entry already exists.",
-  hpe_intake_pkey: "Your intake answers already exist.",
-};
 
 /** Postgres SQLSTATEs worth distinguishing from "something went wrong". */
 const CODE_MESSAGES: Record<string, string> = {
@@ -89,20 +80,42 @@ const CODE_MESSAGES: Record<string, string> = {
 };
 
 /**
+ * The status that matches what actually happened.
+ *
+ * `databaseError` used to answer 409 for every recognised code, which is right
+ * for the unique violation it was written around and wrong for the rest. A
+ * permission denial in particular is neither a conflict nor a server fault: RLS
+ * did exactly its job, and answering 409 — or worse, letting it fall through to
+ * a 500 — makes the error dashboard lie in the opposite direction from the one
+ * the 409 was introduced to fix.
+ *
+ * 409 stays the default so anything unlisted behaves as it did before.
+ */
+const CODE_STATUS: Record<string, number> = {
+  // An RLS policy refused the row. The caller is authenticated but not allowed.
+  "42501": 403,
+  // Pointing at a row that is gone.
+  "23503": 409,
+  // Values the schema refuses: the request is malformed, not conflicting.
+  "23514": 400,
+  "23502": 400,
+  // Unique violation — the case this helper was written for.
+  "23505": 409,
+};
+
+/**
  * Turn a database error into a message it is safe to send.
  *
  * Returns null when there is nothing specific to say, which the caller turns
  * into a generic 500. Never returns any part of `error.message`.
  */
 export function safeDatabaseMessage(error: DatabaseErrorLike): string | null {
-  if (error.code === "23505") {
-    // The constraint name appears in `details` or `message`; we only ever read
-    // it to look up OUR mapping, and never pass either string on.
-    const haystack = `${error.message ?? ""} ${error.details ?? ""}`;
-    for (const [constraint, message] of Object.entries(UNIQUE_VIOLATION_MESSAGES)) {
-      if (haystack.includes(constraint)) return message;
-    }
-    return "That already exists.";
+  if (error.code === UNIQUE_VIOLATION) {
+    // Shared with the browser path, so the same conflict cannot produce two
+    // different answers depending on which client wrote the row. The helper
+    // reads the constraint NAME and discards the error text, which carries the
+    // conflicting value.
+    return uniqueViolationMessage(error);
   }
 
   return error.code ? (CODE_MESSAGES[error.code] ?? null) : null;
@@ -189,7 +202,10 @@ export function databaseError(
       code: error.code,
       ...options.context,
     });
-    return NextResponse.json({ error: specific, ref }, { status: 409 });
+    return NextResponse.json(
+      { error: specific, ref },
+      { status: (error.code && CODE_STATUS[error.code]) || 409 }
+    );
   }
 
   return serverError({ ...options, cause: error });

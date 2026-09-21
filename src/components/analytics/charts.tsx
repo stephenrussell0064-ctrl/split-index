@@ -17,6 +17,8 @@ import {
 import { motion, useReducedMotion } from "framer-motion";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { formatIndex } from "@/lib/utils/format";
+import { ChartFigure } from "@/components/analytics/chart-figure";
+import { describeSeries } from "@/lib/a11y/describe-series";
 import { designTokens } from "@/lib/design/tokens";
 
 const CHART_COLORS = {
@@ -82,9 +84,14 @@ export function IndexTrendChart({
           <CardTitle>{title}</CardTitle>
         </CardHeader>
         <CardContent>
-          <div
-            role="img"
-            aria-label={`${title} line chart with ${data.length} data points`}
+          <ChartFigure
+            label={`${title} line chart`}
+            summary={describeSeries(title, data.map((d) => ({ at: d.date, value: d.value })))}
+            columns={[
+              { header: "Date", cell: (d: { date: string; value: number }) => d.date },
+              { header: title, cell: (d: { date: string; value: number }) => formatIndex(d.value) },
+            ]}
+            rows={data}
           >
             <ResponsiveContainer width="100%" height={200}>
             <AreaChart data={data}>
@@ -122,7 +129,7 @@ export function IndexTrendChart({
               />
             </AreaChart>
           </ResponsiveContainer>
-          </div>
+          </ChartFigure>
         </CardContent>
       </Card>
     </motion.div>
@@ -172,9 +179,16 @@ export function SplitTrendPanel({ data }: { data: TrendPoint[] }) {
         {data.length < 2 ? (
           <ChartEmptyState message="Your index trend charts here after a couple of workouts" />
         ) : (
-          <div
-            role="img"
-            aria-label={`Index trend chart showing split, endurance, and strength over ${data.length} data points`}
+          <ChartFigure
+            label="Index trend: split, endurance and strength"
+            summary={describeSeries("Split Index", data.map((d) => ({ at: d.date, value: d.split })))}
+            columns={[
+              { header: "Date", cell: (d: TrendPoint) => d.date },
+              { header: "Split", cell: (d: TrendPoint) => formatIndex(d.split) },
+              { header: "Endurance", cell: (d: TrendPoint) => formatIndex(d.endurance) },
+              { header: "Strength", cell: (d: TrendPoint) => formatIndex(d.strength) },
+            ]}
+            rows={data}
           >
             <ResponsiveContainer width="100%" height={260}>
             <AreaChart data={data} margin={{ top: 8, right: 4, left: -8, bottom: 0 }}>
@@ -246,7 +260,7 @@ export function SplitTrendPanel({ data }: { data: TrendPoint[] }) {
               />
             </AreaChart>
           </ResponsiveContainer>
-          </div>
+          </ChartFigure>
         )}
       </CardContent>
     </Card>
@@ -285,9 +299,21 @@ export function SportBalanceRadar({ data }: { data: RadarAxis[] }) {
         {data.length < 3 ? (
           <ChartEmptyState message="Train 3+ disciplines to unlock your balance radar" />
         ) : (
-          <div
-            role="img"
-            aria-label={`Sport balance radar comparing endurance and strength across ${data.length} disciplines`}
+          <ChartFigure
+            label="Sport balance: endurance against strength"
+            summary={
+              data.length === 0
+                ? "No disciplines scored yet."
+                : `Endurance and strength compared across ${data.length} ${
+                    data.length === 1 ? "discipline" : "disciplines"
+                  }: ${data.map((d) => `${d.axis}, endurance ${formatIndex(d.endurance)}, strength ${formatIndex(d.strength)}`).join("; ")}.`
+            }
+            columns={[
+              { header: "Discipline", cell: (d: RadarAxis) => d.axis },
+              { header: "Endurance", cell: (d: RadarAxis) => formatIndex(d.endurance) },
+              { header: "Strength", cell: (d: RadarAxis) => formatIndex(d.strength) },
+            ]}
+            rows={data}
           >
             <ResponsiveContainer width="100%" height={240}>
             <RadarChart data={data} outerRadius="72%">
@@ -321,7 +347,7 @@ export function SportBalanceRadar({ data }: { data: RadarAxis[] }) {
               />
             </RadarChart>
           </ResponsiveContainer>
-          </div>
+          </ChartFigure>
         )}
       </CardContent>
     </Card>

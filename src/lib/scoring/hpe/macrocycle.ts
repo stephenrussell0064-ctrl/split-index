@@ -1,41 +1,31 @@
 /**
- * Hybrid Plan Engine — WP5: the macrocycle, on-ramp, deloads and ACWR.
+ * Hybrid Plan Engine — WP5: the macrocycle, on-ramp, deloads and ACWR
+ * enforcement.
  *
  * Closes four Critical assurance findings at once:
  *
- *  F3 — Week 1 volume IS the athlete's current weekly running minutes. Not a
- *       fraction of a target, not an idealised base week — the number they
- *       are already doing.
+ *  F3 — "Rev A's week 1 prescribed four to five endurance sessions to an
+ *       athlete currently running twice a week, and did so at full base-phase
+ *       volume. The `chronic_load` field existed on the athlete record and was
+ *       never read by a single line of code. This is the single most common
+ *       way generated plans injure people: the plan is internally coherent and
+ *       starts 60% above where the athlete actually is." Week 1 volume IS the
+ *       athlete's current weekly running minutes. Not a fraction of a target,
+ *       not an idealised base week — the number they are already doing.
  *
- *  F4 — A deload every fourth week with intensity HELD. The intensity-held
- *       detail matters: dropping both is detraining, not deloading.
+ *  F4 — A deload every fourth week at 60% volume with intensity HELD. The
+ *       intensity-held detail matters: dropping both is detraining, not
+ *       deloading.
  *
- *  F5 — Genuine progressive overload, capped per week.
+ *  F5 — Genuine progressive overload, capped at 8%/week. Rev A ran 505 in base
+ *       week 1 and 540 in specific week 17, "not a training plan, it is the
+ *       same week repeated with different labels."
  *
- *  F6 — ACWR computed and enforced. Since constants 3.0.0 it is a BACKSTOP
- *       rather than the control: the evidence for the ratio as an injury
- *       predictor did not survive scrutiny (Impellizzeri 2020; Frandsen 2025
- *       found it inversely associated with injury in 5,205 runners). The
- *       controls that carry evidence are the weekly ramp cap here and the
- *       single-session spike rule in session-set.ts.
- *
- * Constants 3.0.0 changes, each traceable to the evidence register:
- *
- *  - The ramp multipliers no longer compound below a floor. Novice, provisional
- *    and safety-screen halvings stacked to a 1-2% weekly ramp, so a beginner
- *    went from 60 to 63 minutes in twelve weeks — a block that did nothing.
- *  - The novice halving lives here only. It used to fire here AND in the
- *    safety screen for the same answer.
- *  - Taper length follows the event (Bosquet 2007; Spilsbury 2015; Smyth &
- *    Lawlor 2021): one week for a 5k or 10k, two for a half, three for a
- *    marathon, always progressive and monotone.
- *  - The athlete's own previous maximum volume is a soft ceiling: the ramp
- *    halves above it and the block never exceeds it by more than a quarter.
- *  - Life load — stress 4+/5 or under six hours' sleep — slows the ramp.
- *  - Travel weeks become maintenance weeks rather than holes.
- *  - A plan can be CONTINUED from a given week, anchored to the athlete's
- *    current logged volume, so the block the athlete is living through is
- *    the block that gets adjusted rather than restarted.
+ *  F6 — ACWR computed and ENFORCED, not merely specified. The review names
+ *       this pattern explicitly: "a control that is specified but not
+ *       implemented is worse than no control, because it is reported as
+ *       present." The chronic denominator is seeded from the athlete's real
+ *       chronic load so week 1 is measured against reality rather than zero.
  *
  * Volume is held flat through the specific and peak phases while intensity
  * rises — you do not add volume and intensity simultaneously in the specific
@@ -43,7 +33,7 @@
  */
 
 import {
-  ABOVE_PREVIOUS_MAX_RAMP_MULTIPLIER,
+  MIN_ENDURANCE_SESSION_MIN,
   ACWR_BLOCK,
   ACWR_CHRONIC_WEEKS,
   ACWR_ENFORCEMENT_PASSES,
@@ -51,31 +41,28 @@ import {
   ACWR_WARN,
   DELOAD_EVERY_N_WEEKS,
   DELOAD_VOLUME_MULTIPLIER,
-  LIFE_LOAD_RAMP_MULTIPLIER,
-  LIFE_LOAD_SLEEP_HOURS_THRESHOLD,
-  LIFE_LOAD_STRESS_THRESHOLD,
   MAX_WEEKLY_VOLUME_RAMP,
-  MIN_COMBINED_RAMP_MULTIPLIER,
-  MIN_ENDURANCE_SESSION_MIN,
   NOVICE_ENDURANCE_YEARS,
   NOVICE_RAMP_MULTIPLIER,
   ONRAMP_MAX_MULTIPLE,
   ONRAMP_START_MULTIPLIER,
-  PHASE_SHARE,
-  PREVIOUS_MAX_VOLUME_HEADROOM,
   PROVISIONAL_START_RUN_MIN_PER_WEEK,
+  ONRAMP_PERFORMANCE_FLOOR_SHARE,
+  PHASE_SHARE,
+  TAPER_DAYS,
   TAPER_ENDURANCE_SHARE_BY_WEEK_FROM_RACE,
   TAPER_WEEKS_BY_EVENT,
   type Phase,
 } from "./constants";
 import type { AthleteState, Goal } from "./intake";
+import { requiredWeeklyMinutesFor5k } from "./diagnostics";
 
 export interface MacrocycleWeek {
   /** 1-indexed week of the block. */
   week: number;
   phase: Phase;
   deload: boolean;
-  /** Set when this is a travel week the athlete declared — a maintenance week, labelled as such. */
+  /** Set when this is a travel week the athlete declared — a reduced week, labelled as such. */
   travel?: boolean;
   /** Target endurance minutes for the week, after any deload reduction. */
   enduranceMin: number;
@@ -83,57 +70,85 @@ export interface MacrocycleWeek {
   phaseProgress: number;
 }
 
-export interface MacrocycleOptions {
-  /**
-   * Continue an existing block from this week (1-based). Weeks before it are
-   * emitted with the ramp they would have had — the caller replaces them with
-   * the stored weeks the athlete has actually lived — and the ramp from this
-   * week onwards starts at `volumeAtFromWeek`, the athlete's real current
-   * volume, rather than at the plan's original projection.
-   */
-  fromWeek?: number;
-  volumeAtFromWeek?: number;
-  /** Plan weeks the athlete has said they will be away. */
-  travelWeeks?: readonly number[];
-}
+/**
+ * The volume every week of a block is a multiple of.
+ *
+ * Exported because the feasibility projection needs the same number and must
+ * not recompute it: the two would drift, and the failure mode of that drift is
+ * a plan telling an athlete a target is reachable on volume the plan does not
+ * actually prescribe.
+ */
+export function onRampStartingVolume(state: AthleteState): number {
+  const reportedVolume =
+    state.currentRunMinPerWeek > 0 ? state.currentRunMinPerWeek : PROVISIONAL_START_RUN_MIN_PER_WEEK;
 
-/** Taper length in weeks for the athlete's event. A block with no event has a one-week test week. */
-export function taperWeeksFor(goal: Pick<Goal, "enduranceEventKey" | "horizonSource" | "weeksOut">): number {
-  const byEvent = goal.enduranceEventKey ? TAPER_WEEKS_BY_EVENT[goal.enduranceEventKey] : undefined;
-  const wanted = goal.horizonSource === "event_date" && byEvent != null ? byEvent : 1;
-  // A very short block cannot spend most of itself tapering.
-  return Math.max(1, Math.min(wanted, Math.floor(goal.weeksOut / 4)));
+  /*
+   * A floor set by what the athlete can already RUN, not only by what they
+   * reported doing.
+   *
+   * Every week of this block is a multiple of one number: week 1 is
+   * `startingVolume`, and the hard ceiling is `startingVolume *
+   * ONRAMP_MAX_MULTIPLE`. So an anchor that comes in ten times too low does
+   * not merely start the athlete slow — it caps them there for the whole
+   * block. Reported from a device by an athlete running 18:25 for 5k who was
+   * given a single 5k run per week, in week 1 and in the last week alike.
+   *
+   * The anchor is the lower of stated and logged minutes, which is the right
+   * default against optimism but has no floor under it. An 18:25 5k is not an
+   * opinion: `VOLUME_ADEQUACY_MIN_PER_WEEK` already records what weekly volume
+   * that level is historically built on, and the diagnostic already uses it to
+   * judge whether volume or intensity is an athlete's limiting factor. The
+   * on-ramp simply never consulted it.
+   *
+   * Set at a QUARTER of the table, not at the adequate level. This is a
+   * plausibility floor, not a prescription: it exists to catch an anchor that
+   * could not have produced the athlete's own race time, and nothing more. An
+   * athlete who genuinely trains light for their ability — they exist at every
+   * level — keeps the number they gave, which is what the "leaves a real volume
+   * untouched" case in onramp-floor.test.ts protects.
+   *
+   * The proper channel for an athlete whose logs understate them is the intake
+   * question about training that is not recorded here, which makes their own
+   * stated figure win outright. This floor is the safety net under that, for
+   * the case where nobody thought to say so.
+   *
+   * Guarded on `predicted5kFromEffort`. Without a real maximal effort the 5k is
+   * a placeholder, and flooring volume on a placeholder would invent a base the
+   * athlete has never shown. It only ever RAISES the anchor: an athlete already
+   * running more than the table asks keeps their own number.
+   */
+  const performanceFloor =
+    state.predicted5kFromEffort && state.predicted5kS > 0
+      ? ONRAMP_PERFORMANCE_FLOOR_SHARE * requiredWeeklyMinutesFor5k(state.predicted5kS)
+      : 0;
+
+  const startingVolume = Math.max(reportedVolume, performanceFloor);
+  return startingVolume;
 }
 
 /**
- * The effective weekly ramp for this athlete: the constant ceiling, scaled by
- * every caution factor, floored so the factors cannot compound the block into
- * standing still.
+ * How many weeks this athlete's event is tapered for.
+ *
+ * Only a real event date earns the longer taper. A block with a chosen
+ * timeframe and no race has nothing to peak for on a given day, so its last
+ * week is a test week rather than a three-week wind-down, and a very short
+ * block cannot spend most of itself tapering.
  */
-export function effectiveRamp(state: AthleteState, rampMultiplier: number): { ramp: number; reasons: string[] } {
-  const reasons: string[] = [];
-  let multiplier = rampMultiplier;
-  if (state.enduranceTrainingYears < NOVICE_ENDURANCE_YEARS) {
-    multiplier *= NOVICE_RAMP_MULTIPLIER;
-    reasons.push("under six months of running halves the ramp");
-  }
-  const stress = state.lifeStressNow ?? 3;
-  const sleep = state.sleepHoursTypical ?? 7;
-  if (stress >= LIFE_LOAD_STRESS_THRESHOLD || sleep < LIFE_LOAD_SLEEP_HOURS_THRESHOLD) {
-    multiplier *= LIFE_LOAD_RAMP_MULTIPLIER;
-    reasons.push(
-      stress >= LIFE_LOAD_STRESS_THRESHOLD
-        ? "high life stress right now slows the ramp (a coaching rule — recovery is slower under chronic stress)"
-        : "under six hours' sleep slows the ramp (a coaching rule — recovery is slower short of sleep)"
-    );
-  }
-  return { ramp: MAX_WEEKLY_VOLUME_RAMP * Math.max(MIN_COMBINED_RAMP_MULTIPLIER, multiplier), reasons };
+export function taperWeeksFor(goal: Pick<Goal, "enduranceEventKey" | "horizonSource" | "weeksOut">): number {
+  const byEvent = goal.enduranceEventKey ? TAPER_WEEKS_BY_EVENT[goal.enduranceEventKey] : undefined;
+  const wanted = goal.horizonSource === "event_date" && byEvent != null ? byEvent : Math.max(1, Math.round(TAPER_DAYS / 7));
+  return Math.max(1, Math.min(wanted, Math.floor(goal.weeksOut / 4)));
+}
+
+export interface MacrocycleOptions {
+  /** Plan weeks (1-based) the athlete has said they will be away. Each becomes a reduced week rather than a hole. */
+  travelWeeks?: readonly number[];
 }
 
 /**
  * Builds one record per week. `rampMultiplier` comes from the safety screen
- * and the tailoring level and is applied on top of the weekly ceiling, never
- * instead of it.
+ * (halved for novice runners and for a recent injury) and is applied on top
+ * of the 8% ceiling, never instead of it.
  */
 export function buildMacrocycle(
   state: AthleteState,
@@ -158,6 +173,8 @@ export function buildMacrocycle(
   // longer, and the one an under-prepared athlete benefits most from.
   allocation.base += remaining - assigned;
   if (allocation.base < 1) {
+    // A very short block can drive base negative; take the shortfall back off
+    // the later phases rather than emitting a phase of negative length.
     let deficit = 1 - allocation.base;
     allocation.base = 1;
     for (const phase of ["peak", "specific", "build"] as Phase[]) {
@@ -168,51 +185,56 @@ export function buildMacrocycle(
     }
   }
 
-  const { ramp } = effectiveRamp(state, rampMultiplier);
+  let ramp = MAX_WEEKLY_VOLUME_RAMP * rampMultiplier;
+  if (state.enduranceTrainingYears < NOVICE_ENDURANCE_YEARS) ramp *= NOVICE_RAMP_MULTIPLIER;
 
+  /**
+   * A week's endurance budget, floored at one session that is worth doing.
+   *
+   * The budget decides how many endurance slots the week gets
+   * (session-set.ts, affordableBySessionLength) and is quoted back to the
+   * athlete in the week's notes. Below MIN_ENDURANCE_SESSION_MIN it can buy no
+   * session at all, so it stopped describing anything: a real block budgeted
+   * 5 minutes a week for eight weeks while the session generator — which
+   * applies its own floor — wrote 35, 41, 47 and 59-minute runs into those same
+   * weeks. The athlete's note read "5 minutes split any further would be
+   * sessions too short to be worth doing" beside a 35-minute run.
+   *
+   * Zero stays zero. An athlete with no endurance in their plan at all is a
+   * different case from one whose budget rounded below a session, and this must
+   * not conjure running for someone who is not doing any.
+   */
   const viableWeeklyMinutes = (minutes: number): number =>
     minutes <= 0 ? 0 : Math.max(MIN_ENDURANCE_SESSION_MIN, Math.round(minutes));
 
-  // F3: week 1 is exactly what the athlete is already doing. What they
-  // already do may be nothing, in which case week 1 is deliberately small
-  // rather than absent.
-  const startingVolume =
-    state.currentRunMinPerWeek > 0 ? state.currentRunMinPerWeek : PROVISIONAL_START_RUN_MIN_PER_WEEK;
+  const weeks: MacrocycleWeek[] = [];
+  // F3: week 1 is exactly what the athlete is already doing.
+  // An on-ramp is multiplicative, and no multiple of zero is anything but
+  // zero. An athlete currently doing no running — a powerlifter adding
+  // conditioning, a complete beginner — was therefore given a plan with no
+  // endurance minutes in any week, forever. Found by the five-persona
+  // simulation, where three of five athletes received a two-session week of
+  // nothing but generic maintenance.
+  //
+  // Starting from a low floor instead is the conservative reading of "week 1
+  // is what you already do": what they already do is nothing, so week 1 is
+  // deliberately small rather than absent.
+  const startingVolume = onRampStartingVolume(state);
+
   let volume = startingVolume * ONRAMP_START_MULTIPLIER;
-
-  // The block's ceiling: a multiple of the start, and never more than a
-  // quarter past the most the athlete has ever held for a month.
-  const previousMax = state.previousMaxVolumeMin ?? null;
-  let ceiling = startingVolume * ONRAMP_MAX_MULTIPLE;
-  if (previousMax != null && previousMax > 0) {
-    ceiling = Math.min(ceiling, Math.max(startingVolume, previousMax * PREVIOUS_MAX_VOLUME_HEADROOM));
-  }
-
-  const travel = new Set(options.travelWeeks ?? []);
-  const fromWeek = options.fromWeek ?? 1;
-
+  const ceiling = startingVolume * ONRAMP_MAX_MULTIPLE;
   let peakVolume = volume;
   let week = 1;
-  const weeks: MacrocycleWeek[] = [];
+
+  const travel = new Set(options.travelWeeks ?? []);
 
   for (const phase of developmentPhases) {
     const phaseWeeks = allocation[phase];
     for (let i = 0; i < phaseWeeks; i++) {
+      // A declared travel week is a reduced week, not a hole in the block.
       const isTravel = travel.has(week);
       const deload = week % DELOAD_EVERY_N_WEEKS === 0 || isTravel;
-
-      if (week === fromWeek && fromWeek > 1 && options.volumeAtFromWeek != null && options.volumeAtFromWeek > 0) {
-        // Continuing the block: the ramp restarts from what the athlete is
-        // actually doing now, not from where the original projection said
-        // they would be.
-        volume = Math.min(options.volumeAtFromWeek, ceiling);
-      } else if (week > 1 && !deload) {
-        // Above the athlete's own proven ceiling the ramp halves.
-        const stepRamp = previousMax != null && previousMax > 0 && volume >= previousMax
-          ? ramp * ABOVE_PREVIOUS_MAX_RAMP_MULTIPLIER
-          : ramp;
-        volume = Math.min(volume * (1 + stepRamp), ceiling);
-      }
+      if (week > 1 && !deload) volume = Math.min(volume * (1 + ramp), ceiling);
       // Specific and peak hold volume and raise intensity instead.
       if (phase === "specific" || phase === "peak") volume = Math.min(volume, peakVolume);
       peakVolume = Math.max(peakVolume, volume);
@@ -228,8 +250,8 @@ export function buildMacrocycle(
     }
   }
 
-  // Progressive, monotone taper: race week is the deepest cut, and every
-  // week before it is a step above the one after.
+  // Progressive and monotone: race week is the deepest cut and every week
+  // before it sits a step above the one after.
   for (let i = 0; i < taperWeeks; i++) {
     const weeksFromRace = taperWeeks - 1 - i;
     const share =
@@ -251,13 +273,14 @@ export function buildMacrocycle(
 }
 
 // ---------------------------------------------------------------------------
-// F6 — ACWR (backstop)
+// F6 — ACWR
 // ---------------------------------------------------------------------------
 
 /**
  * Acute (1 week) : chronic (rolling 4-week mean), seeded from the athlete's
- * ACTUAL chronic load — in the same stress units as the plan's own weeks —
- * so week 1 is measured against reality rather than zero.
+ * ACTUAL chronic load so week 1 is measured against reality rather than zero.
+ * Seeding is the whole point — an unseeded series makes every on-ramp week
+ * look like a spike and every real spike look normal.
  */
 export function acwrSeries(weeklyStress: number[], seedChronic: number): number[] {
   const out: number[] = [];
@@ -277,7 +300,7 @@ export interface AcwrEnforcement {
   ratios: number[];
   /** One note per week that had to be scaled back — shown to the athlete, not just logged. */
   notes: string[];
-  /** Weeks sitting below the detraining floor. */
+  /** Weeks sitting below the detraining floor. An on-ramp week here is fine, but it must be surfaced as deliberately easy rather than left looking like a bug. */
   belowFloorWeeks: number[];
   /** Weeks between the warning line and the block ceiling. */
   warningWeeks: number[];
@@ -297,6 +320,14 @@ export function enforceAcwr(
   const stress = [...weeklyStress];
   const notes: string[] = [];
 
+  // Cap EVERY breaching week each pass, not just the worst one.
+  //
+  // Capping one week per pass and stopping after ten meant a long block where
+  // many weeks breach simply never converged — the enforcement ran, reported
+  // notes, and shipped a plan still above the ceiling. That is the exact
+  // failure mode the assurance review named: a control that is reported as
+  // present while not actually holding. The passes now scale with the block
+  // length and the loop asserts convergence rather than assuming it.
   const maxPasses = Math.max(ACWR_ENFORCEMENT_PASSES, stress.length * 2);
   for (let pass = 0; pass < maxPasses; pass++) {
     const ratios = acwrSeries(stress, seedChronic);
@@ -305,16 +336,17 @@ export function enforceAcwr(
 
     const padded = [...Array.from({ length: ACWR_CHRONIC_WEEKS }, () => seedChronic), ...stress];
     // Earliest first: capping an early week lowers the chronic denominator for
-    // every week after it, so working forwards converges.
+    // every week after it, so working forwards converges where working from
+    // the worst backwards oscillates.
     const { i: worst, r } = breaching[0];
     const window = padded.slice(worst, worst + ACWR_CHRONIC_WEEKS);
     const chronic = window.reduce((s, v) => s + v, 0) / window.length;
     const capped = chronic * ACWR_WARN;
     if (notes.length < stress.length) {
       notes.push(
-        `Week ${weeks[worst]?.week ?? worst + 1}: the jump in total training load (${r.toFixed(2)}× your recent ` +
-          `average) was over the ${ACWR_BLOCK} backstop, so this week is trimmed from ${stress[worst].toFixed(0)} to ` +
-          `${capped.toFixed(0)} stress units. The ramp is the constraint here, not your ambition.`
+        `Week ${weeks[worst]?.week ?? worst + 1}: acute:chronic load ${r.toFixed(2)} exceeded the ` +
+          `${ACWR_BLOCK} ceiling, so this week is capped from ${stress[worst].toFixed(0)} to ${capped.toFixed(0)} ` +
+          `stress units. The ramp is the constraint here, not your ambition.`
       );
     }
     stress[worst] = capped;

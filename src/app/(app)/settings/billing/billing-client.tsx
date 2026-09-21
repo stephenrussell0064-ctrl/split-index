@@ -4,17 +4,18 @@ import { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import { PREMIUM_PRICE_GBP, FREE_TRIAL_DAYS } from "@/lib/stripe/config";
 import {
   FREE_TIER_FEATURES,
   PREMIUM_TIER_FEATURES,
 } from "@/lib/premium/features";
-import { getTrialDaysRemaining, isPremiumUser } from "@/lib/retention/trial";
+import { getTrialDaysRemaining, hasPaidAccess } from "@/lib/retention/trial";
 import { createClient } from "@/lib/supabase/client";
 import { ScoreDisclaimer } from "@/components/legal/score-disclaimer";
 import { SkuPicker } from "@/components/pricing/sku-picker";
 import { ManageSubscription } from "@/components/pricing/manage-subscription";
+import { LegalLinks } from "@/components/pricing/legal-links";
 import type { SubscriptionStatus, SubscriptionTier } from "@/types";
 
 function BillingContent() {
@@ -50,7 +51,7 @@ function BillingContent() {
   }, []);
 
   const premium = profile
-    ? isPremiumUser(profile.tier, profile.status)
+    ? hasPaidAccess({ subscription_tier: profile.tier, subscription_status: profile.status })
     : false;
   const trialDays = profile
     ? getTrialDaysRemaining(profile.createdAt, profile.tier, profile.status)
@@ -64,9 +65,7 @@ function BillingContent() {
           <p className="text-muted text-sm mb-6">
             Your subscription is active. AI coaching and advanced analytics are now unlocked.
           </p>
-          <Link href="/dashboard">
-            <Button>Go to Dashboard</Button>
-          </Link>
+          <Link href="/dashboard" className={buttonVariants()}>Go to Dashboard</Link>
         </CardContent>
       </Card>
     );
@@ -153,6 +152,10 @@ function BillingContent() {
               </p>
               {/* Native only — see the component for why web renders nothing. */}
               <ManageSubscription className="mt-4" />
+              {/* Guideline 3.1.2 lives on SkuPicker, which a subscriber never
+                  sees. Without this the app's only billing screen loses both
+                  links the moment someone pays. */}
+              <LegalLinks className="mt-4" />
             </>
           )}
         </CardContent>

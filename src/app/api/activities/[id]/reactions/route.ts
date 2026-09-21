@@ -1,3 +1,5 @@
+import { parseBody } from "@/lib/validation/boundary";
+import { reactionSchema } from "@/lib/validation/schemas/routes";
 import { NextResponse } from "next/server";
 import { databaseError } from "@/lib/api/errors";
 import { createClient } from "@/lib/supabase/server";
@@ -21,11 +23,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await request.json().catch(() => ({}));
-  const score = Number(body.score);
-  if (!Number.isInteger(score) || score < 1 || score > 10) {
-    return NextResponse.json({ error: "Score must be a whole number from 1 to 10" }, { status: 400 });
-  }
+  // N1. Same 1-10 range, now with a body cap and unknown keys refused.
+  const parsed = await parseBody(request, reactionSchema);
+  if (parsed.response) return parsed.response;
+  const score = parsed.data.score;
 
   const { data: reaction, error } = await supabase
     .from("activity_reactions")

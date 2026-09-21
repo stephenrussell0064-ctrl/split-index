@@ -18,7 +18,8 @@ export type LockedCardioFields =
   | "flags"
   | "adjustments"
   | "personal"
-  | "fitnessEquivalentSeconds";
+  | "fitnessEquivalentSeconds"
+  | "ageGradeFactor";
 
 export type LockedIndexFields =
   | "labIndex"
@@ -76,6 +77,11 @@ export function gateCardioResult(
       "adjustments",
       "personal",
       "fitnessEquivalentSeconds",
+      // Premium, same as `flags` (which already carries `age-graded`) and
+      // same as strength's `appliedFactors`. The free pick above omits it,
+      // so it is never sent — this list only tells the client what is behind
+      // the gate.
+      "ageGradeFactor",
     ],
   };
 }

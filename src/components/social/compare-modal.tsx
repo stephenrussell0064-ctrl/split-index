@@ -1,5 +1,6 @@
 "use client";
 
+import { useDialog } from "@/components/ui/use-dialog";
 import { useCallback, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, GitCompare } from "lucide-react";
@@ -65,6 +66,10 @@ export function CompareModal({
     return () => clearTimeout(timer);
   }, [open, initialUsername, initialUserId, metric, loadCompare]);
 
+  // See useDialog: Escape, a focus trap, and focus restored to whatever opened
+  // this. None of the app's four modals had any of it.
+  const { dialogRef, dialogProps } = useDialog(onClose, { label: "Compare index trends" });
+
   if (!open) return null;
 
   return (
@@ -73,10 +78,12 @@ export function CompareModal({
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 sm:items-center"
+        className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:items-center sm:pb-4"
         onClick={onClose}
       >
         <motion.div
+          ref={dialogRef}
+          {...dialogProps}
           initial={{ opacity: 0, y: 24 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 24 }}
@@ -88,10 +95,14 @@ export function CompareModal({
               <GitCompare className="h-4 w-4 text-accent" />
               <h2 className="font-semibold">Compare Index Trends</h2>
             </div>
+            {/* lucide marks every childless icon aria-hidden, correctly — which
+                leaves an icon-only button with no accessible name at all, not a
+                weak one. A screen reader said "button". */}
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg p-1.5 text-muted hover:bg-white/5 hover:text-foreground"
+              aria-label="Close comparison"
+              className="-m-1.5 flex h-11 w-11 items-center justify-center rounded-lg text-muted hover:bg-white/5 hover:text-foreground"
             >
               <X className="h-4 w-4" />
             </button>
@@ -138,7 +149,7 @@ export function CompareModal({
               placeholder="@username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              className="flex-1"
+              wrapperClassName="flex-1"
             />
             <Button
               size="sm"

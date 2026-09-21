@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Users, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 
 const STORAGE_KEY = "split-index-friend-invite-dismissed";
 const WEEK_MS = 7 * 86400000;
@@ -35,7 +35,7 @@ export function FriendInviteBanner() {
         type="button"
         aria-label="Dismiss"
         onClick={dismiss}
-        className="absolute right-3 top-3 rounded-lg p-1 text-muted hover:bg-white/5 hover:text-foreground"
+        className="absolute right-1 top-1 flex h-11 w-11 items-center justify-center rounded-lg text-muted hover:bg-white/5 hover:text-foreground"
       >
         <X className="h-4 w-4" />
       </button>
@@ -49,10 +49,8 @@ export function FriendInviteBanner() {
             Athletes with training partners stay consistent 40% longer.
           </p>
         </div>
-        <Link href="/social">
-          <Button variant="secondary" size="sm">
-            Invite friends
-          </Button>
+        <Link href="/social" className={buttonVariants({ variant: "secondary", size: "sm" })}>
+          Invite friends
         </Link>
       </div>
     </div>

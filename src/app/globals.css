@@ -16,6 +16,20 @@
   --accent: #3dff6e;
   --accent-foreground: #04120a;
   --accent-glow: rgba(61, 255, 110, 0.2);
+  /*
+    The keyboard focus outline, and the reason it is not just --accent.
+
+    A focus ring is neither text nor a decorative fill. It is non-text content
+    that carries meaning, so WCAG 1.4.11 puts it at 3:1 against whatever it is
+    drawn on — and `outline-offset: 2px` draws it on the PAGE, not on the
+    control. On the dark shell --accent is #3DFF6E at 15.17:1 and there is
+    nothing to think about. In the Engine there is: see the override in
+    [data-mode="cardio"] .mode-content.
+
+    Follows --accent by default so a palette change carries through, and is
+    pinned only where following it would drop below the bar.
+  */
+  --focus-ring: var(--accent);
   --success: #22c55e;
   --warning: #eab308;
   --danger: #ef4444;
@@ -79,9 +93,34 @@
   --cardio-rim: rgba(59, 166, 255, 0.08);
   --cardio-text: #0c1a24;
   --cardio-muted: #5b7284;
-  /* Engine blue for TEXT on any cardio surface — 5.0:1 or better on all three. */
-  --cardio-accent-text: #006ac2;
-  /* Engine blue for ICONS, BORDERS and CHART LINES — 3.5:1 on the cardio bg. */
+  /*
+    The Engine's blue, dark enough to READ on the Engine's near-white ground.
+
+    #3ba6ff is the brand colour and it stays the brand colour — as a FILL, where
+    it is fine. As text on --cardio-bg it measures 2.50:1, which fails WCAG AA
+    for body text (4.5) and fails the 3:1 large-text floor as well, so the 6xl
+    Endurance Blend number on /cardio was below the bar even at 60px. This is
+    the same hue taken down to 5.30:1, used wherever the accent is ink rather
+    than paint. Computed against #f7fbff, not eyeballed.
+  */
+  --cardio-accent-text: #0b6bb8;
+  /*
+    Semantic colours, re-darkened for the light ground. The dark-theme values
+    are tuned for #060606 and are simply the wrong paint on white: danger 3.62,
+    warning 1.84, success 2.19. These are the same three meanings at 5.6, 5.7
+    and 5.1.
+  */
+  --cardio-danger: #c2261a;
+  --cardio-warning: #8a5a08;
+  --cardio-success: #1f7a4d;
+  /*
+    Engine blue for ICONS, BORDERS and CHART LINES — 3.5:1 on the cardio bg.
+
+    Distinct from --cardio-accent-text above: non-text meaning only has to
+    clear 3:1, so this sits lighter and closer to the brand blue than the
+    text variant, while --cardio-accent-soft (#6bb8ff, 2.03:1) clears
+    neither and must not be used to carry meaning on this ground.
+  */
   --cardio-accent-strong: #0086f6;
 }
 
@@ -120,6 +159,60 @@
 
 * {
   box-sizing: border-box;
+}
+
+/*
+  Let every flex and grid child shrink below its content.
+
+  THE BUG THIS ENDS. A flex or grid item defaults to `min-width: auto`, which
+  means "never narrower than my content". One wide thing inside — a date input
+  Safari sizes to its picker, an exercise name nobody bounded, a long username,
+  a row of chips — pushes its parent past the viewport, and because the parent
+  sits in normal flow the WHOLE PAGE gains a horizontal scrollbar. Not the one
+  card: everything on the screen slides.
+
+  It kept coming back. The Goals tab, the leaderboard, and the target-lift rows
+  were each fixed one at a time by adding `min-w-0` at whichever level happened
+  to be the culprit, and each fix taught us nothing about the next one, because
+  the next one was a different element in a different file. Finding them by
+  reading code does not work either: the offending element is usually several
+  levels above the wide content and looks entirely innocent.
+
+  WHY THIS IS SAFE. `min-width: auto` only means anything for flex and grid
+  items. For every other element `auto` already computes to `0`, so this rule
+  is a no-op outside the exact cases it is meant to change.
+
+  `:where()` keeps the specificity at zero, so any explicit width or min-width
+  utility still wins — `min-w-32`, `min-w-min`, `w-32` all override it without
+  `!important`. Where an item genuinely must not shrink, say so with `flex-none`
+  or `min-w-min` and the intent is then visible in the markup instead of being
+  an accident of the initial value.
+
+  The attribute selectors catch Tailwind's variants — `md:flex`, `lg:grid`,
+  `sm:inline-flex` — which the plain class selectors would miss. They are
+  deliberately loose: they also match things like `flex-1` that are not
+  containers at all, and that costs nothing for the reason above.
+
+  IT MUST STAY INSIDE `@layer base`. Unlayered CSS beats layered CSS outright,
+  whatever the specificity, and Tailwind's utilities are layered. Written
+  outside a layer this rule silently flattens every deliberate `min-w-*` in the
+  app: measured in the browser, `min-w-11` resolved to 0px unlayered and to the
+  correct 44px from inside `@layer base`. The `:where()` then handles the rest,
+  keeping specificity at zero so a utility on the same element always wins.
+
+  WHAT THIS DOES NOT DO. It lets a box shrink; it cannot make content wrap that
+  has been told not to. A `whitespace-nowrap` child still overflows its parent
+  with this rule in force — measured, 358px of text in a 320px row. There are
+  three such places in the app and each is separately bounded. If a fourth
+  appears and drags the page sideways, this rule is not the thing that failed.
+
+  Guarded by no-sideways-scroll.test.ts, which fails if this rule is removed.
+*/
+@layer base {
+  :where(.flex, .inline-flex, .grid, .inline-grid) > *,
+  :where([class*=":flex"], [class*=":grid"], [class*="flex-"], [class*="grid-"]) > * {
+    min-width: 0;
+  }
 }
 
 html {
@@ -164,21 +257,6 @@ body {
 .bg-cardio-zone {
   background: var(--cardio-bg);
   color: var(--cardio-text);
-
-  /*
-    Inside a light Engine surface, the brand blue is remapped to its
-    contrast-tuned variants rather than every `text-cardio-accent` in the app
-    being rewritten.
-
-    That matters because the same class is correct on the DARK shell, where
-    #3BA6FF measures 7.80:1. There are 51 files using it and most of them are
-    fine; the failure is specific to this surface. Scoping the swap here fixes
-    the ones that are wrong without darkening the ones that are right.
-  */
-  --cardio-accent: var(--cardio-accent-text);
-  --cardio-accent-soft: var(--cardio-accent-strong);
-  --accent: var(--cardio-accent-text);
-  --accent-foreground: #ffffff;
 }
 
 /* Legacy class names kept as no-ops for gradual migration */
@@ -284,8 +362,27 @@ body {
   line-height: 1.1;
 }
 
+/*
+  11px, not 10. `.micro-label` is the app's label style and it is on 118
+  elements: card titles, stat captions, the eyebrow above almost every heading.
+  At 0.625rem it was 10px, uppercase, with 0.12em of tracking — a combination
+  that is small before the tracking and smaller after it.
+
+  Raised once here rather than at 118 call sites. Measured first in the
+  narrowest place a micro-label actually sits inside a grid cell — the
+  raw-stats-panel tiles, 153px at 390px — where the longest labels
+  ("Elevation gain", "Avg heart rate") stay on one line at both sizes. The
+  whole cost is 2px of height per label.
+
+  Deliberately NOT accompanied by the `text-[9px]` sweep the audit pairs with
+  this. Several of those 9px instances are load-bearing: the race-prediction
+  strip's distance captions were measured at 320px to fit five across only at
+  that size, and raising them would undo a fit verified two days ago. A 9px
+  label that has been measured into its box is a different thing from one that
+  is small by default.
+*/
 .micro-label {
-  font-size: 0.625rem;
+  font-size: 0.6875rem;
   font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -343,23 +440,104 @@ body {
   */
   --foreground: var(--cardio-text);
   --muted: var(--cardio-muted);
-  --muted-foreground: #5b7284;
-  --accent: var(--cardio-accent-text);
-  --cardio-accent: var(--cardio-accent-text);
-  --cardio-accent-soft: var(--cardio-accent-strong);
-  --accent-foreground: #ffffff;
+  /* Was #7d94a5 — 3.04:1, below AA for the small print it is used on. */
+  --muted-foreground: var(--cardio-muted);
+  --accent: var(--cardio-accent);
+  /*
+    The focus outline, pinned off --accent here.
+
+    --accent stays the brand #3BA6FF in this scope on purpose — it is a FILL,
+    and 2.50:1 does not matter for a fill nobody reads. The focus ring is the
+    one place that reasoning does not reach: it is a 2px line, offset onto the
+    near-white page behind the control, and at #3BA6FF it measured 2.50:1 on
+    --cardio-bg and 2.38:1 on --cardio-bg-elevated. WCAG 1.4.11 asks 3:1 of
+    anything non-text that carries meaning, and a focus ring is the clearest
+    example there is — so in the Engine the keyboard indicator was below the
+    bar on every control not sitting inside .glass-cardio or .bg-cardio-zone,
+    both of which already remap --accent to the readable ink.
+
+    --cardio-accent-strong, not --cardio-accent-text: the palette already
+    distinguishes an ink for words from a stronger blue for icons and borders,
+    and a focus ring belongs with the borders. It measures 3.52:1 on
+    --cardio-bg and 3.36:1 on --cardio-bg-elevated; both are pinned in
+    contrast.test.ts so a palette tweak has to argue with the number.
+
+    This is an addition to the WP12 work, not a correction of it. That pass
+    measured the text uses and the label-on-fill case and fixed both; the
+    outline is a third category it did not have a rule for.
+  */
+  --focus-ring: var(--cardio-accent-strong);
+  /*
+    Dark text on the brand blue, not white.
+
+    White on #3ba6ff is 2.60:1 — every default Button in cardio mode, the
+    "Start GPS tracking" CTA, the three GPS buttons in the log launcher and the
+    raised + in the bottom nav. Swapping the LABEL rather than the fill takes it
+    to 6.80:1 and keeps the brand colour exactly where it was.
+  */
+  --accent-foreground: var(--cardio-text);
   --accent-glow: rgba(14, 165, 233, 0.2);
   --glass: rgba(14, 165, 233, 0.04);
   --glass-border: rgba(12, 26, 36, 0.12);
+  --danger: var(--cardio-danger);
+  --warning: var(--cardio-warning);
+  --success: var(--cardio-success);
 }
 
-/* White-alpha utilities are invisible on the light cardio shell — remap them */
-[data-mode="cardio"] .mode-content [class*="border-white"] {
+/*
+  Accent as INK, on the Engine only.
+
+  The accent has two jobs and one token, and on a light ground they need
+  different values: as a fill #3ba6ff is correct and passes with dark text on
+  it; as text it is 2.50:1 and unreadable. Rather than darken the brand colour
+  everywhere, these two rules redirect only the TEXT uses — the same targeted
+  approach the [class*="text-white"] rule below already takes, and the reason
+  both live here rather than in every component.
+
+  The attribute selector deliberately catches the modifier forms too
+  (text-cardio-accent/80, text-cardio-accent-soft), because those measure 2.08
+  and 2.03 and are the captions under the numbers.
+*/
+[data-mode="cardio"] .mode-content .text-accent,
+[data-mode="cardio"] .mode-content [class*="text-cardio-accent"],
+.bg-cardio-zone [class*="text-cardio-accent"] {
+  color: var(--cardio-accent-text);
+}
+
+/*
+  White-alpha utilities are invisible on the light cardio shell — remap them.
+
+  THE SUBSTRING SELECTOR MATCHES THE VARIANTS TOO. `[class*="bg-white"]` catches
+  `hover:bg-white/5` and `active:bg-white/[0.06]` exactly as readily as a plain
+  `bg-white/5`, and the rule carries no pseudo-class — so at specificity (0,3,0)
+  it beat Tailwind's own `.hover\:bg-white\/5:hover` at (0,2,0) and applied
+  ALWAYS. Two consequences on every /cardio route:
+
+    * `Button variant="ghost"`, whose only white utility is `hover:bg-white/5`,
+      rendered with a permanent grey fill and stopped reading as a ghost button.
+    * Nothing on the cardio theme could change background on press. Every
+      `active:bg-white/[…]` state was dead.
+
+  So the base rule now excludes anything whose class carries a variant prefix —
+  `:bg-white` only appears in `hover:bg-white`, `active:bg-white` and the like,
+  never in the bare utility — and the variants get their own rules with the
+  pseudo-class attached, which is what makes them states again.
+*/
+[data-mode="cardio"] .mode-content [class*="border-white"],
+[data-mode="cardio"] .mode-content[class*="border-white"] {
   border-color: rgba(12, 26, 36, 0.12);
 }
 
-[data-mode="cardio"] .mode-content [class*="bg-white"] {
+[data-mode="cardio"] .mode-content [class*="bg-white"]:not([class*=":bg-white"]) {
   background-color: rgba(12, 26, 36, 0.04);
+}
+
+[data-mode="cardio"] .mode-content [class*="hover:bg-white"]:hover {
+  background-color: rgba(12, 26, 36, 0.06);
+}
+
+[data-mode="cardio"] .mode-content [class*="active:bg-white"]:active {
+  background-color: rgba(12, 26, 36, 0.09);
 }
 
 /**
@@ -385,11 +563,56 @@ body {
   }
 }
 
-[data-mode="cardio"] .mode-content [class*="text-white"] {
+/*
+  The same blanket-match problem, costing hierarchy rather than interaction.
+
+  `text-white`, `text-white/60` and `text-white/50` all collapsed to the same
+  full-strength dark, so on the GPS run review card the "Distance" caption and
+  the "5.02 km" value came out identical and the label/value relationship the
+  layout depends on disappeared. Legible, so a design regression rather than an
+  accessibility failure — but the hierarchy is the reason the card is readable
+  at a glance after a run.
+
+  Graded overrides after the blanket rule, so the opacity steps stay steps. The
+  variant forms are excluded from the base rule for the same reason as the
+  background above: `hover:text-white` is a state, not a colour.
+
+  The `:not()` is repeated on the graded rules DELIBERATELY, and measured: it
+  contributes its argument's specificity, so the base rule sits at (0,4,0) and
+  a graded rule without it at (0,3,0) — the blanket rule would win and every
+  opacity step would still collapse. With it they match at (0,4,0) and source
+  order decides, which is what these rules coming last is for.
+*/
+[data-mode="cardio"] .mode-content [class*="text-white"]:not([class*=":text-white"]) {
   color: var(--cardio-text);
 }
 
-[data-mode="cardio"] .mode-content .glass-strong {
+[data-mode="cardio"] .mode-content [class*="text-white/6"]:not([class*=":text-white"]),
+[data-mode="cardio"] .mode-content [class*="text-white/5"]:not([class*=":text-white"]) {
+  color: var(--cardio-muted);
+}
+
+[data-mode="cardio"] .mode-content [class*="text-white/4"]:not([class*=":text-white"]),
+[data-mode="cardio"] .mode-content [class*="text-white/3"]:not([class*=":text-white"]) {
+  color: var(--cardio-muted);
+  opacity: 0.75;
+}
+
+[data-mode="cardio"] .mode-content [class*="hover:text-white"]:hover {
+  color: var(--cardio-text);
+}
+
+/*
+  Both a descendant AND a compound selector, because the element carrying
+  `mode-content` can itself be the themed surface. AppShell's sidebar is
+  `mode-content ... glass-strong` on ONE element, so the descendant form alone
+  never matched it: the text tokens flipped to the light cardio theme while the
+  panel behind them stayed dark, which is worse than not theming it at all.
+  Verified on an iPad, where the sidebar sits beside the light cardio content
+  and the two have to agree.
+*/
+[data-mode="cardio"] .mode-content .glass-strong,
+[data-mode="cardio"] .mode-content.glass-strong {
   background: rgba(255, 255, 255, 0.9);
   border-color: rgba(12, 26, 36, 0.1);
 }
@@ -470,7 +693,7 @@ body {
 }
 
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -679,11 +902,21 @@ body {
   pointer-events: none;
 }
 
+/*
+  min-height 2.75rem = 44pt, Apple's floor for anything a finger has to hit.
+  These were about 27px tall. The padding is what makes a chip look like a
+  chip, so the height comes from min-height and the text stays centred —
+  raising the padding instead would have made them visually chunky.
+*/
 .logbook-filter-chip {
   font-size: 0.65rem;
   font-weight: 600;
   letter-spacing: 0.16em;
   text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.75rem;
   padding: 0.45rem 0.9rem;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.1);

@@ -26,11 +26,68 @@
  */
 
 /**
- * Bump on any change to a value in this file. Stamped onto every profile and
- * plan (see `constantsVersion` on AthleteProfile) — the audit trail for "why
- * did this athlete's plan change when their data didn't".
+ * Bump whenever the same inputs would now produce a different plan.
+ *
+ * That is broader than the rule this comment used to state — "bump on any
+ * change to a value in this file" — and the wording is corrected because the
+ * narrow reading let the field go stale precisely when it mattered most. Four
+ * consecutive changes to how weeks are built altered nearly every generated
+ * plan without touching a single number here, so by the letter of the old rule
+ * no bump was due, while the question the field exists to answer ("why did this
+ * athlete's plan change when their data didn't") had four new answers and no
+ * way to tell them apart. A version that only moves when constants move is not
+ * an audit trail for generation, it is an audit trail for this file.
+ *
+ * So: a change to a value here, or anywhere in the generation path that moves
+ * the output, moves this. Refactors that provably cannot change a plan do not.
+ *
+ * WHAT A BUMP DOES. `evaluateRerun` in persistence.ts treats a version change
+ * as grounds to regenerate — but only for an athlete whose diagnostic is
+ * already due (`due && (... || constantsChanged || ...)`), so a bump never
+ * rebuilds anyone's plan out from under them. When their next rerun does come
+ * around, they are told the constants moved and their plan was rebuilt under
+ * the current rules instead of being left on the old ones. That sentence is
+ * the whole point of the field.
+ *
+ * 2.2.0 — the four budget-honesty fixes. A week no longer prescribes more
+ * endurance than it budgeted (28% of weeks did, worst 4.8x), no longer
+ * advertises a budget it cannot spend (54% spent under 90%, median 84%), no
+ * longer exceeds the weekly hours the athlete gave (22% did, worst 3.0x), and
+ * the ACWR cap now trims the sessions rather than only the heading above them.
+ * Minor rather than major: plans change, the contract does not.
+ *
+ * 2.3.0 — the September evidence review. Six changes, every one of which
+ * moves generated plans, which is why this field moves with them:
+ *
+ *   - HYROX carries its 8km of running, so it resolves as an endurance event
+ *     instead of being filtered out and classified maintain. Anyone training
+ *     for it gets a materially different plan, not a tuned one.
+ *   - The long run is held to 10% past the longest of the last four weeks
+ *     (Frandsen 2025), and comes down on a deload instead of being the one
+ *     session the deload left alone.
+ *   - The taper follows the event: one week for a 5k or 10k, two for a half,
+ *     three for a marathon, monotone rather than flat.
+ *   - Concurrent interference lands on the lower-body share for men under
+ *     real running volume, rather than as a flat 18% on everyone including
+ *     women and bench presses.
+ *   - Strength training age is floored by relative strength, so an unanswered
+ *     history question no longer promises a beginner's rate to somebody
+ *     squatting twice bodyweight.
+ *   - Age eases the rate only past sixty.
+ *
+ * The projection also gained an 80% interval, a probability and a goal level
+ * alongside its existing point fields. Those are additive, so the contract
+ * holds and this stays a minor bump — but plans and the numbers quoted with
+ * them both change, which is the test this field is supposed to answer to.
+ *
+ * Bumped late, and that is the failure this comment warns about: the six
+ * commits went to main without moving it, so for a few hours the field said
+ * 2.2.0 over plans no 2.2.0 engine would have produced. `evaluateRerun` reads
+ * a version change as grounds to rebuild a plan at an athlete's next due
+ * rerun and tell them why, so leaving it stale would have quietly denied them
+ * both.
  */
-export const HPE_CONSTANTS_VERSION = "3.0.0";
+export const HPE_CONSTANTS_VERSION = "2.3.0";
 
 // ---------------------------------------------------------------------------
 // Fatigue resistance (Riegel exponent)
@@ -171,6 +228,22 @@ export const VOLUME_ADEQUACY_MIN_PER_WEEK: ReadonlyArray<readonly [number, numbe
 ];
 /** [EST] Below this ratio of actual to typical weekly minutes, volume — not intensity — is the highest-return lever. */
 export const VOLUME_ADEQUACY_LOW = 0.7;
+/**
+ * [EST] Share of the volume a 5k level is historically built on, below which
+ * the on-ramp anchor is treated as implausible rather than merely low.
+ *
+ * Not VOLUME_ADEQUACY_LOW. That threshold answers "is volume this athlete's
+ * limiting factor", which is a coaching judgement about someone whose number
+ * is believed. This one answers a narrower question: could this athlete have
+ * run that time off this volume at all? An 18:25 5k on 25 min/week is not a
+ * training choice, it is a number that has gone wrong somewhere — a week of
+ * sessions logged on another watch, or a figure typed into the wrong box.
+ *
+ * A quarter is deliberately far below anything a coach would prescribe, so it
+ * only ever catches the pathological case and leaves genuinely low-volume
+ * athletes — who do exist at every level — with the number they gave.
+ */
+export const ONRAMP_PERFORMANCE_FLOOR_SHARE = 0.25;
 /** [EST] Above this ratio, volume is ample and returns come from intensity quality instead. */
 export const VOLUME_ADEQUACY_HIGH = 1.4;
 
@@ -510,8 +583,6 @@ export const HEAVY_LOWER_TO_QUALITY_ENDURANCE_H = 48.0;
 export const QUALITY_ENDURANCE_TO_HEAVY_LOWER_H = 24.0;
 /** [ASSURED] F11-adjacent: deadlifting close before a long run is a lumbar-loading risk. */
 export const DEADLIFT_TO_LONG_RUN_H = 48.0;
-/** [EST] Two quality endurance sessions closer than this is a hard/hard pair the hard-easy rule forbids. */
-export const QUALITY_ENDURANCE_SPACING_H = 36.0;
 /** [EST] Longest run of consecutive training days before a rest day is forced. */
 export const MAX_CONSECUTIVE_TRAINING_DAYS = 6;
 /** [ASSURED] F10: any long run over this many minutes counts as QUALITY for spacing purposes. A 90-minute long run 37 hours after heavy squats must not pass the spacing checks. */
@@ -545,73 +616,37 @@ export const ONRAMP_MAX_MULTIPLE = 2.6;
 /** [EST] Ramp rate is halved for athletes under this many years of consistent running. */
 export const NOVICE_ENDURANCE_YEARS = 0.5;
 export const NOVICE_RAMP_MULTIPLIER = 0.5;
-/** [EST] F4: deload every fourth week. A 3:1 or 4:1 pattern is coaching consensus in both sports (Bell 2023/2024 Delphi and survey: every 5.6 ± 2.3 weeks); there is no controlled endurance evidence for the cadence itself, and one resistance trial (Coleman 2024) found a full week OFF cost strength. So this is a reduced week, never an empty one. */
+/** [ASSURED] F4: deload every fourth week. Twenty-four weeks of uninterrupted progression appears in no credible programme in either sport. */
 export const DELOAD_EVERY_N_WEEKS = 4;
 /**
- * [EST] Endurance volume on a deload week, as a share of the surrounding
- * weeks. Practitioner sources (Daniels, Pfitzinger) cut 20-30%; the previous
- * 0.6 was a 40% cut that, combined with the session floors, removed the easy
- * run and left the long run untouched — the opposite of what a recovery week
- * is for. Intensity is HELD; dropping both is detraining, not deloading.
- */
-export const DELOAD_VOLUME_MULTIPLIER = 0.7;
-/** [EST] The long run on a deload week, relative to the long run the week before. It was the one session the deload did not touch, and it is the most fatiguing one. */
-export const DELOAD_LONG_RUN_MULTIPLIER = 0.75;
-/** [EST] Strength deload: sets cut to this share (Bell 2023 consensus: −40-50% volume, frequency kept), and effort backed off by one rep in reserve. */
-export const DELOAD_STRENGTH_SET_MULTIPLIER = 0.6;
-export const DELOAD_STRENGTH_RIR_BONUS = 1;
-
-/**
- * [DATA] The single-session spike rule. Frandsen, Hulme, Parner ... Nielsen
- * 2025 (Br J Sports Med; 5,205 runners, 588,071 sessions): a run more than 10%
- * longer than the longest run of the previous 30 days raised the overuse-injury
- * hazard by 64% (10-30% over), 52% (30-100% over) and 128% (>100% over). It
- * out-predicted both the week-to-week ratio and the acute:chronic ratio, which
- * showed no association and an inverse one respectively. So the long run may
- * not exceed this multiple of the longest recent run, and each week's long run
- * may not exceed it relative to the previous week's.
+ * [DATA] The single-session spike rule — the best-supported injury control in
+ * the running literature, and the one this engine did not have.
+ *
+ * Frandsen, Hulme, Parner ... Nielsen 2025 (Br J Sports Med), 5,205 runners
+ * and 588,071 sessions: a run more than 10% longer than the longest run of
+ * the previous 30 days raised the overuse-injury hazard by 64% (10-30% over),
+ * 52% (30-100%) and 128% (>100%). In the same cohort the week-to-week ratio
+ * showed no association at all, and the acute:chronic ratio ran the WRONG
+ * WAY — large "spikes" by that measure were associated with fewer injuries,
+ * not more.
+ *
+ * So the long run — the session this binds, because it is the one that grows
+ * — may not exceed this multiple of the longest run of the last month.
  */
 export const SESSION_SPIKE_MAX_MULTIPLE = 1.1;
 
 /**
- * [EST] Ramp multiplier once weekly volume passes the highest the athlete has
- * ever held for a month (`previousMaxVolume`). Above their own proven ceiling
- * the evidence base is thinner, so the ramp halves rather than stops — the
- * ceiling is a fact about their history, not a law.
+ * [EST] The long run on a deload week, against the longest of the recent
+ * weeks. The deload cut volume and left the long run untouched, which is the
+ * single most fatiguing session of the week surviving the week meant to
+ * recover from it.
  */
-export const ABOVE_PREVIOUS_MAX_RAMP_MULTIPLIER = 0.5;
-/** [EST] How far past the previous maximum the block may take them at all, as a multiple. */
-export const PREVIOUS_MAX_VOLUME_HEADROOM = 1.25;
+export const DELOAD_LONG_RUN_MULTIPLIER = 0.75;
 
-/**
- * [EST] Recovery-and-life-load modifier. Life stress ≥ 4/5 or habitual sleep
- * under 6 hours slows the ramp and holds quality to one session a week.
- * Bartholomew 2008 and Stults-Kolehmainen 2014 show slower recovery and
- * smaller strength gains under chronic stress; the effect on a ramp rate is a
- * practitioner translation, tagged as such in the plan notes.
- */
-export const LIFE_LOAD_STRESS_THRESHOLD = 4;
-export const LIFE_LOAD_SLEEP_HOURS_THRESHOLD = 6;
-export const LIFE_LOAD_RAMP_MULTIPLIER = 0.75;
-export const LIFE_LOAD_MAX_QUALITY_SESSIONS = 1;
+/** [ASSURED] -40% volume with intensity HELD. Dropping both is detraining, not deloading. */
+export const DELOAD_VOLUME_MULTIPLIER = 0.6;
 
-/**
- * [ASSURED] Floor on the COMBINED ramp multiplier. The novice halving, the
- * provisional halving and the safety-screen halving used to compound, so a
- * beginner with nothing logged ramped at 1-2% a week and went from 60 to 63
- * minutes in twelve weeks. Uncertainty is paid for in caution, not in a block
- * that does nothing.
- */
-export const MIN_COMBINED_RAMP_MULTIPLIER = 0.5;
-
-/**
- * [BETA] Gabbett 2016. Kept as a BACKSTOP, not a control. Impellizzeri 2020
- * found no causal evidence for the ratio and unsound statistics behind it, and
- * in 5,205 runners it was inversely associated with injury (Frandsen 2025).
- * The controls that carry evidence are the weekly ramp cap and the
- * single-session spike rule above; this ratio is displayed, and only a week
- * beyond ACWR_BLOCK is scaled back.
- */
+/** [DATA] Gabbett. Matches the live injury-risk engine's own warning line. */
 export const ACWR_WARN = 1.3;
 /** [ASSURED] QC-4 hard ceiling — any week breaching this is scaled back, not merely flagged. */
 export const ACWR_BLOCK = 1.5;
@@ -629,44 +664,41 @@ export const ACWR_ENFORCEMENT_PASSES = 10;
 export type TrainingAge = "novice" | "intermediate" | "advanced" | "elite";
 
 
-/**
- * [DATA] Fractional 1RM gain per 12-week block by training age — the MEAN of
- * the observed distribution, with its SD beside it.
- *
- * Novice: Ahtiainen 2016 (n=287, 21 weeks, +21 ± 11.5%) scaled to 12 weeks;
- * Hubal 2005 ranges. Intermediate: supervised 6-12 week trials in trained
- * lifters (Helms 2018, Dorrell 2020: +8-14% squat, +4-10% bench) shaded down
- * to the meet data. Advanced/elite: Latella 2020/2024 (n=1,897 and 9,259
- * competitive powerlifters: +7.5-12.5% in the first year of competing, ≤ +4%
- * a year after three). The SD is what the athlete will actually see, not the
- * noise-free trainability variance, because it is the total they experience.
- */
+/** [EST] Fractional strength gain per 12-week block by training age. */
 export const STRENGTH_GAIN_PER_BLOCK: Readonly<Record<TrainingAge, number>> = {
-  novice: 0.12,
-  intermediate: 0.05,
-  advanced: 0.02,
-  elite: 0.01,
+  novice: 0.1,
+  intermediate: 0.04,
+  advanced: 0.018,
+  elite: 0.008,
 };
+/** [EST] Fractional endurance gain (time reduction) per 12-week block. */
+export const ENDURANCE_GAIN_PER_BLOCK: Readonly<Record<TrainingAge, number>> = {
+  novice: 0.07,
+  intermediate: 0.03,
+  advanced: 0.015,
+  elite: 0.006,
+};
+/**
+ * [DATA] The SPREAD around each gain rate, as the cohorts report it.
+ *
+ * The rates above are means. Quoting a mean as a forecast is the error this
+ * engine has made since it was written: two athletes of the same training age
+ * on the same plan do not get the same result, and the spread is not small.
+ * Ahtiainen 2016 (n=287, 21 weeks) found strength gains of +21 +/- 11.5% with
+ * a range from -8% to +60%; Hubal 2005 (n=585) found 1RM changes from 0% to
+ * +250%; HERITAGE found VO2max responses from about -2% to over +40% on one
+ * identical 20-week programme.
+ *
+ * These are the OBSERVED spreads, not the noise-free trainability spreads.
+ * Renwick 2024 shows the true between-person variance is smaller and most of
+ * the observed scatter is measurement error — but the observed spread is what
+ * the athlete experiences, so it is what the interval is drawn from.
+ */
 export const STRENGTH_GAIN_SD_PER_BLOCK: Readonly<Record<TrainingAge, number>> = {
   novice: 0.07,
   intermediate: 0.035,
   advanced: 0.02,
   elite: 0.012,
-};
-/**
- * [DATA] Fractional endurance gain (race-time reduction) per 12-week block.
- *
- * Novice: HERITAGE-scale VO2max change (+15-19%) converts to roughly 8-10% of
- * pace; recreational: 10-week trials in recreational runners (Muñoz 2014
- * +3.6-5.0% 10k, Festa 2020 +3-3.5% 2k in 8 weeks); trained: HIIT add-on
- * trials (+1.5-2.3% in 4 weeks) and Filipas 2022 (+1.5% 5k in 16 weeks,
- * well-trained). Elite: within the 1-2% test-retest noise of a 5k.
- */
-export const ENDURANCE_GAIN_PER_BLOCK: Readonly<Record<TrainingAge, number>> = {
-  novice: 0.09,
-  intermediate: 0.045,
-  advanced: 0.025,
-  elite: 0.01,
 };
 export const ENDURANCE_GAIN_SD_PER_BLOCK: Readonly<Record<TrainingAge, number>> = {
   novice: 0.05,
@@ -674,124 +706,64 @@ export const ENDURANCE_GAIN_SD_PER_BLOCK: Readonly<Record<TrainingAge, number>> 
   advanced: 0.02,
   elite: 0.015,
 };
+
 /**
- * [DATA] Diminishing returns across blocks. Gains are roughly linear over
- * one or two blocks (Emig & Peltonen 2020 volume slope; Latella first-year
- * rate) and flatten after that, so a 52-week horizon is not 4.3 × a 12-week
- * one. Exponent applied to the block count.
+ * [DATA] Gains flatten across blocks rather than compounding. A 52-week
+ * horizon is not 4.3x a 12-week one — Emig & Peltonen 2020 show aerobic power
+ * saturating against training volume, and Latella's powerlifting cohorts run
+ * at 7.5-12.5% in the first year of competing against under 4% a year after
+ * three. Exponent on the block count.
  */
 export const MULTI_BLOCK_GAIN_EXPONENT = 0.85;
-/**
- * [DATA] Concurrent-training interference on LOWER-BODY strength for a trained
- * male lifter with meaningful running volume. Petré 2021: trained ES −0.35,
- * same-session −0.66, separated −0.10; Huiberts 2024: men SMD −0.43, women
- * +0.08. The old flat 18% (Wilson 2012, mostly untrained, within-group ratios)
- * is not supported as a general penalty — Schumann 2022 pooled max-strength
- * SMD is −0.06. So: applied to squat and deadlift only, for men only, only
- * once running is a real weekly load, and never to bench.
- */
-export const CONCURRENT_ATTENUATION_LOWER_BODY_MALE = 0.25;
-/** [DATA] Running minutes per week above which the lower-body interference term applies (≈30 km/week). */
-export const CONCURRENT_ATTENUATION_RUN_MIN_THRESHOLD = 150;
-/** [DATA] Endurance is not impaired by strength work in trained runners (Huiberts 2024 SMD 0.18); a small cost appears only in the endurance-untrained (SMD −0.35). */
-export const CONCURRENT_ATTENUATION_ENDURANCE_NOVICE = 0.15;
-/** [DATA] Llanos-Lagos 2024, Blagrove 2018 — HEAVY (≥80% 1RM) strength work improves running economy 2-8% and time-trial performance. Applied only when the plan actually delivers two heavy sessions a week. */
-export const RUNNING_ECONOMY_BONUS_PER_BLOCK = 0.01;
-export const RUNNING_ECONOMY_MIN_HEAVY_SESSIONS = 2;
 
 /**
- * [DATA] Dose gates. Montero & Lundby 2017: non-response to endurance training
- * was 69% at 60 min/week, 40% at 120, 29% at 180 and 0% at 240+. Below the
- * upper gate the expected gain is scaled down toward the floor share; the
- * plan says so BEFORE it says the goal is infeasible, because the honest
- * statement is "this plan's running dose gives a ~40% chance of no measurable
- * aerobic gain", not "you cannot get there".
- */
-export const ENDURANCE_DOSE_FULL_MIN_PER_WEEK = 180;
-export const ENDURANCE_DOSE_FLOOR_MIN_PER_WEEK = 60;
-export const ENDURANCE_DOSE_FLOOR_SHARE = 0.4;
-/** [DATA] Androulakis-Korakakis 2021: 3-6 hard sets per lift per week at ≥80% is the floor for meaningful gain in trained lifters; Ralston 2017: ≥10 sets/week adds ~20-25% to the rate. */
-export const STRENGTH_DOSE_FULL_SETS_PER_LIFT_PER_WEEK = 6;
-export const STRENGTH_DOSE_FLOOR_SETS_PER_LIFT_PER_WEEK = 2;
-export const STRENGTH_DOSE_FLOOR_SHARE = 0.5;
-
-/**
- * [DATA] Learning this athlete's OWN rate of improvement from their logged
- * diagnostic history, and how little to trust a short observation of it.
- *
- * Renwick 2024: most of the variation in observed change scores after an
- * intervention is measurement error, not trainability. Bonafiglia 2021: most
- * studies cannot separate the two at all. So the observed rate is blended into
- * the population prior at a weight that starts near zero, reaches 0.3 only
- * after a full block of observation, and is clamped so no single reading can
- * more than halve or double the expected rate. The 0.3 is the feasibility
- * brief's rule 9, which sets it at roughly the share of a single block's
- * deviation that is signal rather than noise.
- */
-export const RESPONSE_MIN_WEEKS = 4;
-export const RESPONSE_FULL_WEIGHT_WEEKS = 12;
-export const RESPONSE_SHRINKAGE_WEIGHT = 0.3;
-export const RESPONSE_MIN_RATE_MULTIPLE = 0.5;
-export const RESPONSE_MAX_RATE_MULTIPLE = 2.0;
-
-/**
- * [DATA] Measurement noise. A 5k time trial in trained runners repeats to
- * 1-2%; a 1RM to 2-3% day to day (Zourdos 2016 daily-max series: 2.4 ± 1.7%).
- * An expected gain below twice the noise is labelled as not measurable within
- * the block rather than promised.
+ * [DATA] Measurement noise. A 5k time trial repeats to 1-2% in trained
+ * runners; a daily 1RM swings 2.4 +/- 1.7% (Zourdos 2016). An expected gain
+ * under twice the noise is reported as a trend to watch rather than as a
+ * number to test against on one day.
  */
 export const RUN_TEST_NOISE_FRACTION = 0.02;
 export const ONE_RM_TEST_NOISE_FRACTION = 0.03;
 
 /**
- * [DATA] Adherence prior — the probability the block is completed as
- * written. STRRIDE and supervised trials: ~70% complete a structured plan;
- * unsupervised novice running plans 30-55% (Couch-to-5k 27% completion,
- * Relph 2023, with prior injury OR 7.6 for dropout). Applied multiplicatively
- * to the goal probability, with the partial-completion branch assuming ~40%
- * of the block's gain (dropouts cluster before the midpoint).
+ * [DATA] The probability quoted to the athlete includes the chance they do
+ * not finish the block, because that is the outcome they actually face.
+ *
+ * STRRIDE and comparable supervised trials lose about 30%, concentrated in
+ * the ramp-in weeks. Unsupervised novice running plans do far worse: Relph
+ * 2023 saw 27% of a Couch-to-5k cohort complete, with prior injury carrying
+ * an odds ratio of 7.6 for dropping out. Dropouts cluster before the midpoint,
+ * so a partial block is modelled at roughly 40% of its gain.
  */
 export const ADHERENCE_BASE = 0.7;
 export const ADHERENCE_PRIOR_INJURY_MULTIPLIER = 0.8;
 export const ADHERENCE_NOVICE_ENDURANCE_MULTIPLIER = 0.8;
-export const ADHERENCE_LIFE_LOAD_MULTIPLIER = 0.85;
-export const ADHERENCE_OVER_AVAILABILITY_MULTIPLIER = 0.85;
 export const PARTIAL_COMPLETION_GAIN_SHARE = 0.4;
-/** [EST] Joint probability of two goals is not the product — adherence and recovery are shared. */
+/** [EST] Two goals are not independent — they share the same athlete, the same week and the same adherence draw. */
 export const JOINT_GOAL_CORRELATION = 0.9;
 
 /**
- * [DATA] Goal-difficulty rules (Locke & Latham; Bar-Eli 1997: +20% goals
- * beat +40% ones; Swann 2021: open goals for novices). A target beyond the
- * mean plus one SD is kept as the STRETCH goal with a primary goal at the
- * mean; beyond two SDs it is a multi-block goal and the block is built toward
- * the milestone.
+ * [DATA] Where a target sits against the athlete's own expected outcome
+ * decides how it is framed. Bar-Eli 1997 found difficult-but-realistic goals
+ * (+20%) outperformed improbable ones (+40%); Locke & Latham find commitment
+ * collapses once a goal reads as a threat rather than a challenge; Swann 2021
+ * recommends open goals for the inexperienced. So beyond one SD a target
+ * becomes the stretch and the expected outcome becomes the primary goal;
+ * beyond two it is named as a multi-block goal.
  */
 export const STRETCH_GOAL_SD = 1.0;
 export const MULTI_BLOCK_GOAL_SD = 2.0;
 
 /**
- * [DATA] Race-time equivalence exponents. Riegel's 1.06 is calibrated to the
- * half marathon and under-predicts the marathon by ≥10 min for half of
- * recreational runners (Vickers & Vertosick 2016); population exponents are
- * 1.10-1.15 (Blythe & Király 2016, 164,746 runners), elites 1.08-1.09. The
- * marathon exponent is conditioned on weekly volume: runners over ~65 km a
- * week with a 30 km long run in the log behave like the calibrated case.
- */
-export const EVENT_RIEGEL_K_UP_TO_HALF = 1.07;
-export const EVENT_RIEGEL_K_MARATHON_HIGH_VOLUME = 1.08;
-export const EVENT_RIEGEL_K_MARATHON_LOW_VOLUME = 1.12;
-/** [DATA] Fokkema 2020: marathon >65 km/week was 14 min faster; expressed here as running minutes per week at a typical easy pace. */
-export const MARATHON_HIGH_VOLUME_MIN_PER_WEEK = 330;
-
-/**
- * [DATA] Strength training age inferred from relative strength, as a floor
- * under what the athlete said — the same rule as the 5k floor on endurance
- * training age. Someone squatting twice bodyweight is not a novice whatever
- * they typed. Thresholds are total ÷ bodyweight (community strength
- * standards, crowd-sourced: intermediate ≈ 1.5×BW squat, 1×BW bench, 2×BW
- * deadlift ≈ 4.5× total; advanced ≈ 6×). Female thresholds are scaled by the
- * live scoring engine's own sex factor rather than reinvented here.
+ * [DATA] Strength training age inferred from relative strength, as a FLOOR
+ * under what the athlete typed — the same rule the 5k already applies to
+ * endurance training age.
+ *
+ * Unanswered training-age questions resolve to zero years, which is the
+ * novice bucket and the largest gain rate in the table. Somebody squatting
+ * twice bodyweight who skipped the history section was being promised a
+ * novice's progress. Thresholds are total divided by bodyweight, from the
+ * crowd-sourced strength standards athletes already frame themselves in.
  */
 export const STRENGTH_TRAINING_AGE_FLOOR_BY_RELATIVE_TOTAL: ReadonlyArray<readonly [number, TrainingAge]> = [
   [6.0, "advanced"],
@@ -799,9 +771,44 @@ export const STRENGTH_TRAINING_AGE_FLOOR_BY_RELATIVE_TOTAL: ReadonlyArray<readon
 ];
 export const FEMALE_RELATIVE_TOTAL_FACTOR = 0.72;
 
-/** [EST] Age term, only where the evidence supports one: trainability is preserved to about 60 (Peterson 2010, Huang 2016); a small ceiling penalty per decade beyond. */
+/**
+ * [DATA] Concurrent interference, applied where the meta-analyses find it
+ * rather than as a flat penalty on everything.
+ *
+ * The flat 18% below comes from Wilson 2012, whose sample was largely
+ * untrained and whose figure is a ratio of within-group effect sizes. It has
+ * not survived: Schumann 2022 (43 studies) puts the pooled effect on maximal
+ * strength at SMD -0.06, indistinguishable from zero. What does replicate is
+ * narrower — Petre 2021 finds ES -0.35 in TRAINED lifters, -0.66 when both
+ * are trained in one session and -0.10 when they are separated; Huiberts 2024
+ * finds SMD -0.43 in men and +0.08 in women. Upper body is unaffected
+ * throughout.
+ *
+ * So: lower-body lifts only, men only, and only once running is a real weekly
+ * load. Never bench, never women, never as a blanket discount.
+ */
+export const CONCURRENT_ATTENUATION_LOWER_BODY_MALE = 0.25;
+/** [DATA] Running minutes a week past which the interference term applies — roughly 30km. */
+export const CONCURRENT_ATTENUATION_RUN_MIN_THRESHOLD = 150;
+
+/** [EST] Trainability holds to about 60 (Peterson 2010; Huang 2016; Skinner 2001), then eases. */
 export const AGE_GAIN_PENALTY_START = 60;
 export const AGE_GAIN_PENALTY_PER_DECADE = 0.15;
+
+/**
+ * [SUPERSEDED] Wilson 2012's flat attenuation. Kept only so the constants
+ * register records what was replaced and why — nothing reads it.
+ *
+ * Its sample was largely untrained and the 18% is a ratio of within-group
+ * effect sizes rather than a between-group estimate. Schumann 2022 (43
+ * studies) puts the pooled effect on maximal strength at SMD -0.06. See
+ * CONCURRENT_ATTENUATION_LOWER_BODY_MALE for what replaced it.
+ */
+export const CONCURRENT_ATTENUATION_STRENGTH = 0.18;
+/** [EST] The smaller reciprocal cost to endurance. */
+export const CONCURRENT_ATTENUATION_ENDURANCE = 0.05;
+/** [DATA-derived] Llanos-Lagos 2024 — strength work improves running economy independently of aerobic gain. */
+export const RUNNING_ECONOMY_BONUS_PER_BLOCK = 0.01;
 /** [ASSURED] How far the priority slider may skew the split of adaptation between domains. */
 export const PRIORITY_SHARE_SKEW = 0.6;
 /** [ASSURED] A domain is "develop" rather than "maintain" once the gap exceeds this fraction of the available headroom. */
@@ -889,40 +896,36 @@ export const DEADLIFT_AFTER_RACE_IS_UNSAFE = true;
 // ---------------------------------------------------------------------------
 
 export const TAPER_DAYS = 10;
+
 /**
- * [DATA] Taper length by event. Bosquet 2007 / Wang 2023 meta-analyses: the
- * best time-trial effect is 8-14 days at a 41-60% progressive volume cut with
- * intensity and frequency held; elite British runners taper 6 days for
- * 3k-10k and 14 days for the marathon (Spilsbury 2015); 158,117 Strava
- * marathoners ran fastest off strict 2-3 week tapers (Smyth & Lawlor 2021).
- * Weeks, keyed by the running event; 1 for everything else.
+ * [DATA] Taper length in WEEKS, by event. The engine tapered for one week
+ * whatever the athlete was training for, which is right for a 5k and wrong
+ * for a marathon by a fortnight.
+ *
+ * Bosquet 2007 and Wang 2023 (meta-analyses): the best time-trial effect
+ * comes from 8-14 days at a 41-60% progressive volume cut with intensity and
+ * frequency held. Spilsbury 2015 timed elite British runners at a median 6
+ * days for 3k-10k and 14 days for the marathon. Smyth & Lawlor 2021, across
+ * 158,117 Strava marathons, found strict monotone 2-3 week tapers fastest,
+ * worth about 2-3% on finish time.
+ *
+ * Absent from this table means one week, which is the right answer for a
+ * powerlifting meet, a 2k row, and a block with no event at all.
  */
 export const TAPER_WEEKS_BY_EVENT: Readonly<Record<string, number>> = {
   "5k": 1,
   "10k": 1,
+  hyrox: 1,
   half: 2,
   marathon: 3,
 };
+
 /**
- * [DATA] Endurance volume in each taper week as a share of peak, progressive
- * and monotone — a step taper is worse than an exponential one and an up-week
- * inside the taper is worse than either. Indexed from the last week backwards:
- * race week first.
+ * [DATA] Endurance volume in each taper week as a share of peak, race week
+ * first. Progressive and monotone: an exponential taper beats a step taper
+ * (Bosquet 2007), and an up-week inside the taper beats neither.
  */
 export const TAPER_ENDURANCE_SHARE_BY_WEEK_FROM_RACE: readonly number[] = [0.5, 0.65, 0.8];
-/**
- * [DATA] Lift-specific ceilings inside the final seven days. Travis 2021
- * (n=364 raw lifters) and Burke 2023: last heavy deadlift 7-10 days out,
- * squat about 7, bench 3-5; final sessions at 70-80%. Deadlift benefits from
- * more rest, bench suffers from more than about four days off.
- */
-export const TAPER_FINAL_WEEK_INTENSITY_CEILING: Readonly<Record<string, number>> = {
-  deadlift: 0.75,
-  squat: 0.8,
-  bench: 0.9,
-};
-/** [DATA] Quality endurance work in the taper keeps its intensity and loses volume: rep count is scaled by this, never the pace. */
-export const TAPER_QUALITY_REP_MULTIPLIER = 0.6;
 /** [DATA] Strength volume cut. */
 export const TAPER_VOLUME_REDUCTION = 0.5;
 /** [DATA] Intensity floor held through the taper — cutting both is detraining. */
@@ -975,39 +978,6 @@ export const STRENGTH_PHASE_SPEC: Readonly<
   taper: { pct: [0.85, 0.92], reps: [1, 2], rir: [2, 3], sets: 2 },
 };
 
-/**
- * [DATA] Within-phase progression of the strength load band. Each phase's
- * spec is a band (e.g. 75-85%); the prescribed sub-band walks from the bottom
- * of it in the first week of the phase to the top in the last, so two weeks
- * of the same phase are never the same session. Travis 2020: intensity rises
- * ≤15% across a block; Moesgaard 2022: variation within the week and across
- * weeks beats a fixed scheme (ES 0.31-0.61 in trained lifters). Width of the
- * prescribed sub-band as a share of the phase band.
- */
-export const STRENGTH_SUBBAND_WIDTH = 0.5;
-/**
- * [DATA] The working maximum the loads are written against advances across
- * the block by the feasibility model's EXPECTED gain — a 140kg squatter whose
- * block is expected to add 5% is lifting percentages of 147 by the end of it,
- * not of 140. Capped so a novice's large expected gain cannot run ahead of
- * the athlete: the SRI adaptive 1RM re-anchors it from logged sets on every
- * regeneration.
- */
-export const WORKING_MAX_PROGRESSION_CAP = 0.08;
-/**
- * [DATA] A peaking athlete's lower-body day carries BOTH lower lifts: the
- * day's primary at the full prescription and the other as a secondary at
- * reduced sets and load. With three gym days a week the split rotation alone
- * gave each lower lift four sets every second week — under the 3-6 hard sets
- * per lift per week floor (Androulakis-Korakakis 2021) and the 2×/week squat
- * frequency floor (Grgic 2018). Secondary sets and the load offset below the
- * primary's band.
- */
-export const SECONDARY_LIFT_SETS = 3;
-export const SECONDARY_LIFT_INTENSITY_OFFSET = 0.05;
-/** [DATA] Same-pattern assistance counts at half weight toward a lift's weekly sets (Pelland 2026 fractional sets). */
-export const SECONDARY_LIFT_SET_WEIGHT = 0.5;
-
 /** [ASSURED] Strength sessions per week per phase when developing. */
 export const STRENGTH_SESSIONS_BY_PHASE: Readonly<Record<Phase, number>> = {
   base: 4,
@@ -1024,39 +994,9 @@ export const ENDURANCE_SESSIONS_BY_PHASE: Readonly<Record<Phase, number>> = {
   peak: 4,
   taper: 3,
 };
-/**
- * [DATA] How the priority slider moves the session split between domains.
- * Jones 2013: a 3:1 strength:endurance week matched strength-only gains, a
- * 1:1 week did not; Wilson 2012: endurance frequency and duration are the
- * moderators of interference. So a strength-priority athlete gives up
- * endurance sessions down to the maintenance dose, and vice versa — the old
- * rule moved one session at the margin whatever the slider said.
- */
-export const PRIORITY_STRONG_LEAN = 0.7;
-export const PRIORITY_LEAN_SESSION_SHIFT = 2;
 
-/**
- * [EST] How long a quality session is, as a share of the week's endurance
- * minutes — bounded below by MIN_QUALITY_SESSION_MIN and above by
- * MAX_QUALITY_SESSION_MIN. A quality session is a SESSION SIZE, not a
- * budget slice: the old fixed 15% share made it structurally impossible for
- * anyone under 200 minutes a week to be given a quality session at all,
- * which is most hybrid athletes, and a sub-20 5k athlete on four sessions a
- * week went eleven weeks with no speed work.
- */
-export const QUALITY_SESSION_MINUTE_SHARE = 0.2;
-export const MAX_QUALITY_SESSION_MIN = 60;
-/** [EST] Warm-up plus cool-down inside every quality session. The work and the recoveries have to fit inside the session with this left over, or the reps come down. */
-export const QUALITY_WARMUP_COOLDOWN_MIN = 15;
-/**
- * [DATA] Quality density. Two hard sessions a week is the ceiling for a runner
- * under six hours a week; three only with the volume to absorb them and more
- * than two years of running (Casado 2022 elite practice; Kluitenberg 2016
- * intensity-density risk in novices). Practitioner consensus beyond that.
- */
-export const QUALITY_SESSIONS_CAP_LOW_VOLUME = 2;
-export const QUALITY_CAP_HIGH_VOLUME_MIN_PER_WEEK = 360;
-export const QUALITY_CAP_HIGH_VOLUME_MIN_YEARS = 2;
+/** [ASSURED] Share of weekly endurance minutes allocated to each quality session, and to the long run. */
+export const QUALITY_SESSION_MINUTE_SHARE = 0.15;
 /**
  * [DATA] Race distance in kilometres for each endurance event the intake offers.
  *
@@ -1080,12 +1020,13 @@ export const EVENT_DISTANCE_KM: Readonly<Record<string, number | null>> = {
    *
    * This was null, meaning "not a run", so HYROX was filtered out of the
    * endurance-event resolution entirely: `enduranceEventKm` came back null,
-   * `classifyDomains` never saw a race, and an athlete who entered HYROX was
-   * put in endurance MAINTAIN — two sessions a week — for an event that is
-   * about half running by time. Brandt & Ebel 2025 timed a recreational field
-   * at 51.2 min running against 32.8 min on the stations, and the finish-time
-   * correlates were VO2max (rho -0.71) and weekly endurance volume (rho
-   * -0.68); grip strength and resistance-training volume did not predict it.
+   * `classifyDomains` never saw a race, and an athlete who entered HYROX in
+   * the intake was put in endurance MAINTAIN — two sessions a week — for an
+   * event that is about half running by time. Brandt & Ebel 2025 timed a
+   * recreational field at 51.2 min running against 32.8 min on the stations,
+   * and the finish-time correlates were VO2max (rho -0.71) and weekly
+   * endurance volume (rho -0.68); grip strength and resistance-training
+   * volume did not predict it.
    */
   hyrox: 8,
 };
@@ -1201,7 +1142,6 @@ export const PENALTY: Readonly<Record<string, number>> = {
   quality_before_heavy_lower: 150,
   heavy_lower_too_close: 350,
   deadlift_before_long_run: 300,
-  quality_endurance_consecutive: 300,
   no_rest_day: 300,
   consecutive_days_exceeded: 250,
   day_unavailable: 10000,
@@ -1234,7 +1174,6 @@ export const HARD_PENALTIES: ReadonlySet<string> = new Set([
   "quality_before_heavy_lower",
   "heavy_lower_too_close",
   "deadlift_before_long_run",
-  "quality_endurance_consecutive",
   "no_rest_day",
   "consecutive_days_exceeded",
   "day_unavailable",
@@ -1344,13 +1283,34 @@ export const EMPHASIS_DRIFT_REGENERATE_THRESHOLD = 0.1;
 
 /** [ASSURED] Offered timeframes when the athlete has no event, in weeks. */
 export const PLANNING_HORIZONS: readonly { weeks: number; label: string; blurb: string }[] = [
-  { weeks: 12, label: "3 months", blurb: "One full training block. Long enough to move a 5k time or a lift, short enough to stay committed to." },
-  { weeks: 24, label: "6 months", blurb: "Two blocks with a genuine base phase. The best choice if your aerobic base is the limiter." },
+  { weeks: 12, label: "3 months", blurb: "One full training block. Short enough to stay committed to, but a trained athlete will not move a 5k far in it." },
+  { weeks: 24, label: "6 months", blurb: "Two blocks with a genuine base phase, and the default. Twelve weeks is rarely long enough for a trained athlete to move a 5k time by much." },
   { weeks: 52, label: "A year", blurb: "Long-range. The later phases will be rebuilt as your data accumulates, so treat the back half as a sketch." },
 ];
 
-/** [ASSURED] Used when the athlete gives neither an event date nor a timeframe. Twelve weeks is the standard block length and the horizon every gain-rate constant in this file is expressed against. */
-export const DEFAULT_PLANNING_HORIZON_WEEKS = 12;
+/**
+ * [ASSURED] Used when the athlete gives neither an event date nor a timeframe.
+ *
+ * TWENTY-FOUR, not twelve. Twelve is still the block length every gain-rate
+ * constant in this file is expressed against — `weeksOut / 12` is how the
+ * engine counts blocks, and two blocks is exactly what this now is — but it is
+ * a poor DEFAULT for the athlete who has not expressed a preference.
+ *
+ * Measured across the projection: an advanced runner at 18:25 is projected to
+ * 18:04 over twelve weeks and 17:43 over twenty-four. The same athlete's 2-3%
+ * target reads "ambitious" on the short horizon and "reachable" on the long
+ * one, and that is not the projection being generous — it is twelve weeks
+ * genuinely being too short for a trained athlete to move a 5k by much.
+ *
+ * The on-ramp compounds it. Every week is a multiple of the anchor and the
+ * ceiling is `anchor * ONRAMP_MAX_MULTIPLE`; at the safe weekly ramp, twelve
+ * weeks with deloads does not come close to reaching that ceiling, so a short
+ * default also caps the volume an athlete is ever built up to.
+ *
+ * Someone counting down to a date still gets the weeks to that date, and the
+ * twelve-week option remains one tap away for anyone who wants it.
+ */
+export const DEFAULT_PLANNING_HORIZON_WEEKS = 24;
 
 /** [ASSURED] Bounds on any horizon, however it was arrived at. */
 export const MIN_HORIZON_WEEKS = 4;

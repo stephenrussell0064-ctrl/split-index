@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { AlertTriangle, ArrowRight, Merge } from "lucide-react";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
+import { useDialog } from "@/components/ui/use-dialog";
 import { cn } from "@/lib/utils/cn";
 import { formatDistance, formatDuration, formatSportPace } from "@/lib/utils/format";
 import type { LogbookEntry } from "@/lib/activities/logbook-query";
@@ -93,6 +94,20 @@ export function MergeActivitiesModal({
   const [merging, setMerging] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  /*
+    This dialog already SAID it was modal — `role="dialog" aria-modal="true"`
+    were written by hand — while doing none of the things that makes one. No
+    focus was moved into it, Tab walked straight out into the logbook behind,
+    Escape did nothing, and closing it left focus wherever it had been.
+
+    `aria-modal="true"` made that worse rather than neutral: it tells a screen
+    reader the rest of the page is inert, so the content a keyboard could still
+    reach was content the athlete was being told did not exist. The other four
+    modals were converted to useDialog in the same pass and this one was missed,
+    precisely because it looked correct — the attributes were there.
+  */
+  const { dialogRef, dialogProps } = useDialog(onClose, { label: "Merge sessions" });
+
   const activityIds = entries.map((e) => e.id);
   const idsKey = [...activityIds].sort().join(",");
 
@@ -148,15 +163,22 @@ export function MergeActivitiesModal({
   const merged = preview?.merged;
   const pace = merged ? paceLine(merged) : null;
 
+  /*
+    A bottom sheet at p-4 puts its own controls 16px from the physical edge of
+    the phone — inside the 34px the home indicator owns, where a swipe up goes
+    to the OS rather than to the button under the finger. And `vh` on iOS is
+    the viewport BEFORE the keyboard opens, so a sheet capped at 85vh is taller
+    than what is actually visible the moment anything is typed into it. `dvh`
+    tracks the real one, the way the shell already does.
+  */
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center p-4 sm:items-center">
+    <div className="fixed inset-0 z-50 flex items-end justify-center p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:items-center sm:pb-4">
       <button type="button" aria-label="Close" className="absolute inset-0 bg-black/60" onClick={onClose} />
       <div
-        role="dialog"
-        aria-modal="true"
-        aria-label="Merge sessions"
+        ref={dialogRef}
+        {...dialogProps}
         className={cn(
-          "relative max-h-[85vh] w-full max-w-md overflow-y-auto rounded-2xl border border-white/10 bg-[#12121a] p-6 shadow-xl",
+          "relative max-h-[85dvh] w-full max-w-md overflow-y-auto rounded-2xl border border-white/10 bg-[#12121a] p-6 shadow-xl",
           "animate-in fade-in slide-in-from-bottom-4 duration-200"
         )}
       >

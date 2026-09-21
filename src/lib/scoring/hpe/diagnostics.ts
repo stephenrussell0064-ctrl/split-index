@@ -339,16 +339,26 @@ export function anaerobicSpeedReserveMs(
  */
 export const NO_MAXIMAL_EFFORT_5K_S = 1500.0;
 
+/**
+ * The weekly running minutes historically associated with supporting a given
+ * 5k level.
+ *
+ * Split out of `volumeAdequacy` so the on-ramp can ask the question directly.
+ * It needs the requirement itself, not a ratio against a number it is trying
+ * to decide — recovering one from the other by division worked but read as
+ * arithmetic rather than as the lookup it is.
+ */
+export function requiredWeeklyMinutesFor5k(predicted5kS: number): number {
+  const table = [...VOLUME_ADEQUACY_MIN_PER_WEEK].sort((a, b) => a[0] - b[0]);
+  for (const [seconds, minutes] of table) {
+    if (predicted5kS <= seconds) return minutes;
+  }
+  return table[table.length - 1][1];
+}
+
 /** Actual weekly minutes ÷ the minutes historically associated with supporting this 5k level. */
 export function volumeAdequacy(weeklyMin: number, predicted5kS: number): number {
-  const table = [...VOLUME_ADEQUACY_MIN_PER_WEEK].sort((a, b) => a[0] - b[0]);
-  let required = table[table.length - 1][1];
-  for (const [seconds, minutes] of table) {
-    if (predicted5kS <= seconds) {
-      required = minutes;
-      break;
-    }
-  }
+  const required = requiredWeeklyMinutesFor5k(predicted5kS);
   return required > 0 ? weeklyMin / required : 1.0;
 }
 

@@ -236,12 +236,13 @@ describe("WP1 — the public projections", () => {
     expect([...views.keys()].sort()).toEqual([
       "leaderboard_profiles",
       /*
-       * The seventh view, added by 073 rather than by 056 with the other six.
-       * Two authenticated-only routes read `profiles` across athletes and would
-       * have broken when 073 took public read off the base tables; this is the
-       * column-scoped projection they were moved onto. It is revoked from anon
-       * explicitly, because Supabase grants a new view to anon by name.
-       */
+        073. Two columns — user_id and username — over EVERY profile, so the
+        username uniqueness check can see unverified accounts. It cannot use
+        public_profiles for that: `username` is UNIQUE at the column level, so
+        checking only verified rows would report a taken name as free and the
+        save would fail on a constraint the athlete cannot act on. Revoked from
+        anon; signed-in callers only.
+      */
       "profile_usernames",
       "public_challenge_participation",
       "public_index_history",

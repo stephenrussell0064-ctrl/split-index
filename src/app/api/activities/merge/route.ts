@@ -1,3 +1,5 @@
+import { parseBody } from "@/lib/validation/boundary";
+import { mergeSchema } from "@/lib/validation/schemas/routes";
 import { NextResponse } from "next/server";
 import { databaseError } from "@/lib/api/errors";
 import { createClient } from "@/lib/supabase/server";
@@ -55,12 +57,6 @@ import {
  * expressed by passing a null base.
  */
 
-interface MergeRequestBody {
-  activityIds?: unknown;
-  /** Compute and return the plan without writing anything. Drives the confirmation dialog. */
-  dryRun?: unknown;
-}
-
 /** The plan, minus the merged polyline — hundreds of coordinate pairs the dialog has no use for. */
 function previewOf(plan: MergePlan) {
   const { route, ...merged } = plan.merged;
@@ -85,17 +81,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body: MergeRequestBody = await request.json();
-  const requestedIds = Array.isArray(body.activityIds)
-    ? [...new Set(body.activityIds.filter((id): id is string => typeof id === "string"))]
-    : [];
+  /*
+    N1. The filter kept any string, and those ids go into a WHERE clause. They
+    are uuids now. Ownership is still checked below — the schema settles the
+    shape and nothing else.
 
-  if (requestedIds.length < 2) {
-    return NextResponse.json(
-      { error: "Select at least two sessions to merge." },
-      { status: 400 }
-    );
-  }
+    Dedupe stays here rather than in the schema: sending the same id twice is a
+    client quirk rather than a malformed request, and refusing it would be
+    stricter than the finding asks for.
+  */
+  const parsed = await parseBody(request, mergeSchema);
+  if (parsed.response) return parsed.response;
+  const requestedIds = [...new Set(parsed.data.activityIds)];
 
   const { data: rows, error: fetchError } = await supabase
     .from("activities")
@@ -131,6 +128,7 @@ export async function POST(request: Request) {
   try {
     assertScoringInput({
       sport: mergedBody.sport,
+      startedAt: mergedBody.started_at,
       durationSeconds: mergedBody.duration_seconds,
       distanceMeters: mergedBody.distance_meters,
       avgHeartRate: mergedBody.avg_heart_rate,
@@ -148,7 +146,7 @@ export async function POST(request: Request) {
     throw err;
   }
 
-  if (body.dryRun === true) {
+  if (parsed.data.dryRun === true) {
     return NextResponse.json({ preview: previewOf(plan) });
   }
 

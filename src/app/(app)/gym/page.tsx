@@ -3,7 +3,8 @@ import Link from "next/link";
 import { PlusCircle } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { TrainZoneSwipe } from "@/components/layout/train-zone-swipe";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils/cn";
 import { GymStrengthPanel } from "@/components/dashboard/gym-strength-panel";
 import { GymQuickStart } from "@/components/gym/gym-quick-start";
 import { WorkoutPlansDisclosure } from "@/components/gym/workout-plans-disclosure";
@@ -186,7 +187,7 @@ export default async function GymPage() {
 
   return (
     <TrainZoneSwipe mode="gym">
-      <div className="bg-gym-zone rounded-2xl overflow-hidden border border-gym-border/40 min-h-[80vh]">
+      <div className="bg-gym-zone rounded-2xl overflow-hidden border border-gym-border/40 min-h-[80dvh]">
         <div className="p-6 sm:p-10">
           <div className="flex flex-wrap items-start justify-between gap-4 mb-8">
             <div>
@@ -196,16 +197,17 @@ export default async function GymPage() {
               </h1>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Link href="/gym/log">
-                <Button className="bg-gym-accent hover:bg-gym-accent/90 text-[#04120a] border-0 font-semibold">
-                  <PlusCircle className="h-4 w-4" />
-                  Log session
-                </Button>
+              <Link
+                href="/gym/log"
+                className={cn(buttonVariants(), "bg-gym-accent hover:bg-gym-accent/90 text-[#04120a] border-0 font-semibold")}
+              >
+                <PlusCircle className="h-4 w-4" />
+                Log session
               </Link>
             </div>
           </div>
 
-          <div className="grid gap-8 lg:grid-cols-[1fr_380px]">
+          <div className="grid gap-8 xl:grid-cols-[1fr_380px]">
             <div className="min-w-0">
               <GymStrengthPanel
                 strengthIndex={hasHistory ? strengthIndex : null}
@@ -224,6 +226,27 @@ export default async function GymPage() {
 
               <WorkoutPlansDisclosure />
 
+              {/*
+                QUICK START, ON A PHONE, BEFORE THE LOGBOOK.
+
+                The right rail below is a sticky sidebar on desktop and a
+                perfectly good one. On a phone the grid collapses to one column
+                and it renders LAST — after the strength panel, the recommended
+                split, the plans disclosure and the entire paged logbook. So the
+                primary action of the strength zone, "start a session", sat
+                several screens below the fold on the device this app is mostly
+                used on.
+
+                Hoisted rather than reordered: `order-first` cannot move a child
+                across a grid-column collapse, because on desktop these are in
+                different columns rather than different positions in one. So the
+                phone gets its own copy here and the aside is hidden below `lg`
+                — one of the two renders at any width, never both.
+              */}
+              <div className="mb-8 xl:hidden">
+                <GymQuickStart />
+              </div>
+
               {/* Keyed off logged sessions, not scored ones: an unscored
                   session is still a session the athlete logged and expects
                   to find here. */}
@@ -240,7 +263,7 @@ export default async function GymPage() {
               )}
             </div>
 
-            <aside className="min-w-0 lg:sticky lg:top-24 lg:self-start">
+            <aside className="hidden min-w-0 xl:sticky xl:top-24 xl:block xl:self-start">
               <GymQuickStart />
             </aside>
           </div>

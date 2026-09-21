@@ -21,8 +21,24 @@ export async function GET(request: Request) {
     return NextResponse.json({ available: false, reason: format.reason });
   }
 
+  /*
+    `profile_usernames`, not `profiles`.
+
+    Reading the base table across athletes only worked because a policy from
+    001 — `USING (username IS NOT NULL)`, with no TO clause — let ANY caller
+    read ANY named profile, every column of it, the anon role included. 073
+    removes that, and this is one of exactly two routes that depended on it.
+
+    Not `public_profiles` either, which would look like the obvious choice.
+    That view requires a confirmed email address (061), and uniqueness has to
+    consider every account: `username` is UNIQUE at the column level, so
+    checking only verified rows would report a name as free, let the athlete
+    choose it, and fail the save with a constraint violation they cannot act
+    on. `profile_usernames` is two columns over every profile, readable by
+    signed-in callers only.
+  */
   const { data, error } = await supabase
-    .from("profiles")
+    .from("profile_usernames")
     .select("user_id")
     .ilike("username", username)
     .maybeSingle();

@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { ActivityForm } from "@/components/activities/activity-form";
-import { isPremiumUser } from "@/lib/retention/trial";
+import { hasPaidAccess } from "@/lib/retention/trial";
 import { getWorkoutPlan } from "@/lib/constants/workout-plans";
 import {
   createDefaultState,
@@ -153,24 +153,28 @@ export async function loadLogPage({
     }
   }
 
+  // `updated_at` so the client can tell a server draft from a newer local
+  // mirror — see draft-mirror.ts. Without it every stale server row would win
+  // over work this device typed offline.
   const { data: drafts } = await supabase
     .from("workout_drafts")
-    .select("sport, form_data")
+    .select("sport, form_data, updated_at")
     .eq("user_id", user.id);
 
   const initialDrafts = Object.fromEntries(
     (drafts ?? []).map((d) => [d.sport as SportType, d.form_data])
   );
-
-  const premium = isPremiumUser(
-    profile.subscription_tier,
-    profile.subscription_status
+  const draftUpdatedAt = Object.fromEntries(
+    (drafts ?? []).map((d) => [d.sport as SportType, d.updated_at as string | null])
   );
+
+  const premium = hasPaidAccess(profile);
 
   return (
     <ActivityForm
       profileWeightKg={profile.weight_kg}
       initialDrafts={initialDrafts}
+      draftUpdatedAt={draftUpdatedAt}
       isPremium={premium}
       initialSport={sport}
       initialRepeatState={initialRepeatState}

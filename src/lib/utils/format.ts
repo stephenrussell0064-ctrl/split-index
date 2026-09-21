@@ -105,6 +105,26 @@ export function formatIndex(value: number): string {
   return Number.isInteger(rescaled) ? rescaled.toLocaleString() : rescaled.toFixed(1);
 }
 
+/**
+ * The inverse of `formatIndex`: a number the athlete TYPED on the 0-100 scale,
+ * back onto the 0-1000 scale everything is stored and computed on.
+ *
+ * Every input that accepts an index needs this, and the goals form is why it
+ * exists. It seeded its text field with the RAW stored target (825) while the
+ * card beside it rendered the same target through `formatIndex` (82.5), and
+ * saved whatever was typed without scaling — so an athlete correcting "825" to
+ * the "85" they meant stored 85, which displays as 8.5. The goal silently
+ * became a tenth of itself.
+ *
+ * Returns null for anything that is not a finite number, so callers can reject
+ * rather than store NaN.
+ */
+export function indexFromDisplay(value: string | number): number | null {
+  const parsed = typeof value === "number" ? value : Number(String(value).trim());
+  if (!Number.isFinite(parsed)) return null;
+  return Math.round(parsed * DISPLAY_SCALE);
+}
+
 export function formatTrend(value: number): string {
   const rescaled = value / DISPLAY_SCALE;
   const sign = rescaled >= 0 ? "+" : "";

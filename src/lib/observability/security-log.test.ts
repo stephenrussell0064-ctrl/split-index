@@ -215,13 +215,29 @@ describe("retention", () => {
     expect(sql).toContain(`INTERVAL '${AUDIT_LOG_RETENTION_DAYS} days'`);
   });
 
-  it("does not let any signed-in user run the prune", () => {
-    const sql = readFileSync(MIGRATION, "utf8");
-    expect(sql).toMatch(/REVOKE ALL ON FUNCTION prune_security_events\(\) FROM PUBLIC/i);
-    // A function any authenticated user can call to delete audit rows is not a
-    // retention policy.
-    expect(sql).not.toMatch(/GRANT EXECUTE ON FUNCTION prune_security_events\(\) TO authenticated/i);
-  });
+  /*
+    THERE WAS A TEST HERE CALLED "does not let any signed-in user run the prune",
+    AND IT WAS GREEN FOR THE WHOLE TIME THE PRUNE WAS REACHABLE BY ANON.
+
+    It asserted that 063 contains
+    `REVOKE ALL ON FUNCTION prune_security_events() FROM PUBLIC`. That line is
+    there and the assertion passed — but revoking from PUBLIC does not remove
+    the grant Supabase's ALTER DEFAULT PRIVILEGES hands to `anon` BY NAME, so an
+    unauthenticated caller could make the audit log prune itself until 067
+    revoked it explicitly. See N11. The test named a real property and checked a
+    mechanism that does not provide it, which is worse than not testing it at
+    all: it read as coverage.
+
+    It is not re-pointed at 067, because a regex over whichever file happens to
+    be latest is the same mistake with a newer number on it.
+    `function-grants.test.ts` owns grants now, and does it properly: it
+    enumerates every function across every migration, resolves the effective
+    grants from all of them, and asserts this one is revoked from `anon` AND
+    `authenticated` and never granted back. Duplicating a weaker version here
+    would only give the two somewhere to disagree.
+
+    Found by a peer session, who left it rather than reaching into this file.
+  */
 
   it("keeps the events table unreadable by the people it records", () => {
     const sql = readFileSync(MIGRATION, "utf8");

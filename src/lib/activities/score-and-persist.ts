@@ -1,3 +1,4 @@
+import { clearProvisionalIndexHistory } from "@/lib/activities/provisional-index";
 import type { createClient } from "@/lib/supabase/server";
 import {
   scoreActivity,
@@ -24,7 +25,7 @@ import {
   type HistorySession,
 } from "@/lib/scoring/cardio/race-prediction";
 import { isEnduranceSport } from "@/lib/scoring/engine";
-import { isPremiumUser } from "@/lib/retention/trial";
+import { hasPaidAccess } from "@/lib/retention/trial";
 import type { ActivityFormData, Profile } from "@/types";
 import {
   upsertPersonalRecordsIfBetter,
@@ -215,7 +216,7 @@ export async function scoreAndPersist(
       ];
     });
 
-  const premium = isPremiumUser(profile.subscription_tier, profile.subscription_status);
+  const premium = hasPaidAccess(profile);
   const exerciseHistory =
     body.sport === "gym" && body.exercises?.length
       ? await fetchExerciseHistory(
@@ -504,6 +505,8 @@ export async function scoreAndPersist(
     // matching comment in the create route.
     recorded_at: body.started_at,
   });
+
+  await clearProvisionalIndexHistory(supabase, userId);
 
   if (indexHistoryError) {
     console.error(

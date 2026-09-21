@@ -19,43 +19,23 @@
  *      conflict, PHASE WINS in specific/peak/taper, EMPHASIS WINS in
  *      base/build.
  *
+ * The worked example from the brief: an endurance-limited athlete on 42% of
+ * typical volume with no logged quality work gets aerobic_base 0.36,
+ * threshold 0.20, neuromuscular 0.15, and therefore a week weighted toward
+ * easy volume plus one threshold session and strides — NOT the interval-heavy
+ * week a speed-limited athlete with the same 5k time would receive. "That
+ * difference is the entire product claim."
+ *
  * Non-negotiable #7 is enforced structurally rather than by convention: a
  * session is only ever constructed through `makeSession`, which requires a
- * findingId.
- *
- * Constants 3.0.0 — what changed here and why, each traceable to the evidence
- * register (docs/HPE-EVIDENCE-REVIEW-2026-09.md):
- *
- *  - A quality session is a SESSION SIZE, not a slice of a small budget. The
- *    old 15%-of-budget rule made it structurally impossible for anyone under
- *    200 min/week to be given a hard session; a sub-20 athlete on four sessions
- *    a week went eleven weeks with no speed work and then got the block's
- *    hardest interval session in the taper.
- *  - The priority slider moves whole sessions between domains (Jones 2013:
- *    3:1 matched strength-only gains, 1:1 did not), not one at the margin.
- *  - The athlete's stated hours cap is a cap on the whole week, strength
- *    included. It was collected and never read.
- *  - The long run is bound by the single-session spike rule (Frandsen 2025):
- *    never more than 10% over the longest run of the last month, and never
- *    more than 10% over last week's. On a deload week it comes DOWN.
- *  - Strength progresses inside a phase (the load band walks up week by week)
- *    and the working max walks up with the block's expected gain, so two
- *    weeks are never the same session. A peaking athlete's lower day carries
- *    both lower lifts, so each is met twice a week on three gym days.
- *  - The heavy-lower flag is set from the loads actually prescribed, not from
- *    the unshifted phase table.
- *  - Deloads cut strength sets and add a rep in reserve; the final taper week
- *    caps deadlift, squat and bench at lift-specific ceilings (Travis 2021).
- *  - Disliked accessories are filtered out of the pool.
+ * findingId. There is no way to add a session to the week without naming the
+ * diagnostic finding that bought its slot.
  */
 
 import {
   BASE_STRESS_PER_MIN,
   DEFAULT_STRENGTH_STRESS,
   DEFAULT_STRESS_PER_MIN,
-  DELOAD_LONG_RUN_MULTIPLIER,
-  DELOAD_STRENGTH_RIR_BONUS,
-  DELOAD_STRENGTH_SET_MULTIPLIER,
   EMPHASIS_KEYS,
   ENDURANCE_SESSIONS_BY_PHASE,
   HEAVY_LOWER_BODY_LOAD_THRESHOLD,
@@ -74,41 +54,29 @@ import {
   DEFAULT_TRAINING_SPLIT,
   TRAINING_SPLITS,
   type SplitDay,
+  type TrainingSplit,
   NO_GYM_REP_RANGE,
   NO_GYM_SUBSTITUTIONS,
-  NOVICE_ENDURANCE_YEARS,
-  LIFE_LOAD_MAX_QUALITY_SESSIONS,
   LONG_RUN_MAX_MINUTES,
   LONG_RUN_PEAK_FRACTION_OF_RACE,
   LONG_RUN_MIN_MULTIPLE_OF_EASY,
   LONG_RUN_MINUTE_SHARE,
+  SESSION_SPIKE_MAX_MULTIPLE,
+  DELOAD_LONG_RUN_MULTIPLIER,
   LONG_RUN_QUALITY_THRESHOLD_MIN,
   MAX_QUALITY_ENDURANCE_SESSIONS,
-  MAX_QUALITY_SESSION_MIN,
   MIN_ENDURANCE_SESSION_MIN,
   MIN_QUALITY_SESSION_MIN,
-  PRIORITY_LEAN_SESSION_SHIFT,
-  PRIORITY_STRONG_LEAN,
-  QUALITY_CAP_HIGH_VOLUME_MIN_PER_WEEK,
-  QUALITY_CAP_HIGH_VOLUME_MIN_YEARS,
-  QUALITY_SESSIONS_CAP_LOW_VOLUME,
   REP_SESSION_PHASES,
   MMD_ENDURANCE_QUALITY_PER_WEEK,
   MMD_ENDURANCE_SESSIONS_PER_WEEK,
   MMD_STRENGTH_MIN_INTENSITY,
   MMD_STRENGTH_SESSIONS_PER_WEEK,
   QUALITY_SESSION_MINUTE_SHARE,
-  SECONDARY_LIFT_INTENSITY_OFFSET,
-  SECONDARY_LIFT_SET_WEIGHT,
-  SECONDARY_LIFT_SETS,
-  SESSION_SPIKE_MAX_MULTIPLE,
   STRENGTH_PHASE_SPEC,
   STRENGTH_SESSIONS_BY_PHASE,
   STRENGTH_STRESS,
-  STRENGTH_SUBBAND_WIDTH,
-  TAPER_FINAL_WEEK_INTENSITY_CEILING,
   TID_BY_PHASE,
-  WORKING_MAX_PROGRESSION_CAP,
   type EmphasisKey,
   type Phase,
 } from "./constants";
@@ -138,7 +106,14 @@ export type SessionKind = EnduranceKind | "squat_heavy" | "squat_volume" | "dead
 
 export interface PlannedSession {
   kind: SessionKind;
-  /** What the athlete calls this session — "Push", "Legs", "Upper". */
+  /**
+   * What the athlete calls this session — "Push", "Legs", "Upper".
+   *
+   * `kind` is the engine's classification and drives stress and scheduling; a
+   * push day genuinely costs what a bench session costs. But the athlete who
+   * chose push/pull/legs and was shown "bench_volume" reasonably concluded the
+   * split had been ignored, because the only thing they can see is the label.
+   */
   label?: string;
   domain: "endurance" | "strength";
   /** 0-1, used by the scheduler's ordering and drift penalties. */
@@ -149,7 +124,16 @@ export interface PlannedSession {
   isHeavyLower: boolean;
   isDeadlift: boolean;
   lift?: string;
-  /** Which cardio modality an endurance session is performed in. */
+  /**
+   * Which cardio modality an endurance session is performed in.
+   *
+   * `kind` stays running-flavoured ("easy_run", "interval_run") because it is
+   * the engine's classification and everything downstream — stress tables,
+   * spacing rules, the ACWR pass — is keyed on it, and a rowing threshold
+   * session genuinely costs what a running one costs. What changes is the
+   * PRESCRIPTION, which is written in the modality's own units, and the
+   * `label`, which is the only part the athlete reads.
+   */
   modality?: CardioModality;
   prescription: Prescription;
   /** Which emphasis dimension bought this slot. */
@@ -157,13 +141,13 @@ export interface PlannedSession {
   /** Non-negotiable #7 — the named diagnostic finding this session exists to answer. */
   findingId: FindingId;
   stress: number;
-  /** Direct hard sets per competition lift in this session — the dose the feasibility model reads. */
-  liftSets?: Record<string, number>;
 }
 
 /**
- * Which finding drives each emphasis dimension. Ordered by strength of claim —
- * the first finding present in the athlete's own diagnosis wins.
+ * Which finding drives each emphasis dimension. Used to attribute a session
+ * to the specific finding that earned its slot, so the athlete can read why
+ * they are doing it. Ordered by strength of claim — the first finding present
+ * in the athlete's own diagnosis wins.
  */
 const FINDINGS_BY_EMPHASIS: Record<EmphasisKey, FindingId[]> = {
   aerobic_base: [
@@ -183,6 +167,13 @@ const FINDINGS_BY_EMPHASIS: Record<EmphasisKey, FindingId[]> = {
   weak_lift: ["weak-lift"],
 };
 
+/**
+ * Non-negotiable #7: "If the engine cannot say *why* this athlete is doing
+ * this session, it does not prescribe it." Returns null when no finding in
+ * this athlete's diagnosis backs the dimension — the caller must then either
+ * drop the session or fall back to the explicit hybrid-baseline rationale,
+ * which is itself a named, readable reason rather than a silent default.
+ */
 export function attributeFinding(emphasisKey: EmphasisKey, findings: Finding[]): FindingId | null {
   const present = new Set(findings.map((f) => f.id));
   for (const candidate of FINDINGS_BY_EMPHASIS[emphasisKey]) {
@@ -195,6 +186,13 @@ export function attributeFinding(emphasisKey: EmphasisKey, findings: Finding[]):
 // Proportional allocation, largest remainder first
 // ---------------------------------------------------------------------------
 
+/**
+ * Distributes `total` whole slots across fractional weights so the integer
+ * allocations sum EXACTLY to `total` — each key takes its floor, then the
+ * largest remainders take the few left over, one at a time. Naive rounding
+ * over- or under-counts by a session or two, which in a 6-session week is a
+ * 15% error in what the athlete actually does.
+ */
 export function largestRemainderAllocate(weights: number[], total: number): number[] {
   if (total <= 0) return weights.map(() => 0);
   const sum = weights.reduce((s, w) => s + Math.max(0, w), 0);
@@ -224,47 +222,36 @@ export interface SessionSetInput {
   suppressHeartRate?: boolean;
   /** F16: a reduction imposed by autoregulation on the previous week's feedback. 1 = no reduction. */
   autoregMultiplier?: number;
-  /** Ceiling on prescribed relative intensity, from the health screen. 1 means unrestricted. */
-  intensityCeiling?: number;
-  modalityFitness?: Partial<Record<CardioModality, ModalityFitness>>;
-  /** The 5k the block is expected to bring the athlete to. Quality paces progress toward this, never past it. */
-  expected5kS?: number | null;
-  /** Expected fractional strength gain across the block. Walks the working max up with the projection. */
-  expectedStrengthGain?: number;
   /**
-   * The long runs of the last four weeks, most recent last, for the spike
-   * rule (never more than 10% over the longest of the last month) and the
-   * deload rule (a deload long run is a share of the last full one). Empty
-   * in week one.
+   * Ceiling on prescribed relative intensity, from the health screen. 1 means
+   * unrestricted. This is what an injury answer now does instead of refusing
+   * the plan — see the note on `safetyScreen`.
+   */
+  intensityCeiling?: number;
+  /**
+   * Per-modality fitness, for the modalities the athlete chose. Absent means
+   * the caller had no activity rows to build it from, which is a normal state
+   * — the modality prescription then falls back to effort and says so.
+   */
+  modalityFitness?: Partial<Record<CardioModality, ModalityFitness>>;
+  /**
+   * The long runs of the weeks just gone, most recent last. Anchors the
+   * single-session spike rule: no long run more than 10% past the longest of
+   * the last month. Empty in week one, where `longestRecentRunMin` on the
+   * athlete's state stands in.
    */
   recentLongRunsMin?: readonly number[];
-  /** Years of consistent lifting — a novice's maintenance dose is a hypertrophy dose, not heavy triples. */
-  strengthTrainingYears?: number;
-  /** The longest run of the last month, for the spike rule in week one. */
+  /** The longest run in the athlete's recent log, for week one, before the block has a long run of its own. */
   longestRecentRunMin?: number | null;
-  /** Years of consistent running — gates the third weekly quality session. */
-  enduranceTrainingYears?: number;
-  /** High life stress or short sleep: quality held to one session a week. */
-  lifeLoad?: boolean;
-  /** The final week before the event — the lift-specific taper ceilings apply here only. */
-  isFinalTaperWeek?: boolean;
 }
 
 export interface SessionSet {
   sessions: PlannedSession[];
-  /** How the week's slots were split across emphasis dimensions, after caps and TID reconciliation. */
-  allocation: Record<EmphasisKey, number>;
-  notes: string[];
   /** The long run prescribed this week, for next week's spike rule. Null when there was none. */
   longRunMinutes: number | null;
-  /** Endurance minutes actually prescribed — what the athlete does, as opposed to what was budgeted. */
-  deliveredEnduranceMin: number;
-  /** Quality endurance sessions this week (the long run excluded). */
-  qualityCount: number;
-  /** Direct hard sets per competition lift this week, secondary exposures at half weight. */
-  strengthSetsByLift: Record<string, number>;
-  /** Strength sessions at or above the heavy threshold on a lower-body lift. */
-  heavyStrengthSessions: number;
+  /** How the week's slots were split across emphasis dimensions, after caps and TID reconciliation. Surfaced so the athlete can see the allocation, not just its output. */
+  allocation: Record<EmphasisKey, number>;
+  notes: string[];
 }
 
 function stressFor(kind: SessionKind, minutes: number, domain: "endurance" | "strength"): number {
@@ -283,17 +270,7 @@ function makeSession(
   emphasisKey: EmphasisKey,
   findingId: FindingId,
   prescription: Prescription,
-  opts: {
-    intensity: number;
-    isQuality: boolean;
-    minutes?: number;
-    isHeavyLower?: boolean;
-    isDeadlift?: boolean;
-    lift?: string;
-    label?: string;
-    modality?: CardioModality;
-    liftSets?: Record<string, number>;
-  }
+  opts: { intensity: number; isQuality: boolean; minutes?: number; isHeavyLower?: boolean; isDeadlift?: boolean; lift?: string; label?: string; modality?: CardioModality }
 ): PlannedSession {
   const minutes =
     opts.minutes ??
@@ -315,10 +292,14 @@ function makeSession(
     emphasisKey,
     findingId,
     stress: stressFor(kind, minutes, domain),
-    liftSets: opts.liftSets,
   };
 }
 
+/**
+ * Emphasis dimensions grouped by the session kind they buy. `aerobic_base`
+ * buys easy volume and the long run; the three quality dimensions each buy
+ * their own kind of hard session.
+ */
 const ENDURANCE_EMPHASIS_TO_KIND: Record<string, EnduranceKind> = {
   aerobic_base: "easy_run",
   threshold: "threshold_run",
@@ -334,7 +315,9 @@ const STRENGTH_LADDER: Phase[] = ["base", "build", "specific", "peak"];
 /**
  * Load and rep range move together. `maximal_strength` shifts one rung
  * heavier than the phase would otherwise prescribe, `strength_endurance` one
- * rung lighter — bounded by the ladder.
+ * rung lighter — but the shift is bounded by the ladder, so a base-phase week
+ * can never end up prescribing peak-phase singles, and a peak week never
+ * drops to hypertrophy volume.
  */
 export function shiftPhaseSpec(phase: Phase, emphasisKey: EmphasisKey) {
   const idx = STRENGTH_LADDER.indexOf(phase);
@@ -344,28 +327,45 @@ export function shiftPhaseSpec(phase: Phase, emphasisKey: EmphasisKey) {
   return STRENGTH_PHASE_SPEC[target];
 }
 
+
 /**
- * The prescribed sub-band inside a phase's load band, walking up across the
- * phase. Week one of base sits at the bottom of 65-75%; the last week of base
- * sits at the top. Two weeks of a phase are never the same session.
+ * Accessory lines for a split day, drawn from its movement patterns and
+ * rotated by week.
+ *
+ * This used to take the first two entries of a three-deep pool, so a Push day
+ * was the bench press and the same two accessories for the whole block —
+ * three exercises, identical every week, which an athlete correctly called a
+ * terrible session. It now fills the day to a real session size and walks the
+ * pool by week index, so the patterns stay constant while the exercises that
+ * train them change.
  */
-export function subBandFor(
-  band: readonly [number, number],
-  phaseProgress: number
-): readonly [number, number] {
-  const width = (band[1] - band[0]) * STRENGTH_SUBBAND_WIDTH;
-  const p = Math.min(1, Math.max(0, phaseProgress));
-  const lo = band[0] + (band[1] - band[0] - width) * p;
-  return [lo, lo + width];
-}
-
-/** The working maximum the loads are written against, as a multiple of the logged 1RM. */
-export function workingMaxMultiplierFor(expectedStrengthGain: number, progress: number): number {
-  const gain = Math.min(WORKING_MAX_PROGRESSION_CAP, Math.max(0, expectedStrengthGain));
-  return 1 + gain * Math.min(1, Math.max(0, progress));
-}
-
-function isLowerBodyDay(day: SplitDay): boolean {
+/**
+ * Whether this day is a lower-body day, and so must not draw upper-body pulls.
+ *
+ * The `pull` pattern means two different things depending on the day it is on.
+ * On a Pull day it is the row and the pull-up. On the `upper_lower` split's
+ * deadlift-led Lower day — patterns `["legs", "pull"]` — it means the hinge,
+ * and drawing it from the upper-body pool produced the session an athlete
+ * reported: a lower day prescribing cable rows and pull-ups beside Bulgarian
+ * split squats and deadlifts.
+ *
+ * Deliberately conservative, because the labels on custom days are typed by
+ * the athlete and the cost of guessing wrong in the other direction is a Pull
+ * day with no pulling in it. Three conditions must all hold, and each one can
+ * only ever REMOVE a day from the lower-body set:
+ *
+ *  - any pressing on the day means it is not a lower day;
+ *  - no leg work on the day means it is not a lower day either;
+ *  - a day that says "full" in its own name is a full-body day whatever its
+ *    patterns say — `full_body`'s third day is `["pull", "legs", "core"]` and
+ *    is meant to have a row in it.
+ *
+ * Past those, a day is lower-body if it says so in its name, or if it carries
+ * no pull pattern at all (in which case this changes nothing anyway). A
+ * lift-specific Deadlift day is left alone on purpose: rows and pull-ups
+ * beside a deadlift are conventional and nobody has complained about them.
+ */
+function isLowerBodyDay(day: (typeof TRAINING_SPLITS)[TrainingSplit]["days"][number]): boolean {
   const patterns = day.patterns;
   if (patterns.includes("push")) return false;
   if (!patterns.includes("legs")) return false;
@@ -375,24 +375,26 @@ function isLowerBodyDay(day: SplitDay): boolean {
 }
 
 function accessoriesForDay(
-  day: SplitDay,
+  day: (typeof TRAINING_SPLITS)[TrainingSplit]["days"][number],
   primaryLift: string,
-  week: number,
-  disliked: readonly string[]
+  week: number
 ): string[] {
   const patterns = day.patterns.length > 0 ? day.patterns : ["push"];
+  // On a lower-body day the `pull` pattern is the hinge, not the row.
   const lowerBody = isLowerBodyDay(day);
-  const dislikedLower = disliked.map((d) => d.trim().toLowerCase()).filter((d) => d.length > 0);
-  const isDisliked = (line: string) => {
-    const l = line.toLowerCase();
-    return dislikedLower.some((d) => l.includes(d));
-  };
   const poolFor = (pattern: string): readonly string[] =>
-    (lowerBody && pattern === "pull" ? POSTERIOR_CHAIN_ACCESSORY_POOL : STRENGTH_ACCESSORY_POOL[pattern] ?? []).filter(
-      (line) => !isDisliked(line)
-    );
+    lowerBody && pattern === "pull"
+      ? POSTERIOR_CHAIN_ACCESSORY_POOL
+      : STRENGTH_ACCESSORY_POOL[pattern] ?? [];
+  // The primary already covers one slot, so the accessories fill the rest.
   const wanted = Math.max(MIN_EXERCISES_PER_STRENGTH_SESSION, TARGET_EXERCISES_PER_STRENGTH_SESSION) - 1;
   const out: string[] = [];
+
+  // Round-robin across the day's patterns so a two-pattern day alternates
+  // rather than exhausting one pool before starting the other. Core is capped
+  // at one line: it is listed as a pattern so that a legs day finishes with
+  // some trunk work, and an even split turned that into a legs day that was
+  // half abs.
   const takenPerPattern: Record<string, number> = {};
   for (let depth = 0; out.length < wanted; depth += 1) {
     let addedThisPass = false;
@@ -400,19 +402,32 @@ function accessoriesForDay(
       const pool = poolFor(pattern);
       if (pool.length === 0) continue;
       if (pattern === "core" && (takenPerPattern.core ?? 0) >= CORE_ACCESSORY_CAP) continue;
+      // Rotating the offset by week is what stops eleven identical sessions.
       const line = pool[(depth + week) % pool.length];
       if (out.length >= wanted) break;
+      // Never list the primary again as its own accessory.
       if (line.toLowerCase().includes(primaryLift.toLowerCase())) continue;
       if (out.includes(line)) continue;
       out.push(line);
       takenPerPattern[pattern] = (takenPerPattern[pattern] ?? 0) + 1;
       addedThisPass = true;
     }
+    // Every pool exhausted — stop rather than spin.
     if (!addedThisPass && depth > 8) break;
   }
   return out;
 }
 
+/**
+ * The exercises the athlete picked for this day, if they picked any.
+ *
+ * Matched on the day's label, case- and space-insensitively, because the label
+ * is what they were shown when they chose ("Push", "Legs", "Full body"). A day
+ * they did not answer for returns null and falls through to the engine's own
+ * rotation, which is the whole contract of this feature: selection is an
+ * enhancement, never a requirement, and choosing nothing has to keep working
+ * exactly as it did.
+ */
 function chosenExercisesFor(
   dayLabel: string,
   exercisesByDay: Record<string, string[]> | undefined
@@ -425,13 +440,34 @@ function chosenExercisesFor(
   return null;
 }
 
-const ACCESSORY_DEFAULT_SCHEME = "3x8-12";
-
+/**
+ * A chosen exercise, given a set and rep scheme so it reads like the rest of
+ * the session.
+ *
+ * The athlete chose WHAT to do; the engine still says how much. A picked
+ * accessory that arrived as a bare name would be the only line in the session
+ * without a prescription attached, and "Lat pulldown" on its own is a
+ * suggestion rather than a session.
+ */
 function asAccessoryLine(name: string): string {
   const trimmed = name.trim();
+  // Already carries its own scheme (they typed "Lat pulldown 4x10") — leave it.
   return /\d\s*x\s*\d/i.test(trimmed) ? trimmed : `${trimmed} ${ACCESSORY_DEFAULT_SCHEME}`;
 }
 
+/** [EST] The scheme a chosen accessory gets when the athlete gave only a name. Matches the pool's own accessory range. */
+const ACCESSORY_DEFAULT_SCHEME = "3x8-12";
+
+/**
+ * The exercise that leads the session.
+ *
+ * An athlete peaking a total must keep meeting the competition lift, because
+ * specificity is what a peaking block is for. An athlete training for size or
+ * general strength does not: a push day led by an incline dumbbell press is
+ * still a push day, and their bench goes up anyway. Rotating the lead by week
+ * gives them the variety the plan was missing without changing what the
+ * session trains.
+ */
 function primaryExerciseFor(lift: string, week: number, peakingATotal: boolean): string | undefined {
   if (peakingATotal) return undefined;
   const variants = PRIMARY_LIFT_VARIANTS[lift];
@@ -439,47 +475,67 @@ function primaryExerciseFor(lift: string, week: number, peakingATotal: boolean):
   return variants[week % variants.length];
 }
 
+
 /**
- * Hold a prescribed intensity range under a ceiling, keeping its width. Both
- * ends move, so a band capped at 75% ends at 75% and starts a band-width
- * below it — it does not collapse to "75-75%", which is a point, not a
- * prescription.
+ * Hold a prescribed intensity range under the health screen's ceiling.
+ *
+ * Both ends move, and the range never inverts: an athlete capped at 75% gets
+ * a band that ends at 75%, not one that starts above it.
  */
-function capIntensity(range: readonly [number, number], ceiling: number): readonly [number, number] {
+function capIntensity(
+  range: readonly [number, number],
+  ceiling: number
+): readonly [number, number] {
   if (ceiling >= 1) return range;
-  const width = Math.max(0.03, range[1] - range[0]);
   const hi = Math.min(range[1], ceiling);
-  const lo = Math.max(0.5, Math.min(range[0], hi - width));
+  const lo = Math.min(range[0], hi);
   return [lo, hi];
 }
 
 /**
- * Which KIND of quality session a single slot should be. The phase's own
- * intensity distribution says which kind belongs — base and build are
- * z2-dominant (threshold), specific and peak are z3-dominant (intervals) —
- * and within a phase the type rotates by week.
+ * Which KIND of quality session a single slot should be.
+ *
+ * Emphasis alone always picked the same dimension, so an athlete with one
+ * quality slot a week got eleven consecutive weeks of threshold running and
+ * never a single interval session. No real 5k programme looks like that, and
+ * a 5k is heavily vVO2max-dependent — threshold alone will not move it.
+ *
+ * Two corrections. The phase's own intensity distribution says which kind
+ * belongs: base and build are z2-dominant (threshold), specific and peak are
+ * z3-dominant (intervals), which is the specificity the block is for. And
+ * within a phase the type rotates by week, because doing the identical
+ * session every week for a whole block is not a progression.
  */
 function qualityKindForSlot(
   phase: Phase,
   week: number,
   profile: AthleteProfile,
-  repSessionsAllowed: boolean,
-  longEvent = false
+  repSessionsAllowed: boolean
 ): EmphasisKey {
   const [, z2, z3] = TID_BY_PHASE[phase];
-  // A half or marathon is a threshold event: its specific work is sustained
-  // pace, with VO2max sessions as the minority. A 5k is the reverse.
-  const pool: EmphasisKey[] = longEvent
-    ? ["threshold", "threshold", "vo2max_speed"]
-    : z3 > z2
-      ? ["vo2max_speed", "threshold"]
-      : ["threshold", "vo2max_speed"];
-  if (repSessionsAllowed && !longEvent && profile.emphasis.neuromuscular > profile.emphasis.threshold) {
+  const pool: EmphasisKey[] = z3 > z2 ? ["vo2max_speed", "threshold"] : ["threshold", "vo2max_speed"];
+  if (repSessionsAllowed && profile.emphasis.neuromuscular > profile.emphasis.threshold) {
     pool.push("neuromuscular");
   }
+  // Alternate across weeks so a one-quality week is not the same session every
+  // time, while keeping the phase-appropriate kind in the majority.
   return pool[week % pool.length];
 }
 
+/**
+ * One endurance session, prescribed in whichever modality this slot belongs
+ * to.
+ *
+ * Running keeps the existing path EXACTLY — `prescribeEndurance`, the
+ * three-anchor easy band, the athlete's own HR-vs-pace regression, the
+ * progression overrides. Nothing about a running athlete's plan changes.
+ * Anything else goes through `prescribeModalityEndurance`, which quotes pace
+ * in that sport's own units and never borrows a running number.
+ *
+ * The label is what the athlete reads, so it is the label that carries the
+ * modality: "Easy row", "Threshold ride". The `kind` stays `easy_run` because
+ * the scheduler, the stress table and the ACWR pass are all keyed on it.
+ */
 function buildEnduranceSession(args: {
   profile: AthleteProfile;
   modality: CardioModality;
@@ -506,8 +562,7 @@ function buildEnduranceSession(args: {
     return makeSession(kind, "endurance", emphasisKey, findingId, prescription, {
       intensity: args.intensity,
       isQuality: args.isQuality,
-      // A quality session may have grown to fit its own reps.
-      minutes: prescription.minutes > 0 ? prescription.minutes : minutes,
+      minutes,
       modality,
     });
   }
@@ -527,96 +582,34 @@ function buildEnduranceSession(args: {
   });
 }
 
-/** Sessions per domain the phase wants, after the priority slider has moved whole sessions between them. */
-export function domainSessionTargets(
-  phase: Phase,
-  mode: Record<"strength" | "endurance", DomainMode>,
-  priority: number
-): { endurance: number; strength: number } {
-  let endurance = mode.endurance === "develop" ? ENDURANCE_SESSIONS_BY_PHASE[phase] : MMD_ENDURANCE_SESSIONS_PER_WEEK;
-  let strength = mode.strength === "develop" ? STRENGTH_SESSIONS_BY_PHASE[phase] : Math.max(MMD_STRENGTH_SESSIONS_PER_WEEK, 2);
-  if (mode.endurance === "develop" && mode.strength === "develop") {
-    if (priority >= PRIORITY_STRONG_LEAN) {
-      endurance = Math.max(MMD_ENDURANCE_SESSIONS_PER_WEEK + 1, endurance - PRIORITY_LEAN_SESSION_SHIFT);
-    } else if (priority <= 1 - PRIORITY_STRONG_LEAN) {
-      strength = Math.max(MMD_STRENGTH_SESSIONS_PER_WEEK + 1, strength - PRIORITY_LEAN_SESSION_SHIFT);
-    } else if (priority > 0.5) {
-      endurance = Math.max(3, endurance - 1);
-    } else if (priority < 0.5) {
-      strength = Math.max(2, strength - 1);
-    } else {
-      endurance = Math.max(3, endurance - 1);
-    }
-  }
-  return { endurance, strength };
-}
-
-/**
- * F17 — the easy session a flagged low-capacity day swaps a hard one for.
- *
- * Same length, same sport, same finding: the athlete is not losing the slot,
- * they are losing the intensity. Exported because the swap happens in the
- * engine, after scheduling — a low-capacity day is a response to a day rather
- * than to the block, and the week has to already exist for there to be a day
- * to respond to.
- */
-export function easySwapFor(
-  original: PlannedSession,
-  profile: AthleteProfile,
-  opts: { suppressHeartRate?: boolean; fitness?: ModalityFitness } = {}
-): PlannedSession {
-  const modality = original.modality ?? "run";
-  return buildEnduranceSession({
-    profile,
-    modality,
-    fitness: opts.fitness,
-    kind: "easy_run",
-    emphasisKey: "aerobic_base",
-    findingId: original.findingId,
-    minutes: original.minutes,
-    intensity: 0.35,
-    isQuality: false,
-    suppressHeartRate: opts.suppressHeartRate ?? false,
-  });
-}
-
 export function buildSessionSet(input: SessionSetInput): SessionSet {
   const {
     profile, week, mode, goal, constraints,
     suppressHeartRate = false, autoregMultiplier = 1, intensityCeiling = 1,
     modalityFitness = {},
-    expected5kS = null,
-    expectedStrengthGain = 0,
-    recentLongRunsMin = [],
-    longestRecentRunMin = null,
-    enduranceTrainingYears = 0,
-    strengthTrainingYears = 1,
-    lifeLoad = false,
-    isFinalTaperWeek = week.phase === "taper",
   } = input;
-  const noviceEndurance = enduranceTrainingYears < NOVICE_ENDURANCE_YEARS;
-  const noviceStrength = strengthTrainingYears < 1;
-  const longEvent = (goal.enduranceEventKm ?? 0) >= 21;
   const { phase, deload } = week;
   const notes: string[] = [];
   const sessions: PlannedSession[] = [];
-  const disliked = constraints.dislikedExercises ?? [];
-
-  if (week.travel) {
-    notes.push("A travel week: held as a maintenance week — volume down, intensity kept, nothing new added.");
-  }
 
   // ---- which sport is each endurance session in? --------------------------
+  // The athlete's whitelist, resolved once for the week. Quality lands in the
+  // modality their goal is contested in where they named one, so a 2k rower's
+  // intervals are rowing intervals rather than the running intervals that used
+  // to be the only kind this engine could produce.
   const cardio = resolveCardioPlan(
     constraints.cardioModalities ?? [],
     constraints.crossTrainOk ?? false,
     modalityForEvent(goal.enduranceEventKey)
   );
   for (const note of cardio.notes) notes.push(note);
+  // Easy volume walks the rotation so a two-modality athlete alternates rather
+  // than doing all of one and none of the other. Offset by the week index so
+  // the alternation does not put the same sport in the same slot every week.
   let easyRotationCursor = week.week;
   const nextEasyModality = (): CardioModality =>
     cardio.rotation[easyRotationCursor++ % cardio.rotation.length];
-  let totalMinutes = Math.max(0, week.enduranceMin * autoregMultiplier);
+  const totalMinutes = Math.max(0, week.enduranceMin * autoregMultiplier);
   if (autoregMultiplier < 1) {
     notes.push(
       `Volume reduced ${Math.round((1 - autoregMultiplier) * 100)}% this week off your logged feedback from last week.`
@@ -624,14 +617,77 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
   }
 
   // ---- how many slots does each domain get? -------------------------------
-  const wanted = domainSessionTargets(phase, mode, goal.priority);
-  const affordable = (minutes: number) =>
-    minutes > 0 ? Math.max(1, Math.floor(minutes / MIN_ENDURANCE_SESSION_MIN)) : 0;
-  let enduranceSlots = Math.min(wanted.endurance, affordable(totalMinutes));
-  let strengthSlots = wanted.strength;
+  // The emphasis vector is allocated WITHIN each domain rather than across
+  // both at once. Allocating one seven-way split over the whole week lets a
+  // strongly endurance-tilted vector round the strength dimensions to zero
+  // and delete strength from the plan entirely — which is not what "emphasis"
+  // means, and would silently drop the minimum maintenance dose the evidence
+  // base is clearest about.
+  const enduranceByPhase =
+    mode.endurance === "develop"
+      ? Math.max(3, ENDURANCE_SESSIONS_BY_PHASE[phase] - (goal.priority >= 0.5 ? 1 : 0))
+      : MMD_ENDURANCE_SESSIONS_PER_WEEK;
 
-  // Fit inside the athlete's own stated session ceiling, trimming whichever
-  // domain is furthest above its minimum dose first.
+  /**
+   * A budget too big to spend in the slots the phase asks for needs MORE
+   * slots, not a discarded surplus.
+   *
+   * The phase table decides how many endurance sessions a week wants, and
+   * every one of them is capped at the athlete's own `maxSessionMin`. Nothing
+   * checked whether the two together could actually hold the week's budget, so
+   * the leftover minutes were simply lost. Measured across 32,400 generated
+   * weeks, 54% spent less than 90% of their budget and the median week spent
+   * 84%; the worst case was 55 minutes prescribed against 468 budgeted — two
+   * slots, each capped at 30 minutes, and a note quoting 468 back to the
+   * athlete.
+   *
+   * The count is the free variable here, in the opposite direction from the
+   * budget pass further down: where too little time forces fewer sessions, too
+   * much time forces more of them. Both are the same rule, that the number of
+   * sessions is what bends.
+   *
+   * This is a REQUEST, not a guarantee. The athlete's own `maxSessionsPerWeek`
+   * still binds immediately below, and the trim loop there balances the two
+   * domains rather than letting a large endurance budget crowd lifting out of
+   * the week.
+   */
+  const neededForBudget =
+    totalMinutes > 0 && constraints.maxSessionMin > 0
+      ? Math.ceil(totalMinutes / constraints.maxSessionMin)
+      : 0;
+  const enduranceWanted = Math.max(
+    enduranceByPhase,
+    Math.min(neededForBudget, constraints.maxSessionsPerWeek)
+  );
+  const strengthWanted =
+    mode.strength === "develop"
+      ? Math.max(2, STRENGTH_SESSIONS_BY_PHASE[phase] - (goal.priority < 0.5 ? 1 : 0))
+      : Math.max(MMD_STRENGTH_SESSIONS_PER_WEEK, 2);
+
+  // Each endurance session has to be long enough to be a session. Where the
+  // week's minutes cannot support the session count, the COUNT gives way —
+  // never the duration.
+  const affordableBySessionLength =
+    totalMinutes > 0 ? Math.max(1, Math.floor(totalMinutes / MIN_ENDURANCE_SESSION_MIN)) : 0;
+  let enduranceSlots = Math.min(enduranceWanted, affordableBySessionLength);
+  let strengthSlots = strengthWanted;
+  /**
+   * Both of these notes quote the week's endurance minutes back to the
+   * athlete, and both used to be written HERE, from `totalMinutes` — the
+   * budget as it stood before the reconciliation further down had trimmed
+   * anything. Rebuilding two real plans and reading them is what caught it: a
+   * week that prescribed 63 minutes said "68 minutes split any further", and
+   * one that prescribed 105 said "at 113 weekly minutes".
+   *
+   * Five and eight minutes is not much. Quoting a number the plan below then
+   * contradicts is the entire defect class the reconciliation exists to close,
+   * so it is not much in the wrong direction. They are deferred to the end and
+   * written from what the week actually contains.
+   */
+  const fewerLongerRuns = enduranceSlots < enduranceWanted;
+
+  // Fit inside the athlete's own stated ceiling, trimming whichever domain is
+  // furthest above its minimum dose first.
   while (enduranceSlots + strengthSlots > constraints.maxSessionsPerWeek) {
     const enduranceHeadroom = enduranceSlots - MMD_ENDURANCE_SESSIONS_PER_WEEK;
     const strengthHeadroom = strengthSlots - MMD_STRENGTH_SESSIONS_PER_WEEK;
@@ -647,59 +703,20 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
   enduranceSlots = Math.max(0, enduranceSlots);
   strengthSlots = Math.max(0, strengthSlots);
 
-  // ---- the athlete's hours cap binds the WHOLE week -----------------------
-  // A strength session is a warm-up plus about six exercises. The cap has
-  // to fit BOTH domains: three gym sessions inside a four-hour week left one
-  // run and no quality session, which is not a hybrid week. So the slots
-  // give way on whichever side is furthest above its minimum dose — the
-  // same rule the session cap uses — and the endurance minutes then fit
-  // beside the gym time that is left. The sessions built below report their
-  // real length, and a final pass trims the easy runs and then the long run
-  // if the estimate was short.
-  const strengthSessionEstimateMin = STRENGTH_WARMUP_MIN + TARGET_EXERCISES_PER_STRENGTH_SESSION * STRENGTH_MIN_PER_EXERCISE;
-  const hoursCapMin = Math.max(0, constraints.maxHoursPerWeek * 60);
-  if (hoursCapMin > 0) {
-    // A quality session needs its minimum; an easy run and the long run need
-    // theirs. The floor a week's endurance slots need, in minutes.
-    const enduranceFloor = (slots: number) =>
-      slots <= 0 ? 0 : MIN_QUALITY_SESSION_MIN + Math.max(0, slots - 1) * MIN_ENDURANCE_SESSION_MIN;
-    let trimmedSlots = false;
-    while (
-      strengthSlots * strengthSessionEstimateMin + enduranceFloor(enduranceSlots) > hoursCapMin &&
-      (strengthSlots > MMD_STRENGTH_SESSIONS_PER_WEEK || enduranceSlots > MMD_ENDURANCE_SESSIONS_PER_WEEK)
-    ) {
-      const enduranceHeadroom = enduranceSlots - MMD_ENDURANCE_SESSIONS_PER_WEEK;
-      const strengthHeadroom = strengthSlots - MMD_STRENGTH_SESSIONS_PER_WEEK;
-      if (strengthHeadroom >= enduranceHeadroom && strengthHeadroom > 0) strengthSlots--;
-      else enduranceSlots--;
-      trimmedSlots = true;
-    }
-    const estimatedStrengthMin = strengthSlots * strengthSessionEstimateMin;
-    const capped = Math.max(0, hoursCapMin - estimatedStrengthMin);
-    if (capped < totalMinutes || trimmedSlots) {
-      notes.push(
-        `Held to your ${constraints.maxHoursPerWeek} hours a week: ${strengthSlots} gym session${strengthSlots === 1 ? "" : "s"} ` +
-          `take${strengthSlots === 1 ? "s" : ""} about ${Math.round((estimatedStrengthMin / 60) * 10) / 10} hours, so running ` +
-          `is held to ${Math.round(Math.min(capped, totalMinutes))} minutes this week` +
-          (capped < totalMinutes ? ` rather than the ${Math.round(totalMinutes)} the ramp would have given it` : "") +
-          `. More hours is the lever if the goals are to move faster.`
-      );
-      totalMinutes = Math.min(totalMinutes, capped);
-      enduranceSlots = Math.min(enduranceSlots, affordable(totalMinutes));
-    }
-  }
-  if (enduranceSlots < wanted.endurance && totalMinutes > 0) {
-    notes.push(
-      `Fewer, longer runs this week — ${Math.round(totalMinutes)} minutes split any further would be sessions too ` +
-        `short to be worth doing.`
-    );
-  }
-
   // ---- step 1: reserve the mandatory minimums -----------------------------
+  // The long run is reserved before the emphasis vector bids for anything —
+  // it is the one session emphasis may not take away.
+  // Reserved whenever there is any running at all outside the taper. A
+  // deload week that drops the long run entirely is not a deload, it is a
+  // gap in the one session the whole aerobic block is built around.
   const wantsLongRun = phase !== "taper" && enduranceSlots >= 1;
   const remainingEnduranceSlots = Math.max(0, enduranceSlots - (wantsLongRun ? 1 : 0));
 
   // ---- step 2: allocate the rest proportionally to emphasis ---------------
+  // Neuromuscular work is delivered as strides on easy runs during base and
+  // build, and only claims a session of its own in specific and peak. Its
+  // weight is not discarded when it cannot claim a session — it folds into
+  // aerobic base, where the strides actually happen.
   const repSessionsAllowed = REP_SESSION_PHASES.includes(phase);
   const enduranceDims: EmphasisKey[] = repSessionsAllowed
     ? ["aerobic_base", "threshold", "vo2max_speed", "neuromuscular"]
@@ -717,6 +734,10 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
   });
   if (wantsLongRun) allocation.aerobic_base += 1;
 
+  // The weak-lift dimension only buys a session when the diagnostic actually
+  // named a weak lift. Without one there is no finding behind the session,
+  // and non-negotiable #7 says a session the engine cannot justify is not
+  // prescribed — the weight goes to the rotation instead.
   const strengthDims: EmphasisKey[] = profile.weakLift
     ? ["maximal_strength", "strength_endurance", "weak_lift"]
     : ["maximal_strength", "strength_endurance"];
@@ -730,90 +751,143 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
     allocation[k] = strengthCounts[i];
   });
 
-  // ---- quality session size and caps --------------------------------------
-  // A quality session is a session size: a share of the week bounded to a
-  // real session, never a slice that shrinks below its own warm-up.
-  const qualityMinutes = Math.min(
-    constraints.maxSessionMin,
-    Math.max(MIN_QUALITY_SESSION_MIN, Math.min(MAX_QUALITY_SESSION_MIN, Math.round(totalMinutes * QUALITY_SESSION_MINUTE_SHARE)))
-  );
-  const qualityAllocated = () => QUALITY_EMPHASIS.reduce((s, k) => s + allocation[k], 0);
-  const demote = (reason: string) => {
-    const donor = QUALITY_EMPHASIS.filter((k) => allocation[k] > 0).sort(
-      (a, b) => profile.emphasis[a] - profile.emphasis[b]
-    )[0];
-    if (!donor) return false;
-    allocation[donor] -= 1;
-    allocation.aerobic_base += 1;
-    if (reason && !notes.includes(reason)) notes.push(reason);
-    return true;
-  };
-
-  // How many hard sessions this athlete can absorb in a week.
-  const highVolumeAndExperienced =
-    totalMinutes >= QUALITY_CAP_HIGH_VOLUME_MIN_PER_WEEK && enduranceTrainingYears >= QUALITY_CAP_HIGH_VOLUME_MIN_YEARS;
-  let qualityCap = Math.min(
-    MAX_QUALITY_ENDURANCE_SESSIONS,
-    highVolumeAndExperienced ? MAX_QUALITY_ENDURANCE_SESSIONS : QUALITY_SESSIONS_CAP_LOW_VOLUME
-  );
-  if (lifeLoad) qualityCap = Math.min(qualityCap, LIFE_LOAD_MAX_QUALITY_SESSIONS);
-  if (deload) qualityCap = Math.min(qualityCap, 1);
-  // A novice runner (Videbæk 2015: 2.3× the injury rate of recreational
-  // runners) gets one hard session a week at most, and none in the base
-  // phase — strides on the easy runs are the neuromuscular work until the
-  // base is there to absorb a track session.
-  if (noviceEndurance) qualityCap = Math.min(qualityCap, phase === "base" ? 0 : 1);
-
-  // ---- step 2b: size the long run -------------------------------------------
-  const qualityEnduranceCount = qualityAllocated();
+  // ---- step 2b: size the long run against the easy runs it sits beside ----
+  //
+  // The long run has to be distinctly the longest session of the week. The
+  // share used to fall back to `1 / slots` in low-frequency weeks, to stop it
+  // coming out shorter than an easy run, and overcorrected into identical: at
+  // two slots both took exactly 50% of the week, which is how an athlete was
+  // handed a 6.5km easy run and a 6.7km "long" run.
+  //
+  // This has to run AFTER the allocation, not before it. Quality sessions take
+  // a fixed share off the top, so the long run is not competing with every
+  // other slot — only with the easy runs that divide what is left. Sizing it
+  // against the raw slot count was the first fix and it still produced 67
+  // minutes against 60, because it counted the interval session as a rival for
+  // minutes it had already been given.
+  //
+  // With q the fraction spent on quality and e easy runs sharing the rest,
+  // long/easy = L·e/(1-L-q), so holding that at or above R needs
+  // L >= R(1-q)/(e+R).
+  const qualityEnduranceCount = QUALITY_EMPHASIS.reduce((n, k) => n + allocation[k], 0);
   const easyRunCount = Math.max(1, allocation.aerobic_base - (wantsLongRun ? 1 : 0));
-  const qualityFraction = Math.min(0.8, (qualityEnduranceCount * qualityMinutes) / Math.max(1, totalMinutes));
+  const qualityFraction = Math.min(0.8, qualityEnduranceCount * QUALITY_SESSION_MINUTE_SHARE);
   const ratioShare =
     (LONG_RUN_MIN_MULTIPLE_OF_EASY * (1 - qualityFraction)) /
     (easyRunCount + LONG_RUN_MIN_MULTIPLE_OF_EASY);
+  // No ceiling here, deliberately. A ceiling fights the ratio: with one easy
+  // run in the week, holding the long run at a third of the volume makes the
+  // EASY run the longest session, which is the defect this ratio exists to
+  // prevent. `ratioShare` is self-limiting anyway — it only approaches 0.6
+  // when there is a single easy run to be 1.5x longer than, and falls to 0.19
+  // once there are four, where the 28% floor takes over instead.
   const longShare = Math.max(LONG_RUN_MINUTE_SHARE, ratioShare);
   const shareLongMinutes = Math.max(MIN_ENDURANCE_SESSION_MIN, Math.round(totalMinutes * longShare));
 
+  // ---- the race distance decides how long "long" has to be ----------------
+  //
+  // A share of weekly volume is the right way to size a long run when there is
+  // no race, and completely the wrong way when there is one. Someone training
+  // for a half was handed a 7km long run because 28% of their week is 7km —
+  // arithmetic that never asked what they were preparing for. The event
+  // distance now sets a target and the block ramps toward it.
+  //
+  // The ramp matters as much as the target. Jumping straight to a 30km long
+  // run in week one is how people get hurt, so the peak is approached over the
+  // block and the ACWR pass downstream still governs the whole week.
   let longMinutes = shareLongMinutes;
+  let longRunNote: string | null = null;
   const raceKm = goal.enduranceEventKm;
   const easyPaceS = profile.easyBand ? (profile.easyBand.lo + profile.easyBand.hi) / 2 : null;
   if (raceKm != null && goal.enduranceEventKey && easyPaceS != null && phase !== "taper") {
     const peakFraction = LONG_RUN_PEAK_FRACTION_OF_RACE[goal.enduranceEventKey];
     if (peakFraction != null) {
       const peakKm = raceKm * peakFraction;
+      // Ramped: 60% of the peak at the start of the block, the full peak by
+      // the end of the specific phase.
       const progress = Math.min(1, blockProgress(week));
       const targetKm = peakKm * (0.6 + 0.4 * progress);
       const targetMinutes = Math.min(LONG_RUN_MAX_MINUTES, Math.round((targetKm * easyPaceS) / 60));
-      longMinutes = Math.min(targetMinutes, constraints.maxSessionMin);
-      if (targetMinutes > constraints.maxSessionMin) {
-        notes.push(
-          `Your ${goal.enduranceEventKey} needs a long run building toward about ` +
+      // The race distance is authoritative in BOTH directions. It raises the
+      // long run for a marathoner whose weekly share would have given them
+      // 7km, and it holds one down for a half runner with a big weekly volume
+      // whose share would otherwise have prescribed 34km — further in training
+      // than they will race, which is nobody's idea of a half-marathon plan.
+      longMinutes = targetMinutes;
+      {
+        // The athlete's own stated session ceiling still wins. Overriding it
+        // would prescribe a session they have already said they cannot fit,
+        // which is not a plan, it is a wish — but they should be told, because
+        // a marathon cannot be trained for in 90-minute pieces.
+        longMinutes = Math.min(targetMinutes, constraints.maxSessionMin);
+        if (targetMinutes > constraints.maxSessionMin) {
+          longRunNote =
+            `Your ${goal.enduranceEventKey} needs a long run building toward about ` +
             `${Math.round(targetMinutes / 5) * 5} minutes, and you have said your longest available session is ` +
             `${constraints.maxSessionMin}. The long run is capped at what you said you can fit — if you can free ` +
-            `up a longer window once a week, this is the session to spend it on.`
-        );
+            `up a longer window once a week, this is the session to spend it on.`;
+        }
       }
     }
   }
-  const capEnduranceMinutes = (m: number) => Math.min(m, constraints.maxSessionMin);
-  longMinutes = capEnduranceMinutes(longMinutes);
 
-  // The single-session spike rule, and the deload rule. The long run is the
-  // session these bind: it may not exceed 1.1× the longest run of the last
-  // month in week one, nor 1.1× last week's long run after that — and on a
-  // deload week it comes down from last week's, because it is the most
-  // fatiguing session of the week and the one the deload used to leave alone.
+  if (longRunNote) notes.push(longRunNote);
+
+  // The athlete's stated session ceiling binds every endurance session, not
+  // just the long run. It was a scheduler penalty and nothing else, so a
+  // high-volume week with few slots could hand someone a 153-minute easy run
+  // after they had said 90 was their limit — a session they had already told
+  // us they could not do.
+  const capEnduranceMinutes = (m: number) => Math.min(m, constraints.maxSessionMin);
+  /**
+   * A SINGLE session may not be longer than the WHOLE WEEK's endurance budget.
+   *
+   * The race-distance branch above sets `longMinutes` from the event and the
+   * athlete's easy pace, and is bounded by the event, by LONG_RUN_MAX_MINUTES
+   * and by the athlete's own session ceiling — but never by the week it has to
+   * fit inside. Measured across a 32,400-week sweep, the worst case was a
+   * deload week budgeted 25 minutes carrying a 120-minute long run: 4.8x the
+   * volume the same week's note quotes back to the athlete.
+   *
+   * Capping at the budget can produce a "long run" far shorter than the event
+   * needs, and that is the honest output rather than a bug: an athlete whose
+   * whole week is 25 minutes is not a marathoner yet, and feasibility says so
+   * separately. What must not happen is the plan asserting both numbers at
+   * once.
+   */
+  longMinutes = Math.min(capEnduranceMinutes(longMinutes), Math.max(MIN_ENDURANCE_SESSION_MIN, Math.round(totalMinutes)));
+
+  /*
+   * THE SINGLE-SESSION SPIKE RULE.
+   *
+   * Frandsen 2025, 5,205 runners and 588,071 sessions: a run more than 10%
+   * beyond the longest of the previous 30 days raised the overuse-injury
+   * hazard by 64% to 128% depending on the size of the jump. In the same
+   * cohort the week-to-week ratio predicted nothing and the acute:chronic
+   * ratio pointed the wrong way, so this is the progression control with the
+   * strongest evidence behind it and the engine had none of it.
+   *
+   * It binds the long run because the long run is the session that grows.
+   * Race-distance sizing above can ask for a step the athlete has never taken
+   * — a marathoner in week one being given the long run their race implies
+   * rather than the one their history supports — and this is what holds that
+   * to a ramp.
+   *
+   * On a deload the long run comes DOWN. It was the one session the deload
+   * never touched, which left the most fatiguing run of the week surviving
+   * the week meant to recover from it.
+   */
   if (wantsLongRun) {
-    const recent = recentLongRunsMin.filter((m) => m > 0);
+    const recent = (input.recentLongRunsMin ?? []).filter((m) => m > 0);
     const longestRecent = recent.length > 0 ? Math.max(...recent) : null;
-    const anchor = longestRecent ?? longestRecentRunMin ?? null;
+    const anchor = longestRecent ?? input.longestRecentRunMin ?? null;
     if (anchor != null && anchor > 0) {
       const spikeCap = Math.max(MIN_ENDURANCE_SESSION_MIN, Math.round(anchor * SESSION_SPIKE_MAX_MULTIPLE));
       if (longMinutes > spikeCap) {
         notes.push(
-          `Long run held to ${spikeCap} minutes — no more than 10% over your longest run of the last month. ` +
-            `A single run more than 10% beyond that is the best-supported injury signal there is, so the long ` +
-            `run builds in steps rather than jumps.`
+          `Long run held to ${spikeCap} minutes — no more than 10% over your longest run of the last month. A ` +
+            `single run past that is the best-supported injury signal there is, so the long run builds in steps ` +
+            `rather than jumps.`
         );
         longMinutes = spikeCap;
       }
@@ -827,48 +901,72 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
   }
 
   // ---- step 3: hard caps ---------------------------------------------------
+  const qualityMinutes = capEnduranceMinutes(Math.round(totalMinutes * QUALITY_SESSION_MINUTE_SHARE));
   const longRunCountsAsQuality = wantsLongRun && longMinutes >= LONG_RUN_QUALITY_THRESHOLD_MIN;
-  while (qualityAllocated() + (longRunCountsAsQuality ? 1 : 0) > qualityCap && qualityAllocated() > 0) {
-    if (!demote(`Quality capped at ${qualityCap} session${qualityCap === 1 ? "" : "s"} this week — the slot moves to easy volume.`)) break;
+  const qualityAllocated = () => QUALITY_EMPHASIS.reduce((s, k) => s + allocation[k], 0);
+  const demote = (reason: string) => {
+    const donor = QUALITY_EMPHASIS.filter((k) => allocation[k] > 0).sort(
+      (a, b) => profile.emphasis[a] - profile.emphasis[b]
+    )[0];
+    if (!donor) return false;
+    allocation[donor] -= 1;
+    allocation.aerobic_base += 1;
+    if (reason && !notes.includes(reason)) notes.push(reason);
+    return true;
+  };
+
+  let oneQualitySessionOnly = false;
+  // A quality session shorter than its own warm-up is not a quality session.
+  if (qualityMinutes < MIN_QUALITY_SESSION_MIN) {
+    while (qualityAllocated() > 1 && demote("")) {
+      /* keep one, fold the rest into easy volume */
+    }
+    if (qualityAllocated() > 0) {
+      oneQualitySessionOnly = true;
+    }
   }
 
-  // ---- strength load band for this week ------------------------------------
-  const strengthEmphasisFindingPresent = profile.findings.some(
-    (f) => f.id === "under-expressed" || f.id === "under-built"
-  );
-  const strengthEmphasisKey: EmphasisKey = strengthEmphasisFindingPresent
-    ? profile.emphasis.maximal_strength >= profile.emphasis.strength_endurance
-      ? "maximal_strength"
-      : "strength_endurance"
-    : "maximal_strength";
-  const peakingATotal =
-    goal.targetTotalKg != null || goal.targetSquatKg != null || goal.targetBenchKg != null || goal.targetDeadliftKg != null;
-  // The rep-profile shift only applies when the diagnostic actually found a
-  // rep-profile gap. A tie at the floor used to shift every peaking athlete a
-  // rung heavier for the whole block, so the base-phase spec was never used.
-  const baseSpec = peakingATotal
-    ? strengthEmphasisFindingPresent
-      ? shiftPhaseSpec(phase, strengthEmphasisKey)
-      : STRENGTH_PHASE_SPEC[phase]
-    : GENERAL_STRENGTH_SPEC[Math.min(GENERAL_STRENGTH_SPEC.length - 1, Math.floor(blockProgress(week) * GENERAL_STRENGTH_SPEC.length))];
-  const progressedBand = phase === "taper" ? baseSpec.pct : subBandFor(baseSpec.pct, week.phaseProgress);
-  const workingMax = workingMaxMultiplierFor(expectedStrengthGain, blockProgress(week));
+  // At most three quality endurance sessions in a week, whatever the vector
+  // says. F10: a long run over 75 minutes counts toward that ceiling.
+  while (qualityAllocated() + (longRunCountsAsQuality ? 1 : 0) > MAX_QUALITY_ENDURANCE_SESSIONS) {
+    if (!demote(`Quality capped at ${MAX_QUALITY_ENDURANCE_SESSIONS} sessions this week — the slot moves to easy volume.`)) break;
+  }
+
+  const spec = STRENGTH_PHASE_SPEC[phase];
+  const heavyLoads = spec.pct[1] > HEAVY_LOWER_BODY_LOAD_THRESHOLD;
 
   // ---- step 4: reconcile against the phase's TID target --------------------
+  // Where emphasis and phase conflict, phase wins in specific/peak/taper and
+  // emphasis wins in base/build. Early in a block the diagnostic knows better
+  // than the calendar what this athlete needs; close to the event, the
+  // calendar knows better than the diagnostic what the event demands.
   const phaseGovernsTid = phase === "specific" || phase === "peak" || phase === "taper";
 
-  // A quality FLOOR in every phase for anyone with a race goal: even the base
-  // phase's own intensity distribution is 20% quality, not none. Only the
-  // long run is protected from it.
+  // A quality FLOOR in every phase, not just the ones where the phase governs.
+  //
+  // Emphasis winning in base and build was letting a dominant aerobic_base
+  // weight drive quality to zero for the whole first half of a block — an
+  // athlete chasing a sub-18 5k was getting nothing but easy and long runs
+  // for six weeks. No emphasis vector legitimately outputs "no quality at
+  // all" for someone with a race goal: even the base phase's own TID target
+  // is 80/15/5, which is 20% quality, not none. Emphasis still decides how
+  // much ABOVE the floor and which kind; it does not get to decide none.
   if (
     !phaseGovernsTid &&
     mode.endurance === "develop" &&
     !deload &&
-    qualityCap >= 1 &&
+    qualityMinutes >= MIN_QUALITY_SESSION_MIN &&
     qualityAllocated() < MMD_ENDURANCE_QUALITY_PER_WEEK &&
+    // Only the long run is protected. This used to hold back TWO aerobic
+    // slots, so an athlete whose week had exactly two runs — a long one and an
+    // easy one, which is what three gym days leaves most people — could never
+    // reach the floor at all, and the guard meant to guarantee quality
+    // guaranteed its absence instead. Long plus a session that actually
+    // changes something beats long plus easy for anyone with a race goal, and
+    // the long run keeps the week aerobic by minutes regardless.
     allocation.aerobic_base > (wantsLongRun ? 1 : 0)
   ) {
-    const receiver = qualityKindForSlot(phase, week.week, profile, repSessionsAllowed, longEvent);
+    const receiver = qualityKindForSlot(phase, week.week, profile, repSessionsAllowed);
     allocation[receiver] += 1;
     allocation.aerobic_base -= 1;
     notes.push(
@@ -877,17 +975,19 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
     );
   }
 
-  if (phaseGovernsTid && qualityCap >= 1) {
+  if (phaseGovernsTid && qualityMinutes >= MIN_QUALITY_SESSION_MIN) {
     const [, z2, z3] = TID_BY_PHASE[phase];
     const floor = deload || phase === "taper" ? 1 : MMD_ENDURANCE_QUALITY_PER_WEEK;
     const targetQuality = Math.min(
-      qualityCap - (longRunCountsAsQuality ? 1 : 0),
+      MAX_QUALITY_ENDURANCE_SESSIONS - (longRunCountsAsQuality ? 1 : 0),
       Math.max(floor, Math.round(enduranceSlots * (z2 + z3)))
     );
     let current = qualityAllocated();
     while (current > targetQuality && demote("")) current--;
     while (current < targetQuality && allocation.aerobic_base > (wantsLongRun ? 1 : 0)) {
-      const receiver = qualityKindForSlot(phase, week.week + current, profile, repSessionsAllowed, longEvent);
+      // The phase decides HOW MUCH quality; the emphasis vector still decides
+      // WHICH quality.
+      const receiver = qualityKindForSlot(phase, week.week + current, profile, repSessionsAllowed);
       allocation[receiver] += 1;
       allocation.aerobic_base -= 1;
       current++;
@@ -895,36 +995,47 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
   }
 
   // ---- build the endurance sessions ---------------------------------------
+  // Emphasis decides HOW MANY quality sessions; the phase and the week decide
+  // WHICH KIND. Taking the kind straight from the allocation meant an athlete
+  // whose threshold weight edged out their vo2max weight got eleven
+  // consecutive weeks of threshold running and never one interval session —
+  // for a 5k goal, which is heavily vVO2max-dependent.
   const qualityCount = QUALITY_EMPHASIS.reduce((sum, k) => sum + allocation[k], 0);
   const qualitySlots: EmphasisKey[] = Array.from({ length: qualityCount }, (_, i) =>
-    qualityKindForSlot(phase, week.week + i, profile, repSessionsAllowed, longEvent)
+    qualityKindForSlot(phase, week.week + i, profile, repSessionsAllowed)
   );
 
   for (const emphasisKey of qualitySlots) {
     const kind = ENDURANCE_EMPHASIS_TO_KIND[emphasisKey];
     const findingId = attributeFinding(emphasisKey, profile.findings) ?? "hybrid-baseline";
-    const progression = qualityProgressionFor(kind, week, profile, goal, expected5kS);
+    const progression = qualityProgressionFor(kind, week, profile, goal);
+    const minutes = Math.max(MIN_QUALITY_SESSION_MIN, qualityMinutes);
     sessions.push(
       buildEnduranceSession({
         profile,
+        // Quality goes to one modality for the whole block, not to whichever
+        // sport the rotation happens to land on. Interval paces progress across
+        // the block toward a target, and a target you chase on the erg one week
+        // and in the pool the next is not a progression.
         modality: cardio.qualityModality,
         fitness: modalityFitness[cardio.qualityModality],
         kind,
         emphasisKey,
         findingId,
-        minutes: qualityMinutes,
+        minutes,
         intensity: kind === "interval_run" ? 0.95 : kind === "rep_run" ? 0.9 : 0.8,
         isQuality: true,
         suppressHeartRate,
-        progression: { ...progression, maxMinutes: Math.min(constraints.maxSessionMin, MAX_QUALITY_SESSION_MIN) },
+        progression,
       })
     );
   }
 
-  let longRunMinutes: number | null = null;
   if (wantsLongRun) {
     const findingId = attributeFinding("aerobic_base", profile.findings) ?? "hybrid-baseline";
-    longRunMinutes = longMinutes;
+    // The long session belongs to the primary modality — it is the week's
+    // anchor session, and rotating it would leave a rower's longest effort
+    // happening in a pool.
     sessions.push(
       buildEnduranceSession({
         profile,
@@ -935,8 +1046,14 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
         findingId,
         minutes: longMinutes,
         intensity: 0.45,
+        // F10 — a long run past 75 minutes is quality for spacing purposes.
         isQuality: longRunCountsAsQuality,
         suppressHeartRate,
+        // F13: strides close the long run. Cheap neuromuscular exposure that
+        // costs nothing aerobically and was absent from Rev A entirely.
+        // Strides are a RUNNING drill — there is no such thing as a stride on
+        // an erg or in a pool, and appending one there would be the running
+        // plan leaking through the label again.
         extra:
           cardio.primary === "run"
             ? "Finish with 6x20s strides, walking back to full recovery between."
@@ -947,15 +1064,12 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
 
   const easySlots = Math.max(0, allocation.aerobic_base - (wantsLongRun ? 1 : 0));
   const usedMinutes = sessions.reduce((s, x) => s + x.minutes, 0);
-  // The long run stays the longest session of the week. With several easy
-  // runs each sits well under it; with a single easy run the ceiling is
-  // gentler, or a 5k athlete on three running days could never be given the
-  // volume the ramp budgeted for them.
+  // The long run stays the longest session even when the athlete's own ceiling
+  // has trimmed it. Capping only the long run inverted the week: a 90-minute
+  // limit pulled the long run to 90 and left an 81-minute "easy" run beside
+  // it, which is two long runs and no easy day.
   const easyCeiling = wantsLongRun
-    ? Math.max(
-        MIN_ENDURANCE_SESSION_MIN,
-        Math.floor(easySlots >= 2 ? longMinutes / LONG_RUN_MIN_MULTIPLE_OF_EASY : longMinutes * 0.9)
-      )
+    ? Math.max(MIN_ENDURANCE_SESSION_MIN, Math.floor(longMinutes / LONG_RUN_MIN_MULTIPLE_OF_EASY))
     : constraints.maxSessionMin;
   const easyMinutes =
     easySlots > 0
@@ -966,36 +1080,115 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
           easyCeiling
         )
       : 0;
-  const buildEasy = (i: number, minutes: number, easyModality: CardioModality): PlannedSession => {
+  for (let i = 0; i < easySlots; i++) {
     const findingId = attributeFinding("aerobic_base", profile.findings) ?? "hybrid-baseline";
     const kind: EnduranceKind = phase === "taper" ? "recovery_run" : "easy_run";
-    const stridesHere = !repSessionsAllowed && phase !== "taper" && i < 2 && easyModality === "run";
-    return buildEnduranceSession({
-      profile,
-      modality: easyModality,
-      fitness: modalityFitness[easyModality],
-      kind,
-      emphasisKey: "aerobic_base",
-      findingId,
-      minutes,
-      intensity: kind === "recovery_run" ? 0.3 : 0.35,
-      isQuality: false,
-      suppressHeartRate,
-      extra: stridesHere ? "Finish with 6x20s strides, walking back to full recovery between." : undefined,
-    });
-  };
-  const easySessions: { index: number; modality: CardioModality; session: PlannedSession }[] = [];
-  for (let i = 0; i < easySlots; i++) {
+    // Easy volume is the only thing that rotates across modalities. It is the
+    // part of the week where the sport matters least physiologically and most
+    // to whether the athlete actually does it.
     const easyModality = nextEasyModality();
-    const session = buildEasy(i, easyMinutes, easyModality);
-    easySessions.push({ index: i, modality: easyModality, session });
-    sessions.push(session);
+    // Strides are how neuromuscular work is delivered outside the specific
+    // and peak phases — the dimension's weight bought this, and it is spent
+    // here rather than silently dropped. Running only: there is no stride on
+    // a rowing machine.
+    const stridesHere = !repSessionsAllowed && phase !== "taper" && i < 2 && easyModality === "run";
+    sessions.push(
+      buildEnduranceSession({
+        profile,
+        modality: easyModality,
+        fitness: modalityFitness[easyModality],
+        kind,
+        emphasisKey: "aerobic_base",
+        findingId,
+        minutes: easyMinutes,
+        intensity: kind === "recovery_run" ? 0.3 : 0.35,
+        isQuality: false,
+        suppressHeartRate,
+        extra: stridesHere ? "Finish with 6x20s strides, walking back to full recovery between." : undefined,
+      })
+    );
+  }
+
+  /**
+   * ---- step 3b: the week may not prescribe more than it budgeted ----------
+   *
+   * Every duration above is floored — MIN_ENDURANCE_SESSION_MIN on easy runs,
+   * MIN_QUALITY_SESSION_MIN on quality, and the long run has floors of its
+   * own. Each floor is right on its own terms: a session below it is not a
+   * session. Nothing, however, was checking what they came to when ADDED UP,
+   * so a week whose budget could not pay for the sessions it had been given
+   * simply issued them anyway.
+   *
+   * Measured over 32,400 generated weeks before this existed, 28% of them
+   * prescribed more endurance than their own stated budget, the worst a
+   * deload week budgeted 25 minutes carrying 120 minutes of running. The
+   * week's note quotes that budget back to the athlete and the ACWR pass
+   * reasons about it, so this is not a display bug — it is the plan asserting
+   * two different numbers for the same week.
+   *
+   * TRIM BEFORE DROPPING. `affordableBySessionLength` already applies the
+   * file's "the COUNT gives way, never the duration" rule up front, and it
+   * cannot get this right because it has to assume every session costs
+   * MIN_ENDURANCE_SESSION_MIN when the long run and the quality sessions both
+   * cost more. But reaching for the same lever again here is too blunt: a week
+   * 5% over budget would lose an entire session and land far UNDER instead,
+   * which is how the first version of this fix turned a 28% overshoot into
+   * more undershoot than it removed. Shortening sessions that are above their
+   * own floor costs the week nothing it needs; deleting one costs it a
+   * session. So durations give way first, down to their floors and no
+   * further, and only a week that still does not fit loses a slot.
+   */
+  {
+    const fitted = fitEnduranceToMinutes(sessions, Math.round(totalMinutes), {
+      easyCeiling: Math.min(constraints.maxSessionMin, easyCeiling),
+    });
+    sessions.length = 0;
+    sessions.push(...fitted.sessions);
+    if (fitted.dropped.length > 0) {
+      notes.push(
+        `${fitted.dropped.length} endurance session${fitted.dropped.length > 1 ? "s" : ""} dropped this week — ` +
+          `${Math.round(totalMinutes)} minutes will not stretch to more without making each one too short to be ` +
+          `worth doing.`
+      );
+    }
+  }
+
+  // Written now rather than where the decisions were taken, so the minutes
+  // quoted are the minutes prescribed. See the note beside `fewerLongerRuns`.
+  {
+    const spent = sessions.reduce((sum, x) => sum + x.minutes, 0);
+    if (fewerLongerRuns) {
+      notes.push(
+        `Fewer, longer runs this week — ${spent} minutes split any further would be sessions too short to be ` +
+          `worth doing.`
+      );
+    }
+    if (oneQualitySessionOnly) {
+      notes.push(
+        `One quality session this week rather than several — at ${spent} weekly minutes, splitting the hard work ` +
+          `further would leave none of it long enough to do anything.`
+      );
+    }
   }
 
   // ---- build the strength sessions ----------------------------------------
+  // F8: lift-specific days, not "lower/upper". Deadlift frequency is
+  // deliberately lowest — highest systemic fatigue cost, competes most
+  // directly with running.
   const weakLiftSlots = allocation.weak_lift;
   const rotationSlots = Math.max(0, strengthSlots - weakLiftSlots);
+  // The split the athlete chose decides how the week is carved up; the
+  // emphasis vector still decides how hard each day is and which lift leads
+  // it. Handing someone a "bench day" when they train push/pull/legs reads as
+  // a fragment of a session rather than a session.
   const split = TRAINING_SPLITS[constraints.trainingSplit ?? DEFAULT_TRAINING_SPLIT];
+  // The athlete's OWN day structure wins over all five stock splits.
+  //
+  // Someone who trains chest/back/arms/legs, or who wants a dedicated
+  // shoulders day, was previously told to pick the closest of five and live
+  // with it. Their week is data, not a fixed option, so it is carried on the
+  // constraints and used here directly. An empty list means they did not
+  // define one, which is the ordinary case and behaves exactly as before.
   const customDays = constraints.customSplitDays ?? [];
   const splitDays: readonly SplitDay[] = customDays.length > 0 ? customDays : split.days;
   if (customDays.length > 0) {
@@ -1004,13 +1197,29 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
         `one of the stock splits.`
     );
   }
-  if (peakingATotal && Object.keys(constraints.exercisesByDay ?? {}).length > 0) {
+  // A peaking block cannot hand the lead over. Said once, here, rather than
+  // silently overriding a choice the athlete made and can see was ignored.
+  const peakingATotalForSplit =
+    goal.targetTotalKg != null || goal.targetSquatKg != null ||
+    goal.targetBenchKg != null || goal.targetDeadliftKg != null;
+  if (peakingATotalForSplit && Object.keys(constraints.exercisesByDay ?? {}).length > 0) {
     notes.push(
       "Your chosen exercises are in, but the competition lift still leads each day — you have set a numeric lift " +
         "target, and specificity is the whole reason a peaking block exists. Clear the target and your own pick " +
         "leads instead."
     );
   }
+  // The split governs in BOTH modes. Maintenance previously hardcoded
+  // squat+bench and ignored the athlete's choice entirely, so someone who
+  // asked for push/pull/legs got a bench day and a squat day.
+  //
+  // The cycle CONTINUES across weeks rather than restarting at day one. Taking
+  // a prefix — `slice(0, slots)` — is what gave an upper/lower athlete with
+  // three gym days Lower, Upper, Lower every single week: two lower sessions
+  // and one upper, forever, because the slice always began at index 0. Three
+  // sessions cannot be two-and-two inside one week, but they even out across
+  // two if the second week picks up where the first left off, which is also
+  // how anybody actually runs an upper/lower split.
   const cycleOffset =
     splitDays.length > 0 ? ((week.week - 1) * Math.max(1, rotationSlots)) % splitDays.length : 0;
   const dayIndexFor = (i: number) => (cycleOffset + i) % Math.max(1, splitDays.length);
@@ -1019,267 +1228,295 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
     (_, i) => splitDays[dayIndexFor(i)]?.primaryLift ?? "squat"
   );
 
+  // Whether the athlete can actually perform what is about to be prescribed.
+  // `constraints.equipment` was previously written and never read, so a
+  // no-gym athlete was still handed a barbell rotation — the gym-access
+  // question was collected, stored, and then ignored by the only code that
+  // mattered.
   const hasBarbell = constraints.equipment.includes("barbell");
-  const strengthSetsByLift: Record<string, number> = {};
-  const addSets = (lift: string, sets: number) => {
-    strengthSetsByLift[lift] = (strengthSetsByLift[lift] ?? 0) + sets;
-  };
-  let heavyStrengthSessions = 0;
-
-  // Lift-specific ceilings inside the final seven days before the event.
-  const taperCeilingFor = (lift: string): number =>
-    isFinalTaperWeek && phase === "taper" ? TAPER_FINAL_WEEK_INTENSITY_CEILING[lift] ?? 1 : 1;
 
   let heavyLowerUsed = false;
   for (let i = 0; i < Math.min(rotationSlots, rotation.length); i++) {
     const lift = rotation[i];
-    const splitDay = splitDays[dayIndexFor(i)];
 
     if (mode.strength === "maintain") {
       const findingId = attributeFinding("maximal_strength", profile.findings) ?? "hybrid-baseline";
-      // Spiering's maintenance dose holds intensity — for someone with a
-      // strength base to maintain. A novice has none yet, and 3x3-5 at 80-85%
-      // with no logged 1RM is not a session they can perform; they get the
-      // general first-block scheme at a load they can hold.
-      const noviceSpec = GENERAL_STRENGTH_SPEC[0];
-      const intensity = capIntensity(
-        noviceStrength ? noviceSpec.pct : [MMD_STRENGTH_MIN_INTENSITY, MMD_STRENGTH_MIN_INTENSITY + 0.05],
-        Math.min(intensityCeiling, taperCeilingFor(lift))
-      );
+      const maintDay = splitDays[dayIndexFor(i)];
       const prescription = prescribeLift(profile, findingId, {
         lift,
+        // No barbell: a substitution, named as one. See NO_GYM_SUBSTITUTIONS.
         substitution: hasBarbell ? undefined : NO_GYM_SUBSTITUTIONS[lift],
         sets: MAINTENANCE_SETS,
-        reps: noviceStrength ? noviceSpec.reps : MAINTENANCE_REPS,
-        intensity,
-        rir: noviceStrength ? noviceSpec.rir : [2, 3],
+        // Spiering's dose holds INTENSITY; it does not require doubles. Three
+        // to five keeps the load high enough to maintain without making a
+        // maintenance week read like a peaking week.
+        reps: MAINTENANCE_REPS,
+        intensity: capIntensity([MMD_STRENGTH_MIN_INTENSITY, MMD_STRENGTH_MIN_INTENSITY + 0.05], intensityCeiling),
+        rir: [2, 3],
+        // A maintenance session is still a session. Prescribing one lift and
+        // nothing else is not a gym visit anybody would make.
+        //
+        // Their own picks for this day beat the engine's rotation. A
+        // maintenance block is exactly where an athlete's preferences should
+        // win: the dose is what matters and the exercise selection is not
+        // carrying any diagnostic weight.
         accessories:
-          chosenExercisesFor(splitDay.label, constraints.exercisesByDay)?.map(asAccessoryLine) ??
-          accessoriesForDay(splitDay, lift, week.week, disliked),
+          chosenExercisesFor(maintDay.label, constraints.exercisesByDay)?.map(asAccessoryLine) ??
+          accessoriesForDay(maintDay, lift, week.week),
       });
-      addSets(lift, MAINTENANCE_SETS);
-      if (lift !== "bench" && intensity[1] >= MMD_STRENGTH_MIN_INTENSITY) heavyStrengthSessions++;
       sessions.push(
         makeSession("strength_maintenance", "strength", "maximal_strength", findingId, prescription, {
           intensity: MMD_STRENGTH_MIN_INTENSITY,
           isQuality: false,
           lift,
-          label: splitDay.label,
-          liftSets: { [lift]: MAINTENANCE_SETS },
+          label: maintDay.label,
         })
       );
       continue;
     }
 
-    const findingId = attributeFinding(strengthEmphasisKey, profile.findings) ?? "hybrid-baseline";
-    const rawSets = baseSpec.sets;
-    const sets = deload ? Math.max(2, Math.round(rawSets * DELOAD_STRENGTH_SET_MULTIPLIER)) : rawSets;
-    const reps = baseSpec.reps;
-    const intensity = capIntensity(progressedBand, Math.min(intensityCeiling, taperCeilingFor(lift)));
-    const rir: readonly [number, number] = deload
-      ? [baseSpec.rir[0] + DELOAD_STRENGTH_RIR_BONUS, baseSpec.rir[1] + DELOAD_STRENGTH_RIR_BONUS]
-      : baseSpec.rir;
+    // Which strength emphasis this slot serves decides the rep scheme. This
+    // is where the diagnostic's rep-profile gap actually changes what the
+    // athlete does: an under-expressed athlete gets heavy singles, an
+    // under-built one gets accumulation volume, out of the same phase.
+    const emphasisKey: EmphasisKey =
+      profile.emphasis.maximal_strength >= profile.emphasis.strength_endurance
+        ? "maximal_strength"
+        : "strength_endurance";
+    const findingId = attributeFinding(emphasisKey, profile.findings) ?? "hybrid-baseline";
 
+    // The emphasis dimension shifts the athlete one step along the phase
+    // ladder — it does NOT set reps and load independently. Pairing the
+    // maximal-strength rep range with a base-phase percentage produces
+    // "4x1-3 @ 65-75% 1RM", which is not a heavy single, it is a fast
+    // sub-maximal rep with a rep target that makes no sense against the load.
+    // Load and rep range have to move together or neither is a prescription.
+    // Peaking a total and building general strength are different jobs. The
+    // phase ladder descends toward singles because it exists to peak three
+    // lifts on a date; an athlete with no numeric target wants size and
+    // strength, and 2 reps at 80% delivers neither.
+    const peakingATotal = goal.targetTotalKg != null || goal.targetSquatKg != null ||
+      goal.targetBenchKg != null || goal.targetDeadliftKg != null;
+    const shifted = peakingATotal
+      ? shiftPhaseSpec(phase, emphasisKey)
+      : GENERAL_STRENGTH_SPEC[
+          Math.min(
+            GENERAL_STRENGTH_SPEC.length - 1,
+            Math.floor(blockProgress(week) * GENERAL_STRENGTH_SPEC.length)
+          )
+        ];
+    const sets = Math.max(2, shifted.sets - (deload ? 1 : 0));
+    const reps = shifted.reps;
+    // The health screen's ceiling lands here. An athlete carrying an injury
+    // gets the same session structure at a load they can actually train
+    // through, which is what asking about the injury was for.
+    const intensity = capIntensity(shifted.pct, intensityCeiling);
+    const rir = shifted.rir;
+
+    // Accessories follow the day's patterns rather than the single lift, so a
+    // "Push" day is a push session rather than a bench press with two
+    // afterthoughts attached.
+    const splitDay = splitDays[dayIndexFor(i)];
+    // What the athlete picked for this day, from the exercises they have
+    // actually logged. Null when they picked nothing, which is the ordinary
+    // case and leaves the engine's own rotation in charge.
     const picks = chosenExercisesFor(splitDay.label, constraints.exercisesByDay);
+    // Their first pick LEADS the session — unless they are peaking a total, in
+    // which case the competition lift has to, because specificity is the whole
+    // reason a peaking block exists. Leading with a chosen exercise reuses the
+    // `variant` path, which prescribes by effort rather than by %1RM: the 1RM
+    // on file belongs to the competition lift, and printing 80% of a bench 1RM
+    // beside a chosen incline press would prescribe a weight nobody can press.
     const chosenLead = picks && !peakingATotal && hasBarbell ? picks[0] : undefined;
     const accessories = picks
       ? picks.slice(chosenLead ? 1 : 0).map(asAccessoryLine)
-      : accessoriesForDay(splitDay, lift, week.week, disliked);
-
-    // A peaking athlete's lower day carries the other lower lift as a
-    // secondary, so each is met twice a week on three gym days.
-    const secondaryLift =
-      peakingATotal && hasBarbell && (lift === "squat" || lift === "deadlift") && splitDay.patterns.includes("legs")
-        ? lift === "squat"
-          ? "deadlift"
-          : "squat"
-        : null;
-    const secondary = secondaryLift
-      ? {
-          lift: secondaryLift,
-          sets: deload ? 2 : SECONDARY_LIFT_SETS,
-          reps,
-          intensity: capIntensity(
-            [Math.max(0.5, intensity[0] - SECONDARY_LIFT_INTENSITY_OFFSET), Math.max(0.5, intensity[1] - SECONDARY_LIFT_INTENSITY_OFFSET)],
-            Math.min(intensityCeiling, taperCeilingFor(secondaryLift))
-          ),
-          rir: [rir[0] + 1, rir[1] + 1] as readonly [number, number],
-        }
-      : undefined;
-
+      : accessoriesForDay(splitDay, lift, week.week);
     const prescription = prescribeLift(profile, findingId, {
       lift,
+      // No barbell: substitute the pattern and say plainly it is a
+      // substitution rather than silently swapping the lift.
       substitution: hasBarbell ? undefined : NO_GYM_SUBSTITUTIONS[lift],
+      // Peaking a total means meeting the competition lift every week. Anyone
+      // else gets the pattern led by a rotating variation instead, which is
+      // the same training with less monotony.
       variant: hasBarbell ? (chosenLead ?? primaryExerciseFor(lift, week.week, peakingATotal)) : undefined,
       sets,
       reps: hasBarbell ? reps : NO_GYM_REP_RANGE,
       intensity,
       rir,
-      accessories: secondary ? accessories.slice(0, Math.max(3, accessories.length - 1)) : accessories,
-      workingMaxMultiplier: workingMax,
-      secondary,
+      accessories,
     });
 
-    const liftSets: Record<string, number> = { [lift]: sets };
-    addSets(lift, sets);
-    if (secondary) {
-      liftSets[secondary.lift] = secondary.sets * SECONDARY_LIFT_SET_WEIGHT;
-      addSets(secondary.lift, secondary.sets * SECONDARY_LIFT_SET_WEIGHT);
-    }
-    const sessionIsHeavy = intensity[1] > HEAVY_LOWER_BODY_LOAD_THRESHOLD;
-    if (lift !== "bench" && sessionIsHeavy) heavyStrengthSessions++;
-
     if (lift === "squat") {
-      const isHeavy: boolean = sessionIsHeavy && !heavyLowerUsed;
+      const isHeavy: boolean = heavyLoads && !heavyLowerUsed;
       heavyLowerUsed = heavyLowerUsed || isHeavy;
       sessions.push(
-        makeSession(isHeavy ? "squat_heavy" : "squat_volume", "strength", strengthEmphasisKey, findingId, prescription, {
+        makeSession(isHeavy ? "squat_heavy" : "squat_volume", "strength", emphasisKey, findingId, prescription, {
           intensity: isHeavy ? 0.9 : 0.7,
-          isQuality: sessionIsHeavy,
+          isQuality: heavyLoads,
           isHeavyLower: isHeavy,
-          isDeadlift: secondary?.lift === "deadlift",
           lift,
           label: splitDay.label,
-          liftSets,
         })
       );
     } else if (lift === "deadlift") {
       sessions.push(
-        makeSession(sessionIsHeavy ? "deadlift_heavy" : "deadlift_volume", "strength", strengthEmphasisKey, findingId, prescription, {
-          intensity: sessionIsHeavy ? 0.9 : 0.72,
-          isQuality: sessionIsHeavy,
-          isHeavyLower: sessionIsHeavy,
+        makeSession(heavyLoads ? "deadlift_heavy" : "deadlift_volume", "strength", emphasisKey, findingId, prescription, {
+          intensity: heavyLoads ? 0.9 : 0.72,
+          isQuality: heavyLoads,
+          isHeavyLower: heavyLoads,
           isDeadlift: true,
           lift,
           label: splitDay.label,
-          liftSets,
         })
       );
     } else {
       sessions.push(
-        makeSession(sessionIsHeavy ? "bench_heavy" : "bench_volume", "strength", strengthEmphasisKey, findingId, prescription, {
-          intensity: sessionIsHeavy ? 0.88 : 0.65,
+        makeSession(heavyLoads ? "bench_heavy" : "bench_volume", "strength", emphasisKey, findingId, prescription, {
+          intensity: heavyLoads ? 0.88 : 0.65,
           isQuality: false,
           lift,
           label: splitDay.label,
-          liftSets,
         })
       );
     }
   }
 
-  // A weak lift earns an EXTRA weekly exposure at moderate load.
+  // A weak lift earns an EXTRA weekly exposure at moderate load, on top of
+  // the rotation — that is what the 2.5x multiplier on the weak_lift
+  // dimension is buying, and without this it would buy nothing at all.
   if (mode.strength === "develop" && weakLiftSlots > 0) {
     const lift = profile.weakLift ?? rotation[0];
     const findingId = attributeFinding("weak_lift", profile.findings) ?? "hybrid-baseline";
     const wl = LIFT_PRESCRIPTIONS.weak_lift;
     for (let i = 0; i < weakLiftSlots; i++) {
-      const wlSets = deload ? Math.max(2, Math.round(wl.sets * DELOAD_STRENGTH_SET_MULTIPLIER)) : wl.sets;
       const prescription = prescribeLift(profile, findingId, {
         lift,
+        // No barbell: a substitution, named as one. See NO_GYM_SUBSTITUTIONS.
         substitution: hasBarbell ? undefined : NO_GYM_SUBSTITUTIONS[lift],
-        sets: wlSets,
+        sets: wl.sets,
         reps: [wl.repsLow, wl.repsHigh],
-        intensity: capIntensity([wl.intensityLow, wl.intensityHigh], Math.min(intensityCeiling, taperCeilingFor(lift))),
+        intensity: [wl.intensityLow, wl.intensityHigh],
         rir: [2, 3],
-        workingMaxMultiplier: workingMax,
       });
-      addSets(lift, wlSets);
       sessions.push(
         makeSession("weak_lift_exposure", "strength", "weak_lift", findingId, prescription, {
           intensity: wl.intensityHigh,
           isQuality: false,
           lift,
+          // Named for what it is. This session exists outside the split — it is
+          // an extra exposure the diagnostic bought for a lagging lift — so
+          // borrowing a "Push"/"Pull" label would misdescribe it.
           label: `Extra ${lift} exposure`,
-          liftSets: { [lift]: wlSets },
         })
       );
     }
   }
 
-  // ---- the hours cap, against the sessions as actually built ---------------
-  // The estimate above sized the endurance budget beside an ESTIMATE of the
-  // gym time. Now the real sessions exist — a lower day carrying a second
-  // lift, a quality session that grew to fit its reps — the easy runs give
-  // way until the week fits, because they are the part with the least
-  // specific work in them.
-  if (hoursCapMin > 0) {
-    const totalOf = () => sessions.reduce((s, x) => s + x.minutes, 0);
-    let excess = totalOf() - hoursCapMin;
-    let easyCut = false;
-    if (excess > 0 && easySessions.length > 0) {
-      const reducible = easySessions.reduce((s, e) => s + Math.max(0, e.session.minutes - MIN_ENDURANCE_SESSION_MIN), 0);
-      const cut = Math.min(excess, reducible);
-      if (cut > 0) {
-        easyCut = true;
-        for (const e of easySessions) {
-          const room = Math.max(0, e.session.minutes - MIN_ENDURANCE_SESSION_MIN);
-          const take = Math.round((room / reducible) * cut);
-          const rebuilt = buildEasy(e.index, e.session.minutes - take, e.modality);
-          sessions[sessions.indexOf(e.session)] = rebuilt;
-          e.session = rebuilt;
-        }
-      }
-      excess = totalOf() - hoursCapMin;
-      // Still over at the floors: the last easy run goes, and the athlete is told.
-      while (excess > 0 && easySessions.length > 0) {
-        const dropped = easySessions.pop()!;
-        easyCut = true;
-        sessions.splice(sessions.indexOf(dropped.session), 1);
-        allocation.aerobic_base = Math.max(0, allocation.aerobic_base - 1);
-        excess = totalOf() - hoursCapMin;
-      }
-    }
-    // Then the long run gives way, down to its floor — it is the one session
-    // that is sized by the race rather than by the week, so it is the last
-    // to shrink and the athlete is told what it would have been.
-    excess = totalOf() - hoursCapMin;
-    const longIdx = sessions.findIndex((s) => s.kind === "long_run");
-    if (excess > 0 && longIdx >= 0) {
-      const current = sessions[longIdx];
-      const target = Math.max(MIN_ENDURANCE_SESSION_MIN, Math.round(current.minutes - excess));
-      if (target < current.minutes) {
-        const findingId = attributeFinding("aerobic_base", profile.findings) ?? "hybrid-baseline";
-        sessions[longIdx] = buildEnduranceSession({
-          profile,
-          modality: cardio.primary,
-          fitness: modalityFitness[cardio.primary],
-          kind: "long_run",
-          emphasisKey: "aerobic_base",
-          findingId,
-          minutes: target,
-          intensity: 0.45,
-          isQuality: target >= LONG_RUN_QUALITY_THRESHOLD_MIN,
-          suppressHeartRate,
-          extra: cardio.primary === "run" ? "Finish with 6x20s strides, walking back to full recovery between." : undefined,
-        });
-        longRunMinutes = target;
-        notes.push(
-          `The long run is held to ${target} minutes by your weekly hours; the block wanted ${current.minutes}. ` +
-            `If one longer window a week can be found, this is the session to spend it on.`
-        );
-      }
-    }
-    if (easyCut && !notes.some((n) => n.startsWith("Held to your"))) {
-      notes.push(
-        `Held to your ${constraints.maxHoursPerWeek} hours a week — the easy running is what gave way, because the ` +
-          `gym sessions and the hard runs carry the work this block is built on.`
-      );
-    }
-  }
-
-  const deliveredEnduranceMin = sessions
-    .filter((s) => s.domain === "endurance")
-    .reduce((s, x) => s + x.minutes, 0);
-
   return {
     sessions,
     allocation,
     notes,
-    longRunMinutes,
-    deliveredEnduranceMin,
-    qualityCount,
-    strengthSetsByLift,
-    heavyStrengthSessions,
+    longRunMinutes: sessions.find((x) => x.kind === "long_run")?.minutes ?? null,
   };
+}
+
+
+/**
+ * Bring a set of endurance sessions inside a minute budget.
+ *
+ * Extracted because two callers need exactly this and had no business
+ * growing two versions of it: the week's own budget (step 3b above), and the
+ * ACWR cap in engine.ts, which trims a week that came out too hard relative to
+ * the athlete's chronic load. Both are answering the same question — these
+ * sessions cost more than this week may spend, so what gives?
+ *
+ * TRIM BEFORE DROPPING. Shortening a session that sits above its own floor
+ * costs the week nothing it needs; deleting one costs it a session. So
+ * durations give way first, taken off the longest session each pass so a week
+ * shaves its biggest run rather than flattening a 30-minute interval session
+ * into nothing, and never below the floor that makes a session a session.
+ * Only a week that still does not fit loses a slot — easy volume first, the
+ * long run last, because the sessions that survive a short week should be the
+ * ones the block is built around.
+ *
+ * Stress travels with the minutes. Endurance stress is
+ * `BASE_STRESS_PER_MIN[kind] * minutes` — linear — so scaling a session's
+ * stress by the same ratio as its minutes is exact, not an approximation.
+ * Leaving it stale would hand the scheduler and the ACWR ratios a cost for
+ * work that is no longer prescribed.
+ *
+ * Strength sessions are returned untouched. Their stress is a flat per-kind
+ * constant that does not vary with minutes, so shortening one cannot reduce
+ * the week's load at all — trimming them would cost the athlete training and
+ * buy nothing.
+ */
+export function fitEnduranceToMinutes(
+  all: readonly PlannedSession[],
+  budgetMinutes: number,
+  opts: { easyCeiling?: number } = {}
+) : { sessions: PlannedSession[]; dropped: SessionKind[]; keptIndices: number[] } {
+  const out = all.map((x) => ({ ...x }));
+  // Which entry of `all` each surviving session came from. Callers hold other
+  // references to these objects — engine.ts's `placements` is the same session
+  // by identity — and after a drop the arrays no longer line up by position,
+  // so the correspondence has to be reported rather than inferred.
+  let src = all.map((_, i) => i);
+  const isEasy = (x: PlannedSession) => x.kind === "easy_run" || x.kind === "recovery_run";
+  const enduranceIdx = () => out.map((x, i) => ({ x, i })).filter(({ x }) => x.domain === "endurance");
+  const total = () => enduranceIdx().reduce((s, { x }) => s + x.minutes, 0);
+
+  if (budgetMinutes <= 0 || total() <= budgetMinutes) return { sessions: out, dropped: [], keptIndices: src };
+
+  const floorFor = (x: PlannedSession) =>
+    x.isQuality && !isEasy(x) && x.kind !== "long_run" ? MIN_QUALITY_SESSION_MIN : MIN_ENDURANCE_SESSION_MIN;
+  const retime = (x: PlannedSession, minutes: number): PlannedSession => ({
+    ...x,
+    minutes,
+    stress: x.minutes > 0 ? (x.stress / x.minutes) * minutes : x.stress,
+  });
+
+  // Pass 1 — durations, longest-first, never below the floor.
+  let guard = 0;
+  while (total() > budgetMinutes && guard++ < 100) {
+    const excess = total() - budgetMinutes;
+    const room = enduranceIdx()
+      .map(({ x, i }) => ({ i, room: x.minutes - floorFor(x) }))
+      .filter((r) => r.room > 0)
+      .sort((a, b) => b.room - a.room);
+    if (room.length === 0) break;
+    const take = Math.min(room[0].room, excess);
+    out[room[0].i] = retime(out[room[0].i], out[room[0].i].minutes - take);
+  }
+
+  // Pass 2 — everything is at its floor and it still does not fit.
+  const dropped: SessionKind[] = [];
+  const sacrifice = (): number => {
+    const end = enduranceIdx();
+    for (let k = end.length - 1; k >= 0; k--) if (isEasy(end[k].x)) return end[k].i;
+    for (let k = end.length - 1; k >= 0; k--) if (end[k].x.kind !== "long_run") return end[k].i;
+    return -1;
+  };
+  while (total() > budgetMinutes && enduranceIdx().length > 1) {
+    const idx = sacrifice();
+    if (idx < 0) break;
+    dropped.push(out[idx].kind);
+    out.splice(idx, 1);
+    src = src.filter((_, k) => k !== idx);
+  }
+
+  // Dropping is coarse, so give anything it freed back to easy volume rather
+  // than losing it. Bounded by the caller's ceiling, which is what keeps the
+  // long run the longest session of the week.
+  const ceiling = opts.easyCeiling;
+  if (dropped.length > 0 && ceiling != null) {
+    for (const { i } of enduranceIdx().filter(({ x }) => isEasy(x))) {
+      const slack = budgetMinutes - total();
+      if (slack <= 0) break;
+      const give = Math.min(ceiling - out[i].minutes, slack);
+      if (give > 0) out[i] = retime(out[i], out[i].minutes + give);
+    }
+  }
+
+  return { sessions: out, dropped, keptIndices: src };
 }

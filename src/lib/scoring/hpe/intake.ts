@@ -37,7 +37,6 @@ import {
   MAX_HORIZON_WEEKS,
   MIN_HORIZON_WEEKS, MIN_HEALTHY_BMI, type SplitDay, type TrainingAge, type TrainingSplit } from "./constants";
 import type { CardioModality } from "./modality";
-import { daysUntilDate } from "@/lib/utils/date";
 
 // ---------------------------------------------------------------------------
 // Section A — safety and eligibility
@@ -131,6 +130,8 @@ export interface AthleteState {
   sex: "male" | "female" | "other";
   oneRms: Record<string, number>;
   predicted5kS: number;
+  /** False when predicted5kS is the no-effort placeholder rather than a real prediction. */
+  predicted5kFromEffort: boolean;
   strengthTrainingAge: TrainingAge;
   enduranceTrainingAge: TrainingAge;
   strengthTrainingYears: number;
@@ -142,24 +143,16 @@ export interface AthleteState {
   chronicLoad: number;
   restingHr: number;
   maxHr: number | null;
+  /**
+   * Longest single run in the recent log, in minutes. Anchors the
+   * single-session spike rule in week one, before the block has a long run of
+   * its own to measure against. Null when unknown, and null means the rule
+   * does not fire rather than that it fires on a guess.
+   */
+  longestRecentRunMin?: number | null;
   safety: SafetyFlags;
   /** Which values had to be defaulted rather than known. Prescriptions widen their bands and label their source accordingly. */
   assumed: string[];
-  /**
-   * The recovery-and-life-load answers, and the two history anchors the
-   * progression rules are bound to. All were collected by the intake and,
-   * until constants 3.0.0, read by nothing — the intake told the athlete that
-   * sleep "nudges the ramp rate" while no line of code looked at it.
-   *
-   * `longestRecentRunMin` anchors the single-session spike rule (a long run may
-   * not exceed 1.1× the longest run of the last month); `previousMaxVolumeMin`
-   * is the athlete's own proven ceiling, above which the ramp halves. Both
-   * null when unknown, and null means the rule that needs them does not fire.
-   */
-  sleepHoursTypical?: number | null;
-  lifeStressNow?: number | null;
-  previousMaxVolumeMin?: number | null;
-  longestRecentRunMin?: number | null;
 }
 
 export function totalKg(state: Pick<AthleteState, "oneRms">): number {
@@ -338,12 +331,16 @@ export interface Constraints {
    * them is not.
    */
   exercisesByDay?: Record<string, string[]>;
+  /**
+   * Plan weeks (1-based) the athlete has said they will be away.
+   *
+   * Collected by the intake since it was written and read by nothing. Each
+   * becomes a reduced week rather than a hole: a week away is a week of less
+   * training, not a week the block pretends did not happen.
+   */
+  travelWeeks?: number[];
   gymAccessDays: string[];
   equipment: string[];
-  /** Plan weeks (1-based) the athlete will be away. Each becomes a maintenance week rather than a hole. */
-  travelWeeks?: number[];
-  /** Accessory exercises the athlete would rather not do — matched by substring against the accessory pool. */
-  dislikedExercises?: string[];
   /**
    * Which cardio modalities the athlete is willing to train in. A WHITELIST:
    * nothing outside it is ever prescribed.
@@ -464,28 +461,7 @@ export function resolveHorizon(
   now: Date = new Date()
 ): { weeksOut: number; horizonSource: HorizonSource; note: string | null } {
   if (eventDate) {
-    /*
-     * Through `daysUntilDate`, not `new Date(eventDate) - now`.
-     *
-     * `event_date` is a `DATE` column, so `new Date(eventDate)` is UTC
-     * midnight, and `now` is a wall-clock instant. Subtracting one from the
-     * other made the answer depend on the time of day the plan was generated:
-     * an event on 9 Dec, planned on 12 Sep, resolved to 13 weeks at 09:00 UTC
-     * and 12 weeks at 17:00 the same day. The athlete is then told "12 weeks
-     * puts you in the X range" or "13 weeks", and `macrocycle.ts` builds a
-     * different block, for pressing the button after lunch.
-     *
-     * `daysUntilDate` exists precisely for this — its header says it is
-     * "computed entirely in UTC on both sides so the result never drifts with
-     * the server's local timezone or the moment-of-day `now` happens to be
-     * called at", and that it is "the one piece of date math the Training
-     * Plan's tapering and feasibility logic both depend on". It was extracted
-     * during a QA pass, given tests, and never wired in; this line was its
-     * reachable twin, carrying the bug the extraction was written to remove.
-     * Found on 12 Sep 2026 by `scripts/audit-reachability.mjs`.
-     */
-    const days = daysUntilDate(eventDate, now);
-    const weeks = days === null ? NaN : Math.round(days / 7);
+    const weeks = Math.round((new Date(eventDate).getTime() - now.getTime()) / (7 * 86_400_000));
     if (Number.isFinite(weeks) && weeks >= MIN_HORIZON_WEEKS && weeks <= MAX_HORIZON_WEEKS) {
       return { weeksOut: weeks, horizonSource: "event_date", note: null };
     }

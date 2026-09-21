@@ -1,5 +1,7 @@
 "use client";
 
+import { ChartFigure } from "@/components/analytics/chart-figure";
+import { describeSeries } from "@/lib/a11y/describe-series";
 import {
   XAxis,
   YAxis,
@@ -50,6 +52,17 @@ export function VolumeChart({ data, metric = "load" }: VolumeChartProps) {
           {!hasData ? (
             <ChartEmptyState message="Weekly load, duration, and distance charts populate as you train" />
           ) : (
+              <ChartFigure
+                label="Weekly training volume"
+                summary={describeSeries("Weekly load", data.map((d) => ({ at: d.week, value: d.load })))}
+                columns={[
+                { header: "Week", cell: (d: VolumeWeek) => d.week },
+                { header: "Load", cell: (d: VolumeWeek) => String(Math.round(d.load)) },
+                { header: "Sessions", cell: (d: VolumeWeek) => String(d.sessions) },
+                { header: "Duration (min)", cell: (d: VolumeWeek) => String(Math.round(d.duration / 60)) },
+                ]}
+                rows={data}
+              >
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={data} margin={{ top: 8, right: 4, left: -8, bottom: 0 }}>
                 <CartesianGrid vertical={false} strokeDasharray="3 6" strokeOpacity={0.15} />
@@ -87,6 +100,7 @@ export function VolumeChart({ data, metric = "load" }: VolumeChartProps) {
                 />
               </BarChart>
             </ResponsiveContainer>
+              </ChartFigure>
           )}
         </CardContent>
       </Card>

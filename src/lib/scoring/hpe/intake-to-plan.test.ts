@@ -59,7 +59,8 @@ describe("intake to plan, end to end", () => {
       age: 32, sex: "male" as const, bodyweightKg: 78, heightCm: 178,
       restingHr: 60, maxHr: 188, // deliberately wrong — the overrides must win
       oneRms: { squat: 140, bench: 100, deadlift: 180 },
-      predicted5kS: 1105, loggedWeeklyRunMinutes: 148, chronicLoad: 420,
+      predicted5kS: 1105,
+      predicted5kFromEffort: true, loggedWeeklyRunMinutes: 148, chronicLoad: 420,
     };
 
     const { state, goal, constraints, assumed, missingSections } = resolveIntakeInputs(record, prefilled);

@@ -90,7 +90,7 @@ export function sanitiseDetail(detail: AuditDetail): AuditDetail {
  */
 export async function recordAdminAccess(event: AdminAccessEvent): Promise<void> {
   try {
-    const admin = createAdminClient();
+    const admin = createAdminClient("lib/auth/admin-audit");
     await admin.from("admin_access_log").insert({
       admin_user_id: event.userId,
       admin_role: event.role,

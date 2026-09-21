@@ -1,5 +1,7 @@
 "use client";
 
+import { ChartFigure } from "@/components/analytics/chart-figure";
+import { describeDistribution } from "@/lib/a11y/describe-series";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { motion, useReducedMotion } from "framer-motion";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -40,6 +42,23 @@ export function TrainingZonesChart({ zones, usesHr }: TrainingZonesChartProps) {
             <ChartEmptyState message="Add heart rate data to unlock HR zone breakdown" />
           ) : (
             <>
+              <ChartFigure
+                label={usesHr ? "Time in each heart-rate zone" : "Sessions by type"}
+                summary={describeDistribution(
+                  usesHr ? "Time in each heart-rate zone" : "Sessions by type",
+                  zones
+                )}
+                columns={[
+                  { header: "Zone", cell: (d: DistributionSlice) => d.name },
+                  { header: "Value", cell: (d: DistributionSlice) => String(Math.round(d.value)) },
+                  {
+                    header: "Share",
+                    cell: (d: DistributionSlice) =>
+                      total > 0 ? `${Math.round((d.value / total) * 100)}%` : "0%",
+                  },
+                ]}
+                rows={zones.filter((d) => d.value > 0)}
+              >
               <ResponsiveContainer width="100%" height={200}>
                 <PieChart>
                   <Pie
@@ -63,6 +82,7 @@ export function TrainingZonesChart({ zones, usesHr }: TrainingZonesChartProps) {
                   />
                 </PieChart>
               </ResponsiveContainer>
+              </ChartFigure>
               <div className="mt-3 grid grid-cols-2 gap-2">
                 {zones
                   .filter((d) => d.value > 0)

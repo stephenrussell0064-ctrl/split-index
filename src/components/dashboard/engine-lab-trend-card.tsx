@@ -1,5 +1,7 @@
 "use client";
 
+import { ChartFigure } from "@/components/analytics/chart-figure";
+import { describeSeries } from "@/lib/a11y/describe-series";
 import { useReducedMotion } from "framer-motion";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
@@ -107,9 +109,15 @@ export function EngineLabTrendCard({
         </div>
       </div>
 
-      <div
-        role="img"
-        aria-label={`Engine vs Lab trend chart over ${recent.length} recent sessions`}
+      <ChartFigure
+        label="Engine against Lab, recent sessions"
+        summary={`${describeSeries("Engine (endurance)", recent.map((d) => ({ at: d.date, value: d.endurance })))} ${describeSeries("Lab (strength)", recent.map((d) => ({ at: d.date, value: d.strength })))}`}
+        columns={[
+          { header: "Date", cell: (d: TrendPoint) => d.date },
+          { header: "Engine", cell: (d: TrendPoint) => formatIndex(d.endurance) },
+          { header: "Lab", cell: (d: TrendPoint) => formatIndex(d.strength) },
+        ]}
+        rows={recent}
       >
         <ResponsiveContainer width="100%" height={170}>
           <AreaChart data={recent} margin={{ top: 4, right: 4, left: -24, bottom: 0 }}>
@@ -154,7 +162,7 @@ export function EngineLabTrendCard({
             />
           </AreaChart>
         </ResponsiveContainer>
-      </div>
+      </ChartFigure>
     </Card>
   );
 }

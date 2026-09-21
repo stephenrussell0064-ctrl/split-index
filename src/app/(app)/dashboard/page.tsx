@@ -37,13 +37,7 @@ import { getPredictedBenchmark } from "@/lib/scoring/predicted-benchmark";
 import { ScoreDisclaimer } from "@/components/legal/score-disclaimer";
 import { calculateTrend } from "@/lib/scoring/service";
 import { localDateKeyInTz, resolveTimezone } from "@/lib/utils/timezone";
-import {
-  buildActivityScores,
-  deriveAthleteProfile,
-  labWeightFromProfile,
-  resolveScoringSex,
-} from "@/lib/scoring/adapters";
-import { computeIndexes } from "@/lib/scoring/index-engine";
+import { resolveScoringSex } from "@/lib/scoring/adapters";
 import type { IndexResult } from "@/lib/scoring/index-engine";
 import { calculateOverallDotsGl } from "@/lib/scoring/strength/overall-dots-gl";
 import { fetchAllTimeLiftRows, fetchBestLoggedSbdSets } from "@/lib/activities/all-time-one-rm";
@@ -55,7 +49,7 @@ import { RacePredictionsSync } from "@/lib/native/race-predictions-sync";
 import type { SplitIndexWidgetPayload } from "@/lib/native/race-predictions";
 import { computeStreakMetrics } from "@/lib/retention/streak-utils";
 import { getGlobalRankPercentile, getNextRankTarget, seedRetentionNotifications } from "@/lib/retention/rank";
-import { isPremiumUser, hasSoftTrialAccess } from "@/lib/retention/trial";
+import { hasShowcaseAccess } from "@/lib/retention/trial";
 import { ACTIVATION_EVENT_SESSION_COUNT, PRICING } from "@/lib/pricing/config";
 import { computeSplitIndexProjection } from "@/lib/premium/projection";
 import { gateAiFeedback } from "@/lib/scoring/gates";
@@ -136,8 +130,7 @@ export default async function DashboardPage() {
   // `premium` extends automatically for the trial window, then reverts to
   // the real free-tier view once it lapses (unless they've actually paid).
   const premium =
-    isPremiumUser(profile.subscription_tier, profile.subscription_status) ||
-    hasSoftTrialAccess(profile.created_at, profile.subscription_tier, profile.subscription_status);
+    hasShowcaseAccess(profile);
 
   const heatmapCutoff = isoDaysAgo(HEATMAP_DAYS);
   const trendCutoff = isoDaysAgo(premium ? 90 : 7);
@@ -162,12 +155,23 @@ export default async function DashboardPage() {
     { data: scores },
     { data: aiFeedback },
     { data: goals },
-    { data: indexActivities },
   ] = await Promise.all([
+    /*
+      The athlete's current index — ordered exactly as
+      `sync_profile_current_index()` orders it (migration 059), because this
+      page and `profiles.current_split_index` must never pick different rows.
+
+      `is_provisional` first: a scored session outranks the onboarding estimate
+      whatever their dates, and the estimate is chosen only when there is no
+      scored session at all. Without the matching term here, an athlete holding
+      both would see one number on this page and another everywhere the profile
+      cache is read.
+    */
     supabase
       .from("split_index_history")
       .select("*")
       .eq("user_id", user.id)
+      .order("is_provisional", { ascending: true })
       .order("recorded_at", { ascending: false })
       .limit(1)
       .single(),
@@ -178,11 +182,20 @@ export default async function DashboardPage() {
       .gte("recorded_at", trendCutoff)
       .order("recorded_at", { ascending: true })
       .limit(180),
+    /*
+      The NEWEST 90 snapshots, then re-sorted ascending for the projection.
+
+      This was `ascending: true` with `limit(90)`, which is the OLDEST 90 — so
+      the moment an athlete passed 90 history rows, `computeSplitIndexProjection`
+      was fitting a trend line to data from months ago and had no knowledge of
+      anything since. A steadily improving athlete was shown a falling 8-week
+      forecast, in red, computed from a period they had already left behind.
+    */
     supabase
       .from("split_index_history")
       .select("*")
       .eq("user_id", user.id)
-      .order("recorded_at", { ascending: true })
+      .order("recorded_at", { ascending: false })
       .limit(90),
     supabase
       .from("activities")
@@ -226,13 +239,6 @@ export default async function DashboardPage() {
       .eq("user_id", user.id)
       .order("deadline", { ascending: true, nullsFirst: false })
       .limit(10),
-    supabase
-      .from("activities")
-      .select("sport, started_at, workout_scores(sport_index, score_breakdown)")
-      .eq("user_id", user.id)
-      .eq("is_draft", false)
-      .order("started_at", { ascending: false })
-      .limit(20),
   ]);
 
   // Best-ever SBD total for the home page's lift strip (Slice 7)
@@ -391,6 +397,22 @@ export default async function DashboardPage() {
 
   const hasActivities = (recentActivities?.length ?? 0) > 0;
   const hasIndexHistory = !!latestIndex;
+  /*
+    The onboarding estimate, shown rather than thrown away.
+
+    Calibration computes an index from the athlete's self-reported bests
+    specifically so a new user sees a number — and then the hero was gated on
+    `hasActivities`, which calibration deliberately does not create. So they
+    answered the questions, were shown "62.4 · Intermediate", tapped twice, and
+    landed on a home screen headed "your index is unwritten". The number they
+    had just been given existed, in the database, on the row this page reads.
+
+    It is shown, and it is labelled as an estimate — see IndexHero's
+    `provisional` prop. Both halves matter: showing it unmarked would be the
+    opposite mistake, presenting a signup guess as measured training.
+  */
+  const indexIsProvisional = hasIndexHistory && latestIndex!.is_provisional === true;
+  const showIndexHero = hasActivities || hasIndexHistory;
   const sessionCount = allActivityDates?.length ?? 0;
   const showActivationPaywall =
     !premium && sessionCount >= ACTIVATION_EVENT_SESSION_COUNT;
@@ -424,7 +446,11 @@ export default async function DashboardPage() {
 
   const projection8Weeks = hasIndexHistory
     ? computeSplitIndexProjection(
-        (fullHistory ?? []) as SplitIndexSnapshot[],
+        // Back into chronological order — the query above asks for the newest
+        // rows, the projection wants them oldest-first to fit a line through.
+        [...((fullHistory ?? []) as SplitIndexSnapshot[])].sort(
+          (a, b) => new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime()
+        ),
         8
       )
     : null;
@@ -485,33 +511,32 @@ export default async function DashboardPage() {
     (scores ?? []).map((s) => [s.activity_id as string, s.sport_index as number])
   );
 
-  const athleteProfile = deriveAthleteProfile((profile.preferred_sports ?? []) as SportType[]);
-  const weightLab = labWeightFromProfile(
-    typeof profile.split_endurance_weight === "number"
-      ? profile.split_endurance_weight
-      : 0.5
-  );
 
-  const indexActivityRows = (indexActivities ?? [])
-    .flatMap((row) => {
-      const ws = Array.isArray(row.workout_scores)
-        ? row.workout_scores[0]
-        : row.workout_scores;
-      if (!ws?.sport_index) return [];
-      return [
-        {
-          sport: row.sport as string,
-          sport_index: ws.sport_index as number,
-          started_at: row.started_at as string,
-          score_breakdown: (ws.score_breakdown ?? null) as Record<string, unknown> | null,
-        },
-      ];
-    });
 
-  const liveIndexes: IndexResult | null =
-    indexActivityRows.length >= 1
-      ? computeIndexes(buildActivityScores(indexActivityRows), athleteProfile, weightLab)
-      : null;
+  /*
+    THE STORED INDEX, NOT A LIVE RECOMPUTE — because five other surfaces read
+    the stored one and this page is not entitled to a different answer.
+
+    This used to recompute `computeIndexes` over the athlete's 20 most recent
+    activities on every dashboard load. The stored value was computed over the
+    20 that existed WHEN THAT SESSION WAS SCORED; this recomputed over the 20
+    that exist NOW, and the two diverge the moment the activity set moves —
+    which the edit path guarantees, because it rewrites only the EDITED
+    session's history row and never the newest one.
+
+    Concretely: log a run on Friday, everything reads 70.0. On Saturday, open
+    last Tuesday's gym session and fix a typo in the weight. Tuesday's history
+    row is rewritten; the newest row is still Friday's, so the profile cache and
+    every surface reading it stay at 70.0 — while this page's live window now
+    contains the corrected gym score and renders 71.5. Same athlete, same
+    second: 71.5 on the home page and 70.0 on the Lab, the Engine, Analytics,
+    their own public profile, the leaderboard and their friends' lists.
+
+    The stored row is the one the 054/059 trigger keeps in agreement with the
+    table, and it is what the rest of the app quotes. Reading it here makes six
+    surfaces agree, and removes a 20-activity query plus a full index
+    computation from every load of the most-visited page in the app.
+  */
 
   // Headline is always the combined Split Index (user feedback: "Why is the
   // main score at the top of the dashboard not the combined score between
@@ -520,10 +545,10 @@ export default async function DashboardPage() {
   // already stores the combined value computed at log time (index-engine.ts),
   // so this fallback (used when nothing was freshly scored this request)
   // just reads it straight.
-  const headlineLabel: IndexResult["headlineLabel"] = liveIndexes?.headlineLabel ?? "Split Index";
-  const headlineValue = liveIndexes?.headline ?? current.split_index;
-  const displayEnduranceIndex = liveIndexes?.engineIndex ?? current.endurance_index;
-  const displayStrengthIndex = liveIndexes?.labIndex ?? current.strength_index;
+  const headlineLabel: IndexResult["headlineLabel"] = "Split Index";
+  const headlineValue = current.split_index;
+  const displayEnduranceIndex = current.endurance_index;
+  const displayStrengthIndex = current.strength_index;
   /*
     RANK THE NUMBER THE PAGE ACTUALLY SHOWS.
 
@@ -619,16 +644,26 @@ export default async function DashboardPage() {
 
       {/* One line, deliberately. Two lines of greeting is a tenth of a phone
           screen spent on a name the athlete already knows. */}
+      {/*
+        The page's heading is "Dashboard", and it is not drawn.
+
+        The only <h1> here used to be the greeting at 14px — a heading level
+        picked for styling rather than structure, naming the athlete rather
+        than the page. A screen reader jumping by heading landed on "Hi,
+        Stephen" and learned nothing about where it was. The greeting stays
+        exactly as designed and is a <p>, which is what it is.
+      */}
+      <h1 className="sr-only">Dashboard</h1>
       <div className="flex items-baseline gap-x-2 overflow-hidden">
-        <h1 className="headline-tight shrink-0 text-sm font-bold">
+        <p className="headline-tight shrink-0 text-sm font-bold">
           {displayName ? `Hi, ${displayName}` : "Welcome back"}
-        </h1>
+        </p>
         <p className="truncate text-xs text-muted">
           {format(new Date(), "EEE d MMM")} · {sessionHint}
         </p>
       </div>
 
-      {!hasActivities && <EmptyDashboardHero displayName={displayName} />}
+      {!hasActivities && !hasIndexHistory && <EmptyDashboardHero displayName={displayName} />}
 
       {/*
         WHERE DO I STAND. Stays first because it is the one block that has to
@@ -639,7 +674,7 @@ export default async function DashboardPage() {
         `raceLadder` both are built from — so the phone's home-screen widget
         and the app cannot disagree about a predicted time.
       */}
-      {hasActivities && (
+      {showIndexHero && (
         <IndexHero
           headlineLabel={headlineLabel}
           headlineValue={hasIndexHistory ? headlineValue : null}
@@ -650,6 +685,7 @@ export default async function DashboardPage() {
           streak={streakMetrics.streak}
           streakAtRisk={streakMetrics.atRisk}
           weeklySessions={streakMetrics.weeklySessions}
+          provisional={indexIsProvisional}
         />
       )}
 
@@ -732,7 +768,13 @@ export default async function DashboardPage() {
               : 0.5
           }
           hasHistory={hasIndexHistory}
-          className="lg:col-span-2"
+          /* The 8-week projection sits beside this and only renders with
+             history behind it. Without that sibling a fixed 2-of-3 span
+             leaves a third of the row empty, which is what a new account
+             sees on its first visit. */
+          className={
+            hasIndexHistory && projection8Weeks !== null ? "lg:col-span-2" : "lg:col-span-3"
+          }
         />
 
         {hasIndexHistory && projection8Weeks !== null && (

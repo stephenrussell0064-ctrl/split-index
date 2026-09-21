@@ -22,13 +22,13 @@ hyrox-hybrid — SERVED
     running           n= 48  mean  929  first3  899 → last3  944
   0 blocking, 0 degraded
 female-lifter — SERVED
-  50 sessions over 10 weeks · index 825 → 881 · ACWR 1.00–4.00
+  50 sessions over 10 weeks · index 825 → 876 · ACWR 1.00–4.00
     gym               n= 40  mean  861  first3  823 → last3  882
-    running           n= 10  mean  866  first3  823 → last3  897
+    running           n= 10  mean  841  first3  794 → last3  875
   0 blocking, 0 degraded
 swimmer — SERVED
-  56 sessions over 8 weeks · index 833 → 862 · ACWR 0.96–4.00
-    swimming          n= 40  mean  892  first3  835 → last3  916
+  56 sessions over 8 weeks · index 816 → 832 · ACWR 0.96–4.00
+    swimming          n= 40  mean  862  first3  818 → last3  882
     gym               n= 16  mean  500  first3  457 → last3  533
   0 blocking, 0 degraded
 cyclist — SERVED
@@ -43,15 +43,15 @@ erg-athlete — SERVED
     gym               n= 24  mean  693  first3  643 → last3  718
   0 blocking, 0 degraded
 female-erg-athlete — SERVED
-  56 sessions over 8 weeks · index 590 → 680 · ACWR 0.96–4.00
-    rowing            n= 16  mean  709  first3  607 → last3  795
-    ski_erg           n= 16  mean  695  first3  590 → last3  787
+  56 sessions over 8 weeks · index 661 → 700 · ACWR 0.96–4.00
+    rowing            n= 16  mean  766  first3  676 → last3  832
+    ski_erg           n= 16  mean  747  first3  661 → last3  818
     gym               n= 24  mean  563  first3  530 → last3  597
   0 blocking, 0 degraded
 female-cyclist — SERVED
-  36 sessions over 9 weeks · index 226 → 749 · ACWR 1.09–4.00
-    outdoor_cycling   n= 18  mean  541  first3  325 → last3  700
-    indoor_cycling    n= 18  mean  680  first3  514 → last3  789
+  36 sessions over 9 weeks · index 227 → 753 · ACWR 1.09–4.00
+    outdoor_cycling   n= 18  mean  546  first3  327 → last3  704
+    indoor_cycling    n= 18  mean  684  first3  518 → last3  792
   0 blocking, 0 degraded
 masters-runner — SERVED
   50 sessions over 10 weeks · index 949 → 924 · ACWR 1.05–4.00
@@ -62,8 +62,8 @@ overreacher — SERVED
     running           n= 48  mean  795  first3  848 → last3  760
   0 blocking, 0 degraded
 returner — SERVED
-  50 sessions over 10 weeks · index 609 → 629 · ACWR 1.08–4.00
-    running           n= 30  mean  692  first3  608 → last3  732
+  50 sessions over 10 weeks · index 582 → 613 · ACWR 1.08–4.00
+    running           n= 30  mean  667  first3  581 → last3  707
     gym               n= 20  mean  425  first3  367 → last3  473
   0 blocking, 0 degraded
 sporadic — SERVED

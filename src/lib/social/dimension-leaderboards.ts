@@ -15,6 +15,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { SportType } from "@/types";
 import type { DimensionLeaderboardRow } from "./types";
+import { publicDisplayName } from "@/lib/social/shareable-name";
 
 interface ProfileLite {
   user_id: string;
@@ -49,7 +50,7 @@ async function joinProfiles(
       rank: i + 1,
       userId,
       username: profile!.username,
-      displayName: profile!.display_name,
+      displayName: publicDisplayName(profile!.display_name),
       avatarUrl: profile!.avatar_url,
       country: profile!.country,
       value: Math.round(value * 10) / 10,

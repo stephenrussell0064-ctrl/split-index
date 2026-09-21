@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { UserAvatar } from "@/components/social/user-avatar";
 import { CompareModal } from "@/components/social/compare-modal";
+import { ReportBlockMenu } from "@/components/social/report-block-menu";
 import { SPORTS } from "@/lib/constants/sports";
 import { formatIndex } from "@/lib/utils/format";
 import type { PublicProfile } from "@/lib/social/types";
@@ -75,10 +76,24 @@ export function ProfileView({ profile, isOwnProfile }: ProfileViewProps) {
               </div>
             </div>
             {!isOwnProfile && (
-              <Button size="sm" variant="secondary" onClick={() => setCompareOpen(true)}>
-                <GitCompare className="h-4 w-4" />
-                Compare
-              </Button>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <Button size="sm" variant="secondary" onClick={() => setCompareOpen(true)}>
+                  <GitCompare className="h-4 w-4" />
+                  Compare
+                </Button>
+                {/*
+                  App Store Guideline 1.2 requires report and block to exist and
+                  to be findable. A public profile is the surface a reviewer
+                  looks at first, and it is where an athlete who has just been
+                  harassed goes, so the control sits beside Compare rather than
+                  in a settings screen.
+                */}
+                <ReportBlockMenu
+                  userId={profile.userId}
+                  displayName={profile.displayName ?? profile.username}
+                  subjectType="profile"
+                />
+              </div>
             )}
           </div>
         </motion.div>

@@ -716,9 +716,30 @@ const SESSION_TYPE_VALUES: SessionType[] = [
 
 // ─── Number parsing ──────────────────────────────────────────────────────────
 
+/**
+ * A decimal number as an athlete would write one, or null.
+ *
+ * `Number()` alone accepts a great deal that nobody types into a weight field:
+ * `Number("0x10")` is 16, `Number("0b101")` is 5, `Number("1e3")` is 1000, and
+ * `Number("Infinity")` is Infinity. These fields are `type="text"` (so a comma
+ * decimal and a clock time can be handled), so all of it reached the scoring
+ * engine and the database — a set logged as "0x10" was silently stored as 16kg.
+ *
+ * The pattern is what a person writes: an optional sign, digits, an optional
+ * decimal part. Nothing else.
+ */
+const DECIMAL_INPUT = /^[+-]?(\d+(\.\d*)?|\.\d+)$/;
+
+/** Matches `assertScoringInput` — see the date check in validateAndBuildPayload. */
+const FUTURE_SESSION_GRACE_MS = 6 * 60 * 60 * 1000;
+const EARLIEST_SESSION_YEAR = 1950;
+/** Faster than any human-powered sport; above this the preview is reporting a typo, not a speed. */
+const MAX_PLAUSIBLE_SPEED_KMH = 200;
+
 export function parseNum(value: string): number | null {
   const trimmed = value.trim().replace(",", ".");
   if (trimmed === "") return null;
+  if (!DECIMAL_INPUT.test(trimmed)) return null;
   const n = Number(trimmed);
   return Number.isFinite(n) ? n : null;
 }
@@ -734,10 +755,26 @@ export function parseSeconds(value: string): number | null {
   if (!trimmed.includes(":")) return parseNum(trimmed);
   const parts = trimmed.split(":");
   if (parts.length > 3) return null;
+
+  /*
+    Every segment has to be a number a person would write, and every segment
+    after the first has to be a real minutes/seconds value.
+
+    `Number("")` is 0, so ":" parsed as 0 and "1:" as 60 — an athlete who
+    typed half a time got a silent, wrong answer instead of a correction. And
+    `Number` accepts what nobody types: "0x10:00" was read as 16:00.
+
+    "1:99" is the interesting one. It parsed as 159 seconds — 2:39 — which is
+    a number the athlete did not write and would not recognise. A minutes or
+    seconds segment above 59 is a typo, not shorthand.
+  */
   let total = 0;
-  for (const part of parts) {
-    const n = Number(part.trim().replace(",", "."));
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i]!.trim().replace(",", ".");
+    if (!DECIMAL_INPUT.test(part)) return null;
+    const n = Number(part);
     if (!Number.isFinite(n) || n < 0) return null;
+    if (i > 0 && n >= 60) return null;
     total = total * 60 + n;
   }
   return total;
@@ -759,7 +796,15 @@ export function splitSecondsFromState(state: WorkoutFormState): number | null {
 
 // ─── Derived metrics ─────────────────────────────────────────────────────────
 
+/**
+ * These strings are the live preview under the duration and pace fields, so
+ * they are rendered while the athlete is still typing. Unguarded they read
+ * `NaN:NaN` for a half-typed entry and `Infinity:NaN:NaN` for a pathological
+ * one, and a negative input produced "-2:-30" — a clock face that cannot
+ * exist. A preview that cannot compute yet should show nothing.
+ */
 export function formatClock(totalSeconds: number): string {
+  if (!Number.isFinite(totalSeconds) || totalSeconds < 0) return "—";
   const rounded = Math.round(totalSeconds);
   const h = Math.floor(rounded / 3600);
   const m = Math.floor((rounded % 3600) / 60);
@@ -788,7 +833,12 @@ export function deriveSplitPer500m(meters: number | null, seconds: number): stri
 
 export function deriveSpeedKmh(meters: number | null, seconds: number): string | null {
   if (!meters || meters <= 0 || seconds <= 0) return null;
-  return `${((meters / 1000) / (seconds / 3600)).toFixed(1)} km/h`;
+  const kmh = (meters / 1000) / (seconds / 3600);
+  // A duration still being typed can be a fraction of a second, which turned
+  // an ordinary distance into "3600000000000.0 km/h" under the field. Nothing
+  // is a better preview than a number that obviously came from a bug.
+  if (!Number.isFinite(kmh) || kmh > MAX_PLAUSIBLE_SPEED_KMH) return null;
+  return `${kmh.toFixed(1)} km/h`;
 }
 
 /** Duration from distance + split/500m — rowing/ski erg "log by distance" mode. */
@@ -1044,8 +1094,29 @@ export function validateAndBuildPayload(
     return value;
   };
 
-  if (!state.startedAt || Number.isNaN(new Date(state.startedAt).getTime())) {
+  /*
+    The date is BOUNDED, not merely parseable.
+
+    Only `isNaN` was checked, so "2099-12-31" sailed through the form and the
+    API and was written to `activities.started_at`,
+    `split_index_history.recorded_at` and `workout_scores.created_at`. The
+    dashboard reads the current Split Index as `recorded_at DESC LIMIT 1` — so
+    one mistyped year became the athlete's index permanently, with every 7-day
+    delta measured against it. Nothing in the app could undo it except deleting
+    the session, and nothing told them that was the cause.
+
+    The same bounds run server-side in `assertScoringInput`, so the form and
+    the API agree and the athlete sees the problem on the field rather than as
+    a 400 after a round trip. A few hours of future slack covers a phone clock
+    that runs fast and a session logged across a timezone boundary.
+  */
+  const startedAtMs = state.startedAt ? new Date(state.startedAt).getTime() : NaN;
+  if (!state.startedAt || Number.isNaN(startedAtMs)) {
     errors.startedAt = "Pick a valid date & time";
+  } else if (startedAtMs > Date.now() + FUTURE_SESSION_GRACE_MS) {
+    errors.startedAt = "That date is in the future";
+  } else if (new Date(startedAtMs).getFullYear() < EARLIEST_SESSION_YEAR) {
+    errors.startedAt = `Sessions can't be dated before ${EARLIEST_SESSION_YEAR}`;
   }
 
   // Rowing/ski erg: split is mandatory and, depending on rowInputMode, either
@@ -1083,7 +1154,22 @@ export function validateAndBuildPayload(
     // Distance/split validation above already set their own errors if
     // missing — a resulting 0 here means the payload build fails downstream,
     // not a distinct "duration" error.
-    duration = avgSplit != null && distanceMeters != null ? (avgSplit / 500) * distanceMeters : 0;
+    /*
+      ROUNDED, because `duration_seconds` is an integer column and the zod
+      schema guarding it is `z.number().int()`.
+
+      (split / 500) * metres is a float for almost every real erg piece —
+      1234 m at a 1:52 split is 276.416 seconds — so the payload was rejected
+      before it reached the database, with the generic "Something looks off"
+      and no field highlighted, because the failure belonged to a value the
+      athlete never typed. Most distances on a rower or SkiErg were literally
+      unloggable in the default input mode, and there was no way to work out
+      why from the screen.
+    */
+    duration =
+      avgSplit != null && distanceMeters != null
+        ? Math.round((avgSplit / 500) * distanceMeters)
+        : 0;
   } else {
     duration = totalDurationSeconds(state);
     if (duration <= 0) {

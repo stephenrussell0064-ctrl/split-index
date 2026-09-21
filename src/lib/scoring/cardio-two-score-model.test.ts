@@ -1,3 +1,4 @@
+import { FEMALE_CARDIO_FACTORS } from "@/lib/scoring/cardio-benchmarks";
 import { describe, expect, it } from "vitest";
 import {
   scoreCardioActivity,
@@ -751,7 +752,12 @@ describe("age and sex grading still apply to the population score only", () => {
       ...ATHLETE,
       sex: "female",
       distanceMeters: 5000,
-      durationSeconds: Math.round(1800 * 1.191),
+      // Read from the table rather than hardcoded. This asserted 1.191, the
+      // scalar the app-store line calibrated; the merged engine takes its
+      // run factor from FEMALE_CARDIO_FACTORS, and a literal here tests the
+      // number rather than the property — that an equal-ability woman and
+      // man score the same, whatever the factor is.
+      durationSeconds: Math.round(1800 * FEMALE_CARDIO_FACTORS.run),
     });
     expect(Math.abs(man.score - woman.score)).toBeLessThanOrEqual(2);
   });

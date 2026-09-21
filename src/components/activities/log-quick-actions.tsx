@@ -26,6 +26,9 @@ interface PastWorkoutRow {
 const sessionTypeLabel = (value: string) =>
   SESSION_TYPES.find((t) => t.value === value)?.label ?? null;
 
+/** Cards shown in the "Start from" grid — two rows of two. See the slot split below. */
+const QUICK_START_SLOTS = 4;
+
 /**
  * What a past session WAS, in the words the athlete would use — "10 km ·
  * 48:20" or "Squat · Bench · Barbell Row". A row of identical dates tells you
@@ -163,7 +166,22 @@ export function LogQuickActions({
   const isGym = sport === "gym";
   const accentText = isGym ? "text-gym-accent" : "text-cardio-accent";
   const cardBase =
-    "flex min-h-[74px] w-[190px] shrink-0 snap-start flex-col justify-center gap-0.5 rounded-2xl border px-3.5 py-2.5 text-left transition-colors duration-200";
+    "flex min-h-[74px] w-full min-w-0 flex-col justify-center gap-0.5 rounded-2xl border px-3.5 py-2.5 text-left transition-colors duration-200";
+
+  /*
+    FOUR SLOTS, TWO ROWS. The rail could hold six recent sessions plus every
+    saved template because only two were ever on screen at once; a grid shows
+    all of them, which would push the fields the athlete actually came for
+    below the fold — trading one scroll for another. Four is two rows of the
+    same 74px card.
+
+    Templates keep two of the four when there are any: they are the sessions
+    the athlete deliberately saved, and burying them under an automatic
+    recent-history list is what a template is for avoiding.
+  */
+  const templateSlots = Math.min(templates.length, 2);
+  const shownWorkouts = pastWorkouts.slice(0, QUICK_START_SLOTS - templateSlots);
+  const shownTemplates = templates.slice(0, QUICK_START_SLOTS - shownWorkouts.length);
 
   // Nothing to offer, or the athlete is already mid-session — either way the
   // rail is dead weight above the fields they came for.
@@ -193,7 +211,15 @@ export function LogQuickActions({
         <p className="text-[11px] text-muted/70">One tap, then adjust</p>
       </div>
 
-      <div className="-mx-1 flex snap-x snap-mandatory gap-2 overflow-x-auto px-1 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      {/*
+        A GRID, NOT A HIDDEN SCROLLER. This was a snap rail with the scrollbar
+        explicitly suppressed, so nothing on screen said there was anything to
+        the right of the second card — the same pattern the social tab strip
+        was rewritten to escape. Two columns show four in the space one row of
+        the rail took, and a card the athlete cannot see is a card they will
+        never tap.
+      */}
+      <div className="grid grid-cols-2 gap-2">
         {loading && pastWorkouts.length === 0 && (
           <>
             <div className={cn(cardBase, "shimmer border-white/[0.06]")} aria-hidden />
@@ -201,7 +227,7 @@ export function LogQuickActions({
           </>
         )}
 
-        {pastWorkouts.map((workout, index) => {
+        {shownWorkouts.map((workout, index) => {
           const { title, meta } = describeWorkout(sport, workout);
           const isLatest = index === 0;
           return (
@@ -236,13 +262,23 @@ export function LogQuickActions({
                   </>
                 )}
               </span>
-              <span className="truncate text-sm font-semibold text-foreground">{title}</span>
+              {/*
+                Two lines, not an ellipsis. The card is 109px wide at 320px
+                rather than the rail's fixed 190, so "Squat · Bench · Barbell
+                Row" truncated to "Squat · Benc…" — and which exercises are in
+                it is the only thing that tells one past session from another.
+                The card has the height for a second line; the meta below it
+                stays one line because a date does not need wrapping.
+              */}
+              <span className="line-clamp-2 text-sm font-semibold leading-tight text-foreground">
+                {title}
+              </span>
               <span className="truncate text-[11px] text-muted">{meta}</span>
             </button>
           );
         })}
 
-        {templates.map((template) => (
+        {shownTemplates.map((template) => (
           <button
             key={template.id}
             type="button"
@@ -256,7 +292,7 @@ export function LogQuickActions({
               <Bookmark className="h-3 w-3" aria-hidden />
               Template
             </span>
-            <span className="truncate text-sm font-semibold text-foreground">{template.name}</span>
+            <span className="line-clamp-2 text-sm font-semibold leading-tight text-foreground">{template.name}</span>
             <span className="truncate text-[11px] text-muted">Saved session</span>
           </button>
         ))}

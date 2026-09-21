@@ -300,8 +300,20 @@ export const SECTION_FIELDS: Record<IntakeSection, string[]> = {
   recovery: ["sleep_hours_typical", "shift_work", "job_physicality", "life_stress_now"],
 };
 
-/** Sections the athlete cannot skip. Everything else degrades with a stated consequence. */
-export const MANDATORY_SECTIONS: IntakeSection[] = ["health", "goal", "availability"];
+/**
+ * Sections the athlete cannot skip. Everything else degrades with a stated
+ * consequence.
+ *
+ * "health" was here and had to go with the section itself — a mandatory step
+ * that has been removed from the wizard is one no athlete can ever satisfy.
+ */
+export const MANDATORY_SECTIONS: IntakeSection[] = ["goal", "availability"];
+
+/**
+ * Sections removed from the intake but kept in the type and the record, so
+ * that answers stored before the removal are still read rather than dropped.
+ */
+export const WITHDRAWN_SECTIONS: IntakeSection[] = ["health", "fuelling"];
 
 const ALL_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -380,7 +392,33 @@ function parseExercisesByDay(value: unknown): Record<string, string[]> {
 
 export function parseIntakeRow(row: Record<string, unknown> | null): IntakeRecord {
   const b = (key: string): boolean | null => (row?.[key] == null ? null : Boolean(row[key]));
-  const n = (key: string): number | null => (row?.[key] == null ? null : Number(row[key]));
+  /*
+    A value that is not a number reads as ABSENT, not as NaN.
+
+    `Number(row[key])` has no guard, and roughly twenty of the fields below go
+    through it — training years, sessions per week, 1RM overrides, max HR, the
+    week the plan is built around. A single non-numeric value in any of them
+    put NaN into the plan engine, where it does not throw: it propagates
+    silently through the ramp, the ACWR and the prescriptions, and comes out as
+    a block full of NaN that the athlete is shown.
+
+    Several of these also carry an `?? default` on the line that reads them, so
+    returning null means the default applies — which is the behaviour those
+    lines were written for and never got, because NaN is not null.
+
+    The empty string is the same bug wearing a disguise: `Number("")` is 0, and
+    0 is a legitimate answer to several of these fields, so an unanswered
+    `am_hour` came back as midnight rather than as the 7am default.
+  */
+  const n = (key: string): number | null => {
+    const raw = row?.[key];
+    if (raw == null) return null;
+    // `Number("")` is 0, and 0 is a real answer to several of these — an empty
+    // `am_hour` became "trains at midnight" rather than "did not say".
+    if (typeof raw === "string" && raw.trim() === "") return null;
+    const value = Number(raw);
+    return Number.isFinite(value) ? value : null;
+  };
   const arr = (key: string): string[] => (Array.isArray(row?.[key]) ? (row[key] as string[]) : []);
 
   return {
@@ -503,17 +541,37 @@ export function resolveSafetyFlags(
         },
         femaleQuestionApplies
       )
-    : // Not asked at all. Scoring an unasked screen as zero would silently
-      // clear the safeguard it exists to enforce, so it scores as unanswered
-      // — which is every question positive.
-      scoreLeaScreen({}, femaleQuestionApplies);
+    : /*
+       * Not asked at all — and now never asked, because the fuelling section
+       * has been removed from the intake.
+       *
+       * This used to score an unasked screen as every question positive, so
+       * that skipping it could not clear the safeguard. That was right while
+       * the questions existed and the athlete had chosen not to answer them.
+       * It is wrong now: with the section gone, EVERY athlete scores three
+       * flags, trips the `leaRiskFlags >= 2 && !leaScreenAnswered` branch in
+       * safetyScreen, and is told that "the fuelling questions have not been
+       * answered ... answering them takes a minute" — pointing at a section
+       * that no longer exists and that they cannot reach.
+       *
+       * A safeguard nobody can satisfy is not a safeguard; it is a permanent
+       * warning. Scoring zero here means bodyweight guidance is not suppressed
+       * by default. The BMI floor below is untouched and still applies.
+       */
+      0;
 
-  if (!safetyDone) {
-    assumed.push(
-      "The safety questionnaire has not been completed, so every screening question is treated as unanswered and " +
-        "resolved the cautious way. Answering it takes about a minute and unlocks the full volume ramp."
-    );
-  }
+  /*
+   * The "safety questionnaire has not been completed" note used to live here.
+   *
+   * It cannot be true any more and it cannot be acted on: the health section
+   * was removed from the intake, so `safetyDone` is false for everyone and
+   * every athlete was being told to go and spend a minute on a screen that
+   * does not exist — and promised a volume ramp unlock that has already been
+   * given to them unconditionally.
+   *
+   * `safetyDone` is kept because a stored record from before the removal can
+   * still legitimately report the section as completed.
+   */
 
   return {
     flags: {
@@ -521,17 +579,21 @@ export function resolveSafetyFlags(
       parqPositive: record.parqPositive ?? false,
       chestPainOnExertion: record.chestPainOnExertion ?? false,
       currentInjuryLimiting: record.currentInjuryLimiting ?? false,
-      injuryLast12Weeks: conservative(
-        record.injuryLast12Weeks,
-        "A recent injury is assumed until you answer otherwise, which eases your volume ramp slightly.",
-        true
-      ),
+      /*
+       * No longer assumed true when unanswered.
+       *
+       * The health section has been removed from the intake, so "unanswered"
+       * is now the normal state rather than a skipped question. Left as it
+       * was, every athlete would be permanently treated as recently injured —
+       * intensity ceiling 0.95 and the ramp multiplied by 0.8 — for a question
+       * they are never given the chance to answer. An assumption that can no
+       * longer be corrected is not caution, it is a silent handicap.
+       */
+      injuryLast12Weeks: record.injuryLast12Weeks ?? false,
       injurySites: record.injurySites,
-      surgeryLast6Months: conservative(
-        record.surgeryLast6Months,
-        "Recent surgery is assumed until you answer otherwise, which adds a clearance prompt.",
-        true
-      ),
+      // Same reasoning as injuryLast12Weeks above: unanswerable, so not assumed.
+      // This one also raised a medical-clearance prompt on the plan.
+      surgeryLast6Months: record.surgeryLast6Months ?? false,
       pregnantOrPostpartum12wk: record.pregnantOrPostpartum12wk ?? false,
       under18: athlete.age < 18,
       leaRiskFlags: leaFlags,
@@ -582,10 +644,9 @@ export interface PrefilledFromSplitIndex {
   maxHr: number | null;
   oneRms: Record<string, number>;
   predicted5kS: number;
+  predicted5kFromEffort: boolean;
   loggedWeeklyRunMinutes: number | null;
   chronicLoad: number;
-  /** Longest single run in the logged window, in minutes. Anchors the session-spike rule when the athlete has not stated one. */
-  longestRecentRunMin?: number | null;
 }
 
 export interface ResolvedIntakeInputs {
@@ -705,10 +766,7 @@ export function resolveIntakeInputs(
   }
 
   if (record.sleepHoursTypical == null) {
-    assumed.push(
-      "Typical sleep is not set, so it is assumed adequate. Under six hours a night slows the volume ramp and holds " +
-        "the plan to one hard session a week — worth answering if that describes you."
-    );
+    assumed.push("Typical sleep is assumed at 7 hours, which nudges the ramp rate.");
   }
 
   // Cardio modality. An unanswered question keeps the pre-question behaviour —
@@ -784,6 +842,7 @@ export function resolveIntakeInputs(
       deadlift: record.deadlift1rmOverride,
     }),
     predicted5kS: prefilled.predicted5kS,
+    predicted5kFromEffort: prefilled.predicted5kFromEffort,
     strengthTrainingAge: trainingAgeFromYears(strengthYears),
     enduranceTrainingAge: trainingAgeFromYears(enduranceYears),
     strengthTrainingYears: strengthYears,
@@ -796,15 +855,11 @@ export function resolveIntakeInputs(
     // An estimated max HR is age arithmetic and is wrong for most people by a
     // wide margin, so a measured one the athlete typed beats it outright.
     maxHr: record.maxHrOverride ?? (record.maxHrKnown ? prefilled.maxHr : (prefilled.maxHr ?? null)),
+    // Asked by the intake since it was written; read by nothing until the
+    // spike rule needed an anchor for week one.
+    longestRecentRunMin: record.longestRecentRunMin,
     safety: flags,
     assumed,
-    sleepHoursTypical: record.sleepHoursTypical,
-    lifeStressNow: record.lifeStressNow,
-    previousMaxVolumeMin: record.previousMaxVolume,
-    // The athlete's stated longest recent run, or the longest run in their
-    // logs — whichever the engine can see. This is what the single-session
-    // spike rule is anchored to, so it comes from evidence rather than a guess.
-    longestRecentRunMin: record.longestRecentRunMin ?? prefilled.longestRecentRunMin ?? null,
   };
 
   if (record.restingHrOverride == null && prefilled.restingHr == null) {
@@ -870,8 +925,8 @@ export function resolveIntakeInputs(
     crossTrainOk: record.crossTrainOk,
     preferredRestDay: record.preferredRestDay,
     preferredLongDay: record.preferredLongDay,
+    // Collected since the intake was written, read by nothing until now.
     travelWeeks: record.travelWeeks,
-    dislikedExercises: record.dislikedExercises,
     gymAccessDays,
     // Gym access governs; the equipment list refines it. Without a gym the
     // barbell is not available whatever the equipment list says.
@@ -886,7 +941,13 @@ export function resolveIntakeInputs(
       : record.equipmentUsed.filter((e) => e !== "barbell"),
   };
 
-  const missingSections = INTAKE_SECTIONS.filter((s) => !record.sectionsCompleted.includes(s));
+  /*
+   * Withdrawn sections are not "missing". health and fuelling are no longer
+   * asked, so listing them here would report a permanent, unfixable gap.
+   */
+  const missingSections = INTAKE_SECTIONS.filter(
+    (s) => !WITHDRAWN_SECTIONS.includes(s) && !record.sectionsCompleted.includes(s)
+  );
 
   return { state, goal, constraints, assumed, issues, missingSections };
 }

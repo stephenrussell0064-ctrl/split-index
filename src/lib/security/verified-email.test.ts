@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { SUPABASE_AUTH_RATE_LIMITS } from "./config";
@@ -35,6 +35,53 @@ function migration(name: string): string {
 }
 
 const SQL = migration("061_require_verified_email.sql");
+
+/**
+ * The view assertions below read the LIVE definition, not 061's.
+ *
+ * They read 061 like everything else in this file until now, and that stopped
+ * being right the moment 064 rebuilt public_profiles and leaderboard_profiles
+ * to stop display_name publishing an email address. The gate assertions were
+ * then describing a definition the database no longer had: if 064 had dropped
+ * `email_confirmed_at IS NOT NULL` while rebuilding, every test here would
+ * still have passed and unverified accounts would have been public again.
+ *
+ * 064 did keep it — it was generated from 061 programmatically for exactly
+ * that reason — so nothing was broken. The test was simply no longer capable
+ * of saying so if it had been.
+ *
+ * The policy, function and grant assertions above keep reading 061 on purpose:
+ * nothing has redefined `caller_email_verified()` or those policies, and 061
+ * is still where they live.
+ */
+function allMigrations(): string[] {
+  return readdirSync(MIGRATIONS).filter((f) => f.endsWith(".sql")).sort();
+}
+
+/** The migration that last defines `view` — the text the database actually has. */
+function liveDefinitionOf(view: string): string {
+  const defining = allMigrations().filter((f) =>
+    new RegExp(`CREATE VIEW ${view}\\b`).test(migration(f))
+  );
+  const last = defining[defining.length - 1];
+  if (!last) throw new Error(`No migration defines ${view} — has it been renamed?`);
+  return migration(last);
+}
+
+/** The body of `view` as last defined, up to the statement terminator. */
+function liveViewBody(view: string): string {
+  const sql = liveDefinitionOf(view);
+  const after = sql.split(new RegExp(`CREATE VIEW ${view}\\b`)).pop() ?? "";
+  return after.split(";")[0]!;
+}
+
+const PROFILE_VIEWS = ["public_profiles", "leaderboard_profiles"];
+const DERIVED_VIEWS = [
+  "public_strength_scores",
+  "public_workout_scores",
+  "public_index_history",
+  "public_leaderboard_entries",
+];
 
 describe("an unverified account cannot log a session", () => {
   /**
@@ -84,12 +131,8 @@ describe("an unverified account does not appear in public", () => {
   it("gates every public projection on a confirmed address", () => {
     // An unverified account on a public list is a spam vector, and a way to
     // occupy a username without proving you can receive mail at the address.
-    const profileViews = SQL.split(/CREATE VIEW (public_profiles|leaderboard_profiles)\b/);
-    expect(profileViews.length).toBeGreaterThan(2);
-
-    for (const view of ["public_profiles", "leaderboard_profiles"]) {
-      const body = SQL.split(new RegExp(`CREATE VIEW ${view}\\b`))[1] ?? "";
-      const definition = body.split(";")[0];
+    for (const view of PROFILE_VIEWS) {
+      const definition = liveViewBody(view);
       expect(definition, `${view} does not join auth.users`).toMatch(/JOIN auth\.users u ON u\.id = p\.user_id/);
       expect(definition, `${view} does not require a confirmed address`).toMatch(
         /u\.email_confirmed_at IS NOT NULL/
@@ -100,15 +143,8 @@ describe("an unverified account does not appear in public", () => {
   it("derives the score projections from public_profiles rather than repeating the rule", () => {
     // Repeating `email_confirmed_at IS NOT NULL` in six places is six places to
     // forget it. Deriving means the rule is stated once.
-    for (const view of [
-      "public_strength_scores",
-      "public_workout_scores",
-      "public_index_history",
-      "public_leaderboard_entries",
-    ]) {
-      const body = SQL.split(new RegExp(`CREATE VIEW ${view}\\b`))[1] ?? "";
-      const definition = body.split(";")[0];
-      expect(definition, `${view} does not derive from public_profiles`).toMatch(
+    for (const view of DERIVED_VIEWS) {
+      expect(liveViewBody(view), `${view} does not derive from public_profiles`).toMatch(
         /FROM public_profiles pp WHERE pp\.user_id/
       );
     }
@@ -121,15 +157,14 @@ describe("an unverified account does not appear in public", () => {
    * goes blank for everyone.
    */
   it("restates every grant it dropped", () => {
-    for (const view of [
-      "public_profiles",
-      "leaderboard_profiles",
-      "public_strength_scores",
-      "public_workout_scores",
-      "public_index_history",
-      "public_leaderboard_entries",
-    ]) {
-      expect(SQL, `${view} is recreated without a grant`).toMatch(
+    /*
+      Against the migration that LAST defines each view, not 061. That is the
+      whole invariant: a view keeps its grants until something recreates it, so
+      the grant has to be restated by whichever migration did the recreating.
+      Checking 061 only ever proved that 061 was careful.
+    */
+    for (const view of [...PROFILE_VIEWS, ...DERIVED_VIEWS]) {
+      expect(liveDefinitionOf(view), `${view} is recreated without a grant`).toMatch(
         new RegExp(`GRANT SELECT ON ${view} TO`, "i")
       );
     }
@@ -144,15 +179,13 @@ describe("an unverified account does not appear in public", () => {
     // With security_invoker on, the view would re-apply the CALLER's rights —
     // and `authenticated` cannot read auth.users, so every projection would
     // return nothing and the failure would look like a data problem.
-    for (const view of [
-      "public_profiles",
-      "leaderboard_profiles",
-      "public_strength_scores",
-      "public_workout_scores",
-      "public_index_history",
-      "public_leaderboard_entries",
-    ]) {
-      expect(SQL).toMatch(new RegExp(`ALTER VIEW ${view} SET \\(security_invoker = off\\);`, "i"));
+    // Same rule as the grants: a recreated view resets its options, so this
+    // belongs to whichever migration last defined it.
+    for (const view of [...PROFILE_VIEWS, ...DERIVED_VIEWS]) {
+      expect(
+        liveDefinitionOf(view),
+        `${view} is recreated without security_invoker = off`
+      ).toMatch(new RegExp(`ALTER VIEW ${view} SET \\(security_invoker = off\\);`, "i"));
     }
   });
 });

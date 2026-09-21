@@ -1,3 +1,5 @@
+import { parseBody } from "@/lib/validation/boundary";
+import { hrvSchema } from "@/lib/validation/schemas/social";
 import { NextResponse } from "next/server";
 import { databaseError } from "@/lib/api/errors";
 import { createClient } from "@/lib/supabase/server";
@@ -35,11 +37,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await request.json().catch(() => ({}));
-  const hrvMs = Number(body.hrvMs);
-  if (!Number.isFinite(hrvMs) || hrvMs <= 0 || hrvMs > 500) {
-    return NextResponse.json({ error: "hrvMs must be a plausible rMSSD value in ms" }, { status: 400 });
-  }
+  // N1. Same range as before — numberFields.hrvMs is BOUND_HRV_MS, [1, 500],
+  // which is what this checked by hand. What is new is the body size cap, the
+  // refusal of unknown keys, and a field-level message instead of one string.
+  const parsed = await parseBody(request, hrvSchema);
+  if (parsed.response) return parsed.response;
+  const hrvMs = parsed.data.hrvMs;
 
   const { data: recentScores } = await supabase
     .from("workout_scores")

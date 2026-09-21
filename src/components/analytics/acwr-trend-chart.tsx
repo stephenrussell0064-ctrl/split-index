@@ -5,7 +5,16 @@ import { useReducedMotion } from "framer-motion";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { ChartEmptyState, chartGridStroke, chartTickFill, chartTooltipStyle } from "@/components/analytics/charts";
 import { designTokens } from "@/lib/design/tokens";
-import type { AcwrTrendPoint } from "@/lib/scoring/injury-risk";
+import type { AcwrTrendPoint, InjuryRiskZone } from "@/lib/scoring/injury-risk";
+import { ChartFigure } from "@/components/analytics/chart-figure";
+
+/** The bands the chart draws, in words, so the table and the sentence agree. */
+const ACWR_ZONE_WORDS: Record<InjuryRiskZone, string> = {
+  Undertraining: "below the optimal band",
+  Optimal: "in the optimal band",
+  Caution: "above optimal",
+  Danger: "in the danger band",
+};
 
 /**
  * ACWR as a trend, not just a snapshot (user feedback: "i want this data
@@ -35,7 +44,29 @@ export function AcwrTrendChart({ data }: { data: AcwrTrendPoint[] }) {
         {data.length < 2 ? (
           <ChartEmptyState message="Your load ratio trends here once you've logged a few weeks of training" />
         ) : (
-          <div role="img" aria-label={`ACWR trend chart over ${data.length} weeks`}>
+          <ChartFigure
+            label="ACWR trend"
+            summary={
+              /*
+                Not describeSeries. The point of this chart is not the shape of
+                the line but which BAND the ratio is in — optimal 0.8 to 1.3,
+                danger above 1.5 — which is why the plot draws those bands and
+                why a generic "up from 0.94 to 1.12" would report the movement
+                and lose the meaning.
+              */
+              `Acute-to-chronic load ratio, ${data.length} weeks. Latest ${
+                data[data.length - 1].acwr
+              }, ${ACWR_ZONE_WORDS[data[data.length - 1].zone]}. Started at ${data[0].acwr}, ${
+                ACWR_ZONE_WORDS[data[0].zone]
+              }.`
+            }
+            columns={[
+              { header: "Date", cell: (d: AcwrTrendPoint) => d.date },
+              { header: "Ratio", cell: (d: AcwrTrendPoint) => String(d.acwr) },
+              { header: "Zone", cell: (d: AcwrTrendPoint) => ACWR_ZONE_WORDS[d.zone] },
+            ]}
+            rows={data}
+          >
             <ResponsiveContainer width="100%" height={220}>
               <AreaChart data={data} margin={{ top: 8, right: 4, left: -8, bottom: 0 }}>
                 <defs>
@@ -73,7 +104,7 @@ export function AcwrTrendChart({ data }: { data: AcwrTrendPoint[] }) {
                 />
               </AreaChart>
             </ResponsiveContainer>
-          </div>
+          </ChartFigure>
         )}
       </CardContent>
     </Card>

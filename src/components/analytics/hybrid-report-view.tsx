@@ -1,6 +1,6 @@
-import { Share2, TrendingUp, TrendingDown, Gauge } from "lucide-react";
+import { ShareImageButton } from "@/components/analytics/share-image-button";
+import { TrendingUp, TrendingDown, Gauge } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { buttonVariants } from "@/components/ui/button";
 import { PremiumTease } from "@/components/premium/premium-tease";
 import { formatIndex } from "@/lib/utils/format";
 import type { HybridAthleteReport } from "@/lib/scoring/hybrid-report";
@@ -84,15 +84,13 @@ export function HybridReportView({
         <div className="flex items-center justify-between gap-2">
           <CardTitle>Hybrid Athlete Report</CardTitle>
           {isPremium && report && (
-            <a
+            <ShareImageButton
               href="/api/reports/hybrid/card"
-              target="_blank"
-              rel="noopener noreferrer"
-              className={buttonVariants({ variant: "secondary", size: "sm" })}
-            >
-              <Share2 className="h-3.5 w-3.5" />
-              Share
-            </a>
+              filename="hybrid-athlete-report.png"
+              shareTitle="My Split Index Hybrid Athlete Report"
+              shareText="My hybrid training, tracked with Split Index."
+              contentSummary="Your display name, your Split Index for this period, your interference finding and your target pace. No readiness, recovery or health answers."
+            />
           )}
         </div>
         <p className="text-xs text-muted">

@@ -1,9 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useKeyboardSafeFocus } from "@/components/activities/use-keyboard";
 import Link from "next/link";
 import { Card } from "@/components/ui/card";
+import { TimeOfDaySelect } from "@/components/ui/time-of-day-select";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils/cn";
@@ -11,10 +13,8 @@ import { Article9ConsentCard } from "@/components/settings/article9-consent-card
 import { isTier2Section } from "@/lib/consent/article9";
 import { DEFAULT_TRAINING_SPLIT, TRAINING_SPLITS, type TrainingSplit } from "@/lib/scoring/hpe/constants";
 import {
-  CustomSplitEditor,
   DayWindowsEditor,
   DurationField,
-  ExercisePicker,
   Field,
   MultiSelect,
   NumberField,
@@ -22,9 +22,7 @@ import {
   PrefilledOverridable,
   SelectField,
   YesNo,
-  type CustomSplitDayValue,
   type DayWindowValue,
-  type LoggedExercise,
 } from "./intake-fields";
 import {
   INTAKE_DAYS,
@@ -101,9 +99,26 @@ const SECTION_META: Record<IntakeSection, { title: string; blurb: string; skipCo
   },
 };
 
+/*
+ * The health and fuelling sections are deliberately not here.
+ *
+ * They asked about injuries, surgery, chest pain, pregnancy, restricted
+ * eating and unintended weight loss. None of it decides what the athlete
+ * trains, how many exercises they get, or how the week is split — the four
+ * things this wizard exists to establish — and being asked all of it before
+ * a training plan is the reason people abandoned the form.
+ *
+ * Removing the questions is only half of it. Two of those answers defaulted
+ * to "assume the cautious thing until told otherwise", so simply deleting
+ * the section would have left every athlete permanently treated as recently
+ * injured and recently operated on: intensity capped and the volume ramp
+ * multiplied down, with a medical-clearance prompt on the plan. Those
+ * defaults are flipped in intake-record.ts alongside this.
+ *
+ * The sections remain defined in SECTION_META and still render if reached,
+ * so nothing is deleted that the record or the engine still reads.
+ */
 const ORDER: IntakeSection[] = [
-  "health",
-  "fuelling",
   "goal",
   "availability",
   "history",
@@ -141,33 +156,19 @@ function normalizeDayWindows(raw: unknown): DayWindowValue[] {
     .filter((w) => w.day.length > 0);
 }
 
-/**
- * A draft in progress holds the snake_case wire shape; a saved record comes
- * back camelCased. Both have to land on the editor's shape before it can read
- * them — the same problem `normalizeDayWindows` solves for training windows.
- */
-function normalizeCustomDays(raw: unknown): CustomSplitDayValue[] {
-  if (!Array.isArray(raw)) return [];
-  return raw.map((entry) => {
-    const e = entry as Record<string, unknown>;
-    const primary = e.primary_lift ?? e.primaryLift;
-    return {
-      label: String(e.label ?? ""),
-      primary_lift: typeof primary === "string" && primary.length > 0 ? primary : null,
-      patterns: Array.isArray(e.patterns) ? e.patterns.map(String) : [],
-    };
-  });
-}
 
 export function IntakeWizard() {
+  /*
+    On iOS the software keyboard does NOT resize the layout viewport, so a
+    field in the lower half of a step is typed into blind. This is the longest
+    form in the app — multi-step, many fields per step — and it is the one that
+    decides what the athlete's training block will be.
+  */
+  const formRef = useRef<HTMLDivElement>(null);
+  useKeyboardSafeFocus(formRef);
   const router = useRouter();
   const [data, setData] = useState<IntakeResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  // The athlete's own logged exercises, for the per-day picker. Fetched lazily
-  // and failing silently: the picker degrades to "nothing logged yet", which is
-  // the same message an athlete with no gym history sees, and the plan is
-  // unaffected either way because picking nothing is a complete answer.
-  const [loggedExercises, setLoggedExercises] = useState<LoggedExercise[]>([]);
   const [step, setStep] = useState(0);
   const [draft, setDraft] = useState<Record<string, unknown>>({});
   const [saving, setSaving] = useState(false);
@@ -183,24 +184,6 @@ export function IntakeWizard() {
         if (res.ok && !cancelled) setData((await res.json()) as IntakeResponse);
       } finally {
         if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const res = await fetch("/api/hpe/intake/exercises");
-        if (!res.ok || cancelled) return;
-        const json = (await res.json()) as { exercises?: LoggedExercise[] };
-        if (!cancelled) setLoggedExercises(json.exercises ?? []);
-      } catch {
-        // The picker is an enhancement. Losing it must not cost the athlete
-        // the rest of the intake.
       }
     })();
     return () => {
@@ -238,25 +221,6 @@ export function IntakeWizard() {
   const section = ORDER[step];
   const intake = data?.intake;
   const prefilled = data?.prefilled;
-
-  /**
-   * The day names to offer exercise picks for — the athlete's own days when
-   * they laid some out, otherwise the days of whichever split is in force.
-   * De-duplicated, because an upper/lower rotation names "Upper" twice and
-   * asking the same question twice is how a form loses somebody.
-   */
-  const exerciseDayLabels = useMemo(() => {
-    if (!intake) return [] as string[];
-    const custom = normalizeCustomDays(
-      "custom_split_days" in draft ? draft.custom_split_days : intake.customSplitDays
-    ).filter((d) => d.label.trim().length > 0);
-    if (custom.length > 0) return [...new Set(custom.map((d) => d.label.trim()))];
-    const chosen = ("training_split" in draft ? draft.training_split : intake.trainingSplit) as
-      | TrainingSplit
-      | null;
-    const spec = TRAINING_SPLITS[chosen ?? DEFAULT_TRAINING_SPLIT];
-    return [...new Set(spec.days.map((d) => d.label))];
-  }, [draft, intake]);
 
   // Unsaved edits are dropped when the step changes — `get` falls back to the
   // stored value, so revisiting a section shows the athlete's own saved
@@ -358,7 +322,7 @@ export function IntakeWizard() {
   const completed = new Set(intake.sectionsCompleted);
 
   return (
-    <div className="space-y-5">
+    <div ref={formRef} className="space-y-5">
       {/* Progress. Mandatory sections are visually distinct from skippable
           ones so the athlete can see how short the required part is. */}
       <div className="flex gap-1.5">
@@ -542,20 +506,11 @@ export function IntakeWizard() {
                   );
                 })()}
               </Field>
-              <Field
-                label="Do you want to cross-train?"
-                why="Say no and every endurance session stays in what you picked above — with one modality chosen, nothing in the plan will ever ask you to run. Say yes and easy volume is spread across your choices."
-              >
-                <YesNo
-                  value={get("cross_train_ok", intake.crossTrainOk) as boolean}
-                  onChange={(v) => set("cross_train_ok", v)}
-                />
-              </Field>
 
               {/* Always shown. Training without a date is the ordinary case, not the
                   fallback — an event date simply overrides this when there is one. */}
               <>
-                <Field label="How long should this plan run?" why="Most people are training rather than counting down to a date, so this is the normal way to answer. Leave it on 'let the engine choose' for a standard 12-week block.">
+                <Field label="How long should this plan run?" why="Most people are training rather than counting down to a date, so this is the normal way to answer. Left alone it runs 24 weeks — twelve is rarely long enough for a trained athlete to move a 5k time by much.">
                   <div className="flex flex-wrap gap-2" role="group" aria-label="Planning horizon">
                     {PLANNING_HORIZONS.map((h) => (
                       <button
@@ -596,31 +551,25 @@ export function IntakeWizard() {
                 </Field>
               </>
               <Field label="Do you have an event? When is it?" why="Optional, and most people do not. Given a date, phase lengths, the taper and the peak all measure back from it and it overrides the block length above.">
+                {/*
+                  min-w-0 max-w-full: Safari sizes input[type=date] to the
+                  widest date its picker can draw, not to the container, and a
+                  flex/grid child will not shrink below that on its own. Without
+                  this the whole step scrolls sideways on a phone — the same bug
+                  the Goals tab had.
+                */}
                 <input
                   type="date"
                   value={(get("event_date", intake.eventDate) as string | null) ?? ""}
                   onChange={(e) => set("event_date", e.target.value || null)}
                   aria-label="Event date"
-                  className="min-h-11 rounded-xl border border-white/10 bg-white/[0.03] px-3 text-sm text-foreground focus:border-accent focus:outline-none"
+                  className="min-h-11 min-w-0 max-w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 text-base text-foreground focus:border-accent focus:outline-none"
                 />
               </Field>              {((get("events", intake.events) as string[]).length >= 2) && (
                 <>
                   <Field label="Are these on the same day?" why="Same-day events need an order, and one of the two orders is a safety block rather than a preference.">
                     <YesNo value={get("same_day", intake.sameDay) as boolean} onChange={(v) => set("same_day", v)} />
                   </Field>
-                  {(get("same_day", intake.sameDay) as boolean) && (
-                    <Field label="Roughly how many hours between them?" why="Drives how much of the first event's fatigue has cleared before the second.">
-                      <NumberField
-                        value={get("inter_event_gap_h", intake.interEventGapH) as number}
-                        onChange={(v) => set("inter_event_gap_h", v ?? 4)}
-                        min={0.5}
-                        max={14}
-                        step={0.5}
-                        suffix="hours"
-                        ariaLabel="Hours between events"
-                      />
-                    </Field>
-                  )}
                 </>
               )}
               <Field label="Target 5k time" why="Optional. Without it the endurance side is set to maintain rather than develop, and interval paces stop progressing toward anything.">
@@ -630,33 +579,35 @@ export function IntakeWizard() {
                   ariaLabel="Target 5k time"
                 />
               </Field>
-              {/* Per-lift, not a total: asking for a total makes the athlete do arithmetic on three numbers they may not all know, and loses the whole answer if one is missing. Each is independently skippable. */}
-              <Field label="Target squat" why="Optional and independent of bench and deadlift below — any one of the three is still useful. Without at least one the strength side is set to maintain rather than develop.">
-                <NumberField
-                  value={get("target_squat_kg", intake.targetSquatKg) as number | null}
-                  onChange={(v) => set("target_squat_kg", v)}
-                  min={0}
-                  suffix="kg"
-                  ariaLabel="Target squat"
-                />
-              </Field>
-              <Field label="Target bench" why="Optional and independent of the other two.">
-                <NumberField
-                  value={get("target_bench_kg", intake.targetBenchKg) as number | null}
-                  onChange={(v) => set("target_bench_kg", v)}
-                  min={0}
-                  suffix="kg"
-                  ariaLabel="Target bench"
-                />
-              </Field>
-              <Field label="Target deadlift" why="Optional and independent of the other two.">
-                <NumberField
-                  value={get("target_deadlift_kg", intake.targetDeadliftKg) as number | null}
-                  onChange={(v) => set("target_deadlift_kg", v)}
-                  min={0}
-                  suffix="kg"
-                  ariaLabel="Target deadlift"
-                />
+              {/*
+                  One question, three inputs.
+
+                  Still per-lift rather than a total — a total makes the athlete
+                  do arithmetic on three numbers they may not all know, and
+                  loses the whole answer if one is missing. But three separate
+                  Field blocks asked what is plainly one question three times,
+                  each with its own heading and its own explanation, which is a
+                  third of the goal step spent on one idea.
+              */}
+              <Field label="Target lifts" why="Optional, and any one of the three is useful on its own. Without at least one, the strength side is set to maintain rather than develop.">
+                <div className="flex flex-wrap gap-3">
+                  {([
+                    ["Squat", "target_squat_kg", intake.targetSquatKg],
+                    ["Bench", "target_bench_kg", intake.targetBenchKg],
+                    ["Deadlift", "target_deadlift_kg", intake.targetDeadliftKg],
+                  ] as const).map(([label, field, stored]) => (
+                    <label key={field} className="flex items-center gap-2 text-sm text-muted">
+                      {label}
+                      <NumberField
+                        value={get(field, stored) as number | null}
+                        onChange={(v) => set(field, v)}
+                        min={0}
+                        suffix="kg"
+                        ariaLabel={`Target ${label.toLowerCase()}`}
+                      />
+                    </label>
+                  ))}
+                </div>
               </Field>
               <Field label="If you could only hit one, which matters more?" why="Pre-set from your goals. Move it if it is wrong — it decides how the week splits between running and lifting.">
                 <div className="space-y-2">
@@ -680,20 +631,6 @@ export function IntakeWizard() {
                   </div>
                 </div>
               </Field>
-              <Field label="Are you lifting in a weight class?" why="Only used to frame the bodyweight discussion honestly, and to refuse a water cut alongside a same-day race.">
-                <NumberField
-                  value={get("weight_class_kg", intake.weightClassKg) as number | null}
-                  onChange={(v) => set("weight_class_kg", v)}
-                  min={0}
-                  suffix="kg"
-                  ariaLabel="Weight class"
-                />
-              </Field>
-              {get("weight_class_kg", intake.weightClassKg) != null && (
-                <Field label="Are you planning to cut weight for weigh-in?" why="Declared alongside a same-day endurance race, this is refused outright — dehydration is incompatible with a 5k and with recovering between events.">
-                  <YesNo value={get("intends_weight_cut", intake.intendsWeightCut)} onChange={(v) => set("intends_weight_cut", v)} />
-                </Field>
-              )}
             </>
           )}
 
@@ -711,23 +648,23 @@ export function IntakeWizard() {
                 <YesNo value={get("two_a_days_possible", intake.twoADaysPossible) as boolean} onChange={(v) => set("two_a_days_possible", v)} />
               </Field>
               <Field label="Roughly what times do you train?" why="The six-hour separation rule between a hard lift and a hard run is computed from these, not assumed. Training at 06:00 and 12:00 clears it; 12:00 and 17:00 does not.">
-                <div className="flex items-center gap-3">
-                  <NumberField
-                    value={get("am_hour", intake.amHour) as number}
-                    onChange={(v) => set("am_hour", v ?? 7)}
-                    min={0}
-                    max={23}
-                    suffix="morning"
-                    ariaLabel="Morning training hour"
-                  />
-                  <NumberField
-                    value={get("pm_hour", intake.pmHour) as number}
-                    onChange={(v) => set("pm_hour", v ?? 18)}
-                    min={0}
-                    max={23}
-                    suffix="evening"
-                    ariaLabel="Evening training hour"
-                  />
+                <div className="flex flex-wrap items-center gap-3">
+                  <label className="flex items-center gap-2 text-sm text-muted">
+                    Morning
+                    <TimeOfDaySelect
+                      value={get("am_hour", intake.amHour) as number}
+                      onChange={(v) => set("am_hour", v)}
+                      ariaLabel="Morning training time"
+                    />
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-muted">
+                    Evening
+                    <TimeOfDaySelect
+                      value={get("pm_hour", intake.pmHour) as number}
+                      onChange={(v) => set("pm_hour", v)}
+                      ariaLabel="Evening training time"
+                    />
+                  </label>
                 </div>
               </Field>
               <Field label="Most sessions you would realistically do in a week" why="A cap, not a target. The engine fits the plan inside it rather than assuming you will find extra time." required>
@@ -763,29 +700,23 @@ export function IntakeWizard() {
                   onChange={(v) => set("availability_varies", v)}
                 />
               </Field>
-              {!(get("availability_varies", intake.availabilityVaries) as boolean) && (
-                <Field label="Exact training windows, per day" why="Optional and more precise than the morning/evening hours above. Real clock times differ by day, and the six-hour separation rule between a hard lift and a hard run is computed from these — a day left as a rest day here just falls back to the flat hours.">
-                  <DayWindowsEditor
-                    days={INTAKE_DAYS}
-                    value={normalizeDayWindows(get("day_windows", intake.dayWindows))}
-                    onChange={(v) => set("day_windows", v)}
-                  />
-                </Field>
-              )}
-              <Field label="Best day for your longest session" why="A soft preference. The scheduler honours it unless a hard constraint says otherwise.">
-                <SelectField
-                  value={get("preferred_long_day", intake.preferredLongDay) as string | null}
-                  onChange={(v) => set("preferred_long_day", v)}
-                  options={DAY_OPTIONS}
-                  ariaLabel="Preferred long day"
-                />
-              </Field>
-              <Field label="Preferred rest day" why="Also soft. Every week gets at least one rest day regardless.">
-                <SelectField
-                  value={get("preferred_rest_day", intake.preferredRestDay) as string | null}
-                  onChange={(v) => set("preferred_rest_day", v)}
-                  options={DAY_OPTIONS}
-                  ariaLabel="Preferred rest day"
+              {/*
+                  Shown whether or not the week varies.
+
+                  It used to be hidden as soon as the athlete answered yes to
+                  "does your week vary", on the reasoning that a varying week
+                  cannot be fixed to days. But saying your week varies is not
+                  saying you have no pattern — and the six-hour separation rule
+                  between a hard lift and a hard run is computed from these
+                  times in BOTH modes, so hiding them threw away the input that
+                  still mattered. From the athlete's side it read as the app
+                  taking the question away for giving the honest answer.
+              */}
+              <Field label="Exact training windows, per day" why="Optional. Set the days you can actually train and the hours on each. The six-hour separation rule between a hard lift and a hard run is computed from these, so they are worth setting even if your week moves around.">
+                <DayWindowsEditor
+                  days={INTAKE_DAYS}
+                  value={normalizeDayWindows(get("day_windows", intake.dayWindows))}
+                  onChange={(v) => set("day_windows", v)}
                 />
               </Field>
             </>
@@ -803,9 +734,23 @@ export function IntakeWizard() {
                   ariaLabel="Current weekly running minutes"
                 />
               </Field>
+              {/*
+                  Restored after being trimmed as low-value. It is not.
+
+                  The weekly-minutes figure above is reconciled against the
+                  athlete's logs and the LOWER of the two wins — the right
+                  default against optimism, and the reason a plan does not ramp
+                  someone into injury. This answer is the only way to say the
+                  gap is missing data rather than optimism, and without it an
+                  athlete whose training is logged elsewhere is anchored to a
+                  number they have already told us is incomplete, with no way
+                  to move it. Every week of the block is a multiple of that
+                  anchor, so the cost of removing one question was a whole
+                  block built at a fraction of the right volume.
+              */}
               <Field
                 label="Is some of your training not recorded in Split Index?"
-                why="If yes, the number above is used as-is. If no, the lower of your figure and your logs is used, because starting a plan above where you actually are is the most common way generated plans cause injury."
+                why="If yes, your figure above is used as-is. If no, the lower of your figure and your logs is used — starting a plan above where you actually are is the most common way generated plans cause injury."
               >
                 <YesNo
                   value={get("trains_outside_app", intake.trainsOutsideApp) as boolean}
@@ -831,16 +776,6 @@ export function IntakeWizard() {
                   max={300}
                   suffix="min"
                   ariaLabel="Longest recent run"
-                />
-              </Field>
-              <Field label="Highest weekly running volume you have ever sustained for a month" why="A ceiling on the ramp. If you have held 300 min/week before, getting back there is a different problem from reaching it the first time.">
-                <NumberField
-                  value={get("previous_max_volume", intake.previousMaxVolume) as number | null}
-                  onChange={(v) => set("previous_max_volume", v)}
-                  min={0}
-                  max={800}
-                  suffix="min/week"
-                  ariaLabel="Previous max weekly volume"
                 />
               </Field>
               <Field label="How many lifting sessions are you doing now?" why="Part of the on-ramp: the plan starts from what you are doing, not from what it would like you to do.">
@@ -874,15 +809,6 @@ export function IntakeWizard() {
                   performable. "Do you have a barbell" was the old question and
                   it had the order backwards — a barbell is a detail inside gym
                   access, not a substitute for asking about it. */}
-              <Field
-                label="Can you get to a gym?"
-                why="If not, the barbell lifts are substituted for movements you can actually perform. Prescribing a back squat to someone training in a bedroom produces a plan that cannot be followed."
-              >
-                <YesNo
-                  value={get("has_gym_access", intake.hasGymAccess) as boolean}
-                  onChange={(v) => set("has_gym_access", v)}
-                />
-              </Field>
 
               {!(get("has_gym_access", intake.hasGymAccess) as boolean) && (
                 <p className="rounded-2xl border border-warning/25 bg-warning/[0.06] p-4 text-sm leading-relaxed text-warning/90">
@@ -927,53 +853,7 @@ export function IntakeWizard() {
 
               {(get("has_gym_access", intake.hasGymAccess) as boolean) && (
                 <>
-                  <Field
-                    label="Prefer to lay out your own gym days?"
-                    why="Optional, and only worth it if none of the splits above describes your week. Each day needs at least one movement pattern — that is what the day gets filled with. Leave this empty and the split above is used."
-                  >
-                    <CustomSplitEditor
-                      value={normalizeCustomDays(get("custom_split_days", intake.customSplitDays))}
-                      onChange={(v) => set("custom_split_days", v)}
-                    />
-                  </Field>
 
-                  <Field
-                    label="Pick your own exercises for each day"
-                    why="Seeded from what you have actually logged, not from the full catalogue. Pick nothing and the engine chooses for you, which is what it does today — this only ever adds."
-                  >
-                    {exerciseDayLabels.length === 0 ? (
-                      <p className="text-xs leading-relaxed text-muted">
-                        Choose a split above, or lay out your own days, and each day appears here to pick for.
-                      </p>
-                    ) : (
-                      <div className="space-y-4">
-                        {exerciseDayLabels.map((dayLabel) => (
-                          <div key={dayLabel}>
-                            <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted">
-                              {dayLabel}
-                            </p>
-                            <ExercisePicker
-                              dayLabel={dayLabel}
-                              available={loggedExercises}
-                              selected={
-                                (get("exercises_by_day", intake.exercisesByDay) as Record<string, string[]>)[
-                                  dayLabel
-                                ] ?? []
-                              }
-                              onChange={(names) => {
-                                const current = {
-                                  ...(get("exercises_by_day", intake.exercisesByDay) as Record<string, string[]>),
-                                };
-                                if (names.length === 0) delete current[dayLabel];
-                                else current[dayLabel] = names;
-                                set("exercises_by_day", current);
-                              }}
-                            />
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </Field>
                 </>
               )}
 
@@ -1070,21 +950,7 @@ export function IntakeWizard() {
                   ariaLabel="Typical sleep"
                 />
               </Field>
-              <Field label="Do you work shifts or nights?" why="Disables the fixed morning/evening assumptions in the scheduler.">
-                <YesNo value={get("shift_work", intake.shiftWork) as boolean} onChange={(v) => set("shift_work", v)} />
-              </Field>
-              <Field label="Is your job sedentary, on your feet, or physical?" why="Adjusts the chronic-load seed — a day on your feet is training load your watch never sees.">
-                <SelectField
-                  value={get("job_physicality", intake.jobPhysicality) as string}
-                  onChange={(v) => set("job_physicality", v)}
-                  options={[
-                    { value: "sedentary", label: "Sedentary" },
-                    { value: "on_feet", label: "On my feet" },
-                    { value: "physical", label: "Physical" },
-                  ]}
-                  ariaLabel="Job physicality"
-                />
-              </Field>            </>
+            </>
           )}
 
         </div>
