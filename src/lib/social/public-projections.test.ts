@@ -235,6 +235,14 @@ describe("WP1 — the public projections", () => {
   it("defines every view the application reads from", () => {
     expect([...views.keys()].sort()).toEqual([
       "leaderboard_profiles",
+      /*
+       * The seventh view, added by 073 rather than by 056 with the other six.
+       * Two authenticated-only routes read `profiles` across athletes and would
+       * have broken when 073 took public read off the base tables; this is the
+       * column-scoped projection they were moved onto. It is revoked from anon
+       * explicitly, because Supabase grants a new view to anon by name.
+       */
+      "profile_usernames",
       "public_challenge_participation",
       "public_index_history",
       "public_leaderboard_entries",

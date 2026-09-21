@@ -31,7 +31,7 @@ export async function POST(request: Request) {
   }
 
   const { error } = await supabase
-    .from("user_blocks")
+    .from("blocked_users")
     // Blocking twice is not an error. A second tap, or a retry on a flaky
     // connection, should leave the person blocked and say so.
     .upsert(
@@ -57,7 +57,7 @@ export async function DELETE(request: Request) {
   if (!blockedId) return NextResponse.json({ error: "No user given" }, { status: 400 });
 
   const { error } = await supabase
-    .from("user_blocks")
+    .from("blocked_users")
     .delete()
     .eq("blocker_id", user.id)
     .eq("blocked_id", blockedId);
@@ -78,7 +78,7 @@ export async function GET() {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { data: blocks } = await supabase
-    .from("user_blocks")
+    .from("blocked_users")
     .select("blocked_id, created_at")
     .eq("blocker_id", user.id)
     .order("created_at", { ascending: false });

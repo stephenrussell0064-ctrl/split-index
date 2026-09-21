@@ -178,7 +178,7 @@ describe("the audit row cannot carry health data", () => {
 
 describe("migration 059", () => {
   const SQL = readFileSync(
-    fileURLToPath(new URL("../../../supabase/migrations/059_admin_access_log.sql", import.meta.url)),
+    fileURLToPath(new URL("../../../supabase/migrations/062_admin_access_log.sql", import.meta.url)),
     "utf8"
   );
 

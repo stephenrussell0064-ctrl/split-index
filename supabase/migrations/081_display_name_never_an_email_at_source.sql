@@ -28,6 +28,27 @@
 -- `UPDATE` whose predicate stops matching once it has run. Safe to apply twice,
 -- which matters because part of this repo's history reached production through
 -- the SQL editor, leaving no row in `supabase_migrations.schema_migrations`.
+-- RUN THIS BEFORE APPLYING, AND READ THE ANSWER
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Part 2 below is a destructive UPDATE against real rows. Know the numbers
+-- first. Carried over verbatim from the migration this replaces, because the
+-- counts it separates are the ones that decide whether to proceed:
+-- `exposed_via_view` is the harm already done, `other_at_signs` is the data the
+-- narrow predicate deliberately protects.
+--
+--   SELECT
+--     count(*) FILTER (WHERE p.display_name IS NOT NULL)              AS have_a_name,
+--     count(*) FILTER (WHERE lower(p.display_name) = lower(u.email))  AS name_is_own_email,
+--     count(*) FILTER (WHERE lower(p.display_name) = lower(u.email)
+--                        AND p.username IS NOT NULL)                  AS exposed_via_view,
+--     count(*) FILTER (WHERE p.display_name LIKE '%@%'
+--                        AND lower(p.display_name) IS DISTINCT FROM lower(u.email))
+--                                                                     AS other_at_signs,
+--     count(*) FILTER (WHERE lower(p.display_name) = lower(u.email)
+--                        AND p.username IS NULL)                      AS not_yet_public
+--   FROM public.profiles p
+--   JOIN auth.users u ON u.id = p.user_id;
+
 BEGIN;
 
 -- ─── Part 1. Stop creating the problem ──────────────────────────────────────
