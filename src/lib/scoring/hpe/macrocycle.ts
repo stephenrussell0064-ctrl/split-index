@@ -50,7 +50,8 @@ import {
   ONRAMP_PERFORMANCE_FLOOR_SHARE,
   PHASE_SHARE,
   TAPER_DAYS,
-  TAPER_ENDURANCE_VOLUME_REDUCTION,
+  TAPER_ENDURANCE_SHARE_BY_WEEK_FROM_RACE,
+  TAPER_WEEKS_BY_EVENT,
   type Phase,
 } from "./constants";
 import type { AthleteState, Goal } from "./intake";
@@ -125,6 +126,20 @@ export function onRampStartingVolume(state: AthleteState): number {
   return startingVolume;
 }
 
+/**
+ * How many weeks this athlete's event is tapered for.
+ *
+ * Only a real event date earns the longer taper. A block with a chosen
+ * timeframe and no race has nothing to peak for on a given day, so its last
+ * week is a test week rather than a three-week wind-down, and a very short
+ * block cannot spend most of itself tapering.
+ */
+export function taperWeeksFor(goal: Pick<Goal, "enduranceEventKey" | "horizonSource" | "weeksOut">): number {
+  const byEvent = goal.enduranceEventKey ? TAPER_WEEKS_BY_EVENT[goal.enduranceEventKey] : undefined;
+  const wanted = goal.horizonSource === "event_date" && byEvent != null ? byEvent : Math.max(1, Math.round(TAPER_DAYS / 7));
+  return Math.max(1, Math.min(wanted, Math.floor(goal.weeksOut / 4)));
+}
+
 export interface MacrocycleOptions {
   /** Plan weeks (1-based) the athlete has said they will be away. Each becomes a reduced week rather than a hole. */
   travelWeeks?: readonly number[];
@@ -141,7 +156,7 @@ export function buildMacrocycle(
   rampMultiplier = 1,
   options: MacrocycleOptions = {}
 ): MacrocycleWeek[] {
-  const taperWeeks = Math.max(1, Math.round(TAPER_DAYS / 7));
+  const taperWeeks = taperWeeksFor(goal);
   const remaining = Math.max(1, goal.weeksOut - taperWeeks);
 
   // Allocate the non-taper weeks across the four development phases.
@@ -235,12 +250,20 @@ export function buildMacrocycle(
     }
   }
 
+  // Progressive and monotone: race week is the deepest cut and every week
+  // before it sits a step above the one after.
   for (let i = 0; i < taperWeeks; i++) {
+    const weeksFromRace = taperWeeks - 1 - i;
+    const share =
+      TAPER_ENDURANCE_SHARE_BY_WEEK_FROM_RACE[
+        Math.min(weeksFromRace, TAPER_ENDURANCE_SHARE_BY_WEEK_FROM_RACE.length - 1)
+      ];
     weeks.push({
       week,
       phase: "taper",
       deload: false,
-      enduranceMin: viableWeeklyMinutes(peakVolume * (1 - TAPER_ENDURANCE_VOLUME_REDUCTION)),
+      travel: travel.has(week) || undefined,
+      enduranceMin: viableWeeklyMinutes(peakVolume * share),
       phaseProgress: taperWeeks > 1 ? i / (taperWeeks - 1) : 1,
     });
     week++;

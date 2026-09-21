@@ -740,6 +740,36 @@ export const DEADLIFT_AFTER_RACE_IS_UNSAFE = true;
 // ---------------------------------------------------------------------------
 
 export const TAPER_DAYS = 10;
+
+/**
+ * [DATA] Taper length in WEEKS, by event. The engine tapered for one week
+ * whatever the athlete was training for, which is right for a 5k and wrong
+ * for a marathon by a fortnight.
+ *
+ * Bosquet 2007 and Wang 2023 (meta-analyses): the best time-trial effect
+ * comes from 8-14 days at a 41-60% progressive volume cut with intensity and
+ * frequency held. Spilsbury 2015 timed elite British runners at a median 6
+ * days for 3k-10k and 14 days for the marathon. Smyth & Lawlor 2021, across
+ * 158,117 Strava marathons, found strict monotone 2-3 week tapers fastest,
+ * worth about 2-3% on finish time.
+ *
+ * Absent from this table means one week, which is the right answer for a
+ * powerlifting meet, a 2k row, and a block with no event at all.
+ */
+export const TAPER_WEEKS_BY_EVENT: Readonly<Record<string, number>> = {
+  "5k": 1,
+  "10k": 1,
+  hyrox: 1,
+  half: 2,
+  marathon: 3,
+};
+
+/**
+ * [DATA] Endurance volume in each taper week as a share of peak, race week
+ * first. Progressive and monotone: an exponential taper beats a step taper
+ * (Bosquet 2007), and an up-week inside the taper beats neither.
+ */
+export const TAPER_ENDURANCE_SHARE_BY_WEEK_FROM_RACE: readonly number[] = [0.5, 0.65, 0.8];
 /** [DATA] Strength volume cut. */
 export const TAPER_VOLUME_REDUCTION = 0.5;
 /** [DATA] Intensity floor held through the taper — cutting both is detraining. */
