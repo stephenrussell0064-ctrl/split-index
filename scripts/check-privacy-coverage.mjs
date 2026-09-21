@@ -79,8 +79,13 @@ const RULES = [
     mustSay: ['comments you leave', 'comments you write'],
   },
   {
+    // Both spellings. Production runs main's `blocked_users` (057); the
+    // app-store line's `user_blocks` (its 062) was deleted in the renumber
+    // rather than merged, because two answers to blocking is one too many.
+    // Keyed on the old name alone this rule matched nothing from that point on,
+    // which is how §2's blocking clause came to be unguarded.
     what: 'blocking other athletes',
-    evidence: /create table[^;]*user_blocks/i,
+    evidence: /create table[^;]*(blocked_users|user_blocks)/i,
     mustSay: ['block another athlete', 'if you block'],
   },
   {
@@ -245,6 +250,11 @@ export const TABLE_COVERAGE = {
   activity_reactions: 'social features',
   user_achievements: 'social features',
   activity_comments: 'comments you leave',
+  // `blocked_users` is main's table (057) and the one production has. The
+  // app-store line's `user_blocks` was deleted in the 21 Sep renumber, so the
+  // entry naming it covered nothing while the live table went unnamed. Both are
+  // listed: the map should not start failing if the other spelling returns.
+  blocked_users: 'block another athlete',
   user_blocks: 'block another athlete',
   content_reports: 'report a comment',
 
