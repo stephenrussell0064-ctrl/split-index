@@ -83,7 +83,7 @@ interface PlanResponse {
       };
     }[];
   }[];
-  feasibility?: { messages: string[] } | null;
+  feasibility?: { messages: string[]; doseWarnings?: string[] } | null;
   eventOrder?: EventOrderResult | null;
   eventDay?: EventDayStep[] | null;
   taper?: TaperDay[];
@@ -105,9 +105,25 @@ interface PlanResponse {
    * header over an empty "Why" card, with nothing to read and nothing to tap.
    */
   consentRequired?: boolean;
+  /**
+   * The account is not on Premium, so a NEW block will not be built.
+   *
+   * Its own field rather than a reuse of `paused`, for the same reason
+   * `consentRequired` is: the two produce different screens. A pause is
+   * temporary and there is nothing for the athlete to do about it; this one
+   * has an action, and the branch below is the only place that offers it.
+   * Arriving with `paused: true` as well is deliberate — it keeps an older
+   * client that predates this field on the "your stored plan survives" path
+   * rather than dropping it into the bare refusal screen.
+   */
+  premiumRequired?: boolean;
   /** Explanation that accompanies `consentRequired`. Not the same field as `refusal.reason`. */
   message?: string;
   storedPlan?: { generatedAt: string; constantsVersion: string } | null;
+  /** Monday of week one, yyyy-MM-dd. Present on every generated plan. */
+  startsOn?: string | null;
+  currentWeek?: number;
+  continued?: boolean;
   tailoring?: {
     level: string;
     confidence: number;
@@ -205,11 +221,18 @@ export function HybridPlanScreen() {
    * slide the whole block forward and tell an athlete in week 4 they were in
    * week 1.
    */
+  // A live plan carries `startsOn`, the Monday its week one began on. That
+  // is the block's own calendar: a continued block keeps the Monday it
+  // started on, so the athlete in week five is shown week five.
   const generatedAt = data?.storedPlan?.generatedAt ?? null;
-  const planStart = useMemo(
-    () => (generatedAt ? new Date(generatedAt) : new Date()),
-    [generatedAt]
-  );
+  const startsOn = data?.startsOn ?? null;
+  const planStart = useMemo(() => {
+    if (startsOn) {
+      const [y, m, d] = startsOn.split("-").map(Number);
+      return new Date(y, m - 1, d);
+    }
+    return generatedAt ? new Date(generatedAt) : new Date();
+  }, [startsOn, generatedAt]);
 
   /**
    * What the iOS home-screen widget will show.
@@ -337,6 +360,58 @@ export function HybridPlanScreen() {
             withdraw it later in the same place.
           </p>
         </Card>
+      </div>
+    );
+  }
+
+  // ---- Premium builds the blocks ------------------------------------------
+  // BEFORE the paused branch, which would otherwise catch this response
+  // (`paused` is set too) and head it "Generation is paused". That is the
+  // wrong sentence: nothing is paused, and unlike a pause there is something
+  // the athlete can do. The stored plan is still rendered underneath when
+  // there is one — a block generated while the Hybrid Plan was free stays
+  // readable and trainable, and the upgrade buys the NEXT one.
+  if (!data.generated && data.premiumRequired) {
+    const hasStored = storedWeeks.length > 0 && profile;
+    return (
+      <div className="space-y-5">
+        {widgetSync}
+        <PageHeader
+          eyebrow="Hybrid plan"
+          title={hasStored ? "Your block" : "Built with Premium"}
+          subtitle={
+            hasStored
+              ? "This block is unchanged and still yours to train. The next one is built with Premium."
+              : "One periodised block toward your event date, lifting and endurance balanced against each other."
+          }
+        />
+        <Card glow="accent">
+          <h2 className="text-lg font-semibold tracking-tight">
+            {hasStored ? "Building a new block is Premium" : "The Hybrid Plan is part of Premium"}
+          </h2>
+          <p className="mt-2 text-sm leading-relaxed text-foreground/90">{data.refusal?.reason}</p>
+          {(data.refusal?.nextSteps.length ?? 0) > 0 && (
+            <ul className="mt-4 space-y-2">
+              {data.refusal!.nextSteps.map((step) => (
+                <li key={step} className="text-sm leading-relaxed text-foreground/85">
+                  {step}
+                </li>
+              ))}
+            </ul>
+          )}
+          <Link
+            href="/settings/billing"
+            className="mt-5 inline-flex min-h-11 items-center rounded-2xl bg-accent px-5 text-sm font-semibold text-accent-foreground transition-colors hover:bg-accent/90"
+          >
+            Upgrade to Premium
+          </Link>
+          <p className="mt-3 text-xs leading-relaxed text-muted/80">
+            Everything else in Split Index is unaffected — your logging, scores and history all work either way.
+          </p>
+        </Card>
+        {hasStored && (
+          <PlanView weeks={toPlanWeeks(storedWeeks)} profile={profile} planStart={planStart} />
+        )}
       </div>
     );
   }
@@ -557,6 +632,18 @@ export function HybridPlanScreen() {
               </li>
             ))}
           </ul>
+          {(data.feasibility!.doseWarnings?.length ?? 0) > 0 && (
+            <div className="mt-3 border-t border-border/60 pt-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted">What this plan can deliver</p>
+              <ul className="mt-1 space-y-2">
+                {data.feasibility!.doseWarnings!.map((m) => (
+                  <li key={m} className="text-sm leading-relaxed text-foreground/80">
+                    {m}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </Card>
       )}
 

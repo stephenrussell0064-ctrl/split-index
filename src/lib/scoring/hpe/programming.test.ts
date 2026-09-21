@@ -177,19 +177,21 @@ describe("projected improvement stays inside what a human can do", () => {
     expect(f.enduranceGainPct).toBeGreaterThan(3.5);
   });
 
-  it("quotes a range and says plainly that progress is not linear", () => {
+  it("quotes an 80% interval around an expected outcome that is faster than today", () => {
     const s = state({ predicted5kS: 1105, enduranceTrainingAge: "novice" });
     const f = feasibilityScreen(s, goal({ weeksOut: 11, target5kS: 1080, priority: 0 }));
 
-    // The whole band is faster than where the athlete is today. Quoting their
-    // own PB back at them as a possible outcome of eleven weeks' work is
-    // dispiriting and is not what the evidence says — a block that gets
-    // completed makes people faster, and how much is the uncertain part.
-    expect(f.projected5kRangeS[0]).toBe(f.projected5kS);
-    expect(f.projected5kRangeS[1]).toBeLessThan(1105);
-    expect(f.projected5kRangeS[1]).toBeGreaterThan(f.projected5kRangeS[0]);
-    // The caveat is stated in words rather than smuggled into the arithmetic.
-    expect(f.messages.join(" ")).toMatch(/not improve in a straight line/);
+    // The expected outcome is faster than today, and the range is a genuine
+    // 80% interval around it — which for an advanced runner honestly reaches
+    // back to about where they are now, because a trained runner's 12-week
+    // gain (1-3%) is the same size as the repeatability of a time trial.
+    expect(f.projected5kS).toBeLessThan(1105);
+    expect(f.projected5kRangeS[0]).toBeLessThan(f.projected5kS);
+    expect(f.projected5kRangeS[1]).toBeGreaterThan(f.projected5kS);
+    expect(f.projected5kRangeS[1] - f.projected5kRangeS[0]).toBeLessThan(120);
+    // The uncertainty is stated as a probability and a range, in words.
+    expect(f.endurance.probability).not.toBeNull();
+    expect(f.messages.join(" ")).toMatch(/80% range/);
     expect(f.messages.join(" ")).toMatch(/from 18:25 today/);
   });
 

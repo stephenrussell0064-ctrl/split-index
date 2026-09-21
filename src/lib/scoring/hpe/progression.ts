@@ -45,6 +45,7 @@ import {
   INTERVAL_REPS_PROGRESSION,
   POST_MEET_FIRST_KM_OFFSET_S,
   SESSION_PACE_BANDS,
+  TAPER_QUALITY_REP_MULTIPLIER,
   THRESHOLD_BLOCK_MIN_PROGRESSION,
   WEIGHT_ROUNDING_KG,
   type EmphasisKey,
@@ -82,39 +83,72 @@ export interface QualityProgression {
 }
 
 /**
+ * The 5k time the block's quality sessions progress TOWARD.
+ *
+ * It used to be the stated target, whatever the target was. A 23:20 runner
+ * who typed 18:00 was prescribed 1000m reps at 3:37/km by the build phase —
+ * 25% faster than anything their fitness supported — because the pace axis
+ * lerped to the goal regardless of reachability. The plan got MORE aggressive
+ * exactly when the goal was infeasible, which is the wrong direction for an
+ * injury pathway.
+ *
+ * Now: the end-of-block anchor is the feasibility model's EXPECTED outcome,
+ * or the target if the target is slower than that. A stretch goal is kept as
+ * a stretch; the reps are paced to what the athlete can hold.
+ */
+export function qualityEndAnchor5kS(profile: AthleteProfile, goal: Goal, expected5kS: number | null): number {
+  const current = profile.predicted5kS;
+  // Without a projection there is nothing to bound the target by, so the
+  // target governs — but never faster than the athlete is already.
+  if (expected5kS == null || expected5kS <= 0) {
+    return goal.target5kS != null ? Math.min(current, goal.target5kS) : current;
+  }
+  const feasible = Math.min(current, expected5kS);
+  if (goal.target5kS == null) return feasible;
+  // The target may only make the anchor SLOWER than the projection, never faster.
+  return Math.min(current, Math.max(goal.target5kS, feasible));
+}
+
+/**
  * F15. Early in the block: fewer reps, longer recovery, at the athlete's
- * CURRENT 5k pace. Late in the block: more reps, shorter recovery, at their
- * TARGET 5k pace. The pace axis never goes beyond the target — prescribing
- * faster than the athlete's own goal pace is not a progression, it is a
- * fantasy.
+ * CURRENT 5k pace. Late in the block: more reps, shorter recovery, at the
+ * pace the block is expected to bring them to. The pace axis never goes
+ * beyond that — prescribing faster than the athlete's own fitness will reach
+ * is not a progression, it is a fantasy.
+ *
+ * In the taper the reps come down and the pace is HELD (Bosquet 2007: cut
+ * volume, keep intensity). The taper week used to carry the hardest interval
+ * session of the whole block, three days before the race.
  */
 export function qualityProgressionFor(
   kind: EnduranceKind,
   week: MacrocycleWeek,
   profile: AthleteProfile,
-  goal: Goal
+  goal: Goal,
+  expected5kS: number | null = null
 ): QualityProgression {
   const t = blockProgress(week);
   if (kind !== "interval_run" && kind !== "threshold_run") return {};
 
   const currentPace = profile.predicted5kS / 5;
-  // A target slower than current would drag the prescription backwards; the
-  // athlete is already past it, so current pace governs.
-  const targetPace = goal.target5kS != null ? Math.min(goal.target5kS / 5, currentPace) : currentPace;
+  const endPace = qualityEndAnchor5kS(profile, goal, expected5kS) / 5;
   const paceBlend = lerp(INTERVAL_PACE_PROGRESSION[0], INTERVAL_PACE_PROGRESSION[1], t);
-  const anchorPace = lerp(currentPace, targetPace, paceBlend);
+  const anchorPace = lerp(currentPace, endPace, paceBlend);
   const band = SESSION_PACE_BANDS[kind];
   const paceOverride = { lo: anchorPace * band[0], hi: anchorPace * band[1] };
+  const taperScale = week.phase === "taper" ? TAPER_QUALITY_REP_MULTIPLIER : 1;
 
   if (kind === "interval_run") {
+    const reps = Math.round(lerp(INTERVAL_REPS_PROGRESSION[0], INTERVAL_REPS_PROGRESSION[1], t));
     return {
-      intervalReps: Math.round(lerp(INTERVAL_REPS_PROGRESSION[0], INTERVAL_REPS_PROGRESSION[1], t)),
+      intervalReps: Math.max(3, Math.round(reps * taperScale)),
       intervalRecoveryS: Math.round(lerp(INTERVAL_RECOVERY_PROGRESSION_S[0], INTERVAL_RECOVERY_PROGRESSION_S[1], t)),
       paceOverride,
     };
   }
+  const blockMin = Math.round(lerp(THRESHOLD_BLOCK_MIN_PROGRESSION[0], THRESHOLD_BLOCK_MIN_PROGRESSION[1], t));
   return {
-    thresholdBlockMin: Math.round(lerp(THRESHOLD_BLOCK_MIN_PROGRESSION[0], THRESHOLD_BLOCK_MIN_PROGRESSION[1], t)),
+    thresholdBlockMin: Math.max(4, Math.round(blockMin * taperScale)),
     paceOverride,
   };
 }

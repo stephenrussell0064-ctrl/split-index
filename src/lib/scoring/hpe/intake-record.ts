@@ -584,6 +584,8 @@ export interface PrefilledFromSplitIndex {
   predicted5kS: number;
   loggedWeeklyRunMinutes: number | null;
   chronicLoad: number;
+  /** Longest single run in the logged window, in minutes. Anchors the session-spike rule when the athlete has not stated one. */
+  longestRecentRunMin?: number | null;
 }
 
 export interface ResolvedIntakeInputs {
@@ -703,7 +705,10 @@ export function resolveIntakeInputs(
   }
 
   if (record.sleepHoursTypical == null) {
-    assumed.push("Typical sleep is assumed at 7 hours, which nudges the ramp rate.");
+    assumed.push(
+      "Typical sleep is not set, so it is assumed adequate. Under six hours a night slows the volume ramp and holds " +
+        "the plan to one hard session a week — worth answering if that describes you."
+    );
   }
 
   // Cardio modality. An unanswered question keeps the pre-question behaviour —
@@ -721,6 +726,25 @@ export function resolveIntakeInputs(
         `run and the 5k projection is replaced by your own sport's benchmark. The running-specific diagnostics — ` +
         `easy-pace band, decoupling, fatigue resistance — stay blank, because they are measured from running and ` +
         `you are not running.`
+    );
+  }
+
+  // HYROX: say plainly what this plan covers and what it does not.
+  //
+  // The running half is programmed properly — the race is about half running
+  // by time, and VO2max and weekly endurance volume are what predict a finish
+  // time, so an aerobic block is the right answer to it. The stations are
+  // not: sled push and pull, wall balls, burpee broad jumps, the farmers
+  // carry and the sandbag lunges are muscular-endurance work this engine's
+  // barbell programming does not write. Claiming otherwise would be the same
+  // failure as prescribing a barbell to someone training in a bedroom.
+  if (record.events.includes("hyrox")) {
+    assumed.push(
+      "Your HYROX is programmed as the running race it half is: eight kilometres between stations, so the plan " +
+        "builds the aerobic base and the race-pace work that finish times actually track. It does NOT programme " +
+        "the stations — sled, wall balls, burpees, carries and lunges are muscular-endurance work this engine does " +
+        "not write, and you will need to add them yourself. What is here rests on race-demand data and coaching " +
+        "practice rather than on training trials; there are none for HYROX yet."
     );
   }
 
@@ -774,6 +798,13 @@ export function resolveIntakeInputs(
     maxHr: record.maxHrOverride ?? (record.maxHrKnown ? prefilled.maxHr : (prefilled.maxHr ?? null)),
     safety: flags,
     assumed,
+    sleepHoursTypical: record.sleepHoursTypical,
+    lifeStressNow: record.lifeStressNow,
+    previousMaxVolumeMin: record.previousMaxVolume,
+    // The athlete's stated longest recent run, or the longest run in their
+    // logs — whichever the engine can see. This is what the single-session
+    // spike rule is anchored to, so it comes from evidence rather than a guess.
+    longestRecentRunMin: record.longestRecentRunMin ?? prefilled.longestRecentRunMin ?? null,
   };
 
   if (record.restingHrOverride == null && prefilled.restingHr == null) {
@@ -839,6 +870,8 @@ export function resolveIntakeInputs(
     crossTrainOk: record.crossTrainOk,
     preferredRestDay: record.preferredRestDay,
     preferredLongDay: record.preferredLongDay,
+    travelWeeks: record.travelWeeks,
+    dislikedExercises: record.dislikedExercises,
     gymAccessDays,
     // Gym access governs; the equipment list refines it. Without a gym the
     // barbell is not available whatever the equipment list says.

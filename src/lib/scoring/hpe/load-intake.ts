@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { ageFromDateOfBirth } from "@/lib/utils/age";
 import { loadAthleteProfile } from "./load-profile";
 import { loggedWeeklyRunMinutes, type ActivityRow } from "./ingest";
-import { RETURNING_ATHLETE_VOLUME_SHARE } from "./constants";
+import { BASE_STRESS_PER_MIN, RETURNING_ATHLETE_VOLUME_SHARE, STRENGTH_STRESS } from "./constants";
 import type { PrefilledFromSplitIndex } from "./intake-record";
 import { onRampAnchorMinutes } from "./intake";
 
@@ -96,6 +96,44 @@ export async function loadPrefilledIntake(
     // running. Seeding the denominator from total volume gave a heavy rower
     // four-fold headroom to ramp running against — the opposite of what the
     // control is for.
-    chronicLoad: Math.max(1, (diagnostic?.profile.runningVolumeMin ?? 0) * 4),
+    // In STRESS UNITS, the same ones the plan's own weeks are measured in.
+    // This was running minutes × 4 — a different unit from the numerator —
+    // so a normal athlete's first four weeks read as a ratio of 0.5-0.75 and
+    // were labelled "deliberately easy" when they were their current volume.
+    chronicLoad: chronicLoadFromRuns(activities),
+    longestRecentRunMin: longestRunMinutes(activities),
   };
+}
+
+/**
+ * The athlete's recent weekly training stress, in the engine's own stress
+ * units, so the ACWR denominator and numerator measure the same thing.
+ *
+ * Runs are costed at the easy-run rate per minute; gym sessions at the flat
+ * maintenance-session figure. Both are the engine's own tables
+ * (`BASE_STRESS_PER_MIN`, `STRENGTH_STRESS`), so a week the athlete has
+ * actually done and a week the plan prescribes are on one scale.
+ */
+export function chronicLoadFromRuns(activities: ActivityRow[]): number {
+  const windowWeeks = 4;
+  const since = Date.now() - windowWeeks * 7 * 86_400_000;
+  let stress = 0;
+  for (const a of activities) {
+    const startedAt = new Date(a.started_at).getTime();
+    if (!Number.isFinite(startedAt) || startedAt < since) continue;
+    const minutes = (Number(a.duration_seconds) || 0) / 60;
+    if (a.sport === "gym") stress += STRENGTH_STRESS.strength_maintenance ?? 42;
+    else if (a.sport === "run") stress += minutes * (BASE_STRESS_PER_MIN.easy_run ?? 0.8);
+    else stress += minutes * (BASE_STRESS_PER_MIN.easy_bike ?? 0.55);
+  }
+  return Math.max(1, stress / windowWeeks);
+}
+
+function longestRunMinutes(activities: ActivityRow[]): number | null {
+  let longest = 0;
+  for (const a of activities) {
+    if (a.sport !== "run") continue;
+    longest = Math.max(longest, (Number(a.duration_seconds) || 0) / 60);
+  }
+  return longest > 0 ? Math.round(longest) : null;
 }

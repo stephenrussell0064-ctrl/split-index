@@ -176,9 +176,13 @@ export function safetyScreen(state: AthleteState, goal: Goal): SafetyResult {
     offerGeneralPreparationInstead = true;
   }
 
-  if (state.enduranceTrainingYears < 0.5 && goal.target5kS != null) {
+  // Under six months of running halves the ramp — applied ONCE, in the
+  // macrocycle (`effectiveRamp`), where every ramp factor is combined and
+  // floored. It used to be halved here as well for the same answer, which
+  // compounded to a 2% weekly ramp for anyone who had not filled in the
+  // history section.
+  if (state.enduranceTrainingYears < 0.5 && (goal.target5kS != null || goal.enduranceEventKm != null)) {
     warnings.push("Under 6 months of running: endurance targets are capped and the volume ramp is halved.");
-    rampMultiplier = Math.min(rampMultiplier, 0.5);
   }
 
   // A recent injury that stopped training for over a week eases the ramp.

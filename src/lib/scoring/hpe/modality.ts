@@ -649,6 +649,8 @@ export function modalitySessionLabel(modality: CardioModality, kind: EnduranceKi
 export function modalityForEvent(eventKey: string | null): CardioModality | null {
   if (!eventKey) return null;
   if (eventKey === "2k_row") return "row";
-  if (["5k", "10k", "half", "marathon"].includes(eventKey)) return "run";
+  // HYROX is contested on foot: eight kilometres of running between the
+  // stations, and running is where its finish time is won or lost.
+  if (["5k", "10k", "half", "marathon", "hyrox"].includes(eventKey)) return "run";
   return null;
 }

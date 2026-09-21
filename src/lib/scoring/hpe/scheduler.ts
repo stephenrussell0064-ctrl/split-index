@@ -40,6 +40,7 @@ import {
   MIN_SEPARATION_H,
   PENALTY,
   QUALITY_ENDURANCE_TO_HEAVY_LOWER_H,
+  QUALITY_ENDURANCE_SPACING_H,
   SCHEDULER_ITERATIONS,
   SCHEDULER_RESTARTS,
   SCHEDULER_PLATEAU_ITERATIONS,
@@ -168,6 +169,21 @@ export function scoreWeek(placements: Placement[], constraints: Constraints): Pe
       // F11-adjacent: deadlifting close before a long run.
       if (x.isDeadlift && y.kind === "long_run" && dt < DEADLIFT_TO_LONG_RUN_H) {
         p.deadlift_before_long_run += PENALTY.deadlift_before_long_run;
+      }
+      // Two hard endurance sessions on consecutive days. Elite practice and
+      // coaching consensus alternate hard and easy days; a novice cohort
+      // showed intensity density in the previous week raising injury risk
+      // (Kluitenberg 2016). Long runs count only when they are long enough
+      // to have been flagged as quality.
+      if (
+        x.domain === "endurance" &&
+        y.domain === "endurance" &&
+        x.isQuality &&
+        y.isQuality &&
+        dt > 0 &&
+        dt < QUALITY_ENDURANCE_SPACING_H
+      ) {
+        p.quality_endurance_consecutive += PENALTY.quality_endurance_consecutive;
       }
       if (x.stress >= 85 && x.intensity < 0.6 && y.intensity >= 0.85 && dt >= 12) {
         p.volume_before_intensity += PENALTY.volume_before_intensity;

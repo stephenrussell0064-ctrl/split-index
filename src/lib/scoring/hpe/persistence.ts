@@ -30,6 +30,7 @@ import { compareEmphasis, type EmphasisDrift } from "./progression";
 import type { AthleteProfile, EmphasisVector, Finding, FindingId } from "./types";
 import type { PlanWeek } from "./engine";
 import type { Goal, Constraints } from "./intake";
+import type { ProfileObservation } from "./response";
 
 /** A previously stored diagnostic run, reduced to what the re-run comparison needs. */
 export interface StoredProfileSummary {
@@ -236,6 +237,42 @@ export async function saveProfile(
  * — the foreign key is the enforcement point for non-negotiable #7, and
  * working around it here would defeat the reason it is NOT NULL.
  */
+/**
+ * A stable fingerprint of what a plan was built FOR. When it changes, the
+ * block is a different block and is rebuilt from week one; when it holds, a
+ * new generation continues the existing block from its current week.
+ */
+export function goalHash(goal: Goal, constraints: Constraints, constantsVersion: string): string {
+  const stable = JSON.stringify({ goal, constraints, constantsVersion }, Object.keys({ ...goal, ...constraints, constantsVersion }).sort());
+  // FNV-1a, 32-bit — a fingerprint, not a secret.
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < stable.length; i++) {
+    hash ^= stable.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, "0");
+}
+
+/** The Monday of the local week containing `date`, as yyyy-MM-dd. */
+export function mondayOf(date: Date): string {
+  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const day = (d.getDay() + 6) % 7; // Monday = 0
+  d.setDate(d.getDate() - day);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${dd}`;
+}
+
+/** Which plan week (1-based) `today` falls in for a block whose week one began on `startsOn` (yyyy-MM-dd, a Monday). */
+export function planWeekFor(startsOn: string, today: Date = new Date()): number {
+  const [y, m, d] = startsOn.split("-").map(Number);
+  const start = new Date(y, m - 1, d);
+  const anchor = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const days = Math.round((anchor.getTime() - start.getTime()) / 86_400_000);
+  return Math.floor(days / 7) + 1;
+}
+
 export async function savePlan(
   supabase: SupabaseClient,
   userId: string,
@@ -247,8 +284,28 @@ export async function savePlan(
     constraints: Constraints;
     weeks: PlanWeek[];
     eventDate?: string | null;
+    /** Monday of week one, yyyy-MM-dd. Defaults to this week's Monday. */
+    startsOn?: string;
+    /** The week this generation started from — 1 for a fresh block. */
+    generatedForWeek?: number;
   }
 ): Promise<{ planId: string; storedSessions: number; droppedSessions: number } | null> {
+  const weekMeta: Record<string, unknown> = {};
+  for (const w of args.weeks) {
+    weekMeta[String(w.week)] = {
+      notes: w.notes,
+      allocation: w.allocation,
+      stress: w.stress,
+      stressCapped: w.stressCapped,
+      acwr: w.acwr,
+      penalty: w.penalty,
+      hardPenalty: w.hardPenalty,
+      phaseProgress: w.phaseProgress,
+      enduranceMin: w.enduranceMin,
+      travel: w.travel ?? false,
+      delivered: w.delivered ?? null,
+    };
+  }
   const { data: plan, error } = await supabase
     .from("hpe_plans")
     .insert({
@@ -259,6 +316,10 @@ export async function savePlan(
       event_date: args.eventDate ?? null,
       goal: args.goal,
       constraints: args.constraints,
+      starts_on: args.startsOn ?? mondayOf(new Date()),
+      goal_hash: goalHash(args.goal, args.constraints, args.constantsVersion),
+      generated_for_week: args.generatedForWeek ?? 1,
+      week_meta: weekMeta,
     })
     .select("id")
     .single();
@@ -296,6 +357,14 @@ export async function savePlan(
         hr_hi: session.prescription.hrHi ?? null,
         hr_source: session.prescription.hrSource ?? null,
         prescription: session.prescription.text,
+        label: session.label ?? null,
+        lift: session.lift ?? null,
+        intensity: session.intensity,
+        is_heavy_lower: session.isHeavyLower,
+        is_deadlift: session.isDeadlift,
+        stress: session.stress,
+        lift_sets: session.liftSets ?? null,
+        prescription_notes: session.prescription.notes ?? null,
       });
     }
   }
@@ -441,4 +510,152 @@ export async function loadLatestStoredPlan(
     weeks: [...byWeek.values()].sort((a, b) => Number(a.week) - Number(b.week)),
     profile,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Block continuity — the current plan, reconstructed for continuation
+// ---------------------------------------------------------------------------
+
+export interface CurrentPlan {
+  planId: string;
+  profileId: string;
+  generatedAt: string;
+  /** Monday of week one, yyyy-MM-dd. */
+  startsOn: string;
+  goalHash: string;
+  constantsVersion: string;
+  weeksOut: number;
+  generatedForWeek: number;
+  /** Every stored week, rebuilt into the engine's own shape so it can be carried over. */
+  weeks: PlanWeek[];
+}
+
+/**
+ * The plan the athlete is currently living through — the latest one not
+ * superseded — with its weeks rebuilt into `PlanWeek` so the engine can carry
+ * the lived weeks through a continuation and the spike rule can read the
+ * long runs already done.
+ */
+export async function loadCurrentPlan(supabase: SupabaseClient, userId: string): Promise<CurrentPlan | null> {
+  const { data: plan } = await supabase
+    .from("hpe_plans")
+    .select("id, profile_id, generated_at, constants_version, weeks_out, starts_on, goal_hash, generated_for_week, week_meta")
+    .eq("user_id", userId)
+    .is("superseded_at", null)
+    .order("generated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!plan || !plan.starts_on) return null;
+
+  const [{ data: sessionRows }, { data: findingRows }] = await Promise.all([
+    supabase
+      .from("hpe_sessions")
+      .select(
+        "week, phase, is_deload, day_of_week, slot, kind, domain, emphasis_key, is_quality, minutes, distance_km, " +
+          "pace_lo_s_per_km, pace_hi_s_per_km, hr_lo, hr_hi, hr_source, prescription, finding_id, label, lift, " +
+          "intensity, is_heavy_lower, is_deadlift, stress, lift_sets, prescription_notes"
+      )
+      .eq("plan_id", plan.id as string)
+      .order("week", { ascending: true }),
+    supabase.from("hpe_findings").select("id, finding_key").eq("profile_id", plan.profile_id as string),
+  ]);
+  const findingKeyById = new Map((findingRows ?? []).map((r) => [r.id as string, r.finding_key as FindingId]));
+  const meta = (plan.week_meta ?? {}) as Record<string, Record<string, unknown>>;
+
+  const byWeek = new Map<number, PlanWeek>();
+  for (const r of (sessionRows ?? []) as unknown as Record<string, unknown>[]) {
+    const week = Number(r.week);
+    if (!byWeek.has(week)) {
+      const m = meta[String(week)] ?? {};
+      byWeek.set(week, {
+        week,
+        phase: r.phase as PlanWeek["phase"],
+        deload: Boolean(r.is_deload),
+        travel: Boolean(m.travel) || undefined,
+        enduranceMin: Number(m.enduranceMin ?? 0),
+        phaseProgress: Number(m.phaseProgress ?? 0),
+        sessions: [],
+        placements: [],
+        allocation: (m.allocation as PlanWeek["allocation"]) ?? ({} as PlanWeek["allocation"]),
+        notes: (m.notes as string[]) ?? [],
+        penalty: Number(m.penalty ?? 0),
+        hardPenalty: Number(m.hardPenalty ?? 0),
+        stress: Number(m.stress ?? 0),
+        stressCapped: Number(m.stressCapped ?? 0),
+        acwr: Number(m.acwr ?? 0),
+        droppedSessions: [],
+        delivered: (m.delivered as PlanWeek["delivered"]) ?? undefined,
+      });
+    }
+    const w = byWeek.get(week)!;
+    const session: PlanWeek["sessions"][number] = {
+      kind: r.kind as PlanWeek["sessions"][number]["kind"],
+      domain: r.domain as "endurance" | "strength",
+      intensity: Number(r.intensity ?? 0.5),
+      isQuality: Boolean(r.is_quality),
+      minutes: Number(r.minutes ?? 0),
+      isHeavyLower: Boolean(r.is_heavy_lower),
+      isDeadlift: Boolean(r.is_deadlift),
+      lift: (r.lift as string | null) ?? undefined,
+      label: (r.label as string | null) ?? undefined,
+      prescription: {
+        text: r.prescription as string,
+        notes: (r.prescription_notes as string[] | null) ?? undefined,
+        findingId: findingKeyById.get(r.finding_id as string) ?? "hybrid-baseline",
+        minutes: Number(r.minutes ?? 0),
+        distanceKm: r.distance_km != null ? Number(r.distance_km) : undefined,
+        paceLoSPerKm: r.pace_lo_s_per_km != null ? Number(r.pace_lo_s_per_km) : undefined,
+        paceHiSPerKm: r.pace_hi_s_per_km != null ? Number(r.pace_hi_s_per_km) : undefined,
+        hrLo: r.hr_lo != null ? Number(r.hr_lo) : undefined,
+        hrHi: r.hr_hi != null ? Number(r.hr_hi) : undefined,
+        hrSource: (r.hr_source as string | null) ?? undefined,
+      },
+      emphasisKey: r.emphasis_key as EmphasisKey,
+      findingId: findingKeyById.get(r.finding_id as string) ?? "hybrid-baseline",
+      stress: Number(r.stress ?? 0),
+      liftSets: (r.lift_sets as Record<string, number> | null) ?? undefined,
+    };
+    w.sessions.push(session);
+    if (r.day_of_week) {
+      w.placements.push({ session, day: r.day_of_week as string, slot: (r.slot as "AM" | "PM") ?? "AM" });
+    }
+  }
+
+  return {
+    planId: plan.id as string,
+    profileId: plan.profile_id as string,
+    generatedAt: plan.generated_at as string,
+    startsOn: plan.starts_on as string,
+    goalHash: (plan.goal_hash as string | null) ?? "",
+    constantsVersion: plan.constants_version as string,
+    weeksOut: Number(plan.weeks_out),
+    generatedForWeek: Number(plan.generated_for_week ?? 1),
+    weeks: [...byWeek.values()].sort((a, b) => a.week - b.week),
+  };
+}
+
+/**
+ * The athlete's stored diagnostic runs, for measuring their OWN rate of
+ * improvement rather than assuming the population's.
+ *
+ * Only the two numbers `estimateObservedResponse` reads are selected. A
+ * diagnostic row carries health-derived metrics and there is no reason for a
+ * rate estimate to load them.
+ */
+export async function loadProfileHistory(
+  supabase: SupabaseClient,
+  userId: string,
+  sinceIso: string
+): Promise<ProfileObservation[]> {
+  const { data } = await supabase
+    .from("hpe_athlete_profile")
+    .select("generated_at, predicted_5k_s, one_rms")
+    .eq("user_id", userId)
+    .gte("generated_at", sinceIso)
+    .order("generated_at", { ascending: true });
+  return (data ?? []).map((r) => ({
+    generatedAt: r.generated_at as string,
+    predicted5kS: Number(r.predicted_5k_s ?? 0),
+    oneRms: (r.one_rms as Record<string, number> | null) ?? {},
+  }));
 }

@@ -7,12 +7,24 @@ import { estimatedMaxHr } from "@/lib/scoring/hpe/intake";
 
 /** The intake spec's documented default, flagged as assumed rather than silently applied. */
 const ASSUMED_RESTING_HR = 60;
-import { loadLatestStoredPlan, savePlan, supersedePlans } from "@/lib/scoring/hpe/persistence";
+import {
+  goalHash,
+  loadCurrentPlan,
+  loadLatestStoredPlan,
+  loadProfileHistory,
+  mondayOf,
+  planWeekFor,
+  savePlan,
+  supersedePlans,
+} from "@/lib/scoring/hpe/persistence";
+import { estimateObservedResponse } from "@/lib/scoring/hpe/response";
+import { deriveFeedbackFromActivities, loadFeedbackSources, recentRunMinutesPerWeek } from "@/lib/scoring/hpe/feedback";
 import { selectAttempts, racePacing } from "@/lib/scoring/hpe/progression";
 import { validateIntake } from "@/lib/scoring/hpe/intake";
 import { parseIntakeRow, resolveIntakeInputs } from "@/lib/scoring/hpe/intake-record";
 import { loadPrefilledIntake } from "@/lib/scoring/hpe/load-intake";
 import { evaluateAccess, type FeatureFlag } from "@/lib/scoring/hpe/rollout";
+import { allows, getEntitlements, logEntitlementDenial } from "@/lib/premium/entitlements";
 import { hasArticle9Consent } from "@/lib/consent/article9";
 import { HPE_CONSTANTS_VERSION } from "@/lib/scoring/hpe/constants";
 import { ingestModalityFitness } from "@/lib/scoring/hpe/modality";
@@ -177,6 +189,59 @@ export async function GET(request: Request) {
     });
   }
 
+  /*
+   * The subscription gate.
+   *
+   * Checked AFTER the rollout dial, deliberately. An athlete outside the
+   * rollout cannot generate a plan however much they pay, so prompting them to
+   * upgrade would be selling something we would not then deliver. Eligibility
+   * first, entitlement second.
+   *
+   * Generation stops; reading an existing plan does not. That is the same
+   * asymmetry the kill switch relies on, and it carries more weight here. The
+   * Hybrid Plan shipped FREE in build 1.0 (5) — every block a free athlete is
+   * currently living through was generated under terms we offered them.
+   * Paywalling the read would retroactively withdraw a plan somebody is three
+   * weeks into training on, which is a recall, not a paywall. Paywalling
+   * generation means their block runs to its end and the next one is a
+   * subscriber's.
+   *
+   * This does not weaken WP6.3. That rule is that a payload must not carry
+   * value the account is not entitled to; a plan this account generated while
+   * it was entitled is not that value. An athlete with no stored plan gets
+   * `weeks: []` — there is nothing withheld because there is nothing there.
+   */
+  const entitlements = await getEntitlements(supabase, user.id);
+  if (!allows(entitlements, "hybrid_plan")) {
+    logEntitlementDenial(entitlements, "hybrid_plan", "api/hpe/plan");
+    await recordEvent(supabase, user.id, {
+      outcome: "feature_disabled",
+      reason_code: "not_premium",
+    });
+    const stored = await loadLatestStoredPlan(supabase, user.id).catch(() => null);
+    const hasStored = (stored?.weeks?.length ?? 0) > 0;
+    return NextResponse.json({
+      generated: false,
+      premiumRequired: true,
+      paused: true,
+      storedPlan: stored,
+      weeks: stored?.weeks ?? [],
+      profile: stored?.profile ?? null,
+      refusal: {
+        reason: hasStored
+          ? "Building a new block is part of Premium. The block you are on was built while the Hybrid Plan was free, and it stays yours — nothing about it has changed."
+          : "The Hybrid Plan is part of Premium. It builds one periodised block toward your event date, balancing lifting and endurance against each other rather than stacking them.",
+        nextSteps: hasStored
+          ? [
+              "Keep training the block below — it runs to the end of its weeks either way.",
+              "Upgrade to Premium when you want the next block built.",
+            ]
+          : ["Upgrade to Premium to build your first block."],
+      },
+      diagnostic: null,
+    });
+  }
+
   // Profile fields are read by loadPrefilledIntake rather than here — one
   // reader, so the numbers confirmed on the intake form are exactly the ones
   // the plan is built from.
@@ -310,7 +375,97 @@ export async function GET(request: Request) {
     return ingestModalityFitness((rows ?? []) as unknown as ActivityRow[], chosen, MODALITY_HISTORY_WEEKS);
   })();
 
-  const plan = generatePlan({ state, goal, constraints, profile, overrideEventOrder, modalityFitness });
+  /**
+   * BLOCK CONTINUITY. The plan the athlete is living through is the plan
+   * that gets adjusted, not restarted.
+   *
+   * Every GET used to regenerate the whole block from week one and the
+   * screen anchored it to that Monday, so the athlete was permanently in
+   * week one and no deload, ramp step or phase change ever arrived.
+   *
+   * Now: if a current plan exists, was built for the same goal, constraints
+   * and constants, and the athlete is still inside it, the block CONTINUES
+   * from the current week. The lived weeks are carried through unchanged;
+   * the remaining weeks are regenerated from the athlete's real logged
+   * volume and the feedback derived from what they actually did. The
+   * calendar stays anchored to the block's original Monday.
+   *
+   * A changed goal, a constants bump, a diagnostic drift beyond the
+   * threshold, or a finished block starts a fresh one.
+   */
+  const current = await loadCurrentPlan(supabase, user.id).catch(() => null);
+  const hash = goalHash(goal, constraints, HPE_CONSTANTS_VERSION);
+  const today = new Date();
+  const currentWeek = current ? planWeekFor(current.startsOn, today) : 1;
+  const canContinue =
+    current != null &&
+    current.goalHash === hash &&
+    currentWeek > 1 &&
+    currentWeek <= current.weeksOut &&
+    !(diagnostic?.rerun?.drift?.shouldRegenerate === true);
+
+  const sinceIso = current
+    ? new Date(`${current.startsOn}T00:00:00`).toISOString()
+    : new Date(Date.now() - 8 * 7 * 86_400_000).toISOString();
+  const sources = await loadFeedbackSources(supabase, user.id, current?.planId ?? null, sinceIso);
+  const feedbackByWeek =
+    current && canContinue ? deriveFeedbackFromActivities(current.weeks, sources.activities, current.startsOn, today, sources.explicit) : {};
+  const loggedNow = recentRunMinutesPerWeek(sources.activities, 2, today);
+
+  /**
+   * What this athlete's own history says about their rate of improvement.
+   *
+   * Read over the last half-year of stored diagnostic runs, because a rate
+   * needs two points far enough apart to mean anything and anything older
+   * than that is a different athlete. Blended into the population prior at a
+   * weight the observation length supports — `response.ts` explains why that
+   * weight is small even when the observation looks convincing.
+   */
+  const observedResponse = estimateObservedResponse(
+    await loadProfileHistory(supabase, user.id, new Date(Date.now() - 26 * 7 * 86_400_000).toISOString()).catch(() => []),
+    today
+  );
+
+  /**
+   * F17 — days the athlete has flagged as low capacity.
+   *
+   * Only days that have not yet passed: a flag on a session three weeks ago
+   * is a record of how that day went, not an instruction about it, and
+   * rewriting history would make the plan disagree with what they did.
+   */
+  const lowCapacityDays = current
+    ? sources.explicit
+        .filter((e) => e.lowCapacity && e.dayOfWeek != null && e.week >= currentWeek)
+        .map((e) => ({ week: e.week, day: e.dayOfWeek as string }))
+    : [];
+
+  const startsOn = canContinue && current ? current.startsOn : mondayOf(today);
+  const plan = generatePlan({
+    state,
+    goal,
+    constraints,
+    profile,
+    overrideEventOrder,
+    modalityFitness,
+    feedbackByWeek,
+    observedResponse,
+    lowCapacityDays,
+    continueFrom:
+      canContinue && current
+        ? {
+            week: currentWeek,
+            priorWeeks: current.weeks,
+            // The ramp restarts from what they are actually running, floored
+            // at a share of the plan's own projection so one quiet fortnight
+            // does not collapse the block.
+            currentVolumeMin: Math.max(
+              loggedNow ?? 0,
+              (current.weeks.find((w) => w.week === currentWeek - 1)?.delivered?.enduranceMin ?? 0) * 0.7,
+              1
+            ),
+          }
+        : undefined,
+  });
 
   // The screen no longer refuses, so there is no un-generated plan to record.
   // What is worth recording is that it CONSTRAINED one — the fleet view reads
@@ -328,11 +483,26 @@ export async function GET(request: Request) {
   }
 
   // Persist when the plan is real and the diagnostic behind it was stored.
+  // Persist when the plan is real and the diagnostic behind it was stored —
+  // and only when something changed. A continuation whose generated weeks
+  // are unchanged from the stored ones is not a new plan; writing it on
+  // every visit would fill the table with copies and make the "current
+  // plan" a measure of how often the athlete opened the app.
   let persisted: { planId: string; storedSessions: number; droppedSessions: number } | null = null;
-  if (plan.generated && diagnostic?.profileId) {
-    if (diagnostic?.rerun?.shouldRegenerate) {
-      await supersedePlans(supabase, user.id, diagnostic.rerun!.explanations.join(" ")).catch(() => {});
-    }
+  const unchanged =
+    canContinue &&
+    current != null &&
+    current.generatedForWeek === currentWeek &&
+    current.constantsVersion === plan.constantsVersion;
+  if (plan.generated && diagnostic?.profileId && !unchanged) {
+    const reason = diagnostic?.rerun?.shouldRegenerate
+      ? diagnostic.rerun!.explanations.join(" ")
+      : canContinue
+        ? `Continued from week ${currentWeek} on ${today.toISOString().slice(0, 10)}.`
+        : current
+          ? "The goal, constraints or block changed, so a new block was started."
+          : null;
+    if (reason) await supersedePlans(supabase, user.id, reason).catch(() => {});
     persisted = await savePlan(supabase, user.id, {
       profileId: diagnostic.profileId,
       findingIds: diagnostic.findingIds,
@@ -341,10 +511,15 @@ export async function GET(request: Request) {
       constraints,
       weeks: plan.weeks,
       eventDate,
+      startsOn,
+      generatedForWeek: plan.startWeek,
     }).catch(() => null);
+  } else if (unchanged && current) {
+    persisted = { planId: current.planId, storedSessions: current.weeks.reduce((s, w) => s + w.placements.length, 0), droppedSessions: 0 };
   }
 
   if (plan.generated) {
+    const f = plan.feasibility;
     await recordEvent(supabase, user.id, {
       outcome: "generated",
       tier: profile.tier,
@@ -354,6 +529,23 @@ export async function GET(request: Request) {
       weeks_out: goal.weeksOut,
       session_count: plan.weeks.reduce((s, w) => s + w.placements.length, 0),
       hard_violations: plan.weeks.reduce((s, w) => s + w.hardPenalty, 0),
+      // Migration 080 — how ambitious the target was, what the plan could
+      // deliver against it, and whether this was a continued block. The
+      // evidence review names the ambition-versus-abandonment curve as the
+      // one number nobody has published and this product is placed to
+      // measure; it cannot be measured without recording the ambition at the
+      // moment the athlete was shown it.
+      endurance_goal_z: f?.endurance.zRequired ?? null,
+      strength_goal_z: f?.strength.zRequired ?? null,
+      endurance_goal_level: f?.endurance.level ?? null,
+      strength_goal_level: f?.strength.level ?? null,
+      endurance_goal_probability: f?.endurance.probability ?? null,
+      strength_goal_probability: f?.strength.probability ?? null,
+      adherence_prior: f?.adherence ?? null,
+      delivered_endurance_min: plan.dose?.enduranceMinPerWeek ?? null,
+      delivered_sets_per_lift: plan.dose?.setsPerLiftPerWeek ?? null,
+      continued_block: canContinue,
+      plan_week: plan.startWeek,
     });
   }
 
@@ -362,6 +554,11 @@ export async function GET(request: Request) {
     assumptions,
     eventDate,
     persisted,
+    // The Monday week one began on and the week the athlete is in now — the
+    // screen anchors its calendar to these rather than to today.
+    startsOn,
+    currentWeek: canContinue ? currentWeek : 1,
+    continued: canContinue,
     rerun: diagnostic?.rerun ?? null,
     // F18 — attempt selection and race pacing, the two core coach
     // deliverables the assurance review flagged as absent.
