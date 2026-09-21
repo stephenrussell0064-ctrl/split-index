@@ -14,6 +14,12 @@ import {
 } from "@/lib/consent/article9";
 import { invalidRequest } from "@/lib/validation/boundary";
 import { validateIntakeValues } from "@/lib/validation/schemas/intake";
+import {
+  PREMIUM_REQUIRED,
+  allows,
+  getEntitlements,
+  logEntitlementDenial,
+} from "@/lib/premium/entitlements";
 
 /**
  * WP2 — the intake endpoint.
@@ -56,6 +62,25 @@ export async function PATCH(request: Request) {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  /*
+   * The subscription gate, on the WRITE only.
+   *
+   * GET is deliberately left open: those are the athlete's own stored answers,
+   * and someone who filled the form while the Hybrid Plan was free keeps being
+   * able to read what they told us.
+   *
+   * Gating here and not only on the page is the point — the intake page
+   * redirects non-subscribers, but a redirect is navigation, not a gate, and
+   * this endpoint is reachable without it. These sections carry PAR-Q answers,
+   * so an ungated write would collect special category health data for a plan
+   * this account cannot generate.
+   */
+  const entitlements = await getEntitlements(supabase, user.id);
+  if (!allows(entitlements, "hybrid_plan")) {
+    logEntitlementDenial(entitlements, "hybrid_plan", "api/hpe/intake");
+    return NextResponse.json(PREMIUM_REQUIRED, { status: 403 });
+  }
 
   const body = (await request.json().catch(() => null)) as { section?: string; values?: Record<string, unknown> } | null;
   const section = body?.section as IntakeSection | undefined;

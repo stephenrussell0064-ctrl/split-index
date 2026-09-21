@@ -20,7 +20,8 @@ export type PremiumFeature =
   | "global_rank"
   | "csv_import"
   | "manual_logging"
-  | "run_analysis";
+  | "run_analysis"
+  | "hybrid_plan";
 
 type TierAccess = { free: boolean; premium: boolean };
 
@@ -56,6 +57,17 @@ export const PREMIUM_FEATURES: Record<PremiumFeature, TierAccess> = {
    * own training is never paywalled — only the deeper reading of it is.
    */
   run_analysis: { free: false, premium: true },
+  /*
+   * The Hybrid Plan: one periodised block built toward a named event date.
+   *
+   * Gated on GENERATION only. A free athlete who already has a block keeps
+   * reading it — see the note on the gate in api/hpe/plan. That is the same
+   * asymmetry the kill switch relies on, and it exists here for a stronger
+   * reason: the plan was free in build 1.0 (5), so anyone mid-block generated
+   * theirs under the old terms. Withdrawing a plan somebody is three weeks
+   * into is not a paywall, it is a recall.
+   */
+  hybrid_plan: { free: false, premium: true },
 };
 
 /*
@@ -79,6 +91,7 @@ export const FREE_TIER_FEATURES = [
 ] as const;
 
 export const PREMIUM_TIER_FEATURES = [
+  "Hybrid Plan — one periodised block built toward your event date, across lifting and endurance together",
   "Run, ride and walk analysis — splits, best efforts, heart-rate zones and elevation for every GPS session",
   "Injury Risk Index — know when to back off, before it becomes an injury",
   "GPT AI Coach — a concrete recommendation after every workout",
@@ -90,18 +103,21 @@ export const PREMIUM_TIER_FEATURES = [
   "Global leaderboards & rank percentile",
   "Data export (CSV / JSON)",
   /*
-   * "Multi-goal hybrid training plan across every sport" was here, and it is
-   * removed rather than reworded because it named the multi-goal weekly
-   * balancer specifically — the product whose page was removed and whose API is
-   * now retired. Billing and the marketing pricing panel both render this list
-   * verbatim, so leaving it would have gone on selling a removed feature to
+   * "Multi-goal hybrid training plan across every sport" used to sit here. It
+   * named the multi-goal weekly balancer specifically — the product whose page
+   * was removed and whose API is now retired — so it was deleted rather than
+   * reworded. Billing and the marketing pricing panel both render this list
+   * verbatim, and leaving it would have gone on selling a removed feature to
    * paying subscribers.
    *
-   * It is NOT repointed at the Hybrid Plan, tempting as that is. The Hybrid
-   * Plan is gated by a rollout flag (hpe/rollout.ts), not by subscription, so
-   * naming it here would claim as paid something every free account can already
-   * open. If it should become the paid hook, it needs a premium gate first —
-   * that is a pricing decision, not a copy edit.
+   * The Hybrid Plan line at the top of this list is NOT that feature returning
+   * under a new name. It is a different product, and it is named here only
+   * because the pricing decision that was outstanding has now been made: the
+   * premium gate went in on 21 Sep 2026, after App Store approval closed the
+   * Guideline 2.1 review that required it to stay free. The rollout flag
+   * (hpe/rollout.ts) still decides eligibility separately — a subscriber
+   * outside the rollout cannot generate either, which is why the gate is
+   * checked AFTER the rollout dial rather than before it.
    */
 ] as const;
 

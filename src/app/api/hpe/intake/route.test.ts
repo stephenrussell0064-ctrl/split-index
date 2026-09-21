@@ -29,7 +29,16 @@ interface Upsert {
  * consent lookup from `consentAction`, and records every upsert so a test can
  * inspect the payload that would have hit the table.
  */
-function createFakeSupabase(consentAction: "granted" | "withdrawn" | null) {
+function createFakeSupabase(
+  consentAction: "granted" | "withdrawn" | null,
+  /*
+   * Which plan the account is on. Defaults to premium because these tests are
+   * about the Article 9 gate, and a free profile would be refused by the
+   * subscription gate before the consent code ever ran — every assertion about
+   * what reached the upsert would then pass for the wrong reason.
+   */
+  plan: "free" | "premium" = "premium"
+) {
   const upserts: Upsert[] = [];
 
   function chainFor(table: string) {
@@ -45,6 +54,18 @@ function createFakeSupabase(consentAction: "granted" | "withdrawn" | null) {
                     created_at: "2026-09-01T00:00:00.000Z",
                   }
                 : null,
+              error: null,
+            })
+          );
+        }
+        if (table === "profiles") {
+          return Promise.resolve(
+            resolve({
+              data: {
+                subscription_tier: plan,
+                subscription_status: plan === "premium" ? "active" : null,
+                created_at: "2020-01-01T00:00:00.000Z",
+              },
               error: null,
             })
           );
@@ -76,6 +97,15 @@ const createClientMock = vi.fn();
 vi.mock("@/lib/supabase/server", () => ({ createClient: () => createClientMock() }));
 vi.mock("@/lib/scoring/hpe/load-intake", () => ({
   loadPrefilledIntake: async () => ({}),
+}));
+/*
+ * getEntitlements resolves an admin role through the SERVICE ROLE client.
+ * Stubbed to "not an admin" so these tests neither need service credentials
+ * nor reach the network. Admin is not a premium bypass in any case — see the
+ * note on `allows` in entitlements.ts — so this cannot mask a gate failure.
+ */
+vi.mock("@/lib/auth/admin-role", () => ({
+  resolveAdminRole: async () => null,
 }));
 
 function patch(body: unknown): Request {
@@ -210,6 +240,65 @@ describe("PATCH /api/hpe/intake — Article 9 consent gate", () => {
     expect(payload).toMatchObject({ max_sessions_per_week: 4 });
     for (const field of Object.keys(HEALTH_ANSWERS)) {
       expect(payload, `${field} must not reach the table`).not.toHaveProperty(field);
+    }
+  });
+});
+
+/**
+ * The subscription gate on the write path, added 21 Sep 2026.
+ *
+ * Asserted on the upsert rather than the status code, for the same reason the
+ * Article 9 tests are: a 403 returned alongside a row that was written anyway
+ * would pass a status assertion and fail the only thing that matters. These
+ * sections carry PAR-Q answers, so an ungated write collects special category
+ * health data to build a plan the account cannot generate.
+ */
+describe("PATCH /api/hpe/intake — subscription gate", () => {
+  it("refuses a free account and writes nothing, even with consent on record", async () => {
+    const { client, upserts } = createFakeSupabase("granted", "free");
+    createClientMock.mockResolvedValue(client);
+    const { PATCH } = await import("./route");
+
+    const res = await PATCH(patch({ section: "health", values: HEALTH_ANSWERS }));
+
+    expect(res.status).toBe(403);
+    await expect(res.json()).resolves.toMatchObject({ premium_required: true });
+    expect(upserts, "no intake row may be written for a free account").toHaveLength(0);
+  });
+
+  it("refuses a free account on an ungated section too — the gate is the feature, not the data class", async () => {
+    const { client, upserts } = createFakeSupabase("granted", "free");
+    createClientMock.mockResolvedValue(client);
+    const { PATCH } = await import("./route");
+
+    const res = await PATCH(patch({ section: "availability", values: { max_sessions_per_week: 4 } }));
+
+    expect(res.status).toBe(403);
+    expect(upserts).toHaveLength(0);
+  });
+
+  it("lets a premium account through to the Article 9 gate rather than short-circuiting it", async () => {
+    // Premium is not a consent bypass. Both gates refuse with 403, so the
+    // status cannot tell them apart — the BODY can. A premium account with no
+    // consent must be refused by Article 9 (`error`, no `premium_required`),
+    // which is what proves the subscription gate sits in front of the consent
+    // gate rather than replacing it.
+    const { client, upserts } = createFakeSupabase(null, "premium");
+    createClientMock.mockResolvedValue(client);
+    const { PATCH } = await import("./route");
+
+    const res = await PATCH(patch({ section: "health", values: HEALTH_ANSWERS }));
+
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body, "refusal must come from Article 9, not the paywall").not.toHaveProperty(
+      "premium_required"
+    );
+    expect(body).toHaveProperty("error");
+    for (const { payload } of upserts) {
+      for (const field of Object.keys(HEALTH_ANSWERS)) {
+        expect(payload, `${field} must not reach the table without consent`).not.toHaveProperty(field);
+      }
     }
   });
 });
