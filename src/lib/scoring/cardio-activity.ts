@@ -512,6 +512,7 @@ interface SessionShape {
   temperatureCelsius?: number | null;
   structuredInterval?: IntervalWorkPiece | null;
   structuredFartlek?: FartlekOnPiece | null;
+  sessionType?: SessionType | null;
 }
 
 interface AthleteShape {
@@ -541,6 +542,7 @@ function sessionFitnessEquivalent(
     elevationMeters: session.elevationMeters ?? null,
     temperatureCelsius: session.temperatureCelsius ?? null,
     rpe: session.rpe ?? null,
+    sessionType: session.sessionType ?? null,
   };
 
   if (isValidIntervalWorkPiece(session.structuredInterval)) {
@@ -604,6 +606,7 @@ function recentSessionShape(session: RecentCardioSession, benchmarkSport: Benchm
     temperatureCelsius: session.temperatureCelsius ?? null,
     structuredInterval: isValidIntervalWorkPiece(structuredInterval) ? structuredInterval : null,
     structuredFartlek: isValidFartlekOnPiece(structuredFartlek) ? structuredFartlek : null,
+    sessionType: session.sessionType ?? null,
   };
 }
 
@@ -623,13 +626,61 @@ interface PersonalOutcome {
  * restricted to sessions with the same signal class when enough exist, and
  * widened to everything (flagged) only when it must be.
  */
+/**
+ * Whether an effort reading came from an instrument rather than from a label.
+ *
+ * Both sides of the personal comparison MUST ask this the same way — the
+ * session being scored and every historical sample — or the pools are built on
+ * different definitions and a session is compared against history that was
+ * measured differently from it.
+ *
+ * 'tag' is excluded deliberately. A tag-derived effort fraction carries real
+ * credit in the population score, where it is an estimate of what the session
+ * was. Letting it also mark a session as "effort-read" would put that credit
+ * up against heart-rate-read history, which is precisely the comparison that
+ * let one "easy" tag lift a personal score by ~350 points on 21 September 2026.
+ * The tag informs what the session WAS; it never decides what it is compared
+ * WITH. See SESSION_TAG_EFFORT_FRACTIONS.
+ */
+function isMeasuredEffort(source: EffortSource): boolean {
+  return source === 'hr' || source === 'rpe';
+}
+
 function personalOutcome(
   input: CardioInput,
-  thisFitness: FitnessEquivalent,
+  thisFitnessAsScored: FitnessEquivalent,
   reference: EffortReference
 ): PersonalOutcome {
+  let thisFitness = thisFitnessAsScored;
   const sessions = input.recentSessions ?? [];
   if (sessions.length === 0) return { score: null, comparison: null, flags: ['personal-calibrating'] };
+
+  /*
+   * The personal score does not see the session tag. At all.
+   *
+   * A tag-derived effort is credit this session was GIVEN rather than credit it
+   * earned, and the history it is compared against was given none — so leaving
+   * it in the value is the 350-point failure of 21 September 2026 in slower
+   * motion. Keeping 'tag' out of isMeasuredEffort decides which pool this
+   * session joins; it does nothing about the credit already inside the number.
+   *
+   * Recomputing without the tag is preferred over routing these sessions down
+   * the pace-only fallback, which would also discard the terrain, weather and
+   * bodyweight corrections — those are measurements about the session and have
+   * every right to be in the comparison. Only the tag's credit is removed.
+   *
+   * Caught by "compares like with like": the personal score read 300 against a
+   * norm of 500 for an ordinary run, purely for having been labelled.
+   */
+  if (thisFitness.effort.source === 'tag') {
+    const untagged = sessionFitnessEquivalent(
+      { ...input, sessionType: null },
+      { sex: input.sex, bodyweightKg: input.bodyweightKg, riegelK: input.personalizedRiegelK },
+      reference
+    ).fitness;
+    if (!untagged) return { score: null, comparison: null, flags: ['personal-calibrating'] };
+    thisFitness = untagged;
+  }
 
   const anchor = input.startedAt ? new Date(input.startedAt) : new Date();
   const anchorMs = Number.isFinite(anchor.getTime()) ? anchor.getTime() : Date.now();
@@ -670,12 +721,12 @@ function personalOutcome(
       // reading a different scale, and pairing the two would compare a felt
       // 6 with a measured 68% of reserve as though they were the same thing.
       intensity: fitness.effort.source === 'hr' ? fitness.effort.fraction : null,
-      hasEffort: fitness.effort.source !== 'none',
+      hasEffort: isMeasuredEffort(fitness.effort.source),
     });
   }
 
   const thisIntensity = thisFitness.effort.source === 'hr' ? thisFitness.effort.fraction : null;
-  const thisHasEffort = thisFitness.effort.source !== 'none';
+  const thisHasEffort = isMeasuredEffort(thisFitness.effort.source);
   const matched = samples.filter((s) => s.hasEffort === thisHasEffort);
 
   const flags: string[] = [];
@@ -687,7 +738,9 @@ function personalOutcome(
   if (!baseline) {
     /*
      * Too few sessions recorded the way this one was — typically an athlete
-     * who wears a heart-rate strap most days and forgot it today.
+     * who wears a heart-rate strap most days and forgot it today. Also the
+     * deliberate route for a session whose only effort signal is its tag; see
+     * thisIsTagOnly above.
      *
      * The wrong repair, and the one that was here first, is to widen the pool
      * and compare anyway: this session carries no effort credit and those
@@ -839,7 +892,14 @@ export function scoreCardioActivity(input: CardioInput): CardioResult {
     // estimate. A heart-rate-read session with cross-session memory behind it
     // is the strongest case; an HR-less, RPE-less one the weakest; a long
     // effort extrapolation (fitness.confidence) discounts either.
-    const base = fitness.effort.source === 'hr' ? 0.85 : fitness.effort.source === 'rpe' ? 0.75 : 0.65;
+    const base =
+      fitness.effort.source === 'hr'
+        ? 0.85
+        : fitness.effort.source === 'rpe'
+          ? 0.75
+          : fitness.effort.source === 'tag'
+            ? 0.7
+            : 0.65;
     const memoryBonus = input.storedPredictionSeconds != null ? 0.1 : 0;
     if (input.storedPredictionSeconds != null) flags.push('memory-available');
     confidence = clamp((base + memoryBonus) * fitness.confidence, 0, 1);

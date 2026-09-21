@@ -44,6 +44,7 @@
 
 import { BENCHMARK_DISTANCE_METERS, type BenchmarkSport } from "@/lib/scoring/cardio-benchmarks";
 import { benchmarkRiegelK, riegelEquivalentSeconds } from "@/lib/scoring/cardio-predictions";
+import type { SessionType } from "@/types";
 
 const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
 
@@ -407,7 +408,56 @@ export function effortTimeExponent(sport: BenchmarkSport, rawRatio: number): num
 const MIN_EFFORT_FRACTION = 0.3;
 const MAX_EFFORT_FRACTION = 1.05;
 
-export type EffortSource = "hr" | "rpe" | "none";
+export type EffortSource = "hr" | "rpe" | "tag" | "none";
+
+/**
+ * The session tag as a last-resort effort estimate, for a session logged with
+ * neither heart rate nor RPE.
+ *
+ * ## Read the history before changing this
+ *
+ * Crediting the tag was tried on 21 September 2026 and reverted the same day:
+ * it let a single "easy" tag lift a personal score by roughly 350 points
+ * against untagged history. `cardio-session-tag-is-inert.test.ts` was written
+ * to pin the revert. That test still passes and must keep passing, because the
+ * property it protects is the one that matters — the tag is athlete-supplied,
+ * so if it can raise a score it is a dial rather than a measurement.
+ *
+ * What makes this version safe is not the numbers below. It is that a
+ * tag-derived effort never reaches the PERSONAL score: `personalOutcome`
+ * treats `source === "tag"` as having no effort reading at all, so a tagged
+ * session is compared pace-against-pace with the rest of the log, exactly as
+ * an untagged one is. The tag informs only the population score, where it is
+ * an estimate of what the session was, competing against no one.
+ *
+ * ## Why these values, and why they sit high
+ *
+ * Each is at the HARD end of the band the tag plausibly covers, not the middle.
+ * A lower assumed intensity earns MORE credit (effortTimeRatio divides the
+ * benchmark fraction by the observed one), so biasing these downward would be
+ * biasing the score upward on the athlete's own say-so. Biasing them upward
+ * costs an honestly-logged easy run a little credit it deserves, which is the
+ * cheaper error by a wide margin.
+ *
+ * `other` is deliberately absent: a tag that says nothing should not be turned
+ * into a number, and the score says "no effort signal" instead.
+ */
+export const SESSION_TAG_EFFORT_FRACTIONS: Partial<Record<SessionType, number>> = {
+  recovery: 0.62,
+  easy: 0.68,
+  long: 0.72,
+  fartlek: 0.8,
+  tempo: 0.84,
+  threshold: 0.88,
+  interval: 0.9,
+  race: 0.95,
+};
+
+export function effortFractionFromSessionTag(tag: SessionType | null | undefined): number | null {
+  if (!tag) return null;
+  const fraction = SESSION_TAG_EFFORT_FRACTIONS[tag];
+  return fraction == null ? null : clamp(fraction, MIN_EFFORT_FRACTION, MAX_EFFORT_FRACTION);
+}
 
 /** %HRR for this session, clamped to the range the model is meaningful over. */
 export function effortFractionFromHeartRate(
@@ -476,13 +526,20 @@ export interface EffortReading {
   source: EffortSource;
 }
 
-/** The effort signal to scale by: heart rate when present, RPE otherwise, nothing for walking. */
+/**
+ * The effort signal to scale by, strictly in order of how much it is worth
+ * believing: measured heart rate, then self-reported RPE, then the session tag,
+ * then nothing. A later source is only ever consulted when every earlier one is
+ * absent, so a tag can never override, contradict or improve on a reading the
+ * athlete actually took — which is the whole safety property.
+ */
 export function resolveEffort(
   sport: BenchmarkSport,
   avgHR: number | null | undefined,
   rpe: number | null | undefined,
   restingHR: number | null | undefined,
-  maxHR: number | null | undefined
+  maxHR: number | null | undefined,
+  sessionType?: SessionType | null
 ): EffortReading {
   if (!EFFORT_SCALED_SPORTS.has(sport)) return { fraction: null, source: "none" };
   if (restingHR && maxHR) {
@@ -491,6 +548,8 @@ export function resolveEffort(
   }
   const fromRpe = effortFractionFromRpe(rpe);
   if (fromRpe !== null) return { fraction: fromRpe, source: "rpe" };
+  const fromTag = effortFractionFromSessionTag(sessionType);
+  if (fromTag !== null) return { fraction: fromTag, source: "tag" };
   return { fraction: null, source: "none" };
 }
 
@@ -511,6 +570,8 @@ export interface FitnessEquivalentInput {
   restingHR?: number | null;
   maxHR?: number | null;
   riegelK?: number | null;
+  /** Last-resort effort estimate, used only when avgHR and rpe are both absent. */
+  sessionType?: SessionType | null;
 }
 
 export interface FitnessEquivalent {
@@ -542,7 +603,14 @@ export function computeFitnessEquivalent(input: FitnessEquivalentInput): Fitness
   const elevationFraction = elevationTimeFraction(input.sport, input.elevationMeters, input.distanceMeters);
   const temperatureFraction = temperatureTimeFraction(input.sport, input.temperatureCelsius);
   const bodyweightFactor = bodyweightTimeFactor(input.sport, input.bodyweightKg, input.sex);
-  const effort = resolveEffort(input.sport, input.avgHR, input.rpe, input.restingHR, input.maxHR);
+  const effort = resolveEffort(
+    input.sport,
+    input.avgHR,
+    input.rpe,
+    input.restingHR,
+    input.maxHR,
+    input.sessionType
+  );
 
   // Not the benchmark's own intensity — the intensity a maximal effort of
   // THIS session's length is held at. See maxIntensityForDuration.
@@ -556,6 +624,9 @@ export function computeFitnessEquivalent(input: FitnessEquivalentInput): Fitness
   if (effort.fraction !== null) {
     confidence *= effortExtrapolationConfidence(effort.fraction, benchmarkFraction);
     if (effort.source === "rpe") confidence *= 0.85;
+    // Harsher than RPE's, because RPE is at least a report about this session
+    // while the tag is a report about what the session was meant to be.
+    if (effort.source === "tag") confidence *= 0.7;
   }
 
   const equivalentSeconds =

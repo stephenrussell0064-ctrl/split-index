@@ -8,8 +8,8 @@
  *
  * 500 means "your normal". Better than your recent norm reads above 500,
  * worse below, and the scale is the same for every sport so the number means
- * the same thing on a run, a row and a bench press: about 14 points per 1%
- * of performance in cardio, about 26 per 1% in strength (lifts vary less
+ * the same thing on a run, a row and a bench press: about 26 points per 1%
+ * of performance in cardio, about 44 per 1% in strength (lifts vary less
  * session to session than paces do, so the same percentage is a bigger
  * deal, and a lift is a cleaner measurement than a pace). The curve is a
  * tanh, not a clip — a 15% breakthrough still reads higher than a 10% one,
@@ -19,19 +19,28 @@
  * of easy running spread across 50 to 678: correct in direction every time,
  * and far too dramatic to read as "these were all ordinary runs".
  *
- * It came down again, 22 to 14, on 21 September 2026, for the same complaint
- * one step further in. At 22 an ordinary bad day — 20 s/km slower at 13 bpm
- * higher — cost 288 points, landing on 21.2 of the 0-100 the athlete actually
- * sees. Nothing about that session deserves a number that reads as a disaster.
- * At 14 the same session reads 29.8 and a clearly good day reads 58.6, so the
- * ordering and the resolution both survive: a single bpm and a single second
- * per kilometre still move it, which is the property the two-score model was
- * built to get right in the first place.
+ * On 21 September 2026 it was SPLIT rather than lowered again, after the same
+ * complaint one step further in. At a symmetric 22 an ordinary bad day — 20
+ * s/km slower at 13 bpm higher — cost 288 points and landed on 21.2 of the
+ * 0-100 the athlete actually sees. Lowering the whole slope fixed that and
+ * flattened the good days with it, which loses the thing the number is for.
  *
- * Measured, not estimated — the figures above are from scoring that week
- * through `scoreCardioActivity` at each slope, and the four-point spread they
- * describe (58.6 / 50.0 / 44.6 / 29.8) is what an athlete now sees for a good
- * day, a normal one, a slightly off one and a bad one.
+ * So the upside went UP, to 26, and only the downside came down, to 13. See
+ * DOWNSIDE_SLOPE_RATIO for why that asymmetry is deliberate.
+ *
+ * Measured, not estimated — by scoring one athlete's week through
+ * `scoreCardioActivity` at each setting. What they now see:
+ *
+ *                     symmetric 22    symmetric 14    asymmetric 26/13
+ *   clearly better        63.8            58.6              65.4
+ *   bang on normal        50.0            50.0              50.0
+ *   a touch off           41.6            44.6              45.0
+ *   bad day               21.2            29.8              31.1
+ *
+ * Both ends moved the right way at once, which neither symmetric setting could
+ * do. Resolution survives: a single bpm and a single second per kilometre
+ * still move the number, which is the property the two-score model was built
+ * to get right in the first place.
  *
  * The baseline is a recency-weighted median rather than a mean: one wild
  * session (a GPS overread, a race, a session logged with the wrong distance)
@@ -49,10 +58,32 @@ const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x
 export const PERSONAL_SCORE_CENTER = 500;
 /** How far above/below center the curve can reach — 50..950, never the extremes reserved for records. */
 export const PERSONAL_SCORE_AMPLITUDE = 450;
-/** Points per unit fraction of improvement near center (14 per 1%). */
-export const CARDIO_PERSONAL_SLOPE = 1400;
-/** Points per unit fraction of improvement near center (26 per 1%). */
-export const STRENGTH_PERSONAL_SLOPE = 2600;
+/** Points per unit fraction of improvement above center (26 per 1%). */
+export const CARDIO_PERSONAL_SLOPE = 2600;
+/** Points per unit fraction of improvement above center (44 per 1%). */
+export const STRENGTH_PERSONAL_SLOPE = 4400;
+
+/**
+ * A bad day costs half what an equally good day earns.
+ *
+ * This is a deliberate asymmetry and it is worth naming as one, because it
+ * means the number is no longer a symmetric measurement: +3% and -3% do not
+ * read as equal and opposite, and nobody should later "fix" that by restoring
+ * the symmetry without reading this.
+ *
+ * The reasoning is about what the number is FOR. It is shown to an athlete
+ * immediately after a session, unlabelled beyond "vs your normal", and it is
+ * read as a verdict on the session rather than as a signed deviation. A
+ * symmetric curve therefore punishes a slightly-off Tuesday exactly as hard as
+ * it rewards a breakthrough, and an athlete training normally sees more of the
+ * former than the latter — the median guarantees it. That reads as a scold.
+ *
+ * Steeper above, gentler below: a genuinely good session is worth shouting
+ * about, an ordinary bad one is worth noting quietly. The ordering, the
+ * resolution and the sign are all untouched — a worse session still scores
+ * lower than a better one, always, and a single bpm still moves it.
+ */
+export const DOWNSIDE_SLOPE_RATIO = 0.5;
 /** Fewer comparable sessions than this and the number would be noise, so there is no number. */
 export const MIN_PERSONAL_BASELINE_SAMPLES = 3;
 /**
@@ -82,7 +113,10 @@ export const BASELINE_HALF_LIFE_DAYS = 60;
  */
 export function personalScoreFromDelta(delta: number, slope: number): number {
   if (!Number.isFinite(delta)) return PERSONAL_SCORE_CENTER;
-  const curved = PERSONAL_SCORE_AMPLITUDE * Math.tanh((delta * slope) / PERSONAL_SCORE_AMPLITUDE);
+  // Asymmetric on purpose — see DOWNSIDE_SLOPE_RATIO.
+  const effectiveSlope = delta >= 0 ? slope : slope * DOWNSIDE_SLOPE_RATIO;
+  const curved =
+    PERSONAL_SCORE_AMPLITUDE * Math.tanh((delta * effectiveSlope) / PERSONAL_SCORE_AMPLITUDE);
   return Math.round(clamp(PERSONAL_SCORE_CENTER + curved, 0, 1000));
 }
 

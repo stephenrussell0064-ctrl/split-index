@@ -17,14 +17,27 @@ import type { SessionType } from "@/types";
  * it produced were indistinguishable from each other, and the way back to that
  * is one plausible-looking commit.
  *
- * A NOTE ON THE NO-HEART-RATE CASE. The tag is inert there too, and that is
- * deliberate rather than unfinished. Crediting it when nothing measured the
- * session was tried and reverted on 21 Sep 2026: a tagged session is compared
- * against the athlete's own history, most of which is untagged, so tagging one
- * run "easy" lifted its personal score by roughly 350 points — farmable, and
- * exactly the failure the model was built to remove. RPE already covers "no
- * heart rate, but I know how hard it was", with finer resolution and the same
- * honesty about being self-reported.
+ * A NOTE ON THE NO-HEART-RATE CASE, REVISED 21 Sep 2026.
+ *
+ * The tag was inert there too, and crediting it was tried and reverted the
+ * same day: a tagged session was compared against the athlete's own history,
+ * most of which is untagged, so tagging one run "easy" lifted its PERSONAL
+ * score by roughly 350 points. Farmable, and exactly the failure the model
+ * exists to remove.
+ *
+ * It is now credited, but only where that failure cannot occur. The rule is
+ * narrower than "the tag counts":
+ *
+ *   - with a heart rate, or an RPE, the tag is never consulted at all;
+ *   - with neither, it supplies a last-resort effort estimate to the
+ *     POPULATION score, at 0.7 confidence;
+ *   - it never marks a session as effort-read, so the PERSONAL score still
+ *     compares it pace-against-pace with the rest of the log — which is the
+ *     comparison that broke, and the reason 350 points cannot recur.
+ *
+ * The assumed fractions sit at the hard end of each tag's plausible band, so
+ * the error the tag can introduce costs an honest athlete a little credit
+ * rather than handing a dishonest one a dial.
  */
 
 const TAGS: (SessionType | null)[] = ["easy", "recovery", "long", "tempo", "race", null];
@@ -66,8 +79,53 @@ describe("the session tag cannot move the score", () => {
     expect(new Set(scoresAcrossEveryTag({ rpe: 8 })).size).toBe(1);
   });
 
-  it("is inert with no heart rate and no RPE either", () => {
-    expect(new Set(scoresAcrossEveryTag({})).size).toBe(1);
+  it("is still inert for the PERSONAL score with no heart rate and no RPE", () => {
+    // The 350-point failure, pinned. History is untagged and HR-less, so every
+    // tag must compare pace-against-pace and land on the same personal score.
+    const scoredAt = "2026-06-01T07:00:00Z";
+    const history = [320, 325, 318, 330, 322].map((pace, i) => ({
+      distanceMeters: 8000,
+      durationSeconds: 8 * pace,
+      // Inside the comparison window and BEFORE the session being scored. An
+      // earlier version of this test dated the history two months before a
+      // session dated "now", so every tag returned null and the assertion
+      // passed against a set of nulls. Verified by mutation this time: with
+      // the guard removed, "easy" reads 870 against 669 for "race".
+      startedAt: new Date(Date.parse(scoredAt) - (i + 1) * 4 * 86_400_000).toISOString(),
+    }));
+    const personal = TAGS.map(
+      (sessionType) =>
+        scoreCardioActivity(run({ sessionType, startedAt: scoredAt, recentSessions: history }))
+          .personalScore
+    );
+    expect(personal.every((p) => p != null)).toBe(true);
+    expect(new Set(personal).size).toBe(1);
+  });
+
+  it("lets the tag inform the POPULATION score only when nothing measured the session", () => {
+    // The new behaviour, and the reason it is safe: this is the one score with
+    // no comparison in it, so an estimate cannot beat anyone else's measurement.
+    const scores = scoresAcrossEveryTag({});
+    expect(new Set(scores).size).toBeGreaterThan(1);
+
+    // Ordered the way the tags are: a session claimed easy implies a faster
+    // maximal effort than the same split claimed as a race.
+    const easy = scoreCardioActivity(run({ sessionType: "easy" })).populationScore;
+    const tempo = scoreCardioActivity(run({ sessionType: "tempo" })).populationScore;
+    const race = scoreCardioActivity(run({ sessionType: "race" })).populationScore;
+    expect(easy).toBeGreaterThan(tempo);
+    expect(tempo).toBeGreaterThan(race);
+
+    // And an untagged session is never worse off than the hardest tag — no
+    // assumption beats a bad assumption.
+    const untagged = scoreCardioActivity(run({ sessionType: null })).populationScore;
+    expect(untagged).toBeGreaterThanOrEqual(race!);
+  });
+
+  it("says so in its confidence — an estimate is not a measurement", () => {
+    const tagged = scoreCardioActivity(run({ sessionType: "easy" }));
+    const measured = scoreCardioActivity(run({ avgHR: 145, sessionType: "easy" }));
+    expect(tagged.confidence!).toBeLessThan(measured.confidence!);
   });
 
   /**

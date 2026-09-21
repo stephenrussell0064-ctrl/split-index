@@ -23,6 +23,7 @@ import {
   weightedMedian,
   buildPersonalBaseline,
   CARDIO_PERSONAL_SLOPE,
+  DOWNSIDE_SLOPE_RATIO,
   PERSONAL_SCORE_CENTER,
 } from "./personal-score";
 
@@ -623,9 +624,18 @@ describe("the personal score", () => {
 describe("personal-score mechanics", () => {
   it("is centred, symmetric and saturating", () => {
     expect(personalScoreFromDelta(0, CARDIO_PERSONAL_SLOPE)).toBe(PERSONAL_SCORE_CENTER);
+    // Deliberately NOT symmetric — see DOWNSIDE_SLOPE_RATIO. A bad day costs
+    // about half what an equally good day earns, because the number is read as
+    // a verdict on the session and a median guarantees an athlete sees more
+    // below-centre days than above. Restoring symmetry here is a product
+    // decision, not a bug fix.
     const up = personalScoreFromDelta(0.03, CARDIO_PERSONAL_SLOPE) - PERSONAL_SCORE_CENTER;
     const down = PERSONAL_SCORE_CENTER - personalScoreFromDelta(-0.03, CARDIO_PERSONAL_SLOPE);
-    expect(up).toBe(down);
+    expect(up).toBeGreaterThan(down);
+    expect(down / up).toBeCloseTo(DOWNSIDE_SLOPE_RATIO, 1);
+    // Still strictly signed: better is above centre, worse is below, always.
+    expect(personalScoreFromDelta(0.03, CARDIO_PERSONAL_SLOPE)).toBeGreaterThan(PERSONAL_SCORE_CENTER);
+    expect(personalScoreFromDelta(-0.03, CARDIO_PERSONAL_SLOPE)).toBeLessThan(PERSONAL_SCORE_CENTER);
     // Strictly increasing forever: a bigger breakthrough always scores higher.
     const big = personalScoreFromDelta(0.2, CARDIO_PERSONAL_SLOPE);
     const bigger = personalScoreFromDelta(0.3, CARDIO_PERSONAL_SLOPE);
@@ -633,22 +643,26 @@ describe("personal-score mechanics", () => {
     expect(bigger).toBeLessThan(1000);
   });
 
-  it("moves roughly 14 points per 1% near the centre", () => {
+  it("moves roughly 26 points per 1% above the centre, 13 below", () => {
     // 30 -> 22 after a real athlete's ordinary week of easy running spread
     // from 50 to 678 — right in direction every time, far too loud to read as
     // "these were all normal runs".
     //
-    // 22 -> 14 on 21 September 2026, same complaint one step further in: at 22
-    // an ordinary bad day (20 s/km slower, 13 bpm higher) landed on 21.2 of the
-    // 0-100 the athlete sees, which reads as a disaster rather than as a bad
-    // day. At 14 it reads 29.8 and a clearly good day reads 58.6.
+    // Then split in two on 21 September 2026 rather than lowered outright.
+    // Lowering it symmetrically softened the bad days and flattened the good
+    // ones with them, which loses the thing the score is for: a genuinely good
+    // session should be worth shouting about. So the upside went UP, to 26,
+    // and only the downside came down, to 13.
     //
-    // The band is what is being pinned, not the constant — a slope outside it
-    // is a decision someone should make deliberately, which is why this test
-    // fails loudly rather than tracking whatever the constant happens to be.
-    const onePct = personalScoreFromDelta(0.01, CARDIO_PERSONAL_SLOPE) - PERSONAL_SCORE_CENTER;
-    expect(onePct).toBeGreaterThan(12);
-    expect(onePct).toBeLessThan(17);
+    // The bands are what is pinned, not the constants — a slope outside them
+    // is a decision someone should make deliberately, which is why this fails
+    // loudly rather than tracking whatever the constants happen to be.
+    const up = personalScoreFromDelta(0.01, CARDIO_PERSONAL_SLOPE) - PERSONAL_SCORE_CENTER;
+    expect(up).toBeGreaterThan(24);
+    expect(up).toBeLessThan(28);
+    const down = PERSONAL_SCORE_CENTER - personalScoreFromDelta(-0.01, CARDIO_PERSONAL_SLOPE);
+    expect(down).toBeGreaterThan(11);
+    expect(down).toBeLessThan(15);
   });
 
   it("weights the median by recency", () => {
