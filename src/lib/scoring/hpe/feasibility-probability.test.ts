@@ -132,6 +132,22 @@ describe("training age is floored by what the athlete can actually do", () => {
   });
 });
 
+describe("age enters only where the evidence puts it", () => {
+  it("does not penalise a 55-year-old, because trainability holds into the sixties", () => {
+    const young = feasibilityScreen(state({ age: 30 }), goal());
+    const masters = feasibilityScreen(state({ age: 55 }), goal());
+    expect(masters.enduranceGainPct).toBeCloseTo(young.enduranceGainPct, 6);
+    expect(masters.strengthGainPct).toBeCloseTo(young.strengthGainPct, 6);
+  });
+
+  it("eases gently past sixty rather than falling off a cliff", () => {
+    const sixty = feasibilityScreen(state({ age: 60 }), goal());
+    const seventy = feasibilityScreen(state({ age: 70 }), goal());
+    expect(seventy.enduranceGainPct).toBeLessThan(sixty.enduranceGainPct);
+    expect(seventy.enduranceGainPct).toBeGreaterThan(sixty.enduranceGainPct * 0.7);
+  });
+});
+
 describe("the adherence prior", () => {
   it("is lower for a recent injury and for a novice runner with a race", () => {
     const base = adherencePrior(state(), goal(), "intermediate");

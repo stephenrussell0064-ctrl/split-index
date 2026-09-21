@@ -21,7 +21,6 @@
 import {
   ALLOMETRIC_EXPONENT,
   CONCURRENT_ATTENUATION_ENDURANCE,
-  CONCURRENT_ATTENUATION_STRENGTH,
   CONCURRENT_ATTENUATION_LOWER_BODY_MALE,
   CONCURRENT_ATTENUATION_RUN_MIN_THRESHOLD,
   STRENGTH_GAIN_SD_PER_BLOCK,
@@ -450,8 +449,26 @@ export function feasibilityScreen(
     state.sex === "male" && state.currentRunMinPerWeek >= CONCURRENT_ATTENUATION_RUN_MIN_THRESHOLD
       ? CONCURRENT_ATTENUATION_LOWER_BODY_MALE * lowerBodyShare
       : 0;
-  const strengthGain = strengthRate * blocks * strengthShare * (1 - interference);
-  let enduranceGain = enduranceRate * blocks * enduranceShare * (1 - CONCURRENT_ATTENUATION_ENDURANCE);
+  /*
+   * Age enters where the evidence puts it, and only there.
+   *
+   * Trainability itself is preserved into the sixties — Peterson 2010 found
+   * adults over 50 gaining 24-33% on compound lifts over 12-18 weeks,
+   * indistinguishable from young novices, and Huang 2016 found the same
+   * relative VO2max gain in over-60s as HERITAGE found in a mixed-age cohort.
+   * Skinner 2001 found age explained very little of the response variance.
+   *
+   * So there is no age term on the rate until about 60, and a gentle one
+   * after it. What age really moves is the baseline, and the baseline is the
+   * athlete's own measured performance, which is already in the arithmetic.
+   */
+  const agePenalty =
+    state.age > AGE_GAIN_PENALTY_START
+      ? Math.max(0.5, 1 - AGE_GAIN_PENALTY_PER_DECADE * ((state.age - AGE_GAIN_PENALTY_START) / 10))
+      : 1;
+
+  const strengthGain = strengthRate * blocks * strengthShare * (1 - interference) * agePenalty;
+  let enduranceGain = enduranceRate * blocks * enduranceShare * (1 - CONCURRENT_ATTENUATION_ENDURANCE) * agePenalty;
   // Strength work improves running economy independently of aerobic gain —
   // the one place concurrent training pays rather than costs.
   enduranceGain += RUNNING_ECONOMY_BONUS_PER_BLOCK * blocks;

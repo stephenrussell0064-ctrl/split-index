@@ -764,7 +764,15 @@ export const CONCURRENT_ATTENUATION_RUN_MIN_THRESHOLD = 150;
 export const AGE_GAIN_PENALTY_START = 60;
 export const AGE_GAIN_PENALTY_PER_DECADE = 0.15;
 
-/** [DATA] Wilson 2012 — concurrent training attenuates strength adaptation by this fraction. */
+/**
+ * [SUPERSEDED] Wilson 2012's flat attenuation. Kept only so the constants
+ * register records what was replaced and why — nothing reads it.
+ *
+ * Its sample was largely untrained and the 18% is a ratio of within-group
+ * effect sizes rather than a between-group estimate. Schumann 2022 (43
+ * studies) puts the pooled effect on maximal strength at SMD -0.06. See
+ * CONCURRENT_ATTENUATION_LOWER_BODY_MALE for what replaced it.
+ */
 export const CONCURRENT_ATTENUATION_STRENGTH = 0.18;
 /** [EST] The smaller reciprocal cost to endurance. */
 export const CONCURRENT_ATTENUATION_ENDURANCE = 0.05;
