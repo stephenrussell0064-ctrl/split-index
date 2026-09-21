@@ -647,6 +647,123 @@ export const ENDURANCE_GAIN_PER_BLOCK: Readonly<Record<TrainingAge, number>> = {
   advanced: 0.015,
   elite: 0.006,
 };
+/**
+ * [DATA] The SPREAD around each gain rate, as the cohorts report it.
+ *
+ * The rates above are means. Quoting a mean as a forecast is the error this
+ * engine has made since it was written: two athletes of the same training age
+ * on the same plan do not get the same result, and the spread is not small.
+ * Ahtiainen 2016 (n=287, 21 weeks) found strength gains of +21 +/- 11.5% with
+ * a range from -8% to +60%; Hubal 2005 (n=585) found 1RM changes from 0% to
+ * +250%; HERITAGE found VO2max responses from about -2% to over +40% on one
+ * identical 20-week programme.
+ *
+ * These are the OBSERVED spreads, not the noise-free trainability spreads.
+ * Renwick 2024 shows the true between-person variance is smaller and most of
+ * the observed scatter is measurement error — but the observed spread is what
+ * the athlete experiences, so it is what the interval is drawn from.
+ */
+export const STRENGTH_GAIN_SD_PER_BLOCK: Readonly<Record<TrainingAge, number>> = {
+  novice: 0.07,
+  intermediate: 0.035,
+  advanced: 0.02,
+  elite: 0.012,
+};
+export const ENDURANCE_GAIN_SD_PER_BLOCK: Readonly<Record<TrainingAge, number>> = {
+  novice: 0.05,
+  intermediate: 0.03,
+  advanced: 0.02,
+  elite: 0.015,
+};
+
+/**
+ * [DATA] Gains flatten across blocks rather than compounding. A 52-week
+ * horizon is not 4.3x a 12-week one — Emig & Peltonen 2020 show aerobic power
+ * saturating against training volume, and Latella's powerlifting cohorts run
+ * at 7.5-12.5% in the first year of competing against under 4% a year after
+ * three. Exponent on the block count.
+ */
+export const MULTI_BLOCK_GAIN_EXPONENT = 0.85;
+
+/**
+ * [DATA] Measurement noise. A 5k time trial repeats to 1-2% in trained
+ * runners; a daily 1RM swings 2.4 +/- 1.7% (Zourdos 2016). An expected gain
+ * under twice the noise is reported as a trend to watch rather than as a
+ * number to test against on one day.
+ */
+export const RUN_TEST_NOISE_FRACTION = 0.02;
+export const ONE_RM_TEST_NOISE_FRACTION = 0.03;
+
+/**
+ * [DATA] The probability quoted to the athlete includes the chance they do
+ * not finish the block, because that is the outcome they actually face.
+ *
+ * STRRIDE and comparable supervised trials lose about 30%, concentrated in
+ * the ramp-in weeks. Unsupervised novice running plans do far worse: Relph
+ * 2023 saw 27% of a Couch-to-5k cohort complete, with prior injury carrying
+ * an odds ratio of 7.6 for dropping out. Dropouts cluster before the midpoint,
+ * so a partial block is modelled at roughly 40% of its gain.
+ */
+export const ADHERENCE_BASE = 0.7;
+export const ADHERENCE_PRIOR_INJURY_MULTIPLIER = 0.8;
+export const ADHERENCE_NOVICE_ENDURANCE_MULTIPLIER = 0.8;
+export const PARTIAL_COMPLETION_GAIN_SHARE = 0.4;
+/** [EST] Two goals are not independent — they share the same athlete, the same week and the same adherence draw. */
+export const JOINT_GOAL_CORRELATION = 0.9;
+
+/**
+ * [DATA] Where a target sits against the athlete's own expected outcome
+ * decides how it is framed. Bar-Eli 1997 found difficult-but-realistic goals
+ * (+20%) outperformed improbable ones (+40%); Locke & Latham find commitment
+ * collapses once a goal reads as a threat rather than a challenge; Swann 2021
+ * recommends open goals for the inexperienced. So beyond one SD a target
+ * becomes the stretch and the expected outcome becomes the primary goal;
+ * beyond two it is named as a multi-block goal.
+ */
+export const STRETCH_GOAL_SD = 1.0;
+export const MULTI_BLOCK_GOAL_SD = 2.0;
+
+/**
+ * [DATA] Strength training age inferred from relative strength, as a FLOOR
+ * under what the athlete typed — the same rule the 5k already applies to
+ * endurance training age.
+ *
+ * Unanswered training-age questions resolve to zero years, which is the
+ * novice bucket and the largest gain rate in the table. Somebody squatting
+ * twice bodyweight who skipped the history section was being promised a
+ * novice's progress. Thresholds are total divided by bodyweight, from the
+ * crowd-sourced strength standards athletes already frame themselves in.
+ */
+export const STRENGTH_TRAINING_AGE_FLOOR_BY_RELATIVE_TOTAL: ReadonlyArray<readonly [number, TrainingAge]> = [
+  [6.0, "advanced"],
+  [4.5, "intermediate"],
+];
+export const FEMALE_RELATIVE_TOTAL_FACTOR = 0.72;
+
+/**
+ * [DATA] Concurrent interference, applied where the meta-analyses find it
+ * rather than as a flat penalty on everything.
+ *
+ * The flat 18% below comes from Wilson 2012, whose sample was largely
+ * untrained and whose figure is a ratio of within-group effect sizes. It has
+ * not survived: Schumann 2022 (43 studies) puts the pooled effect on maximal
+ * strength at SMD -0.06, indistinguishable from zero. What does replicate is
+ * narrower — Petre 2021 finds ES -0.35 in TRAINED lifters, -0.66 when both
+ * are trained in one session and -0.10 when they are separated; Huiberts 2024
+ * finds SMD -0.43 in men and +0.08 in women. Upper body is unaffected
+ * throughout.
+ *
+ * So: lower-body lifts only, men only, and only once running is a real weekly
+ * load. Never bench, never women, never as a blanket discount.
+ */
+export const CONCURRENT_ATTENUATION_LOWER_BODY_MALE = 0.25;
+/** [DATA] Running minutes a week past which the interference term applies — roughly 30km. */
+export const CONCURRENT_ATTENUATION_RUN_MIN_THRESHOLD = 150;
+
+/** [EST] Trainability holds to about 60 (Peterson 2010; Huang 2016; Skinner 2001), then eases. */
+export const AGE_GAIN_PENALTY_START = 60;
+export const AGE_GAIN_PENALTY_PER_DECADE = 0.15;
+
 /** [DATA] Wilson 2012 — concurrent training attenuates strength adaptation by this fraction. */
 export const CONCURRENT_ATTENUATION_STRENGTH = 0.18;
 /** [EST] The smaller reciprocal cost to endurance. */
