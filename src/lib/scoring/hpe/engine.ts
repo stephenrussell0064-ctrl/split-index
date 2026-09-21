@@ -152,7 +152,11 @@ export function generatePlan(input: GeneratePlanInput): GeneratedPlan {
   // Both caution factors compound: a novice runner with no logged history gets
   // the halved novice ramp AND the halved provisional ramp, which is the
   // correct direction to stack them.
-  const macro = buildMacrocycle(state, goal, safety.rampMultiplier * tailoring.rampMultiplier);
+  const macro = buildMacrocycle(state, goal, safety.rampMultiplier * tailoring.rampMultiplier, {
+    // Declared travel weeks become reduced weeks rather than holes. Collected
+    // by the intake since it was written and read by nothing until now.
+    travelWeeks: constraints.travelWeeks ?? [],
+  });
 
   const weeks: PlanWeek[] = [];
   const rawStress: number[] = [];

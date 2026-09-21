@@ -922,6 +922,8 @@ export function resolveIntakeInputs(
     crossTrainOk: record.crossTrainOk,
     preferredRestDay: record.preferredRestDay,
     preferredLongDay: record.preferredLongDay,
+    // Collected since the intake was written, read by nothing until now.
+    travelWeeks: record.travelWeeks,
     gymAccessDays,
     // Gym access governs; the equipment list refines it. Without a gym the
     // barbell is not available whatever the equipment list says.

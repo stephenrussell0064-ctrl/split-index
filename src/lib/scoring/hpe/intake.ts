@@ -324,6 +324,14 @@ export interface Constraints {
    * them is not.
    */
   exercisesByDay?: Record<string, string[]>;
+  /**
+   * Plan weeks (1-based) the athlete has said they will be away.
+   *
+   * Collected by the intake since it was written and read by nothing. Each
+   * becomes a reduced week rather than a hole: a week away is a week of less
+   * training, not a week the block pretends did not happen.
+   */
+  travelWeeks?: number[];
   gymAccessDays: string[];
   equipment: string[];
   /**

@@ -61,6 +61,8 @@ export interface MacrocycleWeek {
   week: number;
   phase: Phase;
   deload: boolean;
+  /** Set when this is a travel week the athlete declared — a reduced week, labelled as such. */
+  travel?: boolean;
   /** Target endurance minutes for the week, after any deload reduction. */
   enduranceMin: number;
   /** Position within this phase, 0 (first week) to 1 (last week). Drives quality-session progression — see progression.ts, F15. */
@@ -123,12 +125,22 @@ export function onRampStartingVolume(state: AthleteState): number {
   return startingVolume;
 }
 
+export interface MacrocycleOptions {
+  /** Plan weeks (1-based) the athlete has said they will be away. Each becomes a reduced week rather than a hole. */
+  travelWeeks?: readonly number[];
+}
+
 /**
  * Builds one record per week. `rampMultiplier` comes from the safety screen
  * (halved for novice runners and for a recent injury) and is applied on top
  * of the 8% ceiling, never instead of it.
  */
-export function buildMacrocycle(state: AthleteState, goal: Goal, rampMultiplier = 1): MacrocycleWeek[] {
+export function buildMacrocycle(
+  state: AthleteState,
+  goal: Goal,
+  rampMultiplier = 1,
+  options: MacrocycleOptions = {}
+): MacrocycleWeek[] {
   const taperWeeks = Math.max(1, Math.round(TAPER_DAYS / 7));
   const remaining = Math.max(1, goal.weeksOut - taperWeeks);
 
@@ -199,10 +211,14 @@ export function buildMacrocycle(state: AthleteState, goal: Goal, rampMultiplier 
   let peakVolume = volume;
   let week = 1;
 
+  const travel = new Set(options.travelWeeks ?? []);
+
   for (const phase of developmentPhases) {
     const phaseWeeks = allocation[phase];
     for (let i = 0; i < phaseWeeks; i++) {
-      const deload = week % DELOAD_EVERY_N_WEEKS === 0;
+      // A declared travel week is a reduced week, not a hole in the block.
+      const isTravel = travel.has(week);
+      const deload = week % DELOAD_EVERY_N_WEEKS === 0 || isTravel;
       if (week > 1 && !deload) volume = Math.min(volume * (1 + ramp), ceiling);
       // Specific and peak hold volume and raise intensity instead.
       if (phase === "specific" || phase === "peak") volume = Math.min(volume, peakVolume);
@@ -211,6 +227,7 @@ export function buildMacrocycle(state: AthleteState, goal: Goal, rampMultiplier 
         week,
         phase,
         deload,
+        travel: isTravel || undefined,
         enduranceMin: viableWeeklyMinutes(volume * (deload ? DELOAD_VOLUME_MULTIPLIER : 1)),
         phaseProgress: phaseWeeks > 1 ? i / (phaseWeeks - 1) : 1,
       });
