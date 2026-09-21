@@ -8,16 +8,30 @@
  *
  * 500 means "your normal". Better than your recent norm reads above 500,
  * worse below, and the scale is the same for every sport so the number means
- * the same thing on a run, a row and a bench press: about 22 points per 1%
- * of performance in cardio, about 40 per 1% in strength (lifts vary less
+ * the same thing on a run, a row and a bench press: about 14 points per 1%
+ * of performance in cardio, about 26 per 1% in strength (lifts vary less
  * session to session than paces do, so the same percentage is a bigger
  * deal, and a lift is a cleaner measurement than a pace). The curve is a
  * tanh, not a clip — a 15% breakthrough still reads higher than a 10% one,
  * it just no longer reads 150 points higher.
  *
- * The cardio slope came down from 30 after an athlete saw a normal week of
- * easy running spread across 50 to 678: correct in direction every time, and
- * far too dramatic to read as "these were all ordinary runs".
+ * The cardio slope came down from 30 to 22 after an athlete saw a normal week
+ * of easy running spread across 50 to 678: correct in direction every time,
+ * and far too dramatic to read as "these were all ordinary runs".
+ *
+ * It came down again, 22 to 14, on 21 September 2026, for the same complaint
+ * one step further in. At 22 an ordinary bad day — 20 s/km slower at 13 bpm
+ * higher — cost 288 points, landing on 21.2 of the 0-100 the athlete actually
+ * sees. Nothing about that session deserves a number that reads as a disaster.
+ * At 14 the same session reads 29.8 and a clearly good day reads 58.6, so the
+ * ordering and the resolution both survive: a single bpm and a single second
+ * per kilometre still move it, which is the property the two-score model was
+ * built to get right in the first place.
+ *
+ * Measured, not estimated — the figures above are from scoring that week
+ * through `scoreCardioActivity` at each slope, and the four-point spread they
+ * describe (58.6 / 50.0 / 44.6 / 29.8) is what an athlete now sees for a good
+ * day, a normal one, a slightly off one and a bad one.
  *
  * The baseline is a recency-weighted median rather than a mean: one wild
  * session (a GPS overread, a race, a session logged with the wrong distance)
@@ -35,13 +49,32 @@ const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x
 export const PERSONAL_SCORE_CENTER = 500;
 /** How far above/below center the curve can reach — 50..950, never the extremes reserved for records. */
 export const PERSONAL_SCORE_AMPLITUDE = 450;
-/** Points per unit fraction of improvement near center (22 per 1%). */
-export const CARDIO_PERSONAL_SLOPE = 2200;
-/** Points per unit fraction of improvement near center (40 per 1%). */
-export const STRENGTH_PERSONAL_SLOPE = 4000;
+/** Points per unit fraction of improvement near center (14 per 1%). */
+export const CARDIO_PERSONAL_SLOPE = 1400;
+/** Points per unit fraction of improvement near center (26 per 1%). */
+export const STRENGTH_PERSONAL_SLOPE = 2600;
 /** Fewer comparable sessions than this and the number would be noise, so there is no number. */
 export const MIN_PERSONAL_BASELINE_SAMPLES = 3;
-export const BASELINE_HALF_LIFE_DAYS = 30;
+/**
+ * Sixty days, not thirty.
+ *
+ * At a thirty-day half-life the baseline caught up with the athlete inside a
+ * month: four weeks of genuine improvement read above center while it happened
+ * and then settled back to 500, because the sessions it was being compared
+ * against were the improved ones. A number that cannot stay up is no use as a
+ * progress signal, and an athlete watching a good block get quietly re-based to
+ * "normal" reasonably concludes the score is broken.
+ *
+ * At sixty days this month's form is judged against form from roughly two
+ * months back, so a real gain reads as a gain for long enough to see it.
+ *
+ * What this does NOT do, and cannot: make most sessions read above center. The
+ * baseline is a median, so half the comparable pool sits below it by
+ * construction — that is what a median is. The lever for "an ordinary session
+ * should not look like a failure" is the slope below and the wording around the
+ * number, not the baseline.
+ */
+export const BASELINE_HALF_LIFE_DAYS = 60;
 
 /**
  * `delta` is the fractional improvement over the baseline, signed so that

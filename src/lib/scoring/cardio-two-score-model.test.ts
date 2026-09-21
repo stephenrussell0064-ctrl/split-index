@@ -633,13 +633,22 @@ describe("personal-score mechanics", () => {
     expect(bigger).toBeLessThan(1000);
   });
 
-  it("moves roughly 22 points per 1% near the centre", () => {
-    // Lowered from 30 after a real athlete's ordinary week of easy running
-    // spread from 50 to 678 — right in direction every time, far too loud to
-    // read as "these were all normal runs".
+  it("moves roughly 14 points per 1% near the centre", () => {
+    // 30 -> 22 after a real athlete's ordinary week of easy running spread
+    // from 50 to 678 — right in direction every time, far too loud to read as
+    // "these were all normal runs".
+    //
+    // 22 -> 14 on 21 September 2026, same complaint one step further in: at 22
+    // an ordinary bad day (20 s/km slower, 13 bpm higher) landed on 21.2 of the
+    // 0-100 the athlete sees, which reads as a disaster rather than as a bad
+    // day. At 14 it reads 29.8 and a clearly good day reads 58.6.
+    //
+    // The band is what is being pinned, not the constant — a slope outside it
+    // is a decision someone should make deliberately, which is why this test
+    // fails loudly rather than tracking whatever the constant happens to be.
     const onePct = personalScoreFromDelta(0.01, CARDIO_PERSONAL_SLOPE) - PERSONAL_SCORE_CENTER;
-    expect(onePct).toBeGreaterThan(19);
-    expect(onePct).toBeLessThan(24);
+    expect(onePct).toBeGreaterThan(12);
+    expect(onePct).toBeLessThan(17);
   });
 
   it("weights the median by recency", () => {
