@@ -205,7 +205,7 @@ export function SkuPicker({ ctaLabel, onError, className }: SkuPickerProps) {
     nativeOfferings.find((o) => o.sku === sku)?.priceString;
 
   const defaultCta = (sku: SubscriptionSku) =>
-    sku === "lifetime" ? `Get lifetime access — £${PRICING.LIFETIME_GBP}` : "Go Premium";
+    sku === "lifetime" ? `Get lifetime access — £${PRICING.LIFETIME_GBP}` : `Start your ${PRICING.TRIAL_DAYS}-day free trial`;
 
   return (
     <div className={className}>

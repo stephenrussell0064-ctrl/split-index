@@ -316,7 +316,7 @@ export function ScoreRevealSequence({ onDone }: ScoreRevealSequenceProps) {
   return (
     <Card className="glass-strong text-center py-10 px-6 mb-6">
       <h2 className="headline-tight text-2xl font-bold mb-2">
-        Go Premium
+        Start your {PRICING.TRIAL_DAYS}-day free trial
       </h2>
       <p className="text-sm text-muted mb-6 max-w-sm mx-auto">
         Full Split Index, AI coaching, and analytics — free for {PRICING.TRIAL_DAYS} days.

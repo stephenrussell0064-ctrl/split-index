@@ -408,9 +408,9 @@ export default function SettingsClient() {
                 </div>
               </div>
               <p className="text-xs text-muted mb-4">
-                Cancel anytime
+                {FREE_TRIAL_DAYS}-day free trial · cancel anytime
               </p>
-              <Link href="/settings/billing" className={cn(buttonVariants(), "w-full")}>Go Premium</Link>
+              <Link href="/settings/billing" className={cn(buttonVariants(), "w-full")}>Start {FREE_TRIAL_DAYS}-Day Free Trial</Link>
             </>
           )}
         </CardContent>

@@ -58,21 +58,9 @@ describe("the two questions give different answers, which is the point", () => {
    * athlete, either the trial has been taken away from the dashboard it was
    * built for, or every paid gate has been opened to every new signup.
    */
-  /*
-    These two used to differ for a brand-new free athlete: the showcase
-    surfaces rode the card-less trial while the paid gates did not. The
-    comment above named the two ways they could come to agree, and the first
-    of them has now happened on purpose — the trial was removed on 21 Sep
-    2026 (FREE_TRIAL_DAYS, in stripe/config.ts, carries the reason).
-
-    So they agree, and the assertion that still earns its place is WHICH way
-    they agree: closed. If `hasPaidAccess` ever answers true here, the second
-    possibility the comment warned about has happened instead, and every paid
-    gate is open to every signup.
-  */
-  it("agree — and agree CLOSED — for a new free athlete, now the trial is gone", () => {
+  it("differ for a new free athlete inside the trial window", () => {
     expect(hasPaidAccess(freeToday)).toBe(false);
-    expect(hasShowcaseAccess(freeToday)).toBe(false);
+    expect(hasShowcaseAccess(freeToday)).toBe(true);
   });
 
   it("agree once the trial has lapsed", () => {

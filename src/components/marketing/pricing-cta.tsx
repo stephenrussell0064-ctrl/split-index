@@ -108,7 +108,7 @@ export function PricingSection() {
               "mt-8 flex w-full bg-gym-accent font-bold text-[#04120a] hover:bg-gym-accent/90"
             )}
           >
-            Go Premium
+            Start free trial
           </Link>
           <p className="mt-4 text-center text-xs text-white/40">
             Also available monthly (£{PRICING.MONTHLY_GBP}/mo) or lifetime (£{PRICING.LIFETIME_GBP}, one-time) after signup.
