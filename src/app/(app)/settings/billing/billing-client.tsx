@@ -79,13 +79,13 @@ function BillingContent() {
         </p>
       )}
 
-      {trialDays !== null && trialDays > 0 && !premium && (
-        <div className="mb-4 rounded-xl border border-accent/20 bg-accent/10 px-4 py-3 text-center">
-          <p className="text-sm font-medium text-accent tabular-nums">
-            {trialDays} day{trialDays === 1 ? "" : "s"} left in your free trial
-          </p>
-        </div>
-      )}
+      {/*
+        The "N days left in your free trial" banner stood here. There is no
+        free trial any more (FREE_TRIAL_DAYS is 0, and the reason is recorded
+        there), so the banner was unreachable — `trialDays > 0` cannot be true.
+        Deleted rather than left dormant: a block that advertises a trial is a
+        promise waiting for somebody to re-enable a constant and not read it.
+      */}
 
       <div className="grid sm:grid-cols-2 gap-4 mb-6">
         <Card padding="sm">
@@ -123,7 +123,7 @@ function BillingContent() {
       <Card glow="accent">
         <CardHeader>
           <CardTitle>
-            {premium ? "Premium active" : `Start your ${FREE_TRIAL_DAYS}-day trial`}
+            {premium ? "Premium active" : "Go Premium"}
           </CardTitle>
         </CardHeader>
         <CardContent>

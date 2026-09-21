@@ -34,6 +34,7 @@ import type {
 } from "@/lib/social/types";
 import type { LeaderboardPeriod, SportType } from "@/types";
 import { cn } from "@/lib/utils/cn";
+import { isContested, uncontestedLabel } from "@/lib/social/contested";
 
 const PLACEHOLDER_DETAIL: LeaderboardDetail = {
   topLifts: [
@@ -162,12 +163,23 @@ function BracketSummaryCard({ bracket }: { bracket: BracketSummary | null }) {
         {bracket.exactLabel}
       </p>
       <div className="mt-2 flex flex-wrap items-baseline gap-x-4 gap-y-1">
-        <p className="text-2xl font-bold tabular-nums tracking-tight">
-          {bracket.bracketRank != null ? `#${bracket.bracketRank}` : "—"}
-          <span className="ml-1.5 text-sm font-medium text-muted">
-            of {bracket.bracketSize}
-          </span>
-        </p>
+        {/*
+          A bracket of one is not a bracket. Six of the seven exact peer
+          brackets on production held a single athlete, so this read "#1 of 1"
+          for most people — see lib/social/contested.ts.
+        */}
+        {isContested(bracket.bracketSize) ? (
+          <p className="text-2xl font-bold tabular-nums tracking-tight">
+            {bracket.bracketRank != null ? `#${bracket.bracketRank}` : "—"}
+            <span className="ml-1.5 text-sm font-medium text-muted">
+              of {bracket.bracketSize}
+            </span>
+          </p>
+        ) : (
+          <p className="text-sm font-medium text-muted">
+            {uncontestedLabel(bracket.bracketSize)}
+          </p>
+        )}
         <p className="text-xs text-muted">
           Global{" "}
           <span className="tabular-nums text-foreground/80">
@@ -778,6 +790,37 @@ function DimensionLeaderboard({
           <p className="py-8 text-center text-sm text-muted">
             {loading ? "Loading…" : "No rankings yet for this selection — log a matching session to appear here"}
           </p>
+        ) : !isContested(rows.length) ? (
+          /*
+            Scores without positions. Measured on production, 19 of 22 exercise
+            boards had exactly one athlete on them, so "#1" was being awarded
+            against nobody — see lib/social/contested.ts.
+          */
+          <>
+            <p className="pb-2 text-center text-xs text-muted">{uncontestedLabel(rows.length)}</p>
+            {rows.map((entry) => (
+              <div
+                key={entry.userId}
+                className={cn(
+                  "flex items-center gap-3 rounded-xl p-3",
+                  entry.userId === currentUserId ? "bg-accent/10 ring-1 ring-accent/30" : ""
+                )}
+              >
+                <span className="w-8 text-center text-muted" aria-hidden>
+                  ·
+                </span>
+                <UserAvatar
+                  name={entry.displayName ?? entry.username ?? "?"}
+                  avatarUrl={entry.avatarUrl}
+                  size="sm"
+                />
+                <div className="min-w-0 flex-1 truncate text-sm">
+                  {entry.displayName ?? entry.username ?? "Athlete"}
+                </div>
+                <span className="font-display font-bold tabular-nums">{entry.value}</span>
+              </div>
+            ))}
+          </>
         ) : (
           rows.map((entry, i) => {
             const isMe = entry.userId === currentUserId;

@@ -84,7 +84,11 @@ export default function GpsMap({ points, className }: GpsMapProps) {
   const positions: [number, number][] = points.map((p) => [p.latitude, p.longitude]);
 
   return (
-    <div className={className}>
+    // `isolate` for the same reason as route-map.tsx: Leaflet's panes carry
+    // z-indexes up to 1000 and every overlay in this app sits at z-40, so
+    // without a stacking context the live map draws over the tab bar and any
+    // sheet above it.
+    <div className={cn("isolate", className)}>
       <MapContainer
         center={[latest.latitude, latest.longitude]}
         zoom={16}

@@ -7,6 +7,7 @@ import { ChevronDown, HeartPulse } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
+import { InlineArticle9Consent } from "@/components/hybrid-plan/inline-article9-consent";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils/cn";
 import { DiagnosticReport } from "./diagnostic-report";
@@ -376,16 +377,14 @@ export function HybridPlanScreen() {
             {data.message ??
               "The Hybrid Plan screens your health before it programmes anything, so it needs your explicit consent to use that information. You can give it — or take it back — in Settings."}
           </p>
-          <Link
-            href="/settings"
-            className="mt-5 inline-flex min-h-11 items-center rounded-2xl bg-accent px-5 text-sm font-semibold text-accent-foreground transition-colors hover:bg-accent/90"
-          >
-            Go to Settings
-          </Link>
-          <p className="mt-3 text-xs leading-relaxed text-muted/80">
-            Nothing else in Split Index needs this — your logging, scores and history all work either way, and you can
-            withdraw it later in the same place.
-          </p>
+          {/*
+            The tick box lives here rather than in Settings. Sending somebody
+            three taps away to answer a yes/no question they are being asked
+            on this screen is how a plan never gets built — see
+            inline-article9-consent.tsx. `retry` is the screen's own refetch,
+            so the plan rebuilds the moment consent lands.
+          */}
+          <InlineArticle9Consent onGranted={retry} />
         </Card>
       </div>
     );

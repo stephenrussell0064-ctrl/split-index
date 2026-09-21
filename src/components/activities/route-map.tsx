@@ -92,7 +92,25 @@ export function RouteMap({
     <div
       ref={containerRef}
       className={cn(
-        "relative overflow-hidden rounded-2xl border",
+        /*
+         * `isolate` is load-bearing, not tidiness.
+         *
+         * Leaflet's own stylesheet positions its panes with hard z-indexes —
+         * 200 for tiles, 400 for the overlay pane, 600 for markers, 1000 for
+         * controls. Every overlay in this app sits at z-40: the More sheet,
+         * its backdrop, the sidebar, the tab bar. Without a stacking context
+         * here those panes are compared against the overlay in the ROOT
+         * context and win by an order of magnitude, so the little route
+         * thumbnails float on top of the sheet that is supposed to cover
+         * them. Reported from a device, with three maps punched through the
+         * More menu.
+         *
+         * `isolation: isolate` makes this div a stacking context, so 400 is
+         * resolved among the map's own children and the map as a whole takes
+         * its natural place in the row. Raising the overlays instead would
+         * only move the problem to whatever Leaflet does next.
+         */
+        "isolate relative overflow-hidden rounded-2xl border",
         variant === "light"
           ? "border-cardio-border/50 bg-cardio-bg-elevated"
           : "border-white/[0.06] bg-white/[0.02]",

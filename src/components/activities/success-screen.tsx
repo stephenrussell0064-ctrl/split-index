@@ -254,7 +254,7 @@ export function SuccessScreen({
                   href="/settings/billing"
                   className="mt-2 inline-block text-xs font-medium text-accent hover:text-accent/80"
                 >
-                  Start 14-day free trial →
+                  Go Premium →
                 </Link>
               </div>
             </div>

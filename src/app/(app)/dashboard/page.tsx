@@ -16,13 +16,9 @@ import type { HeatmapDay } from "@/components/dashboard/activity-heatmap";
 import { WeekOverWeekCard } from "@/components/dashboard/week-over-week-card";
 import { TodaysSessionCard } from "@/components/dashboard/todays-session-card";
 import { loadTodaysSessionPayload } from "@/components/dashboard/todays-session-data";
-import { GoalsCard, type DashboardGoal } from "@/components/dashboard/goals-card";
-import { SplitTrendPanel, type TrendPoint } from "@/components/analytics/charts";
-import { SportComparisonGrid } from "@/components/dashboard/sport-comparison-grid";
+import { type TrendPoint } from "@/components/analytics/charts";
 import { PremiumTease } from "@/components/premium/premium-tease";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { FocusWeekCard } from "@/components/retention/focus-week-card";
-import { NextRankCard } from "@/components/retention/next-rank-card";
 import { EmptyDashboardHero } from "@/components/retention/empty-dashboard-hero";
 import { InterferenceRadarCard } from "@/components/analytics/interference-radar-card";
 import { UpcomingRacesPanel } from "@/components/analytics/upcoming-races-panel";
@@ -48,14 +44,13 @@ import { formatPredictionLabel, formatShortPredictionLabel } from "@/lib/scoring
 import { RacePredictionsSync } from "@/lib/native/race-predictions-sync";
 import type { SplitIndexWidgetPayload } from "@/lib/native/race-predictions";
 import { computeStreakMetrics } from "@/lib/retention/streak-utils";
-import { getGlobalRankPercentile, getNextRankTarget, seedRetentionNotifications } from "@/lib/retention/rank";
 import { hasShowcaseAccess } from "@/lib/retention/trial";
-import { ACTIVATION_EVENT_SESSION_COUNT, PRICING } from "@/lib/pricing/config";
 import { computeSplitIndexProjection } from "@/lib/premium/projection";
 import { gateAiFeedback } from "@/lib/scoring/gates";
 import { formatIndex, formatTrend } from "@/lib/utils/format";
 import { cn } from "@/lib/utils/cn";
 import type { SplitIndexSnapshot, SportType } from "@/types";
+import { seedRetentionNotifications } from "@/lib/retention/rank";
 
 const DAY_MS = 86400000;
 const HEATMAP_DAYS = 112;
@@ -154,7 +149,6 @@ export default async function DashboardPage() {
     { data: loadActivities },
     { data: scores },
     { data: aiFeedback },
-    { data: goals },
   ] = await Promise.all([
     /*
       The athlete's current index — ordered exactly as
@@ -233,12 +227,6 @@ export default async function DashboardPage() {
       .order("created_at", { ascending: false })
       .limit(1)
       .single(),
-    supabase
-      .from("goals")
-      .select("id, title, target_split_index, deadline, completed")
-      .eq("user_id", user.id)
-      .order("deadline", { ascending: true, nullsFirst: false })
-      .limit(10),
   ]);
 
   // Best-ever SBD total for the home page's lift strip (Slice 7)
@@ -413,9 +401,6 @@ export default async function DashboardPage() {
   */
   const indexIsProvisional = hasIndexHistory && latestIndex!.is_provisional === true;
   const showIndexHero = hasActivities || hasIndexHistory;
-  const sessionCount = allActivityDates?.length ?? 0;
-  const showActivationPaywall =
-    !premium && sessionCount >= ACTIVATION_EVENT_SESSION_COUNT;
   const streakMetrics = computeStreakMetrics(
     (allActivityDates ?? []).map((a) => a.started_at as string),
     new Date(),
@@ -586,16 +571,11 @@ export default async function DashboardPage() {
         session made that older session "current". It now recomputes from the
         newest surviving row (migration 054).
   */
-  const rankPercentile =
-    hasActivities && hasIndexHistory
-      ? await getGlobalRankPercentile(supabase, headlineValue)
-      : null;
-
-  const nextRankTarget =
-    premium && hasActivities && hasIndexHistory
-      ? await getNextRankTarget(supabase, headlineValue)
-      : null;
-
+  /*
+    `rankPercentile` and `nextRankTarget` were awaited here for the rank cards
+    that are gone. Two database round trips on every dashboard render, for
+    numbers nothing draws.
+  */
   const indexGap = current.endurance_index - current.strength_index;
   const weakerSide: "endurance" | "strength" | "balanced" =
     indexGap < -15 ? "endurance" : indexGap > 15 ? "strength" : "balanced";
@@ -746,16 +726,13 @@ export default async function DashboardPage() {
 
       {hasActivities && <InterferenceRadarCard report={interferenceReport} />}
 
-      {showActivationPaywall && (
-        <PremiumTease
-          title={`Start your ${PRICING.TRIAL_DAYS}-day free trial`}
-          subtitle="You've logged a few sessions — see your full trend, projections, and AI coaching."
-          ctaLabel={`Start your ${PRICING.TRIAL_DAYS}-day free trial →`}
-          className="border border-accent/20"
-        >
-          <SplitTrendPanel data={trendData} />
-        </PremiumTease>
-      )}
+      {/*
+        CUT: the activation paywall that wrapped a second SplitTrendPanel.
+        The EngineLabTrendCard directly below already draws this athlete's
+        trend, so the page rendered the same chart twice — once as their data
+        and once as an advertisement for it. The upgrade route lives on the
+        cards that are actually gated.
+      */}
 
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
         <EngineLabTrendCard
@@ -839,31 +816,15 @@ export default async function DashboardPage() {
       */}
 
       {/*
-        THE PUSH ROW — the three cards that ask for something rather than
-        report something. Grouped so they read as one prompt instead of being
-        scattered through the analysis tail as they were.
-      */}
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-        {premium ? (
-          <NextRankCard target={nextRankTarget} currentPercentile={rankPercentile?.percentile ?? null} />
-        ) : (
-          <PremiumTease
-            title="Beat the next rank"
-            subtitle="Unlock Premium to see exactly how many points separate you from the athlete ahead."
-            className="h-full"
-          />
-        )}
-        <FocusWeekCard
-          weakerSide={weakerSide}
-          enduranceIndex={current.endurance_index}
-          strengthIndex={current.strength_index}
-        />
-        <GoalsCard
-          goals={(goals ?? []) as DashboardGoal[]}
-          currentIndex={hasIndexHistory ? current.split_index : 0}
-        />
-      </div>
+        CUT: the push row — a premium tease for "beat the next rank", the
+        focus-week card and the goals card.
 
+        All three asked the athlete for something on a screen they open to
+        find out what to do today. Two of the three were the second and third
+        upgrade prompt below the fold. Goals and weekly focus are planning,
+        and planning has the Hybrid Plan and /analytics; the rank nag is not
+        information at all.
+      */}
       {/* User feedback: "Move upcoming races further down on dashboard as
           it is not a key feature unless you can pull the race terrain and
           conditions for each event without the requirement of manual
@@ -902,12 +863,7 @@ export default async function DashboardPage() {
         week" is a right-now question and it exists nowhere else. It keeps
         `heatmapDays`, which is why that computation is still above.
       */}
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-        <WeekOverWeekCard days={heatmapDays} className="lg:col-span-1" />
-        <div className="lg:col-span-2">
-          <SportComparisonGrid scoresBySport={scoresBySport} />
-        </div>
-      </div>
+      <WeekOverWeekCard days={heatmapDays} />
 
       <RecentWorkouts activities={recentActivities ?? []} scores={scoreMap} />
 
