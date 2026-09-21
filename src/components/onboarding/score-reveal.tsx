@@ -11,32 +11,22 @@ import { tierForScore } from "@/lib/scoring/split-strength-engine";
 import { PRICING } from "@/lib/pricing/config";
 import { formatIndex } from "@/lib/utils/format";
 import { SPORTS } from "@/lib/constants/sports";
+import {
+  SBD_LIFTS,
+  buildCalibrationPayload,
+  canSubmitCalibration,
+  newCardioEntry,
+  newSbdState,
+  type CardioEntry,
+  type LiftKey,
+} from "@/components/onboarding/calibration-input";
 import type { SportType } from "@/types";
-
-const SBD_LIFTS: { key: "squat" | "bench" | "deadlift"; label: string }[] = [
-  { key: "squat", label: "Squat" },
-  { key: "bench", label: "Bench Press" },
-  { key: "deadlift", label: "Deadlift" },
-];
 
 const CARDIO_SPORT_OPTIONS = SPORTS.filter((s) => s.category === "endurance").map((s) => ({
   value: s.id,
   label: s.name,
 }));
 
-interface CardioEntry {
-  id: string;
-  sport: SportType;
-  distanceKm: string;
-  minutes: string;
-  seconds: string;
-}
-
-let cardioEntryCounter = 0;
-function newCardioEntry(sport: SportType = "running"): CardioEntry {
-  cardioEntryCounter += 1;
-  return { id: `cardio-${cardioEntryCounter}`, sport, distanceKm: "5", minutes: "25", seconds: "0" };
-}
 
 type Phase = "calculating" | "quick-input" | "revealing" | "trial-offer";
 
@@ -68,11 +58,7 @@ export function ScoreRevealSequence({ onDone }: ScoreRevealSequenceProps) {
   const [headline, setHeadline] = useState<number | null>(null);
   const [displayValue, setDisplayValue] = useState(0);
 
-  const [sbd, setSbd] = useState<Record<"squat" | "bench" | "deadlift", { weightKg: string; reps: string }>>({
-    squat: { weightKg: "", reps: "5" },
-    bench: { weightKg: "", reps: "5" },
-    deadlift: { weightKg: "", reps: "5" },
-  });
+  const [sbd, setSbd] = useState(newSbdState);
   const [cardioEntries, setCardioEntries] = useState<CardioEntry[]>([newCardioEntry()]);
 
   useEffect(() => {
@@ -95,15 +81,9 @@ export function ScoreRevealSequence({ onDone }: ScoreRevealSequenceProps) {
     return () => cancelAnimationFrame(raf);
   }, [phase, headline]);
 
-  const filledLifts = SBD_LIFTS.filter(
-    ({ key }) => Number(sbd[key].weightKg) > 0 && Number(sbd[key].reps) > 0
-  );
-  const completeCardioEntries = cardioEntries.filter(
-    (c) => Number(c.distanceKm) > 0 && Number(c.minutes) * 60 + Number(c.seconds) > 0
-  );
-  const canSubmitQuickInput = filledLifts.length > 0 || completeCardioEntries.length > 0;
+  const canSubmitQuickInput = canSubmitCalibration(sbd, cardioEntries);
 
-  const updateSbd = (key: "squat" | "bench" | "deadlift", field: "weightKg" | "reps", value: string) => {
+  const updateSbd = (key: LiftKey, field: "weightKg" | "reps", value: string) => {
     setSbd((prev) => ({ ...prev, [key]: { ...prev[key], [field]: value } }));
   };
 
@@ -115,19 +95,7 @@ export function ScoreRevealSequence({ onDone }: ScoreRevealSequenceProps) {
     setSubmitting(true);
     setError("");
 
-    const sbdPayload: Record<string, { weightKg: number; reps: number }> = {};
-    for (const { key } of filledLifts) {
-      sbdPayload[key] = { weightKg: Number(sbd[key].weightKg), reps: Number(sbd[key].reps) };
-    }
-
-    const payload = {
-      sbd: sbdPayload,
-      cardio: completeCardioEntries.map((c) => ({
-        sport: c.sport,
-        distanceMeters: Number(c.distanceKm) * 1000,
-        durationSeconds: Number(c.minutes) * 60 + Number(c.seconds),
-      })),
-    };
+    const payload = buildCalibrationPayload(sbd, cardioEntries);
 
     try {
       const res = await fetch("/api/onboarding/calibrate", {
@@ -171,8 +139,10 @@ export function ScoreRevealSequence({ onDone }: ScoreRevealSequenceProps) {
         <div>
           <p className="text-sm font-semibold">Enter a result to see your score</p>
           <p className="mt-1 text-xs text-muted">
-            Any combination works — a lift, a run, or several of each. This is stored as a
-            personal stat, not a logged workout, so it won&apos;t show up in your activity history.
+            Optional. Any combination works — a lift, a run, or several of each. This is
+            stored as a personal stat, not a logged workout, so it won&apos;t show up in your
+            activity history. Leave it blank and your index starts from your first real
+            session instead.
           </p>
         </div>
 
@@ -235,6 +205,7 @@ export function ScoreRevealSequence({ onDone }: ScoreRevealSequenceProps) {
                     type="number"
                     min={0}
                     step={0.1}
+                    placeholder="5"
                     value={entry.distanceKm}
                     onChange={(e) => updateCardioEntry(entry.id, { distanceKm: e.target.value })}
                     className="flex-[1.3]"
@@ -243,6 +214,7 @@ export function ScoreRevealSequence({ onDone }: ScoreRevealSequenceProps) {
                     label="Minutes"
                     type="number"
                     min={0}
+                    placeholder="25"
                     value={entry.minutes}
                     onChange={(e) => updateCardioEntry(entry.id, { minutes: e.target.value })}
                   />
@@ -251,6 +223,7 @@ export function ScoreRevealSequence({ onDone }: ScoreRevealSequenceProps) {
                     type="number"
                     min={0}
                     max={59}
+                    placeholder="00"
                     value={entry.seconds}
                     onChange={(e) => updateCardioEntry(entry.id, { seconds: e.target.value })}
                   />
@@ -280,6 +253,21 @@ export function ScoreRevealSequence({ onDone }: ScoreRevealSequenceProps) {
         >
           See your score
         </Button>
+        {/*
+          The escape this screen never had. Both sections say "optional", but
+          the only control was a button disabled until something was typed, so
+          an athlete who wanted to enter nothing had nowhere to go. Onboarding
+          has already saved the profile and set onboarding_completed before
+          this renders, so skipping costs a first estimate and nothing else.
+          Same wording and placement as the trial screen's own skip below.
+        */}
+        <button
+          type="button"
+          onClick={() => setPhase("trial-offer")}
+          className="mx-auto block text-sm text-muted underline underline-offset-2 hover:text-foreground"
+        >
+          Skip for now
+        </button>
       </Card>
     );
   }
