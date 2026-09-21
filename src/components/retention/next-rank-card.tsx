@@ -41,7 +41,7 @@ export function NextRankCard({ target, currentPercentile = null, className }: Ne
   const icon =
     target?.type === "peer" ? (
       <Swords className="h-3.5 w-3.5 text-muted" />
-    ) : target?.type === "standard" ? (
+    ) : target?.type === "standard" || target?.type === "unranked_pool" ? (
       <Target className="h-3.5 w-3.5 text-muted" />
     ) : (
       <Crown className="h-3.5 w-3.5 text-warning" />
@@ -51,7 +51,13 @@ export function NextRankCard({ target, currentPercentile = null, className }: Ne
     <Card className={cn("flex h-full flex-col", className)}>
       <CardHeader className="mb-2">
         <div className="flex items-center justify-between">
-          <CardTitle>{target?.type === "standard" ? "Reach The Next Tier" : "Beat The Next Rank"}</CardTitle>
+          <CardTitle>
+            {target?.type === "standard"
+              ? "Reach The Next Tier"
+              : target?.type === "unranked_pool"
+                ? "Where You Stand"
+                : "Beat The Next Rank"}
+          </CardTitle>
           {icon}
         </div>
         {currentPercentile !== null && (
@@ -126,6 +132,23 @@ export function NextRankCard({ target, currentPercentile = null, className }: Ne
             <p className="text-xs text-muted">
               Not enough athletes ranked yet for a peer target — this is measured against the
               published strength/endurance standard instead.
+            </p>
+          </>
+        ) : target?.type === "unranked_pool" ? (
+          /*
+            Top of the board, but the board is ten people. "You're #1" here is
+            the hollow crown this card's own comment says it exists to avoid —
+            it just had one way through: above the top standards tier there is
+            no tier left to offer, and the athlete fell into the crown branch.
+            Says what is true instead, and names the size of the field so the
+            claim can be weighed.
+          */
+          <>
+            <p className="text-2xl font-bold tracking-tight">Top of the board</p>
+            <p className="text-xs text-muted">
+              {target.poolSize <= 1
+                ? "You are the only ranked athlete so far, so there is nobody to place against yet."
+                : `Only ${target.poolSize} athletes are ranked so far — too few for a global placing to mean much yet.`}
             </p>
           </>
         ) : (

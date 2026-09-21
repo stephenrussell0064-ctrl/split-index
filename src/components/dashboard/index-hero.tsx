@@ -74,7 +74,7 @@ function SubIndex({
     <div className="min-w-0">
       <p className="micro-label text-muted/70">{label}</p>
       <p className={cn("index-display mt-0.5 text-xl font-bold tabular-nums", accentClass)}>
-        {value !== null ? formatIndex(value) : "—"}
+        {value !== null ? formatIndex(value) : "TBC"}
       </p>
       <p className="truncate text-[10px] leading-tight text-muted">{caption}</p>
     </div>
@@ -95,7 +95,22 @@ export function IndexHero({
   provisional = false,
 }: IndexHeroProps) {
   const reducedMotion = useReducedMotion();
-  const showScore = hasHistory && headlineValue !== null;
+  /*
+   * A provisional index does NOT count as a score.
+   *
+   * It is derived from the answers given at signup — training age, rough
+   * weekly volume, a self-reported lift — and nothing the athlete has
+   * actually done. It used to be shown as a number with "Estimated from your
+   * answers" underneath, which is honest labelling of a dishonest shape: the
+   * eye takes the 62 and not the caption, and the first thing a new athlete
+   * sees is a performance figure for training they have not done. Worse, it
+   * moves when they log their first real session, so the app appears to have
+   * marked them down for turning up.
+   *
+   * TBC is the truthful rendering. The number returns the moment there is a
+   * logged session behind it.
+   */
+  const showScore = hasHistory && headlineValue !== null && !provisional;
 
   return (
     <motion.div
@@ -145,9 +160,14 @@ export function IndexHero({
               </>
             ) : (
               <>
-                <p className="headline-tight mt-0.5 text-xl font-bold">Nothing scored yet</p>
-                <p className="mt-1 text-[11px] leading-tight text-muted">
-                  Log a session and your Split Index appears here.
+                <p className="index-display text-5xl font-bold leading-none tracking-tight sm:text-6xl">
+                  TBC
+                </p>
+                <p className="mt-1.5 text-[11px] leading-tight text-muted">
+                  Strength + endurance, out of 100
+                </p>
+                <p className="mt-0.5 text-[11px] font-medium leading-tight text-warning">
+                  Log an activity to calculate your Split Index score
                 </p>
               </>
             )}
@@ -200,13 +220,13 @@ export function IndexHero({
           <SubIndex
             label="Engine"
             caption="Endurance score"
-            value={engineIndex}
+            value={provisional ? null : engineIndex}
             accentClass="text-endurance"
           />
           <SubIndex
             label="Lab"
             caption="Strength score"
-            value={labIndex}
+            value={provisional ? null : labIndex}
             accentClass="text-strength"
           />
           <div className="min-w-0">

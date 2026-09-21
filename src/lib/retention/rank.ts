@@ -65,7 +65,22 @@ export function topPercent(percentile: number): number {
 
 export type NextRankTarget =
   | { type: "peer"; pointsToClose: number; nextIndex: number }
-  | { type: "standard"; pointsToClose: number; tierLabel: string };
+  | { type: "standard"; pointsToClose: number; tierLabel: string }
+  /*
+   * Nobody above, no tier left, and not enough athletes for either fact to
+   * mean anything.
+   *
+   * This case used to be `null`, which the card reads as "genuinely #1" and
+   * answers with a crown and "Nobody's ahead of you globally right now". Two
+   * conditions have to hold for that to be true and only one was being
+   * checked: the standards fallback covers an athlete who still has a tier to
+   * climb, but above the top tier it returns null as well, and the athlete
+   * dropped straight through to the crown — in a scored population of ten.
+   *
+   * Carrying the pool size makes the card say what is actually true: top of
+   * the board, and how small the board is.
+   */
+  | { type: "unranked_pool"; poolSize: number };
 
 /**
  * The nearest athlete ranked just above this one, and how many index points
@@ -102,9 +117,14 @@ export async function getNextRankTarget(
     .select("*", { count: "exact", head: true })
     .not("current_split_index", "is", null);
 
+  // A real, earned #1: nobody above, in a population big enough to mean it.
   if ((poolSize ?? 0) >= MIN_PEER_POOL) return null;
 
   const standard = nextStandardsTierTarget(userIndex);
+  if (!standard) {
+    // Top of a small board with no tier left to climb. Not a crown.
+    return { type: "unranked_pool", poolSize: poolSize ?? 0 };
+  }
   return standard
     ? { type: "standard", pointsToClose: standard.pointsToClose, tierLabel: standard.label }
     : null;
