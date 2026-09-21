@@ -40,6 +40,19 @@
  *
  * Enumerating them found three things the policy is silent on. See `GAPS`.
  *
+ * ## Both halves above test for silence, and silence is not the only way to be
+ * ## wrong
+ *
+ * Added 21 Sep 2026. A policy can also SAY something untrue, and on that date
+ * §2 said a tracked run's route stays on the athlete's phone while a simplified
+ * route polyline had been written to `activities.metadata` — and read by any
+ * accepted friend — since 13 Aug. Every check here passed on that sentence for
+ * a fortnight and was right to: the rule about location asks whether the policy
+ * mentions location, and it did, in the act of denying it.
+ *
+ * `CONTRADICTIONS` closes that third door. See the note on it for why the
+ * direction of the error is the part worth building a mechanism around.
+ *
  *   node scripts/check-privacy-coverage.mjs
  */
 
@@ -98,6 +111,73 @@ const RULES = [
 ];
 
 /**
+ * The other way a privacy policy goes wrong, and the way this check could not
+ * see until 21 Sep 2026.
+ *
+ * Everything above tests for SILENCE: the app collects something and the policy
+ * does not mention it. `TABLE_COVERAGE` closes the same question from the schema
+ * end. Between them they will find anything the policy fails to say.
+ *
+ * Neither can find something the policy says that is not true, and on 21 Sep the
+ * policy said this, in §2, about a tracked run:
+ *
+ *   "Your route itself stays on your device: the individual GPS fixes are
+ *    stored in the app's own storage so an interrupted run can be recovered,
+ *    and only a summary — distance, duration, pace and elevation gain — is
+ *    sent to us."
+ *
+ * A simplified route polyline has been written to `activities.metadata` since
+ * 5930379 (13 Aug 2026), and read by any accepted friend since. That sentence
+ * was written on 7 Sep — three weeks AFTER the thing it denies began happening —
+ * and every check here passed on it, correctly, for a fortnight: the rule about
+ * location asks whether the policy says "location" or "gps", and it says both,
+ * in the sentence denying it.
+ *
+ * The direction is the point. An omission understates what a reader knows; a
+ * false denial tells them a positive untruth about where their home address is,
+ * and it is the error a policy drifts INTO, because the reassuring sentence is
+ * the one nobody re-reads. Guideline 5.1.1(i) is about accuracy, not coverage.
+ *
+ * So: each rule below pairs evidence that the app DOES something with wording
+ * the policy therefore may not carry. `mustNotSay` phrases are lower-cased
+ * substrings of the normalised policy, and they are deliberately the
+ * reassuring paraphrases rather than one exact sentence — a check that pins the
+ * exact words is satisfied by rewording the same untruth.
+ *
+ * `evidence` is a path relative to the repo root, so a rule can point at the
+ * code that does the thing and not only at the schema; `null` means the
+ * concatenated migrations.
+ */
+export const CONTRADICTIONS = [
+  {
+    what: 'the simplified route polyline is stored server-side, in activities.metadata',
+    evidence: 'src/app/api/activities/route.ts',
+    pattern: /applyRoutePrivacyZone|sanitizeRoute/,
+    mustNotSay: [
+      'route itself stays on your device',
+      'route stays on your device',
+      'your route never leaves',
+      'only a summary — distance, duration, pace and elevation gain — is sent to us',
+      'we do not store your route',
+    ],
+    insteadSay:
+      'that a simplified route IS stored, that its first and last stretch are removed first, ' +
+      'and that a friend who can see the activity can see it',
+  },
+  {
+    what: 'a per-sample series is stored server-side for every tracked session (activity_streams)',
+    evidence: null,
+    pattern: /create table (?:if not exists )?(?:public\.)?activity_streams/i,
+    mustNotSay: [
+      'every heart-rate reading is discarded',
+      'we keep only the summary of a tracked session',
+      'the per-sample data never leaves your device',
+    ],
+    insteadSay: 'what the series holds, and that it holds no coordinates',
+  },
+];
+
+/**
  * Every user-linked table, and the clause of the policy that accounts for it.
  *
  * A table is "user-linked" when its definition references a user — `user_id`,
@@ -133,6 +213,14 @@ export const TABLE_COVERAGE = {
   training_goal_progress: 'training goals',
   goals: 'training goals',
   leaderboard_entries: 'leaderboard participation',
+
+  // Run analysis — §2's own bullet, written 21 Sep 2026 when 078 and 079
+  // landed. Two tables, two clauses, for the same reason the administrator pair
+  // have two: the series is *what was recorded moment by moment*, the best
+  // efforts are *what we concluded from it and keep*, and either paragraph
+  // could be deleted without the other. One phrase would let half of it go.
+  activity_streams: 'the per-sample series the analysis is built from',
+  activity_best_efforts: 'your fastest stretch at each standard distance',
 
   // Identity.
   profiles: 'profile details',
@@ -286,9 +374,39 @@ export function tablesIn(schema) {
   return found;
 }
 
+/**
+ * Which contradiction rules fire, given a normalised policy.
+ *
+ * Split out and exported so the suite can assert the mechanism by mutation —
+ * feed it the sentence that was in the policy on 21 Sep 2026 and require a
+ * failure — without needing the real policy to be wrong to prove it works.
+ *
+ * `readSource` is injected for the same reason: a rule's evidence is a file in
+ * the repo, and a test needs to say "suppose that file no longer did this".
+ */
+export function contradictionsIn(policy, readSource = (rel) => readFileSync(join(ROOT, rel), 'utf8')) {
+  const found = [];
+  for (const rule of CONTRADICTIONS) {
+    let evidence;
+    try {
+      evidence = rule.evidence === null ? migrationsText() : readSource(rule.evidence);
+    } catch {
+      // The file is gone. That is a real answer — the app no longer does this —
+      // and the rule stands down rather than failing on its own plumbing.
+      continue;
+    }
+    if (!rule.pattern.test(evidence)) continue; // The app does not do it.
+    const said = rule.mustNotSay.filter((phrase) => policy.includes(phrase));
+    if (said.length) found.push({ rule, said });
+  }
+  return found;
+}
+
 function main() {
   const schema = migrationsText();
   const policy = normalisePolicy(readFileSync(POLICY, 'utf8'));
+
+  const contradictions = contradictionsIn(policy);
 
   const gaps = [];
   let checked = 0;
@@ -329,15 +447,38 @@ function main() {
 
   const openGaps = [...tablesIn(schema).keys()].filter((t) => t in GAPS);
 
-  if (gaps.length === 0 && unaccounted.length === 0 && clauseMissing.length === 0 && openGaps.length === 0) {
+  if (
+    gaps.length === 0 &&
+    unaccounted.length === 0 &&
+    clauseMissing.length === 0 &&
+    openGaps.length === 0 &&
+    contradictions.length === 0
+  ) {
     process.stdout.write(
-      `privacy policy covers all ${checked} categories and accounts for all ${userLinked} ` +
-        `user-linked tables in the schema\n`,
+      `privacy policy covers all ${checked} categories, accounts for all ${userLinked} ` +
+        `user-linked tables in the schema, and denies none of the ${CONTRADICTIONS.length} ` +
+        `things the app is doing\n`,
     );
     process.exit(0);
   }
 
   let out = '\n';
+
+  if (contradictions.length) {
+    out +=
+      `The policy says something the code contradicts. This is worse than a gap:\n` +
+      `a reader is told a positive untruth, and in every case here the untruth is\n` +
+      `the reassuring one.\n\n` +
+      contradictions
+        .map(
+          ({ rule, said }) =>
+            `  · ${rule.what}\n` +
+            said.map((p) => `    policy still says: "${p}"\n`).join('') +
+            `    it should instead say ${rule.insteadSay}\n`,
+        )
+        .join('') +
+      '\n';
+  }
 
   if (gaps.length) {
     out +=

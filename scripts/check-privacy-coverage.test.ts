@@ -5,9 +5,11 @@ import { describe, expect, it } from "vitest";
 import {
   tablesIn,
   normalisePolicy,
+  contradictionsIn,
   POLICY,
   TABLE_COVERAGE,
   GAPS,
+  CONTRADICTIONS,
 } from "./check-privacy-coverage.mjs";
 
 /*
@@ -204,5 +206,88 @@ describe("the enumerated gaps are now disclosures", () => {
     // nothing about that until 13 Sep; art. 17 says it should.
     const policy = normalisePolicy(readFileSync(POLICY, "utf8"));
     expect(policy).toContain("outlive a deletion");
+  });
+});
+
+/*
+ * Saying something untrue, which is the failure everything above is blind to.
+ *
+ * On 21 Sep 2026 §2 said "Your route itself stays on your device ... only a
+ * summary is sent to us". A simplified route polyline had been written to
+ * activities.metadata since 13 Aug and read by any accepted friend since. The
+ * sentence was written on 7 Sep, three weeks after the thing it denied started
+ * happening, and every check in this file passed on it — the location rule asks
+ * whether the policy says "location" or "gps", and it said both, inside the
+ * denial.
+ *
+ * These assertions are about the mechanism that sees it, and they are written as
+ * mutations rather than as assertions about the current policy: a test that only
+ * checks today's wording passes for the same reason the old check did.
+ */
+describe("catching a denial of something the app does", () => {
+  const ROUTE_RULE = "src/app/api/activities/route.ts";
+
+  it("THE FAULT: the sentence that was live on 21 Sep 2026 fails", () => {
+    const asItWas = normalisePolicy(
+      "<li>Your route itself stays on your device: the individual GPS fixes are " +
+        "stored in the app&apos;s own storage so an interrupted run can be recovered, " +
+        "and only a summary is sent to us.</li>",
+    );
+    const found = contradictionsIn(asItWas);
+    expect(found.map((f) => f.rule.evidence)).toContain(ROUTE_RULE);
+  });
+
+  it("the real policy denies nothing the code does", () => {
+    // The same assertion the check makes, in the suite — so a reassuring
+    // rewrite fails `pnpm test` rather than a dashboard milestone hours later.
+    const policy = normalisePolicy(readFileSync(POLICY, "utf8"));
+    expect(contradictionsIn(policy)).toEqual([]);
+  });
+
+  it("a rule stands down when the app stops doing the thing", () => {
+    /*
+     * The failure mode of a mustNotSay rule is that it outlives its evidence and
+     * forbids a sentence that has become true again. If the route ever stops
+     * being persisted, saying so must be allowed — so the rule is conditioned on
+     * the code, not on the calendar.
+     */
+    const asItWas = normalisePolicy("<p>Your route itself stays on your device.</p>");
+    const noEvidence = contradictionsIn(asItWas, () => "// nothing here writes a route");
+    expect(noEvidence.map((f) => f.rule.evidence)).not.toContain(ROUTE_RULE);
+  });
+
+  it("forbids the paraphrase, not one exact sentence", () => {
+    /*
+     * A check pinned to the exact wording is satisfied by rewording the same
+     * untruth, which is precisely how a policy drifts. Each rule has to offer
+     * more than one way of saying it.
+     */
+    for (const rule of CONTRADICTIONS) {
+      expect(rule.mustNotSay.length, rule.what).toBeGreaterThan(1);
+      for (const phrase of rule.mustNotSay) {
+        expect(phrase, rule.what).toBe(phrase.toLowerCase());
+        expect(phrase.trim().split(/\s+/).length, phrase).toBeGreaterThan(2);
+      }
+    }
+  });
+
+  it("each rule says what to write instead, not just what is banned", () => {
+    // A failure that only forbids leaves the writer guessing, and guessing at a
+    // privacy disclosure is how the wrong one gets written.
+    for (const rule of CONTRADICTIONS) {
+      expect(rule.insteadSay.length, rule.what).toBeGreaterThan(30);
+      expect(rule.what.length).toBeGreaterThan(20);
+    }
+  });
+
+  it("the policy now states the two things that denial was hiding", () => {
+    /*
+     * Named rather than counted. The route IS stored, and it is trimmed at both
+     * ends — a reader needs both, because the first without the second reads
+     * worse than the truth and the second without the first is meaningless.
+     */
+    const policy = normalisePolicy(readFileSync(POLICY, "utf8"));
+    expect(policy).toContain("a real record of where you went, and we store it");
+    expect(policy).toContain("never begins or ends at your front door");
   });
 });

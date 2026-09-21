@@ -74,14 +74,37 @@ export default function PrivacyPolicyPage() {
                   <strong>Location data (mobile apps):</strong> when you start a tracked
                   outdoor session, we use your device&apos;s precise location, including
                   while the app is in the background or your phone is locked, so tracking
-                  survives a pocketed phone. Your route itself stays on your device: the
-                  individual GPS fixes are stored in the app&apos;s own storage so an
-                  interrupted run can be recovered, and only a summary — distance,
-                  duration, pace and elevation gain — is sent to us. The one exception is
-                  the coordinate a session starts at, which is sent so we can look up the
-                  temperature at the time; it is used for that and not stored as part of
-                  your activity. We never collect location when a session is not running,
-                  and you can refuse or revoke the permission in your device settings.
+                  survives a pocketed phone. The individual GPS fixes stay on your device,
+                  in the app&apos;s own storage, so an interrupted run can be recovered —
+                  we never receive them. What we do receive is the session summary
+                  (distance, duration, pace and elevation gain) and a simplified route, so
+                  the run can be drawn on a map. That route is a real record of where you
+                  went, and we store it. Before it is written we remove the first and the
+                  last stretch of the run, so a stored route never begins or ends at your
+                  front door; the honest limit of that is worth stating, because it hides
+                  your start and your finish and not every moment you were near home — a
+                  loop that passes the house at halfway still shows that passage. An
+                  athlete you have accepted as a friend can see the stored route wherever
+                  they can see the activity itself. The one other thing we receive is the
+                  coordinate a session starts at, sent so we can look up the temperature at
+                  the time; it is used for that and not stored as part of your activity. We
+                  never collect location when a session is not running, and you can refuse
+                  or revoke the permission in your device settings.
+                </li>
+                <li>
+                  <strong>Run analysis and best efforts (mobile apps):</strong> for a
+                  GPS-tracked session we also store the per-sample series the analysis is
+                  built from — for each sample, how far into the run it was in moving
+                  seconds and cumulative metres, and the altitude, heart rate and cadence
+                  recorded at that point. It holds no coordinates: it records how far along
+                  the run you were, never where you were. From it we store your best
+                  efforts — your fastest stretch at each standard distance in that session,
+                  and when it happened — which is what lets the app tell you a run was your
+                  fastest ever. We record both for every athlete, whether or not you are
+                  subscribed, so that the analysis is there for the runs you logged before
+                  you subscribed rather than a hole in your history. Both are visible only
+                  to you: they are not shown to friends, do not appear on any leaderboard,
+                  and are deleted with the activity they belong to.
                 </li>
                 <li>
                   <strong>Motion and fitness sensors (mobile apps):</strong> step counts
@@ -374,9 +397,12 @@ export default function PrivacyPolicyPage() {
                 You can delete your account yourself, from Settings in the app or on the
                 website — you do not need to email us or ask permission. Deleting removes
                 your account and the data held against it, including your activities, your
-                health screening answers and your profile. GPS fixes from a tracked session
-                are held in the app&apos;s own storage on your device; removing the app
-                deletes those with it.
+                health screening answers and your profile. Everything we hold about a
+                tracked session goes with that activity — its stored route, its per-sample
+                series and its best efforts — because each is attached to the activity and
+                deleted with it. The raw GPS fixes are the one part we never held: they sit
+                in the app&apos;s own storage on your device, and removing the app deletes
+                those with it.
               </p>
               <p className="mt-3">
                 Deleting your Split Index account does not cancel a subscription bought
