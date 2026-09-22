@@ -459,9 +459,9 @@ const WEIGHT_RATIO_ANCHOR_TABLES: Partial<Record<string, WeightAnchor[]>> = {
    * fifth time, that is the thing to question rather than the number.
    */
   bench: [
-    [44 / REFERENCE_BODYWEIGHT_KG, 150],
-    [65 / REFERENCE_BODYWEIGHT_KG, 400],
-    [92 / REFERENCE_BODYWEIGHT_KG, 650],
+    [40 / REFERENCE_BODYWEIGHT_KG, 150],
+    [59 / REFERENCE_BODYWEIGHT_KG, 400],
+    [84 / REFERENCE_BODYWEIGHT_KG, 650],
     [132 / REFERENCE_BODYWEIGHT_KG, 850],
     [169 / REFERENCE_BODYWEIGHT_KG, 950],
   ],
@@ -570,7 +570,7 @@ const ACCESSORY_MAP: Record<string, LiftAnchor> = {
   // an isolation movement most people load conservatively and stop well short
   // of failure on, so anchoring it near two fifths of bodyweight asked an
   // ordinary lifter for a stack they would never reasonably pick.
-  cableFly: { anchorRatio: 0.34, category: "chest", bodyPart: "upperBody" },
+  cableFly: { anchorRatio: 0.28, category: "chest", bodyPart: "upperBody" },
   pecDeck: { anchorRatio: 0.8583, category: "chest", bodyPart: "upperBody" },
   // Calibrated (user feedback: 95kg x8 should score ~700, 125kg x8 should
   // score ~875 — "Tricep Press" had no anchor at all before this, so it was

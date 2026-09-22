@@ -217,8 +217,9 @@ describe("rep-based sessions are untouched", () => {
       exercise("Barbell Row", "Back", [lift(80, 8)], 2),
     ]);
     // 787 -> 828 in the Strength-Level anchor-table pass, 828 -> 759 in the
-    // estimator pass, and 759 -> 765 when bench's bottom three anchors were
-    // eased on 22 Sep 2026 (this session has a bench in it). This assertion is what it says on the describe
+    // estimator pass, and 759 -> 765 -> 769 across the two
+    // passes that eased bench's bottom three anchors on 22 Sep 2026 (this
+    // session has a bench in it). This assertion is what it says on the describe
     // block — a guard that the HOLD/CARRY work leaves rep-based sessions
     // alone — and that still holds: nothing in the hold/carry path moved it
     // either time. The number itself is a calibration snapshot, re-taken
@@ -231,7 +232,7 @@ describe("rep-based sessions are untouched", () => {
     // of these lifts are five-to-eight-rep barbell sets, so all three drop:
     // Squat 140x5 and Bench 100x5 lose the 1.1667x/1.06 stack for Strength
     // Level's own 1.1236x, Barbell Row 80x8 loses 1.2667x/1.06 for 1.2346x.
-    expect(result.sportIndex).toBe(765);
+    expect(result.sportIndex).toBe(769);
     expect(result.strengthActivities).toHaveLength(3);
     expect(result.strengthActivities?.every((r) => r.oneRM > 0)).toBe(true);
   });

@@ -39,13 +39,13 @@ describe("scoreStrength — bench/deadlift corrected anchors (Part G, re-anchore
     expect(result.tier).toBe("Elite");
   });
 
-  it("bench matches the re-anchored table exactly (bottom three eased 22 Sep; top two still untouched)", () => {
+  it("bench matches the re-anchored table exactly (bottom three eased twice on 22 Sep; top two still untouched)", () => {
     // Eased from 47/70/98 so an ordinary 83 kg lifter benching 75 kg reads 49.3
     // rather than 44.5. The top two are deliberately unchanged — moving them
     // too would have made 132 kg Elite at about 121.
-    expect(scoreAtOneRM("bench", 44).score).toBeCloseTo(150, 0);
-    expect(scoreAtOneRM("bench", 65).score).toBeCloseTo(400, 0);
-    expect(scoreAtOneRM("bench", 92).score).toBeCloseTo(650, 0);
+    expect(scoreAtOneRM("bench", 40).score).toBeCloseTo(150, 0);
+    expect(scoreAtOneRM("bench", 59).score).toBeCloseTo(400, 0);
+    expect(scoreAtOneRM("bench", 84).score).toBeCloseTo(650, 0);
     expect(scoreAtOneRM("bench", 132).score).toBeCloseTo(850, 0); // raised from 725 — now the Elite boundary
     expect(scoreAtOneRM("bench", 169).score).toBeCloseTo(950, 0); // raised from 850 — deep into World Class
   });
