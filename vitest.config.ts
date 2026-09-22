@@ -1,5 +1,21 @@
 import { defineConfig } from "vitest/config";
 import path from "node:path";
+import os from "node:os";
+
+/**
+ * Cores left free for everything that is not this test run.
+ *
+ * Two, because that is what the 9 Sep 2026 audit found was needed: see the
+ * note on `maxWorkers` below for the mechanism.
+ */
+const RESERVED_CORES = 2;
+
+/**
+ * `os.cpus()` returns an empty array on some container runtimes rather than
+ * throwing, which would otherwise compute a worker count of 1 by accident
+ * rather than on purpose. One is the right answer there either way.
+ */
+const AVAILABLE_CORES = os.cpus().length || 1;
 
 export default defineConfig({
   resolve: {
@@ -27,7 +43,18 @@ export default defineConfig({
   },
   test: {
     /*
-      Capped below the machine's core count (10 here) rather than left at
+      DERIVED from the core count, not hardcoded to one machine's.
+
+      This was `maxWorkers: 8` — two below the 10 cores of the box the fix was
+      written on, which is the right *rule* expressed as the wrong *number*.
+      CI runners have 4 cores, so 8 asked for two workers per core: the exact
+      oversubscription this setting exists to prevent, on the one host where
+      nobody is watching the run. `scripts/check-test-pool-headroom.test.ts`
+      caught it and had been failing every CI run since — which is worse than
+      the saturation itself, because a suite that is always red stops being
+      read at all.
+
+      Capped below the machine's core count rather than left at
       Vitest's default of "one worker per core". Uncapped, the full suite
       saturates every core at once, and leaves zero scheduling headroom for
       anything else running on the same box — including another Claude
@@ -51,7 +78,7 @@ export default defineConfig({
       resolved value so a future edit can't reintroduce either mistake
       unnoticed.
     */
-    maxWorkers: 8,
+    maxWorkers: Math.max(1, AVAILABLE_CORES - RESERVED_CORES),
     /*
       The application's own tests, and nothing else.
 
