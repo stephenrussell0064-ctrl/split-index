@@ -326,6 +326,55 @@ async function cmdAutomationGet(id) {
   out(await req("GET", `/automations/${id}`));
 }
 
+/**
+ * Delete automations, by explicit id only.
+ *
+ * There is no undo and no list-what-I-deleted afterwards, so this refuses two
+ * things that a bulk cleanup gets wrong: it will not touch an automation whose
+ * status is `active` without --include-active, and it will not accept a bare
+ * "delete everything paused" — ids are always named on the command line. The
+ * account reached 24 automations in an afternoon precisely because creating
+ * them is cheap, and the cleanup that follows is where the live one gets
+ * caught by accident.
+ *
+ * Each id is fetched before it is deleted so the title and status can be
+ * printed. That read is the point: it is the last chance to notice that the id
+ * in the list is not the automation you meant.
+ */
+async function cmdAutomationDelete(ids, flags) {
+  if (!ids || ids.length === 0) {
+    die("Usage: rf.mjs automation:delete <automation_id> [<id>...] [--include-active] [--dry-run]");
+  }
+
+  const targets = [];
+  for (const id of ids) {
+    const a = await req("GET", `/automations/${id}`);
+    targets.push({ id, title: a?.title ?? "(no title)", status: a?.status ?? "unknown" });
+  }
+
+  const live = targets.filter((t) => t.status === "active");
+  if (live.length > 0 && !flags["include-active"]) {
+    die(
+      [
+        "Refusing — these are ACTIVE and would stop posting:",
+        ...live.map((t) => `  ${t.id}  ${t.title}`),
+        "",
+        "Pause them first, or pass --include-active if that is genuinely intended.",
+      ].join("\n"),
+    );
+  }
+
+  for (const t of targets) {
+    if (flags["dry-run"]) {
+      console.log(`would delete  ${t.id}  [${t.status}]  ${t.title}`);
+      continue;
+    }
+    await req("DELETE", `/automations/${t.id}`);
+    console.log(`deleted  ${t.id}  [${t.status}]  ${t.title}`);
+  }
+  if (flags["dry-run"]) console.log(`\n${targets.length} would be deleted. Re-run without --dry-run.`);
+}
+
 async function cmdAutomationHooks(id, flags) {
   if (!id) die("Usage: rf.mjs automation:hooks <automation_id> [--batch gym] [--cold] [--field short]");
   const selected = selectHooks(flags);
@@ -502,6 +551,7 @@ const USAGE = `ReelFarm CLI — Split Index
                                            payload's post_mode is DIRECT_POST
   automation:list
   automation:get <id>
+  automation:delete <id> [<id>...] [--dry-run] [--include-active]
   automation:hooks <id> [--batch gym]      PATCH slideshow_hooks from the library
   automation:run <id> [--hook-id gym-15]   one-off generation (--mode draft_only default)
 
@@ -528,6 +578,7 @@ async function main() {
     case "automation:create": return cmdAutomationCreate(positional[0], flags);
     case "automation:list": return cmdAutomationList();
     case "automation:get": return cmdAutomationGet(positional[0]);
+    case "automation:delete": return cmdAutomationDelete(positional, flags);
     case "automation:hooks": return cmdAutomationHooks(positional[0], flags);
     case "automation:run": return cmdAutomationRun(positional[0], flags);
     case "videos": return cmdVideos(flags);
