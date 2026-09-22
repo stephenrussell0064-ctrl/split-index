@@ -252,6 +252,46 @@ describe("five-persona functionality test", () => {
     }
   });
 
+  /*
+   * THE CAPTURE CONTRACT — an assertion about a marketing asset, not about
+   * the engine.
+   *
+   * A screenshot is a surface that resolves a session's reason, and unlike
+   * every other such surface it ships to Apple rather than to a test runner,
+   * with no assertion behind it. Diffing the PNG would be the obvious guard
+   * and is a trap: it fails on every legitimate redesign, which teaches people
+   * to regenerate the baseline without looking at it.
+   *
+   * Asserting the PERSONA instead catches the thing that actually matters —
+   * the capture has become unsafe — without coupling to pixels, and fails for
+   * a reason a human can act on.
+   *
+   * Note what this does NOT say: that the baseline share should stay 0 for
+   * everyone. Widening finding coverage is the good direction. It says that if
+   * the persona behind a committed capture starts rendering baseline cards,
+   * somebody has to look at the capture. See `traceability-claim.test.ts` for
+   * the claim this protects, and the note on PERSONAS above for the numbers.
+   */
+  it("the persona used for App Store captures still renders no baseline sessions", () => {
+    const capture = plans.find((p) => p.name === "Hybrid athlete, dual event");
+    expect(
+      capture,
+      "the App Store capture persona was renamed or removed — see the note on PERSONAS above"
+    ).toBeDefined();
+
+    const sessions = capture!.plan.weeks.flatMap((w) => w.sessions);
+    const baseline = sessions.filter((s) => s.findingId === "hybrid-baseline");
+
+    expect(
+      baseline.length,
+      `The persona used for App Store captures now renders ${baseline.length} of ${sessions.length} sessions ` +
+        `as baseline — cards reading "not answering a specific finding about you". ` +
+        `docs/pre-launch/app-store-screenshots/source/06hybridplan.png was rendered from this persona and ` +
+        `may now show that text on the listing. Recapture from a persona with full finding coverage, or ` +
+        `change which persona the capture uses. Do not relax this assertion.`
+    ).toBe(0);
+  });
+
   it("no plan emits calorie, macro or weight-loss output for anyone", () => {
     for (const { name, plan } of plans) {
       const all = JSON.stringify(plan).toLowerCase();
