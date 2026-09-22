@@ -119,3 +119,33 @@ describe("no two pbxproj objects share an id", () => {
     expect(dangling).toEqual([]);
   });
 });
+
+/**
+ * The app and its widget extension must ship the same version.
+ *
+ * App Store Connect rejects a bundle whose extension disagrees with its host on
+ * `CFBundleShortVersionString`, and the project sets that from
+ * `MARKETING_VERSION` in four places — App Debug, App Release, Widgets Debug,
+ * Widgets Release. Bumping two of the four is the easy mistake, and it is not
+ * visible until the upload fails.
+ *
+ * NOT asserted here: which version is correct. This file cannot know what
+ * App Store Connect has already approved — 1.0 being closed to new builds is a
+ * fact about their servers, not about this repo. All that is checkable locally
+ * is that the four agree with each other.
+ */
+describe("the iOS version is set consistently across every target", () => {
+  const project = readFileSync(PBXPROJ, "utf8");
+
+  it("gives all four build configurations the same MARKETING_VERSION", () => {
+    const versions = [...project.matchAll(/MARKETING_VERSION = ([^;]+);/g)].map((m) => m[1].trim());
+    expect(versions.length, "expected four MARKETING_VERSION settings").toBe(4);
+    expect(new Set(versions).size, `they disagree: ${versions.join(", ")}`).toBe(1);
+  });
+
+  it("gives all four the same CURRENT_PROJECT_VERSION", () => {
+    const builds = [...project.matchAll(/CURRENT_PROJECT_VERSION = ([^;]+);/g)].map((m) => m[1].trim());
+    expect(builds.length).toBe(4);
+    expect(new Set(builds).size, `build numbers disagree: ${builds.join(", ")}`).toBe(1);
+  });
+});
