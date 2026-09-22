@@ -678,13 +678,21 @@ const ACCESSORY_MAP: Record<string, LiftAnchor> = {
   // there is no Strength Level table for Hammer Strength machines — so treat
   // them the same way as this file's other documented estimates and refine
   // as real logged data accumulates.
-  isoLateralRow: { anchorRatio: 1.59, category: "back", bodyPart: "pull" },
-  isoLateralPulldown: { anchorRatio: 1.325, category: "back", bodyPart: "pull" },
-  isoLateralChestPress: { anchorRatio: 1.205, category: "chest", bodyPart: "upperBody" },
-  isoLateralShoulderPress: { anchorRatio: 0.771, category: "shoulders", bodyPart: "upperBody" },
-  isoLateralLegPress: { anchorRatio: 2.41, category: "legs", bodyPart: "lowerBody" },
-  isoLateralLegExtension: { anchorRatio: 0.964, category: "legs", bodyPart: "lowerBody" },
-  isoLateralLegCurl: { anchorRatio: 0.771, category: "legs", bodyPart: "lowerBody" },
+  isoLateralRow: { anchorRatio: 1.47, category: "back", bodyPart: "pull" },
+  isoLateralPulldown: { anchorRatio: 1.22, category: "back", bodyPart: "pull" },
+  isoLateralChestPress: { anchorRatio: 1.11, category: "chest", bodyPart: "upperBody" },
+  isoLateralShoulderPress: { anchorRatio: 0.71, category: "shoulders", bodyPart: "upperBody" },
+  /*
+   * The whole isoLateral* family eased about 18% on 22 Sep 2026. Every one of
+   * them was anchored harder than its own non-iso equivalent — isoLateralRow
+   * asked 132 kg where dbRow asked 37.5, a gap no lifter would recognise.
+   * These are plate-loaded machines whose loading is read off the sled, and
+   * the anchors appear to have been set from the sled rather than from what
+   * the athlete moves.
+   */
+  isoLateralLegPress: { anchorRatio: 2.23, category: "legs", bodyPart: "lowerBody" },
+  isoLateralLegExtension: { anchorRatio: 0.89, category: "legs", bodyPart: "lowerBody" },
+  isoLateralLegCurl: { anchorRatio: 0.71, category: "legs", bodyPart: "lowerBody" },
 };
 
 /**
