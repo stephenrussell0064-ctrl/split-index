@@ -27,6 +27,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { DIAGNOSTIC_RERUN_WEEKS, EMPHASIS_KEYS, type EmphasisKey } from "./constants";
 import { compareEmphasis, type EmphasisDrift } from "./progression";
+import { HYBRID_BASELINE_FINDING } from "./session-set";
 import type { AthleteProfile, EmphasisVector, Finding, FindingId } from "./types";
 import type { PlanWeek } from "./engine";
 import type { Goal, Constraints } from "./intake";
@@ -210,21 +211,22 @@ export async function saveProfile(
   // Sessions that exist to keep the hybrid balanced rather than to answer a
   // specific finding still need something to point at, or they cannot be
   // stored at all. This is a real, readable rationale, not a null in disguise.
-  if (!findingIds.has("hybrid-baseline")) {
+  //
+  // The body comes from `HYBRID_BASELINE_FINDING` rather than a literal here,
+  // so the text the database stores and the text the plan screen renders are
+  // the same object. They were not, and the screen had no copy of this at all.
+  if (!findingIds.has(HYBRID_BASELINE_FINDING.id)) {
     const { data: baseline } = await supabase
       .from("hpe_findings")
       .insert({
         profile_id: profileId,
-        finding_key: "hybrid-baseline",
-        body:
-          "Baseline hybrid coverage. This session is not answering a specific finding about you — it is here so " +
-          "that no movement pattern and neither side of the hybrid goes untrained while your priorities get the " +
-          "rest of the week.",
+        finding_key: HYBRID_BASELINE_FINDING.id,
+        body: HYBRID_BASELINE_FINDING.text,
         ordinal: profile.findings.length,
       })
       .select("id, finding_key")
       .single();
-    if (baseline) findingIds.set("hybrid-baseline", baseline.id as string);
+    if (baseline) findingIds.set(HYBRID_BASELINE_FINDING.id, baseline.id as string);
   }
 
   return { profileId, findingIds };
@@ -413,12 +415,37 @@ export async function loadLatestStoredPlan(
 } | null> {
   const { data: plan } = await supabase
     .from("hpe_plans")
-    .select("id, generated_at, constants_version, weeks_out")
+    .select("id, profile_id, generated_at, constants_version, weeks_out")
     .eq("user_id", userId)
     .order("generated_at", { ascending: false })
     .limit(1)
     .maybeSingle();
   if (!plan) return null;
+
+  /*
+    THE FINDINGS THIS PLAN'S SESSIONS ACTUALLY POINT AT.
+
+    Read against the plan's OWN `profile_id`, not the athlete's latest profile.
+    A session's `finding_id` is a foreign key into the findings of the run that
+    prescribed it; resolving it against a newer run's findings is resolving it
+    against the wrong set, and after a four-weekly re-diagnosis that is the
+    ordinary case rather than an edge one.
+  */
+  const { data: findingRows } = await supabase
+    .from("hpe_findings")
+    .select("id, finding_key, body, ordinal")
+    .eq("profile_id", plan.profile_id as string)
+    .order("ordinal", { ascending: true });
+
+  /*
+    `hpe_sessions.finding_id` is a UUID (migration 039); the screen resolves
+    each session against findings keyed by SLUG. Sending the raw column made
+    every session on this path cite an id no finding had, so a paused plan
+    rendered "this session's diagnostic finding could not be loaded" on every
+    single card. The join back to the slug is the whole fix.
+  */
+  const slugByRowId = new Map<string, FindingId>();
+  for (const r of findingRows ?? []) slugByRowId.set(r.id as string, r.finding_key as FindingId);
 
   const { data: sessionRows } = await supabase
     .from("hpe_sessions")
@@ -454,7 +481,11 @@ export async function loadLatestStoredPlan(
         domain: r.domain,
         minutes: Number(r.minutes ?? 0),
         isQuality: Boolean(r.is_quality),
-        findingId: r.finding_id,
+        // Unresolvable only if the finding row is genuinely gone, which the
+        // ON DELETE RESTRICT forbids. Passing the raw id through in that case
+        // leaves the screen's "could not be loaded" message saying something
+        // true, rather than substituting a reason this session did not have.
+        findingId: slugByRowId.get(r.finding_id as string) ?? r.finding_id,
         emphasisKey: r.emphasis_key,
         prescription: { text: r.prescription },
       },
@@ -463,30 +494,26 @@ export async function loadLatestStoredPlan(
   }
 
   // The stored profile and its findings, so a paused plan still says why each
-  // session is there rather than rendering an unexplained calendar.
+  // session is there rather than rendering an unexplained calendar. The
+  // findings are the ones loaded above — the plan's own — so the ids the
+  // sessions now carry and the list they are resolved against are one set.
   const storedProfile = await loadLatestStoredProfile(supabase, userId);
-  let profile: {
+  const profile: {
     constantsVersion: string;
     tier: number;
     emphasis: EmphasisVector;
     findings: Finding[];
-  } | null = null;
-  if (storedProfile) {
-    const { data: findingRows } = await supabase
-      .from("hpe_findings")
-      .select("finding_key, body, ordinal")
-      .eq("profile_id", storedProfile.id)
-      .order("ordinal", { ascending: true });
-    profile = {
-      constantsVersion: storedProfile.constantsVersion,
-      tier: storedProfile.tier,
-      emphasis: storedProfile.emphasis,
-      findings: (findingRows ?? []).map((r) => ({
-        id: r.finding_key as FindingId,
-        text: r.body as string,
-      })) as Finding[],
-    };
-  }
+  } | null = storedProfile
+    ? {
+        constantsVersion: storedProfile.constantsVersion,
+        tier: storedProfile.tier,
+        emphasis: storedProfile.emphasis,
+        findings: (findingRows ?? []).map((r) => ({
+          id: r.finding_key as FindingId,
+          text: r.body as string,
+        })) as Finding[],
+      }
+    : null;
 
   return {
     generatedAt: plan.generated_at as string,

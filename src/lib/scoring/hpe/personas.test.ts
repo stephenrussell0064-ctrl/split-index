@@ -14,6 +14,7 @@ import { describe, expect, it } from "vitest";
 import { diagnose } from "./diagnostics";
 import { generatePlan } from "./engine";
 import { paceBandFor } from "./prescription";
+import { planFindingsById } from "./session-set";
 import { ACWR_BLOCK, type TrainingSplit } from "./constants";
 import { DEFAULT_SAFETY_FLAGS, type AthleteState, type Constraints, type Goal } from "./intake";
 import type { LiftSet, RunLog } from "./types";
@@ -211,9 +212,15 @@ describe("five-persona functionality test", () => {
 
   it("every session in every plan is traceable to a named finding", () => {
     for (const { name, plan, profile } of plans) {
-      const known = new Set([...profile.findings.map((f) => f.id), "hybrid-baseline"]);
+      // The screen's own lookup. See the note in engine.test.ts: the previous
+      // `∪ {"hybrid-baseline"}` here made the test broader than the render
+      // path and hid a session that said its reason could not be loaded.
+      const known = planFindingsById(profile.findings);
       for (const w of plan.weeks) {
-        for (const s of w.sessions) expect(known.has(s.findingId), `${name}/${s.kind}`).toBe(true);
+        for (const s of w.sessions) {
+          expect(known.has(s.findingId), `${name}/${s.kind}`).toBe(true);
+          expect(known.get(s.findingId)!.text, `${name}/${s.kind} cited an empty finding`).toMatch(/\S/);
+        }
       }
     }
   });

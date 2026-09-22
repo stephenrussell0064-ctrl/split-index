@@ -182,6 +182,45 @@ export function attributeFinding(emphasisKey: EmphasisKey, findings: Finding[]):
   return null;
 }
 
+/**
+ * The rationale behind a session that answers no finding in this athlete's own
+ * diagnosis — the reason every `?? "hybrid-baseline"` above points at.
+ *
+ * It lives here, as a `Finding`, because it was previously only a STRING
+ * LITERAL in `saveProfile` and an id in `FindingId`. `diagnose` never emits it,
+ * so it was never in `profile.findings`, so the plan screen — which resolves
+ * each session's id against exactly that array — could not resolve it and told
+ * the athlete their session's finding "could not be loaded" over a reason that
+ * was sitting in `hpe_findings` the whole time. One definition, read by the
+ * writer and the reader both, is what stops those two drifting again.
+ *
+ * Deliberately NOT appended to `profile.findings`: it is not a finding ABOUT
+ * the athlete, and the diagnostic report would then count it among the things
+ * the engine observed in their history. It is a reason a session exists, which
+ * is a different claim, and the only one non-negotiable #7 requires.
+ */
+export const HYBRID_BASELINE_FINDING: Finding = {
+  id: "hybrid-baseline",
+  text:
+    "Baseline hybrid coverage. This session is not answering a specific finding about you — it is here so " +
+    "that no movement pattern and neither side of the hybrid goes untrained while your priorities get the " +
+    "rest of the week.",
+};
+
+/**
+ * Every finding a prescribed session can cite, keyed by id.
+ *
+ * This is the lookup the plan screen must use. `profile.findings` alone is the
+ * athlete's diagnosis and is one entry short of the set the engine prescribes
+ * against; the difference is precisely the bug above. The athlete's own
+ * findings are written last so a real diagnosis always wins over the baseline.
+ */
+export function planFindingsById(findings: readonly Finding[]): Map<FindingId, Finding> {
+  const byId = new Map<FindingId, Finding>([[HYBRID_BASELINE_FINDING.id, HYBRID_BASELINE_FINDING]]);
+  for (const finding of findings) byId.set(finding.id, finding);
+  return byId;
+}
+
 // ---------------------------------------------------------------------------
 // Proportional allocation, largest remainder first
 // ---------------------------------------------------------------------------

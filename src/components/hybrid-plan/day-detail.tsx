@@ -4,7 +4,7 @@ import { SessionFeedbackControl } from "./session-feedback-control";
 import { useState } from "react";
 import { format, isToday, isTomorrow, isYesterday } from "date-fns";
 import { cn } from "@/lib/utils/cn";
-import type { Finding } from "@/lib/scoring/hpe";
+import type { Finding, FindingId } from "@/lib/scoring/hpe";
 import {
   exerciseLines,
   formatMinutes,
@@ -51,7 +51,8 @@ function SessionBlock({
   offsetDays,
 }: {
   session: PlanSessionView;
-  findingsById: Map<string, Finding>;
+  /** Built by `planFindingsById`, which is the athlete's diagnosis PLUS the baseline rationale. Keyed by slug, never by the `hpe_findings` row id. */
+  findingsById: Map<FindingId, Finding>;
   /** The one session of the day opens its reasoning by default; a second one does not, or the card becomes a wall. */
   defaultOpen: boolean;
   /** Days from today — negative in the past. Feedback is only offered once the day has arrived. */
@@ -189,9 +190,17 @@ function SessionBlock({
               </p>
             </>
           ) : (
-            // Should be unreachable: the database refuses a session without a
-            // finding. If it ever renders, say so plainly rather than showing
-            // an empty box that looks like a loading state.
+            // Unreachable for a session the engine prescribed: every finding
+            // id it can cite — the athlete's own, or the baseline rationale —
+            // is in `planFindingsById`, and the database refuses to store a
+            // session without a finding row behind it.
+            //
+            // This was NOT always true, and this message shipped. The map was
+            // built from `profile.findings` alone, which omits the baseline
+            // rationale that `diagnose` never emits, so any session whose
+            // emphasis no finding backed rendered this over a reason sitting
+            // in `hpe_findings`. Left in place as a genuine last resort, for
+            // the one case it now describes: a finding row that is gone.
             <p className="text-sm text-muted">
               This session&apos;s diagnostic finding could not be loaded. That is a bug — a session without a reason
               behind it should never have been prescribed.
@@ -217,7 +226,7 @@ export function DayDetail({
   weekPhaseLabel,
 }: {
   day: PlanDayView;
-  findingsById: Map<string, Finding>;
+  findingsById: Map<FindingId, Finding>;
   weekPhaseLabel: string;
 }) {
   const past = day.offsetDays < 0;
