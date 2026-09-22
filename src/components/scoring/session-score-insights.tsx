@@ -1,6 +1,9 @@
 "use client";
 
+import { HelpCircle } from "lucide-react";
+import { useState } from "react";
 import { PremiumTease } from "@/components/premium/premium-tease";
+import { PersonalScoreExplainer } from "@/components/scoring/personal-score-explainer";
 import { ScoringExplainerNote } from "@/components/scoring/scoring-explainer-note";
 import { isBodyweightOnlyExercise } from "@/lib/scoring/weight-entry";
 import { cn } from "@/lib/utils/cn";
@@ -128,6 +131,7 @@ function CardioFreeStats({
   sessionType?: SessionType | null;
   flags?: string[];
 }) {
+  const [explaining, setExplaining] = useState(false);
   return (
     <div className="space-y-3">
       <dl className="grid gap-3 sm:grid-cols-2 text-sm">
@@ -151,7 +155,22 @@ function CardioFreeStats({
                     : "text-cardio-text"
             )}
           >
-            {result.personalScore == null ? "—" : formatIndex(result.personalScore)}
+            {result.personalScore == null ? (
+              "—"
+            ) : (
+              /* Tappable, because two digits labelled "vs you" do not say what
+                 they are measured against or where their middle is. Everything
+                 the sheet shows was already computed and rendered nowhere. */
+              <button
+                type="button"
+                onClick={() => setExplaining(true)}
+                aria-label={`Your score against yourself, ${formatIndex(result.personalScore)}. What this means`}
+                className="-mx-1 -my-0.5 inline-flex min-h-11 items-center gap-1.5 rounded-lg px-1 py-0.5 text-left underline decoration-dotted decoration-white/25 underline-offset-4 hover:bg-white/5 hover:decoration-white/60"
+              >
+                {formatIndex(result.personalScore)}
+                <HelpCircle className="h-3.5 w-3.5 shrink-0 text-muted" aria-hidden />
+              </button>
+            )}
           </dd>
           {result.personalScore == null && (
             <p className="text-[10px] text-muted">calibrating</p>
@@ -168,6 +187,13 @@ function CardioFreeStats({
         )}
       </dl>
       <ScoreBasisNote result={result} />
+      {explaining && result.personalScore != null && (
+        <PersonalScoreExplainer
+          score={result.personalScore}
+          comparison={result.personal ?? null}
+          onClose={() => setExplaining(false)}
+        />
+      )}
     </div>
   );
 }
