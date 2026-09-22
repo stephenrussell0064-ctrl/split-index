@@ -30,6 +30,10 @@ one branch, not of the database.
 | `activity_streams` | exists | `078` ran (through the SQL editor — see §4) |
 | `rpc/personal_best_efforts` | responds | `079` ran |
 | `hpe_generation_events.endurance_goal_z` | exists | `080` ran |
+| `rpc/personal_best_efforts` to `anon` | denied | `082` ran |
+| `public_activity_strength_scores` | exists, `anon` denied | `083` ran |
+| `viewer_is_blocked_with(uuid)` | exists | `084` ran |
+| `pg_default_acl` for `postgres`/`r` | no `anon` | `085` ran |
 
 So production is **main's lineage through 075, plus 076–080 from the app-store
 line**. The schema is not behind. The problem is entirely one of file numbering
@@ -178,7 +182,7 @@ this machine:
 bare `CREATE TYPE` — Postgres has no `IF NOT EXISTS` for types — so letting
 `db push` run it would abort the whole push if those types already exist. **The
 integrations schema will therefore never be created by `db push`.** When
-Strava/Garmin sync is built it needs a fresh migration at 082 or above, not a
+Strava/Garmin sync is built it needs a fresh migration at 086 or above, not a
 revival of 003; delete `003_integrations.sql` at that point rather than leave a
 file that claims to have run.
 
@@ -194,10 +198,47 @@ backfill above.
 
 ---
 
+### 4.4 Record 082–085 as they were applied — DONE
+
+The ledger was created in §4.2 and immediately started going stale: four
+migrations were applied after it and none was written down. That is the same
+failure it exists to prevent, so the rule now is that a migration is not done
+until it has a row in §1.
+
+| Migration | What it did | How its row in §1 was chosen |
+|---|---|---|
+| `082_revoke_best_effort_functions_from_anon` | took EXECUTE on the best-effort functions away from `anon` | the probe asks `anon` to execute one and expects a denial, which is the thing the migration changed |
+| `083_friend_activity_strength_scores` | the friend-visible lift detail behind the social feed — `security_invoker = off`, revoked from `PUBLIC` and `anon`, granted to `authenticated` | existence alone would not settle it, so the probe checks the grant as well; a view that exists but is anon-readable would mean the migration half-ran |
+| `084_blocking_is_enforced_by_the_database` | moved blocking from application code into the database — `viewer_is_blocked_with()` plus policies on comments and reactions | the function is the thing every new read path is supposed to filter with, so its existence is the useful signal |
+| `085_new_objects_are_not_public_by_default` | removed `anon` from `postgres`'s default privileges on tables in `public` | see the caveat below |
+
+**The caveat on 085, recorded because it changes how much the row is worth.**
+Its effect was inferred, not watched. The evidence is that Supabase sets
+`postgres` and `supabase_admin` identically at project creation, and afterwards
+`supabase_admin`'s default still lists `anon` while `postgres`'s does not — an
+asymmetry something had to create, and no migration in this repo has ever
+executed an `ALTER DEFAULT PRIVILEGES` except this one.
+
+That reasoning was very nearly used to draw the opposite conclusion. Reading
+the clean `postgres` row *after* the migration had been applied looked exactly
+like evidence the migration was never needed, and the recommendation at that
+moment was to delete it. Cause was mistaken for absence of cause. If a later
+session finds grounds to believe the `pg_default_acl` reading predates the
+apply, this row is the one to revisit — the others rest on probes that answer
+for themselves.
+
+**What the guard now buys.** A new view in `public` is unreachable until
+someone writes an explicit `GRANT`. Confirmed on 22 Sep 2026: the only view in
+`public` that `anon` can select is `public_profiles`, which is granted by name
+in `064` and is meant to be public. Every table returned `rls_on = true`.
+
+---
+
 ## 5. Where this leaves the project
 
-Steps 1 to 4 are done. The files are renumbered to match production, `081` is
-applied, and the ledger exists and records 81 migrations.
+Steps 1 to 4 are done. The files are renumbered to match production and the
+ledger exists. It records 85 migrations: the 81 backfilled in §4.2, plus
+`082`–`085` added in §4.4 as they were applied.
 
 **One step remains, and it needs the database password:**
 
