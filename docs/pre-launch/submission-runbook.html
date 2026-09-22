@@ -166,9 +166,9 @@
 <div class="wrap">
 
   <header class="mast">
-    <p class="eyebrow">Split Index · iOS 1.0 (build 3) · App Review</p>
+    <p class="eyebrow">Split Index · iOS 1.0 (build 9) · resubmission</p>
     <h1>Submission Runbook</h1>
-    <p class="standfirst">Everything seven working sessions and two days of device testing turned up, in the order it has to happen. Amber steps are gates — do not pass one until it reads green. Red steps are things that will cost you the review if you do them. Phases 0 and 1 are complete; what remains is the walkthrough, App Store Connect, and the button.</p>
+    <p class="standfirst">Everything left before the archive, in the order it has to happen. Amber steps are gates — do not pass one until it reads green. Red steps cost you the review if you do them. Phase 0 is already done and is listed so you can see what no longer needs checking; the work starts at Phase 1.</p>
   </header>
 
   <div class="progress">
@@ -179,336 +179,257 @@
 
   <!-- ============ PHASE 0 ============ -->
   <section class="phase">
-    <div class="phase-head"><span class="phase-num">00</span><h2>Cleared on 8 Sept</h2></div>
-    <p class="phase-note">Everything in this phase is done and verified against production. Kept rather than deleted, because each entry looked like a different problem first, and the wrong diagnosis is the transferable part. Worth noting what found them: <b>every one came from using the app on a device</b>. None would have surfaced by reading code, and three were diagnosed wrongly at least once before being reproduced.</p>
+    <div class="phase-head"><span class="phase-num">0</span><h2>Already done</h2></div>
+    <p class="phase-note">Nothing here needs an action. It is listed because the previous version of this runbook described build 3, and knowing what is closed is most of knowing what is not.</p>
 
-    <div class="done-block">
-      <h3>Fixed and confirmed — no action</h3>
-      <ul>
-        <li><b>Saving a workout</b> — returned a 500 for everyone. Migration <b>058</b> adds <code>activities.client_request_id</code> and had never been applied, so every insert failed on a column that did not exist. Applied. The route no longer reports an RLS refusal as a server fault either (<code>4636076</code>).</li>
-        <li><b>Migration 057</b> — could never run at all: its dedupe index used <code>created_at::date</code>, which is STABLE not IMMUTABLE, so Postgres rejected it with <code>42P17</code> every time. Pinned to UTC and applied (<code>ab29539</code>).</li>
-        <li><b>Sets scoring "—"</b> — chased through profile data, which was wrong. <code>scoreSet</code> bails on an empty exercise <b>name</b>; Est. 1RM, × BW and Volume need only weight, reps and the session-bar bodyweight, which is exactly why three stats fill in and the score does not. The card now says so (<code>ab9a88a</code>). An unrecognised name still scores — only an empty one blocks it.</li>
-        <li><b>Paying and landing on the offline error page</b> — <code>window.location.reload()</code> fired while iOS was still restoring the app after the StoreKit sheet, the WebView load failed, and Capacitor fell back to <code>errorPath</code>. Replaced with a confirmation screen and <code>router.refresh()</code> (<code>501d33a</code>).</li>
-        <li><b>Account deletion</b> — see Phase 3.</li>
-        <li><b>Paying and landing on the offline error page</b> — a real sandbox purchase ended on "No connection right now". <code>window.location.reload()</code> fired while iOS was still restoring the app after the StoreKit sheet, the WebView load failed, and Capacitor fell back to <code>errorPath</code>. Replaced with a confirmation screen and <code>router.refresh()</code> (<code>501d33a</code>).</li>
-        <li><b>Hybrid Plan → Goals scrolled sideways</b> — an <code>input[type=date]</code>. Safari sizes it to the widest date its picker can draw, and a flex child will not shrink below that, so it widened the page (<code>4988e0a</code>). The same input in the intake wizard is fixed too — that is the flow a reviewer completes before the plan renders at all.</li>
-        <li><b>The leaderboard scrolled sideways, then clipped</b> — the grid item holding the panel had no <code>min-w-0</code>. A grid item defaults to <code>min-width: auto</code> and will not shrink below its content, so one wide descendant dragged the card and every row with it (<code>044bab6</code>). Two earlier rounds went on descendants that looked like the cause from a screenshot; with <code>min-width:auto</code> above them, none of those could have shrunk even once fixed. The DOM named it in one line when finally asked.</li>
-      </ul>
+    <div class="step">
+      <input type="checkbox" checked disabled aria-label="Already done">
+      <div class="step-body">
+        <h3>Sign in with Apple works</h3>
+        <p>The rejection was the Supabase provider, not the code. Enabled, and the review device that failed — iPad Air 11-inch (M3) — is now a supported target rather than a compatibility-mode guess.</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <input type="checkbox" checked disabled aria-label="Already done">
+      <div class="step-body">
+        <h3>iPad is a real target, and the layout holds</h3>
+        <p><span class="mono">TARGETED_DEVICE_FAMILY = "1,2"</span>, safe-area insets fixed on every screen outside the app shell, and The Lab's grid re-keyed off content width rather than viewport.</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <input type="checkbox" checked disabled aria-label="Already done">
+      <div class="step-body">
+        <h3>The native shell is current</h3>
+        <p>The archive worktree carries <span class="mono">SpeechPlugin.swift</span> (voice split callouts), the widget's Live Activity intents compiled into the app target, the corrected privacy manifests and the BLE background mode. Archiving from the older commit would have shipped a binary calling a plugin that was not there.</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <input type="checkbox" checked disabled aria-label="Already done">
+      <div class="step-body">
+        <h3>The database ledger is clean</h3>
+        <p>082 and 083 applied through <span class="mono">db push</span>. Local and remote now agree on all 83 migrations and a dry run proposes nothing — the first clean push this project has had.</p>
+        <p><strong>From here, never paste a migration into the SQL editor again.</strong> A file numbered above 083 and a <span class="mono">db push</span>, or the ledger goes straight back out of step.</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <input type="checkbox" checked disabled aria-label="Already done">
+      <div class="step-body">
+        <h3>The web side is live and needs no build</h3>
+        <p>Two-score engine, the Hybrid Plan premium gate, redrawn avatars, tap-to-explain sheets, friend suggestions and the feed click-through are all on production. The binary is a WebView over <span class="mono">www.splitindex.co.uk</span>, so none of it waits on App Review.</p>
+      </div>
     </div>
   </section>
 
   <!-- ============ PHASE 1 ============ -->
   <section class="phase">
-    <div class="phase-head"><span class="phase-num">01</span><h2>RevenueCat — complete</h2></div>
-    <p class="phase-note">Proven end to end against production on 8 Sept, in both directions. This phase needs nothing further; it is kept as the record of what was verified and how, because almost every step of it was diagnosed by inference first and inference was wrong more than once.</p>
+    <div class="phase-head"><span class="phase-num">1</span><h2>Do this first</h2></div>
+    <p class="phase-note">Unrelated to the archive, and more urgent than it.</p>
 
-    <div class="done-block">
-      <h3>Verified working — do not change</h3>
-      <ul>
-        <li><b>A real sandbox purchase granted premium</b> — <code>subscription_tier: premium</code>, <code>subscription_source: revenuecat</code>, written by the webhook. Purchase → Apple → RevenueCat → webhook → Supabase.</li>
-        <li><b>And revoked it on expiry</b> — the sandbox subscription lapsed minutes later, RevenueCat sent EXPIRATION, and the webhook correctly matched its <code>subscription_source = 'revenuecat'</code> guard and downgraded. The full lifecycle, not just the happy path.</li>
-        <li><b>Real store prices on device</b> — £4.99 / £29.99 / £79.99 from StoreKit. Apple's propagation completed roughly 18 hours after the Paid Apps Agreement activated; nothing configured after the first evening changed the outcome.</li>
-        <li><b>Webhook URL</b> — the <code>www</code> host. The apex 308-redirects and the setup doc pointed at it (since corrected, <code>4be5574</code>).</li>
-        <li><b>Authorization header</b> — <code>Bearer &lt;secret&gt;</code>, matching <code>REVENUECAT_WEBHOOK_SECRET</code> in Vercel.</li>
-        <li><b>Offering, packages, entitlement, bundle ID, API key, SDK</b> — all confirmed, several of them by querying RevenueCat's API directly rather than reading the dashboard.</li>
-      </ul>
-    </div>
-
-    <div class="step">
-      <input type="checkbox" data-id="1-8">
+    <div class="step never">
+      <input type="checkbox" data-id="p1-token">
       <div class="step-body">
-        <h3>Leave <code>NEXT_PUBLIC_REVENUECAT_USE_PAYWALL</code> set to <code>false</code></h3>
-        <span class="where"><b>Where:</b> Vercel → Environment Variables → Production</span>
-        <p>The built-in picker now shows real store prices and carries the Guideline 3.1.2 renewal terms and legal links. The dashboard paywall was the one path still throwing Error 23 while products were unresolved; it may work now, but it is untested and there is nothing to gain by finding out during review.</p>
-        <p>Turn it on after approval: a Vercel env change and a redeploy, no rebuild and no resubmission.</p>
+        <h3>Revoke the exposed Supabase access token</h3>
+        <span class="where"><b>supabase.com/dashboard/account/tokens</b></span>
+        <p>A Personal Access Token beginning <span class="mono">sbp_3557fc…</span> was visible in a screenshot on 22 Sep. It grants Management API rights over every project on the account. Revoke that token specifically — the one <span class="mono">supabase login</span> stored is separate and revoking this one breaks nothing.</p>
+        <p>It is probably in your shell history too: remove the two <span class="mono">export</span> lines, or clear <span class="mono">~/.zsh_history</span>.</p>
       </div>
     </div>
   </section>
 
   <!-- ============ PHASE 2 ============ -->
   <section class="phase">
-    <div class="phase-head"><span class="phase-num">02</span><h2>The reviewer's account</h2></div>
-    <p class="phase-note">The account is <code>demo.athlete+splitindex@example.com</code> / <code>@demo_masters_hybrid</code>. It currently holds 94 activities, 94 scores and 59 personal records — healthy data you do not want to lose. Both gates that stood against it on 7 Sept are now closed: it is premium again, and the Hybrid Plan consent and intake rows exist.</p>
-
-    <div class="done-block">
-      <h3>Closed on 8 Sept — no action</h3>
-      <ul>
-        <li><b>Premium restored</b> — <code>subscription_tier: premium</code>, <code>subscription_status: active</code>, and <code>subscription_source</code> deliberately <b>NULL</b>. That NULL is what makes it durable: the RevenueCat revoke path filters on <code>subscription_source = 'revenuecat'</code>, so no expiry can downgrade the reviewer's account mid-review. Watched exactly that happen to the sandbox test account hours later.</li>
-        <li><b>Hybrid Plan gates</b> — the Article 9 consent event and the <code>hpe_intake</code> row both exist now, so the flagship feature renders instead of meeting a consent wall and a wizard.</li>
-      </ul>
-    </div>
+    <div class="phase-head"><span class="phase-num">2</span><h2>The archive</h2></div>
+    <p class="phase-note">The worktree is prepared and verified. The ordering below is not fussiness — getting it wrong is what cost forty minutes last time.</p>
 
     <div class="step gate">
-      <input type="checkbox" data-id="2-2">
+      <input type="checkbox" data-id="p2-close">
       <div class="step-body">
-        <h3>Confirm the demo account's email is verified</h3>
-        <span class="where"><b>Where:</b> Supabase → SQL Editor</span>
-        <p>The seed script sets <code>email_confirm: true</code>, so it should be fine — but an account created by hand would not be, and <code>@example.com</code> can never confirm by clicking a link. Verify rather than assume:</p>
-        <pre><code>SELECT email_confirmed_at FROM auth.users
-WHERE email = 'demo.athlete+splitindex@example.com';</code></pre>
-        <div class="expect"><b>Expect:</b> a timestamp, not NULL.</div>
-      </div>
-    </div>
-
-    <div class="step gate">
-      <input type="checkbox" data-id="2-5">
-      <div class="step-body">
-        <h3>Clear the two gates in front of the Hybrid Plan<span class="tag gate">Gate</span></h3>
-        <span class="where"><b>Where:</b> the app, signed in as the demo account → Hybrid Plan</span>
-        <p>Verified directly against production: the demo account has <b>zero</b> Article 9 consent events and <b>no</b> <code>hpe_intake</code> row at all. A reviewer tapping Hybrid Plan — the flagship feature — meets a consent screen, then a mandatory intake wizard asking for health, goal and availability. Two unguessable gates before anything renders.</p>
-        <p>Do it through the app rather than by inserting rows: signing in as the demo account, accepting consent and completing the wizard both clears the gates and proves the flow works.</p>
-        <div class="expect"><b>Then:</b> Hybrid Plan generates a real plan. A correct run produces roughly 7 weeks, ~18 strength and ~15 endurance sessions.</div>
-      </div>
-    </div>
-
-    <div class="step gate">
-      <input type="checkbox" data-id="2-3">
-      <div class="step-body">
-        <h3>Walk the reviewer's path yourself, on the device<span class="tag gate">Gate</span></h3>
-        <span class="where"><b>Where:</b> the app on a physical iPhone</span>
-        <p>Sign in as the demo account and confirm all of these in one pass:</p>
-        <ul>
-          <li><b>Log one activity</b> — not just reaching the dashboard. This is the single genuine Guideline 2.1 risk.</li>
-          <li><b>Open the logbook and edit an entry.</b> No session has verified this surface — see the note below.</li>
-          <li><b>Hybrid Plan → Goals.</b> New UI that has never been rendered against a real logged-in account, only a stubbed harness.</li>
-          <li><b>Settings → Billing</b> — "Terms of Use · Privacy Policy" appear under the button, and both open.</li>
-          <li><b>Premium surfaces render</b> — Analytics, Injury Risk Index, Interference Radar, race predictions.</li>
-          <li><b>Settings → Recompute scores</b> — completes, rather than the partial-failure message.</li>
-          <li><b>Tap Share</b> on a report card once — the fallback can silently do nothing in a WebView.</li>
-          <li><b>Delete an account</b> — on a throwaway signup, not the demo one. Verified through the admin API, but that skips the route's own auth and audit step, and a reviewer will press this exact button.</li>
-        </ul>
-        <div class="warn"><b>Two screens were found broken this way today</b> — the Goals tab and the leaderboard both scrolled sideways, and neither showed up in any test. If a screen needs dragging left and right, or something is cut off at the edge, run this in Safari Web Inspector and it names the element outright:<br><br><code>[...document.querySelectorAll('*')].filter(e=&gt;e.getBoundingClientRect().right&gt;document.documentElement.clientWidth+1)</code><br><br>The outermost result is the cause; everything below it merely inherits the width.</div>
-
-        <div class="warn"><b>The logbook is unverified by anyone.</b> The session that owned it had its context compacted, so its "no open bugs" is an absence of recollection rather than an absence of bugs. Its records show the logbook redesign, dark-UI-on-edit, hidden HR/RPE/elevation fields and a wrong 5k prediction all fixed and pushed — but nobody has re-opened that surface. Your taps are the only verification it will get.</div>
+        <h3>Open <em>only</em> the archive project</h3>
+        <span class="where"><b>/Users/stephenrussell/Projects/split-index-archive/ios/App/App.xcodeproj</b></span>
+        <p>Not the main checkout's project. Both resolve Swift packages through their own <span class="mono">node_modules</span>, and opening both is what produced "package already opened from another project".</p>
+        <p>Let package resolution finish before doing anything else.</p>
       </div>
     </div>
 
     <div class="step never">
-      <input type="checkbox" data-id="2-4">
+      <input type="checkbox" data-id="p2-derived">
       <div class="step-body">
-        <h3>Never run <code>seed-demo-athlete.ts</code><span class="tag never">Do not</span></h3>
-        <span class="where"><b>Applies to:</b> every flag, including <code>--delete</code> and a plain re-seed</span>
-        <p><code>--delete --apply</code> destroys <code>demo.athlete+splitindex@example.com</code> and cascades its rows — that is the App Review login, and the marketing account <code>@demo_masters_hybrid</code> is the same row. The reviewer could not sign in at all.</p>
-        <p>A re-seed catches only <code>RecomputeError</code>, so an RPC failure passes through silently and you get 94 workouts with an empty personal-record list, reported as success.</p>
-        <p>To change the password instead, use <code>scripts/demo-account-info.ts --set-password</code>, which touches no activity data.</p>
+        <h3>Never delete DerivedData while Xcode is open</h3>
+        <p>It regenerates immediately and half-written, which produces "no XCFramework found" across every package. If you need it cleared, quit Xcode first, then clear it, then reopen.</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <input type="checkbox" data-id="p2-archive">
+      <div class="step-body">
+        <h3>Product → Archive</h3>
+        <span class="where">Destination: <b>Any iOS Device (arm64)</b></span>
+        <p>Not a simulator — a simulator build cannot be distributed and the Archive menu item stays disabled. Build 9, device family 1,2, already set in the project.</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <input type="checkbox" data-id="p2-upload">
+      <div class="step-body">
+        <h3>Distribute App → App Store Connect → Upload</h3>
+        <p>Then wait for the processing email. The build does not appear in the version's Build selector until processing finishes, which is usually minutes but can be an hour.</p>
       </div>
     </div>
   </section>
 
   <!-- ============ PHASE 3 ============ -->
   <section class="phase">
-    <div class="phase-head"><span class="phase-num">03</span><h2>Confirm the migrations took</h2></div>
-    <p class="phase-note">056 through 070 are applied and verified against production. 057 and 058 were missing until 8 Sept — 058 is why saving a workout returned a 500, and 057 could never run until its index was pinned to UTC. <b>070 is the newest and the most important:</b> without it, account deletion failed for every athlete who had ever been scored, which is a Guideline 5.1.1(v) rejection.</p>
-
-    <div class="done-block">
-      <h3>Migration 070 — account deletion</h3>
-      <ul>
-        <li>"Delete account and all data" returned a 500 for anyone who had ever been scored. Reproduced exactly: no history rows deletes fine, <b>one</b> <code>split_index_history</code> row fails.</li>
-        <li>Migration 054 widened the profile-sync trigger to fire on DELETE, so it ran during the cascade from <code>auth.users</code> and tried to <code>UPDATE profiles</code> — a row the same cascade was deleting. Postgres refuses that and the whole delete aborts.</li>
-        <li>Nothing was ever half-deleted: the error is raised inside the single statement, so the account was left intact rather than partly erased with a working login.</li>
-        <li>Applied and verified 500 → 200 on the same user with the same data (<code>6b79c20</code>).</li>
-      </ul>
-    </div>
+    <div class="phase-head"><span class="phase-num">3</span><h2>App Store Connect</h2></div>
+    <p class="phase-note">Name, subtitle and keywords are only editable on a version that has not shipped — which is this one. They lock again the moment you submit.</p>
 
     <div class="step">
-      <input type="checkbox" data-id="3-1">
+      <input type="checkbox" data-id="p3-meta">
       <div class="step-body">
-        <h3>Check no function is executable by <code>anon</code></h3>
-        <span class="where"><b>Where:</b> Supabase → SQL Editor — the query is in migration 067's header comment</span>
-        <p>Supabase grants EXECUTE to <code>anon</code> by name, so <code>REVOKE ... FROM PUBLIC</code> never removed it. Without 067, an unauthenticated caller could make the security and audit log prune its own aged rows — an anti-forensics hole rather than a data leak, but it matters most exactly when you'd want that log.</p>
-        <div class="expect"><b>Expect:</b> no <code>anon=</code> entry in <code>proacl</code> on any of the four functions.</div>
+        <h3>The three indexed fields</h3>
+        <p>The app currently ranks for exactly one string on earth: its own name typed perfectly. It is 8th organic for that, and absent from the top 50 for every discovery term including "hybrid athlete" — the phrase its own description opens with. The subtitle is empty, which is a third of the ranking signal unused.</p>
+        <table class="fields">
+          <tr><th>App Name</th><td class="mono">Split Index: Hybrid Athlete</td></tr>
+          <tr><th>Subtitle</th><td class="mono">Strength &amp; Endurance Balance</td></tr>
+          <tr><th>Keywords</th><td class="mono">run,lift,running,lifting,gym,cardio,workout,tracker,concurrent,interference,trimp,dots,race,pace</td></tr>
+        </table>
+        <p>No spaces after the commas — each one costs a character of the hundred. Do not add <em>Hyrox</em>: registered trademark, and a takedown risk.</p>
       </div>
     </div>
 
     <div class="step">
-      <input type="checkbox" data-id="3-2">
+      <input type="checkbox" data-id="p3-promo">
       <div class="step-body">
-        <h3>Confirm Recompute now succeeds</h3>
-        <span class="where"><b>Where:</b> the app → Settings → Recompute scores</span>
-        <p>Covered by step 2.3 if you did it there. Before 065 this returned a 207 with "Your personal records or predictions could not be rebuilt" — a visible partial failure on a screen a reviewer opens.</p>
+        <h3>Promotional text</h3>
+        <p class="mono">One score for how well your lifting and running actually fit together — and an Interference Engine that shows you where they are fighting.</p>
+        <p>The one field you can change afterwards without a review.</p>
+      </div>
+    </div>
+
+    <div class="step gate">
+      <input type="checkbox" data-id="p3-shots69">
+      <div class="step-body">
+        <h3>Upload the 6.9" screenshots — this is why the App Store shows none</h3>
+        <span class="where"><b>~/Documents/SplitIndex-Screenshots-6.9/</b> · five files, 1320×2868</span>
+        <p>The live listing has only 6.5" assets (1284×2778). Apple's pipeline treats 6.9" as the master and scales <em>down</em> from it, so with that slot empty there is nothing to scale and the search result renders with no images at all — which is exactly what you saw.</p>
+        <p>After uploading, <strong>delete the existing 6.5" set</strong>. It is in the wrong order (analytics first, dashboard fourth) and once 6.9" exists Apple scales from it automatically.</p>
+      </div>
+    </div>
+
+    <div class="step gate">
+      <input type="checkbox" data-id="p3-shotsipad">
+      <div class="step-body">
+        <h3>Upload the iPad screenshots</h3>
+        <span class="where"><b>~/Documents/SplitIndex-iPad-Screenshots/</b> · five files, 2048×2732 → <b>iPad 13" Display</b></span>
+        <p>Mandatory, not cosmetic: build 9 declares iPad support, and Apple requires an iPad set for an iPad-capable binary. Submitting without them risks a metadata rejection on top of everything else.</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <input type="checkbox" data-id="p3-build">
+      <div class="step-body">
+        <h3>Attach build 9 under <em>Build</em></h3>
       </div>
     </div>
   </section>
 
   <!-- ============ PHASE 4 ============ -->
   <section class="phase">
-    <div class="phase-head"><span class="phase-num">04</span><h2>App Store Connect</h2></div>
-    <p class="phase-note">Your draft submission already holds iOS App 1.0 (3), two subscriptions, the Lifetime IAP and the subscription group. All three IAPs are purchasable in the app, so the submission set is coherent.</p>
+    <div class="phase-head"><span class="phase-num">4</span><h2>The gate: a real purchase</h2></div>
+    <p class="phase-note">The only part of the payment chain never proven end to end. <span class="mono">app-store-remaining.md</span> is explicit: do not submit before this has been seen working once.</p>
 
-    <div class="step gate">
-      <input type="checkbox" data-id="4-1">
+    <div class="step">
+      <input type="checkbox" checked disabled aria-label="Already done">
       <div class="step-body">
-        <h3>Turn on "Sign-in required" and fill in the credentials<span class="tag gate">Gate</span></h3>
-        <span class="where"><b>Where:</b> App Store Connect → your 1.0 version → App Review Information</span>
-        <p>The app opens on a login wall. No credentials is the most common first-submission rejection there is.</p>
-        <p>Username <code>demo.athlete+splitindex@example.com</code>, plus the password. If it has been lost, reset it with <code>scripts/demo-account-info.ts --set-password</code> — it cannot be read back, only replaced.</p>
+        <h3>Webhook — already verified</h3>
+        <p>RevenueCat's test webhook returned <span class="mono">200 {"received":true}</span>. URL and shared secret are both correct, which removes the link most likely to be misconfigured.</p>
       </div>
     </div>
 
     <div class="step gate">
-      <input type="checkbox" data-id="4-2">
+      <input type="checkbox" data-id="p4-sandbox">
       <div class="step-body">
-        <h3>Write the review notes<span class="tag gate">Gate</span></h3>
-        <span class="where"><b>Where:</b> App Store Connect → App Review Information → Notes</span>
-        <p>Your largest structural risk is Guideline 4.2 — the app loads <code>www.splitindex.co.uk</code>, so a reviewer's first screen is web content and the pattern gets rejected routinely. Your defence is strong but invisible unless you write it down. Paste something like:</p>
-        <pre><code>Split Index is a native fitness tracker, not a web wrapper.
-Native features: background GPS run tracking that continues
-with the phone locked; Bluetooth heart-rate monitors and
-Concept2 PM5 rowing machines; Apple Health / AirPods heart
-rate; step cadence; home-screen widgets; Live Activities.
-
-Background location is required to record a run while the
-screen is off — this is the app's core function.
-
-Demo account: demo.athlete+splitindex@example.com
-Password: [password]
-
-To see GPS tracking: sign in, tap the + button, Start run.
-Premium analytics are already enabled on this account.</code></pre>
+        <h3>Make one sandbox purchase on a device</h3>
+        <ol>
+          <li>App Store Connect → Users and Access → Sandbox → Test Accounts → <strong>+</strong>. Use an email that has never been an Apple ID; a <span class="mono">+alias</span> works. Region United Kingdom.</li>
+          <li>On the device: Settings → Developer → <strong>Sandbox Apple Account</strong>. Do not sign out of your real account.</li>
+          <li>Open the paywall. <strong>If the prices do not render, stop</strong> — that is the products or the Paid Applications agreement, not the purchase.</li>
+          <li>Buy the monthly. The sheet must say <span class="mono">[Environment: Sandbox]</span>; if it does not, cancel — that is real money.</li>
+        </ol>
+        <p>Then check all four links, because each fails independently:</p>
+        <ul>
+          <li>RevenueCat → Customers: <span class="mono">split_index_pro</span> shows as an active entitlement</li>
+          <li>RevenueCat → Webhooks: an <span class="mono">INITIAL_PURCHASE</span> event with a 2xx</li>
+          <li>Supabase → <span class="mono">profiles</span>: <span class="mono">subscription_tier = premium</span> <em>and</em> <span class="mono">subscription_source = revenuecat</span></li>
+          <li>In the app: the Hybrid Plan unlocks — it is gated now, so it is the clearest yes/no</li>
+        </ul>
       </div>
-    </div>
-
-    <div class="step">
-      <input type="checkbox" data-id="4-3">
-      <div class="step-body">
-        <h3>Check screenshots are iPhone-only and current</h3>
-        <span class="where"><b>Where:</b> App Store Connect → your 1.0 version → Previews and Screenshots</span>
-        <p>The app now ships iPhone-only, so no iPad screenshots are needed. But the UI has moved a great deal in two days and Guideline 2.3 asks that screenshots match the app.</p>
-        <div class="warn"><b>Specifically changed on 8 Sept:</b> the leaderboard header now stacks the period toggle onto its own line; the Hybrid Plan Goals tab no longer overflows; the paywall gained its renewal terms and legal links; and the purchase flow ends on a "Welcome to Split Index Premium" screen that did not exist before. Any screenshot of those four predates the app.</div>
-      </div>
-    </div>
-
-    <div class="step">
-      <input type="checkbox" data-id="4-4">
-      <div class="step-body">
-        <h3>Complete the App Privacy questionnaire and the two URLs</h3>
-        <span class="where"><b>Where:</b> App Store Connect → App Privacy · and → App Information</span>
-        <p>Privacy Policy URL and Support URL must both be set and resolve. Your privacy policy already states explicitly that health data is never used for advertising and never sold — which is what Apple checks for a HealthKit app.</p>
-      </div>
-    </div>
-
-    <div class="step">
-      <input type="checkbox" data-id="4-5">
-      <div class="step-body">
-        <h3>Put the auto-renew disclosure in the App Store description</h3>
-        <span class="where"><b>Where:</b> App Store Connect → your 1.0 version → Description</span>
-        <p>Apple wants the renewal terms in the metadata as well as in the app. The in-app half is done. Add price, duration, and that subscriptions renew unless cancelled at least 24 hours before the period ends.</p>
-      </div>
-    </div>
-
-    <div class="done-block">
-      <h3>Already handled — no action</h3>
-      <ul>
-        <li><b>Export compliance</b> — <code>ITSAppUsesNonExemptEncryption</code> is in the plist, so build 3 uploads without the question. Build 2's warning can be ignored.</li>
-        <li><b>Guideline 3.1.2</b> — renewal terms and Terms/Privacy links are live on the paywall, confirmed on device.</li>
-        <li><b>Guideline 3.1.1</b> — no purchase CTA bypasses the native billing path; verified on <code>main</code>, and independently by two other sessions.</li>
-        <li><b>Guideline 4.8</b> — Sign in with Apple is offered, above Google.</li>
-        <li><b>Guideline 5.1.1(v)</b> — in-app account deletion exists.</li>
-        <li><b>Privacy manifests, SDK signatures, icons</b> — all passed Apple's automated checks when build 3 processed.</li>
-      </ul>
     </div>
   </section>
 
   <!-- ============ PHASE 5 ============ -->
   <section class="phase">
-    <div class="phase-head"><span class="phase-num">05</span><h2>Freeze <code>main</code></h2></div>
-    <p class="phase-note">The reviewer loads production live. Anything you deploy during review is what they see, mid-review.</p>
+    <div class="phase-head"><span class="phase-num">5</span><h2>Submit</h2></div>
 
-    <div class="step never">
-      <input type="checkbox" data-id="5-1">
+    <div class="step">
+      <input type="checkbox" data-id="p5-submit">
       <div class="step-body">
-        <h3>Do not merge <code>695c2d3</code>, the strict-CSP commit<span class="tag never">Do not</span></h3>
-        <p>It extracts 1,307 lines from <code>gps-run/page.tsx</code> while <code>main</code> has five newer commits in that same file. Merging as-is risks silently reverting GPS fixes. <code>8d5f1fa</code> depends on it. It needs redoing, not merging.</p>
-      </div>
-    </div>
-
-    <div class="step never">
-      <input type="checkbox" data-id="5-2">
-      <div class="step-body">
-        <h3>Do not merge <code>venture/b1-b2-iap-routing</code> or <code>hardening/audit-and-ci</code><span class="tag never">Do not</span></h3>
-        <p>The venture branch is 59 commits ahead and 90 behind, and carries duplicate migrations under different numbers (<code>057_article9_consent</code> here vs <code>060_</code> on main). Merging would try to re-apply live migrations. <code>hardening/audit-and-ci</code> is behind rewritten history — reset it onto current <code>main</code> rather than merging.</p>
-        <p>Nothing on either branch is needed for this submission. Sort the renumbering after approval.</p>
+        <h3>Add for Review → Submit to App Review</h3>
+        <p>Name, subtitle and keywords lock until it is approved. Expect three to seven days after the version goes live before the new search terms are indexed — and no metadata change fixes having zero ratings, which is most of why the app sits 8th for its own name.</p>
       </div>
     </div>
   </section>
 
   <!-- ============ PHASE 6 ============ -->
   <section class="phase">
-    <div class="phase-head"><span class="phase-num">06</span><h2>Submit</h2></div>
-    <p class="phase-note">Only once every gate above reads green.</p>
+    <div class="phase-head"><span class="phase-num">6</span><h2>Open, but not blocking</h2></div>
+    <p class="phase-note">None of this needs to happen before the archive. It is here so it is not forgotten.</p>
 
     <div class="step">
-      <input type="checkbox" data-id="6-1">
+      <input type="checkbox" data-id="p6-preview">
       <div class="step-body">
-        <h3>Click Submit for Review</h3>
-        <span class="where"><b>Where:</b> App Store Connect → Distribution → the draft submission panel</span>
-        <p>Five items: iOS App 1.0 (3), two subscriptions, the Lifetime IAP, and the subscription group. They are reviewed together.</p>
-      </div>
-    </div>
-  </section>
-
-  <!-- ============ AFTER ============ -->
-  <section class="phase">
-    <div class="phase-head"><span class="phase-num">07</span><h2>After you submit</h2></div>
-    <p class="phase-note">Real findings that are not worth holding the button for. None of them blocks review.</p>
-
-    <div class="step">
-      <input type="checkbox" data-id="7-1">
-      <div class="step-body">
-        <h3>Soften the Riegel claim on the pricing page</h3>
-        <span class="where"><b>Where:</b> <code>src/components/marketing/pricing-cta.tsx</code></span>
-        <p>Marketing says predictions are "personalized to your own pace curve — not a generic, one-size-fits-all exponent". A brand-new account sees the Analytics page say "Uses Riegel's formula with a population-average exponent". Both are true at different times; four words ("once you've logged two distances") close the gap. Guideline 2.3, low risk.</p>
+        <h3>An App Preview video</h3>
+        <p>The biggest remaining visual lift in search results — an app with one gets motion where everyone else gets stills. 15–30 seconds, 886×1920 portrait, H.264, under 500 MB. The existing review walkthrough is far too long and the wrong resolution.</p>
       </div>
     </div>
 
     <div class="step">
-      <input type="checkbox" data-id="7-2">
+      <input type="checkbox" data-id="p6-29">
       <div class="step-body">
-        <h3>Add per-share confirmation to the report card</h3>
-        <span class="where"><b>Where:</b> the Hybrid report share card, and <code>src/app/api/interference/report-card/route.tsx</code></span>
-        <p>The card renders a readiness value — health-derived — on a plain GET with no preview step. It is authenticated, premium-gated, and only ever renders the requesting athlete's own report, so nothing leaks. Given the app declares HealthKit, an explicit per-share step is still the right shape.</p>
+        <h3>The 29.7 personal score</h3>
+        <p>Never reproduced. The closest reconstruction was 40.8, and closing the gap needs the actual session history. The tap-to-explain sheet now names which sessions it compared against and how alike they were, so the next odd number may explain itself.</p>
       </div>
     </div>
 
     <div class="step">
-      <input type="checkbox" data-id="7-3">
+      <input type="checkbox" data-id="p6-floor">
       <div class="step-body">
-        <h3>Fix the webhook URL in the setup doc</h3>
-        <span class="where"><b>Where:</b> <code>docs/native-billing-setup.md</code>, step 7.1</span>
-        <p>It still says to register the apex domain. Left alone, the next person re-registers it wrong and rediscovers step 1.1 the hard way.</p>
+        <h3>The flat bottom of the bodyweight scale</h3>
+        <p>Adding 0 to 10 kg to a pull-up moves the score 3.4 points; the next 10 kg moves 25.8. Two constant changes were tried and reverted — raising the floor traded one compression for another, and lowering the curvature runs opposite to intuition. It needs the band's shape reconsidered, not a constant nudged, and it only affects near-bodyweight reps.</p>
       </div>
     </div>
 
     <div class="step">
-      <input type="checkbox" data-id="7-5">
+      <input type="checkbox" data-id="p6-blocked">
       <div class="step-body">
-        <h3>Reconcile the weekly endurance budget with what's prescribed</h3>
-        <span class="where"><b>Where:</b> Hybrid Plan → Plan · documented in <code>adb35c5</code></span>
-        <p>The weekly endurance budget and the sessions actually prescribed disagree by 1.25×–1.90×. Not reviewer-visible, but it means the plan promises one volume and schedules another.</p>
-      </div>
-    </div>
-
-    <div class="step">
-      <input type="checkbox" data-id="7-4">
-      <div class="step-body">
-        <h3>Renumber the migrations on the venture branch</h3>
-        <span class="where"><b>Where:</b> <code>supabase/migrations/</code> on <code>venture/b1-b2-iap-routing</code></span>
-        <p>Five migrations exist under two different numbers across the branches. Resolve before the branches ever join.</p>
+        <h3><span class="mono">blocked_users</span> is not named in the privacy policy</h3>
+        <p>Flagged by <span class="mono">check-privacy-coverage.mjs</span>, cited against Guideline 5.1.1(i) and UK GDPR art. 13. The table predates all of this and is already live; the checker that notices is what is new.</p>
       </div>
     </div>
   </section>
 
   <footer>
-    <p>Collated from seven working sessions: SKU definition, homepage &amp; activity logging, RevenueCat SDK integration, age-graded adjustment, ReelFarm marketing, cross-project hardening audit, logbook &amp; prediction bugs, and this one. Where sessions disagreed, claims were checked against the code, the database or the live site, and the verified answer is what appears above.</p>
-    <p>All seven have now reported: six AGREE, one HOLD on RevenueCat production configuration. Two carry caveats recorded above — the demo account's Hybrid Plan gates, verified empty against production, and the logbook, which no session has actually exercised.</p>
-    <p>Progress is saved in this browser only.</p>
+    <p>Build 9 · resubmission after the Guideline 2.1 rejection (Sign in with Apple). Rewritten 22 Sep 2026; the previous version described build 3 and was three submissions out of date. Progress is stored in this browser only.</p>
   </footer>
 </div>
 
 <script>
   (function () {
     var boxes = Array.prototype.slice.call(document.querySelectorAll('input[type=checkbox][data-id]'));
-    var KEY = 'split-index-submission-runbook-v1';
+    var KEY = 'split-index-submission-runbook-v2';
     var countEl = document.getElementById('count');
     var fillEl = document.getElementById('fill');
 
