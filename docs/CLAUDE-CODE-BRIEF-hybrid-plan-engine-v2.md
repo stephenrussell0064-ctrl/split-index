@@ -192,7 +192,21 @@ Unchanged from Rev 1's WP9, plus: distribution of data-sufficiency tiers across 
 | Safety | No HR prescribed from outside the fitted regression range without fallback labelling | 100% |
 | Individualisation | Opposite-`k` athletes get different session sets | pass |
 | Sufficiency | Tier 0 returns no plan and offers a baseline block | pass |
-| Traceability | Every session maps to a finding_id | 100% |
+| Traceability | Every session maps to a `finding_id` that resolves to readable text — the weak claim of #7, `planFindingsById`, not `profile.findings` | 100% |
+| Traceability | Share of sessions attributed to a finding about the athlete — the strong claim | **not 100%, and varies by athlete** |
+| Traceability | A complete beginner's plan, which is the floor | 0% — every session baseline |
+
+> **The two Traceability rows are the point, not a hedge.** Read alone, "every
+> session maps to a finding_id — 100%" is true and invites the absolute public
+> claim #7 warns against. It is 100% because the `NOT NULL` foreign key makes
+> it so, and the baseline rationale counts. Measured on the five personas,
+> 22 Sep 2026: marathon runner 32/95 sessions baseline, powerlifter 36/112,
+> rower 21/45, hybrid athlete 0/143, **complete beginner 45/45**. A threshold
+> that cannot distinguish the last two is measuring the foreign key, not the
+> claim. `traceability-claim.test.ts` asserts both directions and fails if
+> coverage widens enough to make the strong form true — that is the good
+> direction, and it should come with a deliberate copy change rather than
+> silently.
 
 ---
 
