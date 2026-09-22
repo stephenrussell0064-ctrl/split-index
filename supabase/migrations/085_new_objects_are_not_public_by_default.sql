@@ -1,0 +1,126 @@
+-- 085: a new view in `public` should not be readable by the internet the
+-- moment it is created.
+--
+-- NUMBERING. 085 because 084 is the highest version on any branch or tag in
+-- this repo, checked at the moment this file was written rather than quoted
+-- from memory:
+--   for r in $(git for-each-ref --format='%(refname:short)' refs/heads refs/tags refs/remotes); do
+--     git ls-tree --name-only "$r" supabase/migrations/ | xargs -n1 basename
+--   done | grep -oE '^[0-9]{3}' | sort -u | tail -1
+--
+-- WHAT THIS FIXES
+-- ---------------
+-- Supabase ships `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON
+-- TABLES TO anon, authenticated`. It is what makes PostgREST work without
+-- ceremony, and it means every table AND VIEW created in `public` is granted
+-- to `anon` at birth. Six migrations in this repo exist only to undo it after
+-- the fact: 067, 068, 072, 073, 074, 075.
+--
+-- The asymmetry is the whole problem. A TABLE that inherits the grant is
+-- still protected — RLS is on, the policies are owner-scoped, and `anon` has
+-- no `auth.uid()`, so it matches zero rows. 078's `activity_streams` and
+-- `activity_best_efforts` are exactly this shape and are safe despite having
+-- no revoke. A VIEW is not protected: every projection view in this schema
+-- runs `security_invoker = off` on purpose, which is how a leaderboard sees
+-- anybody but you, and that same property means it reads straight past RLS.
+-- Forget one revoke on one view and it is genuinely public, silently, with
+-- nothing failing.
+--
+-- So the default is a loaded gun pointed at the one object type that has no
+-- second line of defence. This removes it. After this, a new view is
+-- unreachable until someone writes a GRANT, which is the direction the
+-- mistake should point.
+--
+-- WHAT IT DOES NOT DO
+-- -------------------
+-- Default privileges apply to objects created AFTER they change. Nothing
+-- already granted is revoked here, deliberately: this migration is about
+-- stopping the next mistake, not guessing which existing grant was intended.
+-- Run the audit in the header of part 0 first and revoke anything it turns up
+-- in its own migration, where the reasoning for each object can be written
+-- down.
+--
+-- `public_profiles` keeps its grant. It is the one view meant to be readable
+-- by a signed-out visitor, its column list is the security boundary, and 064
+-- grants it by name — an explicit grant is unaffected by a default.
+--
+-- WHY `authenticated` IS LEFT ALONE. Revoking it too would be the tidier
+-- symmetry and would break the app: several views are reached by signed-in
+-- athletes through PostgREST and rely on the default rather than a named
+-- grant. `anon` is the boundary that matters here — the difference between a
+-- mistake that leaks to a logged-in user and one that leaks to the internet.
+--
+-- RE-RUNNABLE. `ALTER DEFAULT PRIVILEGES ... REVOKE` is idempotent: applying
+-- it twice leaves the same catalogue state. Safe to run again, which matters
+-- because part of this repo's history reached production through the SQL
+-- editor without a ledger row.
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- PART 0. RUN THIS FIRST, AND READ THE ANSWER
+-- ─────────────────────────────────────────────────────────────────────────────
+-- This migration changes nothing that already exists, so it cannot tell you
+-- whether something is already exposed. That question is answered by:
+--
+--   SELECT c.relname AS object,
+--          CASE c.relkind WHEN 'r' THEN 'table' WHEN 'v' THEN 'view'
+--                         WHEN 'm' THEN 'matview' ELSE c.relkind::text END AS kind,
+--          c.relrowsecurity AS rls_on,
+--          COALESCE(array_to_string(c.reloptions, ','), '') AS options
+--   FROM pg_class c
+--   JOIN pg_namespace n ON n.oid = c.relnamespace
+--   WHERE n.nspname = 'public'
+--     AND c.relkind IN ('r','v','m')
+--     AND has_table_privilege('anon', c.oid, 'SELECT')
+--   ORDER BY c.relkind, c.relname;
+--
+-- A `table` row with rls_on = true is fine. A `view` row that is not
+-- `public_profiles` is an unintended exposure and needs its own migration.
+
+BEGIN;
+
+-- The grantor matters, and `postgres` below is an ASSUMPTION — check it.
+--
+-- Default privileges are recorded per granting role: a bare ALTER DEFAULT
+-- PRIVILEGES changes only what the CURRENT role's future objects inherit, and
+-- naming the wrong role makes this statement succeed while changing nothing.
+-- That is the failure mode to avoid, because it looks exactly like success.
+-- Supabase's migrations and the SQL editor normally run as `postgres`, but
+-- some projects carry the default under `supabase_admin` instead. Run this
+-- and use whatever role it names:
+--
+--   SELECT pg_get_userbyid(defaclrole) AS grantor, defaclobjtype, defaclacl
+--   FROM pg_default_acl d
+--   JOIN pg_namespace n ON n.oid = d.defaclnamespace
+--   WHERE n.nspname = 'public';
+--
+-- Look for the row whose defaclacl mentions `anon=` — its grantor is the role
+-- that belongs on the next line. If more than one row mentions anon, repeat
+-- the statement once per grantor.
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
+  REVOKE ALL ON TABLES FROM anon;
+
+COMMIT;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- AFTERWARDS
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Confirm the default is gone. `defaclacl` should no longer mention `anon`:
+--
+--   SELECT pg_get_userbyid(defaclrole) AS grantor,
+--          n.nspname AS schema,
+--          defaclobjtype AS objtype,
+--          defaclacl
+--   FROM pg_default_acl d
+--   JOIN pg_namespace n ON n.oid = d.defaclnamespace
+--   WHERE n.nspname = 'public';
+--
+-- And prove it with a throwaway object rather than trusting the catalogue:
+--
+--   CREATE VIEW public._acl_probe AS SELECT 1 AS x;
+--   SELECT has_table_privilege('anon', 'public._acl_probe', 'SELECT');  -- want false
+--   DROP VIEW public._acl_probe;
+--
+-- THE NEW RULE, for every migration after this one: a view that should be
+-- readable must say so. `GRANT SELECT ON <view> TO authenticated;` — and to
+-- `anon` as well only when a signed-out visitor is genuinely meant to see it,
+-- which so far is `public_profiles` alone.
