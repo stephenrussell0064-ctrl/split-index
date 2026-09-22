@@ -67,3 +67,13 @@ ios/DerivedData
 # only ever produces conflicts and noise in diffs. The headless audit logs also
 # capture prompt and result text, which does not belong in a shared repo.
 .claude-flow/
+
+# The UAT personas' report, written by an afterAll hook in tests/uat and read
+# back by scripts/check-uat-report.mjs. Committed until 22 Sep 2026, which was
+# the problem that script exists to describe: a milestone was checked by
+# grepping this file, so it "stayed green for as long as nobody re-ran the
+# bots" — a file's memory of a result rather than the result. The script now
+# runs the suite and reads what THAT run wrote, with a freshness check, so
+# nothing needs the committed copy. Tracked, it only ever arrived as noise in
+# unrelated diffs.
+docs/pre-launch/uat-bot-report.md
