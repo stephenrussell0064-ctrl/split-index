@@ -77,3 +77,10 @@ ios/DerivedData
 # nothing needs the committed copy. Tracked, it only ever arrived as noise in
 # unrelated diffs.
 docs/pre-launch/uat-bot-report.md
+
+# Supabase CLI link state, written by `supabase link`. Machine-local, and
+# `pooler-url` is a database connection string — the one file in this repo that
+# would be worst to commit. It was untracked but not ignored, which is one
+# `git add -A` away from being in the history, and that is exactly how the UAT
+# report got swept into an unrelated commit on 22 Sep.
+supabase/.temp/
