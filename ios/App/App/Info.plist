@@ -124,49 +124,37 @@
 	  feature that requires it. NSBluetoothAlwaysUsageDescription below names
 	  the same hardware.
 
-	  DELIBERATELY NOT HERE YET: `audio`.
+	  `audio`, added 22 September 2026 for build 10.
 
 	  SpeechPlugin.swift reads the per-kilometre split callouts aloud, and
-	  those are silenced the moment the phone locks without that third mode —
-	  which is the whole of the time an athlete is actually running. It is
-	  still held back, on purpose, until 1.0 (5) is approved:
+	  those are silenced the moment the phone locks without this third mode —
+	  which is the whole of the time an athlete is actually running.
 
-	    - STALE AS OF 22 SEP 2026, READ THE NEXT PARAGRAPH. The original
-	      reason was that the callouts could not be heard during review
-	      whatever this file said: the native shell loads production
-	      (capacitor.config.ts), main is frozen for the review, and the JS
-	      that calls the plugin was not on main. A background mode whose
-	      feature is unreachable is exactly the shape Guideline 2.5.4 rejects.
-	    - The app's largest structural risk is already Guideline 4.2 (a
-	      reviewer's first screen is web content). Adding a third background
-	      mode to the build that answers that is unpaid risk.
+	  It was held back through build 9 on the reasoning that the callouts were
+	  unreachable during review: the shell loads production, main is frozen for
+	  review, and the JS that calls the plugin was not on main. A background
+	  mode whose feature is unreachable is the shape 2.5.4 rejects, so
+	  declaring it then would have been unpaid risk against a build that
+	  already carries Guideline 4.2 exposure.
 
-	  WHAT CHANGED. The speech branch was merged, so the calling JS IS on
-	  main now: `src/lib/native/speech.ts`, called from
-	  `src/app/(app)/cardio/gps-run/gps-run-client.tsx` on every completed
-	  kilometre. Production serves main and the shell loads production, so the
-	  feature is reachable by any athlete on the current build. The 2.5.4
-	  argument above is therefore dead — `audio` is now JUSTIFIED rather than
-	  unreachable, and its absence is what costs something.
+	  That premise is gone. The speech branch is merged: `src/lib/native/speech.ts`
+	  is on main and `src/app/(app)/cardio/gps-run/gps-run-client.tsx` calls
+	  `speak(splitAnnouncement(...))` on every completed kilometre. Production
+	  serves main and the shell loads production, so the feature is reachable by
+	  any athlete on this build. The mode is therefore justified on the same
+	  test as the other two — declared because the shipped feature requires it —
+	  and its ABSENCE was the defect: a callout feature that goes silent exactly
+	  when it is needed.
 
-	  THE LIVE TRADE, which is a decision and not an oversight. Shipping
-	  without `audio` means the callouts are silent the moment the screen
-	  locks — which, as the paragraph above says, is the whole of the time an
-	  athlete is actually running. So the feature ships and fails in the only
-	  case it exists for. Against that, the second bullet still stands: this
-	  build carries the 4.2 risk, and a third background mode is one more
-	  thing to explain. Decide it deliberately; do not inherit it from this
-	  comment.
-
-	  To add it: the single `<string>audio</string>` line below, bump the
-	  build, and put the review-notes wording from the "After you submit"
-	  phase of docs/pre-launch/submission-runbook.html alongside it. That
-	  runbook still says to hold `audio` back and is stale for the same
-	  reason this bullet was.
+	  REVIEW NOTES must carry the paragraph from the "After you submit" phase of
+	  docs/pre-launch/submission-runbook.html. A third background mode on an app
+	  whose first screen is web content is worth explaining rather than leaving
+	  to be asked about.
 	-->
 	<array>
 		<string>location</string>
 		<string>bluetooth-central</string>
+		<string>audio</string>
 	</array>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Split Index connects to your heart rate monitor or rowing machine (Garmin, Polar, Concept2, or other standard Bluetooth devices) during a session.</string>
