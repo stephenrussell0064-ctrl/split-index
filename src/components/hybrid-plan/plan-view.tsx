@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { format } from "date-fns";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils/cn";
-import type { AthleteProfile, Finding } from "@/lib/scoring/hpe";
+import { planFindingsById, type AthleteProfile } from "@/lib/scoring/hpe";
 import { ACWR_BLOCK, ACWR_FLOOR, ACWR_WARN } from "@/lib/scoring/hpe/constants";
 import { DayDetail } from "./day-detail";
 import { WeekStrip } from "./week-strip";
@@ -80,10 +80,12 @@ export function PlanView({
     return first.offsetDays > 0 ? first.iso : last.iso;
   });
 
-  const findingsById = useMemo(
-    () => new Map<string, Finding>(profile.findings.map((f) => [f.id as string, f])),
-    [profile.findings]
-  );
+  // `planFindingsById`, not `profile.findings` directly: a session whose
+  // emphasis no finding in the athlete's diagnosis backs cites the baseline
+  // rationale, which `diagnose` does not emit and this map therefore did not
+  // contain. Every such session rendered the "could not be loaded" message
+  // over a reason that exists and is stored.
+  const findingsById = useMemo(() => planFindingsById(profile.findings), [profile.findings]);
 
   if (calendar.days.length === 0) {
     return (

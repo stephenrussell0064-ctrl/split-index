@@ -7,6 +7,7 @@ import dynamic from "next/dynamic";
 // exactly what it looked like before this line existed.
 import "leaflet/dist/leaflet.css";
 import { cn } from "@/lib/utils/cn";
+import { basemapTileUrl } from "@/lib/maps/basemap";
 import type { RoutePoint } from "@/lib/scoring/gps-track";
 
 /**
@@ -33,15 +34,12 @@ const Polyline = dynamic(() => import("react-leaflet").then((m) => m.Polyline), 
 const CircleMarker = dynamic(() => import("react-leaflet").then((m) => m.CircleMarker), { ssr: false });
 const FitRouteBounds = dynamic(() => import("./fit-route-bounds").then((m) => m.FitRouteBounds), { ssr: false });
 
-/**
+/*
  * Basemap tiles have to follow the zone they're rendered into. The Engine is
  * a white surface, and a dark-tiled thumbnail on it reads as a black hole
- * punched through the row rather than as a map.
+ * punched through the row rather than as a map. Both styles, and the API key
+ * they now need, live in `lib/maps/basemap`.
  */
-const TILE_URLS = {
-  dark: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
-  light: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
-} as const;
 
 export function RouteMap({
   route,
@@ -140,7 +138,7 @@ export function RouteMap({
           fadeAnimation={false}
           style={{ height: "100%", width: "100%", background: "transparent" }}
         >
-          <TileLayer url={TILE_URLS[variant]} />
+          <TileLayer url={basemapTileUrl(variant)} />
           <FitRouteBounds route={route} />
           <Polyline positions={route} pathOptions={{ color: "#22d3ee", weight: 3, opacity: 0.9 }} />
           <CircleMarker center={[start[0], start[1]]} radius={4} pathOptions={{ color: "#22c55e", fillOpacity: 1 }} />

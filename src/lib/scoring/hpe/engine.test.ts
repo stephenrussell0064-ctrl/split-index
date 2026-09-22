@@ -16,7 +16,7 @@ import { acwrSeries, buildMacrocycle, enforceAcwr } from "./macrocycle";
 import { hrBandFor, paceBandFor } from "./prescription";
 import { applyLowCapacityDay, autoregulate, compareEmphasis, qualityProgressionFor, racePacing, selectAttempts } from "./progression";
 import { hardViolations } from "./scheduler";
-import { buildSessionSet, largestRemainderAllocate } from "./session-set";
+import { buildSessionSet, largestRemainderAllocate, planFindingsById } from "./session-set";
 import { safetyScreen } from "./safety";
 import { DEFAULT_SAFETY_FLAGS, type AthleteState, type Constraints, type Goal } from "./intake";
 import {
@@ -759,14 +759,42 @@ describe("traceability", () => {
       constraints: calibrationConstraints(),
       profile,
     });
-    const known = new Set([...profile.findings.map((f) => f.id), "hybrid-baseline"]);
+    // The lookup the SCREEN builds, not a superset written for the test.
+    //
+    // This assertion used to be `profile.findings ∪ {"hybrid-baseline"}` —
+    // one entry wider than anything that resolves at render time, because
+    // `diagnose` does not emit the baseline and the screen resolved against
+    // `profile.findings` alone. The test passed on plans whose sessions told
+    // the athlete their finding "could not be loaded". Asserting against the
+    // same map the screen uses is what closes that gap.
+    const known = planFindingsById(profile.findings);
     for (const week of plan.weeks) {
       for (const s of week.sessions) {
         expect(s.findingId, `${s.kind} had no finding`).toBeTruthy();
-        expect(known.has(s.findingId), `${s.kind} cited unknown finding ${s.findingId}`).toBe(true);
+        expect(known.has(s.findingId), `${s.kind} cited unresolvable finding ${s.findingId}`).toBe(true);
+        // Not just resolvable — resolvable to something with words in it. An
+        // empty body renders as an empty reasoning box, which is the same
+        // failure wearing a different shape.
+        expect(known.get(s.findingId)!.text.length, `${s.kind} cited an empty finding`).toBeGreaterThan(0);
         expect(s.prescription.findingId).toBe(s.findingId);
       }
     }
+  });
+
+  it("resolves the baseline rationale a session cites when no finding backs its emphasis", () => {
+    // The precise case that shipped: an athlete whose diagnosis contains no
+    // strength finding still gets strength work, attributed to the baseline
+    // rationale. That id must resolve to readable text or the screen prints
+    // "could not be loaded" under a session it prescribed on purpose.
+    const findings = planFindingsById([]);
+    const baseline = findings.get("hybrid-baseline");
+    expect(baseline).toBeDefined();
+    expect(baseline!.text).toMatch(/\S/);
+  });
+
+  it("lets a real diagnosis win over the baseline entry of the same id", () => {
+    const own = { id: "hybrid-baseline" as const, text: "From the athlete's own run." };
+    expect(planFindingsById([own]).get("hybrid-baseline")!.text).toBe(own.text);
   });
 });
 

@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { MapContainer, TileLayer, Polyline, CircleMarker, useMap } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import { cn } from "@/lib/utils/cn";
+import { basemapTileUrl, BASEMAP_ATTRIBUTION } from "@/lib/maps/basemap";
 import type { GpsPoint } from "@/lib/scoring/gps-track";
 
 interface GpsMapProps {
@@ -101,10 +102,7 @@ export default function GpsMap({ points, className }: GpsMapProps) {
         keyboard={false}
         className="h-full w-full"
       >
-        <TileLayer
-          url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
-        />
+        <TileLayer url={basemapTileUrl("light")} attribution={BASEMAP_ATTRIBUTION} />
         <Polyline positions={positions} pathOptions={{ color: "#3ba6ff", weight: 4 }} />
         <CircleMarker
           center={[latest.latitude, latest.longitude]}

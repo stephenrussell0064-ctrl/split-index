@@ -12,7 +12,8 @@
 import { describe, expect, it } from "vitest";
 import { evaluateRerun, loadLatestStoredPlan, type StoredProfileSummary } from "./persistence";
 import { DIAGNOSTIC_RERUN_WEEKS, EMPHASIS_KEYS, HPE_CONSTANTS_VERSION, type EmphasisKey } from "./constants";
-import type { AthleteProfile, EmphasisVector } from "./types";
+import type { AthleteProfile, EmphasisVector, FindingId } from "./types";
+import { planFindingsById } from "./session-set";
 
 function vector(overrides: Partial<Record<EmphasisKey, number>> = {}): EmphasisVector {
   const even = 1 / EMPHASIS_KEYS.length;
@@ -170,17 +171,25 @@ describe("loadLatestStoredPlan", () => {
     tier: 2,
     emphasis: vector(),
   };
+  /*
+    `hpe_findings.id` is a UUID and `finding_key` is the slug (migration 039).
+    These fixtures used to give both the same value, which quietly asserted
+    that the two are interchangeable — they are not, and the loader was
+    handing the screen the UUID under the name the screen resolves by slug.
+    Keeping them visibly different is the point of the fixture.
+  */
   const findingRows = [
-    { finding_key: "F1", body: "Your aerobic base carries your 5k.", ordinal: 0 },
-    { finding_key: "F3", body: "Your squat lags your deadlift.", ordinal: 1 },
+    { id: "0f4e1b2c-aaaa-4aaa-8aaa-000000000001", finding_key: "low-volume", body: "Your aerobic base carries your 5k.", ordinal: 0 },
+    { id: "0f4e1b2c-bbbb-4bbb-8bbb-000000000002", finding_key: "weak-lift", body: "Your squat lags your deadlift.", ordinal: 1 },
   ];
+  const [AEROBIC, WEAK_LIFT] = findingRows;
 
   it("reconstructs weeks and placements a paused athlete can still read", async () => {
-    const plan = { id: "plan-1", generated_at: "2026-08-01T00:00:00Z", constants_version: HPE_CONSTANTS_VERSION, weeks_out: 2 };
+    const plan = { id: "plan-1", profile_id: "profile-1", generated_at: "2026-08-01T00:00:00Z", constants_version: HPE_CONSTANTS_VERSION, weeks_out: 2 };
     const sessions = [
-      { week: 1, phase: "base", is_deload: false, day_of_week: "Mon", slot: "pm", kind: "easy_run", domain: "endurance", emphasis_key: "aerobic_base", is_quality: false, minutes: 45, prescription: "Easy 8km", finding_id: "F1" },
-      { week: 1, phase: "base", is_deload: false, day_of_week: "Tue", slot: "pm", kind: "strength_lower", domain: "strength", emphasis_key: "max_strength", is_quality: true, minutes: 60, prescription: "Squat 4x6", finding_id: "F3" },
-      { week: 2, phase: "base", is_deload: true, day_of_week: "Mon", slot: "pm", kind: "long_run", domain: "endurance", emphasis_key: "aerobic_base", is_quality: true, minutes: 90, prescription: "Long 16km", finding_id: "F1" },
+      { week: 1, phase: "base", is_deload: false, day_of_week: "Mon", slot: "pm", kind: "easy_run", domain: "endurance", emphasis_key: "aerobic_base", is_quality: false, minutes: 45, prescription: "Easy 8km", finding_id: AEROBIC.id },
+      { week: 1, phase: "base", is_deload: false, day_of_week: "Tue", slot: "pm", kind: "strength_lower", domain: "strength", emphasis_key: "max_strength", is_quality: true, minutes: 60, prescription: "Squat 4x6", finding_id: WEAK_LIFT.id },
+      { week: 2, phase: "base", is_deload: true, day_of_week: "Mon", slot: "pm", kind: "long_run", domain: "endurance", emphasis_key: "aerobic_base", is_quality: true, minutes: 90, prescription: "Long 16km", finding_id: AEROBIC.id },
     ];
 
     const stored = await loadLatestStoredPlan(
@@ -198,6 +207,35 @@ describe("loadLatestStoredPlan", () => {
     expect(w1.enduranceMin).toBe(45);
     expect(w2.deload).toBe(true);
     expect(w2.enduranceMin).toBe(90);
+
+    // Each session cites its finding by the SLUG the screen resolves by, not
+    // by the UUID the column stores. Sending the UUID through made every card
+    // on the paused screen say its reason could not be loaded.
+    const cited = (w1.placements as Array<{ session: { findingId: string } }>).map((p) => p.session.findingId);
+    expect(cited).toEqual(["low-volume", "weak-lift"]);
+  });
+
+  it("resolves every session's finding against the list it ships alongside it", async () => {
+    const plan = { id: "plan-1", profile_id: "profile-1", generated_at: "2026-08-01T00:00:00Z", constants_version: HPE_CONSTANTS_VERSION, weeks_out: 1 };
+    const sessions = [
+      { week: 1, phase: "base", is_deload: false, day_of_week: "Mon", slot: "pm", kind: "easy_run", domain: "endurance", emphasis_key: "aerobic_base", is_quality: false, minutes: 45, prescription: "Easy 8km", finding_id: AEROBIC.id },
+      { week: 1, phase: "base", is_deload: false, day_of_week: "Tue", slot: "pm", kind: "squat_volume", domain: "strength", emphasis_key: "maximal_strength", is_quality: false, minutes: 66, prescription: "Squat 4x6", finding_id: WEAK_LIFT.id },
+    ];
+    const stored = await loadLatestStoredPlan(
+      supabaseWith({ plan, sessions, profile: storedProfileRow, findings: findingRows }),
+      "user-1"
+    );
+
+    // This is the whole promise, asserted end to end rather than in halves:
+    // the ids the sessions carry and the findings sent to render them are one
+    // set. Either half alone passed while the screen showed "could not be
+    // loaded" on every card.
+    const byId = planFindingsById(stored!.profile!.findings);
+    for (const week of stored!.weeks as Array<{ placements: Array<{ session: { findingId: FindingId; kind: string } }> }>) {
+      for (const p of week.placements) {
+        expect(byId.get(p.session.findingId)?.text, `${p.session.kind} had no resolvable finding`).toMatch(/\S/);
+      }
+    }
   });
 
   it("returns null rather than an empty shell when nothing was ever stored", async () => {
@@ -205,9 +243,9 @@ describe("loadLatestStoredPlan", () => {
   });
 
   it("carries the profile and findings, without which the paused screen cannot render", async () => {
-    const plan = { id: "plan-1", generated_at: "2026-08-01T00:00:00Z", constants_version: HPE_CONSTANTS_VERSION, weeks_out: 1 };
+    const plan = { id: "plan-1", profile_id: "profile-1", generated_at: "2026-08-01T00:00:00Z", constants_version: HPE_CONSTANTS_VERSION, weeks_out: 1 };
     const sessions = [
-      { week: 1, phase: "base", is_deload: false, day_of_week: "Mon", slot: "pm", kind: "easy_run", domain: "endurance", emphasis_key: "aerobic_base", is_quality: false, minutes: 45, prescription: "Easy 8km", finding_id: "F1" },
+      { week: 1, phase: "base", is_deload: false, day_of_week: "Mon", slot: "pm", kind: "easy_run", domain: "endurance", emphasis_key: "aerobic_base", is_quality: false, minutes: 45, prescription: "Easy 8km", finding_id: AEROBIC.id },
     ];
     const stored = await loadLatestStoredPlan(
       supabaseWith({ plan, sessions, profile: storedProfileRow, findings: findingRows }),
@@ -217,15 +255,15 @@ describe("loadLatestStoredPlan", () => {
     // The plan view resolves each session's finding id against this list. An
     // empty one turns a traceable block into an unexplained calendar.
     expect(stored!.profile).not.toBeNull();
-    expect(stored!.profile!.findings.map((f) => f.id)).toEqual(["F1", "F3"]);
+    expect(stored!.profile!.findings.map((f) => f.id)).toEqual(["low-volume", "weak-lift"]);
     expect(stored!.profile!.findings[0].text).toMatch(/aerobic base/);
     expect(stored!.profile!.tier).toBe(2);
   });
 
   it("satisfies the exact condition the paused screen branches on", async () => {
-    const plan = { id: "plan-1", generated_at: "2026-08-01T00:00:00Z", constants_version: HPE_CONSTANTS_VERSION, weeks_out: 1 };
+    const plan = { id: "plan-1", profile_id: "profile-1", generated_at: "2026-08-01T00:00:00Z", constants_version: HPE_CONSTANTS_VERSION, weeks_out: 1 };
     const sessions = [
-      { week: 1, phase: "base", is_deload: false, day_of_week: "Mon", slot: "pm", kind: "easy_run", domain: "endurance", emphasis_key: "aerobic_base", is_quality: false, minutes: 45, prescription: "Easy 8km", finding_id: "F1" },
+      { week: 1, phase: "base", is_deload: false, day_of_week: "Mon", slot: "pm", kind: "easy_run", domain: "endurance", emphasis_key: "aerobic_base", is_quality: false, minutes: 45, prescription: "Easy 8km", finding_id: AEROBIC.id },
     ];
     const stored = await loadLatestStoredPlan(
       supabaseWith({ plan, sessions, profile: storedProfileRow, findings: findingRows }),
