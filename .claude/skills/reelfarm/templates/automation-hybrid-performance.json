@@ -1,0 +1,61 @@
+{
+  "title": "Split Index · Hybrid performance",
+  "tiktok_account_id": "-0009TcGXxVCm3Y_DtmAhPj0fpqS9hHw-bO5",
+  "language": "English",
+  "style": "TEXT MUST BE READABLE. Every single text item on every slide MUST use the LIGHT BLACK BACKGROUND text style, so it stays legible over a photograph of any brightness. Never use a plain text style with no background behind it, and never use white text on its own.\n\nThe one permitted alternative is the hook on the first slide, which may use the WHITE BACKGROUND text style instead. It must still have a background.\n\nKeep every text item at 80% width or less so lines never run to the edge of the frame.\n\nI want EXACTLY 3 slides (NO MORE THAN 3 TOTAL SLIDES). A fixed closing slide showing the app is appended automatically after them — do not write a fourth slide.\n\nSlide 1 is the hook: 1 text item in EXTRA LARGE font size at 90% width, WHITE BACKGROUND text style, sitting on the BOTTOM 1/3RD of the slide. Carry the hook line exactly as given. Do not reword it and do not change any number in it.\n\nSlide 2 has 2 text items in SMALL font size at 80% width, LIGHT BLACK BACKGROUND text style, on the TOP 1/3RD. Each states one thing measured from the athlete's own logged sessions, and together they set up a tension between their strength and their endurance.\n\nSlide 3 has 2 text items. The FIRST is in SMALL font size at 80% width, LIGHT BLACK BACKGROUND, on the TOP 1/3RD, and is a question pivoting to what it means for hybrid performance overall. The SECOND is in SMALL font size, LIGHT BLACK BACKGROUND, on the BOTTOM 1/3RD, and reads exactly: Want this kind of data?\n\nUse the default TikTok font throughout.\n\nWritten in a blunt, data-led tone with short declarative sentences, first person where it reads naturally. Use contractions the way a person speaks: don't, didn't, that's, you're. No hype, no emojis, no exclamation marks. 6 to 12 words per text item.\n\nThe subject is always hybrid training: how lifting and running affect each other, and how one athlete can be measured across both. Never compare two lifts against each other as if that were the point — the comparison that matters is strength against endurance.\n\nONLY these things may be named as something the app does. This list is exhaustive:\n  - the Split Index, one score out of 100 combining strength and endurance\n  - the Engine score for endurance and the Lab score for strength\n  - predicted race times at 1500m, 5k, 10k, half and marathon, from the athlete's own pace curve\n  - a personal fatigue exponent regressed from their own maximal efforts, instead of a population average\n  - adaptive 1RM per lift: what recent training says they could lift today, against their all-time best, with a likely range\n  - DOTS and IPF GL, bodyweight-adjusted strength scores\n  - the interference measurement: how their lifting affects their running and the reverse, from their own paired sessions\n  - injury risk as this week's load against their rolling four-week average\n  - a readiness score for today\n  - efficiency factor, meaning speed per heartbeat\n  - an estimated lactate threshold and an estimated VO2max, both clearly estimates\n  - a Hybrid Plan whose sessions each state the reason they were prescribed\n  - per-set scoring in the gym, where each set is scored on its own\n\nDo not name any metric, score or feature outside that list. Do not invent a plausible-sounding name for one. If you cannot make the point using something on the list, make a different point.\n\nNEVER state what is typical, normal, balanced, average or good for most people. The app scores an athlete against their own history and against published standards; it does not hold a norm for every ratio, so any sentence of that shape is an invention.\n\nEVERY number you write must either appear word-for-word in the hook line, or be arithmetic on two numbers that do — a ratio or a percentage of them. You may NOT write any other weight, time, date, duration, percentage or count. Not one. If a sentence needs a number you do not have, write the sentence without a number. Inventing a plausible figure is the single worst thing you can do here.\n\nNever make a medical claim. Injury risk is always relative to the athlete's own baseline, never a diagnosis. Never describe age or sex adjustments as accurate or calibrated, because they are beta.",
+  "schedule": [
+    {
+      "cron": "0 10 * * 1"
+    }
+  ],
+  "slideshow_hooks": [
+    "200 kg deadlift. 3:14 marathon. Can one person really have both?",
+    "133 kg bench. 18:52 5k. Which one is the better number?",
+    "18:52 for a 5k. 200 kg off the floor. Which took longer to build?",
+    "124 squat. 18:52 5k. 3:14 marathon. Which one is lying?",
+    "Squat 180. Run an 18:40 5k. Which one of those is actually better?"
+  ],
+  "tiktok_post_settings": {
+    "caption": {
+      "mode": "prompt",
+      "prompt_text": "Write a TikTok caption under 150 characters for Split Index, a hybrid-fitness app that scores lifting and running on one scale out of 100 from the user's own logged sessions. End with: Search Split Index on the App Store. Blunt and specific, no emojis, at most one hashtag. Never make medical claims; frame injury risk as relative to the athlete's own baseline."
+    },
+    "description": {
+      "mode": "prompt",
+      "prompt_text": "One or two plain sentences expanding the hook for a hybrid athlete. State what the app measures across strength and endurance and why the number is defensible. No hype, no medical claims. Never state age or sex factors as calibrated accuracy. Then end with 4 to 6 hashtags on their own line, drawn from this pool and matched to the post: #hybridathlete #hybridtraining #hyrox #runningtips #powerlifting #strengthandconditioning #marathontraining #gymtok #runtok #fitnessapp"
+    },
+    "auto_post": true,
+    "post_mode": "DIRECT_POST",
+    "visibility": "PUBLIC_TO_EVERYONE",
+    "auto_music": true,
+    "allow_comments": true,
+    "allow_duet": true,
+    "allow_stitch": true
+  },
+  "image_settings": {
+    "aspect_ratio": "9:16",
+    "hook_grid_format": "single",
+    "body_grid_format": "single",
+    "auto_pull_images": false,
+    "auto_images_no_text": false,
+    "disable_auto_image_for_first_slide": false,
+    "is_bg_overlay_on": false,
+    "is_bg_overlay_on_hook_image": false,
+    "background_opacity": 20,
+    "keep_original_aspect_ratio": false,
+    "text_on_first_slide_only": false,
+    "no_text_on_slides": false,
+    "first_slide": {
+      "collection": "user_collection_16250",
+      "mode": "collection",
+      "single_image": null
+    },
+    "all_slides": "user_collection_16250",
+    "cta_slide": {
+      "check": true,
+      "cta_collection_check": true,
+      "cta_collection_id": "user_collection_16264",
+      "image_id": null
+    }
+  }
+}

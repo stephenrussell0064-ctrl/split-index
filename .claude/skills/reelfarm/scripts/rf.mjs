@@ -91,6 +91,32 @@ async function req(method, path, { query, body } = {}) {
       die(`${method} ${path} -> ${res.status}. Key rejected, or your plan lacks API access (Growth+).\n${detail}`);
     }
     if (res.status === 429) {
+      // ReelFarm returns 429 for two unrelated limits. Request rate clears on
+      // its own in a minute; the concurrent-slideshow cap clears only when a
+      // generation finishes, which can be many minutes and is not helped by
+      // waiting a fixed 60s. Telling the caller to wait 60s for the second
+      // kind sends them back into the same wall.
+      const code = typeof parsed === "object" && parsed ? parsed.code : null;
+      if (code === "CONCURRENT_LIMIT") {
+        die(
+          [
+            `${method} ${path} -> 429 concurrent limit (not request rate).`,
+            "Generations already in flight must finish first — waiting 60s will not clear it.",
+            "",
+            // `rf.mjs videos` cannot show these. A slideshow only becomes a
+            // video record once rendering completes, so one still in
+            // `generating` or `rendering` has no video row to list, and the API
+            // has no list-slideshows endpoint at all — only
+            // GET /slideshows/{id}/status, which needs an id you do not have
+            // unless you started it yourself. The dashboard is the only place
+            // the in-flight set is visible.
+            "`rf.mjs videos` will show nothing: in-flight slideshows have no video",
+            "record yet, and the API has no endpoint that lists them. Check the",
+            "ReelFarm dashboard to see what is running.",
+            detail,
+          ].join("\n"),
+        );
+      }
       die(`${method} ${path} -> 429 rate limited. Wait 60s. Do not parallelise.\n${detail}`);
     }
     die(`${method} ${path} -> ${res.status}\n${detail}`);
@@ -209,20 +235,84 @@ function cmdHooks(flags) {
   console.log(`\n${selected.length} hook(s) — ${tally}.`);
 }
 
-async function cmdAutomationCreate(payloadPath) {
-  if (!payloadPath) die("Usage: rf.mjs automation:create <payload.json>");
+const CRON_DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+/**
+ * Plain-English cron, for the live-post confirmation only. Handles the shape
+ * these templates use (fixed minute, fixed hour, weekday) and falls back to
+ * the raw expression rather than guessing at anything more elaborate — a
+ * confirmation prompt that describes the schedule wrongly is worse than one
+ * that shows the cron.
+ */
+function describeSchedule(schedule) {
+  const crons = (schedule ?? []).map((s) => s?.cron).filter(Boolean);
+  if (crons.length === 0) return "run (no schedule set — manual runs only)";
+  return crons
+    .map((cron) => {
+      const [min, hour, dom, mon, dow] = String(cron).split(/\s+/);
+      if (dom !== "*" || mon !== "*" || !/^\d+$/.test(dow ?? "") || !/^\d+$/.test(hour ?? "") || !/^\d+$/.test(min ?? "")) {
+        return `run on cron "${cron}"`;
+      }
+      // ReelFarm's cron is Pacific; saying so avoids a schedule that looks
+      // like a UK morning slot and is actually an evening one.
+      return `${CRON_DAYS[Number(dow) % 7]} at ${hour.padStart(2, "0")}:${min.padStart(2, "0")} Pacific`;
+    })
+    .join(", and every ");
+}
+
+async function cmdAutomationCreate(payloadPath, flags = {}) {
+  if (!payloadPath) die("Usage: rf.mjs automation:create <payload.json> [--confirm-live]");
   let payload;
   try {
     payload = JSON.parse(readFileSync(resolve(payloadPath), "utf8"));
   } catch (err) {
     die(`Could not read payload: ${err.message}`);
   }
-  if (!payload.tiktok_account_id || String(payload.tiktok_account_id).startsWith("<")) {
-    die("payload.tiktok_account_id is still a placeholder. Run `rf.mjs accounts` and fill it in.");
+  // Every placeholder in the payload, not just the account id. The original
+  // check knew about one field, so a template with real credentials and
+  // `user_collection_<STOCK>` still standing passed it — the API accepts those
+  // ids and the automation generates without the images it was designed
+  // around. Same shape of failure as a wrong account id: accepted, silent,
+  // and only visible in the output days later.
+  const placeholders = [];
+  (function scan(node, path) {
+    if (typeof node === "string") {
+      if (/<[A-Za-z_ .:-]+>/.test(node)) placeholders.push(`${path} = ${JSON.stringify(node)}`);
+    } else if (Array.isArray(node)) {
+      node.forEach((v, i) => scan(v, `${path}[${i}]`));
+    } else if (node && typeof node === "object") {
+      for (const [k, v] of Object.entries(node)) scan(v, path ? `${path}.${k}` : k);
+    }
+  })(payload, "");
+  if (!payload.tiktok_account_id) die("payload.tiktok_account_id is missing.");
+  if (placeholders.length > 0) {
+    die(
+      [
+        "This payload still contains placeholders:",
+        ...placeholders.map((p) => `  ${p}`),
+        "",
+        "Account id:  node .claude/skills/reelfarm/scripts/bind-account.mjs",
+        "Collections: rf.mjs collections   (then paste the id into the template)",
+      ].join("\n"),
+    );
   }
+
+  // DIRECT_POST puts a recurring public post on a real account with nobody in
+  // the loop, so it needs the same explicit flag `publish` has always needed.
+  // The header has documented --confirm-live for both since the file was
+  // written; only `publish` ever implemented it, which left create with a
+  // refusal and no way to honour the sign-off it asks for.
   const mode = payload.tiktok_post_settings?.post_mode;
-  if (mode === "DIRECT_POST") {
-    die("This payload posts live (post_mode DIRECT_POST). Set MEDIA_UPLOAD, or get explicit sign-off first.");
+  if (mode === "DIRECT_POST" && !flags["confirm-live"]) {
+    die(
+      [
+        "This payload posts live (post_mode DIRECT_POST):",
+        `  every ${describeSchedule(payload.schedule)}, published publicly, no review step.`,
+        "",
+        "Re-run with --confirm-live if that is intended, or set post_mode to",
+        "MEDIA_UPLOAD to have each batch land as a TikTok draft instead.",
+      ].join("\n"),
+    );
   }
   out(await req("POST", "/automations", { body: payload }));
 }
@@ -407,7 +497,9 @@ const USAGE = `ReelFarm CLI — Split Index
         [--asset confirmed|needs_capture]  filter by shot status — needs_capture is your shot list
         [--asset blocked|stock]
 
-  automation:create <payload.json>
+  automation:create <payload.json> [--confirm-live]
+                                           --confirm-live is required when the
+                                           payload's post_mode is DIRECT_POST
   automation:list
   automation:get <id>
   automation:hooks <id> [--batch gym]      PATCH slideshow_hooks from the library
@@ -433,7 +525,7 @@ async function main() {
     case "collections": return cmdCollections(positional[0]);
     case "pinterest": return cmdPinterest(positional[0]);
     case "hooks": return cmdHooks(flags);
-    case "automation:create": return cmdAutomationCreate(positional[0]);
+    case "automation:create": return cmdAutomationCreate(positional[0], flags);
     case "automation:list": return cmdAutomationList();
     case "automation:get": return cmdAutomationGet(positional[0]);
     case "automation:hooks": return cmdAutomationHooks(positional[0], flags);
