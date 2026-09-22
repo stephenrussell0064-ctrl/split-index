@@ -1,5 +1,44 @@
 # App Store screenshots
 
+Two sets live here. **The designed marketing set below is the one to upload.**
+The captioned set further down predates it and is kept because it covers
+screens the marketing set does not.
+
+## The designed set — `marketing-6.7-1284x2778/` and `marketing-6.9-1320x2868/`
+
+```bash
+node docs/pre-launch/app-store-screenshots/resize-marketing.mjs
+```
+
+Five device-frame renders with marketing captions. The originals are 1152x2048
+— a 9:16 design-tool canvas, which **App Store Connect does not accept**;
+iPhone screenshots are 19.5:9 at exact pixel sizes. Since the target is taller
+relative to its width, conforming them is pure vertical padding and no pixel of
+the artwork is cropped. Both accepted iPhone sizes are generated: 6.7" is what
+this listing already has approved, 6.9" is what a new submission is asked for.
+
+The padding is not a bar. Each edge is mirrored, stretched across the new band
+and faded into that edge's average colour, so the extension continues the
+existing gradient instead of butting against it. Two of the five sit on
+near-white backgrounds and three on near-black, so a single fill colour could
+never have worked for all of them. Measured seam discontinuity after the fix is
+under 6/255 on every image, and under 2.6 on eight of the ten.
+
+Three things the script had to learn the hard way, all still true if you re-run
+it against different artwork:
+
+- **Stretching the single outermost row banded the dashboard render**, because
+  its last row is lighter than the rows above it, so a flat smear of it sat at
+  the wrong level.
+- **Mirroring the full band height printed the headline upside down** at the top
+  of that same render — the band is 247px and the headline starts at 240. The
+  mirror now samples 96px, which stays inside the margin on all five.
+- **The alpha ramp is easy to get backwards.** The opaque end must be the one
+  touching the artwork; inverted, it puts the flat colour at the seam and the
+  discontinuity jumps to 117/255.
+
+## The captioned set — built from live captures
+
 Captioned 1284x2778 assets for the iPhone 6.7" display size, plus the raw
 captures they are built from and the script that builds them.
 
