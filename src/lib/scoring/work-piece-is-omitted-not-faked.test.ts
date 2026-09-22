@@ -69,6 +69,11 @@ describe("the work-piece breakdown is omitted for free users, never faked", () =
     expect(wire).not.toContain("workPaceSecPerKm");
     expect(wire).not.toContain(String(WORK_PIECE.workPaceSecPerKm));
     expect(wire).not.toContain(String(WORK_PIECE.equivalentPaceSecPerKm));
+    // All three, including the session average. A free user could derive that
+    // one from their own distance and duration, so leaking it would be a
+    // smaller sin — but asserting two of three invites the next reader to
+    // treat the gap as an oversight and "fix" it in the wrong direction.
+    expect(wire).not.toContain(String(WORK_PIECE.sessionAvgPaceSecPerKm));
   });
 
   it("names it as withheld, so the client can say what is behind the gate", () => {

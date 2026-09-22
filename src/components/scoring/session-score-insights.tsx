@@ -231,6 +231,17 @@ function CardioPremiumStats({
 }) {
   // Flags the notes above already say in words — listing them raw as well
   // just repeats the explanation in engine vocabulary.
+  /*
+    `in` rather than a plain read: a gated (free-tier) result has the field
+    stripped by `gates.ts` rather than set to null, so a direct
+    `result.workPiece` would be `undefined` on a shape that does not declare
+    it. Null here means "no breakdown to show", which is also the honest
+    answer for a free account — and for a session scored before this field
+    existed.
+
+    Derived BEFORE `hiddenFlags` because the suppression below depends on it.
+  */
+  const workPiece = "workPiece" in result ? result.workPiece : null;
   const hiddenFlags = new Set([
     "effort-from-hr",
     "effort-from-rpe",
@@ -254,13 +265,21 @@ function CardioPremiumStats({
     // bullet — the same adjustment the strength side now names outright.
     "age-graded",
     /*
-     * Rendered as the work-piece breakdown below, with the actual paces,
-     * rather than as the bare words "interval work piece scored" — which is
-     * a dev slug that told the athlete nothing about the one fact that
-     * matters: their reps were scored, not their standing around.
+     * Hidden ONLY when there is a breakdown to show in its place.
+     *
+     * The activity page does not re-score on read — `extractGatedCardioInsight`
+     * casts the stored `breakdown.cardio_activity` JSONB straight through, and
+     * `activity-scorer.ts` writes that blob at log/edit time only. So every
+     * interval session logged before `workPiece` existed carries the flag and
+     * no `workPiece` key, for months. Suppressing the slug unconditionally
+     * would replace it with NOTHING on all of that history — a net loss for
+     * exactly the premium athletes this is meant to serve.
+     *
+     * Same problem `strengthResultFromScoreRow` already solved a few functions
+     * away: rows written before a field existed get the honest fallback rather
+     * than an invented one.
      */
-    "interval-work-piece-scored",
-    "fartlek-work-piece-scored",
+    ...(workPiece ? ["interval-work-piece-scored", "fartlek-work-piece-scored"] : []),
   ]);
   const remainingFlags = result.flags.filter((f) => !hiddenFlags.has(f));
   const isAgeGraded = result.flags.includes("age-graded");
@@ -268,14 +287,6 @@ function CardioPremiumStats({
   // results carry the flag but no magnitude, so they keep the numberless
   // wording rather than showing a fabricated or defaulted figure.
   const cardioAgeGrade = readCardioAgeGrade(result.ageGradeFactor);
-  /*
-    `in` rather than a plain read: a gated (free-tier) result has the field
-    stripped by `gates.ts` rather than set to null, so a direct
-    `result.workPiece` would be `undefined` on a shape that does not declare
-    it. Null here means "no breakdown to show", which is also the honest
-    answer for a free account.
-  */
-  const workPiece = "workPiece" in result ? result.workPiece : null;
   const predictionVerb = (sport && PREDICTION_VERB[sport]) || "run";
 
   return (
