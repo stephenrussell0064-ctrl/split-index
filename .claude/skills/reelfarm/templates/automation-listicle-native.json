@@ -1,0 +1,61 @@
+{
+  "title": "Split Index · Listicle (ReelFarm native)",
+  "tiktok_account_id": "-0009TcGXxVCm3Y_DtmAhPj0fpqS9hHw-bO5",
+  "language": "English",
+  "_note": "style deliberately carries ONLY the readability rule. ReelFarm writes better copy than a prescribed prompt; this leaves slide count, structure and voice to it.",
+  "style": "TEXT MUST BE READABLE. Every single text item on every slide MUST use the LIGHT BLACK BACKGROUND text style, so it stays legible over a photograph of any brightness. Never use a plain text style with no background behind it, and never use white text on its own.\n\nThe one permitted alternative is the hook on the first slide, which may use the WHITE BACKGROUND text style instead. It must still have a background.\n\nKeep every text item at 80% width or less so lines never run to the edge of the frame.\n\nEverything else is yours: how many slides, what each one says, the structure, the voice and the wording.",
+  "schedule": [
+    {
+      "cron": "0 10 * * 6"
+    }
+  ],
+  "slideshow_hooks": [
+    "4 things i changed to stop leg day wrecking my long runs:",
+    "how i stopped my running killing my squat numbers:",
+    "5 ways i finally balanced lifting and running without getting injured:",
+    "how i stopped guessing whether my training was actually working:"
+  ],
+  "tiktok_post_settings": {
+    "caption": {
+      "mode": "prompt",
+      "prompt_text": "Write a TikTok caption under 150 characters for Split Index, a hybrid-fitness app that scores lifting and running on one scale out of 100 from the user's own logged sessions. End with: Search Split Index on the App Store. Blunt and specific, no emojis, at most one hashtag. Never make medical claims; frame injury risk as relative to the athlete's own baseline."
+    },
+    "description": {
+      "mode": "prompt",
+      "prompt_text": "One or two plain sentences expanding the hook for a hybrid athlete. State what the app measures across strength and endurance and why the number is defensible. No hype, no medical claims. Never state age or sex factors as calibrated accuracy. Then end with 4 to 6 hashtags on their own line, drawn from this pool and matched to the post: #hybridathlete #hybridtraining #hyrox #runningtips #powerlifting #strengthandconditioning #marathontraining #gymtok #runtok #fitnessapp"
+    },
+    "auto_post": false,
+    "post_mode": "MEDIA_UPLOAD",
+    "visibility": "SELF_ONLY",
+    "auto_music": true,
+    "allow_comments": true,
+    "allow_duet": true,
+    "allow_stitch": true
+  },
+  "image_settings": {
+    "aspect_ratio": "9:16",
+    "hook_grid_format": "single",
+    "body_grid_format": "single",
+    "auto_pull_images": false,
+    "auto_images_no_text": false,
+    "disable_auto_image_for_first_slide": false,
+    "is_bg_overlay_on": false,
+    "is_bg_overlay_on_hook_image": false,
+    "background_opacity": 20,
+    "keep_original_aspect_ratio": false,
+    "text_on_first_slide_only": false,
+    "no_text_on_slides": false,
+    "first_slide": {
+      "collection": "user_collection_<STOCK>",
+      "mode": "collection",
+      "single_image": null
+    },
+    "all_slides": "user_collection_<STOCK>",
+    "cta_slide": {
+      "check": true,
+      "cta_collection_check": true,
+      "cta_collection_id": "user_collection_<ADVERT>",
+      "image_id": null
+    }
+  }
+}
