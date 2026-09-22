@@ -443,10 +443,25 @@ function slTable(kgAtRowBodyweight: readonly [number, number, number, number, nu
  *    map. They keep their documented engineering-judgement anchors.
  */
 const WEIGHT_RATIO_ANCHOR_TABLES: Partial<Record<string, WeightAnchor[]>> = {
+  /*
+   * The bottom three anchors eased, 22 Sep 2026, the top two left alone.
+   *
+   * The complaint was about the average gym floor, not the top of it: at
+   * 70 kg -> 400 and 98 kg -> 650, an ordinary 83 kg lifter benching 75 kg read
+   * 44.5, and an ordinary lifter is not in the bottom half of a gym. Easing the
+   * middle moves that to 49.3 without touching what Elite costs — shifting all
+   * five would have made 132 kg Elite at about 121, which is a different and
+   * much worse error than the one being fixed.
+   *
+   * Fourth re-anchor for this lift. The three before it all went the same way,
+   * which is worth noticing: each was a response to one athlete's sense of
+   * where they should rank, and none to new population data. If it moves a
+   * fifth time, that is the thing to question rather than the number.
+   */
   bench: [
-    [47 / REFERENCE_BODYWEIGHT_KG, 150],
-    [70 / REFERENCE_BODYWEIGHT_KG, 400],
-    [98 / REFERENCE_BODYWEIGHT_KG, 650],
+    [44 / REFERENCE_BODYWEIGHT_KG, 150],
+    [65 / REFERENCE_BODYWEIGHT_KG, 400],
+    [92 / REFERENCE_BODYWEIGHT_KG, 650],
     [132 / REFERENCE_BODYWEIGHT_KG, 850],
     [169 / REFERENCE_BODYWEIGHT_KG, 950],
   ],
@@ -551,7 +566,11 @@ const ACCESSORY_MAP: Record<string, LiftAnchor> = {
   // DEFAULT_GENERIC_ANCHOR) — a ~8.2% easier anchor, roughly +3 points on
   // the 0-99.9 display scale for the same lift.
   machineChestPress: { anchorRatio: 0.72, category: "chest", bodyPart: "upperBody" },
-  cableFly: { anchorRatio: 0.3823, category: "chest", bodyPart: "upperBody" },
+  // Eased 0.3823 -> 0.3400 on 22 Sep 2026, same complaint as bench. A fly is
+  // an isolation movement most people load conservatively and stop well short
+  // of failure on, so anchoring it near two fifths of bodyweight asked an
+  // ordinary lifter for a stack they would never reasonably pick.
+  cableFly: { anchorRatio: 0.34, category: "chest", bodyPart: "upperBody" },
   pecDeck: { anchorRatio: 0.8583, category: "chest", bodyPart: "upperBody" },
   // Calibrated (user feedback: 95kg x8 should score ~700, 125kg x8 should
   // score ~875 — "Tricep Press" had no anchor at all before this, so it was
