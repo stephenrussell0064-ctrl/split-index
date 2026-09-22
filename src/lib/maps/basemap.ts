@@ -37,6 +37,10 @@ export type BasemapVariant = keyof typeof STYLE;
 /**
  * Required by CARTO's terms and by OSM's licence, both of which ask for
  * visible credit rather than credit in a source file.
+ *
+ * HTML, because this is what Leaflet's own attribution control renders. A
+ * surface that draws its own credit wants `BasemapCredit` instead — see the
+ * note there about why the logbook cannot use this one.
  */
 export const BASEMAP_ATTRIBUTION =
   '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>';

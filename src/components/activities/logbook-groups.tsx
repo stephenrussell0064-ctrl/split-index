@@ -2,6 +2,7 @@ import { format } from "date-fns";
 import { cn } from "@/lib/utils/cn";
 import { formatDistance, formatDuration } from "@/lib/utils/format";
 import { LogbookRow } from "@/components/activities/logbook-row";
+import { BasemapCredit } from "@/components/activities/basemap-credit";
 import { surfaceTheme, type LogbookSurface } from "@/components/activities/logbook-theme";
 import type { LogbookEntry } from "@/lib/activities/logbook-query";
 
@@ -94,6 +95,14 @@ export function LogbookGroups({
   const theme = surfaceTheme(surface);
   const groups = groupByMonth(entries);
 
+  // Credited only when a map is actually on screen. Crediting a tile
+  // provider under a list of gym sessions would be noise claiming to be
+  // compliance.
+  // The same test LogbookRow uses to decide whether to draw a map at all —
+  // two points, because one is not a route. They have to agree or the credit
+  // appears under a list with no maps in it, or worse, fails to.
+  const showsRoutes = entries.some((e) => (e.route?.length ?? 0) >= 2);
+
   return (
     <>
       {groups.map((group) => (
@@ -134,6 +143,7 @@ export function LogbookGroups({
           </ul>
         </section>
       ))}
+      {showsRoutes && <BasemapCredit className={theme.faint} />}
     </>
   );
 }
