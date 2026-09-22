@@ -19,7 +19,8 @@ export type LockedCardioFields =
   | "adjustments"
   | "personal"
   | "fitnessEquivalentSeconds"
-  | "ageGradeFactor";
+  | "ageGradeFactor"
+  | "workPiece";
 
 export type LockedIndexFields =
   | "labIndex"
@@ -82,6 +83,10 @@ export function gateCardioResult(
       // so it is never sent — this list only tells the client what is behind
       // the gate.
       "ageGradeFactor",
+      // The work/rest breakdown behind an interval or fartlek score. Premium
+      // for the same reason the rest of this list is: it is the reading of
+      // the session, not the session itself.
+      "workPiece",
     ],
   };
 }
