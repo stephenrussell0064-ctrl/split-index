@@ -122,6 +122,7 @@ function renderCardio(over: Partial<CardioResult>, isPremium = false): string {
     predictions: null,
     confidence: 0.9,
     flags: [],
+    workPiece: null,
   };
   return renderToStaticMarkup(
     <SessionScoreInsights zone="cardio" isPremium={isPremium} cardioResult={{ ...base, ...over }} />

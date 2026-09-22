@@ -231,6 +231,17 @@ function CardioPremiumStats({
 }) {
   // Flags the notes above already say in words — listing them raw as well
   // just repeats the explanation in engine vocabulary.
+  /*
+    `in` rather than a plain read: a gated (free-tier) result has the field
+    stripped by `gates.ts` rather than set to null, so a direct
+    `result.workPiece` would be `undefined` on a shape that does not declare
+    it. Null here means "no breakdown to show", which is also the honest
+    answer for a free account — and for a session scored before this field
+    existed.
+
+    Derived BEFORE `hiddenFlags` because the suppression below depends on it.
+  */
+  const workPiece = "workPiece" in result ? result.workPiece : null;
   const hiddenFlags = new Set([
     "effort-from-hr",
     "effort-from-rpe",
@@ -253,6 +264,22 @@ function CardioPremiumStats({
     // Rendered as a sentence below instead of as a raw "· age graded"
     // bullet — the same adjustment the strength side now names outright.
     "age-graded",
+    /*
+     * Hidden ONLY when there is a breakdown to show in its place.
+     *
+     * The activity page does not re-score on read — `extractGatedCardioInsight`
+     * casts the stored `breakdown.cardio_activity` JSONB straight through, and
+     * `activity-scorer.ts` writes that blob at log/edit time only. So every
+     * interval session logged before `workPiece` existed carries the flag and
+     * no `workPiece` key, for months. Suppressing the slug unconditionally
+     * would replace it with NOTHING on all of that history — a net loss for
+     * exactly the premium athletes this is meant to serve.
+     *
+     * Same problem `strengthResultFromScoreRow` already solved a few functions
+     * away: rows written before a field existed get the honest fallback rather
+     * than an invented one.
+     */
+    ...(workPiece ? ["interval-work-piece-scored", "fartlek-work-piece-scored"] : []),
   ]);
   const remainingFlags = result.flags.filter((f) => !hiddenFlags.has(f));
   const isAgeGraded = result.flags.includes("age-graded");
@@ -315,6 +342,43 @@ function CardioPremiumStats({
             The times shown here — including the predictions — are your real, un-graded times.
           </ScoringExplainerNote>
         </>
+      )}
+      {workPiece && (
+        <div className="border-t border-white/5 pt-4">
+          <p className="text-[10px] uppercase tracking-wider text-muted mb-2">
+            Scored on your {workPiece.kind === "interval" ? "reps" : "hard efforts"}, not your
+            session average
+          </p>
+          <dl className="grid gap-1.5 text-xs sm:grid-cols-3">
+            <div>
+              <dt className="text-muted">
+                {workPiece.kind === "interval" ? "Rep pace" : "On pace"}
+              </dt>
+              <dd className="font-medium tabular-nums">
+                {formatRiegelPrediction(workPiece.workPaceSecPerKm)}/km
+              </dd>
+            </div>
+            <div>
+              <dt className="text-muted">Scored as</dt>
+              <dd className="font-medium tabular-nums">
+                {formatRiegelPrediction(workPiece.equivalentPaceSecPerKm)}/km
+              </dd>
+            </div>
+            {workPiece.sessionAvgPaceSecPerKm !== null && (
+              <div>
+                <dt className="text-muted">Session average</dt>
+                <dd className="font-medium tabular-nums line-through opacity-60">
+                  {formatRiegelPrediction(workPiece.sessionAvgPaceSecPerKm)}/km
+                </dd>
+              </div>
+            )}
+          </dl>
+          <ScoringExplainerNote>
+            Your {workPiece.kind === "interval" ? "rep" : "hard-effort"} pace is converted to a
+            race-equivalent using the rest you took — recovery makes a pace easier to hold, so the
+            scored figure sits behind the raw one. The standing around never counts.
+          </ScoringExplainerNote>
+        </div>
       )}
       {result.predictions && (
         <div className="border-t border-white/5 pt-4">

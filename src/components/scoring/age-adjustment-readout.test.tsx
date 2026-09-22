@@ -154,6 +154,7 @@ function renderCardio(result: Partial<CardioResult>): string {
     predictions: null,
     confidence: 0.9,
     flags: [],
+    workPiece: null,
   };
 
   return renderToStaticMarkup(
