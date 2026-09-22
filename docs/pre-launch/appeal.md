@@ -106,6 +106,8 @@ A brand-new user never sees it: the whole card is inside `{hasActivities && ...}
 
 **Note on pricing strategy:** interference is *not* in `PREMIUM_FEATURES` — it is free. That is the correct call (it is the hook and it gets better with logging, so it drives retention), but it means the paid tier is currently sold on ACWR, DOTS, projections and leaderboards — i.e. on the generic half of the product. See §5.
 
+*(Updated 22 Sep 2026: interference is still free, and still the right call. The second half no longer holds — the Hybrid Plan is now gated and leads the premium list, so the paid tier is no longer sold only on the generic half.)*
+
 ---
 
 ## 3. Emotional payoff
@@ -194,17 +196,33 @@ Term-by-term. "Explained at point of use" means a sentence in the same visual bl
 
 ### Is free generous enough to hook? Yes — but it doesn't know it.
 
+> **RESOLVED 22 Sep 2026 — the Hybrid Plan half of this is no longer true.** `features.ts` now carries `hybrid_plan: { free: false, premium: true }`, and both `api/hpe/plan` and `api/hpe/intake` gate on it. The original text is kept below because §5's recommendation is what caused the change, and deleting the premise would leave the recommendation looking arbitrary. The Interference Radar is still free, deliberately — `interference` appears nowhere in `features.ts`.
+
 `FREE_TIER_FEATURES` gives full logging, all sports, CSV import, the current Split Index, per-workout cardio index, and a country leaderboard preview. Crucially, **the Interference Radar and the Hybrid Plan are both free** (`hybrid-plan` is gated by `hpe/rollout.ts`, not by subscription — a fact the code comment in `features.ts:85-91` is admirably honest about).
 
 So the free tier includes the two most differentiated things in the product and the marketing page advertises neither as free. The free column reads: *"Full workout logging (all paths)"*, *"Current Split Index & per-workout cardio index"*, *"Last 7 days on dashboard"*, *"Rules-based training snippet"*. That is a list of restrictions with ticks next to them. "Rules-based training snippet" is a phrase that makes a free user feel they are being given the cheap version of something.
+
+**What the free tier is now.** One differentiated thing rather than two: the Interference Radar. The wording criticism above stands untouched — "Rules-based training snippet" is still in `FREE_TIER_FEATURES` and still reads as the cheap version of something.
 
 ### Is paid compelling enough to convert? Not as written.
 
 `PREMIUM_TIER_FEATURES` leads with Injury Risk Index, AI Coach, race predictions, DOTS/IPF GL, TRIMP/EF/decoupling, 90-day trends, projections, leaderboards, export. Every one of those exists elsewhere: injury risk ≈ Whoop strain, AI coach ≈ every app in 2026, race predictions ≈ Garmin, DOTS ≈ free calculators, TRIMP/EF ≈ TrainingPeaks, leaderboards ≈ Strava.
 
+*(As of 22 Sep 2026 the Hybrid Plan line sits above all of these — see the resolution below. The commodity observation about the rest of the list is unchanged and still worth acting on.)*
+
 **The paid tier is sold entirely on the commodity half of the product.** Nothing in the premium list is something only Split Index can do. The unique thing is free and unmentioned.
 
 There is a coherent fix that keeps the hook free: sell **interference depth**, not interference. Free gets the headline finding ("lifting costs you ~4% efficiency the next day"). Premium gets the recovery-window recommendation, the per-lift breakdown (is it squats or deadlifts), the trend over training blocks, and — the real product — the Hybrid Plan that *schedules around your own measured interference*. That is a premium feature no competitor can build, and it is already computed.
+
+#### Taken, 22 Sep 2026 — partially
+
+`PREMIUM_TIER_FEATURES` now **leads** with *"Hybrid Plan — one periodised block built toward your event date, across lifting and endurance together"*, ahead of the injury index and the AI coach. The paid tier is no longer sold entirely on the commodity half: its first line is the one thing in the product that has no competitor equivalent.
+
+The rest of the recommendation — selling interference *depth*, with the recovery window, the per-lift breakdown and the block-over-block trend behind the wall — has **not** been done. Interference is still all-or-nothing and all free.
+
+**One asymmetry that is deliberate, and must not be "fixed".** Generating a plan is premium; *reading a plan you already have* is not. The Hybrid Plan shipped free in build 1.0 (5), so there are athletes mid-block on plans generated under terms they were offered. Paywalling the read would be a recall rather than a paywall. An athlete with no stored plan gets `weeks: []`, so nothing of value is withheld from anyone who never had one.
+
+**And one ordering detail in `api/hpe/plan`.** The rollout dial is checked *before* the entitlement, on purpose: an athlete outside the rollout cannot generate a plan however much they pay, so showing them a paywall would be selling something they cannot receive.
 
 ### Premium walls on the dashboard — count: **five**
 
@@ -315,7 +333,7 @@ In `activities/success-screen.tsx`:
 - **Five walls → two.** Merge the duplicated AI Coach walls (`workout-list.tsx:264` and `:326`). Delete the contentless "Beat the next rank" tease (`page.tsx:800`, `showPreview={false}`) — a padlock in an empty card is a billboard. Keep the 3-session activation paywall; it is well-timed.
 - **Remove `ScoreDisclaimer` from `PremiumTease`** (`premium-tease.tsx:55-57`). The page-level disclaimer already covers it. A sales pitch should not contain a hedge, five times per screen.
 - **Stop blurring fabricated data.** `gateCardioEnrichment` (`gates.ts:104-112`) substitutes invented TRIMP/EF/decoupling values. Blur the real numbers or show a locked shape with no numbers at all. For a product selling honesty, this is the wrong corner to cut.
-- **Repoint the premium pitch** (`premium/features.ts:68`). Lead with interference *depth* — recovery-window recommendation, per-lift breakdown, block-over-block trend, and a Hybrid Plan that schedules around your own measured interference — instead of leading with ACWR and DOTS, which every competitor also sells. And say on the marketing page that the Interference Radar is free; it is the strongest thing in the free tier and the pricing table hides it.
+- ~~**Repoint the premium pitch**~~ — **half done, 22 Sep 2026.** `PREMIUM_TIER_FEATURES` now leads with the Hybrid Plan instead of ACWR and DOTS, and `hybrid_plan` is a gated feature rather than a rollout flag. Still outstanding: interference *depth* (recovery-window recommendation, per-lift breakdown, block-over-block trend) is not split from interference — it remains all free — and the marketing page still does not say the Interference Radar is free, which is the strongest thing in the free tier and the pricing table still hides it.
 
 ---
 
