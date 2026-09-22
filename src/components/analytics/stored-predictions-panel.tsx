@@ -125,23 +125,12 @@ function PredictionsContent({
         </div>
       )}
 
-      {/* One labelled row per sport, not one headed section each. Five sports
-          meant five headings and five three-column grids stacked down the page;
-          the pills wrap instead, so a ladder takes the lines its own contents
-          need rather than a fixed grid's. */}
-      {ladders.length > 0 && (
-        <div className="space-y-2">
-          <p className="micro-label text-muted">Race ladders · from your training memory</p>
-          {ladders.map(({ benchmark, ladder }) => (
-        <div key={benchmark.sport} className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-          {/* The SPORT, not the words "race ladder". Taking the first half of
-              LADDER_TITLE labelled all five rows "Race ladder" and left no way
-              to tell which sport each belonged to — the one thing the per-sport
-              headings had been carrying. */}
-          <p className="w-16 shrink-0 text-[10px] uppercase tracking-wider text-muted">
-            {SPORT_LABELS[benchmark.sport].split(" · ")[0]}
+      {ladders.map(({ benchmark, ladder }) => (
+        <div key={benchmark.sport}>
+          <p className="micro-label text-muted mb-2">
+            {LADDER_TITLE[benchmark.sport] ?? "Race ladder"}
           </p>
-          <ul className="flex min-w-0 flex-wrap gap-1 text-[11px]">
+          <ul className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3 text-xs">
             {Object.entries(ladder)
               // JS object key order sorts integer-like keys (e.g. "42195")
               // numerically ahead of any key containing a decimal point
@@ -151,16 +140,14 @@ function PredictionsContent({
               // below marathon"). Sort explicitly by the real distance.
               .sort(([a], [b]) => Number(a) - Number(b))
               .map(([dist, sec]) => (
-              <li key={dist} className="glass flex items-baseline gap-1.5 rounded-md px-2 py-0.5 tabular-nums">
+              <li key={dist} className="flex justify-between gap-2 tabular-nums glass rounded-lg px-3 py-1.5">
                 <span className="text-muted">{formatPredictionLabel(dist)}</span>
                 <span className="font-medium">{formatRiegelPrediction(sec)}</span>
               </li>
             ))}
           </ul>
         </div>
-          ))}
-        </div>
-      )}
+      ))}
 
       <AdaptiveOneRmList strengthEstimates={strengthEstimates} showConfidence={showConfidence} />
     </div>
