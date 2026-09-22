@@ -5,11 +5,23 @@ import { REFUSAL_MESSAGES, validateBlock } from "@/lib/moderation";
 /**
  * Block and unblock another athlete — guideline 1.2's third requirement.
  *
- * The block itself is one row; the effect comes from migration 062, where
- * `is_blocked_pair` is consulted by the comment table's own select policy. That
- * placement is deliberate: a moderation control enforced in route handlers
- * works until somebody adds a fourth read path and forgets, and the failure is
- * silent and exactly the kind Apple rejects for.
+ * The block itself is one row; the effect comes from migration 084, where
+ * `activity_is_visible_to` refuses a blocked pair in both directions and the
+ * comment and reaction policies check the AUTHOR of each row against the
+ * viewer. That placement is deliberate: a moderation control enforced in route
+ * handlers works until somebody adds a fourth read path and forgets, and the
+ * failure is silent and exactly the kind Apple rejects for.
+ *
+ * This comment previously named `is_blocked_pair` in migration 062. No such
+ * function was ever in this schema — it came from a branch that was not
+ * merged, and 062 is `admin_access_log`. For as long as it said that, the
+ * database enforced none of this and the sentence above was the reason nobody
+ * checked. Corrected 22 Sep 2026 by writing the enforcement it described.
+ *
+ * NOTE: unlike POST /api/social/block, this route does not delete the
+ * friendship. Since 084 that is no longer load-bearing for visibility, but it
+ * does leave the blocked athlete on the friends list. The UI calls the social
+ * route; if this one ever becomes user-facing, sever the friendship here too.
  *
  * Unblocking is offered because a block people cannot undo is one they hesitate
  * to use, and hesitating to block is the outcome this is trying to avoid.

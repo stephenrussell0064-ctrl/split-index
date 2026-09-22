@@ -76,9 +76,16 @@ export function validateBlock(blockerId: string, blockedId: string): Decision<{ 
  * If A blocks B, A stops seeing B and B stops seeing A. A one-way block would
  * leave the blocked person free to keep reading and commenting on the blocker's
  * activities, which is not what anyone means by the word and not what guideline
- * 1.2 is asking for. The database enforces it too — `is_blocked_pair` in
- * migration 062 — because a control that depends on every future read path
+ * 1.2 is asking for. The database enforces it too — `viewer_is_blocked_with`
+ * in migration 084 — because a control that depends on every future read path
  * remembering to call this is one that will eventually be forgotten.
+ *
+ * That last sentence was true as an argument and false as a statement of fact
+ * for as long as it named `is_blocked_pair` in migration 062: that function was
+ * never in this schema, so nothing in the database checked a block, and the
+ * comment was why nobody looked. It is accurate as of 084 — which found a
+ * blocked athlete's comments still reaching the person who blocked them, on any
+ * activity belonging to a friend they had in common.
  */
 export function isBlockedPair(
   blocks: ReadonlyArray<{ blocker_id: string; blocked_id: string }>,
