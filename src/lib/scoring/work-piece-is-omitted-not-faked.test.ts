@@ -72,12 +72,17 @@ describe("the work-piece breakdown is omitted for free users, never faked", () =
   });
 
   it("names it as withheld, so the client can say what is behind the gate", () => {
+    // `GatedCardioResult` is a union of the full result and the free pick, so
+    // `locked` needs narrowing — its presence is exactly what distinguishes
+    // the two, which is the point of the shape.
     const free = gateCardioResult(resultWithWorkPiece(), false);
-    expect(free.locked).toContain("workPiece");
+    expect("locked" in free).toBe(true);
+    if ("locked" in free) expect(free.locked).toContain("workPiece");
   });
 
   it("reaches a premium user intact", () => {
     const paid = gateCardioResult(resultWithWorkPiece(), true);
-    expect(paid.workPiece).toEqual(WORK_PIECE);
+    expect("workPiece" in paid).toBe(true);
+    if ("workPiece" in paid) expect(paid.workPiece).toEqual(WORK_PIECE);
   });
 });
