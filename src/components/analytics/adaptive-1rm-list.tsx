@@ -26,16 +26,38 @@ import type { StrengthEstimate } from "./types";
  * Same rule as the logbook and plan-view redesigns: primary content first, at
  * a size that says so; everything else subordinate but still visible.
  *
- * - The 1RM is the only large thing in the row and gets its own line.
  * - Context comes from a meter reading current against the athlete's own
  *   all-time best, which is the only honest yardstick available here — no
- *   population comparison is claimed, and the percentage and the gap in kg are
- *   both written out so the bar is never the only place a value lives.
+ *   population comparison is claimed, and the percentage is written out so the
+ *   bar is never the only place a value lives.
  * - Heaviest first, so the main lifts lead and the order is stable between
  *   visits rather than an artifact of row order.
- * - Trend carries an icon *and* a word; color alone never states it.
  * - The bodyweight-only caveat is attached to the lifts it applies to instead
  *   of sitting in a paragraph above lifts it does not.
+ *
+ * ## Compressed again, 22 Sep 2026
+ *
+ * "They are too large and this impacts the UI visuals." The redesign above
+ * fixed legibility and spent height doing it: five lines and 16px of padding
+ * per lift, so a dozen lifts pushed everything below them off the page.
+ *
+ * Three lines now, at 10px padding. What went, and why none of it was the
+ * information:
+ *
+ * - The name had a line to itself with the number on the next one, and both
+ *   lines were mostly empty. They share a line now, name truncating rather
+ *   than wrapping — at two-to-four columns a wrapped name moved the number.
+ * - The 1RM came down from 2rem to 1.4rem. It is still by some way the largest
+ *   thing on the row, which was the point of making it large.
+ * - The trend WORD is now `sr-only`. Colour and an icon alone do not state a
+ *   trend to a screen reader, which is why the word existed — it is still
+ *   announced, just not drawn.
+ * - "92% of your best · 4.1 kg to go" and "Best 107.5 kg" were two lines; they
+ *   are one, and the gap in kg went because the percentage and the best are
+ *   both there and the subtraction is not the reader's job.
+ * - The confidence band was a fourth line reading "Likely range 96.3–108.1 kg".
+ *   It is now "±5.9" on the same micro line: the same claim about precision,
+ *   without restating two numbers the reader can already see bracketed.
  */
 
 const TREND_META = {
@@ -71,70 +93,57 @@ function LiftRow({ est, showConfidence }: { est: StrengthEstimate; showConfidenc
   const addedLoadOnly = isBodyweightOnlyExercise(est.exerciseName);
 
   return (
-    <li className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4">
-      <div className="flex items-start justify-between gap-3">
-        {/* Wraps rather than truncates: the name is the row's identity, and a
-            clipped "Dumbbell Incline Bench Pr…" is indistinguishable from the
-            barbell lift of the same name. */}
-        <p className="min-w-0 flex-1 text-sm font-medium leading-snug text-foreground">
+    <li className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2.5">
+      {/* Name and number share a line. They were stacked with the number on its
+          own row at 2rem, which is what made a dozen lifts scroll: the name line
+          was mostly empty and the number line was mostly empty, twice per lift. */}
+      <div className="flex items-baseline gap-2">
+        <p className="min-w-0 flex-1 truncate text-[13px] font-medium leading-tight text-foreground">
           {est.exerciseName}
         </p>
-        <span className={cn("flex shrink-0 items-center gap-1 text-[11px] font-medium", className)}>
-          <Icon className="h-3.5 w-3.5" aria-hidden />
-          {label}
-        </span>
-      </div>
-
-      <p className="mt-2 flex items-baseline gap-1.5">
-        {/* Proportional figures: tabular-nums gives every digit the width of a
-            zero, which reads loose at display size. The small paired numbers
-            below stay tabular — those do sit in aligned pairs. */}
-        <span className="index-display text-[2rem] font-semibold text-foreground [font-variant-numeric:proportional-nums]">
+        {addedLoadOnly && <AddedLoadTag />}
+        <Icon className={cn("h-3.5 w-3.5 shrink-0", className)} aria-hidden />
+        {/* The trend word is still said, just not drawn — colour and an icon
+            alone do not state it to a screen reader, which is why the word was
+            there. Keeping it visible cost a whole line per lift. */}
+        <span className="sr-only">{label}</span>
+        <span className="shrink-0 index-display text-[1.4rem] font-semibold leading-none text-foreground [font-variant-numeric:proportional-nums]">
           {est.current1RmKg.toFixed(1)}
         </span>
-        <span className="text-sm font-medium text-muted">kg</span>
-        {addedLoadOnly && <AddedLoadTag />}
-      </p>
+        <span className="shrink-0 text-[11px] font-medium text-muted">kg</span>
+      </div>
 
       {hasScale && (
-        <div className="mt-3">
-          {/* Unfilled track is a dimmer step of the fill's own hue, so the
-              whole bar reads as one scale. aria-hidden because the percentage
-              and the gap are both written out beside it — the bar is never the
-              only place a value lives. */}
-          <div className="h-1.5 w-full overflow-hidden rounded-full bg-accent/[0.18]" aria-hidden>
+        <>
+          {/* Unfilled track is a dimmer step of the fill's own hue, so the whole
+              bar reads as one scale. aria-hidden because every value it encodes
+              is written out on the line below it. */}
+          <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-accent/[0.18]" aria-hidden>
             <div className="h-full rounded-full bg-accent" style={{ width: `${pctOfBest}%` }} />
           </div>
-          <div className="mt-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 text-[11px] text-muted">
-            <span>
-              {atBest ? (
-                // The filled bar beside it already carries the accent — text
-                // never wears the data colour, or the palette stops meaning
-                // anything.
-                <span className="font-medium text-foreground/80">At your all-time best</span>
-              ) : (
-                <>
-                  <span className="tabular-nums text-foreground/80">{pctOfBest}%</span> of your best
-                  {" · "}
-                  <span className="tabular-nums">{gapKg.toFixed(1)} kg</span> to go
-                </>
-              )}
+          {/* One micro line carries what used to take two, plus the confidence
+              band that had a line of its own below them. */}
+          <p className="mt-1.5 flex flex-wrap items-baseline gap-x-2 text-[10.5px] leading-tight text-muted">
+            {atBest ? (
+              <span className="font-medium text-foreground/80">At your best</span>
+            ) : (
+              <span>
+                <span className="tabular-nums text-foreground/80">{pctOfBest}%</span> of best
+              </span>
+            )}
+            {/* The unit rides on the last number rather than each one: three
+                bare figures in a row read as three unrelated quantities. */}
+            <span className="tabular-nums">
+              best {best.toFixed(1)}
+              {!(showConfidence && est.bandKg) && " kg"}
             </span>
-            <span className="tabular-nums">Best {best.toFixed(1)} kg</span>
-          </div>
-        </div>
-      )}
-
-      {showConfidence && est.bandKg && (
-        // 11px at full --muted, not a dimmed step: below about 4.5:1 this line
-        // stops being readable on the near-black surface, and it is the one
-        // that admits how precise the estimate actually is.
-        <p className="mt-1.5 text-[11px] text-muted">
-          Likely range{" "}
-          <span className="tabular-nums">
-            {est.bandKg[0].toFixed(1)}–{est.bandKg[1].toFixed(1)} kg
-          </span>
-        </p>
+            {showConfidence && est.bandKg && (
+              <span className="tabular-nums">
+                ±{((est.bandKg[1] - est.bandKg[0]) / 2).toFixed(1)} kg
+              </span>
+            )}
+          </p>
+        </>
       )}
     </li>
   );
@@ -176,7 +185,7 @@ export function AdaptiveOneRmList({
         <strong className="not-italic text-foreground/90">Best</strong> only moves when you beat it.
       </ScoringExplainerNote>
 
-      <ul className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+      <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {ordered.map((est) => (
           <LiftRow key={est.exerciseName} est={est} showConfidence={showConfidence} />
         ))}
