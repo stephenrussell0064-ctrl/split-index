@@ -14,7 +14,7 @@ import {
 } from "recharts";
 import { motion, useReducedMotion } from "framer-motion";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { chartTooltipStyle, ChartEmptyState } from "@/components/analytics/charts";
+import { chartTooltipStyle, chartTooltipLabelStyle, chartTooltipItemStyle, ChartEmptyState } from "@/components/analytics/charts";
 import { formatPercent } from "@/lib/utils/format";
 import type { FatigueRecoveryPoint } from "./types";
 
@@ -99,6 +99,8 @@ export function FatigueRecoveryChart({ data }: FatigueRecoveryChartProps) {
                 />
                 <Tooltip
                   contentStyle={chartTooltipStyle}
+                        labelStyle={chartTooltipLabelStyle}
+                        itemStyle={chartTooltipItemStyle}
                   formatter={(value, name) => {
                     if (name === "acwr") return [value ?? "—", "ACWR"];
                     return [formatPercent(Number(value)), String(name)];

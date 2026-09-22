@@ -12,7 +12,7 @@ import {
   CartesianGrid,
   Legend,
 } from "recharts";
-import { chartTooltipStyle } from "@/components/analytics/charts";
+import { chartTooltipStyle, chartTooltipLabelStyle, chartTooltipItemStyle } from "@/components/analytics/charts";
 import { formatIndex } from "@/lib/utils/format";
 import type { CompareSeries } from "@/lib/social/types";
 
@@ -92,6 +92,8 @@ export function CompareChart({ series, height = 260 }: CompareChartProps) {
         />
         <Tooltip
           contentStyle={chartTooltipStyle}
+                        labelStyle={chartTooltipLabelStyle}
+                        itemStyle={chartTooltipItemStyle}
           formatter={(value) => [formatIndex(Number(value)), "Index"]}
         />
         <Legend

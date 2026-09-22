@@ -14,7 +14,7 @@ import {
 } from "recharts";
 import { motion, useReducedMotion } from "framer-motion";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { chartTooltipStyle, ChartEmptyState } from "@/components/analytics/charts";
+import { chartTooltipStyle, chartTooltipLabelStyle, chartTooltipItemStyle, ChartEmptyState } from "@/components/analytics/charts";
 import { formatIndex } from "@/lib/utils/format";
 import type { ProjectionPoint } from "./types";
 
@@ -74,6 +74,8 @@ export function ProjectionChart({ data }: ProjectionChartProps) {
                 />
                 <Tooltip
                   contentStyle={chartTooltipStyle}
+                        labelStyle={chartTooltipLabelStyle}
+                        itemStyle={chartTooltipItemStyle}
                   formatter={(value, name) => [
                     value != null ? formatIndex(Number(value)) : "—",
                     name === "split" ? "Actual" : "Forecast",

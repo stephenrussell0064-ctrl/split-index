@@ -16,7 +16,7 @@ import {
 } from "recharts";
 import { Dumbbell, HeartPulse, ClipboardList, GitCompare, Lightbulb } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { chartGridStroke, chartTickFill, chartTooltipStyle } from "@/components/analytics/charts";
+import { chartGridStroke, chartTickFill, chartTooltipStyle, chartTooltipLabelStyle, chartTooltipItemStyle } from "@/components/analytics/charts";
 import { ShareImageButton } from "@/components/analytics/share-image-button";
 import { cn } from "@/lib/utils/cn";
 import { designTokens } from "@/lib/design/tokens";
@@ -277,7 +277,9 @@ export function InterferenceDetail({ report }: { report: InterferenceReport }) {
                         tick={{ fontSize: 11, fill: chartTickFill }}
                         width={82}
                       />
-                      <Tooltip contentStyle={chartTooltipStyle} formatter={(value) => [value, "How efficiently you ran"]} />
+                      <Tooltip contentStyle={chartTooltipStyle}
+                        labelStyle={chartTooltipLabelStyle}
+                        itemStyle={chartTooltipItemStyle} formatter={(value) => [value, "How efficiently you ran"]} />
                       <Bar dataKey="value" radius={[0, 4, 4, 0]} fill={designTokens.strengthAccent}>
                         <LabelList dataKey="value" position="right" style={{ fill: chartTickFill, fontSize: 11 }} />
                       </Bar>
@@ -357,6 +359,8 @@ export function InterferenceDetail({ report }: { report: InterferenceReport }) {
                       <ReferenceLine y={0} stroke={chartGridStroke} />
                       <Tooltip
                         contentStyle={chartTooltipStyle}
+                        labelStyle={chartTooltipLabelStyle}
+                        itemStyle={chartTooltipItemStyle}
                         formatter={(value) => [`${value}%`, "vs. your normal rested pace"]}
                         labelFormatter={(v) => dayLabel(Number(v))}
                       />
@@ -463,7 +467,9 @@ export function InterferenceDetail({ report }: { report: InterferenceReport }) {
                       tick={{ fontSize: 11, fill: chartTickFill }}
                       width={82}
                     />
-                    <Tooltip contentStyle={chartTooltipStyle} formatter={(value) => [value, "Strength score"]} />
+                    <Tooltip contentStyle={chartTooltipStyle}
+                        labelStyle={chartTooltipLabelStyle}
+                        itemStyle={chartTooltipItemStyle} formatter={(value) => [value, "Strength score"]} />
                     <Bar dataKey="value" radius={[0, 4, 4, 0]} fill={designTokens.cardioAccent}>
                       <LabelList dataKey="value" position="right" style={{ fill: chartTickFill, fontSize: 11 }} />
                     </Bar>

@@ -15,7 +15,7 @@ import {
 } from "recharts";
 import { useReducedMotion } from "framer-motion";
 import { Activity, HeartPulse, Mountain, Timer, Trophy } from "lucide-react";
-import { chartGridStroke, chartTickFill, chartTooltipStyle } from "@/components/analytics/charts";
+import { chartGridStroke, chartTickFill, chartTooltipStyle, chartTooltipLabelStyle, chartTooltipItemStyle } from "@/components/analytics/charts";
 import { designTokens } from "@/lib/design/tokens";
 import type { BestEffort } from "@/lib/analysis/best-efforts";
 import type { HrZone, HrZoneModel } from "@/lib/analysis/heart-rate";
@@ -437,6 +437,8 @@ function PaceChart({ analysis }: { analysis: RunAnalysis }) {
             />
             <Tooltip
               contentStyle={chartTooltipStyle}
+                        labelStyle={chartTooltipLabelStyle}
+                        itemStyle={chartTooltipItemStyle}
               labelFormatter={(v) => `${Number(v).toFixed(2)} km`}
               formatter={(value) => [isRide ? `${value} km/h` : paceLabel(Number(value), "km"), isRide ? "Speed" : "Pace"]}
             />
@@ -511,6 +513,8 @@ function HeartRateSection({ analysis }: { analysis: RunAnalysis }) {
               />
               <Tooltip
                 contentStyle={chartTooltipStyle}
+                        labelStyle={chartTooltipLabelStyle}
+                        itemStyle={chartTooltipItemStyle}
                 labelFormatter={(v) => `${Number(v).toFixed(2)} km`}
                 formatter={(value) => [`${value} bpm`, "Heart rate"]}
               />
@@ -643,6 +647,8 @@ function ElevationSection({ analysis }: { analysis: RunAnalysis }) {
               />
               <Tooltip
                 contentStyle={chartTooltipStyle}
+                        labelStyle={chartTooltipLabelStyle}
+                        itemStyle={chartTooltipItemStyle}
                 labelFormatter={(v) => `${Number(v).toFixed(2)} km`}
                 formatter={(value) => [`${Math.round(Number(value))} m`, "Altitude"]}
               />

@@ -3,7 +3,7 @@
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceArea } from "recharts";
 import { useReducedMotion } from "framer-motion";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { ChartEmptyState, chartGridStroke, chartTickFill, chartTooltipStyle } from "@/components/analytics/charts";
+import { ChartEmptyState, chartGridStroke, chartTickFill, chartTooltipStyle, chartTooltipLabelStyle, chartTooltipItemStyle } from "@/components/analytics/charts";
 import { designTokens } from "@/lib/design/tokens";
 import type { AcwrTrendPoint, InjuryRiskZone } from "@/lib/scoring/injury-risk";
 import { ChartFigure } from "@/components/analytics/chart-figure";
@@ -89,6 +89,8 @@ export function AcwrTrendChart({ data }: { data: AcwrTrendPoint[] }) {
                 />
                 <Tooltip
                   contentStyle={chartTooltipStyle}
+                        labelStyle={chartTooltipLabelStyle}
+                        itemStyle={chartTooltipItemStyle}
                   formatter={(value, _name, item) => [
                     `${Number(value).toFixed(2)} · ${item.payload.zone}`,
                     "ACWR",

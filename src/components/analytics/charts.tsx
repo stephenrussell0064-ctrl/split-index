@@ -28,7 +28,20 @@ const CHART_COLORS = {
   accent: designTokens.strengthAccent,
 } as const;
 
+/**
+ * The tooltip that appears over every chart.
+ *
+ * `color` is not decoration here. Recharts renders its tooltip label with no
+ * colour of its own, so without one set on the container the label inherits
+ * whatever the surrounding document supplies — and Recharts' own defaults
+ * assume the white tooltip it ships with. Against this near-black background
+ * that produced dark text on dark glass: present, correctly positioned, and
+ * unreadable. Reported on the interference radar's "that day" / "next day"
+ * hover, but all nineteen tooltips in the app share this object and every one
+ * of them had it.
+ */
 export const chartTooltipStyle: React.CSSProperties = {
+  color: designTokens.slate[100],
   background: `${designTokens.slate[950]}ee`,
   border: `1px solid ${designTokens.slate[700]}55`,
   borderRadius: "14px",
@@ -38,6 +51,26 @@ export const chartTooltipStyle: React.CSSProperties = {
   boxShadow: "0 12px 40px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.05)",
   backdropFilter: "blur(16px)",
   WebkitBackdropFilter: "blur(16px)",
+};
+
+/**
+ * The x-value at the top of the tooltip ("That day", "Next day", a date).
+ * Passed explicitly rather than left to inherit, because a label is the one
+ * part of a tooltip that has no series colour to fall back on.
+ */
+export const chartTooltipLabelStyle: React.CSSProperties = {
+  color: designTokens.slate[100],
+  fontWeight: 600,
+  marginBottom: "2px",
+};
+
+/**
+ * The rows beneath it. Recharts colours each row from its series stroke, which
+ * is right for the swatch and wrong for the text when a series is dark — so the
+ * text is pinned and the swatch keeps carrying the colour.
+ */
+export const chartTooltipItemStyle: React.CSSProperties = {
+  color: designTokens.slate[200],
 };
 
 export const chartGridStroke = `${designTokens.slate[600]}33`;
@@ -116,6 +149,8 @@ export function IndexTrendChart({
               />
               <Tooltip
                 contentStyle={chartTooltipStyle}
+                        labelStyle={chartTooltipLabelStyle}
+                        itemStyle={chartTooltipItemStyle}
                 formatter={(value) => [formatIndex(Number(value)), "Index"]}
               />
               <Area
@@ -224,6 +259,8 @@ export function SplitTrendPanel({ data }: { data: TrendPoint[] }) {
               />
               <Tooltip
                 contentStyle={chartTooltipStyle}
+                        labelStyle={chartTooltipLabelStyle}
+                        itemStyle={chartTooltipItemStyle}
                 formatter={(value, name) => [
                   formatIndex(Number(value)),
                   trendSeries.find((s) => s.key === name)?.label ?? String(name),
@@ -343,6 +380,8 @@ export function SportBalanceRadar({ data }: { data: RadarAxis[] }) {
               />
               <Tooltip
                 contentStyle={chartTooltipStyle}
+                        labelStyle={chartTooltipLabelStyle}
+                        itemStyle={chartTooltipItemStyle}
                 formatter={(value, name) => [formatIndex(Number(value)), String(name)]}
               />
             </RadarChart>

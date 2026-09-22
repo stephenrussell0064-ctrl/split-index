@@ -5,7 +5,7 @@ import { describeDistribution } from "@/lib/a11y/describe-series";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { motion, useReducedMotion } from "framer-motion";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { chartTooltipStyle, ChartEmptyState } from "@/components/analytics/charts";
+import { chartTooltipStyle, chartTooltipLabelStyle, chartTooltipItemStyle, ChartEmptyState } from "@/components/analytics/charts";
 import type { DistributionSlice } from "./types";
 
 interface IntensityDistributionProps {
@@ -62,6 +62,8 @@ function DonutChart({ data, title }: { data: DistributionSlice[]; title: string 
               </Pie>
               <Tooltip
                 contentStyle={chartTooltipStyle}
+                        labelStyle={chartTooltipLabelStyle}
+                        itemStyle={chartTooltipItemStyle}
                 formatter={(value, name) => [value, name]}
               />
             </PieChart>

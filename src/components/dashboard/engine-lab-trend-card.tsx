@@ -6,7 +6,7 @@ import { useReducedMotion } from "framer-motion";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatIndex, formatTrend } from "@/lib/utils/format";
-import { chartGridStroke, chartTickFill, chartTooltipStyle, type TrendPoint } from "@/components/analytics/charts";
+import { chartGridStroke, chartTickFill, chartTooltipStyle, chartTooltipLabelStyle, chartTooltipItemStyle, type TrendPoint } from "@/components/analytics/charts";
 import { designTokens } from "@/lib/design/tokens";
 import { cn } from "@/lib/utils/cn";
 
@@ -142,6 +142,8 @@ export function EngineLabTrendCard({
             />
             <Tooltip
               contentStyle={chartTooltipStyle}
+                        labelStyle={chartTooltipLabelStyle}
+                        itemStyle={chartTooltipItemStyle}
               formatter={(value, name) => [formatIndex(Number(value)), name === "endurance" ? "Engine" : "Lab"]}
             />
             <Area

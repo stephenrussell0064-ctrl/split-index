@@ -13,7 +13,7 @@ import {
 } from "recharts";
 import { motion, useReducedMotion } from "framer-motion";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { chartTooltipStyle, ChartEmptyState } from "@/components/analytics/charts";
+import { chartTooltipStyle, chartTooltipLabelStyle, chartTooltipItemStyle, ChartEmptyState } from "@/components/analytics/charts";
 import { formatDuration, formatDistance } from "@/lib/utils/format";
 import type { VolumeWeek } from "./types";
 
@@ -88,6 +88,8 @@ export function VolumeChart({ data, metric = "load" }: VolumeChartProps) {
                 />
                 <Tooltip
                   contentStyle={chartTooltipStyle}
+                        labelStyle={chartTooltipLabelStyle}
+                        itemStyle={chartTooltipItemStyle}
                   formatter={(value) => [formatValue(Number(value)), ""]}
                   labelFormatter={(label) => `Week of ${label}`}
                 />

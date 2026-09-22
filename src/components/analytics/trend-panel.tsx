@@ -13,7 +13,7 @@ import {
 } from "recharts";
 import { motion, useReducedMotion } from "framer-motion";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { chartTooltipStyle, ChartEmptyState } from "@/components/analytics/charts";
+import { chartTooltipStyle, chartTooltipLabelStyle, chartTooltipItemStyle, ChartEmptyState } from "@/components/analytics/charts";
 import { formatIndex } from "@/lib/utils/format";
 import type { TrendGranularity, TrendPoint } from "./types";
 
@@ -116,6 +116,8 @@ export function TrendPanel({ data, granularity }: TrendPanelProps) {
                 />
                 <Tooltip
                   contentStyle={chartTooltipStyle}
+                        labelStyle={chartTooltipLabelStyle}
+                        itemStyle={chartTooltipItemStyle}
                   formatter={(value, name) => [
                     formatIndex(Number(value)),
                     SERIES.find((s) => s.key === name)?.label ?? String(name),
