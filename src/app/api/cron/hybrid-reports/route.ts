@@ -6,6 +6,7 @@ import { databaseError } from "@/lib/api/errors";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hasPaidAccess } from "@/lib/retention/trial";
 import { generateHybridReport, currentPeriodStart } from "@/lib/scoring/hybrid-report-data";
+import { notifyOnce } from "@/lib/retention/notify";
 import type { ReportPeriod } from "@/lib/scoring/hybrid-report";
 
 
@@ -44,16 +45,41 @@ export async function GET(request: Request) {
     .filter((p) => hasPaidAccess(p))
     .map((p) => p.user_id as string);
 
+  const periodStart = currentPeriodStart(period);
+
   let generated = 0;
+  let notified = 0;
   for (const userId of premiumUserIds) {
     await generateHybridReport(admin, userId, period);
     generated += 1;
+
+    /*
+      A report nobody is told about is a report nobody reads. This is the
+      whole reason the report is worth generating on a schedule rather than
+      on demand, and until now the only way to discover a new one was to
+      navigate to it and notice the date had changed.
+
+      Deduplicated against `periodStart` rather than a time window, because
+      the schedule deliberately re-runs against the same period — the route's
+      own header explains that a run which isn't the start of a quarter
+      re-upserts the same quarterly period as a no-op. That no-op must stay a
+      no-op here too, or a monthly cron would announce the same quarterly
+      report every month.
+    */
+    const announced = await notifyOnce(admin, userId, {
+      type: `hybrid_report_ready:${period}:${periodStart}`,
+      title: `Your ${period} report is ready`,
+      body: "See how your strength and endurance moved, and what changed between them.",
+      metadata: { period, periodStart },
+    });
+    if (announced.inserted) notified += 1;
   }
 
   return NextResponse.json({
     ok: true,
     period,
-    periodStart: currentPeriodStart(period),
+    periodStart,
     generated,
+    notified,
   });
 }

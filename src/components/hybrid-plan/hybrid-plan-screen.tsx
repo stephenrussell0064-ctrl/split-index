@@ -17,6 +17,7 @@ import { EventOrderDecision } from "./event-order-decision";
 import { PlanView, type PlanWeekView } from "./plan-view";
 import { buildDailyTrainingPayload } from "./daily-widget-payload";
 import { DailyTrainingSync } from "@/lib/native/daily-training-sync";
+import { LocalRemindersSync } from "@/lib/native/local-reminders-sync";
 import type { AthleteProfile, AttemptSelection, EventDayStep, EventOrderResult, RacePacing, TaperDay } from "@/lib/scoring/hpe";
 
 /**
@@ -348,7 +349,21 @@ export function HybridPlanScreen() {
    * "no plan yet", and the only way to guarantee the second is to publish on
    * the refusal path too.
    */
-  const widgetSync = widgetPayload ? <DailyTrainingSync payload={widgetPayload} /> : null;
+  /*
+    Local reminders ride along with the widget publish rather than mounting
+    separately, and for the same reason the comment above gives: they have to
+    run on EVERY branch, refusal included. A notification firing at 08:00 for
+    a session out of a block that was withdrawn yesterday is the same bug as
+    a stale widget, arriving somewhere harder to ignore — and the only way to
+    guarantee the reminders are cleared is to run the sync on the paths where
+    there is no longer a plan.
+  */
+  const widgetSync = widgetPayload ? (
+    <>
+      <DailyTrainingSync payload={widgetPayload} />
+      <LocalRemindersSync payload={widgetPayload} />
+    </>
+  ) : null;
 
   // ---- consent has not been given -----------------------------------------
   // FIRST, because this is the one "no plan" case with a fix the athlete can

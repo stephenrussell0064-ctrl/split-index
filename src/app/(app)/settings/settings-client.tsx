@@ -27,6 +27,7 @@ import {
   type PrivacyState,
 } from "@/components/settings/activity-privacy-settings";
 import { WidgetStatus } from "@/components/settings/widget-status";
+import { TrainingReminders } from "@/components/settings/training-reminders";
 import { Article9ConsentCard } from "@/components/settings/article9-consent-card";
 import { PremiumBadge } from "@/components/retention/premium-badge";
 import { createClient } from "@/lib/supabase/client";
@@ -328,6 +329,7 @@ export default function SettingsClient() {
         container to report on — so it stays invisible for everyone whose
         answer to "why is my widget empty?" is "you don't have one".
       */}
+      <TrainingReminders />
       <WidgetStatus />
 
       {/* Subscription */}
