@@ -62,3 +62,11 @@ ios/DerivedData
 # only ever produces conflicts and noise in diffs. The headless audit logs also
 # capture prompt and result text, which does not belong in a shared repo.
 .claude-flow/
+
+# Supabase CLI local link state. `pooler-url` in here is a live Postgres
+# connection string for the linked project, and `linked-project.json` names it.
+# The directory was untracked but NOT ignored, which is not the same thing —
+# any `git add -A` in this repo would have committed the credential. Ignored
+# now; keep staging explicit paths regardless, since several sessions share
+# this working tree.
+supabase/.temp/
