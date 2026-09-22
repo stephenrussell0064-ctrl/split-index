@@ -1,21 +1,39 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Rowing">
   <defs>
-    <radialGradient id="g" cx="50%" cy="42%" r="65%">
-      <stop offset="0%" stop-color="#baff5c" />
-      <stop offset="45%" stop-color="#3ddc1f" />
-      <stop offset="100%" stop-color="#052b0a" />
+    <radialGradient id="rowBg" cx="42%" cy="34%" r="78%">
+      <stop offset="0%" stop-color="#8fd8ff" />
+      <stop offset="55%" stop-color="#2f8fd6" />
+      <stop offset="100%" stop-color="#0d3f6b" />
     </radialGradient>
+    <filter id="rowHalo" x="-25%" y="-25%" width="150%" height="150%">
+      <feMorphology in="SourceAlpha" operator="dilate" radius="9" result="thick" />
+      <feFlood flood-color="#ffffff" />
+      <feComposite in2="thick" operator="in" />
+      <feMerge>
+        <feMergeNode />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
   </defs>
-  <rect x="8" y="8" width="496" height="496" rx="90" fill="url(#g)" stroke="#000" stroke-width="26" />
-  <!-- thin cable running from the handle off to the machine -->
-  <path d="M170 232 L400 232" fill="none" stroke="#000" stroke-width="10" stroke-linecap="round" />
-  <g fill="none" stroke="#000" stroke-width="34" stroke-linecap="round" stroke-linejoin="round">
-    <!-- bent legs, drive position -->
-    <path d="M234 312 L306 284 L358 322" />
-    <!-- torso leaning back into the pull -->
-    <path d="M234 312 L262 220" />
-    <!-- pulling arm to the handle -->
-    <path d="M262 220 L206 244 L172 232" />
+
+  <rect x="14" y="14" width="484" height="484" rx="98" fill="url(#rowBg)" stroke="#0a0a0a" stroke-width="26" />
+
+  <g filter="url(#rowHalo)" fill="none" stroke="#10243a" stroke-linecap="round" stroke-linejoin="round">
+    <!-- seat rail and footplate: the machine, drawn thin so the athlete stays the subject -->
+    <path d="M132 352 H392" stroke-width="16" />
+    <path d="M384 300 L384 352" stroke-width="16" />
+    <!-- chain running out to the flywheel -->
+    <path d="M330 232 H452" stroke-width="12" />
+    <!-- handle -->
+    <path d="M330 210 L330 254" stroke-width="20" />
+    <!-- legs: thigh heavier than shin, mid-drive -->
+    <path d="M198 312 L286 276" stroke-width="42" />
+    <path d="M286 276 L360 312" stroke-width="34" />
+    <!-- torso laid back into the pull -->
+    <path d="M198 312 L214 204" stroke-width="48" />
+    <!-- arms drawn straight to the handle -->
+    <path d="M214 204 L272 216" stroke-width="34" />
+    <path d="M272 216 L328 230" stroke-width="27" />
   </g>
-  <circle cx="266" cy="182" r="32" fill="#000" />
+  <circle cx="204" cy="160" r="35" fill="#10243a" filter="url(#rowHalo)" />
 </svg>

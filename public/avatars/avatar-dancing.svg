@@ -1,23 +1,38 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Dancing">
   <defs>
-    <radialGradient id="g" cx="50%" cy="42%" r="65%">
-      <stop offset="0%" stop-color="#baff5c" />
-      <stop offset="45%" stop-color="#3ddc1f" />
-      <stop offset="100%" stop-color="#052b0a" />
+    <radialGradient id="danceBg" cx="42%" cy="34%" r="78%">
+      <stop offset="0%" stop-color="#f7b6ff" />
+      <stop offset="55%" stop-color="#a338d6" />
+      <stop offset="100%" stop-color="#2f0a44" />
     </radialGradient>
+    <filter id="danceHalo" x="-25%" y="-25%" width="150%" height="150%">
+      <feMorphology in="SourceAlpha" operator="dilate" radius="9" result="thick" />
+      <feFlood flood-color="#ffffff" />
+      <feComposite in2="thick" operator="in" />
+      <feMerge>
+        <feMergeNode />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
   </defs>
-  <rect x="8" y="8" width="496" height="496" rx="90" fill="url(#g)" stroke="#000" stroke-width="26" />
-  <g fill="none" stroke="#000" stroke-width="34" stroke-linecap="round" stroke-linejoin="round">
-    <!-- standing leg -->
-    <path d="M256 300 L250 400" />
-    <!-- raised, kicked-out leg -->
-    <path d="M256 300 L320 320 L370 280" />
-    <!-- torso, twisting -->
-    <path d="M256 300 L242 210" />
-    <!-- arm curved up overhead -->
-    <path d="M242 210 L200 170 L220 120" />
-    <!-- other arm curved out to the side -->
-    <path d="M242 210 L300 200 L340 230" />
+
+  <rect x="14" y="14" width="484" height="484" rx="98" fill="url(#danceBg)" stroke="#0a0a0a" stroke-width="26" />
+
+  <g filter="url(#danceHalo)" fill="none" stroke="#2a0b3d" stroke-linecap="round" stroke-linejoin="round">
+    <!-- supporting leg, weight through it, toe pointed -->
+    <path d="M252 310 L232 378" stroke-width="42" />
+    <path d="M232 378 L246 438" stroke-width="34" />
+    <!-- free leg, kicked out and lifted -->
+    <path d="M252 310 L332 340" stroke-width="42" />
+    <path d="M332 340 L406 312" stroke-width="34" />
+    <!-- torso, curved away from the raised arm -->
+    <path d="M252 310 L238 200" stroke-width="48" />
+    <!-- raised arm, the line the whole pose hangs off -->
+    <path d="M238 200 L204 138" stroke-width="34" />
+    <path d="M204 138 L238 84" stroke-width="27" />
+    <!-- trailing arm, counterweight -->
+    <path d="M238 200 L306 226" stroke-width="34" />
+    <path d="M306 226 L364 198" stroke-width="27" />
   </g>
-  <circle cx="248" cy="180" r="32" fill="#000" />
+  <circle cx="264" cy="160" r="34" fill="#2a0b3d" filter="url(#danceHalo)" />
 </svg>

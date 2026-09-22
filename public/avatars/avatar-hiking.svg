@@ -1,25 +1,48 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Hiking">
   <defs>
-    <radialGradient id="g" cx="50%" cy="42%" r="65%">
-      <stop offset="0%" stop-color="#baff5c" />
-      <stop offset="45%" stop-color="#3ddc1f" />
-      <stop offset="100%" stop-color="#052b0a" />
+    <radialGradient id="hikeBg" cx="42%" cy="34%" r="78%">
+      <stop offset="0%" stop-color="#9ff0c9" />
+      <stop offset="55%" stop-color="#22a06b" />
+      <stop offset="100%" stop-color="#0b3b28" />
     </radialGradient>
+    <filter id="hikeHalo" x="-25%" y="-25%" width="150%" height="150%">
+      <feMorphology in="SourceAlpha" operator="dilate" radius="9" result="thick" />
+      <feFlood flood-color="#ffffff" />
+      <feComposite in2="thick" operator="in" />
+      <feMerge>
+        <feMergeNode />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
   </defs>
-  <rect x="8" y="8" width="496" height="496" rx="90" fill="url(#g)" stroke="#000" stroke-width="26" />
-  <g fill="none" stroke="#000" stroke-width="34" stroke-linecap="round" stroke-linejoin="round">
-    <!-- back leg, bent -->
-    <path d="M296 268 L232 336 L214 404" />
-    <!-- front leg, striding -->
-    <path d="M296 268 L338 322 L366 392" />
-    <!-- torso, leaning into the climb -->
-    <path d="M296 268 L262 190" />
-    <!-- trailing arm -->
-    <path d="M280 210 L226 250 L198 300" />
-    <!-- walking-stick arm -->
-    <path d="M280 210 L322 240" />
-    <path d="M322 240 L322 400" stroke-width="16" />
+
+  <rect x="14" y="14" width="484" height="484" rx="98" fill="url(#hikeBg)" stroke="#0a0a0a" stroke-width="26" />
+
+  <!-- Third pass. The hill line went first (it crossed the legs). Then the
+       stride: at 192px between the feet this was a lunge, not a walk, and it
+       read as skiing. A walking stride is about 130px at this scale, with the
+       legs staying under the body rather than splaying out from it. -->
+  <g filter="url(#hikeHalo)">
+    <!-- Pack: small, high and clearly outside the torso silhouette. Larger and
+         lower, it just made the back look thick. -->
+    <rect x="196" y="192" width="54" height="80" rx="23" fill="#123a26"
+          transform="rotate(-12 223 232)" />
+    <g fill="none" stroke="#123a26" stroke-linecap="round" stroke-linejoin="round">
+      <!-- trailing leg, toe-off, foot low and behind -->
+      <path d="M262 304 L226 352" stroke-width="42" />
+      <path d="M226 352 L196 410" stroke-width="34" />
+      <!-- leading leg, planted higher up the slope -->
+      <path d="M262 304 L318 334" stroke-width="42" />
+      <path d="M318 334 L330 384" stroke-width="34" />
+      <!-- torso, leaning into the climb -->
+      <path d="M262 304 L278 198" stroke-width="48" />
+      <!-- trailing arm, swung back -->
+      <path d="M278 198 L240 252" stroke-width="30" />
+      <!-- pole arm, forward and gripping -->
+      <path d="M278 198 L336 238" stroke-width="34" />
+      <!-- trekking pole, clear of the body, planted ahead and below -->
+      <path d="M342 176 L372 424" stroke-width="13" />
+    </g>
   </g>
-  <circle cx="262" cy="160" r="34" fill="#000" />
-  <rect x="248" y="196" width="46" height="64" rx="14" fill="#000" transform="rotate(-18 271 228)" />
+  <circle cx="276" cy="152" r="34" fill="#123a26" filter="url(#hikeHalo)" />
 </svg>
