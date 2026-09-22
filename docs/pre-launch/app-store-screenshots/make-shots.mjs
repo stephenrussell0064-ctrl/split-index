@@ -44,7 +44,19 @@ const SHOTS = [
     lines: ["See what leg day does", "to your running"],
   },
   {
-    out: "3-lab.png",
+    // Captured from src/app/shotlab (deleted after capture) on an iPhone 14
+    // Plus simulator, whose 428pt x 3 is 1284x2778 natively. The screen is
+    // unreachable in the running app without an account that has generated a
+    // block, but the render is the shipping <PlanView /> against a plan from
+    // the real engine, so these are the product's own pixels.
+    out: "3-plan.png",
+    src: "06hybridplan.png",
+    crop: { top: 465, height: 2130 }, // week strip through the 24-week block
+    eyebrow: "HYBRID PLAN",
+    lines: ["A week built so they stop", "fighting each other"],
+  },
+  {
+    out: "4-lab.png",
     src: "04lab.png",
     crop: { top: 850, height: 1625 }, // opens on the index, ends after the deadlift bar
     eyebrow: "THE LAB",

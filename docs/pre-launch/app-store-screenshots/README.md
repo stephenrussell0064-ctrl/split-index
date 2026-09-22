@@ -15,7 +15,12 @@ Needs `sharp`, which is already a dependency. Output lands next to the script.
 | --- | --- | --- |
 | 1 | `1-index.png` | Your lifting and your running in one number |
 | 2 | `2-interference.png` | See what leg day does to your running |
-| 3 | `3-lab.png` | Every lift scored, bodyweight-adjusted |
+| 3 | `3-plan.png` | A week built so they stop fighting each other |
+| 4 | `4-lab.png` | Every lift scored, bodyweight-adjusted |
+
+Slots 1-3 are the set that has to work, because search shows only three: the
+score, the insight that is unique to this app, and the week it produces. The
+Lab is the depth behind slot 1 and can sit fourth.
 
 ## The order matters more than the artwork
 
@@ -50,12 +55,21 @@ Reordering needs no new build and no new binary.
   1.0 (5). `../submission-runbook.html` flags four screens that have changed
   since. Re-capture before the next submission or the screenshots will no longer
   match the build.
-- **No Hybrid Plan capture exists.** The intended third screenshot was a
-  populated Hybrid Plan week, captioned "A week built so they stop fighting each
-  other". There is no such capture in `source/`, and the dashboard's plan card
-  reads "No plan yet". Slot 3 falls back to The Lab until someone captures a
-  generated plan week; when that exists, it is a better slot 3 than the Lab and
-  the original caption goes back.
+- **The Hybrid Plan capture was rendered, not photographed.** That screen needs
+  an account that has generated a block, so there was no way to reach it in the
+  running app. `source/06hybridplan.png` instead comes from a throwaway route
+  (`src/app/shotlab`, deleted after capture) that mounted the shipping
+  `<PlanView />` against a plan from the real engine — the "Hybrid athlete, dual
+  event" persona out of `src/lib/scoring/hpe/personas.test.ts`. Every number in
+  it, down to the deadlift percentages and the load ratio, is engine output. It
+  was captured in an iPhone 14 Plus simulator, whose 428pt at 3x is 1284x2778
+  natively, so nothing in that image is upscaled.
+
+  To redo it: restore the route from this commit's history, run the dev server,
+  and open it in a booted iPhone 14 Plus. Note that simulator Safari will not
+  apply Turbopack's dev stylesheet, whose chunk name contains `%5B`-encoded
+  brackets — inline the CSS into a static copy under `public/` and open that
+  instead.
 - **Demo account visible in the raw dashboard.** `source/01dashboard.png` opens
   on a greeting row reading `Hi, demo_masters_hybrid` with a truncated subtitle.
   The crop starts below it deliberately.
