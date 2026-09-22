@@ -32,9 +32,30 @@ describe("vitest worker pool leaves headroom on the host", () => {
   it("caps maxWorkers below the machine's core count", async () => {
     const resolved = await resolve(config as unknown);
     const maxWorkers = (resolved as { test?: { maxWorkers?: number } }).test?.maxWorkers;
+    const cores = os.cpus().length || 1;
+
     expect(maxWorkers, "vitest.config.ts must set test.maxWorkers").toBeTypeOf("number");
     expect(maxWorkers!).toBeGreaterThan(0);
-    expect(maxWorkers!).toBeLessThan(os.cpus().length);
+
+    /*
+      NEVER more workers than cores, on any host. This is the half that was
+      failing: the config named a literal 8, which is headroom on the 10-core
+      box it was written on and two workers per core on a 4-core CI runner.
+      Asserted separately from the headroom check below because
+      oversubscription is a different and worse fault than merely having no
+      spare core — it is the condition the whole setting exists to prevent.
+    */
+    expect(maxWorkers!, `maxWorkers ${maxWorkers} exceeds ${cores} cores`).toBeLessThanOrEqual(cores);
+
+    /*
+      And strictly fewer wherever there is anything to spare. Guarded on
+      `cores > 1` because a single-core host cannot both leave a core free and
+      run a worker; the previous unguarded `toBeLessThan(cores)` made the suite
+      unpassable there rather than catching anything.
+    */
+    if (cores > 1) {
+      expect(maxWorkers!, `maxWorkers ${maxWorkers} leaves no headroom on ${cores} cores`).toBeLessThan(cores);
+    }
   });
 
   it("does not use the Vitest-4-removed poolOptions.forks.maxForks shape", async () => {
