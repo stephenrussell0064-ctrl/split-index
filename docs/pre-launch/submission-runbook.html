@@ -166,7 +166,7 @@
 <div class="wrap">
 
   <header class="mast">
-    <p class="eyebrow">Split Index · iOS 1.0 (build 9) · resubmission</p>
+    <p class="eyebrow">Split Index · iOS 1.0 (build 10) · resubmission</p>
     <h1>Submission Runbook</h1>
     <p class="standfirst">Everything left before the archive, in the order it has to happen. Amber steps are gates — do not pass one until it reads green. Red steps cost you the review if you do them. Phase 0 is already done and is listed so you can see what no longer needs checking; the work starts at Phase 1.</p>
   </header>
@@ -268,7 +268,8 @@
       <div class="step-body">
         <h3>Product → Archive</h3>
         <span class="where">Destination: <b>Any iOS Device (arm64)</b></span>
-        <p>Not a simulator — a simulator build cannot be distributed and the Archive menu item stays disabled. Build 9, device family 1,2, already set in the project.</p>
+        <p>Not a simulator — a simulator build cannot be distributed and the Archive menu item stays disabled. Build 10, device family 1,2, already set in the project.</p>
+        <div class="warn"><b>New in build 10:</b> <code>UIBackgroundModes</code> now declares <code>audio</code> alongside <code>location</code> and <code>bluetooth-central</code>, shipped in <code>6fe0c59</code>. The per-kilometre split callouts went live when the speech branch merged, and without the mode they go silent the moment the screen locks — the whole of the time someone is running. It is justified on the same test as the other two: declared because the shipped feature requires it. <b>Add this to the review notes</b>, because a third background mode on an app whose first screen is web content invites the question:<br><br><code>Spoken per-kilometre split announcements during a GPS-tracked run require the audio background mode; they play through the lock screen while the run records, and duck rather than stop the athlete's own music.</code><br><br>Not yet verified by ear — the chain is confirmed by reading (plugin in the build, caller on main, production serving main), but nobody has run a GPS session with the screen locked and heard one.</div>
       </div>
     </div>
 
@@ -324,14 +325,14 @@
       <div class="step-body">
         <h3>Upload the iPad screenshots</h3>
         <span class="where"><b>~/Documents/SplitIndex-iPad-Screenshots/</b> · five files, 2048×2732 → <b>iPad 13" Display</b></span>
-        <p>Mandatory, not cosmetic: build 9 declares iPad support, and Apple requires an iPad set for an iPad-capable binary. Submitting without them risks a metadata rejection on top of everything else.</p>
+        <p>Mandatory, not cosmetic: build 10 declares iPad support, and Apple requires an iPad set for an iPad-capable binary. Submitting without them risks a metadata rejection on top of everything else.</p>
       </div>
     </div>
 
     <div class="step">
       <input type="checkbox" data-id="p3-build">
       <div class="step-body">
-        <h3>Attach build 9 under <em>Build</em></h3>
+        <h3>Attach build 10 under <em>Build</em></h3>
       </div>
     </div>
   </section>
@@ -422,7 +423,7 @@
   </section>
 
   <footer>
-    <p>Build 9 · resubmission after the Guideline 2.1 rejection (Sign in with Apple). Rewritten 22 Sep 2026; the previous version described build 3 and was three submissions out of date. Progress is stored in this browser only.</p>
+    <p>Build 10 · resubmission after the Guideline 2.1 rejection (Sign in with Apple). Rewritten 22 Sep 2026; the previous version described build 3 and was three submissions out of date. Progress is stored in this browser only.</p>
   </footer>
 </div>
 
