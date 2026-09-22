@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { formatDistanceToNow, format } from "date-fns";
 import { motion } from "framer-motion";
@@ -311,7 +312,14 @@ function FeedPost({ activity, onBlocked }: { activity: FeedActivity; onBlocked?:
         )}
       </div>
 
-      <div className="mt-3 flex items-center gap-2">
+      {/* The card's headline is the way in to the session itself. The feed
+          query never read the lifts — it cannot, they are a different table —
+          so a gym post could only ever show a title and a score here. */}
+      <Link
+        href={`/social/activity/${activity.id}`}
+        aria-label={`Open ${activity.title ?? meta?.name ?? activity.sport}, full session`}
+        className="mt-3 flex min-h-11 items-center gap-2 rounded-lg -mx-1 px-1 hover:bg-white/5"
+      >
         <span className="text-xl">{meta?.icon ?? "🏋️"}</span>
         <p className="text-sm font-medium">
           {activity.title ?? meta?.name ?? activity.sport}
@@ -321,7 +329,7 @@ function FeedPost({ activity, onBlocked }: { activity: FeedActivity; onBlocked?:
             </span>
           )}
         </p>
-      </div>
+      </Link>
 
       {activity.notes && <p className="mt-2 text-sm text-muted">{activity.notes}</p>}
 

@@ -244,6 +244,14 @@ describe("WP1 — the public projections", () => {
         anon; signed-in callers only.
       */
       "profile_usernames",
+      /*
+        083. The lifts inside ONE session, for the athlete and their accepted
+        friends — the only projection whose predicate names `friends` and
+        `blocked_users`, because it is the only one that is not leaderboard
+        data. `relative_strength` is deliberately not in it: 1RM over bodyweight
+        beside the 1RM is bodyweight, and the guard below caught that.
+      */
+      "public_activity_strength_scores",
       "public_challenge_participation",
       "public_index_history",
       "public_leaderboard_entries",
