@@ -122,6 +122,33 @@ function hybridAthlete() {
   };
 }
 
+/*
+ * THESE PERSONAS ARE ALSO USED TO RENDER MARKETING CAPTURES. THE CHOICE IS
+ * LOAD-BEARING.
+ *
+ * `docs/pre-launch/app-store-screenshots/source/06hybridplan.png` was captured
+ * by mounting the shipping <PlanView /> against a real generatePlan() result
+ * for `hybridAthlete()`. That persona is the ONLY one of the five whose plan
+ * cites a diagnostic finding on every card. Share of sessions attributed to
+ * `hybrid-baseline` rather than a finding about the athlete, measured
+ * 22 Sep 2026:
+ *
+ *   Hybrid athlete, dual event    0/143   3 findings   <- safe for a capture
+ *   Marathon runner, never lifts 32/95    7 findings
+ *   Powerlifter, no cardio       36/112   1 finding
+ *   Rower, never runs            21/45    1 finding
+ *   Complete beginner            45/45    0 findings   <- every card baseline
+ *
+ * A capture from `beginner()` would have put "This session's diagnostic
+ * finding could not be loaded. That is a bug" onto the App Store listing at
+ * 1284x2778 — that string was live until 22 Sep, and the persona picked for
+ * the screenshot is the single reason it was not shipped. Nothing recorded
+ * that at the time.
+ *
+ * So: for any capture that shows a session's reason, use `hybridAthlete()`,
+ * or check the baseline share first. `traceability-claim.test.ts` holds the
+ * assertions behind these numbers.
+ */
 const PERSONAS = [marathonRunner(), powerlifter(), rower(), beginner(), hybridAthlete()];
 
 describe("five-persona functionality test", () => {

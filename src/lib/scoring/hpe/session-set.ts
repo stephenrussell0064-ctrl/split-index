@@ -214,6 +214,13 @@ export const HYBRID_BASELINE_FINDING: Finding = {
  * athlete's diagnosis and is one entry short of the set the engine prescribes
  * against; the difference is precisely the bug above. The athlete's own
  * findings are written last so a real diagnosis always wins over the baseline.
+ *
+ * "The plan screen" is broader than it sounds. A MARKETING CAPTURE is also a
+ * surface that resolves a session's reason, and it ships to Apple rather than
+ * to a test runner — the App Store screenshot was rendered from the shipping
+ * <PlanView /> against a real plan, and the persona it used is the only one of
+ * five whose cards all cite a diagnostic finding. See the note on `PERSONAS`
+ * in personas.test.ts before rendering another.
  */
 export function planFindingsById(findings: readonly Finding[]): Map<FindingId, Finding> {
   const byId = new Map<FindingId, Finding>([[HYBRID_BASELINE_FINDING.id, HYBRID_BASELINE_FINDING]]);
