@@ -148,7 +148,11 @@ describe("the trigger on the session card", () => {
     // sessions — and a button opening a sheet about a number that is not there
     // would be worse than no button.
     const html = renderCardio({ personalScore: null, personal: null });
-    expect(html).not.toContain("What this means");
+    // Specifically the personal trigger. The Engine number beside it is always
+    // tappable and legitimately carries "What this means" — asserting on that
+    // phrase alone started failing the moment Engine got its own sheet, which
+    // is the test being too broad rather than the behaviour being wrong.
+    expect(html).not.toContain("against yourself");
     expect(html).toContain("calibrating");
   });
 });

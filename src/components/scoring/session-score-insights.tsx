@@ -4,6 +4,7 @@ import { HelpCircle } from "lucide-react";
 import { useState } from "react";
 import { PremiumTease } from "@/components/premium/premium-tease";
 import { PersonalScoreExplainer } from "@/components/scoring/personal-score-explainer";
+import { StandardsScoreExplainer } from "@/components/scoring/standards-score-explainer";
 import { ScoringExplainerNote } from "@/components/scoring/scoring-explainer-note";
 import { isBodyweightOnlyExercise } from "@/lib/scoring/weight-entry";
 import { cn } from "@/lib/utils/cn";
@@ -135,13 +136,22 @@ function CardioFreeStats({
   sport?: SportType | null;
 }) {
   const [explaining, setExplaining] = useState(false);
+  const [explainingEngine, setExplainingEngine] = useState(false);
   return (
     <div className="space-y-3">
       <dl className="grid gap-3 sm:grid-cols-2 text-sm">
         <div>
           <dt className="text-[10px] uppercase tracking-wider text-muted">Session score · vs everyone</dt>
           <dd className="font-display text-xl font-bold text-cardio-accent tabular-nums">
-            {formatIndex(result.populationScore ?? result.score)}
+            <button
+              type="button"
+              onClick={() => setExplainingEngine(true)}
+              aria-label={`Your Engine score, ${formatIndex(result.populationScore ?? result.score)}. What this means`}
+              className="-mx-1 -my-0.5 inline-flex min-h-11 items-center gap-1.5 rounded-lg px-1 py-0.5 text-left underline decoration-dotted decoration-white/25 underline-offset-4 hover:bg-white/5 hover:decoration-white/60"
+            >
+              {formatIndex(result.populationScore ?? result.score)}
+              <HelpCircle className="h-3.5 w-3.5 shrink-0 text-muted" aria-hidden />
+            </button>
           </dd>
         </div>
         <div>
@@ -190,6 +200,14 @@ function CardioFreeStats({
         )}
       </dl>
       <ScoreBasisNote result={result} />
+      {explainingEngine && (
+        <StandardsScoreExplainer
+          score={result.populationScore ?? result.score}
+          variant="engine"
+          seriesKey={sport ?? null}
+          onClose={() => setExplainingEngine(false)}
+        />
+      )}
       {explaining && result.personalScore != null && (
         <PersonalScoreExplainer
           score={result.personalScore}
@@ -333,6 +351,7 @@ function CardioPremiumStats({
 }
 
 function StrengthRow({ result, liftName }: { result: ScoreStrengthResult; liftName: string }) {
+  const [explainingLab, setExplainingLab] = useState(false);
   const isBeta =
     result.flags?.includes("female-strength-beta") ||
     result.flags?.includes("sex-factor-beta") ||
@@ -361,9 +380,26 @@ function StrengthRow({ result, liftName }: { result: ScoreStrengthResult; liftNa
         </p>
         <div className="text-right">
           <p className="font-display text-lg font-bold text-gym-accent tabular-nums">
-            {formatIndex(result.score)}
+            <button
+              type="button"
+              onClick={() => setExplainingLab(true)}
+              aria-label={`Your Lab score for ${liftName}, ${formatIndex(result.score)}. What this means`}
+              className="-mx-1 -my-0.5 inline-flex min-h-11 items-center gap-1.5 rounded-lg px-1 py-0.5 underline decoration-dotted decoration-white/25 underline-offset-4 hover:bg-white/5 hover:decoration-white/60"
+            >
+              {formatIndex(result.score)}
+              <HelpCircle className="h-3.5 w-3.5 shrink-0 text-muted" aria-hidden />
+            </button>
           </p>
           <p className="text-[9px] uppercase tracking-wider text-gym-muted">vs everyone</p>
+          {explainingLab && (
+            <StandardsScoreExplainer
+              score={result.score}
+              variant="lab"
+              seriesKey={liftName}
+              tier={result.tier}
+              onClose={() => setExplainingLab(false)}
+            />
+          )}
           {result.personalScore != null && (
             <>
               <p

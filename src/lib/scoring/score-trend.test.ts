@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { fetchPersonalTrend } from "./personal-trend";
+import { fetchCardioScoreTrend, fetchStrengthScoreTrend } from "./score-trend";
 
 /**
  * The trend behind the "vs you" number.
@@ -13,11 +13,18 @@ import { fetchPersonalTrend } from "./personal-trend";
 
 /** The smallest thing that answers the chain the query actually builds. */
 function fakeSupabase(result: { data?: unknown; error?: { code?: string; message?: string } | null }) {
-  const calls: { limit?: number; filters: Record<string, unknown> } = { filters: {} };
+  const calls: { limit?: number; usedIlike?: boolean; filters: Record<string, unknown> } = {
+    filters: {},
+  };
   const builder: Record<string, unknown> = {
     select: () => builder,
     eq: (col: string, val: unknown) => {
       calls.filters[col] = val;
+      return builder;
+    },
+    ilike: (col: string, val: unknown) => {
+      calls.filters[col] = val;
+      calls.usedIlike = true;
       return builder;
     },
     order: () => builder,
@@ -43,8 +50,8 @@ describe("the personal score trend", () => {
     const { client } = fakeSupabase({
       data: [row("2026-09-20T07:00:00Z", 620), row("2026-09-13T07:00:00Z", 480), row("2026-09-06T07:00:00Z", 500)],
     });
-    return fetchPersonalTrend(client, "u1", "run").then(({ points }) => {
-      expect(points.map((p) => p.score)).toEqual([500, 480, 620]);
+    return fetchCardioScoreTrend(client, "u1", "run", "personal").then(({ points }: { points: Array<{ at: string; score: number }> }) => {
+      expect(points.map((p: { score: number }) => p.score)).toEqual([500, 480, 620]);
       expect(new Date(points[0].at) < new Date(points[2].at)).toBe(true);
     });
   });
@@ -55,14 +62,14 @@ describe("the personal score trend", () => {
     const { client } = fakeSupabase({
       data: [row("2026-09-20T07:00:00Z", 620), row("2026-09-19T07:00:00Z", null), row("2026-09-18T07:00:00Z", 540)],
     });
-    const { points } = await fetchPersonalTrend(client, "u1", "run");
+    const { points } = await fetchCardioScoreTrend(client, "u1", "run", "personal");
     expect(points).toHaveLength(2);
-    expect(points.map((p) => p.score)).toEqual([540, 620]);
+    expect(points.map((p: { score: number }) => p.score)).toEqual([540, 620]);
   });
 
   it("over-fetches, so a log full of nulls still fills the chart", async () => {
     const { client, calls } = fakeSupabase({ data: [] });
-    await fetchPersonalTrend(client, "u1", "run", 30);
+    await fetchCardioScoreTrend(client, "u1", "run", "personal", 30);
     // Asking for exactly 30 rows would return fewer than 30 points whenever any
     // session lacks a score, which is most logs.
     expect(calls.limit).toBeGreaterThan(30);
@@ -73,13 +80,13 @@ describe("the personal score trend", () => {
       row(`2026-09-${String(i + 1).padStart(2, "0")}T07:00:00Z`, 500 + i)
     );
     const { client } = fetchPersonalTrendFixture(data);
-    const { points } = await fetchPersonalTrend(client, "u1", "run", 5);
+    const { points } = await fetchCardioScoreTrend(client, "u1", "run", "personal", 5);
     expect(points).toHaveLength(5);
   });
 
   it("scopes to this athlete and this sport, and not only to RLS", async () => {
     const { client, calls } = fakeSupabase({ data: [] });
-    await fetchPersonalTrend(client, "u1", "row");
+    await fetchCardioScoreTrend(client, "u1", "row", "personal");
     expect(calls.filters).toMatchObject({ user_id: "u1", sport: "row" });
   });
 
@@ -90,7 +97,7 @@ describe("the personal score trend", () => {
     const { client } = fakeSupabase({
       error: { code: "42703", message: 'column "personal_index" does not exist' },
     });
-    const { points, error } = await fetchPersonalTrend(client, "u1", "run");
+    const { points, error } = await fetchCardioScoreTrend(client, "u1", "run", "personal");
     expect(points).toEqual([]);
     expect(error).toBeNull();
   });
@@ -99,7 +106,7 @@ describe("the personal score trend", () => {
     // An unreadable trend is not a flat trend. Swallowing this would tell the
     // athlete they have no history when the truth is nothing answered.
     const { client } = fakeSupabase({ error: { code: "57014", message: "statement timeout" } });
-    const { points, error } = await fetchPersonalTrend(client, "u1", "run");
+    const { points, error } = await fetchCardioScoreTrend(client, "u1", "run", "personal");
     expect(points).toEqual([]);
     expect(error).toBe("statement timeout");
   });
@@ -110,7 +117,7 @@ describe("the personal score trend", () => {
     const { client } = fakeSupabase({
       data: [{ started_at: "2026-09-20T07:00:00Z", workout_scores: { personal_index: 610 } }],
     });
-    const { points } = await fetchPersonalTrend(client, "u1", "run");
+    const { points } = await fetchCardioScoreTrend(client, "u1", "run", "personal");
     expect(points).toEqual([{ at: "2026-09-20T07:00:00Z", score: 610 }]);
   });
 });
@@ -118,3 +125,43 @@ describe("the personal score trend", () => {
 function fetchPersonalTrendFixture(data: unknown[]) {
   return fakeSupabase({ data });
 }
+
+describe("the Lab trend, off strength_scores", () => {
+  const lift = (at: string, index: number | null) => ({ recorded_at: at, strength_index: index });
+
+  it("returns a lift's scores oldest first", async () => {
+    const { client } = fakeSupabase({
+      data: [lift("2026-09-20T07:00:00Z", 712), lift("2026-09-13T07:00:00Z", 690)],
+    });
+    const { points } = await fetchStrengthScoreTrend(client, "u1", "Bench Press", "population");
+    expect(points.map((p) => p.score)).toEqual([690, 712]);
+  });
+
+  it("matches the lift case-insensitively", async () => {
+    // The same lift reaches this table as "Bench Press" and "bench press"
+    // depending on where it was logged. An `eq` here would silently draw half
+    // an athlete's history and look exactly like a short training log.
+    const { client, calls } = fakeSupabase({ data: [] });
+    await fetchStrengthScoreTrend(client, "u1", "Bench Press", "population");
+    expect(calls.usedIlike).toBe(true);
+    expect(calls.filters).toMatchObject({ user_id: "u1", exercise_name: "Bench Press" });
+  });
+
+  it("reports a real failure rather than drawing an empty chart", async () => {
+    const { client } = fakeSupabase({ error: { code: "57014", message: "statement timeout" } });
+    const { points, error } = await fetchStrengthScoreTrend(client, "u1", "Squat", "population");
+    expect(points).toEqual([]);
+    expect(error).toBe("statement timeout");
+  });
+
+  it("does not swallow a missing column for a score that has always existed", async () => {
+    // The degradable path is for `personal_index`, which arrived with 077.
+    // `strength_index` has been there since 002, so its absence is a real fault
+    // and hiding it would hide a broken schema.
+    const { client } = fakeSupabase({
+      error: { code: "42703", message: 'column "strength_index" does not exist' },
+    });
+    const { error } = await fetchStrengthScoreTrend(client, "u1", "Squat", "population");
+    expect(error).not.toBeNull();
+  });
+});
