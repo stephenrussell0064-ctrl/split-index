@@ -131,19 +131,38 @@
 	  which is the whole of the time an athlete is actually running. It is
 	  still held back, on purpose, until 1.0 (5) is approved:
 
-	    - The callouts cannot be heard during THIS review whatever this file
-	      says. The native shell loads production (capacitor.config.ts), main
-	      is frozen for the review, and the JS that calls the plugin is not on
-	      main. A background mode whose feature is unreachable is exactly the
-	      shape Guideline 2.5.4 rejects.
+	    - STALE AS OF 22 SEP 2026, READ THE NEXT PARAGRAPH. The original
+	      reason was that the callouts could not be heard during review
+	      whatever this file said: the native shell loads production
+	      (capacitor.config.ts), main is frozen for the review, and the JS
+	      that calls the plugin was not on main. A background mode whose
+	      feature is unreachable is exactly the shape Guideline 2.5.4 rejects.
 	    - The app's largest structural risk is already Guideline 4.2 (a
 	      reviewer's first screen is web content). Adding a third background
 	      mode to the build that answers that is unpaid risk.
 
-	  Add the single `<string>audio</string>` line below, bump the build, and
-	  ship it together with the web deploy that turns the callouts on. See the
-	  "After you submit" phase of docs/pre-launch/submission-runbook.html,
-	  which carries the review-notes wording to go with it.
+	  WHAT CHANGED. The speech branch was merged, so the calling JS IS on
+	  main now: `src/lib/native/speech.ts`, called from
+	  `src/app/(app)/cardio/gps-run/gps-run-client.tsx` on every completed
+	  kilometre. Production serves main and the shell loads production, so the
+	  feature is reachable by any athlete on the current build. The 2.5.4
+	  argument above is therefore dead — `audio` is now JUSTIFIED rather than
+	  unreachable, and its absence is what costs something.
+
+	  THE LIVE TRADE, which is a decision and not an oversight. Shipping
+	  without `audio` means the callouts are silent the moment the screen
+	  locks — which, as the paragraph above says, is the whole of the time an
+	  athlete is actually running. So the feature ships and fails in the only
+	  case it exists for. Against that, the second bullet still stands: this
+	  build carries the 4.2 risk, and a third background mode is one more
+	  thing to explain. Decide it deliberately; do not inherit it from this
+	  comment.
+
+	  To add it: the single `<string>audio</string>` line below, bump the
+	  build, and put the review-notes wording from the "After you submit"
+	  phase of docs/pre-launch/submission-runbook.html alongside it. That
+	  runbook still says to hold `audio` back and is stale for the same
+	  reason this bullet was.
 	-->
 	<array>
 		<string>location</string>
