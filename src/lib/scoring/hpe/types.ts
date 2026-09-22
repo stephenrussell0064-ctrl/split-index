@@ -76,11 +76,17 @@ export interface EasyBand {
 export type EasyAnchorName = "5k_multiplier" | "long_effort" | "hr_inverted";
 
 /**
- * A named diagnostic finding. `id` exists for non-negotiable #7: "every
- * session in a generated plan is traceable to a named diagnostic finding. If
- * the engine cannot say *why* this athlete is doing this session, it does not
- * prescribe it." `text` is what the athlete actually reads — brief §0d: those
- * strings are the product.
+ * A named reason a session exists. `id` exists for non-negotiable #7: "every
+ * session in a generated plan is traceable to a named reason, which it carries
+ * to the athlete. If the engine cannot say *why* this athlete is doing this
+ * session, it does not prescribe it." `text` is what the athlete actually
+ * reads — brief §0d: those strings are the product.
+ *
+ * Note the wording, which the brief corrected: a named REASON, not necessarily
+ * a diagnostic finding. Most are findings — something observed in this
+ * athlete's own history — but `hybrid-baseline` is not, and for a thin-data
+ * athlete it is the only one. See the note on #7 in the brief, and
+ * `traceability-claim.test.ts`, before restating this anywhere public.
  */
 export interface Finding {
   id: FindingId;

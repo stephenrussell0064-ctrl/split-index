@@ -22,7 +22,33 @@ Where a brief and a reference implementation disagree, **the reference implement
 4. Zero hard-rule violations, asserted by property tests over randomised inputs.
 5. No calorie, macro or rate-of-loss output under any configuration.
 6. **New:** every derived metric carries a confidence and a data-sufficiency tier. Nothing is prescribed from an extrapolation outside the range the athlete's own data covers.
-7. **New:** every session in a generated plan is traceable to a named diagnostic finding. If the engine cannot say *why* this athlete is doing this session, it does not prescribe it.
+7. **New:** every session in a generated plan is traceable to a named reason, which it carries to the athlete. If the engine cannot say *why* this athlete is doing this session, it does not prescribe it.
+
+> **On #7 — two reasons qualify, and they are not the same claim.**
+>
+> A **diagnostic finding** is something observed in this athlete's own logged
+> history. The **`hybrid-baseline`** rationale is what a session cites when no
+> finding backs its emphasis dimension: a named, written reason — *"this
+> session is not answering a specific finding about you"* — that exists so no
+> movement pattern and neither side of the hybrid goes untrained. Both satisfy
+> #7. Only the first is a finding about the athlete.
+>
+> Enforcement is the `NOT NULL` foreign key on `hpe_sessions.finding_id`;
+> `savePlan` drops any session whose finding has no stored row rather than
+> storing a placeholder.
+>
+> **Do not state the stronger form in public.** *"Every session is traceable to
+> a named diagnostic finding"* is false at the thin end: a complete beginner
+> gets **zero findings and every session attributed to the baseline**, and the
+> baseline text says so on every card. This wording was taken from an earlier
+> draft of #7 into the marketing site and a TikTok hook, where one download
+> would have contradicted it. `src/lib/scoring/hpe/traceability-claim.test.ts`
+> pins it: the test fails if the claim is strengthened back, and also if
+> finding coverage widens enough to make it true — which is the good direction,
+> but should be a deliberate copy change rather than a silent one.
+>
+> The defensible public form is that every session tells the athlete why it is
+> there. That holds for every persona.
 
 ---
 
@@ -190,7 +216,8 @@ logic appears anywhere else; generation is deterministic and stamped with the co
 version; the safety screen runs first and is not bypassable; no prescribed heart rate
 may exceed the athlete's max HR and no metric may be extrapolated outside the range the
 athlete's own data covers - return null and fall back with a labelled source instead;
-every prescribed session must be traceable to a named diagnostic finding; no calorie,
+every prescribed session must be traceable to a named reason it carries to the athlete
+(a diagnostic finding, or the hybrid-baseline rationale — see the note on #7); no calorie,
 macro or rate-of-loss output under any configuration.
 
 Consume the existing SRI adaptive-1RM, race-prediction, personalised-HR and ACWR Risk

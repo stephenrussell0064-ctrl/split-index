@@ -25,10 +25,15 @@ import {
  * size, and the sentence the engine wrote goes underneath as the detail.
  *
  * The "why" stays one tap away rather than being dropped. Non-negotiable #7
- * says every session is traceable to a named diagnostic finding, and a screen
- * that renders the prescription and loses the reason turns a defensible plan
- * back into an opaque calendar — which is exactly the bug this view is
- * replacing.
+ * says every session is traceable to a named reason it carries to the athlete,
+ * and a screen that renders the prescription and loses the reason turns a
+ * defensible plan back into an opaque calendar — which is exactly the bug this
+ * view is replacing.
+ *
+ * "A named reason", not "a diagnostic finding": for an athlete whose diagnosis
+ * found nothing, every card here cites the baseline rationale instead, and the
+ * screen must read correctly for them too. That is the case this view got
+ * wrong once already.
  */
 
 /** Rest is content. It gets the same card, the same weight, and a reason. */
