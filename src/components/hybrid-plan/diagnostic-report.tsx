@@ -129,9 +129,35 @@ export function DiagnosticReport({
       {/* The emphasis vector as a bar chart — the brief's own words. */}
       <Card>
         <h2 className="text-lg font-semibold tracking-tight">What your week is weighted toward</h2>
+        {/*
+          NARROWED, because the stronger sentence was false at the thin end.
+
+          It read: "every one of them moved because of something in your own
+          logged history — the findings below say which." An athlete with no
+          findings is shown seven identical bars and no findings list, so that
+          sentence described a screen they were not looking at. Measured across
+          the five personas: 7 findings and 0.63 spread for the marathon
+          runner, 1 and 0.054 for the rower, and 0 findings with 0.0000 spread
+          for a complete beginner — for whom NOTHING moved.
+
+          The claim now scales with what the diagnosis actually found, because
+          this screen is the product's "share and screenshot moment" and a
+          beginner screenshotting a promise the bars contradict is worse than
+          saying plainly that there is not enough history yet.
+        */}
         <p className="mt-1 text-sm leading-relaxed text-muted">
-          Seven weights summing to 100%. Every session in your plan is allocated against these, and every one of them
-          moved because of something in your own logged history — the findings below say which.
+          {profile.findings.length > 0 ? (
+            <>
+              Seven weights summing to 100%. Every session in your plan is allocated against these, and the ones that
+              moved did so because of something in your own logged history — the findings below say which.
+            </>
+          ) : (
+            <>
+              Seven weights summing to 100%. Every session in your plan is allocated against these. Nothing has moved
+              them yet — these are the balanced defaults, and they will tilt toward you as soon as your logged history
+              is enough to find something specific.
+            </>
+          )}
         </p>
         <div className="mt-5 space-y-2.5">
           {emphasis.map(([key, value]) => {
