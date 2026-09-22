@@ -126,10 +126,13 @@ function PersonalComparison({ result }: { result: CardioResult }) {
 
 function CardioFreeStats({
   result,
+  sport,
 }: {
   result: CardioResult;
   sessionType?: SessionType | null;
   flags?: string[];
+  /** Threaded only so the explainer can draw this sport's trend. */
+  sport?: SportType | null;
 }) {
   const [explaining, setExplaining] = useState(false);
   return (
@@ -191,6 +194,7 @@ function CardioFreeStats({
         <PersonalScoreExplainer
           score={result.personalScore}
           comparison={result.personal ?? null}
+          sport={sport ?? null}
           onClose={() => setExplaining(false)}
         />
       )}
@@ -242,7 +246,7 @@ function CardioPremiumStats({
 
   return (
     <div className="space-y-4 text-sm">
-      <CardioFreeStats result={result} sessionType={sessionType} flags={result.flags} />
+      <CardioFreeStats result={result} sessionType={sessionType} flags={result.flags} sport={sport} />
       <PersonalComparison result={result} />
       <dl className="grid gap-3 sm:grid-cols-2 border-t border-white/5 pt-4">
         {result.trimp !== null && (
@@ -466,7 +470,7 @@ export function SessionScoreInsights({
         {full ? (
           <CardioPremiumStats result={full} sessionType={sessionType} sport={sport} />
         ) : (
-          <CardioFreeStats result={free} sessionType={sessionType} />
+          <CardioFreeStats result={free} sessionType={sessionType} sport={sport} />
         )}
       </div>
     );

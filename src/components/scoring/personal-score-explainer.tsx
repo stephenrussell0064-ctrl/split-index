@@ -3,6 +3,11 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { X } from "lucide-react";
 import Link from "next/link";
+import { useEffect, useState } from "react";
+import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, XAxis, YAxis } from "recharts";
+import { ChartFigure } from "@/components/analytics/chart-figure";
+import { describeSeries } from "@/lib/a11y/describe-series";
+import type { PersonalTrendPoint } from "@/lib/scoring/personal-trend";
 import { useDialog } from "@/components/ui/use-dialog";
 import { formatIndex } from "@/lib/utils/format";
 import { cn } from "@/lib/utils/cn";
@@ -36,11 +41,14 @@ const CENTRE_DISPLAY = 50;
 export function PersonalScoreExplainer({
   score,
   comparison,
+  sport,
   onClose,
 }: {
   /** The personal score on the stored 0–1000 scale. */
   score: number;
   comparison: CardioPersonalComparison | null;
+  /** Which sport to draw the trend for. No sport, no chart — see PersonalTrend. */
+  sport?: string | null;
   onClose: () => void;
 }) {
   const { dialogRef, dialogProps } = useDialog(onClose, { label: "How your score against yourself works" });
@@ -154,6 +162,8 @@ export function PersonalScoreExplainer({
             </div>
           )}
 
+          <PersonalTrend sport={sport} />
+
           <Link
             href="/how-scoring-works#two-scores"
             className="mt-4 inline-flex min-h-11 items-center text-xs text-accent underline underline-offset-4"
@@ -185,6 +195,96 @@ function Scale({ shown }: { shown: number }) {
         <span>your normal · 50</span>
         <span>better</span>
       </div>
+    </div>
+  );
+}
+
+
+/**
+ * The same score over the athlete's recent sessions in this sport.
+ *
+ * DELIBERATELY BELOW THE SENTENCES, and shipped a commit after them. A chart of
+ * numbers you cannot interpret is still numbers you cannot interpret: the
+ * question that prompted all of this — "why is my easy run scoring 29.7" — is
+ * answered by the line about heart-rate matching above, not by this. What this
+ * adds is the one thing a single reading genuinely cannot show. The baseline is
+ * a median of your own sessions, so it moves with you; a run of readings above
+ * 50 is a block of improvement outrunning its own baseline, and no single
+ * number can say that.
+ *
+ * FEWER THAN TWO POINTS DRAWS NOTHING. One dot is a reading, not a trend, and a
+ * chart with one dot on it implies a shape that is not there.
+ */
+function PersonalTrend({ sport }: { sport?: string | null }) {
+  const [points, setPoints] = useState<PersonalTrendPoint[] | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    if (!sport) return;
+    const controller = new AbortController();
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/scores/personal-trend?sport=${encodeURIComponent(sport)}`,
+          { signal: controller.signal }
+        );
+        if (!res.ok) {
+          setFailed(true);
+          return;
+        }
+        const body: { points?: PersonalTrendPoint[] } = await res.json();
+        setPoints(body.points ?? []);
+      } catch (err) {
+        // An aborted fetch is the sheet closing, not a failure to report.
+        if ((err as Error)?.name !== "AbortError") setFailed(true);
+      }
+    })();
+    return () => controller.abort();
+  }, [sport]);
+
+  if (!sport || failed || points === null || points.length < 2) return null;
+
+  const data = points.map((p) => ({
+    at: p.at,
+    shown: Number(formatIndex(p.score)),
+    label: new Date(p.at).toLocaleDateString(undefined, { day: "numeric", month: "short" }),
+  }));
+
+  return (
+    <div className="mt-4 border-t border-white/5 pt-4">
+      <p className="text-[10px] uppercase tracking-wider text-muted">
+        Your last {data.length} sessions in this sport
+      </p>
+      <div className="mt-2 h-32">
+        <ChartFigure
+          label="Your score against yourself, over recent sessions"
+          summary={describeSeries(
+            "Your score against yourself",
+            data.map((d) => ({ at: d.label, value: d.shown }))
+          )}
+          columns={[
+            { header: "Session", cell: (d: (typeof data)[number]) => d.label },
+            { header: "Score", cell: (d: (typeof data)[number]) => d.shown.toFixed(1) },
+          ]}
+          rows={data}
+        >
+          <ResponsiveContainer width="100%" height={128}>
+            <LineChart data={data} margin={{ top: 6, right: 8, bottom: 0, left: -20 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+              <XAxis dataKey="label" tick={{ fontSize: 9 }} stroke="rgba(255,255,255,0.35)" interval="preserveStartEnd" />
+              <YAxis domain={[0, 100]} ticks={[0, 50, 100]} tick={{ fontSize: 9 }} stroke="rgba(255,255,255,0.35)" width={28} />
+              {/* Your normal. Without it the line is just a wobble — this is
+                  the only horizontal on the chart that means anything. */}
+              <ReferenceLine y={50} stroke="rgba(255,255,255,0.45)" strokeDasharray="4 4" />
+              <Line type="monotone" dataKey="shown" stroke="currentColor" strokeWidth={2} dot={{ r: 2 }} isAnimationActive={false} className="text-cardio-accent" />
+            </LineChart>
+          </ResponsiveContainer>
+        </ChartFigure>
+      </div>
+      <p className="mt-1 text-[10px] text-muted">
+        The dashed line is your normal. It moves with you, so a run of sessions above it is a block
+        of form outrunning its own baseline.
+      </p>
     </div>
   );
 }
