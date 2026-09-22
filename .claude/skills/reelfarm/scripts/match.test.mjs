@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Offline regression test for the hook-matching used by `rf.mjs report`.
- * No API key, no network. Run: node scripts/match.test.mjs
+ * No API key, no network. Run: node .claude/skills/reelfarm/scripts/match.test.mjs
  */
 import { matchHook, loadHooks } from "./rf.mjs";
 

@@ -17,7 +17,7 @@ it. If it is missing, the script exits with instructions — relay those and sto
 export REELFARM_API_KEY=rf_...   # user runs this themselves, in their shell profile
 ```
 
-**Plan gate.** API access requires Growth, Scale or Unlimited. `node scripts/rf.mjs account`
+**Plan gate.** API access requires Growth, Scale or Unlimited. `node .claude/skills/reelfarm/scripts/rf.mjs account`
 is the cheapest way to confirm the key works and the tier is sufficient. Run it first in
 any session that will touch the API.
 
@@ -59,31 +59,31 @@ genuinely want human-subject stock.
 
 ## Commands
 
-All from the skill directory: `node scripts/rf.mjs <command>`.
+All from the skill directory: `node .claude/skills/reelfarm/scripts/rf.mjs <command>`.
 
 ```bash
-node scripts/rf.mjs account                      # tier + credits — run this first
-node scripts/rf.mjs accounts                     # connected TikTok accounts (get the id)
-node scripts/rf.mjs collections                  # your image collections
-node scripts/rf.mjs collections <collection_id>  # images inside one
-node scripts/rf.mjs pinterest "<query>"          # stock image URLs
+node .claude/skills/reelfarm/scripts/rf.mjs account                      # tier + credits — run this first
+node .claude/skills/reelfarm/scripts/rf.mjs accounts                     # connected TikTok accounts (get the id)
+node .claude/skills/reelfarm/scripts/rf.mjs collections                  # your image collections
+node .claude/skills/reelfarm/scripts/rf.mjs collections <collection_id>  # images inside one
+node .claude/skills/reelfarm/scripts/rf.mjs pinterest "<query>"          # stock image URLs
 
-node scripts/rf.mjs hooks                        # print the local library
-node scripts/rf.mjs hooks --batch gym --cold     # filter: gym-only, cold-reach-safe
-node scripts/rf.mjs hooks --field short --json   # the slideshow_hooks[] payload
+node .claude/skills/reelfarm/scripts/rf.mjs hooks                        # print the local library
+node .claude/skills/reelfarm/scripts/rf.mjs hooks --batch gym --cold     # filter: gym-only, cold-reach-safe
+node .claude/skills/reelfarm/scripts/rf.mjs hooks --field short --json   # the slideshow_hooks[] payload
 
-node scripts/rf.mjs automation:create <payload.json>
-node scripts/rf.mjs automation:list
-node scripts/rf.mjs automation:get <id>
-node scripts/rf.mjs automation:hooks <id> --batch gym     # PATCH slideshow_hooks
-node scripts/rf.mjs automation:run <id> --hook-id gym-15  # one-off, draft by default
+node .claude/skills/reelfarm/scripts/rf.mjs automation:create <payload.json>
+node .claude/skills/reelfarm/scripts/rf.mjs automation:list
+node .claude/skills/reelfarm/scripts/rf.mjs automation:get <id>
+node .claude/skills/reelfarm/scripts/rf.mjs automation:hooks <id> --batch gym     # PATCH slideshow_hooks
+node .claude/skills/reelfarm/scripts/rf.mjs automation:run <id> --hook-id gym-15  # one-off, draft by default
 
-node scripts/rf.mjs videos --status completed --limit 20
-node scripts/rf.mjs video <video_id>
-node scripts/rf.mjs analytics <video_id>
-node scripts/rf.mjs report --limit 30            # joins analytics back to hooks
+node .claude/skills/reelfarm/scripts/rf.mjs videos --status completed --limit 20
+node .claude/skills/reelfarm/scripts/rf.mjs video <video_id>
+node .claude/skills/reelfarm/scripts/rf.mjs analytics <video_id>
+node .claude/skills/reelfarm/scripts/rf.mjs report --limit 30            # joins analytics back to hooks
 
-node scripts/rf.mjs publish <video_id> <tiktok_account_id> --caption "..."
+node .claude/skills/reelfarm/scripts/rf.mjs publish <video_id> <tiktok_account_id> --caption "..."
 ```
 
 ## Dashboard mode (no API key)
@@ -92,9 +92,9 @@ Everything below runs offline and needs no key or plan. This is the working mode
 the account has API access.
 
 ```bash
-node scripts/rf.mjs hooks --batch gym --field short --plain   # paste into the dashboard
-node scripts/rf.mjs hooks --cold                              # cold-reach-safe subset, with art direction
-node scripts/match.test.mjs                                   # offline regression test
+node .claude/skills/reelfarm/scripts/rf.mjs hooks --batch gym --field short --plain   # paste into the dashboard
+node .claude/skills/reelfarm/scripts/rf.mjs hooks --cold                              # cold-reach-safe subset, with art direction
+node .claude/skills/reelfarm/scripts/match.test.mjs                                   # offline regression test
 ```
 
 Workflow: create the automation in the ReelFarm web dashboard, paste the `--plain` output
