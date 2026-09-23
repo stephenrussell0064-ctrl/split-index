@@ -18,7 +18,13 @@
  * both sides evenly should not be dragged down by having fewer sessions on one
  * side, so each side is scored on its own recent best-and-consistency, then
  * combined by a user-adjustable weight (default 50/50).
+ *
+ * The Engine side is additionally partitioned by sport before it is rolled up —
+ * see `establishedEnginePool` for why a single beginner swim must not be read
+ * as a statement about an athlete's endurance.
  */
+
+import type { BenchmarkSport } from "@/lib/scoring/cardio-benchmarks";
 
 export type Profile = 'gym' | 'cardio' | 'hybrid';
 
@@ -27,6 +33,14 @@ export interface ActivityScore {
   score: number;        // 0–1000 from the per-activity engines
   confidence: number;   // 0–1
   date: string;         // ISO
+  /**
+   * Which benchmark sport this was, for the Engine side — see
+   * `establishedEnginePool`. Omitted on the Lab side, which is not partitioned
+   * by sport, and treated as "unknown, so never excluded" wherever it is
+   * missing: a caller that does not supply it keeps exactly the behaviour it
+   * had before sports were distinguished at all.
+   */
+  sport?: BenchmarkSport | null;
 }
 
 export interface IndexResult {
@@ -48,16 +62,86 @@ const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x
 const RECENT_WINDOW_SIZE = 10;
 
 /**
+ * How many sessions a sport needs in the window before it counts toward the
+ * Engine Index.
+ *
+ * Five, matching `TIER2_MIN_SAMPLES_TO_DISPLAY` — the bar the app already uses
+ * to decide a race prediction is a reading rather than a calibration. The same
+ * question is being asked here, so it gets the same answer.
+ */
+export const ENGINE_SPORT_ESTABLISHED_SESSIONS = 5;
+
+/**
+ * The Engine side's sessions, minus the sports the athlete has barely done.
+ *
+ * ## The problem
+ *
+ * The Engine side pools every endurance sport into one ten-session window, and
+ * a population score is SPORT-RELATIVE: 103 for a swim means "slow among
+ * swimmers", 822 for a run means "fast among runners". Pooling them reads a
+ * first-ever swim as evidence that the athlete's endurance engine is weak, when
+ * it is evidence about their swimming technique.
+ *
+ * Measured on a real account: one 103-scoring swim and one 289 run cost 39
+ * points of Engine Index between them, while the steady run the athlete
+ * actually complained about was worth −2 — removing it made the number go up.
+ * The sports pool, not any single session, was the whole of the problem.
+ *
+ * ## Why not a per-sport index blended by evidence
+ *
+ * That was the obvious fix and it is measurably worse: −19 on the same account.
+ * A sport with one session produces a full-strength index of its own, and even
+ * at an evidence weight of 0.13 that lone swim then moves the blend further
+ * than it does as 1 of 10 rows inside a single confidence-weighted mean. The
+ * fix has to be about INCLUSION, not weighting.
+ *
+ * ## The rule
+ *
+ * A sport counts once the window holds `ENGINE_SPORT_ESTABLISHED_SESSIONS` of
+ * it. If at least one sport clears that bar, the index reads only the sports
+ * that did. If none does, nothing is discarded and the pool is exactly what it
+ * has always been.
+ *
+ * That gate matters: sessions are only ever dropped when there is something
+ * better-evidenced to stand on. Without it this would just be data loss for the
+ * athlete who has four runs and one swim, whose index is provisional anyway.
+ *
+ * A row with no `sport` is never excluded — see `ActivityScore.sport`.
+ */
+function establishedEnginePool(engineRows: ActivityScore[]): ActivityScore[] {
+  const counts = new Map<BenchmarkSport, number>();
+  for (const row of engineRows) {
+    if (row.sport) counts.set(row.sport, (counts.get(row.sport) ?? 0) + 1);
+  }
+  const established = new Set(
+    [...counts.entries()]
+      .filter(([, n]) => n >= ENGINE_SPORT_ESTABLISHED_SESSIONS)
+      .map(([sport]) => sport)
+  );
+  if (established.size === 0) return engineRows;
+  return engineRows.filter((row) => !row.sport || established.has(row.sport));
+}
+
+/**
+ * The rows one side's index and its evidence are both built from. Shared so the
+ * two cannot disagree about which sessions were read — an evidence figure
+ * counting sessions the index ignored would mis-weight the Split Index blend.
+ */
+function rowsForSide(activities: ActivityScore[], side: 'lab' | 'engine'): ActivityScore[] {
+  const rows = activities
+    .filter((a) => a.side === side)
+    .sort((a, b) => +new Date(b.date) - +new Date(a.date));
+  return (side === 'engine' ? establishedEnginePool(rows) : rows).slice(0, RECENT_WINDOW_SIZE);
+}
+
+/**
  * Side index from recent activities: a confidence-weighted blend of the
  * athlete's *best* recent effort (ceiling = what they're capable of) and their
  * *median* recent effort (floor = what they hold consistently). 70/30 toward
  * consistency so one lucky session can't inflate the number.
  */
 function sideIndex(activities: ActivityScore[], side: 'lab' | 'engine'): number | null {
-  const rows = activities
-    .filter(a => a.side === side)
-    .sort((a, b) => +new Date(b.date) - +new Date(a.date))
-    .slice(0, RECENT_WINDOW_SIZE);
+  const rows = rowsForSide(activities, side);
   if (rows.length === 0) return null;
 
   const weighted = rows.map(r => ({ v: r.score, w: clamp(r.confidence, 0.1, 1) }));
@@ -92,11 +176,10 @@ export function aggregateSideIndex(
 const FULL_EVIDENCE_SESSIONS = 5;
 
 function sideEvidence(activities: ActivityScore[], side: 'lab' | 'engine'): number {
-  const confidence = activities
-    .filter(a => a.side === side)
-    .sort((a, b) => +new Date(b.date) - +new Date(a.date))
-    .slice(0, RECENT_WINDOW_SIZE)
-    .reduce((sum, a) => sum + clamp(a.confidence, 0, 1), 0);
+  const confidence = rowsForSide(activities, side).reduce(
+    (sum, a) => sum + clamp(a.confidence, 0, 1),
+    0
+  );
 
   return clamp(confidence / FULL_EVIDENCE_SESSIONS, 0, 1);
 }

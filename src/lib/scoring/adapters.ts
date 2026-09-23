@@ -125,12 +125,21 @@ export function buildActivityScores(
     score_breakdown?: Record<string, unknown> | null;
   }>
 ): ActivityScore[] {
-  return rows.map((row) => ({
-    side: row.sport === "gym" ? ("lab" as const) : ("engine" as const),
-    score: row.sport_index,
-    confidence: extractActivityConfidence(row.score_breakdown),
-    date: row.started_at,
-  }));
+  return rows.map((row) => {
+    const isGym = row.sport === "gym";
+    return {
+      side: isGym ? ("lab" as const) : ("engine" as const),
+      score: row.sport_index,
+      confidence: extractActivityConfidence(row.score_breakdown),
+      date: row.started_at,
+      // Engine rows only: the Engine Index is partitioned by sport so a sport
+      // the athlete has barely done cannot speak for their endurance (see
+      // establishedEnginePool). The Lab side is not partitioned, so it carries
+      // no sport at all rather than a meaningless one — `mapSportToBenchmarkSport`
+      // answers "run" for anything it does not recognise, gym included.
+      sport: isGym ? null : mapSportToBenchmarkSport(row.sport as SportType),
+    };
+  });
 }
 
 function extractActivityConfidence(
