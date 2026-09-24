@@ -189,6 +189,22 @@ export const BOUND_POWER_WATTS = [0, 2_500] as const;
 export const BOUND_CADENCE = [0, 300] as const;
 /** Degrees Celsius, for logged conditions. */
 export const BOUND_TEMPERATURE_C = [-60, 60] as const;
+/**
+ * A single drink's volume. 5000ml is far above any real serving and is here to
+ * catch a slipped decimal, not to police anyone's round — the alcohol model
+ * divides grams of ethanol by bodyweight, so an unbounded volume feeds a dose
+ * per kilogram that no dose-response curve has a meaningful answer for.
+ */
+export const BOUND_DRINK_VOLUME_ML = [1, 5_000] as const;
+/**
+ * ABV as a percentage. The floor is 0 rather than a small positive number so
+ * the rejection an alcohol-free drink gets is a sentence about there being no
+ * dose to model, written in the handler, rather than a range error that reads
+ * as though 0% were an implausible value.
+ */
+export const BOUND_ABV_PERCENT = [0, 100] as const;
+/** How many of that drink. Fractional because half a glass is a real entry. */
+export const BOUND_DRINK_QUANTITY = [0.25, 50] as const;
 
 // ── Session and token lifetimes ──────────────────────────────────────────────
 // Declared here per the brief so the values are visible and reviewable in one

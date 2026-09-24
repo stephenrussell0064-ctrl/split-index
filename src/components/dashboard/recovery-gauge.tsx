@@ -51,13 +51,40 @@ function zoneSegment(start: number, length: number, color: string) {
 interface RecoveryGaugeProps {
   score: number;
   className?: string;
+  /**
+   * Band naming, overridable.
+   *
+   * The gauge shipped with its own thirds (67/34) and its own three labels,
+   * which was fine while it drew a number computed nowhere else. The composed
+   * Recovery score (lib/recovery/score.ts) has four bands with different
+   * boundaries, and two components disagreeing about what "Primed" means — one
+   * in the SVG, one in the score that feeds it — is exactly the kind of split
+   * that goes unnoticed until an athlete sees an amber gauge over a green
+   * headline. The caller that owns the bands passes them in; callers that
+   * don't keep the original behaviour.
+   */
+  bandLabel?: string;
+  bandBlurb?: string;
+  color?: string;
+  /** Overall label above the number. */
+  caption?: string;
 }
 
-export function RecoveryGauge({ score, className }: RecoveryGaugeProps) {
+export function RecoveryGauge({
+  score,
+  className,
+  bandLabel,
+  bandBlurb,
+  color: colorOverride,
+  caption = "Recovery",
+}: RecoveryGaugeProps) {
   const reducedMotion = useReducedMotion();
   const clamped = Math.max(0, Math.min(100, score));
   const band = bandFor(clamped);
-  const { color, label, blurb } = bandMeta[band];
+  const meta = bandMeta[band];
+  const color = colorOverride ?? meta.color;
+  const label = bandLabel ?? meta.label;
+  const blurb = bandBlurb ?? meta.blurb;
   const filled = ARC * (clamped / 100);
 
   return (
@@ -115,7 +142,7 @@ export function RecoveryGauge({ score, className }: RecoveryGaugeProps) {
 
         <div className="absolute inset-0 flex flex-col items-center justify-center">
           <span className="text-[10px] font-medium uppercase tracking-[0.2em] text-muted">
-            Recovery
+            {caption}
           </span>
           <span
             className="index-display mt-1 text-5xl font-bold tabular-nums"

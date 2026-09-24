@@ -23,12 +23,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyDashboardHero } from "@/components/retention/empty-dashboard-hero";
 import { InterferenceRadarCard } from "@/components/analytics/interference-radar-card";
 import { UpcomingRacesPanel } from "@/components/analytics/upcoming-races-panel";
-import { ReadinessCard } from "@/components/dashboard/readiness-card";
+import { RecoveryScoreCard } from "@/components/recovery/recovery-score-card";
 import { TodayCard } from "@/components/dashboard/today-card";
 import { INTERFERENCE_LOOKBACK_DAYS } from "@/lib/scoring/interference-data";
 import { getCrossDomainTimeline } from "@/lib/scoring/timeline";
 import { computeInterferenceReport } from "@/lib/scoring/interference";
 import { computeReadiness } from "@/lib/scoring/readiness";
+import { computeRecoveryScore } from "@/lib/recovery/score";
+import { fetchRecoveryInputs, toDrinkEntries } from "@/lib/recovery/data";
+import { sexForWidmark } from "@/lib/recovery/alcohol";
 import { buildTodayPlan } from "@/lib/scoring/today-plan";
 import { getPredictedBenchmark } from "@/lib/scoring/predicted-benchmark";
 import { ScoreDisclaimer } from "@/components/legal/score-disclaimer";
@@ -140,6 +143,14 @@ export default async function DashboardPage() {
     would turn a dashboard load into a write. See todays-session-data.ts.
   */
   const todaysSessionPromise = loadTodaysSessionPayload(supabase, user.id);
+  /*
+   * The Recovery score's inputs — drinks, HRV, session density, bodyweight.
+   * Same helper the /recovery page calls, so the two surfaces cannot show
+   * different Recovery scores for the same athlete on the same morning.
+   */
+  const recoveryInputsPromise = fetchRecoveryInputs(supabase, user.id, {
+    profileWeightKg: profile.weight_kg,
+  });
 
   const [
     { data: latestIndex },
@@ -249,16 +260,36 @@ export default async function DashboardPage() {
     allTimeGymExercises,
     todaysSessionPayload,
     bestLoggedSbd,
+    recoveryInputs,
   ] = await Promise.all([
     crossDomainSessionsPromise,
     predictedRunBenchmarkPromise,
     allTimeGymExercisesPromise,
     todaysSessionPromise,
     bestLoggedSbdPromise,
+    recoveryInputsPromise,
   ]);
   const interferenceReport = computeInterferenceReport(crossDomainSessions);
   const readiness = computeReadiness(crossDomainSessions);
   const todayPlan = buildTodayPlan(readiness, interferenceReport, predictedRunBenchmark);
+
+  /*
+   * Readiness is still what the Today plan is built from — it is the load half
+   * and the only half that should decide a prescription. The Recovery score
+   * wraps it with HRV, session frequency and alcohol for the athlete-facing
+   * headline, which is a different question ("what state am I in") from the
+   * one the planner answers ("what should today's session be").
+   */
+  const recovery = computeRecoveryScore({
+    readiness,
+    hrvToday: recoveryInputs.hrvToday,
+    hrvBaseline: recoveryInputs.hrvBaseline,
+    recentSessionDates: recoveryInputs.recentSessionDates,
+    drinks: toDrinkEntries(recoveryInputs.drinks),
+    bodyweightKg: recoveryInputs.bodyweightKg ?? 75,
+    sex: sexForWidmark(profile.gender),
+    timeZone: userTimezone,
+  });
 
   // User feedback (Slice 7): "include things such as 5km race prediction
   // and SBD prediction, that is likely to be most useful to a user just
@@ -729,7 +760,15 @@ export default async function DashboardPage() {
 
       {/* ── Below the fold: how today is going, then what has happened ── */}
 
-      {hasActivities && <ReadinessCard readiness={readiness} />}
+      {/*
+        Recovery, not Readiness. The card that used to sit here showed the
+        load-only number under the name "Today's Readiness"; this shows the
+        composed score, with training load named inside it as the largest
+        contributor. One number answering "can I train hard today" instead of
+        two that could disagree — and the only surface where last night's
+        drinking shows up on the home screen.
+      */}
+      {hasActivities && <RecoveryScoreCard result={recovery} />}
 
       {/*
         The AI coach was the LAST content block on this page (bottom-right of

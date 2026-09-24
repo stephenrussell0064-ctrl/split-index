@@ -51,6 +51,10 @@ describe("the paid/free line, feature by feature", () => {
     "split_index_current",
     "cardio_index_per_workout",
     "ai_coaching_rules_snippet",
+    // Recording your own recovery — HRV, drinks — and seeing today's score.
+    // Same principle as logging a workout: the entry path is never paywalled,
+    // because a starved model is worse for everybody including subscribers.
+    "recovery_score",
   ];
 
   const PAID_ONLY: PremiumFeature[] = [
@@ -71,6 +75,11 @@ describe("the paid/free line, feature by feature", () => {
     // stops GENERATION only — api/hpe/plan still serves a block generated
     // while the account was entitled to one.
     "hybrid_plan",
+    // The reading, not the recording: the per-session decrement forecast and
+    // the drinking trend. The score's alcohol DEDUCTION is not gated — a free
+    // athlete's recovery still drops after a heavy night, it just doesn't come
+    // with the forecast.
+    "alcohol_impact_analysis",
   ];
 
   it.each(FREE_FOR_EVERYONE)("%s is free — logging your own training is never paywalled", (feature) => {

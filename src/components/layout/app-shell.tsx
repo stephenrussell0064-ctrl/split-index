@@ -15,6 +15,7 @@ import {
   MoreHorizontal,
   Radar,
   CalendarRange,
+  HeartPulse,
   X,
 } from "lucide-react";
 import { BrandMark } from "@/components/brand/brand-mark";
@@ -38,6 +39,15 @@ const primaryNav = [
 ];
 
 const secondaryNav = [
+  /*
+   * Recovery. A nav item of its own rather than a section of Analytics,
+   * because it is the only surface in the app the athlete has a reason to open
+   * DAILY without having trained — the morning HRV reading, and last night's
+   * drinks. Analytics is where you go to study a month; this is where you go
+   * before deciding what to do today, and burying a daily habit two taps
+   * inside a weekly page is how the habit fails to form.
+   */
+  { href: "/recovery", label: "Recovery", icon: HeartPulse },
   // First-class nav item for the Interference & Synergy Engine (interference
   // brief Part 5) — deliberately not a sub-tab under Analytics, since it's
   // the app's USP and needs to read as one everywhere in the product.

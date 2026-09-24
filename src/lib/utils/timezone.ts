@@ -112,3 +112,23 @@ export function startOfLocalDayInTz(dateKey: string, timeZone: string): Date {
   }
   return new Date(`${dateKey}T00:00:00.000Z`);
 }
+
+const HOUR_MS = 3_600_000;
+
+/**
+ * The next time it will be `hour` o'clock where the athlete is.
+ *
+ * The recovery model needs candidate session times — "if you train at 7am
+ * versus 6pm" — and those hours have to be the athlete's, not the server's.
+ * On Vercel the server clock is UTC, so computing "6pm today" with local
+ * arithmetic silently produces 6pm UTC, which is an hour out for half the
+ * year in the UK and wildly out for anyone else.
+ */
+export function nextLocalHourInTz(hour: number, timeZone: string, now: Date = new Date()): Date {
+  const todayKey = localDateKeyInTz(now, timeZone);
+  const today = new Date(startOfLocalDayInTz(todayKey, timeZone).getTime() + hour * HOUR_MS);
+  if (today.getTime() > now.getTime()) return today;
+
+  const tomorrowKey = localDateKeyInTz(new Date(now.getTime() + 24 * HOUR_MS), timeZone);
+  return new Date(startOfLocalDayInTz(tomorrowKey, timeZone).getTime() + hour * HOUR_MS);
+}

@@ -458,6 +458,28 @@ export interface RecoverySnapshot {
   recorded_at: string;
 }
 
+/**
+ * One logged drink (migration 086).
+ *
+ * `grams_ethanol` is the dose the recovery model reads and is frozen at write
+ * time; volume_ml / abv_percent are what the athlete chose, kept for display
+ * and editing. They can drift apart on purpose — revising a preset's assumed
+ * ABV must not rewrite the doses past recovery scores were computed from.
+ */
+export interface DrinkLog {
+  id: string;
+  user_id: string;
+  drank_at: string;
+  grams_ethanol: number;
+  preset_id: string | null;
+  label: string;
+  volume_ml: number | null;
+  abv_percent: number | null;
+  quantity: number;
+  note: string | null;
+  created_at: string;
+}
+
 export interface OnboardingData {
   age: number;
   height_cm: number;

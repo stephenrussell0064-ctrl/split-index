@@ -26,6 +26,40 @@ import { SECTION_FIELDS, type IntakeSection } from "@/lib/scoring/hpe/intake-rec
  * because the next person to add an intake field needs to know which side of
  * the line they are standing on.
  *
+ * THE ALCOHOL LOG IS TIER 1, AND THAT IS A DECISION WITH CONDITIONS
+ * -----------------------------------------------------------------
+ * `drink_logs` (migration 086) records what an athlete drank and when, and it
+ * is deliberately NOT gated here. The judgement, in the same terms as the rest
+ * of this file: the log exists to estimate a training decrement — how much
+ * slower tomorrow's session is likely to be — not to determine health status.
+ * On the ICO's test that is the distinction that matters, and it is the same
+ * reasoning that already puts HRV, resting heart rate, sleep and bodyweight in
+ * Tier 1, every one of which is closer to a clinical reading than a record of
+ * four pints on a Friday.
+ *
+ * That is a defensible position rather than an obvious one, and it holds only
+ * while four things stay true. They are requirements, not description:
+ *
+ *   1. NO HEALTH INFERENCE. The app must never label an athlete a risky or
+ *      dependent drinker, score their drinking against a clinical instrument
+ *      (AUDIT-C and friends), or infer a condition from the pattern. Stating
+ *      the CMO's 14-unit guideline beside a weekly total is a public-health
+ *      fact and stays on the right side of this; "your drinking suggests X"
+ *      does not, and would move the whole table into Article 9 the day it
+ *      shipped.
+ *   2. NEVER SHARED. Not on a leaderboard, a share card, a social feed, a
+ *      friend's activity view, a public_* projection, or an analytics service.
+ *      recovery-data-is-private.test.ts fails the build if a query for this
+ *      table appears outside the recovery feature.
+ *   3. GENUINELY OPTIONAL. Nothing in the app requires a drink to be logged,
+ *      and the Recovery score is computed and shown without it.
+ *   4. ERASABLE IN ONE ACTION. DELETE /api/recovery/drinks removes the lot,
+ *      hard, from a control on the Recovery page.
+ *
+ * If a future feature breaks any of those — particularly the first — this
+ * stops being a classification question and becomes a consent one, and the
+ * machinery below is already keyed (`consent_key`) to take a second entry.
+ *
  * WHAT REFUSAL COSTS, AND WHAT IT MUST NOT
  * ----------------------------------------
  * Consent is only consent if it is refusable. Refusing this disables the

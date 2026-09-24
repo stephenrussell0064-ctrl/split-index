@@ -34,6 +34,8 @@ one branch, not of the database.
 | `public_activity_strength_scores` | exists, `anon` denied | `083` ran |
 | `viewer_is_blocked_with(uuid)` | exists | `084` ran |
 | `pg_default_acl` for `postgres`/`r` | no `anon` | `085` ran |
+| `drink_logs` to `anon` | denied, `42501` | `086` ran, and 085's guard held for a brand-new table |
+| `drink_logs` RLS + `pg_policy` | `true`, one owner-scoped policy with `WITH CHECK` | `086` ran in full, not half — see §4.5 |
 
 So production is **main's lineage through 075, plus 076–080 from the app-store
 line**. The schema is not behind. The problem is entirely one of file numbering
@@ -232,13 +234,69 @@ someone writes an explicit `GRANT`. Confirmed on 22 Sep 2026: the only view in
 `public` that `anon` can select is `public_profiles`, which is granted by name
 in `064` and is meant to be public. Every table returned `rls_on = true`.
 
+### 4.5 Record 086 as it was applied — DONE
+
+`086_drink_logs` — the `drink_logs` table behind the Recovery score's alcohol
+input. Applied 24 September 2026 through the SQL editor, and its row is now in
+§1. Applied by hand rather than by `db push` for the reason §5 still gives: the
+`supabase migration list` check has never been completed, so nobody knows
+whether a push would propose `086` alone or try to replay history production
+already ran through the editor.
+
+Measured immediately afterwards, with the service-role and anon keys over
+PostgREST:
+
+| Probe | Result |
+|---|---|
+| `drink_logs` as service-role, `count=exact` | 200, `*/0` — the table exists and is empty |
+| `drink_logs` as `anon` | 401, `42501 permission denied` |
+| every column the app selects | 200 — the shape matches the reader in `lib/recovery/data.ts` |
+| insert with `grams_ethanol: -5` | 400, `23514 drink_logs_grams_ethanol_check` |
+| insert with an unknown `user_id` | 409, `23503 drink_logs_user_id_fkey` |
+
+The two rejected inserts wrote nothing — the count was re-read as `*/0`
+afterwards rather than assumed.
+
+**The property none of those probes could settle, settled separately.** PostgREST
+cannot see `pg_class`, so none of the above proves RLS is actually on — and the
+anon denial specifically does not, because it proves only that no grant reached
+`anon`. A table with `relrowsecurity` accidentally off answers `anon` exactly
+the same way while showing every athlete's drinking to every *signed-in*
+athlete, since `authenticated` does hold a grant. That is the failure this
+table can least afford, so it was read directly in the SQL editor rather than
+inferred:
+
+```sql
+SELECT relrowsecurity FROM pg_class WHERE relname = 'drink_logs';
+SELECT polname, polcmd, pg_get_expr(polqual, polrelid) AS using_expr,
+       pg_get_expr(polwithcheck, polrelid) AS with_check_expr
+FROM pg_policy WHERE polrelid = 'public.drink_logs'::regclass;
+```
+
+`relrowsecurity` is `true`, and `pg_policy` returns **one** row:
+`Users manage own drink logs`, `polcmd = *` (i.e. `FOR ALL`), with both
+`using_expr` and `with_check_expr` reading `(auth.uid() = user_id)`.
+
+Two details in that result are worth naming rather than skimming:
+
+- **One row, not two.** Permissive policies are ORed together, so a second,
+  looser policy would widen access without altering this one. A single row
+  means owner-scoping is the only rule on the table.
+- **`with_check_expr` is populated.** That is the half migration 001's
+  `Users manage own recovery` policy omits. Without it, `USING` governs which
+  rows a statement can see but nothing stops an INSERT or UPDATE writing a row
+  carrying somebody else's `user_id`.
+
+So this row rests on probes that answer for themselves, and carries none of the
+caveat 085's row does in §4.4.
+
 ---
 
 ## 5. Where this leaves the project
 
 Steps 1 to 4 are done. The files are renumbered to match production and the
-ledger exists. It records 85 migrations: the 81 backfilled in §4.2, plus
-`082`–`085` added in §4.4 as they were applied.
+ledger exists. It records 86 migrations: the 81 backfilled in §4.2, plus
+`082`–`085` added in §4.4 and `086` in §4.5, each as it was applied.
 
 **One step remains, and it needs the database password:**
 

@@ -69,6 +69,16 @@ export default function PrivacyPolicyPage() {
                   goals, and performance scores including your Split Index.
                 </li>
                 <li>
+                  <strong>Alcohol intake, if you choose to record it:</strong> the drink,
+                  its volume and strength, how many, and the time you had it. It is used
+                  for one thing — estimating the effect on your recovery score and your
+                  next session — and it is never shown to another athlete, never put on a
+                  leaderboard, a share card or a social feed, and never sent to an
+                  analytics service. Recording it is entirely optional; every other part
+                  of Split Index works whether you do or not, and you can delete any entry
+                  from the Recovery page at any time.
+                </li>
+                <li>
                   <strong>Onboarding and preferences:</strong> age, height, weight, gender,
                   experience level, training history, and preferred sports.
                 </li>
@@ -280,13 +290,35 @@ export default function PrivacyPolicyPage() {
                   data under Article 9. We only process them if you explicitly agree, and
                   we keep a record of exactly what you were shown when you did.
                 </li>
+                <li>
+                  <strong>Your alcohol log — contract.</strong> If you choose to record
+                  what you drank and when, we use it for one purpose: estimating the
+                  effect on your recovery score and on your next training session. We are
+                  clear about why this sits with your training data rather than with your
+                  health screening — it is a record of something you did, used to predict
+                  how a workout is likely to go, and we do not use it to assess your
+                  health. Specifically, we do not screen your drinking, score it against
+                  any clinical questionnaire, or draw any conclusion about your health
+                  from the pattern of it. Alongside that, your alcohol log is never shown
+                  to another athlete, never appears on a leaderboard, a share card or a
+                  social feed, and is never sent to an analytics provider.
+                </li>
               </ul>
               <p className="mt-3">
-                You can refuse, and you can change your mind. Refusing switches off the
-                Hybrid Plan and the injury Risk Index and nothing else — logging, your
-                Split Index, predictions, the leaderboard, analytics and your subscription
-                all work either way. You can withdraw in one action from Settings, and
-                withdrawing deletes those answers rather than hiding them.
+                You can refuse the health screening, and you can change your mind.
+                Refusing switches off the Hybrid Plan and the injury Risk Index and
+                nothing else — logging, your Split Index, predictions, the leaderboard,
+                analytics and your subscription all work either way. You can withdraw in
+                one action from Settings, and withdrawing deletes those answers rather
+                than hiding them.
+              </p>
+              <p className="mt-3">
+                Recording alcohol is entirely optional in the same way, and nothing in
+                Split Index requires it — your Recovery score is calculated and shown
+                whether you log a drink or not. You can delete any single entry, or your
+                entire alcohol history in one action, from the Recovery page. Deleting
+                removes the records rather than hiding them, and it affects nothing else
+                in your account.
               </p>
             </section>
 

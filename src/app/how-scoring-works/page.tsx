@@ -60,6 +60,8 @@ const TOC = [
   { id: "age-grading", label: "Age grading" },
   { id: "race-predictions", label: "Race predictions" },
   { id: "injury-risk", label: "Injury risk (ACWR)" },
+  { id: "recovery-score", label: "The Recovery score" },
+  { id: "alcohol", label: "Alcohol and recovery" },
 ] as const;
 
 export default async function HowScoringWorksPage() {
@@ -589,6 +591,80 @@ export default async function HowScoringWorksPage() {
               <p className="mt-3">
                 This is a training-load accountability tool, not a medical diagnosis — it reflects
                 relative risk against your own history, not an absolute probability of injury.
+              </p>
+            </section>
+
+            <section id="recovery-score">
+              <h2 className="text-lg font-semibold text-foreground">The Recovery score</h2>
+              <p className="mt-3">
+                One number, 0–100, for what state your body is actually in today. It&apos;s a
+                weighted blend of every recovery signal the app holds, and the weights are shown
+                on the Recovery page next to each input rather than hidden:
+              </p>
+              <ul className="mt-3 list-disc space-y-2 pl-5">
+                <li>
+                  <strong>Training load (50%)</strong> — cross-domain readiness, built from your
+                  ACWR and fatigue across lifting and endurance together. A heavy squat session
+                  raises tomorrow&apos;s load exactly as a hard run does.
+                </li>
+                <li>
+                  <strong>HRV against your own baseline (30%)</strong> — a morning rMSSD reading
+                  compared with the mean of your recent readings, not against a population norm.
+                </li>
+                <li>
+                  <strong>Session density (20%)</strong> — how many sessions in the last 7 days,
+                  and whether a rest day happened at all. This is deliberately not a duplicate of
+                  ACWR: for someone whose norm <em>is</em> a lot of training, ACWR goes quiet
+                  while frequency still costs recovery.
+                </li>
+                <li>
+                  <strong>Alcohol</strong> — a deduction rather than a component, explained below.
+                </li>
+              </ul>
+              <p className="mt-3">
+                Missing inputs are never counted as bad ones. If you&apos;ve never logged an HRV
+                reading, the remaining weights are renormalised over what is present and the
+                breakdown says the component isn&apos;t contributing yet — an athlete without a
+                chest strap shouldn&apos;t score the same as one whose HRV has collapsed.
+              </p>
+            </section>
+
+            <section id="alcohol">
+              <h2 className="text-lg font-semibold text-foreground">Alcohol and recovery</h2>
+              <p className="mt-3">
+                Alcohol is modelled as a dose, not a drink count. What your body responds to is{" "}
+                <strong>grams of ethanol per kilogram of bodyweight</strong>, so the same two
+                pints are a materially different dose for a 95kg athlete and a 55kg one — and the
+                distribution of alcohol through body water differs by sex, which is why the model
+                uses your profile&apos;s weight and gender where you&apos;ve given them.
+              </p>
+              <p className="mt-3">
+                Grams of ethanol come straight from volume × ABV × density — that part is
+                arithmetic. Blood alcohol over time uses the Widmark model with a standard
+                elimination rate, which is a well-established population estimate with wide
+                individual variation: clearance rates differ by roughly a factor of two between
+                people. Treat the curve as a guide to whether you&apos;re still processing a dose,
+                never as a measurement.{" "}
+                <strong>
+                  It is explicitly not a measure of fitness to drive and must never be used as one.
+                </strong>
+              </p>
+              <p className="mt-3">
+                The cost to recovery scales with that dose and decays over about 48 hours, with an
+                extra weighting for drinks taken inside the sleep window — the dominant mechanism
+                is disrupted sleep architecture, and that only applies if there was sleep left to
+                disrupt. Sustained weekly intake carries a smaller, separate cost, referenced
+                against the UK Chief Medical Officers&apos; low-risk guideline of 14 units a week.
+              </p>
+              <p className="mt-3">
+                The next-session forecast estimates a percentage decrement in endurance output and
+                in peak force from the same dose-response shape, scaled by the hours between your
+                last drink and the session. It follows the direction of the published literature —
+                next-day decrements are real and dose-dependent, large around 1g/kg and
+                small-to-absent at low doses, and a heavy dose after training suppresses muscle
+                protein synthesis for around 24 hours, blunting the adaptation even when the
+                session itself feels fine. These are estimates from a model, not measurements of
+                you, and nothing here is medical advice or an assessment of anyone&apos;s drinking.
               </p>
             </section>
           </div>

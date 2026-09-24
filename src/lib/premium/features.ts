@@ -21,7 +21,9 @@ export type PremiumFeature =
   | "csv_import"
   | "manual_logging"
   | "run_analysis"
-  | "hybrid_plan";
+  | "hybrid_plan"
+  | "recovery_score"
+  | "alcohol_impact_analysis";
 
 type TierAccess = { free: boolean; premium: boolean };
 
@@ -33,6 +35,14 @@ export const PREMIUM_FEATURES: Record<PremiumFeature, TierAccess> = {
   split_index_current: { free: true, premium: true },
   cardio_index_per_workout: { free: true, premium: true },
   ai_coaching_rules_snippet: { free: true, premium: true },
+  /*
+   * Today's Recovery score, and logging the things that feed it — HRV and
+   * alcohol. Free for the same reason logging a workout is free: an athlete
+   * who cannot record what they did has no reason to come back, and a paywall
+   * in front of data entry degrades the model for everyone by starving it of
+   * input. The number itself is the hook.
+   */
+  recovery_score: { free: true, premium: true },
 
   split_index_90d_trends: { free: false, premium: true },
   split_index_projections: { free: false, premium: true },
@@ -68,6 +78,18 @@ export const PREMIUM_FEATURES: Record<PremiumFeature, TierAccess> = {
    * into is not a paywall, it is a recall.
    */
   hybrid_plan: { free: false, premium: true },
+  /*
+   * The analysis half of the alcohol feature: what a dose costs a session at a
+   * given hour, and the drinking trend over the fortnight. Paid because it is
+   * the reading rather than the recording — the same line the run-analysis
+   * gate draws, where logging the run is free and the splits are not.
+   *
+   * Deliberately NOT gating the deduction itself. A free athlete's Recovery
+   * score still drops after a heavy night, because a score that quietly
+   * ignored last night for non-subscribers would be wrong rather than merely
+   * limited.
+   */
+  alcohol_impact_analysis: { free: false, premium: true },
 };
 
 /*
@@ -92,6 +114,16 @@ export const FREE_TIER_FEATURES = [
 
 export const PREMIUM_TIER_FEATURES = [
   "Hybrid Plan — one periodised block built toward your event date, across lifting and endurance together",
+  /*
+   * Logging drinks and seeing today's Recovery score are free (see
+   * recovery_score above). What is sold here is the forecast — the estimated
+   * decrement for a session at a given hour, from the athlete's own dose and
+   * bodyweight — and the fortnight trend. Worded to name exactly that, because
+   * this list is rendered verbatim on the billing screen and a line that
+   * implied the tracking itself was paid would be selling something already
+   * given away.
+   */
+  "Alcohol impact forecast — what last night costs your next session, by dose, bodyweight and the hour you train",
   "Run, ride and walk analysis — splits, best efforts, heart-rate zones and elevation for every GPS session",
   "Injury Risk Index — know when to back off, before it becomes an injury",
   "GPT AI Coach — a concrete recommendation after every workout",

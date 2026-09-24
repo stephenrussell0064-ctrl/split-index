@@ -75,6 +75,7 @@ export const NONCE_PATH_PREFIXES = [
   "/interference",
   "/onboarding",
   "/profile",
+  "/recovery",
   "/reports",
   "/settings",
   "/social",
