@@ -6,6 +6,7 @@ import { motion } from "framer-motion";
 import { Trophy } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { ChartEmptyState } from "@/components/analytics/charts";
+import { ShowMoreButton, useShowMore } from "@/components/ui/show-more";
 import { SPORTS } from "@/lib/constants/sports";
 import { isSpeedBased, sportVocabulary } from "@/lib/analysis/vocabulary";
 import type { PersonalBestEffort } from "@/lib/analysis/records";
@@ -85,6 +86,9 @@ function SportGroup({
 }) {
   const meta = SPORTS.find((s) => s.id === sport);
   const speedBased = isSpeedBased(sport);
+  // Four per sport — one row of tiles on a wide screen — then a button for
+  // the rest, so a runner with efforts at nine distances is not nine tiles.
+  const { visible, expanded, canExpand, hiddenCount, toggle } = useShowMore(rows, 4);
 
   return (
     <div>
@@ -95,7 +99,7 @@ function SportGroup({
         </p>
       )}
       <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-        {rows.map((e) => (
+        {visible.map((e) => (
           <li key={`${e.sport}-${e.distanceMeters}`} className="glass rounded-xl p-3">
             <Link
               href={`/activities/${e.activityId}`}
@@ -119,6 +123,9 @@ function SportGroup({
           </li>
         ))}
       </ul>
+      {canExpand && (
+        <ShowMoreButton expanded={expanded} hiddenCount={hiddenCount} noun="efforts" onClick={toggle} />
+      )}
     </div>
   );
 }

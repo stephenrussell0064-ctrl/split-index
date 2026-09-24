@@ -109,7 +109,7 @@ describe("nothing is shared without the athlete seeing it first", () => {
     // down what is on it.
     expect(button).toMatch(/contentSummary: string;/);
     for (const site of [
-      "src/components/analytics/hybrid-report-view.tsx",
+      "src/components/reports/hybrid-report.tsx",
       "src/components/analytics/interference-detail.tsx",
       "src/components/analytics/interference-radar-card.tsx",
     ]) {
@@ -125,7 +125,7 @@ describe("nothing is shared without the athlete seeing it first", () => {
   it("leaves no raw link to a card route", () => {
     const offenders: string[] = [];
     for (const site of [
-      "src/components/analytics/hybrid-report-view.tsx",
+      "src/components/reports/hybrid-report.tsx",
       "src/components/analytics/interference-detail.tsx",
       "src/components/analytics/interference-radar-card.tsx",
     ]) {

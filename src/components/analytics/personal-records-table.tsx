@@ -6,6 +6,7 @@ import { Trophy } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { SPORTS } from "@/lib/constants/sports";
 import { ChartEmptyState } from "@/components/analytics/charts";
+import { ShowMoreButton, useShowMore } from "@/components/ui/show-more";
 import { formatDuration, formatDistance } from "@/lib/utils/format";
 import type { PersonalRecord } from "@/types";
 
@@ -28,6 +29,10 @@ export function PersonalRecordsTable({ records }: PersonalRecordsTableProps) {
   const sorted = [...records].sort(
     (a, b) => new Date(b.achieved_at).getTime() - new Date(a.achieved_at).getTime()
   );
+  // The five most recent, then a button for the rest — see show-more.tsx.
+  // Fifty records drawn in full is what made the bottom of the analytics tab
+  // a long scroll past things nobody was looking for.
+  const { visible, expanded, canExpand, hiddenCount, toggle } = useShowMore(sorted, 5);
 
   return (
     <motion.div
@@ -64,7 +69,7 @@ export function PersonalRecordsTable({ records }: PersonalRecordsTableProps) {
                 exactly as it was, minus the wrapper that was doing nothing.
               */}
               <ul className="sm:hidden">
-                {sorted.map((pr, i) => (
+                {visible.map((pr, i) => (
                   <motion.li
                     key={pr.id}
                     initial={{ opacity: 0, x: -8 }}
@@ -98,7 +103,7 @@ export function PersonalRecordsTable({ records }: PersonalRecordsTableProps) {
                   </tr>
                 </thead>
                 <tbody>
-                  {sorted.map((pr, i) => (
+                  {visible.map((pr, i) => (
                     <motion.tr
                       key={pr.id}
                       initial={{ opacity: 0, x: -8 }}
@@ -120,6 +125,14 @@ export function PersonalRecordsTable({ records }: PersonalRecordsTableProps) {
                   ))}
                 </tbody>
               </table>
+              {canExpand && (
+                <ShowMoreButton
+                  expanded={expanded}
+                  hiddenCount={hiddenCount}
+                  noun="records"
+                  onClick={toggle}
+                />
+              )}
             </>
           )}
         </CardContent>

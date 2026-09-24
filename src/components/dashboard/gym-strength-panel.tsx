@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils/cn";
 import { formatDOTS, formatGL, formatExRxTier } from "@/lib/utils/scoring-display";
 import { PremiumTease } from "@/components/premium/premium-tease";
 import { ScoringExplainerNote } from "@/components/scoring/scoring-explainer-note";
+import { CollapsibleSection, SummaryPills } from "@/components/ui/collapsible-section";
 import { SportComparisonBars } from "@/components/activities/sport-comparison-bars";
 import { formatIndex } from "@/lib/utils/format";
 import type { ExRxTier } from "@/lib/scoring/strength/ratio-tiers";
@@ -139,33 +140,57 @@ export function GymStrengthPanel({
 
       {lifts.length > 0 && showDotsGl && (
         <div className="border-t border-gym-border/30 pt-4 mt-4">
-          <p className="micro-label text-gym-muted mb-3">Per-lift breakdown</p>
-          <ScoringExplainerNote href="/how-scoring-works#one-rm" className="mt-0 mb-3 text-gym-muted">
-            The headline kg is your current 1RM — what recent training says you could lift today, so
-            it falls after a worse block. &quot;Best&quot; is your all-time high-water mark, which
-            only ever moves when you beat it.
-          </ScoringExplainerNote>
-          {/* Bar width uses relativeStrength (× bodyweight), not raw kg —
-              the only unit that's actually comparable across different
-              lifts (user feedback, Slice 10: "the comparison between the
-              different scoring of their sports"). A 60kg bench and a
-              140kg deadlift can both be a strong lift for the same
-              athlete; a raw-kg bar would make deadlift dominate every
-              chart regardless of relative strength. */}
-          <SportComparisonBars
-            zone="gym"
-            items={lifts.map((lift) => {
-              const tierLabel = lift.tierLabel ?? (lift.tier ? formatExRxTier(lift.tier) : null);
-              const current = lift.currentOneRM ?? lift.estimated1RM;
-              const allTime = lift.allTimeOneRM ?? lift.estimated1RM;
-              return {
-                label: lift.name,
-                value: lift.relativeStrength,
-                displayValue: `${current.toFixed(1)} kg`,
-                sublabel: `best ${allTime.toFixed(1)} kg · ${lift.relativeStrength.toFixed(2)}× BW${tierLabel ? ` · ${tierLabel}` : ""}`,
-              };
-            })}
-          />
+          {/*
+            Same drop-down rule as the analytics 1RM list (user feedback,
+            24 Sep 2026): closed by default with the three strongest lifts
+            as pills, the whole breakdown one tap away.
+          */}
+          <CollapsibleSection
+            tone="gym"
+            title="Per-lift breakdown"
+            count={`${lifts.length} lift${lifts.length === 1 ? "" : "s"}`}
+            description="Current 1RM per lift, and how strong each is for your bodyweight."
+            summary={
+              <SummaryPills
+                tone="gym"
+                items={[...lifts]
+                  .sort((a, b) => b.relativeStrength - a.relativeStrength)
+                  .slice(0, 3)
+                  .map((lift) => ({
+                    label: lift.name,
+                    value: `${(lift.currentOneRM ?? lift.estimated1RM).toFixed(1)} kg`,
+                  }))}
+                more={Math.max(0, lifts.length - 3)}
+              />
+            }
+          >
+            <ScoringExplainerNote href="/how-scoring-works#one-rm" className="mt-0 mb-3 text-gym-muted">
+              The headline kg is your current 1RM — what recent training says you could lift today, so
+              it falls after a worse block. &quot;Best&quot; is your all-time high-water mark, which
+              only ever moves when you beat it.
+            </ScoringExplainerNote>
+            {/* Bar width uses relativeStrength (× bodyweight), not raw kg —
+                the only unit that's actually comparable across different
+                lifts (user feedback, Slice 10: "the comparison between the
+                different scoring of their sports"). A 60kg bench and a
+                140kg deadlift can both be a strong lift for the same
+                athlete; a raw-kg bar would make deadlift dominate every
+                chart regardless of relative strength. */}
+            <SportComparisonBars
+              zone="gym"
+              items={lifts.map((lift) => {
+                const tierLabel = lift.tierLabel ?? (lift.tier ? formatExRxTier(lift.tier) : null);
+                const current = lift.currentOneRM ?? lift.estimated1RM;
+                const allTime = lift.allTimeOneRM ?? lift.estimated1RM;
+                return {
+                  label: lift.name,
+                  value: lift.relativeStrength,
+                  displayValue: `${current.toFixed(1)} kg`,
+                  sublabel: `best ${allTime.toFixed(1)} kg · ${lift.relativeStrength.toFixed(2)}× BW${tierLabel ? ` · ${tierLabel}` : ""}`,
+                };
+              })}
+            />
+          </CollapsibleSection>
         </div>
       )}
 

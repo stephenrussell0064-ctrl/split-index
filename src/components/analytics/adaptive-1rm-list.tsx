@@ -2,6 +2,7 @@
 
 import { TrendingUp, TrendingDown, Minus, Target } from "lucide-react";
 import { ScoringExplainerNote } from "@/components/scoring/scoring-explainer-note";
+import { CollapsibleSection, SummaryPills } from "@/components/ui/collapsible-section";
 import { isBodyweightOnlyExercise } from "@/lib/scoring/weight-entry";
 import { cn } from "@/lib/utils/cn";
 import type { StrengthEstimate } from "./types";
@@ -166,21 +167,32 @@ export function AdaptiveOneRmList({
   );
   const hasAddedLoadOnly = ordered.some((est) => isBodyweightOnlyExercise(est.exerciseName));
 
+  /*
+    Closed by default, showing the three heaviest lifts as pills. User
+    feedback (24 Sep 2026): "I want the 1 rep max predictions in the data
+    analytics to be a drop down which you can see all of them, otherwise
+    they make the user scroll too much." Twelve lift cards at three lines
+    each was most of this tab's height on a phone.
+  */
+  const peek = ordered.slice(0, 3);
+
   return (
-    <section>
-      <div className="flex items-baseline justify-between gap-2">
-        <h4 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
-          <Target className="h-3.5 w-3.5 text-accent" aria-hidden />
-          Adaptive 1RM
-        </h4>
-        <span className="shrink-0 text-[11px] text-muted">
-          {ordered.length} lift{ordered.length === 1 ? "" : "s"}
-        </span>
-      </div>
-      <p className="mt-1 text-xs leading-relaxed text-muted">
-        What your recent training says you could lift today, against the heaviest you have ever hit.
-      </p>
-      <ScoringExplainerNote href="/how-scoring-works#one-rm" className="mb-3 mt-1.5">
+    <CollapsibleSection
+      icon={<Target className="h-3.5 w-3.5 text-accent" aria-hidden />}
+      title="Adaptive 1RM"
+      count={`${ordered.length} lift${ordered.length === 1 ? "" : "s"}`}
+      description="What your recent training says you could lift today, against the heaviest you have ever hit."
+      summary={
+        <SummaryPills
+          items={peek.map((est) => ({
+            label: est.exerciseName,
+            value: `${est.current1RmKg.toFixed(1)} kg`,
+          }))}
+          more={ordered.length - peek.length}
+        />
+      }
+    >
+      <ScoringExplainerNote href="/how-scoring-works#one-rm" className="mb-3 mt-0">
         The big number falls when your sessions do;{" "}
         <strong className="not-italic text-foreground/90">Best</strong> only moves when you beat it.
       </ScoringExplainerNote>
@@ -198,6 +210,6 @@ export function AdaptiveOneRmList({
           hard for one rep — not your bodyweight itself.
         </p>
       )}
-    </section>
+    </CollapsibleSection>
   );
 }

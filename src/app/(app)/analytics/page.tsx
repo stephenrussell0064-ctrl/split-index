@@ -8,10 +8,10 @@ import { hasArticle9Consent } from "@/lib/consent/article9";
 import { resolveScoringSex } from "@/lib/scoring/adapters";
 import { calculateOverallDotsGl } from "@/lib/scoring/strength/overall-dots-gl";
 import { computeRaceRecords } from "@/lib/scoring/race-records";
-import type { AnalyticsPayload, PredictedBenchmark, StrengthEstimate } from "@/components/analytics/types";
+import type { AnalyticsPayload, PredictedBenchmark } from "@/components/analytics/types";
 import { normalizeName } from "@/lib/scoring/split-strength-engine";
 import { fetchAllTimeLiftRows, bestOneRmByKey } from "@/lib/activities/all-time-one-rm";
-import type { ScoreStrengthResult } from "@/lib/scoring/split-strength-engine";
+import { buildStrengthEstimates, type LatestStrengthScoreRow } from "@/lib/scoring/strength/strength-estimates";
 import type { PersonalRecord } from "@/types";
 
 const DAY_MS = 86400000;
@@ -198,36 +198,12 @@ export default async function AnalyticsPage() {
   // different casing across sessions.
   const allTime1RmByLift = bestOneRmByKey(allTimeExercises, normalizeName);
 
-  // latest_strength_scores() already returns one row per exercise — this
-  // dedup is just a defensive no-op if that ever changes.
-  const strengthEstimateByLift = new Map<string, StrengthEstimate>();
-  for (const row of strengthScoresRaw ?? []) {
-    const name = row.exercise_name as string;
-    if (strengthEstimateByLift.has(name)) continue;
-    const breakdown = row.score_breakdown as { strength_result?: ScoreStrengthResult } | null;
-    const result = breakdown?.strength_result;
-    const estimated1RmKg = row.estimated_1rm_kg as number;
-    strengthEstimateByLift.set(name, {
-      exerciseName: name,
-      estimated1RmKg,
-      // Highest of every source that could hold the real best — a row scored
-      // before the split existed has no allTimeOneRM at all, so falling back
-      // to the stored per-session figure keeps the number honest instead of
-      // reporting a zero. All three are the engine's own figure now, so this
-      // compares like with like; it used to reach across two different rulers,
-      // where it could only ever pick the more generous of the two.
-      allTime1RmKg: Math.max(
-        allTime1RmByLift.get(normalizeName(name)) ?? 0,
-        result?.allTimeOneRM ?? 0,
-        estimated1RmKg
-      ),
-      current1RmKg: result?.currentOneRM ?? estimated1RmKg,
-      trend: result?.trend ?? undefined,
-      confidence: result?.oneRMConfidence,
-      bandKg: result?.oneRMBandKg ?? undefined,
-      recordedAt: row.recorded_at as string,
-    });
-  }
+  // Shared with the Hybrid Athlete Report — see strength-estimates.ts for
+  // why the all-time best is the max of three sources.
+  const strengthEstimates = buildStrengthEstimates(
+    (strengthScoresRaw ?? []) as LatestStrengthScoreRow[],
+    allTime1RmByLift
+  );
 
   const payload: AnalyticsPayload = {
     isPremium: premium,
@@ -263,7 +239,7 @@ export default async function AnalyticsPage() {
         riegelK: p.riegel_k as number | null,
       })
     ),
-    strengthEstimates: Array.from(strengthEstimateByLift.values()) as StrengthEstimate[],
+    strengthEstimates,
     hrvToday,
     hrvBaseline,
     article9Consent,

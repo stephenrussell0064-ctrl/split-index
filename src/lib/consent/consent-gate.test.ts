@@ -129,6 +129,8 @@ describe("the leaderboard consent gates appearing on the board, and nothing else
 const GATED_SURFACES: Record<string, string> = {
   "/app/(app)/analytics/page.tsx":
     "The injury Risk Index. The ACWR ratio underneath it is a training-load figure and stays; the risk framing built on it is what the consent covers.",
+  "/app/(app)/reports/page.tsx":
+    "The same injury Risk Index, restated in the Hybrid Athlete Report. Read on the page and passed into the report loader, which never consults the consent itself.",
   "/app/api/hpe/plan/route.ts": "The Hybrid Plan Engine itself.",
   "/app/api/hpe/intake/route.ts": "The health and fuelling screens that collect the data.",
   "/app/api/hpe/monitoring/route.ts": "HPE monitoring, which reads the same answers.",

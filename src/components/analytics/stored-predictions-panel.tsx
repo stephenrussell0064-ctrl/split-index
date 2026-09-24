@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { PremiumTease } from "@/components/premium/premium-tease";
 import { ScoringExplainerNote } from "@/components/scoring/scoring-explainer-note";
+import { CollapsibleSection, SummaryPills } from "@/components/ui/collapsible-section";
 import { cn } from "@/lib/utils/cn";
 import { AdaptiveOneRmList } from "./adaptive-1rm-list";
 import {
@@ -125,29 +126,42 @@ function PredictionsContent({
         </div>
       )}
 
-      {ladders.map(({ benchmark, ladder }) => (
-        <div key={benchmark.sport}>
-          <p className="micro-label text-muted mb-2">
-            {LADDER_TITLE[benchmark.sport] ?? "Race ladder"}
-          </p>
-          <ul className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3 text-xs">
-            {Object.entries(ladder)
-              // JS object key order sorts integer-like keys (e.g. "42195")
-              // numerically ahead of any key containing a decimal point
-              // (e.g. "21097.5", the half-marathon distance in meters),
-              // regardless of insertion order — silently put Marathon
-              // before Half in every ladder (user feedback: "why is half
-              // below marathon"). Sort explicitly by the real distance.
-              .sort(([a], [b]) => Number(a) - Number(b))
-              .map(([dist, sec]) => (
-              <li key={dist} className="flex justify-between gap-2 tabular-nums glass rounded-lg px-3 py-1.5">
-                <span className="text-muted">{formatPredictionLabel(dist)}</span>
-                <span className="font-medium">{formatRiegelPrediction(sec)}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ))}
+      {/*
+        Each ladder is closed by default and shows its first three rungs as
+        pills (user feedback, 24 Sep 2026: the stored predictions "for running
+        and other cardio" should be a drop-down too). Five distances for each
+        of up to five sports was a wall of rows under the headline numbers,
+        which are what most people open this panel for.
+      */}
+      {ladders.map(({ benchmark, ladder }) => {
+        const rungs = Object.entries(ladder)
+          // JS object key order sorts integer-like keys (e.g. "42195")
+          // numerically ahead of any key containing a decimal point
+          // (e.g. "21097.5", the half-marathon distance in meters),
+          // regardless of insertion order — silently put Marathon
+          // before Half in every ladder (user feedback: "why is half
+          // below marathon"). Sort explicitly by the real distance.
+          .sort(([a], [b]) => Number(a) - Number(b))
+          .map(([dist, sec]) => ({ label: formatPredictionLabel(dist), value: formatRiegelPrediction(sec) }));
+        const peek = rungs.slice(0, 3);
+        return (
+          <CollapsibleSection
+            key={benchmark.sport}
+            title={LADDER_TITLE[benchmark.sport] ?? "Race ladder"}
+            count={`${rungs.length} distance${rungs.length === 1 ? "" : "s"}`}
+            summary={<SummaryPills items={peek} more={rungs.length - peek.length} />}
+          >
+            <ul className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3 text-xs">
+              {rungs.map((rung) => (
+                <li key={rung.label} className="flex justify-between gap-2 tabular-nums glass rounded-lg px-3 py-1.5">
+                  <span className="text-muted">{rung.label}</span>
+                  <span className="font-medium">{rung.value}</span>
+                </li>
+              ))}
+            </ul>
+          </CollapsibleSection>
+        );
+      })}
 
       <AdaptiveOneRmList strengthEstimates={strengthEstimates} showConfidence={showConfidence} />
     </div>
