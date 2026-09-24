@@ -9,4 +9,9 @@ export type ExerciseAttachmentIcon =
   | "straight-bar"
   | "v-bar"
   | "wide-bar"
-  | "single-handle";
+  | "single-handle"
+  // Leg-press machine types. Same mechanism, different noun — see
+  // getAttachmentPickerLabel in attachments.ts.
+  | "sled-45"
+  | "horizontal-press"
+  | "vertical-press";

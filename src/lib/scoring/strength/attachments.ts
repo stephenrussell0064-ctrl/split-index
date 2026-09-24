@@ -115,6 +115,68 @@ export const EXERCISE_ATTACHMENTS: Record<string, ExerciseAttachment[]> = {
       anchorMultiplier: 0.65,
     },
   ],
+  /**
+   * LEG PRESS — machine type, not an attachment, and the largest adjustment in
+   * this file by a wide margin. It is here rather than in a parallel mechanism
+   * because the question is identical ("same logged kg, different equipment,
+   * different true effort") and this one already reaches the scorer through
+   * `gym_exercises.attachment`. No new column, no migration.
+   *
+   * ## Why leg press needs it more than any other lift
+   *
+   * The anchors (`legPress: slTable([109, 162, 230, 309, 395])`) are Strength
+   * Level's, and that data is overwhelmingly 45-degree plate-loaded sleds
+   * logged as PLATE load. On such a sled the force along the rail is only
+   * `W x sin(45) = 0.707W` — so a horizontal machine at 163 kg and an angled
+   * sled at 230 kg are the same effort, and 163/230 is 0.71. The multiplier
+   * below is that geometry and nothing more.
+   *
+   * Without this, the two are scored identically and a seated stack machine
+   * reads as roughly a third weaker than the athlete is. That is not a
+   * hypothetical: it is why one real session's leg press scored 313 against a
+   * squat from the same session at 582, when a leg press is normally 1.5-2x
+   * a squat.
+   *
+   * ## What is NOT modelled, deliberately
+   *
+   * The carriage. A 45-degree sled's empty carriage runs anywhere from 20 kg
+   * to 90 kg depending on the model, and nothing the athlete can see tells
+   * them which. Strength Level's numbers already absorb a typical carriage,
+   * so the baseline stays "count your plates" — the answer most people can
+   * actually give. An athlete on a machine that displays total load including
+   * the carriage will read slightly strong, and that is the smaller error.
+   *
+   * Lever-arm machines are the other known gap: a seated press with a linkage
+   * has its own mechanical advantage that the stack number does not reveal,
+   * so `horizontal` is an approximation there rather than the clean geometry
+   * it is for a true horizontal slide.
+   */
+  legPress: [
+    {
+      id: "sled-45",
+      label: "45° sled",
+      description:
+        "The angled plate-loaded sled most gyms have. Count the plates you loaded — this is what the standards assume.",
+      icon: "sled-45",
+      anchorMultiplier: 1.0,
+    },
+    {
+      id: "horizontal",
+      label: "Seated / horizontal",
+      description:
+        "Weight stack, load pushed straight back. There is no incline helping you, so the same effort moves about 30% less than on an angled sled.",
+      icon: "horizontal-press",
+      anchorMultiplier: 0.71,
+    },
+    {
+      id: "vertical",
+      label: "Vertical",
+      description:
+        "Pressing straight up against the full load. Hardest per kilo of the three, and the rarest.",
+      icon: "vertical-press",
+      anchorMultiplier: 0.68,
+    },
+  ],
   cableCurl: [
     {
       id: "straight-bar",
@@ -147,6 +209,23 @@ export const EXERCISE_ATTACHMENTS: Record<string, ExerciseAttachment[]> = {
  */
 export function getAttachmentOptionsByKey(resolvedKey: string): ExerciseAttachment[] | null {
   return EXERCISE_ATTACHMENTS[resolvedKey] ?? null;
+}
+
+/**
+ * What to call the picker for this exercise. "Attachment" is right for a cable
+ * and wrong for a leg press — nobody calls a 45-degree sled an attachment, and
+ * a picker labelled with the wrong noun is a picker people skip.
+ *
+ * A lookup with a default rather than a field on every option: the label
+ * belongs to the exercise, not to each choice, and putting it on the options
+ * would mean three copies of the same string that can disagree.
+ */
+const PICKER_LABELS: Record<string, string> = {
+  legPress: "Machine",
+};
+
+export function getAttachmentPickerLabel(resolvedKey: string): string {
+  return PICKER_LABELS[resolvedKey] ?? "Attachment";
 }
 
 /** The multiplier for a given resolved key + attachment id, or 1.0 (no adjustment) if either is unrecognized. */

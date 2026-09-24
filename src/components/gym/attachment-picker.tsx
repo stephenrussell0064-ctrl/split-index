@@ -17,17 +17,20 @@ export function AttachmentPicker({
   options,
   value,
   onChange,
+  label = "Attachment",
 }: {
   options: ExerciseAttachment[];
   value: string | null;
   onChange: (id: string) => void;
+  /** "Attachment" for a cable, "Machine" for a leg press — see getAttachmentPickerLabel. */
+  label?: string;
 }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   return (
     <div className="space-y-1.5">
       <span className="text-[10px] font-semibold uppercase tracking-wider text-muted/60">
-        Attachment
+        {label}
       </span>
       <div className="flex flex-wrap gap-2">
         {options.map((opt) => {

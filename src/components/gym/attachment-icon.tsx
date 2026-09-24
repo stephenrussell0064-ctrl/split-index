@@ -1,4 +1,13 @@
-import { Waves, Minus, ChevronsLeftRight, MoveHorizontal, Grip } from "lucide-react";
+import {
+  Waves,
+  Minus,
+  ChevronsLeftRight,
+  MoveHorizontal,
+  Grip,
+  TrendingUp,
+  MoveRight,
+  MoveUp,
+} from "lucide-react";
 import type { ExerciseAttachmentIcon } from "@/lib/scoring/strength/attachment-icons";
 
 /**
@@ -15,6 +24,11 @@ const ICONS: Record<ExerciseAttachmentIcon, typeof Waves> = {
   "v-bar": ChevronsLeftRight,
   "wide-bar": MoveHorizontal,
   "single-handle": Grip,
+  // Leg-press machine types: the icon is the direction the load travels, which
+  // is the whole difference between them.
+  "sled-45": TrendingUp,
+  "horizontal-press": MoveRight,
+  "vertical-press": MoveUp,
 };
 
 export function AttachmentIcon({

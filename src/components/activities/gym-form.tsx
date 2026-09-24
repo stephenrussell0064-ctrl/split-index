@@ -25,7 +25,10 @@ import { formatIndex } from "@/lib/utils/format";
 import { cn } from "@/lib/utils/cn";
 import { resolveAnchorKey, scoreStrength } from "@/lib/scoring/split-strength-engine";
 import { scoreLoadedCarry, scoreTimedHold } from "@/lib/scoring/strength/isometric-carry";
-import { getAttachmentOptionsByKey } from "@/lib/scoring/strength/attachments";
+import {
+  getAttachmentOptionsByKey,
+  getAttachmentPickerLabel,
+} from "@/lib/scoring/strength/attachments";
 import { AttachmentPicker } from "@/components/gym/attachment-picker";
 import {
   conventionLabel,
@@ -508,9 +511,10 @@ function ExerciseRow({
   onRemove: () => void;
 }) {
   const loadConfig = row.name.trim() ? getExerciseLoadConfig(row.name) : null;
-  const attachmentOptions = row.name.trim()
-    ? getAttachmentOptionsByKey(resolveAnchorKey(row.name))
-    : null;
+  // Resolved once: the options and the noun to put above them both key off the
+  // same anchor key, and resolving it twice is how the two drift apart.
+  const anchorKey = row.name.trim() ? resolveAnchorKey(row.name) : null;
+  const attachmentOptions = anchorKey ? getAttachmentOptionsByKey(anchorKey) : null;
   const { history, pending: historyPending } = useExerciseHistory(row.name);
   /**
    * The exercise picker (muscle-filter chips + search box + select) is ~150px
@@ -980,11 +984,12 @@ function ExerciseRow({
           </p>
         ) : null}
 
-        {attachmentOptions && (
+        {attachmentOptions && anchorKey && (
           <AttachmentPicker
             options={attachmentOptions}
             value={row.attachment}
             onChange={(id) => onUpdate({ attachment: id })}
+            label={getAttachmentPickerLabel(anchorKey)}
           />
         )}
 
