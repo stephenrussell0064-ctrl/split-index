@@ -24,6 +24,8 @@ import { RadarExplainer, RADAR_DURATION } from "./formats/RadarExplainer";
 import { TextStory, STORY_DURATION } from "./formats/TextStory";
 import { MicroLoop, MICRO_DURATION } from "./formats/MicroLoop";
 import type { FormatProps } from "./formats/shared";
+import { RealAd, RealAdShort } from "./real/RealAd";
+import { RealCover, realCoverSchema } from "./real/RealCover";
 
 const formatSchema = z.object({ sfx: z.boolean(), safeZone: z.boolean() });
 
@@ -49,6 +51,21 @@ export const RemotionRoot: React.FC = () => (
       schema={adSchema}
       defaultProps={{ hook: "A", safeZone: true, sfx: true }}
     />
+
+    <Folder name="Real-footage">
+      <Composition id="RealAd" component={RealAd} durationInFrames={DURATION} {...base} schema={adSchema} defaultProps={{ hook: "A", safeZone: true, sfx: true }} />
+      {HOOK_IDS.map((id) => (
+        <Composition key={`r${id}`} id={`Real-${id}`} component={RealAd} durationInFrames={DURATION} {...base} schema={adSchema} defaultProps={{ hook: id, safeZone: false, sfx: false }} />
+      ))}
+      {HOOK_IDS.map((id) => (
+        <Composition key={`rs${id}`} id={`RealSfx-${id}`} component={RealAd} durationInFrames={DURATION} {...base} schema={adSchema} defaultProps={{ hook: id, safeZone: false, sfx: true }} />
+      ))}
+      <Composition id="RealShort-A" component={RealAdShort} durationInFrames={SHORT.duration} {...base} schema={adSchema} defaultProps={{ hook: "A", safeZone: false, sfx: false }} />
+      <Composition id="RealShortSfx-A" component={RealAdShort} durationInFrames={SHORT.duration} {...base} schema={adSchema} defaultProps={{ hook: "A", safeZone: false, sfx: true }} />
+      {HOOK_IDS.map((id) => (
+        <Still key={`rc${id}`} id={`RealCover-${id}`} component={RealCover} width={WIDTH} height={HEIGHT} schema={realCoverSchema} defaultProps={{ hook: id }} />
+      ))}
+    </Folder>
 
     <Folder name="Masters-silent">
       {HOOK_IDS.map((id) => (

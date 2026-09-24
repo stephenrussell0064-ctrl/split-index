@@ -5,6 +5,7 @@ node_modules/
 # The cover stills ARE committed (small, and the posting kit points at them).
 out/*.mp4
 out/formats/*.mp4
+out/real/*.mp4
 out/*.zip
 out/drafts/
 out/review*/
@@ -15,3 +16,4 @@ out/draft*
 
 # build log
 out/render*.log
+out/real-review*/

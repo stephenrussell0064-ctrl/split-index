@@ -22,6 +22,7 @@ const args = process.argv.slice(2);
 const only = args.includes("--only") ? args[args.indexOf("--only") + 1] : null;
 const drafts = args.includes("--drafts");
 const formatsOnly = args.includes("--formats");
+const realOnly = args.includes("--real");
 
 const HOOKS = { A: "bench-elite-5k-beginner", B: "lifting-slowing-running", C: "built-an-app", D: "strong-or-fit", E: "rate-me" };
 const ids = only ? [only] : Object.keys(HOOKS);
@@ -40,6 +41,23 @@ run("npm run --silent compute");
 run("npm run --silent sfx");
 
 const FORMATS = { StatCard: "stat-card", Quiz: "guess-the-tier", TugOfWar: "the-gap", RadarExplainer: "radar-explainer", TextStory: "text-story", MicroLoop: "micro-loop" };
+
+const REAL_HOOKS = { A: "bench-133-5k-1825", B: "is-759-good", C: "built-an-app", D: "strong-or-fit", E: "rate-my-bench-and-5k" };
+if (realOnly) {
+  mkdirSync(`${outDir}/real`, { recursive: true });
+  for (const id of ids) {
+    const slug = REAL_HOOKS[id];
+    run(`npx remotion render Real-${id} ${outDir}/real/real-${id}-${slug}.mp4 ${scale} ${crf} --log=error`);
+    run(`npx remotion render RealSfx-${id} ${outDir}/real/real-${id}-${slug}-sfx.mp4 ${scale} ${crf} --log=error`);
+    run(`npx remotion still RealCover-${id} ${outDir}/real/cover-${id}-${slug}.png ${scale} --log=error`);
+  }
+  if (!only || only === "A") {
+    run(`npx remotion render RealShort-A ${outDir}/real/short-A-${REAL_HOOKS.A}.mp4 ${scale} ${crf} --log=error`);
+    run(`npx remotion render RealShortSfx-A ${outDir}/real/short-A-${REAL_HOOKS.A}-sfx.mp4 ${scale} ${crf} --log=error`);
+  }
+  console.log(`\n✓ rendered into ${outDir}/real/`);
+  process.exit(0);
+}
 
 for (const id of formatsOnly ? [] : ids) {
   const slug = HOOKS[id];

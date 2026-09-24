@@ -30,6 +30,53 @@ The `.mp4` files are not committed (`.gitignore`); the covers are. Regenerate
 with `npm run render`, or one variant with `npm run render -- --only B`, or
 quarter-resolution drafts of everything with `npm run render:drafts`.
 
+## Real-footage film (`src/real/`) — the one to post
+
+The synthetic film and formats above redraw the app's screens from tokens.
+`RealAd` does not: every frame inside the phone is the actual app — screen
+recordings (`public/real/clips/`, untouched apart from a drawn bar over the iOS
+status bar, which carried the red recording pill) and unedited screenshots the
+camera pans across (`public/real/screens/`). Same beat grid, hooks, grade and
+end-card; different footage. Rendered by `npm run render -- --real` into
+`out/real/`.
+
+| Beat | What is on screen | Source |
+|---|---|---|
+| TENSION | bench sets typed and scored live · run splits / HR trace · a Pull session's per-lift scores · collision | `set-scoring.mp4`, `engine.mp4`, `lab.mp4` |
+| REVEAL | logging a set → the app's own "SESSION SCORED" counter running 0 → 77.7 → the real dashboard: **75.9 Advanced**, Engine 70.1, Lab 81.7, predicted 5k **18:52**, bench **133 kg**, deadlift **200 kg** | `set-scoring.mp4`, `session-done.mp4`, `the-dashboard-3.png` |
+| USP | the real Interference Radar page: "Does cardio weaken your lifting?" **+3.7 %**, 777 vs 806, 13 gym sessions | `interference-radar-1.png` |
+| STATUS | the bracket leaderboard (Male · 20-24 · 80-90kg · #3 of 6) → race records: 5k **18:25**, 10k 49:39, DOTS 319.8 | `first-finding.mp4` frame, `data-analytics-2.png` |
+
+**Whose numbers.** The screenshots are @split_index_ceo's real account
+(profile verified read-only against the database on 24 Sep 2026: male, 78 kg,
+id prefix `f0c63c26`; `scripts/verify-real.mts`). The *recordings* are of a
+second, near-empty test account and show that account's session scores
+(77.5, 79.4, 77.7); they are used for motion, and no caption quotes a number
+from them. `src/real/data.ts` lists every figure with the file it is read off.
+A caption only quotes a number while that file is on screen.
+
+**Why the radar says "+3.7 %" and not a cost.** That is what the real account's
+radar shows: 13 gym sessions, heavy-cardio weeks slightly *up*. The upper
+half of the page (cardio efficiency after lifting) has two sessions and is
+flagged EARLY DATA by the app, so the film leads with the finding that has the
+data. "Mine: no. Yours might differ." is the honest version of the pitch.
+
+**Hooks** (`src/real/hooks.ts`): A "133 kg bench. 18:25 5k. One score." ·
+B "Is 75.9 good for a hybrid athlete?" · C "I built an app that scores hybrid
+athletes." · D "Strong or fit? Pick one." · E "Rate my bench AND my 5k."
+
+**To make it better, record these** (portrait, screen-record on the phone,
+the real account, no email or password on screen):
+1. Dashboard: open the app cold and let the 75.9 count up, then scroll slowly
+   to the predicted race times and 1RM. 10 s.
+2. The Lab: log one real bench set and tap Score workout, all the way to the
+   "SESSION SCORED" counter. 15 s.
+3. Interference page: open it from More, scroll top to bottom. 10 s.
+4. Leaderboard → My Bracket, scroll. 8 s.
+5. A GPS run finishing: the Finish tap and the score screen. 10 s.
+Drop them in `public/real/clips/`, add a line to `CLIPS` in `src/real/data.ts`
+with a frame-accurate note of what is on screen when, and swap them in.
+
 ## Formats (`src/formats/`)
 
 The film is one shape. These are the same computed numbers in five other
@@ -179,6 +226,17 @@ is live at `https://apps.apple.com/gb/app/split-index/id6809234984`
   subscriptions. The posting kit tells you to say so if asked.
 - "One score" / "out of 100" — the app's own copy ("Strength + endurance, out of
   100", `index-hero.tsx`).
+
+## Why the synthetic demo athlete runs a 40:45 5k
+
+Because the brief's default hook was "Your bench says Elite. Your 5k says
+Beginner", and the compute step refuses to render a hook the engine cannot
+substantiate. Beginner on the 5k table means slower than 38:30, so the
+fictional Sam had to run 40:45. It is a true statement about a fictional
+profile, and it is not a hybrid athlete's number. The real-footage film is
+the answer to that: 18:25 and 133 kg, both the account's own. If you want
+the synthetic films to carry a faster runner, change `FIVE_K_TIME_TRIAL`
+in `demo-profile.ts` and drop hook A (its assertion will fail, by design).
 
 ## What could not be done, honestly
 

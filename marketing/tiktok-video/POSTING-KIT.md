@@ -102,6 +102,25 @@ Character counts below exclude hashtags. Hashtags: 3–5 relevant, no walls.
 
 ---
 
+## Real-footage film (`out/real/`) — post these first
+
+Real app, real account, real numbers: 75.9 Advanced, 18:25 5k, 133 kg bench,
+200 kg deadlift, +3.7 % on the radar. Same five hooks, silent + SFX, covers
+and an 8 s cut-down. The numbers you may quote are the ones in the README's
+real-footage table and no others; the radar finding is "+3.7 % on 13 gym
+sessions", never a cost.
+
+| Hook | File | Caption (≤150) | Pinned comment |
+|---|---|---|---|
+| A | `real-A-bench-133-5k-1825(-sfx).mp4` | 133 kg bench. 18:25 5k. The app scores both and gives me one number: 75.9. | Drop your bench and 5k. I'll tell you roughly where you'd land. |
+| B | `real-B-is-759-good(-sfx).mp4` | 75.9 Advanced. Strength 81.7, endurance 70.1. Is that good for a hybrid athlete? Be honest. | What would you need to hit to call yourself Advanced? |
+| C | `real-C-built-an-app(-sfx).mp4` | I built an app that scores hybrid athletes. This is my real account. | Founder here. Ask me anything about the scoring — every question answered. |
+| D | `real-D-strong-or-fit(-sfx).mp4` | Strong or fit? Pick one — or measure both. 81.7 strength, 70.1 endurance, one score. | Which side is your weak half? |
+| E | `real-E-rate-my-bench-and-5k(-sfx).mp4` | Rate my bench AND my 5k. 133 kg, 18:25, 78 kg bodyweight. The app says 75.9. | Post yours: bench, 5k, bodyweight. I'll run it. |
+
+Hashtags for all five: `#hybridathlete #hyrox #gymtok #runtok` plus one
+from the film's own set above. Sounds as per the matching synthetic hook.
+
 ## The six formats (`out/formats/`)
 
 Same numbers, different shapes. Use them to test *format* against the film's

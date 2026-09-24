@@ -31,10 +31,10 @@ export const adSchema = z.object({
 export type AdProps = z.infer<typeof adSchema>;
 
 /** A scene whips in over its first WHIP_FRAMES with camera motion blur, then renders plain. */
-const WhipIn: React.FC<{ from: "left" | "right" | "up" | "down"; children: React.ReactNode }> = ({ from, children }) => {
+export const WhipIn: React.FC<{ from: "left" | "right" | "up" | "down"; children: React.ReactNode }> = ({ from, children }) => {
   const frame = useCurrentFrame();
   if (frame >= WHIP_FRAMES) return <AbsoluteFill>{children}</AbsoluteFill>;
-  const d = interpolate(frame, [0, WHIP_FRAMES], [1, 0], { easing: RAMP_OUT, extrapolateRight: "clamp" });
+  const d = interpolate(frame, [0, WHIP_FRAMES], [0.7, 0], { easing: RAMP_OUT, extrapolateRight: "clamp" });
   const dx = from === "left" ? -WIDTH * d : from === "right" ? WIDTH * d : 0;
   const dy = from === "up" ? -1920 * d : from === "down" ? 1920 * d : 0;
   return (
@@ -44,7 +44,7 @@ const WhipIn: React.FC<{ from: "left" | "right" | "up" | "down"; children: React
   );
 };
 
-const Grade: React.FC<{ safeZone: boolean }> = ({ safeZone }) => (
+export const Grade: React.FC<{ safeZone: boolean }> = ({ safeZone }) => (
   <>
     <Vignette strength={0.5} />
     <Grain opacity={0.08} />

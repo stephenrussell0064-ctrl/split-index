@@ -8,6 +8,6 @@ import { existsSync, rmSync } from "node:fs";
 
 const zip = "out/split-index-tiktok-pack.zip";
 if (existsSync(zip)) rmSync(zip);
-execSync(`zip -q -j ${zip} out/*.mp4 out/*.png POSTING-KIT.md README.md && zip -q ${zip} out/formats/*.mp4`, { stdio: "inherit" });
+execSync(`zip -q -j ${zip} out/*.mp4 out/*.png POSTING-KIT.md README.md && zip -q ${zip} out/formats/*.mp4 out/real/*.mp4 out/real/*.png`, { stdio: "inherit" });
 execSync(`unzip -l ${zip} | tail -1`, { stdio: "inherit" });
 console.log(`✓ ${zip}`);
