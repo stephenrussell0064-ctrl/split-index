@@ -141,49 +141,19 @@ export default async function RecoveryPage() {
 
       <RecoveryScoreCard result={result} />
 
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-        <RecoveryBreakdown result={result} />
-        <div className="space-y-3">
-          <HrvEntryCard hrvToday={inputs.hrvToday} hrvBaseline={inputs.hrvBaseline} />
+      {/* ── Alcohol ─────────────────────────────────────────────────────────
+        Directly under the score, ABOVE the breakdown.
 
-          <Link href="/analytics">
-            <Card interactive className="flex items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent/15">
-                  <Radar className="h-5 w-5 text-accent" />
-                </div>
-                <div>
-                  <p className="text-sm font-semibold">ACWR & injury risk trend</p>
-                  <p className="text-xs text-muted">
-                    The load half of this score, over weeks rather than today.
-                  </p>
-                </div>
-              </div>
-              <ArrowRight className="h-4 w-4 shrink-0 text-muted" />
-            </Card>
-          </Link>
-
-          {inputs.bodyweightKg === null && (
-            <Card padding="lg">
-              <p className="text-sm font-medium">Set your bodyweight</p>
-              <p className="mt-1 text-xs leading-relaxed text-muted">
-                The alcohol model works in grams of ethanol per kilogram, so without your weight it
-                assumes 75kg — which will overstate the dose if you&apos;re heavier than that and
-                understate it if you&apos;re lighter.{" "}
-                <Link href="/profile" className="text-accent underline underline-offset-2">
-                  Add it to your profile
-                </Link>
-                .
-              </p>
-            </Card>
-          )}
-        </div>
-      </div>
-
-      {/* ── Alcohol ─────────────────────────────────────────────────────── */}
+        The order used to be score → breakdown → HRV → alcohol, which put the
+        one thing an athlete opens this page to DO below three things they
+        open it to READ. Logging last night is the daily action here; the
+        breakdown explains a number they have already seen at the top. Reading
+        material that outranks the action is how a daily habit fails to form,
+        so the action goes first and the explanation follows it.
+      */}
 
       <div className="pt-2">
-        <h2 className="text-lg font-semibold tracking-tight">Alcohol</h2>
+        <h2 className="text-xl font-semibold tracking-tight">Alcohol</h2>
         <p className="mt-1 text-sm text-muted">
           Dose is grams of ethanol against your bodyweight and sex — not a drink count. Two pints
           are a different dose for different people, and a different cost at different hours.
@@ -231,6 +201,55 @@ export default async function RecoveryPage() {
           />
         )}
         <DrinkHistoryList drinks={inputs.drinks} />
+      </div>
+
+      {/* ── Why the score is what it is ──────────────────────────────────
+        Below the action rather than above it. The athlete has already seen
+        the number at the top of the page; this is the explanation, and
+        explanations do not outrank the thing you came here to do.
+      */}
+
+      <div className="pt-2">
+        <h2 className="text-xl font-semibold tracking-tight">What the score is built from</h2>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+        <RecoveryBreakdown result={result} />
+        <div className="space-y-3">
+          <HrvEntryCard hrvToday={inputs.hrvToday} hrvBaseline={inputs.hrvBaseline} />
+
+          <Link href="/analytics">
+            <Card interactive className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent/15">
+                  <Radar className="h-5 w-5 text-accent" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold">ACWR &amp; injury risk trend</p>
+                  <p className="text-xs text-muted">
+                    The load half of this score, over weeks rather than today.
+                  </p>
+                </div>
+              </div>
+              <ArrowRight className="h-4 w-4 shrink-0 text-muted" />
+            </Card>
+          </Link>
+
+          {inputs.bodyweightKg === null && (
+            <Card padding="lg">
+              <p className="text-sm font-medium">Set your bodyweight</p>
+              <p className="mt-1 text-xs leading-relaxed text-muted">
+                The alcohol model works in grams of ethanol per kilogram, so without your weight it
+                assumes 75kg — which will overstate the dose if you&apos;re heavier than that and
+                understate it if you&apos;re lighter.{" "}
+                <Link href="/profile" className="text-accent underline underline-offset-2">
+                  Add it to your profile
+                </Link>
+                .
+              </p>
+            </Card>
+          )}
+        </div>
       </div>
 
       <ScoreDisclaimer />

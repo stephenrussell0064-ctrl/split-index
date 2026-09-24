@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check, Loader2, Minus, Plus, Wine } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
   DRINK_PRESETS,
@@ -133,15 +133,27 @@ export function DrinkLogger() {
   }
 
   return (
-    <Card padding="lg" id="log-a-drink" className="scroll-mt-20">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-1.5">
-          <Wine className="h-3.5 w-3.5" />
-          Log a drink
-        </CardTitle>
+    /*
+      Lit, and titled like a heading rather than a micro-label.
+      This is the page's primary action and it was dressed as one panel among
+      six — an 11px uppercase caption over a grid of small tiles. The glow and
+      the real heading are what make it findable at a glance on a phone, which
+      is where it is actually used.
+    */
+    <Card glow="accent" padding="lg" id="log-a-drink" className="scroll-mt-20">
+      <CardHeader className="mb-5">
+        <div className="flex items-center gap-3">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-accent/15">
+            <Wine className="h-5 w-5 text-accent" />
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold tracking-tight text-foreground">Log a drink</h3>
+            <p className="text-xs text-muted">Takes about five seconds</p>
+          </div>
+        </div>
       </CardHeader>
 
-      <CardContent className="space-y-5">
+      <CardContent className="space-y-6">
         {/*
           Said at the point of entry, not buried in a policy page.
           This is the transparency the lawful basis for holding this data rests
@@ -203,7 +215,7 @@ export function DrinkLogger() {
             />
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
             {visiblePresets.map((p) => {
               const selected = p.id === presetId;
               const units = gramsToUnits(gramsOfEthanol(p.volumeMl, p.abvPercent));
@@ -213,16 +225,24 @@ export function DrinkLogger() {
                   type="button"
                   onClick={() => setPresetId(p.id)}
                   aria-pressed={selected}
+                  /*
+                   * 96px rather than 72, and a 2px ring on the selected tile
+                   * rather than a 1px border. These are thumb targets on a
+                   * phone, tapped quickly and often not entirely sober — the
+                   * old tiles cleared the 44pt minimum and nothing more, and
+                   * the selected state was a border shade most people would
+                   * not notice they had missed.
+                   */
                   className={cn(
-                    "flex min-h-[72px] flex-col items-start justify-center rounded-2xl border px-3 py-2.5 text-left transition-colors",
+                    "flex min-h-[96px] flex-col items-start justify-center rounded-2xl border px-4 py-3 text-left transition-colors",
                     selected
-                      ? "border-accent/50 bg-accent/10"
-                      : "border-white/10 bg-white/[0.02] hover:border-white/20"
+                      ? "border-accent/60 bg-accent/15 ring-2 ring-accent/40"
+                      : "border-white/10 bg-white/[0.02] hover:border-white/25 hover:bg-white/[0.04]"
                   )}
                 >
-                  <span className="text-sm font-medium leading-tight">{p.label}</span>
-                  <span className="mt-1 text-[11px] text-muted">{p.detail}</span>
-                  <span className="text-[11px] tabular-nums text-accent">
+                  <span className="text-base font-semibold leading-tight">{p.label}</span>
+                  <span className="mt-1 text-xs text-muted">{p.detail}</span>
+                  <span className="mt-0.5 text-xs font-medium tabular-nums text-accent">
                     {units.toFixed(1)} units
                   </span>
                 </button>
@@ -232,34 +252,35 @@ export function DrinkLogger() {
         )}
 
         {/* How many */}
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
+          <div className="flex items-center gap-4">
             <span className="micro-label text-muted">How many</span>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-2">
               <button
                 type="button"
                 aria-label="One fewer"
                 onClick={() => setQuantity((q) => Math.max(0.5, Math.round((q - 0.5) * 2) / 2))}
-                className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 text-muted transition-colors hover:border-white/25 hover:text-foreground"
+                className="flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 text-muted transition-colors hover:border-white/25 hover:text-foreground"
               >
-                <Minus className="h-4 w-4" />
+                <Minus className="h-5 w-5" />
               </button>
-              <span className="w-10 text-center text-base font-semibold tabular-nums">
+              <span className="w-12 text-center text-xl font-bold tabular-nums">
                 {quantity % 1 === 0 ? quantity : quantity.toFixed(1)}
               </span>
               <button
                 type="button"
                 aria-label="One more"
                 onClick={() => setQuantity((q) => Math.min(50, q + 1))}
-                className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 text-muted transition-colors hover:border-white/25 hover:text-foreground"
+                className="flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 text-muted transition-colors hover:border-white/25 hover:text-foreground"
               >
-                <Plus className="h-4 w-4" />
+                <Plus className="h-5 w-5" />
               </button>
             </div>
           </div>
 
+          {/* The number being committed to, at the size of a number that matters. */}
           <p className="text-sm text-muted">
-            <span className="index-display text-2xl font-bold tabular-nums text-foreground">
+            <span className="index-display text-3xl font-bold tabular-nums text-accent">
               {previewUnits.toFixed(1)}
             </span>{" "}
             units
@@ -299,7 +320,14 @@ export function DrinkLogger() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          <Button onClick={submit} disabled={status === "saving" || previewUnits <= 0}>
+          {/* Full width on a phone: the commit action should not be a small
+              target sitting next to the reset of the form. */}
+          <Button
+            size="lg"
+            className="w-full sm:w-auto"
+            onClick={submit}
+            disabled={status === "saving" || previewUnits <= 0}
+          >
             {status === "saving" ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />
