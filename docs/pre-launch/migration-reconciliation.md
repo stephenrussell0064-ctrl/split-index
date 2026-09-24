@@ -36,6 +36,8 @@ one branch, not of the database.
 | `pg_default_acl` for `postgres`/`r` | no `anon` | `085` ran |
 | `drink_logs` to `anon` | denied, `42501` | `086` ran, and 085's guard held for a brand-new table |
 | `drink_logs` RLS + `pg_policy` | `true`, one owner-scoped policy with `WITH CHECK` | `086` ran in full, not half — see §4.5 |
+| `public_alcohol_free_streaks` to `anon` | denied, `42501` | `087` ran, and its REVOKE landed |
+| `public_alcohol_free_streaks` count, 21 profiles present | `0` | `087`'s consent predicate filters — see §4.6 |
 
 So production is **main's lineage through 075, plus 076–080 from the app-store
 line**. The schema is not behind. The problem is entirely one of file numbering
@@ -290,38 +292,47 @@ Two details in that result are worth naming rather than skimming:
 So this row rests on probes that answer for themselves, and carries none of the
 caveat 085's row does in §4.4.
 
-### 4.6 087 is written and NOT yet applied
+### 4.6 Record 087 as it was applied — DONE
 
 `087_alcohol_free_streak_leaderboard` — the `public_alcohol_free_streaks` view
-behind the opt-in leaderboard. Written against production at version `086`, and
-deliberately **not** given a row in §1, because §1 records what production
-actually has.
+behind the opt-in leaderboard. Applied 24 September 2026 through the SQL
+editor, for the same reason 086 was: §5's `supabase migration list` check is
+still outstanding, so nobody knows what a `db push` would propose.
 
-It is recorded here so the gap between "the file exists" and "the database has
-it" stays visible. Until it is applied, the leaderboard page renders empty
-rather than erroring — PostgREST returns an error object for a missing
-relation and the page reads `data ?? []` — so shipping the code ahead of the
-migration is safe in that direction, and only in that direction.
+Measured over PostgREST immediately afterwards:
 
-When it is applied, move it into §1 with these probes. The first two are the
-ones that matter, and neither is "does the view exist":
+| Probe | Result |
+|---|---|
+| the view, as service-role, `count=exact` | 200, `*/0` |
+| the view, as `anon` | 401, `42501 permission denied for view public_alcohol_free_streaks` |
+| `drink_logs`, as `anon` | 401, `42501` — unchanged by 087 |
 
-| Probe | Expect | What it settles |
-|---|---|---|
-| `public_alcohol_free_streaks` as `anon` | denied | the REVOKE landed; this is health-adjacent data about named people |
-| `SELECT count(*)` with no consent rows anywhere | `0` | the consent predicate is real, not decorative — a view that exists and returns everybody would mean the JOIN was dropped |
-| `drink_logs` as `anon` | still denied | 087 did not loosen 086 on its way past |
+**Why the zero is worth more than it looks.** "The board is empty" is the
+expected result and also what a completely broken view would return, so it was
+read against the tables it joins rather than on its own: `profiles` holds 21
+rows, `article9_consent_events` holds 4, and `drink_logs` holds 0. The view
+LEFT JOINs drink history, so a version that had lost its consent predicate
+would return all 21 profiles, not none. Returning 0 while 21 profiles exist is
+therefore positive evidence that the consent JOIN is filtering, rather than the
+absence of evidence that it is not.
 
-A probe that only confirmed the view existed would pass on the one failure
-that actually matters here: a board that lists athletes who never opted in.
+That distinction is the whole point of the row: the failure this feature
+cannot survive is a board listing athletes who never opted in, and "the view
+exists" would have passed on it.
+
+Note also what has NOT been demonstrated, because it cannot be yet: no athlete
+has granted the leaderboard consent, so the grant path has never produced a
+row on the board. The first opt-in should be checked by eye — the athlete
+should appear, and disappear again on withdrawal.
 
 ---
 
 ## 5. Where this leaves the project
 
 Steps 1 to 4 are done. The files are renumbered to match production and the
-ledger exists. It records 86 migrations: the 81 backfilled in §4.2, plus
-`082`–`085` added in §4.4 and `086` in §4.5, each as it was applied.
+ledger exists. It records 87 migrations: the 81 backfilled in §4.2, plus
+`082`–`085` added in §4.4, `086` in §4.5 and `087` in §4.6, each as it was
+applied.
 
 **One step remains, and it needs the database password:**
 
