@@ -1,0 +1,362 @@
+{
+  "generatedAt": "2026-09-24T21:16:22.195Z",
+  "source": "marketing/tiktok-video/demo-profile.ts → scripts/compute-demo.ts (app engines, no database)",
+  "athlete": {
+    "displayName": "Sam",
+    "handle": "sam_benches",
+    "sex": "male",
+    "age": 29,
+    "bodyweightKg": 84,
+    "sessionsLogged": 47,
+    "gymSessions": 21,
+    "runSessions": 26
+  },
+  "loggedSet": {
+    "exercise": "Bench Press",
+    "weightKg": 145,
+    "reps": 3,
+    "performedAt": "2026-09-14T18:00:00.000Z",
+    "liftScore": 899,
+    "liftScoreDisplay": "89.9",
+    "liftTier": "Elite",
+    "estimatedOneRMKg": 151,
+    "bodyweightRatio": 1.81,
+    "sessionLabIndex": 843,
+    "sessionLabIndexDisplay": "84.3"
+  },
+  "lifts": [
+    {
+      "liftKey": "bench",
+      "score": 899,
+      "scoreDisplay": "89.9",
+      "tier": "Elite",
+      "oneRMKg": 151
+    },
+    {
+      "liftKey": "ohp",
+      "score": 867,
+      "scoreDisplay": "86.7",
+      "tier": "Elite",
+      "oneRMKg": 87
+    },
+    {
+      "liftKey": "inclineDbPress",
+      "score": 723,
+      "scoreDisplay": "72.3",
+      "tier": "Semi-Pro",
+      "oneRMKg": 89
+    },
+    {
+      "liftKey": "squat",
+      "score": 814,
+      "scoreDisplay": "81.4",
+      "tier": "Advanced",
+      "oneRMKg": 167
+    },
+    {
+      "liftKey": "deadlift",
+      "score": 852,
+      "scoreDisplay": "85.2",
+      "tier": "Elite",
+      "oneRMKg": 203
+    },
+    {
+      "liftKey": "barbellRow",
+      "score": 873,
+      "scoreDisplay": "87.3",
+      "tier": "Elite",
+      "oneRMKg": 124
+    }
+  ],
+  "fiveK": {
+    "seconds": 2445,
+    "timeLabel": "40:45",
+    "paceLabel": "8:09/km",
+    "avgHR": 181,
+    "score": 223,
+    "scoreDisplay": "22.3",
+    "tier": "Beginner",
+    "predictions": {
+      "1500": 682.3817345432932,
+      "5000": 2445,
+      "10000": 5097.657570513084,
+      "42195": 23450.240957044676,
+      "21097.5": 11247.487369812352
+    }
+  },
+  "indexes": {
+    "lab": 837,
+    "labDisplay": "83.7",
+    "labTier": "Advanced",
+    "engine": 275,
+    "engineDisplay": "27.5",
+    "engineTier": "Intermediate",
+    "split": 556,
+    "splitDisplay": "55.6",
+    "splitTier": "Semi-Pro",
+    "headlineLabel": "Split Index",
+    "weights": {
+      "lab": 837,
+      "engine": 275,
+      "weightLab": 0.5,
+      "weightEngine": 0.5
+    }
+  },
+  "interference": {
+    "strengthToCardio": {
+      "calibrating": false,
+      "lowConfidence": false,
+      "sampleCount": 14,
+      "totalQualifyingSessions": 25,
+      "headlineDeltaPct": -8.8,
+      "headlineHrDeltaBpm": 9,
+      "headlineDaysSinceStrength": 1,
+      "decayByDay": [
+        {
+          "daysSinceStrength": 0,
+          "sampleCount": 0,
+          "efDeltaPct": null,
+          "hrDeltaBpm": null
+        },
+        {
+          "daysSinceStrength": 1,
+          "sampleCount": 11,
+          "efDeltaPct": -8.8,
+          "hrDeltaBpm": 9
+        },
+        {
+          "daysSinceStrength": 2,
+          "sampleCount": 0,
+          "efDeltaPct": null,
+          "hrDeltaBpm": null
+        },
+        {
+          "daysSinceStrength": 3,
+          "sampleCount": 3,
+          "efDeltaPct": -1.9,
+          "hrDeltaBpm": 1
+        }
+      ],
+      "summary": "Strength sessions cost you roughly 8.8% efficiency and +9bpm on running the next day, recovering by day 3."
+    },
+    "cardioToStrength": {
+      "calibrating": false,
+      "lowConfidence": false,
+      "sampleCount": 21,
+      "deltaPct": 4,
+      "highCardioAvg": 828,
+      "lowCardioAvg": 796,
+      "summary": "Heavy cardio weeks coincide with roughly 4% strength performance compared to lighter cardio weeks."
+    }
+  },
+  "leaderboard": {
+    "bracketLabel": "Male · 25-34 · 80-90kg",
+    "bracketResolved": {
+      "widenLevel": "exact",
+      "peerCount": 24,
+      "label": "Male · 25-34 · 80-90kg"
+    },
+    "minBracketSize": 20,
+    "total": 24,
+    "demoRank": 16,
+    "rows": [
+      {
+        "rank": 1,
+        "handle": "finn.oc",
+        "isDemo": false,
+        "split": 804,
+        "splitDisplay": "80.4",
+        "tier": "Advanced"
+      },
+      {
+        "rank": 2,
+        "handle": "tom.hyrox",
+        "isDemo": false,
+        "split": 802,
+        "splitDisplay": "80.2",
+        "tier": "Advanced"
+      },
+      {
+        "rank": 3,
+        "handle": "george.hybrid",
+        "isDemo": false,
+        "split": 801,
+        "splitDisplay": "80.1",
+        "tier": "Advanced"
+      },
+      {
+        "rank": 4,
+        "handle": "elliot.runs",
+        "isDemo": false,
+        "split": 798,
+        "splitDisplay": "79.8",
+        "tier": "Advanced"
+      },
+      {
+        "rank": 5,
+        "handle": "harry.tri",
+        "isDemo": false,
+        "split": 777,
+        "splitDisplay": "77.7",
+        "tier": "Advanced"
+      },
+      {
+        "rank": 6,
+        "handle": "ollie.runs",
+        "isDemo": false,
+        "split": 776,
+        "splitDisplay": "77.6",
+        "tier": "Advanced"
+      },
+      {
+        "rank": 7,
+        "handle": "aaron_5k",
+        "isDemo": false,
+        "split": 766,
+        "splitDisplay": "76.6",
+        "tier": "Advanced"
+      },
+      {
+        "rank": 8,
+        "handle": "rhys.evans",
+        "isDemo": false,
+        "split": 763,
+        "splitDisplay": "76.3",
+        "tier": "Advanced"
+      },
+      {
+        "rank": 9,
+        "handle": "dan_mcgrath",
+        "isDemo": false,
+        "split": 758,
+        "splitDisplay": "75.8",
+        "tier": "Advanced"
+      },
+      {
+        "rank": 10,
+        "handle": "jakub.k",
+        "isDemo": false,
+        "split": 756,
+        "splitDisplay": "75.6",
+        "tier": "Advanced"
+      },
+      {
+        "rank": 11,
+        "handle": "owen_b",
+        "isDemo": false,
+        "split": 744,
+        "splitDisplay": "74.4",
+        "tier": "Advanced"
+      },
+      {
+        "rank": 12,
+        "handle": "nathan_r",
+        "isDemo": false,
+        "split": 740,
+        "splitDisplay": "74",
+        "tier": "Advanced"
+      },
+      {
+        "rank": 13,
+        "handle": "marcus_pt",
+        "isDemo": false,
+        "split": 736,
+        "splitDisplay": "73.6",
+        "tier": "Advanced"
+      },
+      {
+        "rank": 14,
+        "handle": "lewis_deads",
+        "isDemo": false,
+        "split": 579,
+        "splitDisplay": "57.9",
+        "tier": "Semi-Pro"
+      },
+      {
+        "rank": 15,
+        "handle": "kieran_lifts",
+        "isDemo": false,
+        "split": 566,
+        "splitDisplay": "56.6",
+        "tier": "Semi-Pro"
+      },
+      {
+        "rank": 16,
+        "handle": "sam_benches",
+        "isDemo": true,
+        "split": 556,
+        "splitDisplay": "55.6",
+        "tier": "Semi-Pro"
+      },
+      {
+        "rank": 17,
+        "handle": "matt_squats",
+        "isDemo": false,
+        "split": 531,
+        "splitDisplay": "53.1",
+        "tier": "Semi-Pro"
+      },
+      {
+        "rank": 18,
+        "handle": "cameron_l",
+        "isDemo": false,
+        "split": 515,
+        "splitDisplay": "51.5",
+        "tier": "Semi-Pro"
+      },
+      {
+        "rank": 19,
+        "handle": "reece.k",
+        "isDemo": false,
+        "split": 491,
+        "splitDisplay": "49.1",
+        "tier": "Semi-Pro"
+      },
+      {
+        "rank": 20,
+        "handle": "ben.ashworth",
+        "isDemo": false,
+        "split": 436,
+        "splitDisplay": "43.6",
+        "tier": "Intermediate"
+      },
+      {
+        "rank": 21,
+        "handle": "josh.pt",
+        "isDemo": false,
+        "split": 435,
+        "splitDisplay": "43.5",
+        "tier": "Intermediate"
+      },
+      {
+        "rank": 22,
+        "handle": "dylan_w",
+        "isDemo": false,
+        "split": 425,
+        "splitDisplay": "42.5",
+        "tier": "Intermediate"
+      },
+      {
+        "rank": 23,
+        "handle": "callum.b",
+        "isDemo": false,
+        "split": 409,
+        "splitDisplay": "40.9",
+        "tier": "Intermediate"
+      },
+      {
+        "rank": 24,
+        "handle": "sean_og",
+        "isDemo": false,
+        "split": 406,
+        "splitDisplay": "40.6",
+        "tier": "Intermediate"
+      }
+    ]
+  },
+  "claims": {
+    "benchIsElite": true,
+    "fiveKIsBeginner": true,
+    "liftingCostsRunning": true
+  }
+}

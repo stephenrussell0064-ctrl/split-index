@@ -1,0 +1,40 @@
+{
+  "name": "tiktok-video",
+  "version": "1.0.0",
+  "description": "Split Index — TikTok launch ad (Remotion)",
+  "repository": {},
+  "license": "UNLICENSED",
+  "private": true,
+  "dependencies": {
+    "@remotion/cli": "4.0.528",
+    "@remotion/google-fonts": "^4.0.528",
+    "@remotion/media": "^4.0.528",
+    "@remotion/motion-blur": "^4.0.528",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "remotion": "4.0.528",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@remotion/eslint-config-flat": "4.0.528",
+    "@types/react": "19.2.7",
+    "@types/web": "0.0.166",
+    "eslint": "9.19.0",
+    "prettier": "3.8.1",
+    "tsx": "^4.23.15",
+    "typescript": "5.9.3"
+  },
+  "scripts": {
+    "dev": "remotion studio",
+    "lint": "eslint src && tsc",
+    "compute": "tsx --tsconfig ../../tsconfig.json scripts/compute-demo.ts",
+    "sfx": "node scripts/gen-sfx.mjs",
+    "render": "node scripts/render-all.mjs",
+    "render:drafts": "node scripts/render-all.mjs --drafts",
+    "studio": "remotion studio",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "sideEffects": [
+    "*.css"
+  ]
+}

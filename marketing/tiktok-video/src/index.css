@@ -1,0 +1,3 @@
+/* Minimal reset. Fonts are loaded by @remotion/google-fonts in theme.ts. */
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: #060606; -webkit-font-smoothing: antialiased; }
