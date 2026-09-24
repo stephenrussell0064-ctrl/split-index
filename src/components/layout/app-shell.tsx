@@ -4,24 +4,19 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import {
-  LayoutDashboard,
-  Dumbbell,
-  Activity,
-  BarChart3,
-  Users,
-  Settings,
-  PlusCircle,
-  MoreHorizontal,
-  Radar,
-  CalendarRange,
-  HeartPulse,
-  X,
-} from "lucide-react";
+import { PlusCircle, MoreHorizontal, X } from "lucide-react";
 import { BrandMark } from "@/components/brand/brand-mark";
 import { mainContentProps } from "@/lib/a11y/main-content";
 import { useDialog } from "@/components/ui/use-dialog";
 import { cn } from "@/lib/utils/cn";
+import {
+  ACCOUNT_NAV,
+  INSIGHTS_NAV,
+  LOG_WORKOUT,
+  PRIMARY_NAV,
+  type AppMode,
+  type NavItem,
+} from "@/lib/navigation/app-nav";
 import { SidebarAccount } from "@/components/layout/sidebar-account";
 import { AppTopBar } from "@/components/layout/app-top-bar";
 import { EdgeSwipeBack } from "@/components/layout/edge-swipe-back";
@@ -30,54 +25,37 @@ import { NativeBillingBootstrap } from "@/components/layout/native-billing-boots
 import { StatusBarModeSync } from "@/components/layout/status-bar-mode-sync";
 import { PendingSyncBanner } from "@/components/activities/pending-sync-banner";
 
-type AppMode = "neutral" | "gym" | "cardio";
-
-const primaryNav = [
-  { href: "/dashboard", label: "Dashboard", shortLabel: "Home", icon: LayoutDashboard, mode: "neutral" as const },
-  { href: "/gym", label: "The Lab", shortLabel: "Lab", icon: Dumbbell, mode: "gym" as const },
-  { href: "/cardio", label: "The Engine", shortLabel: "Engine", icon: Activity, mode: "cardio" as const },
-];
-
-const secondaryNav = [
-  /*
-   * Recovery. A nav item of its own rather than a section of Analytics,
-   * because it is the only surface in the app the athlete has a reason to open
-   * DAILY without having trained — the morning HRV reading, and last night's
-   * drinks. Analytics is where you go to study a month; this is where you go
-   * before deciding what to do today, and burying a daily habit two taps
-   * inside a weekly page is how the habit fails to form.
-   */
-  { href: "/recovery", label: "Recovery", icon: HeartPulse },
-  // First-class nav item for the Interference & Synergy Engine (interference
-  // brief Part 5) — deliberately not a sub-tab under Analytics, since it's
-  // the app's USP and needs to read as one everywhere in the product.
-  { href: "/interference", label: "Interference", icon: Radar },
-  // Hybrid Plan Engine (WP9) — the app's only planning surface.
-  //
-  // There used to be a second one, "/training-plan", sitting directly above
-  // this entry: an older wizard that balanced the coming week across the
-  // athlete's goals. Two adjacent nav items both offering to plan your
-  // training, with no way to tell from the labels which one you wanted, is a
-  // choice nobody can make correctly — and the older one was the weaker
-  // answer. It has been removed (user feedback: "Remove the training plan
-  // page as this is not as good as hybrid plan and may cause confusion to
-  // the user"). /training-plan now 308s here from next.config.ts, so anyone
-  // holding a bookmark lands on the plan that is still maintained.
-  { href: "/hybrid-plan", label: "Hybrid Plan", icon: CalendarRange },
-  { href: "/analytics", label: "Analytics", icon: BarChart3 },
-  { href: "/social", label: "Social", icon: Users },
-  { href: "/settings", label: "Settings", icon: Settings },
-];
+/*
+ * WHERE THE NAVIGATION IS DEFINED — and why it is not here any more.
+ *
+ * The tab bar, the sidebar and the More sheet all used to carry their own
+ * lists of links, labelled with the product's own names ("The Lab", "The
+ * Engine") and nothing else. User feedback: the app is too difficult to
+ * navigate, and nothing explains what anything is. Every destination now
+ * lives in lib/navigation/app-nav.ts with a plain-English label and a
+ * one-sentence description, and the in-app guide at /help is rendered from
+ * the same list. This file only decides where each group is drawn.
+ *
+ * Recovery and Interference are first-class entries rather than sections of
+ * Analytics on purpose — see the notes in app-nav.ts. The retired
+ * /training-plan wizard 308s to /hybrid-plan from next.config.ts.
+ */
+const primaryNav = PRIMARY_NAV;
+/** Everything on the phone's More sheet and in the sidebar below "Train". */
+const secondaryNav: readonly NavItem[] = [...INSIGHTS_NAV, ...ACCOUNT_NAV];
 
 // The main tab roots — every other page reached by drilling in (activity
 // detail, edit forms, gps-run, a social profile, settings/billing, etc.)
 // gets a back button in the top bar. Exact match, not prefix: /gym/log is
 // reached by tapping "Log session" from The Lab, so it needs a back button
 // too even though it shares the /gym prefix with the tab root itself.
-const TOP_LEVEL_ROUTES = new Set<string>([
-  ...primaryNav.map((item) => item.href),
-  ...secondaryNav.map((item) => item.href),
-]);
+//
+// /help is the one menu destination that KEEPS its back button: it is also
+// reached from the "?" beside every explained score, and "back to what I was
+// reading" is the thing a person wants after a one-paragraph answer.
+const TOP_LEVEL_ROUTES = new Set<string>(
+  [...primaryNav, ...secondaryNav].map((item) => item.href).filter((href) => href !== "/help")
+);
 
 function resolveMode(pathname: string): AppMode {
   if (pathname.startsWith("/gym")) return "gym";
@@ -103,13 +81,52 @@ function resolveMode(pathname: string): AppMode {
  * /gym/log and /cardio/log are untouched and still reachable from The Lab and
  * The Engine's own buttons, which is where a zone-specific shortcut belongs.
  */
-const LOG_LAUNCHER_HREF = "/activities/new";
+const LOG_LAUNCHER_HREF = LOG_WORKOUT.href;
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <ModeOverrideProvider>
       <AppShellContent>{children}</AppShellContent>
     </ModeOverrideProvider>
+  );
+}
+
+/** One row of the More sheet: what it is, and one line on what you will find there. */
+function MoreNavRow({
+  item,
+  active,
+  onClose,
+}: {
+  item: NavItem;
+  active: boolean;
+  onClose: () => void;
+}) {
+  const Icon = item.icon;
+  return (
+    <Link
+      href={item.href}
+      onClick={onClose}
+      aria-current={active ? "page" : undefined}
+      className={cn(
+        "flex items-center gap-3 rounded-xl px-2.5 py-2 transition-colors",
+        active ? "bg-white/8" : "hover:bg-white/5"
+      )}
+    >
+      <span
+        className={cn(
+          "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
+          active ? "bg-accent/15 text-accent" : "bg-white/5 text-muted"
+        )}
+      >
+        <Icon className="h-4 w-4" aria-hidden />
+      </span>
+      <span className="min-w-0">
+        <span className={cn("block text-sm font-semibold", active ? "text-foreground" : "text-foreground/90")}>
+          {item.label}
+        </span>
+        <span className="block text-xs leading-snug text-muted">{item.description}</span>
+      </span>
+    </Link>
   );
 }
 
@@ -128,6 +145,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
  * did nothing; and it was announced as an anonymous group of links rather than
  * as a dialog. The X is labelled and reachable, so it was operable — it was the
  * ORIENTATION that was missing, which is the half a screenshot cannot show.
+ *
+ * And what was wrong with it after that: six one-word links. "Interference"
+ * on its own is not a destination anyone can choose, and three whole screens
+ * — the logbook, your profile and the athlete report — were not on it at all.
+ * Every row now says what it is, and the sheet scrolls rather than clipping on
+ * a small phone.
  */
 function MoreNavSheet({
   onClose,
@@ -155,10 +178,10 @@ function MoreNavSheet({
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 16 }}
         transition={{ type: "spring", bounce: 0.1, duration: 0.35 }}
-        className="fixed bottom-[calc(4.25rem+env(safe-area-inset-bottom))] left-3 right-3 z-40 rounded-2xl border border-white/10 glass-strong p-2 lg:hidden"
+        className="fixed bottom-[calc(4.25rem+env(safe-area-inset-bottom))] left-3 right-3 z-40 flex max-h-[calc(100dvh-6rem-env(safe-area-inset-bottom)-env(safe-area-inset-top))] flex-col rounded-2xl border border-white/10 glass-strong lg:hidden"
       >
-        <div className="flex items-center justify-between px-2 pb-1 pt-0.5">
-          <p className="micro-label text-muted/60">More</p>
+        <div className="flex items-center justify-between px-4 pb-1 pt-3">
+          <p className="text-sm font-semibold">Everything else</p>
           <button
             type="button"
             onClick={onClose}
@@ -168,24 +191,15 @@ function MoreNavSheet({
             <X className="h-4 w-4" />
           </button>
         </div>
-        {secondaryNav.map((item) => {
-          const active = isActive(item.href);
-          const Icon = item.icon;
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={onClose}
-              className={cn(
-                "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
-                active ? "text-foreground bg-white/8" : "text-muted hover:text-foreground hover:bg-white/5"
-              )}
-            >
-              <Icon className="h-4 w-4" />
-              {item.label}
-            </Link>
-          );
-        })}
+        <div className="overflow-y-auto p-2 pt-0">
+          {INSIGHTS_NAV.map((item) => (
+            <MoreNavRow key={item.href} item={item} active={isActive(item.href)} onClose={onClose} />
+          ))}
+          <div className="my-1.5 border-t border-white/5" />
+          {ACCOUNT_NAV.map((item) => (
+            <MoreNavRow key={item.href} item={item} active={isActive(item.href)} onClose={onClose} />
+          ))}
+        </div>
       </motion.div>
     </>
   );
@@ -239,11 +253,77 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
   }
 
   /** Where tapping this primary-nav tab actually goes — the last path visited under it, if any, so an in-progress log (or anything else mid-flow) is exactly where it was left rather than resetting to the tab's bare root. */
-  const navHref = (item: (typeof primaryNav)[number]) => lastTabPaths[item.href] ?? item.href;
+  const navHref = (item: NavItem) => lastTabPaths[item.href] ?? item.href;
 
   const isActive = (href: string) =>
     pathname === href ||
     (href !== "/dashboard" && pathname.startsWith(href));
+
+  /** The zone colour a primary tab lights up in when it is the current one. */
+  const accentClassFor = (item: NavItem) =>
+    item.mode === "gym"
+      ? "text-gym-accent"
+      : item.mode === "cardio"
+        ? "text-cardio-accent"
+        : "text-accent";
+
+  /** One phone tab. Label at 11px, not 10 — the smallest size the app's own label style allows. */
+  const tabLink = (item: NavItem) => {
+    const active = isActive(item.href);
+    const Icon = item.icon;
+    return (
+      <Link
+        key={item.href}
+        href={navHref(item)}
+        aria-current={active ? "page" : undefined}
+        className={cn(
+          "flex min-w-0 flex-col items-center gap-1 rounded-2xl px-3 py-2 text-[11px] font-medium transition-colors",
+          active ? cn("bg-white/8", accentClassFor(item)) : "text-muted"
+        )}
+      >
+        <Icon className="h-6 w-6 shrink-0" aria-hidden />
+        <span className="truncate">{item.shortLabel ?? item.label}</span>
+      </Link>
+    );
+  };
+
+  /** One sidebar entry: the plain label, and the product's own name for it beside it where there is one. */
+  const sidebarLink = (item: NavItem, layoutId: string) => {
+    const active = isActive(item.href);
+    const Icon = item.icon;
+    return (
+      <Link
+        key={item.href}
+        href={item.group === "primary" ? navHref(item) : item.href}
+        aria-current={active ? "page" : undefined}
+        title={item.description}
+        className={cn(
+          "relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
+          active ? "text-foreground" : "text-muted hover:text-foreground hover:bg-white/5"
+        )}
+      >
+        {active && (
+          <motion.div
+            layoutId={layoutId}
+            className={cn(
+              "absolute inset-0 rounded-xl border",
+              item.mode === "gym" &&
+                "bg-gym-accent/10 border-gym-accent/25 shadow-[0_0_24px_-8px_var(--gym-glow)]",
+              item.mode === "cardio" &&
+                "bg-cardio-accent/10 border-cardio-accent/25 shadow-[0_0_24px_-8px_var(--cardio-glow)]",
+              (item.mode === "neutral" || !item.mode) && "bg-white/8 border-white/10"
+            )}
+            transition={{ type: "spring", bounce: 0.15, duration: 0.5 }}
+          />
+        )}
+        <Icon className={cn("relative h-4 w-4", active && item.mode && accentClassFor(item))} aria-hidden />
+        <span className="relative">{item.label}</span>
+        {item.brandName && (
+          <span className="relative ml-auto text-[11px] font-normal text-muted">{item.brandName}</span>
+        )}
+      </Link>
+    );
+  };
 
   return (
     // min-h-dvh, not min-h-screen (100vh): on mobile, 100vh locks to the
@@ -285,56 +365,20 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
             <BrandMark variant="compact" iconSize={34} wordmarkSize="md" showTagline />
             <p className="mt-2.5 text-[11px] text-muted pl-[42px]">
               {mode === "gym"
-                ? "The Lab · Strength"
+                ? "Strength · The Lab"
                 : mode === "cardio"
-                  ? "The Engine · Endurance"
+                  ? "Endurance · The Engine"
                   : "Hybrid Analytics"}
             </p>
           </Link>
 
-          <nav aria-label="Primary" className="flex-1 px-3 py-4 space-y-1">
+          <nav aria-label="Primary" className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
             <p className="px-3 pb-2 micro-label text-muted/60">Train</p>
-            {primaryNav.map((item) => {
-              const active = isActive(item.href);
-              const Icon = item.icon;
-              const accentClass =
-                item.mode === "gym"
-                  ? "text-gym-accent"
-                  : item.mode === "cardio"
-                    ? "text-cardio-accent"
-                    : "text-accent";
-
-              return (
-                <Link
-                  key={item.href}
-                  href={navHref(item)}
-                  className={cn(
-                    "relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
-                    active ? "text-foreground" : "text-muted hover:text-foreground hover:bg-white/5"
-                  )}
-                >
-                  {active && (
-                    <motion.div
-                      layoutId="nav-active-primary"
-                      className={cn(
-                        "absolute inset-0 rounded-xl border",
-                        item.mode === "gym" &&
-                          "bg-gym-accent/10 border-gym-accent/25 shadow-[0_0_24px_-8px_var(--gym-glow)]",
-                        item.mode === "cardio" &&
-                          "bg-cardio-accent/10 border-cardio-accent/25 shadow-[0_0_24px_-8px_var(--cardio-glow)]",
-                        item.mode === "neutral" && "bg-white/8 border-white/10"
-                      )}
-                      transition={{ type: "spring", bounce: 0.15, duration: 0.5 }}
-                    />
-                  )}
-                  <Icon className={cn("relative h-4 w-4", active && accentClass)} />
-                  <span className="relative">{item.label}</span>
-                </Link>
-              );
-            })}
+            {primaryNav.map((item) => sidebarLink(item, "nav-active-primary"))}
 
             <Link
               href={logHref}
+              title={LOG_WORKOUT.description}
               className={cn(
                 "relative mt-2 flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
                 isActive(logHref) || pathname.endsWith("/log")
@@ -342,37 +386,20 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
                   : "text-muted hover:text-foreground hover:bg-white/5"
               )}
             >
-              <PlusCircle className="h-4 w-4" />
-              Log Workout
+              <PlusCircle className="h-4 w-4" aria-hidden />
+              {LOG_WORKOUT.label}
             </Link>
 
             <div className="my-4 border-t border-white/5" />
             <p className="px-3 pb-2 micro-label text-muted/60">Insights</p>
-            {secondaryNav.map((item) => {
-              const active = isActive(item.href);
-              const Icon = item.icon;
+            {INSIGHTS_NAV.map((item) => sidebarLink(item, "nav-active-secondary"))}
 
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={cn(
-                    "relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
-                    active ? "text-foreground" : "text-muted hover:text-foreground hover:bg-white/5"
-                  )}
-                >
-                  {active && (
-                    <motion.div
-                      layoutId="nav-active-secondary"
-                      className="absolute inset-0 rounded-xl bg-white/8 border border-white/10"
-                      transition={{ type: "spring", bounce: 0.15, duration: 0.5 }}
-                    />
-                  )}
-                  <Icon className="relative h-4 w-4" />
-                  <span className="relative">{item.label}</span>
-                </Link>
-              );
-            })}
+            <div className="my-4 border-t border-white/5" />
+            <p className="px-3 pb-2 micro-label text-muted/60">Account</p>
+            {/* Profile is the account block at the foot of the sidebar, so it is not listed twice. */}
+            {ACCOUNT_NAV.filter((item) => item.href !== "/profile").map((item) =>
+              sidebarLink(item, "nav-active-secondary")
+            )}
           </nav>
 
           <SidebarAccount />
@@ -383,34 +410,11 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
         </AnimatePresence>
 
         <nav aria-label="Bottom tab bar" className="fixed bottom-0 left-0 right-0 z-40 flex items-center justify-around border-t border-white/5 glass-strong px-1 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] lg:hidden">
-          {[primaryNav[0], primaryNav[1]].map((item) => {
-            const active = isActive(item.href);
-            const Icon = item.icon;
-            const accentClass =
-              item.mode === "gym"
-                ? "text-gym-accent"
-                : item.mode === "cardio"
-                  ? "text-cardio-accent"
-                  : "text-accent";
-
-            return (
-              <Link
-                key={item.href}
-                href={navHref(item)}
-                className={cn(
-                  "flex min-w-0 flex-col items-center gap-1 rounded-2xl px-3 py-2 text-[10px] font-medium transition-colors",
-                  active ? cn("bg-white/8", accentClass) : "text-muted"
-                )}
-              >
-                <Icon className="h-6 w-6 shrink-0" />
-                <span className="truncate">{item.shortLabel}</span>
-              </Link>
-            );
-          })}
+          {[primaryNav[0], primaryNav[1]].map(tabLink)}
 
           <Link
             href={logHref}
-            aria-label="Log workout"
+            aria-label={LOG_WORKOUT.label}
             className={cn(
               "-mt-6 flex h-14 w-14 shrink-0 items-center justify-center rounded-full shadow-lg transition-transform active:scale-95",
               mode === "gym"
@@ -420,28 +424,10 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
                   : "bg-accent text-accent-foreground shadow-accent/30"
             )}
           >
-            <PlusCircle className="h-7 w-7" />
+            <PlusCircle className="h-7 w-7" aria-hidden />
           </Link>
 
-          {[primaryNav[2]].map((item) => {
-            const active = isActive(item.href);
-            const Icon = item.icon;
-            const accentClass = item.mode === "cardio" ? "text-cardio-accent" : "text-accent";
-
-            return (
-              <Link
-                key={item.href}
-                href={navHref(item)}
-                className={cn(
-                  "flex min-w-0 flex-col items-center gap-1 rounded-2xl px-3 py-2 text-[10px] font-medium transition-colors",
-                  active ? cn("bg-white/8", accentClass) : "text-muted"
-                )}
-              >
-                <Icon className="h-6 w-6 shrink-0" />
-                <span className="truncate">{item.shortLabel}</span>
-              </Link>
-            );
-          })}
+          {[primaryNav[2]].map(tabLink)}
 
           {/* A toggle that does not say whether it is open leaves a screen
               reader user tapping it to find out — and closing the sheet they
@@ -452,13 +438,13 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
             aria-expanded={moreOpen}
             aria-controls="more-nav-sheet"
             className={cn(
-              "flex min-w-0 flex-col items-center gap-1 rounded-2xl px-3 py-2 text-[10px] font-medium transition-colors",
+              "flex min-w-0 flex-col items-center gap-1 rounded-2xl px-3 py-2 text-[11px] font-medium transition-colors",
               moreOpen || secondaryNav.some((item) => isActive(item.href))
                 ? "bg-white/8 text-accent"
                 : "text-muted"
             )}
           >
-            <MoreHorizontal className="h-6 w-6 shrink-0" />
+            <MoreHorizontal className="h-6 w-6 shrink-0" aria-hidden />
             <span className="truncate">More</span>
           </button>
         </nav>

@@ -137,6 +137,22 @@ export default async function RecoveryPage() {
         eyebrow="Recovery"
         title="How recovered are you, really"
         subtitle="Training load, heart-rate variability, how often you've trained and what you drank — combined into one number, with every input shown."
+        help={
+          <>
+            <p>
+              Your recovery score is a single number, out of 100, for how ready your body is to
+              train hard today. High means go for it; low means an easy day or a rest day will
+              do you more good.
+            </p>
+            <p>
+              It is built from how much training you have done recently, your heart-rate
+              variability if you record it, how many days in a row you have trained, and any
+              drinks you logged last night. Each of those is shown underneath so you can see what
+              is pulling the number down.
+            </p>
+          </>
+        }
+        helpHref="/help#recovery"
       />
 
       <RecoveryScoreCard result={result} />

@@ -71,6 +71,7 @@ export const NONCE_PATH_PREFIXES = [
   "/cardio",
   "/dashboard",
   "/gym",
+  "/help",
   "/hybrid-plan",
   "/interference",
   "/onboarding",

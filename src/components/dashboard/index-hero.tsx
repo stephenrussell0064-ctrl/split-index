@@ -3,6 +3,7 @@
 import { motion, useReducedMotion } from "framer-motion";
 import { Flame } from "lucide-react";
 import { Card } from "@/components/ui/card";
+import { InfoHint } from "@/components/ui/info-hint";
 import { ProgressRing } from "@/components/ui/progress-ring";
 import { CountUp } from "@/components/dashboard/count-up";
 import { cn } from "@/lib/utils/cn";
@@ -64,15 +65,23 @@ function SubIndex({
   caption,
   value,
   accentClass,
+  hint,
 }: {
   label: string;
   caption: string;
   value: number | null;
   accentClass: string;
+  /** What this score is, for the "?" beside its label. */
+  hint: React.ReactNode;
 }) {
   return (
     <div className="min-w-0">
-      <p className="micro-label text-muted/70">{label}</p>
+      <div className="micro-label flex items-center gap-1.5 text-muted/70">
+        {label}
+        <InfoHint label={`the ${label} score`} title={`Your ${label} score`}>
+          {hint}
+        </InfoHint>
+      </div>
       <p className={cn("index-display mt-0.5 text-xl font-bold tabular-nums", accentClass)}>
         {value !== null ? formatIndex(value) : "TBC"}
       </p>
@@ -121,7 +130,27 @@ export function IndexHero({
       <Card glow="accent" padding="sm" className="relative overflow-hidden p-4">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <p className="micro-label text-muted">{headlineLabel}</p>
+            {/*
+              The "?" is the answer to the complaint above, one tap from the
+              number: what it is, what it is out of, and what the word beside
+              it means. The caption underneath stays — it is the answer for
+              people who never tap anything.
+            */}
+            {/* A div, not a p: the "?" opens a sheet with its own paragraphs, and a p cannot contain them. */}
+            <div className="micro-label flex items-center gap-1.5 text-muted">
+              {headlineLabel}
+              <InfoHint label={headlineLabel}>
+                <p>
+                  Your strength and your endurance, combined into one number out of 100. It is
+                  worked out from the sessions you log, and it changes a little after every one.
+                </p>
+                <p>
+                  The word beside it — from Beginner up to World Class — is the band that number
+                  falls into. The two smaller scores underneath are the two halves it is made
+                  from.
+                </p>
+              </InfoHint>
+            </div>
             {showScore ? (
               <>
                 {/*
@@ -217,17 +246,37 @@ export function IndexHero({
         </div>
 
         <div className="mt-3 grid grid-cols-3 gap-3 border-t border-white/[0.06] pt-3">
+          {/*
+            Plain word as the label, product name as the caption — it was the
+            other way round ("Engine" over "Endurance score"), which is the
+            order that made a new athlete ask what an engine had to do with
+            running. Same words, same order, as the tab bar.
+          */}
           <SubIndex
-            label="Engine"
-            caption="Endurance score"
+            label="Endurance"
+            caption="The Engine · out of 100"
             value={provisional ? null : engineIndex}
             accentClass="text-endurance"
+            hint={
+              <p>
+                How your running, cycling, rowing and swimming compare with published standards
+                for your age and sex, out of 100. Built from the endurance sessions you log — the
+                app calls this side of your training The Engine.
+              </p>
+            }
           />
           <SubIndex
-            label="Lab"
-            caption="Strength score"
+            label="Strength"
+            caption="The Lab · out of 100"
             value={provisional ? null : labIndex}
             accentClass="text-strength"
+            hint={
+              <p>
+                How your lifting compares with published strength standards for your bodyweight,
+                age and sex, out of 100. Built from the gym sessions you log — the app calls this
+                side of your training The Lab.
+              </p>
+            }
           />
           <div className="min-w-0">
             <p className="micro-label text-muted/70">Streak</p>

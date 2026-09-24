@@ -1,3 +1,4 @@
+import { InfoHint } from "@/components/ui/info-hint";
 import { cn } from "@/lib/utils/cn";
 
 interface PageHeaderProps {
@@ -6,6 +7,15 @@ interface PageHeaderProps {
   subtitle?: string;
   action?: React.ReactNode;
   className?: string;
+  /**
+   * A plain-English explanation of what this page is for, opened from a "?"
+   * beside the title. The subtitle is the one-line version; this is the one
+   * that can take a paragraph, for the person who has never seen the page
+   * before (user feedback: nothing in the app says what anything is).
+   */
+  help?: React.ReactNode;
+  /** Where the explanation's "Read more in the guide" link goes. */
+  helpHref?: string;
 }
 
 export function PageHeader({
@@ -14,6 +24,8 @@ export function PageHeader({
   subtitle,
   action,
   className,
+  help,
+  helpHref,
 }: PageHeaderProps) {
   return (
     <div
@@ -42,9 +54,16 @@ export function PageHeader({
           Index app, not the website." are not decoration. The two that really
           are decoration are removed at their call sites instead.
         */}
-        <h1 className="text-xl font-semibold tracking-tight md:text-3xl">
-          {title}
-        </h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-xl font-semibold tracking-tight md:text-3xl">
+            {title}
+          </h1>
+          {help && (
+            <InfoHint label="this page" title={`About ${title}`} learnMoreHref={helpHref}>
+              {help}
+            </InfoHint>
+          )}
+        </div>
         {subtitle && (
           <p className="mt-1.5 text-sm leading-relaxed text-muted">
             {subtitle}

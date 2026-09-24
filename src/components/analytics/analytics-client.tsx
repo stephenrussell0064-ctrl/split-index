@@ -245,6 +245,20 @@ export function AnalyticsClient({ data }: { data: AnalyticsPayload }) {
       <PageHeader
         eyebrow="Performance"
         title="Analytics"
+        help={
+          <>
+            <p>
+              Home shows you today. This page shows you the last few weeks and months: how your
+              scores have moved, how much you have trained, how consistent you have been, and
+              what the app predicts you could run or lift next.
+            </p>
+            <p>
+              Change the date range at the top to zoom in or out. Anything marked Premium is a
+              chart the free plan does not include.
+            </p>
+          </>
+        }
+        helpHref="/help#getting-around"
         action={
           !data.isPremium ? (
             <p className="text-xs text-muted">

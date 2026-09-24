@@ -98,6 +98,20 @@ export function SocialHub({
       <PageHeader
         eyebrow="Community"
         title="Social"
+        help={
+          <>
+            <p>
+              Add friends to see their scores next to yours, join leaderboards ranked on the
+              Split Index, take on challenges and duels, and collect achievements for milestones
+              in your own training.
+            </p>
+            <p>
+              Nothing about you is shown to other people unless you add them as a friend or
+              choose to appear on a leaderboard.
+            </p>
+          </>
+        }
+        helpHref="/help#getting-around"
       />
 
       {/*

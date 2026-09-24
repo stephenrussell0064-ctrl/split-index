@@ -5,6 +5,7 @@ import { format } from "date-fns";
 import { createClient } from "@/lib/supabase/server";
 import { EngineLabTrendCard } from "@/components/dashboard/engine-lab-trend-card";
 import { IndexHero } from "@/components/dashboard/index-hero";
+import { GettingAroundCard } from "@/components/dashboard/getting-around-card";
 import {
   LiftPredictionStrip,
   RacePredictionStrip,
@@ -683,6 +684,14 @@ export default async function DashboardPage() {
           {format(new Date(), "EEE d MMM")} · {sessionHint}
         </p>
       </div>
+
+      {/*
+        ONCE, EVER: what the five controls at the bottom of the screen are.
+        Renders nothing after it has been dismissed, and nothing at all on the
+        server, so it costs a returning athlete no height. User feedback: the
+        app is hard to get around, and nothing ever said how it was laid out.
+      */}
+      <GettingAroundCard />
 
       {/*
         THE WHOLE SCREEN, ONCE A DAY. Renders nothing at all unless there is a

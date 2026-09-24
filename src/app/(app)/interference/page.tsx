@@ -31,6 +31,21 @@ export default async function InterferencePage() {
         eyebrow="Cross-Training Intelligence"
         title="Interference Radar"
         subtitle="Is your lifting hurting your running? Is your running hurting your squat? Mined from your own paired history — not a population average dressed up as personal advice."
+        help={
+          <>
+            <p>
+              Interference is what happens when one kind of training gets in the way of the
+              other — a heavy leg day that leaves your run two days later slower than it should
+              be, or a long run that takes the edge off your squat.
+            </p>
+            <p>
+              This page looks at pairs of your own sessions that were close together and shows
+              you where that is happening, and where the two are actually helping each other.
+              It needs a few weeks of both kinds of training before it has enough to say.
+            </p>
+          </>
+        }
+        helpHref="/help#interference"
       />
       <InterferenceDetail report={report} />
       {/* A teaser for the planning surface keeps the natural connection here
