@@ -162,8 +162,9 @@ export function DrinkLogger() {
           moment they decide whether to type anything at all.
         */}
         <p className="text-xs leading-relaxed text-muted">
-          Used only to estimate your recovery and your next session. Private to you —
-          never shown to other athletes, never on a leaderboard or a share card. Delete
+          Used only to estimate your recovery and your next session. Your drinks are private
+          to you — never shown to other athletes, never on a share card. The streak
+          leaderboard shows days since your last drink only if you separately opt in. Delete
           any entry, or all of it, whenever you like.
         </p>
 

@@ -72,11 +72,13 @@ export default function PrivacyPolicyPage() {
                   <strong>Alcohol intake, if you choose to record it:</strong> the drink,
                   its volume and strength, how many, and the time you had it. It is used
                   for one thing — estimating the effect on your recovery score and your
-                  next session — and it is never shown to another athlete, never put on a
-                  leaderboard, a share card or a social feed, and never sent to an
-                  analytics service. Recording it is entirely optional; every other part
-                  of Split Index works whether you do or not, and you can delete any entry
-                  from the Recovery page at any time.
+                  next session — and it is never sent to an analytics service. Your
+                  individual drinks are never shown to another athlete. The single
+                  exception is the alcohol-free streak leaderboard, which shows days since
+                  your last drink and only if you explicitly opt in; it is described in
+                  full below. Recording alcohol is entirely optional; every other part of
+                  Split Index works whether you do or not, and you can delete any entry —
+                  or your whole history — from the Recovery page at any time.
                 </li>
                 <li>
                   <strong>Onboarding and preferences:</strong> age, height, weight, gender,
@@ -299,9 +301,26 @@ export default function PrivacyPolicyPage() {
                   how a workout is likely to go, and we do not use it to assess your
                   health. Specifically, we do not screen your drinking, score it against
                   any clinical questionnaire, or draw any conclusion about your health
-                  from the pattern of it. Alongside that, your alcohol log is never shown
-                  to another athlete, never appears on a leaderboard, a share card or a
-                  social feed, and is never sent to an analytics provider.
+                  from the pattern of it. Your individual drinks are never shown to
+                  another athlete, never appear on a share card or a social feed, and are
+                  never sent to an analytics provider.
+                </li>
+                <li>
+                  <strong>The alcohol-free streak leaderboard — explicit consent.</strong>{" "}
+                  This is the one thing derived from your alcohol log that other people can
+                  see, and you are not on it unless you have separately and explicitly
+                  chosen to be. Showing other athletes how long you have gone without a
+                  drink is special category health data, so it has its own consent, its own
+                  record of exactly what you were shown when you agreed, and its own
+                  one-press withdrawal. What appears is a number of days since your last
+                  logged drink, a count of how long you have been tracking, and the
+                  username, display name and avatar already on your public profile. Your
+                  individual drinks, units, volumes, times, weekly totals and Recovery score
+                  are never part of it. Refusing costs you nothing else — you can still log
+                  drinks, still get your Recovery score and session forecast, and still view
+                  the leaderboard; you simply will not appear on it. Leaving removes you
+                  immediately, and nothing derived from it is retained, because the board is
+                  calculated on demand rather than stored.
                 </li>
               </ul>
               <p className="mt-3">

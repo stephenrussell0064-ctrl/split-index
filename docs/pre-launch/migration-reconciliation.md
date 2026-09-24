@@ -290,6 +290,31 @@ Two details in that result are worth naming rather than skimming:
 So this row rests on probes that answer for themselves, and carries none of the
 caveat 085's row does in §4.4.
 
+### 4.6 087 is written and NOT yet applied
+
+`087_alcohol_free_streak_leaderboard` — the `public_alcohol_free_streaks` view
+behind the opt-in leaderboard. Written against production at version `086`, and
+deliberately **not** given a row in §1, because §1 records what production
+actually has.
+
+It is recorded here so the gap between "the file exists" and "the database has
+it" stays visible. Until it is applied, the leaderboard page renders empty
+rather than erroring — PostgREST returns an error object for a missing
+relation and the page reads `data ?? []` — so shipping the code ahead of the
+migration is safe in that direction, and only in that direction.
+
+When it is applied, move it into §1 with these probes. The first two are the
+ones that matter, and neither is "does the view exist":
+
+| Probe | Expect | What it settles |
+|---|---|---|
+| `public_alcohol_free_streaks` as `anon` | denied | the REVOKE landed; this is health-adjacent data about named people |
+| `SELECT count(*)` with no consent rows anywhere | `0` | the consent predicate is real, not decorative — a view that exists and returns everybody would mean the JOIN was dropped |
+| `drink_logs` as `anon` | still denied | 087 did not loosen 086 on its way past |
+
+A probe that only confirmed the view existed would pass on the one failure
+that actually matters here: a board that lists athletes who never opted in.
+
 ---
 
 ## 5. Where this leaves the project

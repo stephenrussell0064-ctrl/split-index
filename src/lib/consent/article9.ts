@@ -47,10 +47,25 @@ import { SECTION_FIELDS, type IntakeSection } from "@/lib/scoring/hpe/intake-rec
  *      fact and stays on the right side of this; "your drinking suggests X"
  *      does not, and would move the whole table into Article 9 the day it
  *      shipped.
- *   2. NEVER SHARED. Not on a leaderboard, a share card, a social feed, a
- *      friend's activity view, a public_* projection, or an analytics service.
+ *   2. NEVER SHARED WITHOUT EXPLICIT CONSENT. The drinks themselves are never
+ *      shared at all — not on a share card, a social feed, a friend's activity
+ *      view, or an analytics service, and no surface can show another
+ *      athlete's drink, unit, volume or timestamp.
+ *
+ *      There is exactly ONE derived exception, added by migration 087: the
+ *      alcohol-free streak leaderboard publishes days since an athlete's last
+ *      logged drink — and only for athletes who granted
+ *      LEADERBOARD_CONSENT_KEY below. That consent exists BECAUSE this
+ *      condition would otherwise be broken: the moment the data leaves the
+ *      athlete's own account it is special category, and explicit consent is
+ *      the only Article 9 condition available for it. The gate is therefore
+ *      not a nicety, and softening it re-opens a question this classification
+ *      depends on.
+ *
  *      recovery-data-is-private.test.ts fails the build if a query for this
- *      table appears outside the recovery feature.
+ *      table appears outside the recovery feature, if a second view reads it,
+ *      if that one view loses its consent predicate, or if it starts
+ *      projecting drink detail.
  *   3. GENUINELY OPTIONAL. Nothing in the app requires a drink to be logged,
  *      and the Recovery score is computed and shown without it.
  *   4. ERASABLE IN ONE ACTION. DELETE /api/recovery/drinks removes the lot,
@@ -116,6 +131,54 @@ export const ARTICLE9_CONSENT_TEXT = [
   "You can take this back at any time from Settings, in one action. When you do, we delete these answers rather than hiding them.",
 ].join("\n\n");
 
+/**
+ * The SECOND consent. 060 said `consent_key` existed so a second category
+ * would not need a second table, and warned in the same breath that it "is not
+ * an invitation to bundle: Article 9 consent must stay granular and separately
+ * refusable". This is that second key, and it is separately refusable —
+ * refusing it has no effect whatever on the Hybrid Plan, and refusing the
+ * Hybrid Plan's has no effect on this.
+ *
+ * WHY SHARING NEEDS CONSENT WHEN LOGGING DOES NOT. Holding a drink log to
+ * estimate a training decrement is ordinary personal data (the argument is at
+ * the top of this file). Publishing how long a named athlete has gone without
+ * a drink, where other people can read it, is special category data — the
+ * moment it leaves the athlete's own account, the "never shared" condition
+ * that classification rests on is gone, and explicit consent is the only
+ * Article 9 condition a commercial fitness product can rely on.
+ *
+ * So the gate sits in front of APPEARING on the board, never in front of
+ * logging. An athlete who refuses this still logs drinks, still gets a Recovery
+ * score, and still sees the leaderboard — they simply are not on it.
+ */
+export const LEADERBOARD_CONSENT_KEY = "alcohol_free_streak_leaderboard";
+
+export const LEADERBOARD_CONSENT_VERSION = "2026-09-24.1";
+
+export const LEADERBOARD_CONSENT_TEXT = [
+  "The alcohol-free streak leaderboard shows other Split Index athletes how many days it has been since your last logged drink, next to your username, display name and avatar.",
+  "How much you drink is health data, and UK law treats it differently from the rest of what Split Index holds. Keeping that log privately to estimate your recovery is one thing; showing it to other people is another, and we can only do the second if you explicitly say we can. Ticking this box is that permission.",
+  "What appears is a number of days and a count of how long you have been tracking. Your individual drinks never appear — not what you drank, not how much, not when, not your weekly units, not your recovery score. Nobody can see those but you.",
+  "You do not have to agree, and nothing else changes if you don't. You can still log drinks, still get your Recovery score and your session forecast, and still look at the leaderboard — you just will not be on it.",
+  "You can take this back at any time, in one action, from the leaderboard or from Settings. You disappear from the board immediately, and we keep nothing derived from it.",
+].join("\n\n");
+
+/** Every consent this app asks for, so a caller cannot invent a key by typo. */
+export const CONSENT_DEFINITIONS = {
+  [ARTICLE9_CONSENT_KEY]: {
+    key: ARTICLE9_CONSENT_KEY,
+    version: ARTICLE9_CONSENT_VERSION,
+    text: ARTICLE9_CONSENT_TEXT,
+  },
+  [LEADERBOARD_CONSENT_KEY]: {
+    key: LEADERBOARD_CONSENT_KEY,
+    version: LEADERBOARD_CONSENT_VERSION,
+    text: LEADERBOARD_CONSENT_TEXT,
+  },
+} as const;
+
+export type ConsentKey = keyof typeof CONSENT_DEFINITIONS;
+
 export interface Article9ConsentState {
   granted: boolean;
   /** When the current state was decided. Null if the athlete has never been asked. */
@@ -140,7 +203,14 @@ interface ConsentEventRow {
  */
 export async function getArticle9Consent(
   supabase: SupabaseClient,
-  userId: string
+  userId: string,
+  /*
+   * Defaulted so the four Hybrid Plan call sites read exactly as they did.
+   * A second consent must not be able to arrive by a caller forgetting an
+   * argument — and it cannot, because the default is the key that was here
+   * before, not the new one.
+   */
+  consentKey: ConsentKey = ARTICLE9_CONSENT_KEY
 ): Promise<Article9ConsentState> {
   const notGranted: Article9ConsentState = {
     granted: false,
@@ -153,7 +223,7 @@ export async function getArticle9Consent(
       .from("article9_consent_events")
       .select("action, wording_version, created_at")
       .eq("user_id", userId)
-      .eq("consent_key", ARTICLE9_CONSENT_KEY)
+      .eq("consent_key", consentKey)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -174,9 +244,10 @@ export async function getArticle9Consent(
 /** Convenience for the many call sites that only need the boolean. */
 export async function hasArticle9Consent(
   supabase: SupabaseClient,
-  userId: string
+  userId: string,
+  consentKey: ConsentKey = ARTICLE9_CONSENT_KEY
 ): Promise<boolean> {
-  return (await getArticle9Consent(supabase, userId)).granted;
+  return (await getArticle9Consent(supabase, userId, consentKey)).granted;
 }
 
 /**
@@ -188,16 +259,26 @@ export async function hasArticle9Consent(
 export async function recordArticle9Event(
   supabase: SupabaseClient,
   userId: string,
-  action: "granted" | "withdrawn"
+  action: "granted" | "withdrawn",
+  consentKey: ConsentKey = ARTICLE9_CONSENT_KEY
 ): Promise<{ error: string | null }> {
+  /*
+   * Version and text come from the definition for THIS key, never from the
+   * module-level constants. Reading those directly would have stored the
+   * Hybrid Plan's wording against a leaderboard consent — an evidence record
+   * describing a screen the athlete was never shown, which is worse than
+   * having no record at all.
+   */
+  const definition = CONSENT_DEFINITIONS[consentKey];
+
   const { error } = await supabase.from("article9_consent_events").insert({
     user_id: userId,
     action,
-    consent_key: ARTICLE9_CONSENT_KEY,
-    wording_version: ARTICLE9_CONSENT_VERSION,
+    consent_key: definition.key,
+    wording_version: definition.version,
     // The text as shown, stored with the event rather than referenced, so this
     // row still answers "what did they agree to" after the constant changes.
-    wording_text: ARTICLE9_CONSENT_TEXT,
+    wording_text: definition.text,
   });
 
   return { error: error ? "Could not record your choice. Please try again." : null };

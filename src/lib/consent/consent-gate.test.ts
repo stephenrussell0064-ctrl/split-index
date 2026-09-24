@@ -62,6 +62,63 @@ function callSites(): string[] {
 }
 
 /**
+ * There are TWO consents now, and this file must not confuse them.
+ *
+ * `article9.ts` serves both keys through the same functions, so a plain grep
+ * for `hasArticle9Consent` finds call sites for either. Splitting them by the
+ * key they name keeps each boundary assertable on its own terms — the Hybrid
+ * Plan's consent must not spread to the leaderboard, and the leaderboard's
+ * must not spread to logging. Bundling them would be precisely the thing 060
+ * warns against.
+ *
+ * A call site that names no key is using the default, which is the HPE key.
+ */
+function callSitesFor(which: "hpe" | "leaderboard"): string[] {
+  return callSites().filter((f) => {
+    const usesLeaderboardKey = readFileSync(join(SRC, f.slice(1)), "utf8").includes(
+      "LEADERBOARD_CONSENT_KEY"
+    );
+    return which === "leaderboard" ? usesLeaderboardKey : !usesLeaderboardKey;
+  });
+}
+
+/**
+ * Where the leaderboard consent is allowed to be, and why.
+ *
+ * Short by design. This consent buys exactly one thing — appearing on the
+ * streak board — so it may only be consulted where that is decided.
+ */
+const LEADERBOARD_GATED_SURFACES: Record<string, string> = {
+  "/app/api/consent/leaderboard/route.ts": "Joining and leaving, reading and recording the decision.",
+  "/app/(app)/recovery/leaderboard/page.tsx":
+    "The board, which shows the athlete whether they are currently on it.",
+};
+
+describe("the leaderboard consent gates appearing on the board, and nothing else", () => {
+  it("is consulted only where appearing on the board is decided", () => {
+    const unexpected = callSitesFor("leaderboard").filter((f) => !LEADERBOARD_GATED_SURFACES[f]);
+    expect(unexpected).toEqual([]);
+  });
+
+  it("never gates logging a drink, the recovery score, or the session forecast", () => {
+    /*
+     * The promise the consent wording makes in as many words: "You can still
+     * log drinks, still get your Recovery score and your session forecast, and
+     * still look at the leaderboard — you just will not be on it." A gate that
+     * crept onto the logger or the score would make that sentence false, and
+     * a consent you must give to keep using what you already had is not freely
+     * given.
+     */
+    const forbidden = callSitesFor("leaderboard").filter((f) =>
+      /drink-logger|recovery\/page|recovery\/score|recovery\/data|api\/recovery\/drinks|activities|scoring|billing|stripe|revenuecat/i.test(
+        f
+      )
+    );
+    expect(forbidden).toEqual([]);
+  });
+});
+
+/**
  * Where the gate is allowed to be, and why.
  *
  * Anything else appearing here is either the gate spreading into a surface the
@@ -82,14 +139,14 @@ const GATED_SURFACES: Record<string, string> = {
 
 describe("the gate reaches the Hybrid Plan and the Risk Index, and nothing else", () => {
   it("is consulted only on surfaces the consent covers", () => {
-    const unexpected = callSites().filter((f) => !GATED_SURFACES[f]);
+    const unexpected = callSitesFor("hpe").filter((f) => !GATED_SURFACES[f]);
     expect(unexpected).toEqual([]);
   });
 
   it("is still consulted on every one of them", () => {
     // The other way this goes wrong: a refactor that drops the check. An
     // ungated HPE route processes health answers without permission.
-    const sites = callSites();
+    const sites = callSitesFor("hpe");
     const missing = Object.keys(GATED_SURFACES).filter((f) => !sites.includes(f));
     expect(missing).toEqual([]);
   });
@@ -98,7 +155,7 @@ describe("the gate reaches the Hybrid Plan and the Risk Index, and nothing else"
     // The named surfaces from the docblock, stated as themselves rather than
     // left implicit in the list above — these are the ones a consent may not
     // cost you.
-    const forbidden = callSites().filter((f) =>
+    const forbidden = callSitesFor("hpe").filter((f) =>
       /activities|logbook|scoring|leaderboard|social|billing|subscription|stripe|revenuecat/i.test(f)
     );
     expect(forbidden).toEqual([]);

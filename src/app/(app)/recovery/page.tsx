@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { ArrowRight, Radar } from "lucide-react";
+import { ArrowRight, Radar, Trophy } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card } from "@/components/ui/card";
@@ -161,6 +161,32 @@ export default async function RecoveryPage() {
       </div>
 
       <DrinkLogger />
+
+      {/*
+        The leaderboard entry point, directly under the logger.
+
+        Deliberately placed AFTER logging rather than before it: the streak it
+        ranks is built from logged drinks, so the board means nothing to
+        somebody who has not logged any, and leading with it would sell a
+        competition before the thing it is scored on. Styled as a lit card
+        rather than a text link because it was asked for as very visible.
+      */}
+      <Link href="/recovery/leaderboard" className="block">
+        <Card interactive glow="accent" padding="lg" className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-accent/15">
+              <Trophy className="h-6 w-6 text-accent" />
+            </div>
+            <div>
+              <p className="text-base font-semibold">Alcohol-free streak leaderboard</p>
+              <p className="text-sm text-muted">
+                See how your dry days compare. Opt-in — you choose whether you appear.
+              </p>
+            </div>
+          </div>
+          <ArrowRight className="h-5 w-5 shrink-0 text-accent" />
+        </Card>
+      </Link>
 
       {hasRecentAlcohol && (
         <AlcoholStatusCard

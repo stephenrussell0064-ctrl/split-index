@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { stripComments } from "@/lib/testing/source-scan";
 
 /**
  * The alcohol log never leaves the athlete's own account.
@@ -53,9 +54,18 @@ function walk(dir: string, out: string[] = []): string[] {
   return out;
 }
 
+/**
+ * Files that reference the table IN CODE.
+ *
+ * Comments are stripped first, with the same helper premium-policy.test uses.
+ * Without it this flags any file that merely explains the rule — the consent
+ * route documenting what the leaderboard view reads, for instance — and a
+ * guard that fires on prose about itself teaches people to add allowlist
+ * entries, which is how it stops guarding anything.
+ */
 function filesNaming(table: string): string[] {
   return walk(SRC)
-    .filter((file) => readFileSync(file, "utf8").includes(table))
+    .filter((file) => stripComments(readFileSync(file, "utf8")).includes(table))
     .map((file) => relative(REPO, file).replace(/\\/g, "/"));
 }
 
@@ -102,13 +112,55 @@ describe("the alcohol log is reachable only from the recovery feature", () => {
 describe("the alcohol log is private at the database", () => {
   const sql = migrationSql();
 
-  it("is never projected into a view", () => {
-    // Projection views in this schema run security_invoker = off and read
-    // straight past RLS — that is how a leaderboard sees anybody but you, and
-    // it is exactly why this table must never be inside one.
+  /**
+   * ONE view may read this table, and only on terms.
+   *
+   * Projection views here run `security_invoker = off` and read straight past
+   * RLS — that is how a leaderboard sees anybody but you, and it is why this
+   * used to assert that NO view touched drink_logs at all.
+   *
+   * 087 is the deliberate exception: the opt-in alcohol-free streak board.
+   * The exception is narrow and the assertions below are what keep it narrow —
+   * it must be gated on explicit consent, it must publish no drink detail, and
+   * it must stay unreadable by `anon`. A second view, or this one losing its
+   * consent predicate, fails here.
+   */
+  const ALLOWED_VIEW = "public_alcohol_free_streaks";
+
+  function viewsTouchingDrinkLogs(): string[] {
     const views = sql.match(/CREATE\s+(?:OR REPLACE\s+)?VIEW[\s\S]*?;/gi) ?? [];
-    const leaking = views.filter((v) => /drink_logs/i.test(v));
-    expect(leaking).toEqual([]);
+    return views.filter((v) => /drink_logs/i.test(v));
+  }
+
+  it("is projected into exactly one view, and that view is the streak board", () => {
+    const touching = viewsTouchingDrinkLogs();
+    expect(touching).toHaveLength(1);
+    expect(touching[0]).toMatch(new RegExp(ALLOWED_VIEW, "i"));
+  });
+
+  it("gates that view on explicit consent, so nobody appears without opting in", () => {
+    const view = viewsTouchingDrinkLogs()[0] ?? "";
+    // The consent key, and a predicate requiring the newest event to be a grant.
+    expect(view).toMatch(/alcohol_free_streak_leaderboard/);
+    expect(view).toMatch(/article9_consent_events/);
+    expect(view).toMatch(/action\s*=\s*'granted'/i);
+  });
+
+  it("publishes a streak and nothing about any individual drink", () => {
+    // The column list IS the security boundary — whatever the SELECT below it
+    // grows later, only what is named here can ever leave.
+    const columnList = (viewsTouchingDrinkLogs()[0] ?? "").split(") AS")[0] ?? "";
+    for (const forbidden of ["grams_ethanol", "volume_ml", "abv_percent", "drank_at", "label", "preset_id", "note"]) {
+      expect(columnList.toLowerCase()).not.toContain(forbidden);
+    }
+    expect(columnList).toMatch(/streak_days/);
+  });
+
+  it("keeps that view away from anon", () => {
+    const grants = sql.match(new RegExp(`GRANT[^;]*${ALLOWED_VIEW}[^;]*;`, "gi")) ?? [];
+    expect(grants.length).toBeGreaterThan(0);
+    expect(grants.some((g) => /\banon\b/i.test(g))).toBe(false);
+    expect(sql).toMatch(new RegExp(`REVOKE ALL ON ${ALLOWED_VIEW} FROM PUBLIC, anon`, "i"));
   });
 
   it("is never granted to anon", () => {

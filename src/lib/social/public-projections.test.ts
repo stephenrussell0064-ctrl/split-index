@@ -252,6 +252,21 @@ describe("WP1 — the public projections", () => {
         beside the 1RM is bodyweight, and the guard below caught that.
       */
       "public_activity_strength_scores",
+      /*
+        087. The only projection in this list gated on EXPLICIT CONSENT rather
+        than on friendship or on the data being innocuous: days since an
+        athlete's last logged drink, for athletes whose newest
+        article9_consent_events row for 'alcohol_free_streak_leaderboard' is a
+        grant. Nobody appears by default.
+
+        It reads drink_logs, which no other view may touch — that table is held
+        as ordinary personal data precisely because it is not shared, and this
+        view is the narrow, consented exception carved out of that. The column
+        list is the boundary and deliberately carries no drink, unit, volume or
+        timestamp; recovery-data-is-private.test.ts asserts each of those
+        separately.
+      */
+      "public_alcohol_free_streaks",
       "public_challenge_participation",
       "public_index_history",
       "public_leaderboard_entries",
