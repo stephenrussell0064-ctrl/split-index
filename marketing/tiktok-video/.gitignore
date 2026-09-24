@@ -4,6 +4,8 @@ node_modules/
 # rendered video is a build product, not source — regenerate with `npm run render`.
 # The cover stills ARE committed (small, and the posting kit points at them).
 out/*.mp4
+out/formats/*.mp4
+out/*.zip
 out/drafts/
 out/review*/
 out/draft*
@@ -12,4 +14,4 @@ out/draft*
 .remotion/
 
 # build log
-out/render.log
+out/render*.log

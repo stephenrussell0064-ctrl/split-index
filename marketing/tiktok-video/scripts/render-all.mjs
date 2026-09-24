@@ -21,6 +21,7 @@ import { mkdirSync } from "node:fs";
 const args = process.argv.slice(2);
 const only = args.includes("--only") ? args[args.indexOf("--only") + 1] : null;
 const drafts = args.includes("--drafts");
+const formatsOnly = args.includes("--formats");
 
 const HOOKS = { A: "bench-elite-5k-beginner", B: "lifting-slowing-running", C: "built-an-app", D: "strong-or-fit", E: "rate-me" };
 const ids = only ? [only] : Object.keys(HOOKS);
@@ -38,16 +39,26 @@ mkdirSync(outDir, { recursive: true });
 run("npm run --silent compute");
 run("npm run --silent sfx");
 
-for (const id of ids) {
+const FORMATS = { StatCard: "stat-card", Quiz: "guess-the-tier", TugOfWar: "the-gap", RadarExplainer: "radar-explainer", TextStory: "text-story", MicroLoop: "micro-loop" };
+
+for (const id of formatsOnly ? [] : ids) {
   const slug = HOOKS[id];
   run(`npx remotion render Ad-${id} ${outDir}/ad-${id}-${slug}.mp4 ${scale} ${crf} --log=error`);
   run(`npx remotion render AdSfx-${id} ${outDir}/ad-${id}-${slug}-sfx.mp4 ${scale} ${crf} --log=error`);
   run(`npx remotion still Cover-${id} ${outDir}/cover-${id}-${slug}.png ${scale} --log=error`);
 }
 
-if (!only || only === "A") {
+if (!formatsOnly && (!only || only === "A")) {
   run(`npx remotion render Short-A ${outDir}/short-A-${HOOKS.A}.mp4 ${scale} ${crf} --log=error`);
   run(`npx remotion render ShortSfx-A ${outDir}/short-A-${HOOKS.A}-sfx.mp4 ${scale} ${crf} --log=error`);
+}
+
+if (!only) {
+  mkdirSync(`${outDir}/formats`, { recursive: true });
+  for (const [id, slug] of Object.entries(FORMATS)) {
+    run(`npx remotion render Fmt-${id} ${outDir}/formats/${slug}.mp4 ${scale} ${crf} --props='{"sfx":false,"safeZone":false}' --log=error`);
+    run(`npx remotion render FmtSfx-${id} ${outDir}/formats/${slug}-sfx.mp4 ${scale} ${crf} --log=error`);
+  }
 }
 
 console.log(`\n✓ rendered into ${outDir}/`);

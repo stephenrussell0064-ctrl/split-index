@@ -16,6 +16,26 @@ import { Ad, AdShort, adSchema } from "./Ad";
 import { Cover, coverSchema } from "./Cover";
 import { HOOK_IDS } from "./hooks";
 import { DURATION, FPS, HEIGHT, SHORT, WIDTH } from "./timing";
+import { z } from "zod";
+import { StatCard, STATCARD_DURATION } from "./formats/StatCard";
+import { Quiz, QUIZ_DURATION } from "./formats/Quiz";
+import { TugOfWar, TUG_DURATION } from "./formats/TugOfWar";
+import { RadarExplainer, RADAR_DURATION } from "./formats/RadarExplainer";
+import { TextStory, STORY_DURATION } from "./formats/TextStory";
+import { MicroLoop, MICRO_DURATION } from "./formats/MicroLoop";
+import type { FormatProps } from "./formats/shared";
+
+const formatSchema = z.object({ sfx: z.boolean(), safeZone: z.boolean() });
+
+/** The alternative formats: same numbers, same grade, different shape. */
+export const FORMATS: Array<{ id: string; slug: string; component: React.FC<FormatProps>; duration: number }> = [
+  { id: "StatCard", slug: "stat-card", component: StatCard, duration: STATCARD_DURATION },
+  { id: "Quiz", slug: "guess-the-tier", component: Quiz, duration: QUIZ_DURATION },
+  { id: "TugOfWar", slug: "the-gap", component: TugOfWar, duration: TUG_DURATION },
+  { id: "RadarExplainer", slug: "radar-explainer", component: RadarExplainer, duration: RADAR_DURATION },
+  { id: "TextStory", slug: "text-story", component: TextStory, duration: STORY_DURATION },
+  { id: "MicroLoop", slug: "micro-loop", component: MicroLoop, duration: MICRO_DURATION },
+];
 
 const base = { fps: FPS, width: WIDTH, height: HEIGHT } as const;
 
@@ -45,6 +65,17 @@ export const RemotionRoot: React.FC = () => (
     <Folder name="Short">
       <Composition id="Short-A" component={AdShort} durationInFrames={SHORT.duration} {...base} schema={adSchema} defaultProps={{ hook: "A", safeZone: false, sfx: false }} />
       <Composition id="ShortSfx-A" component={AdShort} durationInFrames={SHORT.duration} {...base} schema={adSchema} defaultProps={{ hook: "A", safeZone: false, sfx: true }} />
+    </Folder>
+
+    <Folder name="Formats">
+      {FORMATS.map((f) => (
+        <Composition key={f.id} id={`Fmt-${f.id}`} component={f.component as unknown as React.FC<Record<string, unknown>>} durationInFrames={f.duration} {...base} schema={formatSchema} defaultProps={{ sfx: false, safeZone: true }} />
+      ))}
+    </Folder>
+    <Folder name="Formats-sfx">
+      {FORMATS.map((f) => (
+        <Composition key={f.id} id={`FmtSfx-${f.id}`} component={f.component as unknown as React.FC<Record<string, unknown>>} durationInFrames={f.duration} {...base} schema={formatSchema} defaultProps={{ sfx: true, safeZone: false }} />
+      ))}
     </Folder>
 
     <Folder name="Covers">

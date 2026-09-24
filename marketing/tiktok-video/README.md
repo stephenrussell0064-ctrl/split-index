@@ -23,10 +23,33 @@ npm run render          # everything into ./out at full quality (H.264, CRF 16)
 | `ad-<X>-<slug>-sfx.mp4` | the same five with the sound-design track |
 | `short-A-bench-elite-5k-beginner(-sfx).mp4` | 8 s cut-down of A: hook → score reveal → CTA |
 | `cover-<X>-<slug>.png` | 1080×1920 cover: the score-reveal moment with the hook text |
+| `formats/<format>(-sfx).mp4` | six alternative formats, same numbers, different shape — see *Formats* |
+| `split-index-tiktok-pack.zip` | everything above in one download (`npm run pack`) |
 
 The `.mp4` files are not committed (`.gitignore`); the covers are. Regenerate
 with `npm run render`, or one variant with `npm run render -- --only B`, or
 quarter-resolution drafts of everything with `npm run render:drafts`.
+
+## Formats (`src/formats/`)
+
+The film is one shape. These are the same computed numbers in five other
+TikTok-native shapes plus a teaser, rendered by `npm run render -- --formats`:
+
+| id | file | length | what it is |
+|---|---|---|---|
+| `Fmt-StatCard` | `formats/stat-card.mp4` | 12 s | the stat-card format that circulates in hybrid TikTok — lifts, 5k, Lab/Engine reveal a line at a time, then the one number only this app adds |
+| `Fmt-Quiz` | `formats/guess-the-tier.mp4` | 14 s | "guess the tier" — three questions, the engine answers each; the pause is the comment bait |
+| `Fmt-TugOfWar` | `formats/the-gap.mp4` | 10 s | Lab bar from the left, Engine bar from the right, the 56.2-point gap between them, then the Split Index |
+| `Fmt-RadarExplainer` | `formats/radar-explainer.mp4` | 13 s | the Interference Radar finding as a mini-explainer: question, −8.8 %, per-day bars, the engine's sentence, sample size |
+| `Fmt-TextStory` | `formats/text-story.mp4` | 11 s | POV / confession meme — type only, one line at a time, then the number |
+| `Fmt-MicroLoop` | `formats/micro-loop.mp4` | 5 s | odometer 0 → 55.6, tier slam, "What's yours?", resets — a rewatch loop and profile-pin teaser |
+
+Each has a `FmtSfx-*` twin with the sound track and a `-sfx.mp4` render.
+Every format ends on the same end-card (wordmark, Apple badge, "Free on the
+App Store") and carries the line "Sam · male · 29 · 84 kg · demo profile" so
+nobody mistakes the numbers for a population claim. Shared furniture is in
+`src/formats/shared.tsx`; each format exports its own `*_CUES` list, which is
+the whole sound design for that piece.
 
 ## Numbers — where every figure comes from
 

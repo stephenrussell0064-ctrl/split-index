@@ -102,6 +102,21 @@ Character counts below exclude hashtags. Hashtags: 3–5 relevant, no walls.
 
 ---
 
+## The six formats (`out/formats/`)
+
+Same numbers, different shapes. Use them to test *format* against the film's
+*hook* — post one film variant and one format per day for a fortnight and you
+have both axes.
+
+| File | Caption (≤150) | Hashtags | Pinned comment | Sound |
+|---|---|---|---|---|
+| `stat-card(-sfx).mp4` | 145 kg bench. 203 kg deadlift. 40:45 5k. Every number scored, then one number for all of it. Beat these. | `#hybridathlete #gymtok #5k #statcard` | Post your bench, deadlift and 5k under this and I'll reply with your tiers. | Slow, heavy trap or phonk with a drop at 3.5 s for the reveal. |
+| `guess-the-tier(-sfx).mp4` | Three numbers, three tiers. Guess before the reveal. Most people get the 5k wrong. | `#guessthetier #gymtok #runtok #hybridathlete` | Comment your guesses BEFORE watching to the end 👀 | Quiz-show ticking / countdown sound; the pause before each answer needs silence or a riser. |
+| `the-gap(-sfx).mp4` | 83.7 strength, 27.5 endurance. Same body. 56.2 points apart. How wide is your gap? | `#hybridathlete #strongandfit #gymandrun #hyrox` | How big is your gap, honestly? Strength-heavy or engine-heavy? | Tense minimal beat; a bass hit at 3.5 s and 5 s. |
+| `radar-explainer(-sfx).mp4` | Leg day cost this runner 8.8% efficiency and +9 bpm the next morning. Back to normal by day 3. The app worked it out from his own log. | `#runtok #interference #hybridtraining #runningtips` | Do you run the day after legs or leave a gap? | Documentary-style pulse, no vocals. |
+| `text-story(-sfx).mp4` | I bench 145. I run a 40-minute 5k. One app scored both. Out of 100: 55.6. | `#pov #gymtok #hybridathlete #fitnesstok` | Rate my 55.6. Be honest. | Whatever deadpan storytime sound is trending; this one is built to ride audio. |
+| `micro-loop(-sfx).mp4` | What's your Split Index? | `#splitindex #hybridathlete` | Pin this to the profile. Comment your score when you have one. | A 5 s loop — pick a sound that loops cleanly, or none. |
+
 ## Testing order and times (one week, UK)
 
 Post one variant per day, same account, same time band, so each gets a

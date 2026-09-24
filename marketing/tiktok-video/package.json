@@ -32,7 +32,8 @@
     "render": "node scripts/render-all.mjs",
     "render:drafts": "node scripts/render-all.mjs --drafts",
     "studio": "remotion studio",
-    "typecheck": "tsc --noEmit -p ."
+    "typecheck": "tsc --noEmit -p .",
+    "pack": "node scripts/pack.mjs"
   },
   "sideEffects": [
     "*.css"
