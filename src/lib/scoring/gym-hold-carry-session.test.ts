@@ -230,7 +230,11 @@ describe("rep-based sessions are untouched", () => {
     // of these lifts are five-to-eight-rep barbell sets, so all three drop:
     // Squat 140x5 and Bench 100x5 lose the 1.1667x/1.06 stack for Strength
     // Level's own 1.1236x, Barbell Row 80x8 loses 1.2667x/1.06 for 1.2346x.
-    expect(result.sportIndex).toBe(759);
+    // 759 -> 769 -> 777 across the two lower-curve recalibration passes
+    // (PERCENTILE_SCORES bottom two raised, bench standards eased). All three
+    // lifts here sit in the 20th-to-80th percentile band, which is the part of
+    // the curve both passes moved least, so the session barely shifts.
+    expect(result.sportIndex).toBe(777);
     expect(result.strengthActivities).toHaveLength(3);
     expect(result.strengthActivities?.every((r) => r.oneRM > 0)).toBe(true);
   });

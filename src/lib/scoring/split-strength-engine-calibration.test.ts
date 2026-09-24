@@ -33,18 +33,18 @@ function scoreAtOneRM(liftKey: string, targetOneRMKg: number, overrides: Partial
 }
 
 describe("scoreStrength — bench/deadlift corrected anchors (Part G, re-anchored a 3rd time)", () => {
-  it("bench: 140kg @ 83kg BW now scores ~872 (Elite), not 752 (Advanced) — user feedback: a 120x3/~132kg 1RM set scoring 724 was 'way too low... comparing to the average person in gym not elite athletes'", () => {
+  it("bench: 140kg @ 83kg BW stays Elite (~900) after the 7% buff — the third re-anchoring pass's refusal to inflate this lift survives it, with less room to spare", () => {
     const result = scoreAtOneRM("bench", 140);
-    expect(result.score).toBeCloseTo(872, -1); // within ~10 points
+    expect(result.score).toBeCloseTo(900, -1); // within ~10 points
     expect(result.tier).toBe("Elite");
   });
 
-  it("bench matches the re-anchored table exactly (top two anchors raised; bottom three untouched from the prior pass)", () => {
-    expect(scoreAtOneRM("bench", 47).score).toBeCloseTo(150, 0);
-    expect(scoreAtOneRM("bench", 70).score).toBeCloseTo(400, 0);
-    expect(scoreAtOneRM("bench", 98).score).toBeCloseTo(650, 0);
-    expect(scoreAtOneRM("bench", 132).score).toBeCloseTo(850, 0); // raised from 725 — now the Elite boundary
-    expect(scoreAtOneRM("bench", 169).score).toBeCloseTo(950, 0); // raised from 850 — deep into World Class
+  it("bench matches its table exactly — standards eased 7% across two passes (athlete: 'slightly too low scoring, needs a little buff', then more of the same)", () => {
+    expect(scoreAtOneRM("bench", 43.7).score).toBeCloseTo(320, 0);
+    expect(scoreAtOneRM("bench", 65.1).score).toBeCloseTo(485, 0);
+    expect(scoreAtOneRM("bench", 91.1).score).toBeCloseTo(650, 0);
+    expect(scoreAtOneRM("bench", 122.8).score).toBeCloseTo(850, 0);
+    expect(scoreAtOneRM("bench", 157.2).score).toBeCloseTo(950, 0);
   });
 
   it("bench: 100kg @ 83kg BW (a genuinely good lift) now scores well above 'merely average' 500, not ~501", () => {
@@ -59,8 +59,10 @@ describe("scoreStrength — bench/deadlift corrected anchors (Part G, re-anchore
   });
 
   it("deadlift matches the re-anchored table exactly", () => {
-    expect(scoreAtOneRM("deadlift", 78).score).toBeCloseTo(150, 0);
-    expect(scoreAtOneRM("deadlift", 112).score).toBeCloseTo(400, 0);
+    // Bottom two moved with PERCENTILE_SCORES (150/400 -> 280/460 -> 320/485);
+    // the kg standards themselves are untouched.
+    expect(scoreAtOneRM("deadlift", 78).score).toBeCloseTo(320, 0);
+    expect(scoreAtOneRM("deadlift", 112).score).toBeCloseTo(485, 0);
     expect(scoreAtOneRM("deadlift", 152).score).toBeCloseTo(650, 0);
     expect(scoreAtOneRM("deadlift", 200).score).toBeCloseTo(850, 0); // raised from 725
     expect(scoreAtOneRM("deadlift", 250).score).toBeCloseTo(950, 0); // raised from 850
@@ -164,12 +166,13 @@ describe("scoreStrength — dumbbell curl recalibration", () => {
 
   it("12.5kg/hand x8 sits between Strength Level's novice and intermediate standards", () => {
     const result = scoreDbCurl(12.5, 8);
-    expect(result.score).toBeGreaterThan(400);
-    expect(result.score).toBeLessThan(470);
-    // Explicitly between the table's 400 (novice) and 650 (intermediate)
-    // points — the claim the number is actually making.
-    expect(result.score).toBeGreaterThan(400);
+    // Explicitly between the table's novice and intermediate points — the
+    // claim the number is actually making. Those two points are now 485 and
+    // 650 (PERCENTILE_SCORES), which is why the band moved without the
+    // underlying percentile claim changing at all.
+    expect(result.score).toBeGreaterThan(485);
     expect(result.score).toBeLessThan(650);
+    expect(result.score).toBeCloseTo(507, -1);
   });
 
   it("heavier weight for the same reps never scores lower (monotonic)", () => {
@@ -373,12 +376,16 @@ describe("ageFactor — Foster junior coefficients", () => {
   // is actually about is unchanged and is the reason both numbers are pinned:
   // the junior credit is still worth exactly +16, so the gate is still on the
   // factor rather than on `age > 35`.
-  it("APPLIES the junior credit — the reported lift moves 893 -> 909, and 'age-factor-beta' is flagged", () => {
+  // 893/909 -> 910/926 -> 923/940 across the two bench buffs. The junior
+  // credit is still worth exactly +17, which is the only thing this test is
+  // about; it moves with the curve because it is a ratio adjustment, not a
+  // fixed number of points.
+  it("APPLIES the junior credit — the reported lift moves 923 -> 940, and 'age-factor-beta' is flagged", () => {
     const junior = bench140(19);
     const peak = bench140(30);
-    expect(peak.score).toBe(893);
-    expect(junior.score).toBe(909);
-    expect(junior.score - peak.score).toBe(16);
+    expect(peak.score).toBe(923);
+    expect(junior.score).toBe(940);
+    expect(junior.score - peak.score).toBe(17);
     expect(junior.flags).toContain("age-factor-beta");
     expect(junior.appliedFactors.some((f) => f.startsWith("age:19"))).toBe(true);
   });
@@ -420,8 +427,9 @@ describe("scoreStrength — Strength Level anchor tables (percentile parity)", (
     ["Barbell Row", 88, 114],
     ["Lat Pulldown", 85, 108],
     ["Pec Deck", 89, 119],
-    ["Leg Extension", 103, 140],
-    ["Leg Curl", 66, 90],
+    // Leg extension and leg curl are deliberately NOT in this list — they are
+    // the two tables carrying an athlete-reported correction on top of SL's
+    // standards, pinned separately below.
     ["Tricep Pushdown", 56, 80],
     ["Leg Press", 230, 309],
     ["Hack Squat", 152, 213],
@@ -436,6 +444,77 @@ describe("scoreStrength — Strength Level anchor tables (percentile parity)", (
       expect(at1RM(lift, advanced)).toBeCloseTo(850, -1);
     }
   );
+
+  /**
+   * The front squat's derived table, pinned as the RELATIONSHIP rather than as
+   * five numbers — the relationship is the whole reason the table exists.
+   *
+   * Front squat had no population data, so it kept the single-anchor log curve
+   * while the back squat moved onto percentiles, and the two drifted until an
+   * 80kg x 8 read 67.8 front against 45.6 back. Three separate "it reads
+   * slightly low" easements to the front squat anchor had each widened that
+   * gap, because an anchor easement lifts a curve without reshaping it.
+   *
+   * Deriving the table as back-squat-standards x 0.82 makes the drift
+   * structurally impossible: there is one table, and a front squat scores
+   * exactly what the back squat it is equivalent to scores. If someone
+   * re-anchors the back squat tomorrow, the front squat follows on its own.
+   */
+  it("front squat scores exactly what the equivalent back squat scores", () => {
+    const FRONT_TO_BACK = 0.82;
+    for (const frontKg of [60, 80, 100, 120, 150]) {
+      const front = at1RM("Front Squat", frontKg);
+      const equivalentBack = at1RM("Squat", frontKg / FRONT_TO_BACK);
+      expect(front, `front squat ${frontKg}kg vs its back squat equivalent`).toBeCloseTo(
+        equivalentBack,
+        -1
+      );
+    }
+  });
+
+  it("front squat still sits ABOVE the back squat at equal load — by the movement's difficulty, not the old curve's shape", () => {
+    for (const kg of [60, 80, 100, 120]) {
+      const front = at1RM("Front Squat", kg);
+      const back = at1RM("Squat", kg);
+      expect(front, `equal load ${kg}kg`).toBeGreaterThan(back);
+    }
+  });
+
+  it("goblet squat did not move when the front squat did", () => {
+    // It used to share frontSquat's key, so the derived table would have taken
+    // an honest 40kg x 10 from 44.3 to 25.0 — a silent regression to a lift
+    // nobody reported. It has its own anchor now, holding the value it had.
+    const goblet = scoreStrength({
+      liftKey: "Goblet Squat",
+      exerciseName: "Goblet Squat",
+      history: [],
+      latestSet: { weightKg: 40, reps: 10 },
+      bodyweightKg: 83,
+      sex: "male",
+      age: 30,
+      isPremium: false,
+    });
+    expect(goblet.score).toBeCloseTo(444, -1);
+    expect(goblet.liftKey).toBe("gobletSquat");
+  });
+
+  it("leg extension and leg curl sit BELOW the percentile line, by exactly the documented correction", () => {
+    // Athlete feedback: both read inflated against everything else in the same
+    // session, the curl the more so. The correction lives on the standards
+    // (x1.19 and x1.21), so Strength Level's own median lands short of 650 by
+    // that much rather than on it — deliberate, and the reason these two are
+    // pinned here instead of in MEDIAN_AND_ADVANCED above.
+    expect(at1RM("Leg Extension", 103)).toBeCloseTo(562, -1);
+    expect(at1RM("Leg Extension", 140)).toBeCloseTo(729, -1);
+    expect(at1RM("Leg Curl", 66)).toBeCloseTo(555, -1);
+    expect(at1RM("Leg Curl", 90)).toBeCloseTo(720, -1);
+
+    // The corrected standards themselves still land exactly on the scale.
+    expect(at1RM("Leg Extension", 122.6)).toBeCloseTo(650, -1);
+    expect(at1RM("Leg Extension", 166.6)).toBeCloseTo(850, -1);
+    expect(at1RM("Leg Curl", 79.9)).toBeCloseTo(650, -1);
+    expect(at1RM("Leg Curl", 108.9)).toBeCloseTo(850, -1);
+  });
 
   it("leg press no longer pins the scale at an ordinary working set — the 7.2x generic overshoot is gone", () => {
     // 230kg is the MEDIAN leg press for this bodyweight. On

@@ -277,7 +277,12 @@ const PRIMARY_ANCHORS: Record<string, LiftAnchor> = {
   deadlift: { anchorRatio: 128 / 83, category: "back", bodyPart: "pull" },
   ohp: { anchorRatio: 0.4213, category: "shoulders", bodyPart: "upperBody" },
   barbellRow: { anchorRatio: 0.687, category: "back", bodyPart: "pull" },
-  frontSquat: { anchorRatio: 0.8103, category: "legs", bodyPart: "lowerBody" },
+  // Kept in step with the derived table below (the 500 mark), which is what
+  // actually scores this lift now. The three hand-tuned values this replaced
+  // (0.8103 -> 0.775 -> 0.745, each an "it reads slightly low" easement) are
+  // gone: see WEIGHT_RATIO_ANCHOR_TABLES for why the easements were treating
+  // a symptom.
+  frontSquat: { anchorRatio: 1.0510, category: "legs", bodyPart: "lowerBody" },
   // 0.64 -> 0.61 (user feedback: scoring "slightly" too low) — a ~4.7%
   // easier anchor, roughly +2 points on the 0-99.9 display scale for the
   // same lift.
@@ -369,13 +374,54 @@ type WeightAnchor = [ratio: number, score: number];
  * 725/850, so a genuinely rare lift among actual gym-goers reads as one.
  */
 /**
- * The percentile -> index-score mapping every anchor table uses. Fixed by the
- * three bench/deadlift re-anchoring passes above and NOT re-litigated here:
- * whatever else changes, "Strength Level's 50th percentile" means 650 and
- * "their 95th" means 950 for every lift in the catalogue, so two lifts at the
- * same percentile of the same population read as the same number.
+ * The percentile -> index-score mapping every anchor table uses. Whatever else
+ * changes, "Strength Level's 50th percentile" means 650 and "their 95th" means
+ * 950 for every lift in the catalogue, so two lifts at the same percentile of
+ * the same population read as the same number.
+ *
+ * THE BOTTOM TWO POINTS MOVED (150/400 -> 280/460). The top three are the
+ * settled output of the three bench/deadlift re-anchoring passes above and are
+ * NOT re-litigated here.
+ *
+ * Why the bottom moved. Those three passes all made the same argument — that
+ * Strength Level's population is people who log serious lifts online, so its
+ * percentiles understate where a lift sits among actual gym-goers — and then
+ * applied it only from the 50th percentile upward. The 5th and 20th were left
+ * reading as if they described the general population, which they do not:
+ * SL's "beginner" 80 kg-male squat (75 kg) is not the 5th percentile of people
+ * who squat, it is the 5th percentile of people who squat and post about it.
+ * Scoring it 150/1000 said this athlete is at the very bottom of humanity; it
+ * meant they are somewhere in the ordinary middle of a gym.
+ *
+ * The arithmetic consequence was worse than the label. 250 index points were
+ * spent across the 26 kg between SL's 5th and 20th percentile squat, against
+ * 100 points across the 38 kg between its 80th and 95th — so the STEEPEST part
+ * of the whole curve sat at the bottom, where the athletes least able to
+ * absorb it are, and every segment above it was gentler. That inversion is
+ * what the athlete reported as "the curve is less favourable away from the
+ * average": one extra rep is worth ~10 kg of estimated 1RM at any strength
+ * level, but at the bottom those 10 kg were worth two and a half times the
+ * index points they were worth at the top.
+ *
+ * 320/485 spends 165 points on each of the bottom two bands against the 200 of
+ * the 50th->80th, so points-per-kg no longer peaks at the weakest end.
+ *
+ * SECOND PASS (athlete: "still not quite representative enough", asking for
+ * more of the same). 280/460 -> 320/485. The first pass's reasoning is not
+ * repeated; it was right about the direction and short of the mark on the
+ * size. Squat 60 kg x 8 — SL's own beginner standard, and the athlete's
+ * example of a score that "cannot" be right — has now gone 12.4 -> 26.1 ->
+ * 30.3 across the two passes on the 0-99.9 display scale.
+ *
+ * One wrinkle the second pass introduces, recorded rather than hidden: with
+ * 165/165/200/100 the 20th->50th band is very slightly gentler per kg than the
+ * 50th->80th above it for lifts whose standards bunch up in the middle (squat:
+ * 5.3 vs 5.6 points/kg; bench and the rest are flat or falling throughout).
+ * That is a fraction of the 3.6x inversion this whole exercise started from,
+ * and closing it properly means moving the 650 that three prior passes fixed
+ * as the meaning of "Strength Level's median" — not worth it for 0.3.
  */
-const PERCENTILE_SCORES = [150, 400, 650, 850, 950] as const;
+const PERCENTILE_SCORES = [320, 485, 650, 850, 950] as const;
 
 /**
  * Bodyweight the SL rows below were read off. Strength Level publishes its
@@ -398,6 +444,21 @@ const SL_ROW_BODYWEIGHT_KG = 80;
 function slTable(kgAtRowBodyweight: readonly [number, number, number, number, number]): WeightAnchor[] {
   return kgAtRowBodyweight.map(
     (kg, i) => [relativeStrengthRatio(kg, SL_ROW_BODYWEIGHT_KG), PERCENTILE_SCORES[i]] as WeightAnchor
+  );
+}
+
+/**
+ * slTable's twin for bench and deadlift, whose standards were read off the
+ * 83 kg (= REFERENCE_BODYWEIGHT_KG) row rather than the 80 kg one — see
+ * SL_ROW_BODYWEIGHT_KG. Their five kg values are untouched; this exists so
+ * their scores come from PERCENTILE_SCORES like every other table rather than
+ * from five literals that happened to agree with it. They were written out
+ * long-hand when that list was fixed forever, and a list that is no longer
+ * fixed cannot be duplicated in two places.
+ */
+function refTable(kgAtReferenceBodyweight: readonly [number, number, number, number, number]): WeightAnchor[] {
+  return kgAtReferenceBodyweight.map(
+    (kg, i) => [kg / REFERENCE_BODYWEIGHT_KG, PERCENTILE_SCORES[i]] as WeightAnchor
   );
 }
 
@@ -443,23 +504,59 @@ function slTable(kgAtRowBodyweight: readonly [number, number, number, number, nu
  *    map. They keep their documented engineering-judgement anchors.
  */
 const WEIGHT_RATIO_ANCHOR_TABLES: Partial<Record<string, WeightAnchor[]>> = {
-  bench: [
-    [47 / REFERENCE_BODYWEIGHT_KG, 150],
-    [70 / REFERENCE_BODYWEIGHT_KG, 400],
-    [98 / REFERENCE_BODYWEIGHT_KG, 650],
-    [132 / REFERENCE_BODYWEIGHT_KG, 850],
-    [169 / REFERENCE_BODYWEIGHT_KG, 950],
-  ],
-  deadlift: [
-    [78 / REFERENCE_BODYWEIGHT_KG, 150],
-    [112 / REFERENCE_BODYWEIGHT_KG, 400],
-    [152 / REFERENCE_BODYWEIGHT_KG, 650],
-    [200 / REFERENCE_BODYWEIGHT_KG, 850],
-    [250 / REFERENCE_BODYWEIGHT_KG, 950],
-  ],
+  /**
+   * Bench standards eased 7% total (47/70/98/132/169 -> the values below) —
+   * athlete feedback across two passes, "slightly too low scoring, needs a
+   * little buff" and then more of the same. Uniform, so it is a statement
+   * about the whole lift rather than a dent in one part of the curve: 4% then
+   * a further 3%, worth about +2.5 and +2.0 on the 0-99.9 display scale
+   * through the working range (80 kg x 8: 65.5 -> 67.9 -> 69.9).
+   *
+   * The ceiling is the thing to watch on any further pass here, and it is why
+   * this one stayed small. The 140 kg bench that the third re-anchoring pass
+   * was careful not to inflate now reads 90.0, against 87.2 before either
+   * pass. Still Elite and still clear of the top, but a 7% easier standard has
+   * spent a fair part of the headroom that pass deliberately preserved.
+   */
+  bench: refTable([43.7, 65.1, 91.1, 122.8, 157.2]),
+  deadlift: refTable([78, 112, 152, 200, 250]),
 
   // --- barbell compounds (total load, bar included) -----------------------
   squat: slTable([75, 101, 132, 168, 206]),
+  /**
+   * Front squat — the one DERIVED table in this file: back squat's standards
+   * x 0.82, not population data of its own.
+   *
+   * It is here because the athlete asked for the relativity to be fixed after
+   * it was flagged twice. Front squat had no table, so it kept the
+   * single-anchor log curve while the back squat moved onto percentiles, and
+   * the two drifted apart until an 80 kg x 8 read 67.8 on the front squat
+   * against 45.6 on the back squat. A front squat is roughly 15-20% harder
+   * than a back squat, not 50%, so a 22-point gap was the log curve's shape
+   * showing through rather than a claim about the movement — and the three
+   * easements applied to that anchor ("slightly too low", twice) had each
+   * widened it, because an anchor easement can only move the whole curve up,
+   * never change how it is shaped.
+   *
+   * 0.82 is the middle of the 80-85% front-to-back ratio that coaching
+   * literature reports for trained non-competitive lifters, taken at the
+   * generous end of the middle given those two reports. The choice inside that
+   * range is not load-bearing: 0.80 puts an 80 kg x 8 at 58.9 and 0.85 puts it
+   * at 55.1, against 57.3 here.
+   *
+   * What this buys, and it is the actual point: a front squat now scores
+   * exactly what the back squat it is equivalent to would score. 80 kg x 8
+   * front-squatted implies a ~120 kg back squat e1RM, and 120 kg back-squatted
+   * scores 57.3 too. Neither number can drift from the other again, because
+   * there is only one table.
+   *
+   * STATED PLAINLY: this REDUCES front squat scores, 67.8 -> 57.3 at 80 kg x 8.
+   * It is the opposite direction to the athlete's two earlier reports on this
+   * lift, and was made with that understood — the reports were right that the
+   * number was wrong, and wrong about which way. Goblet squat, which used to
+   * share this key, is split off rather than dragged along (see gobletSquat).
+   */
+  frontSquat: slTable([61.5, 82.8, 108.2, 137.8, 168.9]),
   ohp: slTable([33, 46, 62, 81, 101]),
   barbellRow: slTable([48, 66, 88, 114, 141]),
   barbellCurl: slTable([22, 33, 46, 63, 80]),
@@ -467,8 +564,35 @@ const WEIGHT_RATIO_ANCHOR_TABLES: Partial<Record<string, WeightAnchor[]>> = {
   // --- machines and cables (total load on the stack / sled) ---------------
   latPulldown: slTable([47, 64, 85, 108, 133]),
   pecDeck: slTable([42, 63, 89, 119, 152]),
-  legExtension: slTable([48, 72, 103, 140, 180]),
-  legCurl: slTable([30, 46, 66, 90, 116]),
+  /**
+   * Leg extension and leg curl are the two tables carrying a deliberate
+   * correction ON TOP of Strength Level's published numbers — athlete
+   * feedback that both read inflated against every other lift in the same
+   * session, the curl the more so ("hamstring curls are too inflated"; the
+   * extension only "slightly").
+   *
+   * The correction is applied to the STANDARDS, not the scores: 48/72/103/
+   * 140/180 x 1.19 and 30/46/66/90/116 x 1.21. That keeps each table a single
+   * multiplier away from its source, so the day better population data for
+   * these two machines exists the multiplier is what gets deleted, and it
+   * keeps the percentile scale itself honest for every other lift.
+   *
+   * SECOND PASS: x1.08/x1.12 -> x1.19/x1.21. Most of the increase is not extra
+   * severity, it is holding position — PERCENTILE_SCORES rose underneath these
+   * two tables at the same time, and the first multipliers would have handed
+   * back most of the reduction they were asked to make. The net movement the
+   * athlete sees is what the numbers below are quoted against.
+   *
+   * Why a multiplier is defensible here and not everywhere: both are
+   * single-joint machine movements whose logged load depends heavily on the
+   * machine (cam profile, pad position, plate vs. selectorised stack), so SL's
+   * figures pool equipment that is not interchangeable in a way a barbell's
+   * do not. Across both passes that is ~4.5 points on the display scale for
+   * the extension (70 x 10: 55.4 -> 53.5 -> 50.9) and ~9 for the curl
+   * (50 x 10: 63.8 -> 57.5 -> 54.8).
+   */
+  legExtension: slTable([57.1, 85.7, 122.6, 166.6, 214.2]),
+  legCurl: slTable([36.3, 55.7, 79.9, 108.9, 140.4]),
   calfRaise: slTable([49, 88, 141, 207, 282]),
   tricepPushdown: slTable([22, 36, 56, 80, 107]),
   /**
@@ -600,6 +724,20 @@ const ACCESSORY_MAP: Record<string, LiftAnchor> = {
   preacherCurl: { anchorRatio: 0.3968, category: "arms", bodyPart: "upperBody" },
   latPulldown: { anchorRatio: 0.8813, category: "back", bodyPart: "pull" },
   legExtension: { anchorRatio: 0.9899, category: "legs", bodyPart: "lowerBody" },
+  /**
+   * Goblet squat. 0.745 is not a calibration — it is the exact anchor this
+   * movement was already being scored on, inherited when it shared frontSquat's
+   * key, and kept so that fixing the front squat's relativity does not silently
+   * move a lift nobody has complained about.
+   *
+   * It is a weak number and should be labelled as such: it is the last of three
+   * easements aimed at FRONT squat feedback, which this movement happened to be
+   * riding along with. There is no Strength Level goblet-squat table to replace
+   * it from, and deriving one off the front squat would be inventing the very
+   * ratio that has no evidence behind it. Preserving observed behaviour is the
+   * honest option until someone reports what a goblet squat ought to read.
+   */
+  gobletSquat: { anchorRatio: 0.745, category: "legs", bodyPart: "lowerBody" },
   walkingLunge: { anchorRatio: 0.7762, category: "legs", bodyPart: "lowerBody" },
   bulgarianSplit: { anchorRatio: 0.8921, category: "legs", bodyPart: "lowerBody" },
   calfRaise: { anchorRatio: 1.0462, category: "legs", bodyPart: "lowerBody" },
@@ -615,10 +753,13 @@ const ACCESSORY_MAP: Record<string, LiftAnchor> = {
   // step with it so the fallback and the table cannot disagree; the table is
   // what actually scores them.
   // -------------------------------------------------------------------------
-  legPress: { anchorRatio: 2.3348, category: "legs", bodyPart: "lowerBody" },
-  hackSquat: { anchorRatio: 1.5054, category: "legs", bodyPart: "lowerBody" },
-  hipThrust: { anchorRatio: 1.4460, category: "legs", bodyPart: "lowerBody" },
-  dbShrug: { anchorRatio: 0.8488, category: "back", bodyPart: "pull" },
+  // (Re-derived each time PERCENTILE_SCORES moves: the 500 mark now falls 9%
+  // of the way from each table's 20th-percentile standard to its 50th, where
+  // it was 40% before the first pass and 21% after it.)
+  legPress: { anchorRatio: 2.0777, category: "legs", bodyPart: "lowerBody" },
+  hackSquat: { anchorRatio: 1.3164, category: "legs", bodyPart: "lowerBody" },
+  hipThrust: { anchorRatio: 1.2456, category: "legs", bodyPart: "lowerBody" },
+  dbShrug: { anchorRatio: 0.7278, category: "back", bodyPart: "pull" },
 
   // -------------------------------------------------------------------------
   // Iso-Lateral (Hammer Strength) plate-loaded machines — their OWN anchors.
@@ -680,7 +821,13 @@ const LIFT_ALIASES: Record<string, string> = {
   deadlift: "deadlift", "sumo deadlift": "deadlift", "trap bar deadlift": "deadlift", "rack pull": "deadlift",
   "overhead press": "ohp", ohp: "ohp", "seated overhead press": "ohp", "push press": "ohp", "z press": "ohp", "landmine press": "ohp",
   "barbell row": "barbellRow", "pendlay row": "barbellRow", "chest supported row": "barbellRow", "seal row": "barbellRow", "t-bar row": "barbellRow", "meadows row": "barbellRow",
-  "front squat": "frontSquat", "goblet squat": "frontSquat",
+  "front squat": "frontSquat",
+  // Split off frontSquat when that lift moved onto a derived percentile table.
+  // A goblet squat is one bell held at the chest, capped by grip and by what a
+  // dumbbell rack holds — nobody goblet squats their front squat — so judging
+  // it against front-squat standards took an honest 40kg x 10 from 44.3 to
+  // 25.0. See gobletSquat in ACCESSORY_MAP for why the anchor is what it is.
+  "goblet squat": "gobletSquat",
   "incline bench press": "inclineBench", "decline bench press": "inclineBench", "smith machine bench press": "inclineBench",
   // Weighted variants are a separate key from the plain bodyweight ones —
   // see the comment on PRIMARY_MAP above.
@@ -1202,9 +1349,54 @@ export function tierForScore(score: number): StrengthTier {
   return tier;
 }
 
+/**
+ * Where both scoring curves stop describing a population and start describing
+ * an absence of one. PERCENTILE_SCORES[0] is Strength Level's weakest
+ * published standard, so below it neither the anchor tables nor the
+ * single-anchor log curve has any data to interpolate — they are only
+ * continuing a line drawn somewhere else, and the shape of that continuation
+ * is a choice, not a measurement.
+ */
+const SUB_FLOOR_JOIN_SCORE = PERCENTILE_SCORES[0];
+
+/**
+ * The continuation below that point, shared by both scoring paths so there is
+ * one answer to "what does a light set score" rather than two.
+ *
+ * A power curve through the origin, pinned to the curve above it in both value
+ * and gradient, so the join is invisible and nothing at or above it moves. Two
+ * properties are the whole point: it reaches zero only as the load does, where
+ * a straight line (the tables) reached it at an ordinary warm-up weight and a
+ * clamp (the log curve) flattened every load below a threshold onto the same
+ * score; and it gets shallower as the load falls, where both predecessors were
+ * at their steepest exactly where the athlete could least afford it.
+ */
+function subFloorScore(
+  ratio: number,
+  joinRatio: number,
+  joinScore: number,
+  gradientAtJoin: number
+): number {
+  const exponent = (gradientAtJoin * joinRatio) / joinScore;
+  return joinScore * (ratio / joinRatio) ** exponent;
+}
+
 function scoreFromRatio(ratio: number, effectiveAnchor: number): number {
   const safeRatio = Math.max(ratio, MIN_RATIO);
-  const raw = 500 + SLOPE * Math.log(safeRatio / effectiveAnchor);
+
+  // The log curve's own version of the cliff that interpolateWeightAnchors()
+  // had. 500 + SLOPE x ln(ratio/anchor) falls through zero at a finite ratio
+  // (0.27x the anchor), and the MIN_SCORE clamp then flattened everything
+  // below that onto a single value — an Iso-Lateral Leg Press scored 1 at
+  // 40kg x 8 and 1 at 5kg x 8, indistinguishable, and ten points below where
+  // the curve had been a moment earlier. Hand over to the shared tail at the
+  // same score the tables do.
+  const joinRatio = effectiveAnchor * Math.exp((SUB_FLOOR_JOIN_SCORE - 500) / SLOPE);
+  const raw =
+    safeRatio < joinRatio
+      ? subFloorScore(safeRatio, joinRatio, SUB_FLOOR_JOIN_SCORE, SLOPE / joinRatio)
+      : 500 + SLOPE * Math.log(safeRatio / effectiveAnchor);
+
   return clamp(Math.round(raw), MIN_SCORE, MAX_SCORE);
 }
 
@@ -1237,6 +1429,19 @@ function interpolateWeightAnchors(anchors: WeightAnchor[], ratio: number): numbe
   if (ratio <= first[0]) {
     const next = sorted[1] ?? first;
     const slope = next[0] === first[0] ? 0 : (next[1] - first[1]) / (next[0] - first[0]);
+    // Below the weakest published standard the table says nothing, and what it
+    // used to do in that silence was continue the first segment's straight
+    // line down until it crossed zero — at a perfectly ordinary load. For the
+    // squat that line hit zero at a 1RM of 59 kg, so 40 kg x 8 (a warm-up set,
+    // and the athlete's report that opened this pass) scored 0.1 out of 99.9.
+    // Leg press, overhead press, the dumbbell presses and every other tabled
+    // lift had the same cliff in the same place: it is a property of the
+    // interpolator, not of any one table. Hand over to the shared sub-floor
+    // tail instead — squat 40 kg x 8 now reads 12.3, low (which it should be)
+    // and not a bug.
+    if (ratio > 0 && first[0] > 0 && first[1] > 0 && slope > 0) {
+      return subFloorScore(ratio, first[0], first[1], slope);
+    }
     return Math.max(0, first[1] + slope * (ratio - first[0]));
   }
   if (ratio >= last[0]) {
