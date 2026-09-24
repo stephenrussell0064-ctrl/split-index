@@ -15,6 +15,7 @@ import { RecentWorkouts, AICoachCard } from "@/components/dashboard/workout-list
 import type { HeatmapDay } from "@/components/dashboard/activity-heatmap";
 import { WeekOverWeekCard } from "@/components/dashboard/week-over-week-card";
 import { TodaysSessionCard } from "@/components/dashboard/todays-session-card";
+import { TodaysSessionTakeover } from "@/components/dashboard/todays-session-takeover";
 import { loadTodaysSessionPayload } from "@/components/dashboard/todays-session-data";
 import { type TrendPoint } from "@/components/analytics/charts";
 import { PremiumTease } from "@/components/premium/premium-tease";
@@ -258,25 +259,6 @@ export default async function DashboardPage() {
   const interferenceReport = computeInterferenceReport(crossDomainSessions);
   const readiness = computeReadiness(crossDomainSessions);
   const todayPlan = buildTodayPlan(readiness, interferenceReport, predictedRunBenchmark);
-
-  /*
-    DOES THE PLAN LEAD THE PAGE?
-
-    Only for an athlete who actually has a live block. Once they have signed up
-    for the Hybrid Plan, the first thing on the screen should be the session
-    they are meant to do today (user feedback: "once signed up for hybrid plan
-    the first thing you see on the app when you load it up should be the workout
-    you should do that day") — a plan the athlete is following answers "what am
-    I opening the app for" better than any retrospective number can.
-
-    The condition is deliberately the SAME one `TodaysSessionCard` uses to
-    decide it has a day to draw, rather than "a plan row exists": the no-plan and
-    between-blocks states are prompts to go and set something up, and a prompt is
-    not worth the top of the page. Those keep the slot the band has always had,
-    below the index and the prediction strips.
-  */
-  const planLeadsThePage =
-    todaysSessionPayload?.status === "ready" && (todaysSessionPayload.days?.length ?? 0) > 0;
 
   // User feedback (Slice 7): "include things such as 5km race prediction
   // and SBD prediction, that is likely to be most useful to a user just
@@ -630,13 +612,14 @@ export default async function DashboardPage() {
         3. What I could run — every race distance, not just the 5K.
         4. What I could lift — all three lifts, predicted against performed.
 
-      WITH A LIVE BLOCK, 2 COMES FIRST. An athlete who has signed up for the
-      Hybrid Plan opens the app to be told what to train, so for them the band
-      moves above the index rather than under it ("once signed up for hybrid
-      plan the first thing you see on the app when you load it up should be the
-      workout you should do that day"). It is rendered in one place or the
-      other, never both — see `planLeadsThePage`, which is true only when there
-      is an actual session or prescribed rest day to show.
+      THE ORDER ABOVE IS MEASURED, AND IT STAYS. An athlete inside a block opens
+      the app to be told what to train ("i want a whole screen displaying what
+      you should be doing today as part of the plan when you load the app up,
+      and then you can click off of it"), and that is answered by
+      `TodaysSessionTakeover` — a full-screen layer, once a day. Promoting the
+      band up the page was tried first and is not the same thing: it spends the
+      dashboard's own height budget, and the arithmetic below shows what that
+      costs. The takeover covers this page rather than competing with it.
 
       Nothing was deleted to make room: readiness, the AI coach, interference,
       trends, goals and the rest all still follow, in the same order they were
@@ -671,11 +654,13 @@ export default async function DashboardPage() {
       </div>
 
       {/*
-        WHAT DO I DO TODAY — first, for an athlete inside a block. Same card,
-        same band variant; only its position changes, so there is nothing here
-        that can word today differently from the copy further down.
+        THE WHOLE SCREEN, ONCE A DAY. Renders nothing at all unless there is a
+        live block with a day to show and the athlete has not already dismissed
+        it today — see todays-session-takeover-state.ts. It sits above
+        everything rather than inside the layout below, because it is not part
+        of the layout: it covers it.
       */}
-      {planLeadsThePage && <TodaysSessionCard payload={todaysSessionPayload} variant="band" />}
+      <TodaysSessionTakeover payload={todaysSessionPayload} />
 
       {!hasActivities && !hasIndexHistory && <EmptyDashboardHero displayName={displayName} />}
 
@@ -735,11 +720,12 @@ export default async function DashboardPage() {
         as one third of a three-column grid, which is not what "the app's only
         planning surface" should look like where everyone lands.
 
-        This slot holds the invitation to build a plan, and the between-blocks
-        state. An athlete who has a live block saw the band above the index
-        instead, and must not see it twice.
+        Still here, and unconditional, now that the takeover exists above. The
+        takeover is seen once a day and then dismissed; this is what the plan
+        looks like on every visit after that, and it is the only thing on the
+        page that carries the no-plan and between-blocks states.
       */}
-      {!planLeadsThePage && <TodaysSessionCard payload={todaysSessionPayload} variant="band" />}
+      <TodaysSessionCard payload={todaysSessionPayload} variant="band" />
 
       {/* ── Below the fold: how today is going, then what has happened ── */}
 
