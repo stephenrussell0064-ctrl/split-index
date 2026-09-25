@@ -89,6 +89,23 @@ reps, the one progression rule, the app as the way to see the weight climb.
 **Pinned** the app is split index (free) — it tracks your 1RM per lift and shows whether it's climbing or flat. drop your current bench and how many sets a week you do and i'll tell you which of the 4 it is 👇
 **Sound** something with a bit of grit; gym-trend audio if one is live.
 
+## Script 4: "is running bad for gains"
+
+| Beat | Text |
+|---|---|
+| hook | is running bad for gains? 👇 |
+| set-up | not if you run it like this. 4 rules. |
+| list | run without losing gains — keep most runs easy · lift first, or split by 6+ hours · protein 1.6–2 g per kg, don't cut hard · one hard run a week, not three |
+| rule | then actually check: do your lifts drop in heavy running weeks, or not? |
+| proof 1 | *real Interference Radar screen* — split index checks mine — heavy cardio weeks, strength score +3.7%. no loss. |
+| proof 2 | *real run detail* — every run and every lift, scored on one timeline |
+| close | free on the app store · link in bio |
+
+**Caption** is running bad for gains? 4 rules so it isn't — and the app that checks your own numbers 👇
+**Hashtags** #hybridathlete #runningandlifting #gymtok #runtok #cardioandgains
+**Pinned** the app is split index (free) — its interference radar compares your strength scores in heavy vs light running weeks, from your own logs. do you lift and run the same day? 👇
+**Sound** debate-style or "hot take" trending audio; this one is built for the comments.
+
 ## More gaps worth scripting
 
 Same shape each time. Check each phrase in Creator Search Insights first;
@@ -96,7 +113,6 @@ the list is a starting point, not a result.
 
 | Search phrase | Angle | Where the app appears |
 |---|---|---|
-| is running bad for gains | interference is real but small and mostly about the day after | Interference Radar, +3.7 % |
 | hybrid athlete training split | 3 lift / 3 run, the running easy, one hard | Hybrid Plan week view |
 | how to lose belly fat gym | a compound-lift list, sets and reps | any Lab score screen |
 | what is a good 5k time for my age | age-graded tables | Engine score by sex and age |

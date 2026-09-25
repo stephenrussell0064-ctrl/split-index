@@ -45,7 +45,7 @@ const FORMATS = { StatCard: "stat-card", Quiz: "guess-the-tier", TugOfWar: "the-
 
 if (ugcOnly) {
   mkdirSync(`${outDir}/ugc`, { recursive: true });
-  const UGC = { ArmFat: "arm-fat-loss-exercises", RunFaster5k: "how-to-run-faster-5k", BenchNotGoingUp: "bench-press-not-going-up" };
+  const UGC = { ArmFat: "arm-fat-loss-exercises", RunFaster5k: "how-to-run-faster-5k", BenchNotGoingUp: "bench-press-not-going-up", RunningBadForGains: "is-running-bad-for-gains" };
   for (const [id, slug] of Object.entries(UGC)) {
     run(`npx remotion render Ugc-${id} ${outDir}/ugc/ugc-${slug}.mp4 ${scale} ${crf} --props='{"sfx":false,"safeZone":false}' --log=error`);
     run(`npx remotion render UgcSfx-${id} ${outDir}/ugc/ugc-${slug}-sfx.mp4 ${scale} ${crf} --log=error`);
