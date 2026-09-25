@@ -195,15 +195,45 @@ should show and the proof beats are the app doing each one.
 **Pinned** it's split index (free on the app store). scores every set as you log it, 1RM per lift, session score, and it does running too. what app are you using now? 👇
 **Sound** clean, upbeat; this one reads as a product demo and can carry a brighter track.
 
-## More gaps worth scripting
+## Script 10: "how to lose belly fat gym"
 
-Same shape each time. Check each phrase in Creator Search Insights first;
-the list is a starting point, not a result.
+| Beat | Text |
+|---|---|
+| hook | how to lose belly fat at the gym 👇 |
+| set-up | save this. big lifts, one hard cardio session, walk a lot. |
+| list | squat or leg press 3×8 · deadlift or RDL 3×6 · bench or push-up 3×10 · row or pulldown 3×10 · 1× a week 20 min intervals · 8–10k steps daily |
+| rule | 3 lifts a week, add weight when you hit the top of the range. that's it. |
+| proof 1 | *set logging* — i log every set in split index — it scores it as i type |
+| proof 2 | *run summary* — and the cardio session too, with a score |
+| close | free on the app store · link in bio |
 
-| Search phrase | Angle | Where the app appears |
-|---|---|---|
-| how to lose belly fat gym | a compound-lift list, sets and reps | any Lab score screen |
-| what is a good 5k time for my age | age-graded tables | Engine score by sex and age |
+**Caption** how to lose belly fat at the gym 🔥 the plan: 4 lifts, 1 cardio, steps. save it 👇
+**Hashtags** #bellyfat #gymplan #fatloss #gymtok #hybridathlete
+**Pinned** the app is split index (free) — scores every set and every run so you can see the weight going up. how many days a week can you train? i'll split it for you 👇
+
+## Script 11: "what is a good 5k time for my age"
+
+| Beat | Text |
+|---|---|
+| hook | what's a good 5k time for your age? 👇 |
+| set-up | rough guide for regular runners. men first, women add about 3 min. |
+| list | 20s 22–25 · 30s 23–26 · 40s 24–27 · 50s 26–29 · 60+ 28–32 · under 20 min at any age: fast |
+| rule | the only time that matters is your last one. beat that. |
+| proof 1 | *dashboard, predicted race times* — split index predicts my 5k from my runs — 18:52 — and grades it by sex and age |
+| proof 2 | *run session score* — every run gets a score against people your age |
+| close | free on the app store · link in bio |
+
+**Caption** what's a good 5k time for your age? rough guide by decade — where are you? 👇
+**Hashtags** #5k #5ktime #runtok #runningtips #hybridathlete
+**Pinned** the app is split index (free) — it predicts your 5k from your logged runs and scores every run against your sex and age. drop your age and 5k time 👇
+
+## Next gaps to check in Creator Search Insights
+
+The first ten are scripted. Candidates for the next batch, same shape:
+"how to start running", "push pull legs split", "how long to see gym
+results", "running for weight loss", "how to increase squat", "how to
+train for a half marathon", "beginner gym plan", "hyrox stations
+explained", "protein how much", "how to run without getting tired".
 
 ## Claims
 
