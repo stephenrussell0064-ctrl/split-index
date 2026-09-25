@@ -157,6 +157,23 @@ reps, the one progression rule, the app as the way to see the weight climb.
 **Pinned** the app is split index (free) — every run gets a heart-rate trace, zones and a score. what's your easy pace? drop it and your avg HR 👇
 **Sound** calm, steady; this is a read-along.
 
+## Script 8: "how much should I deadlift"
+
+| Beat | Text |
+|---|---|
+| hook | how much should you deadlift? 👇 |
+| set-up | forget the number. it's a multiple of your bodyweight. rough guide, men: |
+| list | beginner 1× · intermediate 1.5× · advanced 2× · elite 2.5×+ · women roughly 0.75 / 1 / 1.5 / 2× |
+| rule | 80 kg? 1.5× is 120 kg. that's the target, not what the guy next to you pulls. |
+| proof 1 | *real Adaptive 1RM screen* — split index tracks my deadlift 1RM — 200 kg at 78 kg bodyweight |
+| proof 2 | *real Lab recording, × bodyweight line* — and scores every lift as × bodyweight against your sex and age |
+| close | free on the app store · link in bio |
+
+**Caption** how much should you deadlift? it's a bodyweight multiple, not a number. find yours 👇
+**Hashtags** #deadlift #howmuchshouldilift #gymtok #strengthtraining #hybridathlete
+**Pinned** the app is split index (free) — every lift is scored as × bodyweight against your sex and age, with a tier. drop your deadlift and bodyweight and i'll tell you your multiple 👇
+**Sound** gym-trend audio with a bit of weight to it.
+
 ## More gaps worth scripting
 
 Same shape each time. Check each phrase in Creator Search Insights first;
@@ -166,7 +183,6 @@ the list is a starting point, not a result.
 |---|---|---|
 | how to lose belly fat gym | a compound-lift list, sets and reps | any Lab score screen |
 | what is a good 5k time for my age | age-graded tables | Engine score by sex and age |
-| how much should I be able to deadlift | bodyweight multiples, not absolute numbers | per-lift "×bodyweight" line |
 | gym progress tracker app | what to actually track: e1RM trend, not volume | Lab session history |
 
 ## Claims

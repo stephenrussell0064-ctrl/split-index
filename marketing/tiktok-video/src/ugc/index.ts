@@ -6,6 +6,7 @@ import { RUNNING_BAD_FOR_GAINS } from "./scripts/running-bad-for-gains";
 import { HYBRID_SPLIT } from "./scripts/hybrid-split";
 import { HYROX_PLAN } from "./scripts/hyrox-plan";
 import { ZONE_2 } from "./scripts/zone-2";
+import { HOW_MUCH_DEADLIFT } from "./scripts/how-much-deadlift";
 import type { UgcScript } from "./script";
 
-export const UGC_SCRIPTS: UgcScript[] = [ARM_FAT, RUN_FASTER_5K, BENCH_NOT_GOING_UP, RUNNING_BAD_FOR_GAINS, HYBRID_SPLIT, HYROX_PLAN, ZONE_2];
+export const UGC_SCRIPTS: UgcScript[] = [ARM_FAT, RUN_FASTER_5K, BENCH_NOT_GOING_UP, RUNNING_BAD_FOR_GAINS, HYBRID_SPLIT, HYROX_PLAN, ZONE_2, HOW_MUCH_DEADLIFT];
