@@ -121,7 +121,7 @@ const AppBeat: React.FC<{ beat: Extract<UgcBeat, { kind: "app" }> }> = ({ beat }
   return (
     <AbsoluteFill style={{ background: C.black, overflow: "hidden" }}>
       {/* the real app, sharp, filling the frame; the status bar is off the top */}
-      <AbsoluteFill style={{ scale: String(zoom * 1.06), transformOrigin: `50% ${beat.focusY ?? 45}%` }}>
+      <AbsoluteFill style={{ scale: String(zoom * 1.06), transformOrigin: `50% ${beat.focusY ?? 45}%`, translate: `0px ${beat.shiftY ?? 0}px` }}>
         {beat.clip ? (
           <Video src={staticFile(beat.clip)} trimBefore={Math.round((beat.from ?? 0) * fps)} objectFit="cover" style={{ width: "100%", height: "100%" }} />
         ) : beat.screen ? (

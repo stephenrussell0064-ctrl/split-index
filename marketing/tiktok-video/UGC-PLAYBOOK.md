@@ -174,6 +174,27 @@ reps, the one progression rule, the app as the way to see the weight climb.
 **Pinned** the app is split index (free) — every lift is scored as × bodyweight against your sex and age, with a tier. drop your deadlift and bodyweight and i'll tell you your multiple 👇
 **Sound** gym-trend audio with a bit of weight to it.
 
+## Script 9: "gym progress tracker app"
+
+The format flips here: the app is the answer, so the list is what a tracker
+should show and the proof beats are the app doing each one.
+
+| Beat | Text |
+|---|---|
+| hook | gym progress tracker app 👇 what it should actually show you |
+| list | a score per set, as you log it · a 1RM per lift that moves when you beat it · a session score · strength AND running on one dashboard |
+| set-up | this is the one i use. real screens: |
+| proof 1 | *set logging* — 1 · type a set, it's scored on the spot |
+| proof 2 | *session scored count-up* — 2 · finish, and the session gets a score |
+| proof 3 | *Adaptive 1RM* — 3 · a 1RM per lift, steady or climbing |
+| proof 4 | *dashboard* — 4 · lifting and running, one score out of 100 |
+| close | split index · free on the app store |
+
+**Caption** gym progress tracker app — the 4 things it should show you, on real screens 👇
+**Hashtags** #gymprogress #workouttracker #gymapp #gymtok #hybridathlete
+**Pinned** it's split index (free on the app store). scores every set as you log it, 1RM per lift, session score, and it does running too. what app are you using now? 👇
+**Sound** clean, upbeat; this one reads as a product demo and can carry a brighter track.
+
 ## More gaps worth scripting
 
 Same shape each time. Check each phrase in Creator Search Insights first;
@@ -183,7 +204,6 @@ the list is a starting point, not a result.
 |---|---|---|
 | how to lose belly fat gym | a compound-lift list, sets and reps | any Lab score screen |
 | what is a good 5k time for my age | age-graded tables | Engine score by sex and age |
-| gym progress tracker app | what to actually track: e1RM trend, not volume | Lab session history |
 
 ## Claims
 

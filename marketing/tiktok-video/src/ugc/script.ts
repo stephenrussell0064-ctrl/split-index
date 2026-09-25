@@ -14,7 +14,7 @@ export type UgcBeat =
   /** A numbered/checked list that reveals one item at a time. */
   | { kind: "list"; title: string; items: string[]; seconds: number; bg?: string; bgFrom?: number }
   /** The real app, sharp, full-bleed, with a caption. Recording or screenshot. */
-  | { kind: "app"; clip?: string; from?: number; screen?: string; focusY?: number; zoom?: number; text: string; seconds: number }
+  | { kind: "app"; clip?: string; from?: number; screen?: string; focusY?: number; zoom?: number; /** px to push the footage down (recordings are cropped ~210px top and bottom to fit 9:16). */ shiftY?: number; text: string; seconds: number }
   /** Soft close: wordmark, badge, one line. */
   | { kind: "cta"; text: string; seconds: number };
 
