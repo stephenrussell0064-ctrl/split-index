@@ -125,7 +125,7 @@ const AppBeat: React.FC<{ beat: Extract<UgcBeat, { kind: "app" }> }> = ({ beat }
         {beat.clip ? (
           <Video src={staticFile(beat.clip)} trimBefore={Math.round((beat.from ?? 0) * fps)} objectFit="cover" style={{ width: "100%", height: "100%" }} />
         ) : beat.screen ? (
-          <Img src={staticFile(beat.screen)} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          <Img src={staticFile(beat.screen)} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: `50% ${beat.focusY ?? 45}%` }} />
         ) : null}
       </AbsoluteFill>
       <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 120, background: "linear-gradient(#000, rgba(0,0,0,0))" }} />
