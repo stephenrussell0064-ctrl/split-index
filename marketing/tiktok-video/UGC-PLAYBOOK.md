@@ -227,10 +227,26 @@ should show and the proof beats are the app doing each one.
 **Hashtags** #5k #5ktime #runtok #runningtips #hybridathlete
 **Pinned** the app is split index (free) — it predicts your 5k from your logged runs and scores every run against your sex and age. drop your age and 5k time 👇
 
+## Script 12: "how to start running"
+
+| Beat | Text |
+|---|---|
+| hook | how to start running 👇 |
+| set-up | 3× a week, 20–30 min. walk and run. slower than you think. |
+| list | wk 1 run 1 / walk 2 ×8 · wk 2 run 2 / walk 2 ×6 · wk 3 run 4 / walk 1 ×5 · wk 4 run 8 / walk 1 ×3 · then 20 min without stopping |
+| rule | if you can't talk while running, slow down. every run, until it feels easy. |
+| proof 1 | *run summary* — i log every run in split index — distance, pace, heart rate |
+| proof 2 | *run session score* — and a score from your very first run, so you can watch it climb |
+| close | free on the app store · link in bio |
+
+**Caption** how to start running 🏃 the first 4 weeks, walk/run, 3× a week. save it 👇
+**Hashtags** #howtostartrunning #beginnerrunner #runtok #couchto5k #runningtips
+**Pinned** the app is split index (free) — every run gets distance, pace, heart rate and a score from day one. which week are you on? 👇
+
 ## Next gaps to check in Creator Search Insights
 
 The first ten are scripted. Candidates for the next batch, same shape:
-"how to start running", "push pull legs split", "how long to see gym
+"push pull legs split", "how long to see gym
 results", "running for weight loss", "how to increase squat", "how to
 train for a half marathon", "beginner gym plan", "hyrox stations
 explained", "protein how much", "how to run without getting tired".

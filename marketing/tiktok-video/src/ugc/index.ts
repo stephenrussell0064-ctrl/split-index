@@ -10,6 +10,7 @@ import { HOW_MUCH_DEADLIFT } from "./scripts/how-much-deadlift";
 import { PROGRESS_TRACKER } from "./scripts/progress-tracker";
 import { BELLY_FAT } from "./scripts/belly-fat";
 import { GOOD_5K_TIME } from "./scripts/good-5k-time";
+import { START_RUNNING } from "./scripts/start-running";
 import type { UgcScript } from "./script";
 
-export const UGC_SCRIPTS: UgcScript[] = [ARM_FAT, RUN_FASTER_5K, BENCH_NOT_GOING_UP, RUNNING_BAD_FOR_GAINS, HYBRID_SPLIT, HYROX_PLAN, ZONE_2, HOW_MUCH_DEADLIFT, PROGRESS_TRACKER, BELLY_FAT, GOOD_5K_TIME];
+export const UGC_SCRIPTS: UgcScript[] = [ARM_FAT, RUN_FASTER_5K, BENCH_NOT_GOING_UP, RUNNING_BAD_FOR_GAINS, HYBRID_SPLIT, HYROX_PLAN, ZONE_2, HOW_MUCH_DEADLIFT, PROGRESS_TRACKER, BELLY_FAT, GOOD_5K_TIME, START_RUNNING];
