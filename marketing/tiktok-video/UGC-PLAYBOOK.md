@@ -123,6 +123,23 @@ reps, the one progression rule, the app as the way to see the weight climb.
 **Pinned** the app is split index (free) — the hybrid plan builds a block toward your event from your own lifts and runs, targets on screen. what's your event? 👇
 **Sound** steady, motivational; a Hyrox-trend sound if one is live.
 
+## Script 6: "hyrox training plan"
+
+| Beat | Text |
+|---|---|
+| hook | hyrox training plan 👇 |
+| set-up | 8 runs, 8 stations. train running tired, not just running. |
+| list | mon lower strength · tue easy run 40 min · wed station circuit · thu run + station intervals 1 km, station, ×4 · fri upper + carries · sat long run 60–75 min · sun rest |
+| rule | 8 weeks out, make thursday the priority. that's the race. |
+| proof 1 | *real Hybrid Plan week view* — split index builds the block toward your event date — week 1 of 5, base |
+| proof 2 | *real Targets screen* — targets on screen so the gap is visible: 5k 18:22 → 18:00 |
+| close | free on the app store · link in bio |
+
+**Caption** hyrox training plan 🏁 the week, day by day, 8 weeks out. save it 👇
+**Hashtags** #hyrox #hyroxtraining #hybridathlete #hyroxprep #gymtok
+**Pinned** the app is split index (free) — the hybrid plan builds a block toward your event date from your own lifts and runs. when's your hyrox? 👇
+**Sound** whatever is trending under #hyrox that week; this audience has its own sounds.
+
 ## More gaps worth scripting
 
 Same shape each time. Check each phrase in Creator Search Insights first;
@@ -135,7 +152,6 @@ the list is a starting point, not a result.
 | how much should I be able to deadlift | bodyweight multiples, not absolute numbers | per-lift "×bodyweight" line |
 | zone 2 running explained | HR, not pace; the app's zones chart | Engine run detail, zones |
 | gym progress tracker app | what to actually track: e1RM trend, not volume | Lab session history |
-| hyrox training plan | strength and running on one calendar | Hybrid Plan block |
 
 ## Claims
 
