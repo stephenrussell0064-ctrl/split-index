@@ -45,7 +45,7 @@ const FORMATS = { StatCard: "stat-card", Quiz: "guess-the-tier", TugOfWar: "the-
 
 if (ugcOnly) {
   mkdirSync(`${outDir}/ugc`, { recursive: true });
-  const UGC = { ArmFat: "arm-fat-loss-exercises", RunFaster5k: "how-to-run-faster-5k", BenchNotGoingUp: "bench-press-not-going-up", RunningBadForGains: "is-running-bad-for-gains", HybridSplit: "hybrid-athlete-training-split", HyroxPlan: "hyrox-training-plan", Zone2: "zone-2-running-explained", HowMuchDeadlift: "how-much-should-i-deadlift", ProgressTracker: "gym-progress-tracker-app", BellyFat: "how-to-lose-belly-fat-gym", Good5kTime: "good-5k-time-for-my-age", StartRunning: "how-to-start-running", PplSplit: "push-pull-legs-split" };
+  const UGC = { ArmFat: "arm-fat-loss-exercises", RunFaster5k: "how-to-run-faster-5k", BenchNotGoingUp: "bench-press-not-going-up", RunningBadForGains: "is-running-bad-for-gains", HybridSplit: "hybrid-athlete-training-split", HyroxPlan: "hyrox-training-plan", Zone2: "zone-2-running-explained", HowMuchDeadlift: "how-much-should-i-deadlift", ProgressTracker: "gym-progress-tracker-app", BellyFat: "how-to-lose-belly-fat-gym", Good5kTime: "good-5k-time-for-my-age", StartRunning: "how-to-start-running", PplSplit: "push-pull-legs-split", SpeedShoes: "speed-running-shoes" };
   for (const [id, slug] of Object.entries(UGC)) {
     run(`npx remotion render Ugc-${id} ${outDir}/ugc/ugc-${slug}.mp4 ${scale} ${crf} --props='{"sfx":false,"safeZone":false}' --log=error`);
     run(`npx remotion render UgcSfx-${id} ${outDir}/ugc/ugc-${slug}-sfx.mp4 ${scale} ${crf} --log=error`);

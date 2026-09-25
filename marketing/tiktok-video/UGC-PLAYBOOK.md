@@ -259,6 +259,23 @@ should show and the proof beats are the app doing each one.
 **Hashtags** #pushpulllegs #ppl #gymsplit #gymtok #hybridathlete
 **Pinned** the app is split index (free) — scores every set and gives every lift its own 1RM, so you can see which day is moving. 6 days or 3? 👇
 
+## Script 14: "speed running shoes"
+
+| Beat | Text |
+|---|---|
+| hook | speed running shoes 👇 what to actually buy |
+| set-up | a speed shoe = light, firm foam, often a plate. for race day and hard sessions, not easy runs. |
+| list | tempo days: endorphin speed, magic speed, mach · race day: vaporfly, adios pro, metaspeed · budget: last year's model · keep your daily trainer, speed shoes are for 1–2 runs a week |
+| rule | then prove it: same route, same effort, compare the splits. |
+| proof 1 | *run splits + best efforts* — split index gives me every km split and my fastest stretch at each distance |
+| proof 2 | *dashboard predicted race times* — and a predicted 5k from all of it — 18:52 right now |
+| close | free on the app store · link in bio · no shoe brand paid for this |
+
+**Caption** speed running shoes — what they are, when to wear them, the shortlist. then log it and see if it actually helped 👇
+**Hashtags** #runningshoes #speedshoes #carbonplate #runtok #hybridathlete
+**Pinned** the app is split index (free) — every run gets km splits and best efforts, so you can see whether the new shoes changed anything. what are you racing in? 👇
+**Note** shoes are named as examples, no performance claim is made about any of them, and the disclaimer says no brand paid. Keep it that way in replies.
+
 ## Next gaps to check in Creator Search Insights
 
 The first ten are scripted. Candidates for the next batch, same shape:
