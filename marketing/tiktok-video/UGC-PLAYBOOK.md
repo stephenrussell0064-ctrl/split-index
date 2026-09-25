@@ -140,6 +140,23 @@ reps, the one progression rule, the app as the way to see the weight climb.
 **Pinned** the app is split index (free) — the hybrid plan builds a block toward your event date from your own lifts and runs. when's your hyrox? 👇
 **Sound** whatever is trending under #hyrox that week; this audience has its own sounds.
 
+## Script 7: "zone 2 running explained"
+
+| Beat | Text |
+|---|---|
+| hook | zone 2 running explained 👇 |
+| set-up | zone 2 = easy. the pace where your body builds the engine instead of just surviving the run. |
+| list | heart rate roughly 60–70% of max · talk test: full sentences · it will feel too slow, that's correct · 3–4 runs a week, 30–60 min · watch for same pace, lower heart rate |
+| rule | one hard run a week is plenty. the rest stays in zone 2. |
+| proof 1 | *real run detail, HR trace + zones* — split index shows my heart-rate trace and zones on every run |
+| proof 2 | *real run summary* — pace, avg HR and a score, so i can see the drift week to week |
+| close | free on the app store · link in bio |
+
+**Caption** zone 2 running explained 🫀 how to find it, how much to do, what to watch for. save it 👇
+**Hashtags** #zone2 #zone2running #runtok #runningtips #hybridathlete
+**Pinned** the app is split index (free) — every run gets a heart-rate trace, zones and a score. what's your easy pace? drop it and your avg HR 👇
+**Sound** calm, steady; this is a read-along.
+
 ## More gaps worth scripting
 
 Same shape each time. Check each phrase in Creator Search Insights first;
@@ -150,7 +167,6 @@ the list is a starting point, not a result.
 | how to lose belly fat gym | a compound-lift list, sets and reps | any Lab score screen |
 | what is a good 5k time for my age | age-graded tables | Engine score by sex and age |
 | how much should I be able to deadlift | bodyweight multiples, not absolute numbers | per-lift "×bodyweight" line |
-| zone 2 running explained | HR, not pace; the app's zones chart | Engine run detail, zones |
 | gym progress tracker app | what to actually track: e1RM trend, not volume | Lab session history |
 
 ## Claims
