@@ -30,6 +30,16 @@ The `.mp4` files are not committed (`.gitignore`); the covers are. Regenerate
 with `npm run render`, or one variant with `npm run render -- --only B`, or
 quarter-resolution drafts of everything with `npm run render:drafts`.
 
+## UGC (`src/ugc/`) — search-led faceless videos
+
+A different job from the film: answer a question people already type into
+TikTok search (Creator Search Insights → content gaps), in TikTok's own
+caption style, with the real app appearing once as the proof. Each gap is a
+script file in `src/ugc/scripts/`; `Ugc.tsx` renders any of them.
+`npm run render -- --ugc` → `out/ugc/`. The workflow, the first script
+("arm fat loss exercises", the honest version) and ten more gaps to try are in
+**UGC-PLAYBOOK.md**.
+
 ## Real-footage film (`src/real/`) — the one to post
 
 The synthetic film and formats above redraw the app's screens from tokens.

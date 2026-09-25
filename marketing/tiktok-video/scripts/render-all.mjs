@@ -23,6 +23,7 @@ const only = args.includes("--only") ? args[args.indexOf("--only") + 1] : null;
 const drafts = args.includes("--drafts");
 const formatsOnly = args.includes("--formats");
 const realOnly = args.includes("--real");
+const ugcOnly = args.includes("--ugc");
 
 const HOOKS = { A: "bench-elite-5k-beginner", B: "lifting-slowing-running", C: "built-an-app", D: "strong-or-fit", E: "rate-me" };
 const ids = only ? [only] : Object.keys(HOOKS);
@@ -41,6 +42,17 @@ run("npm run --silent compute");
 run("npm run --silent sfx");
 
 const FORMATS = { StatCard: "stat-card", Quiz: "guess-the-tier", TugOfWar: "the-gap", RadarExplainer: "radar-explainer", TextStory: "text-story", MicroLoop: "micro-loop" };
+
+if (ugcOnly) {
+  mkdirSync(`${outDir}/ugc`, { recursive: true });
+  const UGC = { ArmFat: "arm-fat-loss-exercises" };
+  for (const [id, slug] of Object.entries(UGC)) {
+    run(`npx remotion render Ugc-${id} ${outDir}/ugc/ugc-${slug}.mp4 ${scale} ${crf} --props='{"sfx":false,"safeZone":false}' --log=error`);
+    run(`npx remotion render UgcSfx-${id} ${outDir}/ugc/ugc-${slug}-sfx.mp4 ${scale} ${crf} --log=error`);
+  }
+  console.log(`\n✓ rendered into ${outDir}/ugc/`);
+  process.exit(0);
+}
 
 const REAL_HOOKS = { A: "bench-133-5k-1825", B: "is-759-good", C: "built-an-app", D: "strong-or-fit", E: "rate-my-bench-and-5k" };
 if (realOnly) {

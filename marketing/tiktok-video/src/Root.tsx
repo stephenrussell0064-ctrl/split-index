@@ -26,6 +26,11 @@ import { MicroLoop, MICRO_DURATION } from "./formats/MicroLoop";
 import type { FormatProps } from "./formats/shared";
 import { RealAd, RealAdShort } from "./real/RealAd";
 import { RealCover, realCoverSchema } from "./real/RealCover";
+import { makeUgc, ugcSchema } from "./ugc/Ugc";
+import { UGC_SCRIPTS } from "./ugc";
+import { ugcDuration } from "./ugc/script";
+
+const UGC = UGC_SCRIPTS.map((s) => ({ script: s, component: makeUgc(s) }));
 
 const formatSchema = z.object({ sfx: z.boolean(), safeZone: z.boolean() });
 
@@ -51,6 +56,15 @@ export const RemotionRoot: React.FC = () => (
       schema={adSchema}
       defaultProps={{ hook: "A", safeZone: true, sfx: true }}
     />
+
+    <Folder name="UGC">
+      {UGC.map(({ script, component }) => (
+        <React.Fragment key={script.id}>
+          <Composition id={`Ugc-${script.id}`} component={component} durationInFrames={ugcDuration(script, FPS)} {...base} schema={ugcSchema} defaultProps={{ sfx: false, safeZone: true }} />
+          <Composition id={`UgcSfx-${script.id}`} component={component} durationInFrames={ugcDuration(script, FPS)} {...base} schema={ugcSchema} defaultProps={{ sfx: true, safeZone: false }} />
+        </React.Fragment>
+      ))}
+    </Folder>
 
     <Folder name="Real-footage">
       <Composition id="RealAd" component={RealAd} durationInFrames={DURATION} {...base} schema={adSchema} defaultProps={{ hook: "A", safeZone: true, sfx: true }} />
