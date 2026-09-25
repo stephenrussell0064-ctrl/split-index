@@ -243,10 +243,26 @@ should show and the proof beats are the app doing each one.
 **Hashtags** #howtostartrunning #beginnerrunner #runtok #couchto5k #runningtips
 **Pinned** the app is split index (free) — every run gets distance, pace, heart rate and a score from day one. which week are you on? 👇
 
+## Script 13: "push pull legs split"
+
+| Beat | Text |
+|---|---|
+| hook | push pull legs split 👇 |
+| set-up | 3 days, repeat. the whole thing on one screen. |
+| list | push: bench 6–8, OHP 8–10, incline db 10, pushdown 12 · pull: deadlift or row 6, pull-up 8–10, face pull 15, curl 12 · legs: squat 6–8, RDL 8–10, leg press 10–12, calf raise 15 |
+| rule | run it 6 days a week, or 3. never 4 — you'll always miss a day. |
+| proof 1 | *real Pull session* — my pull day in split index — every lift scored, 1RM per exercise |
+| proof 2 | *Adaptive 1RM list* — and a 1RM list that tells you which lift is stalling |
+| close | free on the app store · link in bio |
+
+**Caption** push pull legs split 🏋️ all 3 days with the lifts, sets and reps. save it 👇
+**Hashtags** #pushpulllegs #ppl #gymsplit #gymtok #hybridathlete
+**Pinned** the app is split index (free) — scores every set and gives every lift its own 1RM, so you can see which day is moving. 6 days or 3? 👇
+
 ## Next gaps to check in Creator Search Insights
 
 The first ten are scripted. Candidates for the next batch, same shape:
-"push pull legs split", "how long to see gym
+"how long to see gym
 results", "running for weight loss", "how to increase squat", "how to
 train for a half marathon", "beginner gym plan", "hyrox stations
 explained", "protein how much", "how to run without getting tired".
