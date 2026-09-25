@@ -72,14 +72,30 @@ reps, the one progression rule, the app as the way to see the weight climb.
 **Pinned** the app is split index (free) — it predicts your 5k from your logged runs and scores every run. drop your current 5k time and i'll tell you which session to add 👇
 **Sound** upbeat but steady; a running-trend sound if one is live that week.
 
-## Ten more gaps worth scripting
+## Script 3: "bench press not going up"
+
+| Beat | Text |
+|---|---|
+| hook | bench press not going up? 👇 |
+| set-up | it's almost always one of these four. fix the one that's you. |
+| list | why your bench is stuck — not enough sets · aim 10–15 hard sets a week · same weight every session · add 2.5 kg or 1 rep · no back-off work · 3×8 at 70% after your top set · sleep + food |
+| rule | run the fix for 6 weeks before you change anything else. |
+| proof 1 | *real Adaptive 1RM screen* — split index tracks my 1RM per lift — flat line means stalled, before i feel it |
+| proof 2 | *real set logging* — and every set gets scored as i type it |
+| close | free on the app store · link in bio |
+
+**Caption** bench press not going up? it's one of these 4 🔒 save it and fix yours 👇
+**Hashtags** #benchpress #benchpressplateau #gymtok #strengthtraining #hybridathlete
+**Pinned** the app is split index (free) — it tracks your 1RM per lift and shows whether it's climbing or flat. drop your current bench and how many sets a week you do and i'll tell you which of the 4 it is 👇
+**Sound** something with a bit of grit; gym-trend audio if one is live.
+
+## More gaps worth scripting
 
 Same shape each time. Check each phrase in Creator Search Insights first;
 the list is a starting point, not a result.
 
 | Search phrase | Angle | Where the app appears |
 |---|---|---|
-| bench press not going up | plateaus are usually volume or recovery, not technique | adaptive 1RM "Steady" vs "Best" |
 | is running bad for gains | interference is real but small and mostly about the day after | Interference Radar, +3.7 % |
 | hybrid athlete training split | 3 lift / 3 run, the running easy, one hard | Hybrid Plan week view |
 | how to lose belly fat gym | a compound-lift list, sets and reps | any Lab score screen |
