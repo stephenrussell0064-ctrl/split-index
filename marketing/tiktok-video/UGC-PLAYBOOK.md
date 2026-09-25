@@ -106,6 +106,23 @@ reps, the one progression rule, the app as the way to see the weight climb.
 **Pinned** the app is split index (free) — its interference radar compares your strength scores in heavy vs light running weeks, from your own logs. do you lift and run the same day? 👇
 **Sound** debate-style or "hot take" trending audio; this one is built for the comments.
 
+## Script 5: "hybrid athlete training split"
+
+| Beat | Text |
+|---|---|
+| hook | hybrid athlete training split 👇 |
+| set-up | 3 lifts, 3 runs, 1 rest. here's the week. |
+| list | mon upper lift · tue easy run 30–45 min · wed lower lift · thu intervals or tempo · fri full body lift · sat long run, easy · sun rest |
+| rule | hard run and lower day never back to back. that's the only rule. |
+| proof 1 | *real Hybrid Plan week view* — split index builds my week — 5 sessions, 2 rest, from my own lifts and runs |
+| proof 2 | *real Targets screen* — with the targets on screen: 5k 18:22 → 18:00, squat 127 → 150 |
+| close | free on the app store · link in bio |
+
+**Caption** hybrid athlete training split 🏋️🏃 3 lifts, 3 runs, 1 rest. save the week 👇
+**Hashtags** #hybridathlete #hybridtraining #hyrox #gymtok #runtok
+**Pinned** the app is split index (free) — the hybrid plan builds a block toward your event from your own lifts and runs, targets on screen. what's your event? 👇
+**Sound** steady, motivational; a Hyrox-trend sound if one is live.
+
 ## More gaps worth scripting
 
 Same shape each time. Check each phrase in Creator Search Insights first;
@@ -113,7 +130,6 @@ the list is a starting point, not a result.
 
 | Search phrase | Angle | Where the app appears |
 |---|---|---|
-| hybrid athlete training split | 3 lift / 3 run, the running easy, one hard | Hybrid Plan week view |
 | how to lose belly fat gym | a compound-lift list, sets and reps | any Lab score screen |
 | what is a good 5k time for my age | age-graded tables | Engine score by sex and age |
 | how much should I be able to deadlift | bodyweight multiples, not absolute numbers | per-lift "×bodyweight" line |
