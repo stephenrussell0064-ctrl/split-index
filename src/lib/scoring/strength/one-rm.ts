@@ -231,14 +231,31 @@ export function weightedCalisthenic1RM(
   reps: number,
   bodyweightKg: number,
   exerciseClass: ExerciseClass = "compound",
-  repsInReserve?: RepsInReserve
+  repsInReserve?: RepsInReserve,
+  /**
+   * Bodyweight the athlete OWNS, when that differs from the bodyweight the
+   * movement LOADS. Defaults to the loaded figure, which is every lift where
+   * the two are the same — so every existing call is unchanged.
+   *
+   * They differ for a movement harder than hanging: a muscle-up pulls to
+   * sternum height and presses out of the transition, so it loads more than
+   * bodyweight while the athlete still only weighs bodyweight. The difference
+   * is real added-weight-equivalent and must survive the subtraction below.
+   *
+   * Without this the result is structurally zero for ANY bodyweight-only
+   * single — `repFormula(bw) - bw` with a 1-rep multiplier of exactly 1.0 —
+   * so one strict muscle-up, one strict pull-up and one knee push-up were
+   * indistinguishable at the bottom of the scale. A muscle-up scored 9.7.
+   */
+  ownedBodyweightKg: number = bodyweightKg
 ): number {
   void exerciseClass; // inert — one rep curve for every class, see file header
-  if (reps <= 1 && (repsInReserve ?? 0) === 0) return addedKg;
+  const intrinsicCredit = bodyweightKg - ownedBodyweightKg;
+  if (reps <= 1 && (repsInReserve ?? 0) === 0) return addedKg + intrinsicCredit;
   const effective = effectiveReps(reps, repsInReserve);
-  if (effective <= 1) return addedKg;
+  if (effective <= 1) return addedKg + intrinsicCredit;
   const totalLoad1RM =
-    scoringRepFormula(bodyweightKg + addedKg, reps, repsInReserve) - bodyweightKg;
+    scoringRepFormula(bodyweightKg + addedKg, reps, repsInReserve) - ownedBodyweightKg;
   // The added-only side of the blend is degenerate at addedKg <= 0 — any
   // rep formula applied to a 0 weight trivially returns 0 regardless of
   // reps, so blending 50/50 with an always-zero signal silently halved the

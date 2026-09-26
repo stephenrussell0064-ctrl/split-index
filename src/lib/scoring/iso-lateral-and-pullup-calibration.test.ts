@@ -178,10 +178,20 @@ describe("Pull Up — the reported +30kg x 8 = 72.9 case", () => {
   });
 
   it("stays monotonic in added load across the whole calisthenics family", () => {
+    // Strictly increasing UNTIL the scale runs out, then flat. The strict
+    // version of this held only while nothing reached the ceiling, which
+    // stopped being true on 27 Sep 2026 when muscle-ups gained their
+    // bodyweight load factor: +20kg x 8 now tops out at 999, and a bounded
+    // scale cannot keep climbing past its bound. Saturation is correct
+    // behaviour; going DOWN would not be, and that is what this now pins.
+    const CAP = 999;
+    const added = [0, 10, 20, 30, 40];
     for (const name of ["Weighted Pull Up", "Weighted Dips", "Weighted Muscle Up", "Weighted Push Up"]) {
-      const scores = [0, 10, 20, 30, 40].map((w) => scoreLogged(name, w, 8).score);
+      const scores = added.map((w) => scoreLogged(name, w, 8).score);
       for (let i = 1; i < scores.length; i++) {
-        expect(scores[i], `${name} at +${[0, 10, 20, 30, 40][i]}kg`).toBeGreaterThan(scores[i - 1]);
+        const label = `${name} at +${added[i]}kg`;
+        expect(scores[i], label).toBeGreaterThanOrEqual(scores[i - 1]);
+        if (scores[i - 1] < CAP) expect(scores[i], `${label} (below the cap)`).toBeGreaterThan(scores[i - 1]);
       }
     }
   });
