@@ -204,10 +204,24 @@ describe("repMaxMultiplier — Strength Level's published rep → %1RM table", (
     expect(repMaxMultiplier(-3)).toBe(1);
   });
 
-  it("holds flat past the end of the published table rather than extrapolating off it", () => {
-    const atThirty = repMaxMultiplier(30);
-    expect(repMaxMultiplier(45)).toBe(atThirty);
-    expect(repMaxMultiplier(200)).toBe(atThirty);
+  it("keeps rising from 30 to 50 reps, then holds flat past the extrapolated tail", () => {
+    // Was "holds flat past 30". The flat hold put a hard ceiling under every
+    // bodyweight-only calisthenic — a pull-up's estimate is bodyweight x
+    // multiplier - bodyweight, so 30, 40 and 50 strict pull-ups all scored
+    // 91.8. The table now runs to 50 on an explicitly extrapolated tail.
+    expect(repMaxMultiplier(40)).toBeGreaterThan(repMaxMultiplier(30));
+    expect(repMaxMultiplier(50)).toBeGreaterThan(repMaxMultiplier(40));
+
+    // The tail is deliberately shallow: a 50-rep set must not imply a bigger
+    // 1RM jump than the published 20->30 stretch does.
+    const published = repMaxMultiplier(30) - repMaxMultiplier(20);
+    const extrapolated = repMaxMultiplier(50) - repMaxMultiplier(30);
+    expect(extrapolated).toBeLessThan(published);
+
+    // Still flat past the end, just at 50 instead of 30.
+    const atFifty = repMaxMultiplier(50);
+    expect(repMaxMultiplier(80)).toBe(atFifty);
+    expect(repMaxMultiplier(200)).toBe(atFifty);
   });
 
   it("interpolates between whole reps so a fractional RIR doesn't step", () => {

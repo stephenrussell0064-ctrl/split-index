@@ -101,7 +101,10 @@ const ANCHOR_FIXTURES: Array<{
   { lift: "lateralRaise", kg: 22, score: 771, tier: "Advanced", note: "PER HAND: between 16kg(650) and 25kg(850)" },
   { lift: "dbRow", kg: 67, score: 720, tier: "Semi-Pro", note: "log curve, aliases too mixed to table" },
   { lift: "barbellCurl", kg: 60, score: 798, tier: "Advanced", note: "between 46kg(650) and 63kg(850)" },
-  { lift: "preacherCurl", kg: 65, score: 758, tier: "Advanced", note: "log curve, no published table" },
+  // 758 -> 834: anchor eased 0.3968 -> 0.3249 on 26 Sep 2026 after "preacher
+  // curl too low scoring, needs a buff". Safe to hand-tune precisely because
+  // there is no published table behind it, unlike dbCurl and latPulldown.
+  { lift: "preacherCurl", kg: 65, score: 834, tier: "Advanced", note: "log curve, no published table" },
   { lift: "latPulldown", kg: 145, score: 984, tier: "World Class", note: "ABOVE the 133kg 95th-percentile anchor" },
   { lift: "legExtension", kg: 150, score: 866, tier: "Elite", note: "between 140kg(850) and 180kg(950)" },
   { lift: "bulgarianSplit", kg: 55, score: 387, tier: "Intermediate", note: "log curve, no published table" },
