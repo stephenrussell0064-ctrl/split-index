@@ -69,25 +69,26 @@ const DashboardShot: React.FC = () => {
   const { fps } = useVideoConfig();
   const S = SHOWCASE;
   const enter = spring({ frame, fps, config: SPRING_CAMERA, durationInFrames: 34 });
-  const rotateY = interpolate(enter, [0, 1], [30, 10]);
-  const rotateX = interpolate(enter, [0, 1], [10, 4]);
-  const rotateZ = interpolate(enter, [0, 1], [-6, -2]);
-  const scale = interpolate(enter, [0, 1], [0.95, 1.2]);
-  const y = interpolate(enter, [0, 1], [500, 60]);
+  const rotateY = interpolate(enter, [0, 1], [22, 5]);
+  const rotateX = interpolate(enter, [0, 1], [8, 2]);
+  const rotateZ = interpolate(enter, [0, 1], [-4, -1]);
+  const push = spring({ frame: frame - S.races, fps, config: { damping: 40, stiffness: 40, mass: 1.4 }, durationInFrames: 40 });
+  const scale = interpolate(enter, [0, 1], [1.1, 1.36]) + push * 0.08;
+  const y = interpolate(enter, [0, 1], [500, 120]) - push * 40;
   const impact = useImpact(S.races, 6, 16);
   const glow = interpolate(frame, [S.races - 20, S.races], [0.3, 0.9], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
 
   // one Screen per move so each has its own start
   const screen =
     frame < S.sides ? (
-      <Screen src={REAL.dashboard.file} focusFrom={[590, 640]} focusTo={[590, 660]} zoomFrom={1.25} zoomTo={1.35} frames={S.sides} />
+      <Screen src={REAL.dashboard.file} focusFrom={[590, 1278]} focusTo={[590, 1278]} zoomFrom={1} zoomTo={1} frames={S.sides} />
     ) : frame < S.races ? (
       <Sequence from={S.sides} layout="none">
-        <Screen src={REAL.dashboard.file} focusFrom={[590, 660]} focusTo={[590, 900]} zoomFrom={1.35} zoomTo={1.3} frames={40} />
+        <Screen src={REAL.dashboard.file} focusFrom={[590, 1278]} focusTo={[590, 1400]} zoomFrom={1} zoomTo={1} frames={40} />
       </Sequence>
     ) : (
       <Sequence from={S.races} layout="none">
-        <Screen src={REAL.dashboard.file} focusFrom={[590, 900]} focusTo={[590, 1230]} zoomFrom={1.3} zoomTo={1.42} frames={26} />
+        <Screen src={REAL.dashboard.file} focusFrom={[590, 1400]} focusTo={[590, 1650]} zoomFrom={1} zoomTo={1} frames={30} />
       </Sequence>
     );
 
@@ -128,14 +129,14 @@ const RecordsShot: React.FC = () => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const enter = spring({ frame, fps, config: SPRING_CAMERA, durationInFrames: 30 });
-  const rotateY = interpolate(enter, [0, 1], [-28, -8]);
-  const y = interpolate(enter, [0, 1], [400, 60]);
+  const rotateY = interpolate(enter, [0, 1], [-20, -5]);
+  const y = interpolate(enter, [0, 1], [400, 120]);
   return (
     <AbsoluteFill style={{ background: C.black }}>
       <Bloom color="blue" intensity={0.3} x={540 + SAFE_DX} y={800} size={1100} />
       <LightStreak y={300} color="blue" width={1500} thickness={6} opacity={0.3} drift={260} progress={frame / 120} />
-      <Phone rotateY={rotateY} rotateX={4} rotateZ={2} scale={1.24} x={SAFE_DX} y={y} glow="blue">
-        <Screen src={REAL.records.file} focusFrom={[590, 560]} focusTo={[590, 700]} zoomFrom={1.5} zoomTo={1.35} frames={70} />
+      <Phone rotateY={rotateY} rotateX={2} rotateZ={1} scale={1.38} x={SAFE_DX} y={y} glow="blue">
+        <Screen src={REAL.records.file} focusFrom={[590, 1278]} focusTo={[590, 1278]} zoomFrom={1} zoomTo={1} frames={70} />
       </Phone>
       <Provenance text={`@${REAL.handle} · race records`} />
       <CaptionTrack
@@ -154,14 +155,15 @@ const OneRmShot: React.FC = () => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const enter = spring({ frame, fps, config: SPRING_CAMERA, durationInFrames: 30 });
-  const rotateY = interpolate(enter, [0, 1], [24, 8]);
-  const y = interpolate(enter, [0, 1], [400, 60]);
+  const rotateY = interpolate(enter, [0, 1], [20, 5]);
+  // slide up so the 1RM card sits above the caption slot
+  const y = interpolate(enter, [0, 1], [400, -150]);
   return (
     <AbsoluteFill style={{ background: C.black }}>
       <Bloom color="green" intensity={0.3} x={540 + SAFE_DX} y={800} size={1100} />
       <LightStreak y={300} color="green" width={1500} thickness={6} opacity={0.3} drift={-260} progress={frame / 120} />
-      <Phone rotateY={rotateY} rotateX={4} rotateZ={-2} scale={1.24} x={SAFE_DX} y={y}>
-        <Screen src={REAL.dashboard.file} focusFrom={[590, 1400]} focusTo={[590, 1480]} zoomFrom={1.3} zoomTo={1.4} frames={70} />
+      <Phone rotateY={rotateY} rotateX={2} rotateZ={-1} scale={1.38} x={SAFE_DX} y={y}>
+        <Screen src={REAL.dashboard.file} focusFrom={[590, 1650]} focusTo={[590, 1750]} zoomFrom={1} zoomTo={1} frames={70} />
       </Phone>
       <Provenance text={`@${REAL.handle} · predicted 1RM`} />
       <CaptionTrack
