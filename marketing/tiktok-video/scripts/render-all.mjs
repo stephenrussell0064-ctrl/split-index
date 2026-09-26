@@ -23,6 +23,7 @@ const only = args.includes("--only") ? args[args.indexOf("--only") + 1] : null;
 const drafts = args.includes("--drafts");
 const formatsOnly = args.includes("--formats");
 const realOnly = args.includes("--real");
+const showcaseOnly = args.includes("--showcase");
 const ugcOnly = args.includes("--ugc");
 
 const HOOKS = { A: "bench-elite-5k-beginner", B: "lifting-slowing-running", C: "built-an-app", D: "strong-or-fit", E: "rate-me" };
@@ -51,6 +52,17 @@ if (ugcOnly) {
     run(`npx remotion render UgcSfx-${id} ${outDir}/ugc/ugc-${slug}-sfx.mp4 ${scale} ${crf} --log=error`);
   }
   console.log(`\n✓ rendered into ${outDir}/ugc/`);
+  process.exit(0);
+}
+
+const SHOWCASE = { Dashboard: "dashboard-and-race-predictions" };
+if (showcaseOnly) {
+  mkdirSync(`${outDir}/showcase`, { recursive: true });
+  for (const [id, slug] of Object.entries(SHOWCASE)) {
+    run(`npx remotion render Showcase-${id} ${outDir}/showcase/showcase-${slug}.mp4 ${scale} ${crf} --props='{"sfx":false,"safeZone":false}' --log=error`);
+    run(`npx remotion render ShowcaseSfx-${id} ${outDir}/showcase/showcase-${slug}-sfx.mp4 ${scale} ${crf} --log=error`);
+  }
+  console.log(`\n✓ rendered into ${outDir}/showcase/`);
   process.exit(0);
 }
 

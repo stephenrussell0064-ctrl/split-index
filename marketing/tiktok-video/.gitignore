@@ -6,6 +6,7 @@ node_modules/
 out/*.mp4
 out/formats/*.mp4
 out/real/*.mp4
+out/showcase/*.mp4
 out/ugc/*.mp4
 out/*.zip
 out/drafts/
@@ -18,4 +19,6 @@ out/draft*
 # build log
 out/render*.log
 out/real-review*/
+out/ugc-review*/
+out/sc-review*/
 out/ugc-review*/

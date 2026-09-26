@@ -26,6 +26,7 @@ import { MicroLoop, MICRO_DURATION } from "./formats/MicroLoop";
 import type { FormatProps } from "./formats/shared";
 import { RealAd, RealAdShort } from "./real/RealAd";
 import { RealCover, realCoverSchema } from "./real/RealCover";
+import { DashboardShowcase, SHOWCASE_DURATION, showcaseSchema } from "./showcase/DashboardShowcase";
 import { makeUgc, ugcSchema } from "./ugc/Ugc";
 import { UGC_SCRIPTS } from "./ugc";
 import { ugcDuration } from "./ugc/script";
@@ -64,6 +65,11 @@ export const RemotionRoot: React.FC = () => (
           <Composition id={`UgcSfx-${script.id}`} component={component} durationInFrames={ugcDuration(script, FPS)} {...base} schema={ugcSchema} defaultProps={{ sfx: true, safeZone: false }} />
         </React.Fragment>
       ))}
+    </Folder>
+
+    <Folder name="Showcase">
+      <Composition id="Showcase-Dashboard" component={DashboardShowcase} durationInFrames={SHOWCASE_DURATION} {...base} schema={showcaseSchema} defaultProps={{ sfx: false, safeZone: true }} />
+      <Composition id="ShowcaseSfx-Dashboard" component={DashboardShowcase} durationInFrames={SHOWCASE_DURATION} {...base} schema={showcaseSchema} defaultProps={{ sfx: true, safeZone: false }} />
     </Folder>
 
     <Folder name="Real-footage">
