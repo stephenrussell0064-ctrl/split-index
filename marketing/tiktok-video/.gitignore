@@ -8,6 +8,8 @@ out/formats/*.mp4
 out/real/*.mp4
 out/showcase/*.mp4
 out/showreel/*.mp4
+out/silent/
+out/*.zip
 out/ugc/*.mp4
 out/*.zip
 out/drafts/

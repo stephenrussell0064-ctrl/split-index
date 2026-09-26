@@ -14,17 +14,12 @@ import { Phone } from "../components/Phone";
 import { CaptionTrack } from "../components/Captions";
 import { AberrationDefs, Aberration, Bloom, Defocus, Flash, LightStreak, Shake, useImpact, RAMP_IN, SPRING_CAMERA } from "../fx";
 import { SfxTrack, SfxTrackShort } from "../Sfx";
-import { C, microLabel } from "../theme";
+import { C } from "../theme";
 import { REAL, CLIPS, STILLS } from "./data";
 import { REAL_HOOKS } from "./hooks";
 import { Clip, Screen, BleedClip } from "./Shots";
 
 const SAFE_DX = SAFE_RECT.x + SAFE_RECT.w / 2 - 540;
-
-/** Small provenance line — whose screen this is. */
-const Provenance: React.FC<{ text: string; y?: number }> = ({ text, y = 205 }) => (
-  <div style={{ position: "absolute", left: SAFE_RECT.x + 30, top: y, ...microLabel(22), color: "rgba(250,250,250,0.5)", pointerEvents: "none" }}>{text}</div>
-);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TENSION · real footage, Lab vs Engine, colliding
@@ -194,7 +189,6 @@ export const RevealReal: React.FC<{ coverMode?: boolean; captions?: boolean }> =
       <Flash at={R.countClip} frames={2} peak={0.5} />
       <Flash at={R.countLands} frames={2} peak={0.45} color="#dfffe8" />
       <Flash at={R.dashboard} frames={3} peak={0.9} color="#dfffe8" />
-      {!coverMode ? <Provenance text={frame >= R.dashboard ? `@${REAL.handle} · real account · 22 Sep 2026` : "Real screen recording"} /> : null}
       {captions ? <CaptionTrack lines={captionLines} /> : null}
     </AbsoluteFill>
   );
@@ -217,7 +211,6 @@ const UspReal: React.FC = () => {
       <Phone rotateY={rotateY} rotateX={4} rotateZ={2} scale={1.22} x={SAFE_DX} y={y}>
         <Screen src={REAL.radar.file} focusFrom={[590, 800]} focusTo={[590, 1250]} zoomFrom={1.2} zoomTo={1.1} frames={70} delay={beat(3)} />
       </Phone>
-      <Provenance text={`@${REAL.handle} · Interference Radar`} />
       <CaptionTrack
         lines={[
           { at: 4, words: ["Does", "_cardio_", "weaken", "your", "*lifting?*"] },
@@ -259,7 +252,6 @@ const StatusReal: React.FC = () => {
         </Phone>
       </Aberration>
       <Flash at={swap} frames={3} peak={0.6} />
-      <Provenance text={frame < swap ? "Real leaderboard · test account" : `@${REAL.handle} · race records`} />
       <CaptionTrack
         lines={[
           { at: 2, words: ["Ranked", "against", "your"] },

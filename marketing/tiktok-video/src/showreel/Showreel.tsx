@@ -28,7 +28,6 @@ export type ShowreelProps = z.infer<typeof showreelSchema>;
 // ── palette for the light stage (the app's own light-surface tokens) ────────
 const STAGE = "#f3f3f3";
 const INK = "#161616";
-const INK_SOFT = "#6b6b70";
 const GREEN_TEXT = "#1f7a4d"; // --cardio-success: the green the app uses as text on light surfaces
 const BLUE_TEXT = C.blueText; // --cardio-accent-text
 
@@ -246,7 +245,6 @@ export const makeShowreel = (script: ShowreelScript): React.FC<ShowreelProps> =>
         <Sequence from={outroAt + OUTRO_LIGHT} durationInFrames={OUTRO_DARK}>
           <OutroDark />
         </Sequence>
-        <div style={{ position: "absolute", left: SAFE_RECT.x + 20, top: 200, fontFamily: FONT.body, fontWeight: 600, fontSize: 22, letterSpacing: "0.16em", textTransform: "uppercase", color: frame >= outroAt ? "transparent" : INK_SOFT }}>@split_index_ceo · real account</div>
         {safeZone ? <SafeZone /> : null}
       </AbsoluteFill>
     );

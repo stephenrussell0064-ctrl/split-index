@@ -22,7 +22,7 @@ import { CtaScene } from "../scenes/Cta";
 import { Phone } from "../components/Phone";
 import { CaptionTrack } from "../components/Captions";
 import { AberrationDefs, Aberration, Bloom, Flash, LightStreak, Shake, useImpact, SPRING_CAMERA } from "../fx";
-import { C, microLabel } from "../theme";
+import { C } from "../theme";
 import { REAL } from "../real/data";
 import { Screen } from "../real/Shots";
 import { Cues, type Cue } from "../formats/shared";
@@ -42,10 +42,6 @@ export const SHOWCASE = {
 export const SHOWCASE_DURATION = SHOWCASE.end;
 
 const SAFE_DX = SAFE_RECT.x + SAFE_RECT.w / 2 - 540;
-
-const Provenance: React.FC<{ text: string }> = ({ text }) => (
-  <div style={{ position: "absolute", left: SAFE_RECT.x + 30, top: 205, ...microLabel(22), color: "rgba(250,250,250,0.5)", pointerEvents: "none" }}>{text}</div>
-);
 
 export const SHOWCASE_CUES: Cue[] = [
   { at: SHOWCASE.open, name: "bass-hit" },
@@ -107,7 +103,6 @@ const DashboardShot: React.FC = () => {
       </Shake>
       <Flash at={S.sides} frames={2} peak={0.5} />
       <Flash at={S.races} frames={3} peak={0.9} color="#dfffe8" />
-      <Provenance text={`@${REAL.handle} · real account · 22 Sep 2026`} />
       <CaptionTrack
         lines={[
           { at: 6, words: ["My", "Split", "Index:"] },
@@ -138,7 +133,6 @@ const RecordsShot: React.FC = () => {
       <Phone rotateY={rotateY} rotateX={2} rotateZ={1} scale={1.38} x={SAFE_DX} y={y} glow="blue">
         <Screen src={REAL.records.file} focusFrom={[590, 1278]} focusTo={[590, 1278]} zoomFrom={1} zoomTo={1} frames={70} />
       </Phone>
-      <Provenance text={`@${REAL.handle} · race records`} />
       <CaptionTrack
         lines={[
           { at: 4, words: ["And", "my", "actual", "records."] },
@@ -165,7 +159,6 @@ const OneRmShot: React.FC = () => {
       <Phone rotateY={rotateY} rotateX={2} rotateZ={-1} scale={1.38} x={SAFE_DX} y={y}>
         <Screen src={REAL.dashboard.file} focusFrom={[590, 1650]} focusTo={[590, 1750]} zoomFrom={1} zoomTo={1} frames={70} />
       </Phone>
-      <Provenance text={`@${REAL.handle} · predicted 1RM`} />
       <CaptionTrack
         lines={[
           { at: 4, words: ["Same", "for", "the", "gym."] },
