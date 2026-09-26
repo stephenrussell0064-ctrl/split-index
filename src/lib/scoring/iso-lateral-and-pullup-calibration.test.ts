@@ -45,10 +45,15 @@ describe("Iso-Lateral High Row — the reported 100kg x 8 = 99.9 case", () => {
   // same correction — see the test immediately below, which is the one that
   // actually pins it and which still passes unchanged. The absolute band was
   // only ever a snapshot of where that relative placement landed.
-  it("no longer pins the top of the scale: 100/side x 8 scores ~75, not 999", () => {
+  it("no longer pins the top of the scale: 100/side x 8 scores ~82, not 999", () => {
     const result = scoreLogged("Iso-Lateral High Row", 100, 8);
-    expect(result.score).toBeGreaterThan(720);
-    expect(result.score).toBeLessThan(800);
+    // Band widened 26 Sep 2026 (was 720-800) when the anchor eased 1.47 -> 1.28
+    // after "iso lateral high row is too low scoring". This lift sat ~7 points
+    // under the Iso-Lateral Wide Pulldown it most resembles. The comment above
+    // already said this band was a snapshot of a relative placement rather than
+    // the thing being pinned — the relative test below is that, and still holds.
+    expect(result.score).toBeGreaterThan(780);
+    expect(result.score).toBeLessThan(880);
     // The specific symptom: an ordinary working set reading as world-class.
     expect(result.score).toBeLessThan(900);
     expect(result.flags).not.toContain("near-record");

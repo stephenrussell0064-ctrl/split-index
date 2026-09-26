@@ -74,17 +74,48 @@ const REP_PERCENT_OF_1RM = [
   100, 97, 94, 92, 89, 86, 83, 81, 78, 75,
   73, 71, 70, 68, 67, 65, 64, 63, 61, 60,
   59, 58, 57, 56, 55, 54, 53, 52, 51, 50,
+  // ---- beyond Strength Level's published table (31-50) --------------------
+  // Extended 26 Sep 2026. Held flat at 30 before, which put a hard ceiling
+  // under every bodyweight-only calisthenic: a pull-up's estimate is
+  // `bodyweight x multiplier - bodyweight`, so once the multiplier stopped
+  // moving the score stopped with it. 30, 40 and 50 strict pull-ups all
+  // scored exactly 91.8 (user feedback: "pull ups have a ceiling").
+  //
+  // These are an extrapolation, not published data, and are deliberately much
+  // shallower than the table they continue: the last published decade falls
+  // 1 point per rep (60 at 20, 50 at 30), this falls 0.3 and then 0.2, landing
+  // at 45 rather than running on to 40.
+  //
+  // The taper was tuned, not guessed. A first attempt fell 0.6/0.4 to 40 at 50
+  // reps, and 60kg bench x 50 then scored 89.9 — an implied 150kg single out of
+  // a fifty-rep set, which is precisely the over-reading the flat-hold existed
+  // to prevent. At 45 the same set implies 133kg: still a generous read of a
+  // set nobody performs, but no longer an absurd one.
+  //
+  // Two reasons the curve has to keep moving at all. A rep formula does say
+  // less about a 1RM the further out it runs — the flat-hold was right about
+  // that — but a bodyweight-only calisthenic has nothing else to say it with.
+  // And past roughly 30 reps the set is measuring muscular endurance, which
+  // the Engine score already rewards, so the Lab score should keep moving
+  // without racing.
+  49.7, 49.4, 49.1, 48.8, 48.5, 48.2, 47.9, 47.6, 47.3, 47.0,
+  46.8, 46.6, 46.4, 46.2, 46.0, 45.8, 45.6, 45.4, 45.2, 45.0,
 ] as const;
 
-const MAX_TABULATED_REPS = REP_PERCENT_OF_1RM.length - 1; // 30
+const MAX_TABULATED_REPS = REP_PERCENT_OF_1RM.length - 1; // 50 (30 published + 20 extrapolated)
 
 /**
  * Multiplier taking a set weight to a 1RM: 1RM = weight × repMaxMultiplier(reps).
  *
  * Interpolated between whole reps so a fractional effective rep count (reps +
- * a fractional reps-in-reserve) doesn't jump. Held flat past the end of the
- * published table rather than extrapolated — the same discipline the age
- * coefficients use, and a 40-rep set says nothing useful about a 1RM anyway.
+ * a fractional reps-in-reserve) doesn't jump.
+ *
+ * Flat past the end of the table — now 50 reps rather than 30. The old cutoff
+ * was defended as "a 40-rep set says nothing useful about a 1RM anyway", which
+ * is true of a barbell and false of a pull-up: bodyweight-only calisthenics
+ * have nothing BUT the rep count to say it with, so freezing the multiplier
+ * froze the score. See the extrapolated tail in REP_PERCENT_OF_1RM for why it
+ * tapers rather than continuing straight.
  */
 export function repMaxMultiplier(reps: number): number {
   if (reps <= 1) return 1;

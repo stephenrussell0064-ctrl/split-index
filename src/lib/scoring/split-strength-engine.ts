@@ -476,6 +476,20 @@ const WEIGHT_RATIO_ANCHOR_TABLES: Partial<Record<string, WeightAnchor[]>> = {
   // --- barbell compounds (total load, bar included) -----------------------
   squat: slTable([75, 101, 132, 168, 206]),
   ohp: slTable([33, 46, 62, 81, 101]),
+  // CHEST SUPPORTED ROW aliases here, and 26 Sep 2026 it was reported as
+  // scoring "a bit too high", with a question about whether the curve was
+  // broken because 96x8 read 86 and 103x7 read 88.
+  //
+  // The curve is not broken. 7 reps is 83% of 1RM and 8 reps is 81%, so those
+  // sets imply 124kg and 118kg — 103x7 really is the better set and the
+  // ordering is right.
+  //
+  // The level was NOT lowered, deliberately. These five numbers are Strength
+  // Level's published standards, and the percentile-parity fixture pins the
+  // claim that a score IS a percentile of that population. Raising them 11%
+  // to shave 4 points off a working set made a genuinely median rower read
+  // 546 instead of 650. That is not a calibration tweak, it is abandoning the
+  // claim, and it needs deciding as such rather than in passing.
   barbellRow: slTable([48, 66, 88, 114, 141]),
   barbellCurl: slTable([22, 33, 46, 63, 80]),
 
@@ -505,6 +519,12 @@ const WEIGHT_RATIO_ANCHOR_TABLES: Partial<Record<string, WeightAnchor[]>> = {
 
   // --- dumbbells, NOT doubled: anchorConvention is perHand -----------------
   lateralRaise: slTable([5, 10, 16, 25, 34]),
+  // Reported as scoring too low on 26 Sep 2026 and deliberately NOT buffed.
+  // These are Strength Level's published curl standards, and the fixture
+  // above is named "read off Strength Level's own curl curve, not a
+  // hand-fitted anchor" — a previous pass moved this ONTO the published
+  // curve on purpose. Softening 16% to gain ~7 points would move it back off
+  // and break percentile parity. See the note on barbellRow.
   dbCurl: slTable([8, 14, 22, 32, 42]),
   hammerCurl: slTable([11, 16, 24, 33, 42]),
   /**
@@ -616,7 +636,9 @@ const ACCESSORY_MAP: Record<string, LiftAnchor> = {
   lateralRaise: { anchorRatio: 0.145, category: "shoulders", bodyPart: "upperBody" },
   dbRow: { anchorRatio: 0.4524, category: "back", bodyPart: "pull" },
   barbellCurl: { anchorRatio: 0.3435, category: "arms", bodyPart: "upperBody" },
-  preacherCurl: { anchorRatio: 0.3968, category: "arms", bodyPart: "upperBody" },
+  // 0.3968 -> 0.3249 on 26 Sep 2026 (user: "too low scoring, needs a buff"),
+  // a score up ~8 points at a working set.
+  preacherCurl: { anchorRatio: 0.3249, category: "arms", bodyPart: "upperBody" },
   latPulldown: { anchorRatio: 0.8813, category: "back", bodyPart: "pull" },
   legExtension: { anchorRatio: 0.9899, category: "legs", bodyPart: "lowerBody" },
   walkingLunge: { anchorRatio: 0.7762, category: "legs", bodyPart: "lowerBody" },
@@ -678,7 +700,31 @@ const ACCESSORY_MAP: Record<string, LiftAnchor> = {
   // there is no Strength Level table for Hammer Strength machines — so treat
   // them the same way as this file's other documented estimates and refine
   // as real logged data accumulates.
-  isoLateralRow: { anchorRatio: 1.47, category: "back", bodyPart: "pull" },
+  /*
+   * HIGH ROW EASED, 26 Sep 2026: 1.47 -> 1.28, about +5 points at a working
+   * set. Reported as "too low scoring", with a request to check the rest of
+   * the family.
+   *
+   * Measured through resolveScoringWeight, because these machines log PER SIDE
+   * and the scoring weight is double the logged number — a comparison that
+   * skips that step is measuring a lift the app never scores. At 100/side x 8
+   * on an 83kg athlete the family read:
+   *
+   *   high row      76.8   <- reported, and genuinely the lowest upper body
+   *   wide pulldown 83.9
+   *   chest press   87.5
+   *   leg extension 95.9
+   *   shoulder press / leg curl  99.9 (already at the cap)
+   *   leg press     61.0   (lowest overall, but not reported and not touched)
+   *
+   * Only the high row moved. It sat ~7 points under the pulldown it most
+   * resembles; the rest of the family is either mid-band or already capped, so
+   * there was no family-wide defect to correct. The invariant in
+   * iso-lateral-and-pullup-calibration.test.ts still holds with room to spare:
+   * this stays below the same athlete's Squat 180x8 (97.8) and Deadlift 200x8
+   * (94.4), which is the rule that actually matters here.
+   */
+  isoLateralRow: { anchorRatio: 1.28, category: "back", bodyPart: "pull" },
   isoLateralPulldown: { anchorRatio: 1.22, category: "back", bodyPart: "pull" },
   isoLateralChestPress: { anchorRatio: 1.11, category: "chest", bodyPart: "upperBody" },
   isoLateralShoulderPress: { anchorRatio: 0.71, category: "shoulders", bodyPart: "upperBody" },
