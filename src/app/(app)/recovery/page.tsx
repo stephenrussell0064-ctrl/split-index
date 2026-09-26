@@ -155,7 +155,8 @@ export default async function RecoveryPage() {
         helpHref="/help#recovery"
       />
 
-      <RecoveryScoreCard result={result} />
+      {/* The breakdown is on this page, three sections down — so the button scrolls, rather than linking to the page it is on. */}
+      <RecoveryScoreCard result={result} breakdownHref="/recovery#breakdown" />
 
       {/* ── Alcohol ─────────────────────────────────────────────────────────
         Directly under the score, ABOVE the breakdown.
@@ -251,7 +252,8 @@ export default async function RecoveryPage() {
         explanations do not outrank the thing you came here to do.
       */}
 
-      <div className="pt-2">
+      {/* scroll-mt clears the sticky top bar, as #log-a-drink does on the DrinkLogger card. */}
+      <div id="breakdown" className="scroll-mt-20 pt-2">
         <h2 className="text-xl font-semibold tracking-tight">What the score is built from</h2>
       </div>
 
