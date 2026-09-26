@@ -40,6 +40,43 @@ script file in `src/ugc/scripts/`; `Ugc.tsx` renders any of them.
 ("arm fat loss exercises", the honest version) and ten more gaps to try are in
 **UGC-PLAYBOOK.md**.
 
+## Showreels (`src/showreel/`) — the reference-ad structure
+
+Four ~30 s films built on the structure of a reference app ad (a golf-swing
+app's: near-white stage, black phone centred, real UI cards popping out of the
+phone and stacking, one calm sentence per beat with an accent word, a natural
+voiceover the caption follows, app icon + Apple badge, dark handle card).
+Rendered by `npm run render -- --reel` into `out/showreel/`, each with a
+`-silent` twin for laying a track under.
+
+| id | file | what it covers |
+|---|---|---|
+| `Reel-OneScore` | `reel-one-score.mp4` | log a set → session scored → Engine 70.1 + Lab 81.7 → 75.9 Advanced → bracket leaderboard → predicted races + 1RM |
+| `Reel-TheLab` | `reel-the-lab.mp4` | per-set scoring → strength index 81.7 (DOTS / IPF GL) → Adaptive 1RM (deadlift 200, pec deck 156.6) → preset plans → Interference Radar +3.7 % → predicted 1RM |
+| `Reel-TheEngine` | `reel-the-engine.mp4` | run detail (distance, pace, HR, elevation) → per-km splits → best efforts → Riegel race ladder 1500 m–marathon → lactate threshold 187 bpm / 4:14 → VO2max 52.4 → race records |
+| `Reel-Recovery` | `reel-recovery-and-planning.mp4` | readiness 79 → recovery 78/100, fatigue 2/100 → injury risk 22/95 + ACWR → today's plan → block targets (5k 18:22 → 18:00) |
+
+**How it is built.** `src/showreel/script.ts` is the beat type; the four
+scripts are in `src/showreel/scripts/index.ts`. A beat = a voiceover line, a
+caption (`*green*` / `_blue_` accent words), what the phone shows (a screenshot
+at 1:1 scrolled to a y, or a recording) and optional cards. A card is a crop
+rectangle in a real screenshot's own pixels — nothing is redrawn. Beat length
+= the voiceover line + a 14-frame hold (`src/showreel/vo-durations.json`).
+
+**Voiceover.** `scripts/gen-vo.ts` speaks every line with macOS `say`
+("Daniel", en-GB) straight to WAV — self-generated, royalty-free, and a
+placeholder with the right timing. `public/vo/` is gitignored and regenerated
+by the render script. To use a human read, record each line, drop it at
+`public/vo/<id>/<n>.wav`, and run `npx tsx scripts/gen-vo.ts --keep` to refresh
+the durations; beats resize to the new take.
+
+**Not covered yet.** Alcohol logging and its effect on the recovery score —
+there is no screenshot of the Recovery page with a drink logged. Take one
+(Recovery → log a drink → the alcohol status card) and it slots in as one more
+beat of `Reel-Recovery`. GPS map tiles are also absent on purpose: the only
+capture of the tracking screen shows the basemap's "API KEY REQUIRED"
+watermark.
+
 ## Real-footage film (`src/real/`) — the one to post
 
 The synthetic film and formats above redraw the app's screens from tokens.

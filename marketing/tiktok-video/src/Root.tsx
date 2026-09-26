@@ -27,6 +27,10 @@ import type { FormatProps } from "./formats/shared";
 import { RealAd, RealAdShort } from "./real/RealAd";
 import { RealCover, realCoverSchema } from "./real/RealCover";
 import { DashboardShowcase, SHOWCASE_DURATION, showcaseSchema } from "./showcase/DashboardShowcase";
+import { makeShowreel, showreelDuration, showreelSchema } from "./showreel/Showreel";
+import { SHOWREELS } from "./showreel/scripts";
+
+const REELS = SHOWREELS.map((s) => ({ script: s, component: makeShowreel(s) }));
 import { makeUgc, ugcSchema } from "./ugc/Ugc";
 import { UGC_SCRIPTS } from "./ugc";
 import { ugcDuration } from "./ugc/script";
@@ -63,6 +67,15 @@ export const RemotionRoot: React.FC = () => (
         <React.Fragment key={script.id}>
           <Composition id={`Ugc-${script.id}`} component={component} durationInFrames={ugcDuration(script, FPS)} {...base} schema={ugcSchema} defaultProps={{ sfx: false, safeZone: true }} />
           <Composition id={`UgcSfx-${script.id}`} component={component} durationInFrames={ugcDuration(script, FPS)} {...base} schema={ugcSchema} defaultProps={{ sfx: true, safeZone: false }} />
+        </React.Fragment>
+      ))}
+    </Folder>
+
+    <Folder name="Showreel">
+      {REELS.map(({ script, component }) => (
+        <React.Fragment key={script.id}>
+          <Composition id={`Reel-${script.id}`} component={component} durationInFrames={showreelDuration(script)} {...base} schema={showreelSchema} defaultProps={{ voice: true, safeZone: true }} />
+          <Composition id={`ReelSilent-${script.id}`} component={component} durationInFrames={showreelDuration(script)} {...base} schema={showreelSchema} defaultProps={{ voice: false, safeZone: false }} />
         </React.Fragment>
       ))}
     </Folder>

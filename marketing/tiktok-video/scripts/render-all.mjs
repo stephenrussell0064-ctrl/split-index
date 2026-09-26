@@ -24,6 +24,7 @@ const drafts = args.includes("--drafts");
 const formatsOnly = args.includes("--formats");
 const realOnly = args.includes("--real");
 const showcaseOnly = args.includes("--showcase");
+const reelOnly = args.includes("--reel");
 const ugcOnly = args.includes("--ugc");
 
 const HOOKS = { A: "bench-elite-5k-beginner", B: "lifting-slowing-running", C: "built-an-app", D: "strong-or-fit", E: "rate-me" };
@@ -52,6 +53,19 @@ if (ugcOnly) {
     run(`npx remotion render UgcSfx-${id} ${outDir}/ugc/ugc-${slug}-sfx.mp4 ${scale} ${crf} --log=error`);
   }
   console.log(`\n✓ rendered into ${outDir}/ugc/`);
+  process.exit(0);
+}
+
+const REELS = { OneScore: "one-score", TheLab: "the-lab", TheEngine: "the-engine", Recovery: "recovery-and-planning" };
+if (reelOnly) {
+  mkdirSync(`${outDir}/showreel`, { recursive: true });
+  run("npx tsx scripts/gen-vo.ts --keep");
+  for (const [id, slug] of Object.entries(REELS)) {
+    if (only && only !== id) continue;
+    run(`npx remotion render Reel-${id} ${outDir}/showreel/reel-${slug}.mp4 ${scale} ${crf} --props='{"voice":true,"safeZone":false}' --log=error`);
+    run(`npx remotion render ReelSilent-${id} ${outDir}/showreel/reel-${slug}-silent.mp4 ${scale} ${crf} --log=error`);
+  }
+  console.log(`\n✓ rendered into ${outDir}/showreel/`);
   process.exit(0);
 }
 

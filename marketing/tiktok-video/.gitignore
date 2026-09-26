@@ -7,6 +7,7 @@ out/*.mp4
 out/formats/*.mp4
 out/real/*.mp4
 out/showcase/*.mp4
+out/showreel/*.mp4
 out/ugc/*.mp4
 out/*.zip
 out/drafts/
@@ -22,3 +23,5 @@ out/real-review*/
 out/ugc-review*/
 out/sc-review*/
 out/ugc-review*/
+out/reel-review*/
+public/vo/
