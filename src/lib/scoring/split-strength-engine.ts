@@ -1181,6 +1181,27 @@ const BODYWEIGHT_RELATIVE_LIFTS = new Set<string>([
 const BODYWEIGHT_FRACTIONS: Record<string, number> = {
   pushUp: 0.64,
   weightedPushUp: 0.64,
+  // ABOVE 1.0 — the movement loads MORE than bodyweight.
+  //
+  // A muscle-up is not a pull-up. It pulls to sternum height and then presses
+  // out of the transition, and published calisthenics standards put it at
+  // roughly a pull-up carrying an extra 20-30% of bodyweight.
+  //
+  // 1.20 rather than anywhere else in that band, because it makes the two
+  // halves of this lift's calibration agree exactly. muscleUp's anchor note
+  // above defines Intermediate as "~1 rep at bodyweight+20%" and sets
+  // anchorRatio 0.20 to score that 500 — a definition the scoring could never
+  // reach from a bodyweight set, because the estimator subtracted out exactly
+  // what it added in and returned zero. At 1.20 one strict muscle-up is worth
+  // 0.20 x bodyweight of added load, which is precisely the anchor, so it
+  // scores 500 by construction rather than by coincidence.
+  //
+  // Only the fraction ABOVE 1.0 becomes added-weight credit: the athlete owns
+  // 1.0 x bodyweight, the movement asks 1.25, and the 0.25 difference is what
+  // a bodyweight muscle-up is worth in added-load terms. See the
+  // `ownedBodyweightKg` parameter in strength/one-rm.ts.
+  muscleUp: 1.2,
+  weightedMuscleUp: 1.2,
 };
 
 function bodyweightFraction(resolvedKey: string): number {
@@ -1197,13 +1218,19 @@ function estimate1RMFromSet(
   repsInReserve?: number | null
 ): number {
   const loadedBodyweight = bodyweightKg * loadFraction;
+  // The athlete never owns more than their own bodyweight. Where the movement
+  // loads less (a push-up's four-point stance) the two are the same and this
+  // caps to the loaded figure; where it loads more (a muscle-up) the excess
+  // stays in as added-weight credit instead of cancelling out.
+  const ownedBodyweight = bodyweightKg * Math.min(loadFraction, 1);
   if (isBodyweightRelative) {
     return weightedCalisthenic1RM(
       weightKg,
       reps,
       loadedBodyweight,
       exerciseClass,
-      repsInReserve
+      repsInReserve,
+      ownedBodyweight
     );
   }
   return bestEstimate1RM(weightKg, reps, exerciseClass, repsInReserve);
