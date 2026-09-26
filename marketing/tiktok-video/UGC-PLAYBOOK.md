@@ -1,4 +1,13 @@
-# UGC playbook — content gaps → faceless videos
+# UGC playbook — RETIRED 26 Sep 2026
+
+> **Direction change (Stephen, 26 Sep 2026):** no more UGC / content-gap
+> videos. Everything from here is either a **Split Index showcase** (the real
+> app, real screens, real numbers) or a **hybrid-athlete personal video**
+> (Stephen's own training) with the Split Index advert built in. The 14 UGC
+> scripts below stay rendered in `out/ugc/` and can still be posted, but no
+> new ones get written. The analytics read that informed this is in
+> `ANALYTICS-2026-09-26.md`.
+
 
 The film sells the app. This format does something different: it answers a
 question people are already typing into TikTok search, in TikTok's own
