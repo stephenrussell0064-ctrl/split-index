@@ -26,9 +26,17 @@ import { cn } from "@/lib/utils/cn";
 export function RecoveryScoreCard({
   result,
   className,
+  breakdownHref = "/recovery",
 }: {
   result: RecoveryScoreResult;
   className?: string;
+  /**
+   * Where "Full breakdown" goes. The dashboard leaves the default, which
+   * takes the athlete to /recovery. /recovery itself must override it: the
+   * default there is a link to the page you are already on, which Next treats
+   * as nothing at all — the button appeared to do nothing, because it did.
+   */
+  breakdownHref?: string;
 }) {
   const reducedMotion = useReducedMotion();
   const color = BAND_COLORS[result.band];
@@ -85,7 +93,7 @@ export function RecoveryScoreCard({
 
           <div className="mt-4 flex flex-wrap gap-2">
             <Link
-              href="/recovery"
+              href={breakdownHref}
               className="inline-flex items-center gap-1.5 rounded-full border border-white/10 px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-white/20 hover:bg-white/5"
             >
               Full breakdown
