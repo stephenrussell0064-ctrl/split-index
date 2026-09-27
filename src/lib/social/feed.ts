@@ -46,6 +46,14 @@ export interface FeedAuthor {
   avatarUrl: string | null;
 }
 
+/** One scored lift on a feed card. Mirrors the columns migration 083 projects, and nothing else. */
+export interface FeedExercise {
+  exerciseName: string;
+  muscleGroup: string | null;
+  estimated1rmKg: number | null;
+  strengthIndex: number | null;
+}
+
 export interface FeedActivity {
   id: string;
   sport: SportType;
@@ -72,8 +80,20 @@ export interface FeedActivity {
   isOwn: boolean;
   sportIndex: number | null;
   loadScore: number | null;
-  /** Curated slice of score_breakdown — vo2max/DOTS/GL/per-lift, the "all data possible" fields worth showing a friend, not the full internal debug object. */
+  /** Curated slice of score_breakdown — vo2max/DOTS/GL, the "all data possible" fields worth showing a friend, not the full internal debug object. */
   extra: Record<string, unknown> | null;
+  /**
+   * The lifts actually logged in this session, from
+   * `public_activity_strength_scores` (migration 083) — the same projection the
+   * activity detail page reads, so the feed and the page cannot disagree about
+   * what a friend may see.
+   *
+   * This replaced `extra.perLift`, which was squat/bench/deadlift only and so
+   * showed three lifts for a session that might contain twelve. It also carried
+   * `relativeStrength` beside `estimated1RM`; see extractExtra for why that had
+   * to stop.
+   */
+  exercises: FeedExercise[];
   reactionAverage: number | null;
   reactionCount: number;
   myReaction: number | null;
@@ -177,7 +197,6 @@ interface FeedScoreExtras {
   decoupling_pct?: unknown;
   dots_score?: unknown;
   gl_points?: unknown;
-  per_lift?: unknown;
 }
 
 /**
@@ -192,7 +211,7 @@ interface FeedScoreExtras {
  * where a number was. The view decides what may be read; this decides what is
  * worth rendering.
  */
-function extractExtra(row: FeedScoreExtras | null): Record<string, unknown> | null {
+export function extractExtra(row: FeedScoreExtras | null): Record<string, unknown> | null {
   if (!row) return null;
   const extra: Record<string, unknown> = {};
 
@@ -201,7 +220,20 @@ function extractExtra(row: FeedScoreExtras | null): Record<string, unknown> | nu
   if (typeof row.decoupling_pct === "number") extra.decouplingPct = row.decoupling_pct;
   if (typeof row.dots_score === "number") extra.dotsScore = row.dots_score;
   if (typeof row.gl_points === "number") extra.glPoints = row.gl_points;
-  if (row.per_lift && typeof row.per_lift === "object") extra.perLift = row.per_lift;
+  // `per_lift` IS DELIBERATELY NOT HERE, removed 27 Sep 2026.
+  //
+  // Its entries are `{ estimated1RM, relativeStrength }`, and the feed rendered
+  // both in one pill: "Squat: 180kg (2.05xBW)". Dividing one by the other is
+  // the athlete's exact bodyweight. Migration 083 refused to publish
+  // `relative_strength` for precisely this reason and says so in its header;
+  // this path was handing out the same number in camelCase, inside a jsonb
+  // blob, where the projection guard — which reads SQL column names — could
+  // not see it.
+  //
+  // Nothing is lost from the card. `per_lift` only ever held squat, bench and
+  // deadlift, so a twelve-exercise session showed at most three; the feed now
+  // reads the session's real lifts from public_activity_strength_scores, which
+  // has a strength index per exercise and no bodyweight in it.
 
   return Object.keys(extra).length > 0 ? extra : null;
 }
@@ -308,17 +340,27 @@ export async function fetchActivityFeed(
   // errors are deliberately not promoted to a page-level failure the way the
   // two queries above are — losing the reaction count is not worth replacing
   // a readable feed with an error card.
-  const [{ data: scores }, { data: authors }, { data: reactions }, { data: comments }] = await Promise.all([
-    supabase
-      .from("public_workout_scores")
-      .select(
-        "activity_id, sport_index, load_score, vo2max, execution_score, decoupling_pct, dots_score, gl_points, per_lift"
-      )
-      .in("activity_id", activityIds),
-    supabase.from("public_profiles").select("user_id, username, display_name, avatar_url").in("user_id", authorIds),
-    supabase.from("activity_reactions").select("activity_id, user_id, score").in("activity_id", activityIds),
-    supabase.from("activity_comments").select("activity_id").in("activity_id", activityIds),
-  ]);
+  const [{ data: scores }, { data: authors }, { data: reactions }, { data: comments }, { data: lifts }] =
+    await Promise.all([
+      supabase
+        .from("public_workout_scores")
+        .select(
+          "activity_id, sport_index, load_score, vo2max, execution_score, decoupling_pct, dots_score, gl_points"
+        )
+        .in("activity_id", activityIds),
+      supabase.from("public_profiles").select("user_id, username, display_name, avatar_url").in("user_id", authorIds),
+      supabase.from("activity_reactions").select("activity_id, user_id, score").in("activity_id", activityIds),
+      supabase.from("activity_comments").select("activity_id").in("activity_id", activityIds),
+      // Batched with the rest rather than fetched per card: a page of twenty
+      // gym sessions would otherwise be twenty round trips for the thing the
+      // card is mostly made of. Ordering here, once, so every card's lifts
+      // arrive heaviest-scoring first without the panel having to sort.
+      supabase
+        .from("public_activity_strength_scores")
+        .select("activity_id, exercise_name, muscle_group, estimated_1rm_kg, strength_index")
+        .in("activity_id", activityIds)
+        .order("strength_index", { ascending: false, nullsFirst: false }),
+    ]);
 
   const scoreByActivity = new Map((scores ?? []).map((s) => [s.activity_id as string, s]));
   const authorById = new Map((authors ?? []).map((a) => [a.user_id as string, a]));
@@ -331,6 +373,19 @@ export async function fetchActivityFeed(
     agg.count += 1;
     if (r.user_id === userId) agg.mine = r.score as number;
     reactionsByActivity.set(key, agg);
+  }
+
+  const liftsByActivity = new Map<string, FeedExercise[]>();
+  for (const l of lifts ?? []) {
+    const key = l.activity_id as string;
+    const list = liftsByActivity.get(key) ?? [];
+    list.push({
+      exerciseName: (l.exercise_name as string) ?? "",
+      muscleGroup: (l.muscle_group as string | null) ?? null,
+      estimated1rmKg: typeof l.estimated_1rm_kg === "number" ? l.estimated_1rm_kg : null,
+      strengthIndex: typeof l.strength_index === "number" ? l.strength_index : null,
+    });
+    liftsByActivity.set(key, list);
   }
 
   const commentCountByActivity = new Map<string, number>();
@@ -371,6 +426,7 @@ export async function fetchActivityFeed(
       sportIndex: (score?.sport_index as number | null) ?? null,
       loadScore: (score?.load_score as number | null) ?? null,
       extra: extractExtra((score as FeedScoreExtras | undefined) ?? null),
+      exercises: liftsByActivity.get(row.id as string) ?? [],
       reactionAverage: reactionAgg && reactionAgg.count > 0 ? reactionAgg.sum / reactionAgg.count : null,
       reactionCount: reactionAgg?.count ?? 0,
       myReaction: reactionAgg?.mine ?? null,

@@ -13,6 +13,13 @@ import { SPORTS } from "@/lib/constants/sports";
 import { formatDistance, formatDuration, formatPace, formatIndex } from "@/lib/utils/format";
 import { cn } from "@/lib/utils/cn";
 
+interface FeedExercise {
+  exerciseName: string;
+  muscleGroup: string | null;
+  estimated1rmKg: number | null;
+  strengthIndex: number | null;
+}
+
 interface FeedActivity {
   id: string;
   sport: string;
@@ -36,6 +43,7 @@ interface FeedActivity {
   sportIndex: number | null;
   loadScore: number | null;
   extra: Record<string, unknown> | null;
+  exercises: FeedExercise[];
   reactionAverage: number | null;
   reactionCount: number;
   myReaction: number | null;
@@ -73,6 +81,71 @@ function Stat({ label, value }: { label: string; value: string | number | null |
     <div className="rounded-lg bg-white/[0.03] px-2.5 py-2">
       <p className="text-[9px] uppercase tracking-wider text-muted/70">{label}</p>
       <p className="mt-0.5 text-sm font-semibold tabular-nums">{value}</p>
+    </div>
+  );
+}
+
+/**
+ * The lifts in a gym session.
+ *
+ * Replaces a row of pills reading "Squat: 180kg (2.05xBW)". Two things were
+ * wrong with those. The parenthesised figure was relative strength, and
+ * dividing the 1RM by it returns the athlete's exact bodyweight — the very
+ * disclosure migration 083 refused to make. And the data behind them was
+ * squat/bench/deadlift only, so a full push session showed one pill, or none.
+ *
+ * What a reader wants from a friend's gym post is what they trained and how
+ * well it went, so each row leads with the exercise and ends with its Lab
+ * score. The score is the largest thing on the row because it is the one
+ * number that means the same on every exercise; the 1RM sits under it as the
+ * evidence. Four rows, then a count — a feed card competing with twenty others
+ * should not be twelve rows long, and the full list is one tap away on a page
+ * that already exists.
+ */
+const FEED_LIFT_LIMIT = 4;
+
+function LiftList({ exercises, activityId }: { exercises: FeedExercise[]; activityId: string }) {
+  if (exercises.length === 0) return null;
+  const shown = exercises.slice(0, FEED_LIFT_LIMIT);
+  const remaining = exercises.length - shown.length;
+
+  return (
+    <div className="mt-3">
+      <p className="text-[9px] uppercase tracking-wider text-muted/70">
+        {exercises.length} {exercises.length === 1 ? "exercise" : "exercises"}
+      </p>
+      <ul className="mt-1.5 divide-y divide-white/[0.05] overflow-hidden rounded-lg bg-white/[0.03]">
+        {shown.map((ex, i) => (
+          <li key={`${ex.exerciseName}-${i}`} className="flex items-center justify-between gap-3 px-2.5 py-2">
+            <div className="min-w-0">
+              <p className="truncate text-[13px] font-medium leading-tight">{ex.exerciseName}</p>
+              {ex.muscleGroup && (
+                <p className="truncate text-[10px] capitalize leading-tight text-muted/70">{ex.muscleGroup}</p>
+              )}
+            </div>
+            <div className="flex shrink-0 items-baseline gap-2">
+              {ex.estimated1rmKg != null && (
+                <span className="text-[11px] tabular-nums text-muted">
+                  {ex.estimated1rmKg.toFixed(0)}kg
+                </span>
+              )}
+              {ex.strengthIndex != null && (
+                <span className="index-display text-base font-semibold tabular-nums leading-none text-gym-accent">
+                  {formatIndex(ex.strengthIndex)}
+                </span>
+              )}
+            </div>
+          </li>
+        ))}
+      </ul>
+      {remaining > 0 && (
+        <Link
+          href={`/social/activity/${activityId}`}
+          className="mt-1.5 inline-block text-[11px] text-muted underline-offset-2 hover:text-foreground hover:underline"
+        >
+          +{remaining} more {remaining === 1 ? "exercise" : "exercises"}
+        </Link>
+      )}
     </div>
   );
 }
@@ -255,9 +328,6 @@ function FeedPost({ activity, onBlocked }: { activity: FeedActivity; onBlocked?:
     reactionAverage: activity.reactionAverage,
     reactionCount: activity.reactionCount,
   });
-  const perLift = activity.extra?.perLift as
-    | Record<string, { estimated1RM: number; relativeStrength: number }>
-    | undefined;
 
   return (
     /*
@@ -370,15 +440,7 @@ function FeedPost({ activity, onBlocked }: { activity: FeedActivity; onBlocked?:
         />
       </div>
 
-      {perLift && Object.keys(perLift).length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {Object.entries(perLift).map(([name, lift]) => (
-            <span key={name} className="rounded-full bg-white/[0.04] px-2.5 py-1 text-[11px] text-muted">
-              {name}: {lift.estimated1RM.toFixed(0)}kg ({lift.relativeStrength.toFixed(2)}×BW)
-            </span>
-          ))}
-        </div>
-      )}
+      <LiftList exercises={activity.exercises} activityId={activity.id} />
 
       <div className="mt-3 flex items-center justify-between border-t border-white/5 pt-2.5">
         {activity.isOwn ? (
