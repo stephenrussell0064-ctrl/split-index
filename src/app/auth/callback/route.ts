@@ -6,8 +6,24 @@ import { getPublicOrigin } from "@/lib/app-url";
 import { correlationId } from "@/lib/api/errors";
 import { logSecurityEvent } from "@/lib/observability/security-log";
 
-function failurePath(next: string, reason: string): string {
-  if (next === "/reset-password") return "/reset-password";
+/**
+ * Supabase tells us what KIND of link this was, in `type`, independently of the
+ * `next` we asked for. Recovery is the one case where getting the destination
+ * wrong strands the user completely: they arrive holding a one-use token, and
+ * anywhere other than /reset-password consumes it and shows them a page with
+ * no password field. Reported 28 Sep 2026 — "select the link just takes me
+ * back to the site" — by an athlete who then could not get in at all.
+ *
+ * `next` is a query parameter on a URL that makes a round trip through the
+ * mail client and the Supabase verify endpoint. `type` comes back from
+ * Supabase itself. Trusting either alone is worse than trusting both.
+ */
+function isRecovery(next: string, otpType: string | null): boolean {
+  return otpType === "recovery" || next === "/reset-password";
+}
+
+function failurePath(next: string, reason: string, otpType?: string | null): string {
+  if (isRecovery(next, otpType ?? null)) return "/reset-password";
   if (next === "/onboarding" || next === "/email-confirmed" || next.startsWith("/signup")) {
     return "/signup";
   }
@@ -18,7 +34,8 @@ function authFailureRedirect(
   request: Request,
   reason: string,
   detail?: string,
-  next?: string
+  next?: string,
+  otpType?: string | null
 ) {
   const origin = getPublicOrigin(request);
 
@@ -39,7 +56,7 @@ function authFailureRedirect(
 
   console.error("[auth/callback] Sign-in failed:", { reason, detail, next });
 
-  const path = failurePath(next ?? "/dashboard", reason);
+  const path = failurePath(next ?? "/dashboard", reason, otpType);
   const params = new URLSearchParams({ error: "auth", reason });
 
   /*
@@ -98,7 +115,8 @@ export async function GET(request: Request) {
       request,
       mapOAuthErrorReason(oauthError, errorCode, otpType),
       oauthErrorDescription ?? oauthError,
-      next
+      next,
+      otpType
     );
   }
 
@@ -116,7 +134,7 @@ export async function GET(request: Request) {
         verifyError.message.toLowerCase().includes("invalid")
           ? "link_expired"
           : "email_confirmation_failed";
-      return authFailureRedirect(request, reason, verifyError.message, next);
+      return authFailureRedirect(request, reason, verifyError.message, next, otpType);
     }
   } else if (code) {
     const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
@@ -131,10 +149,10 @@ export async function GET(request: Request) {
           : lower.includes("expired") || lower.includes("already been used")
             ? "link_expired"
             : "exchange_failed";
-      return authFailureRedirect(request, reason, exchangeError.message, next);
+      return authFailureRedirect(request, reason, exchangeError.message, next, otpType);
     }
   } else {
-    return authFailureRedirect(request, "missing_code", undefined, next);
+    return authFailureRedirect(request, "missing_code", undefined, next, otpType);
   }
 
   const {
@@ -143,11 +161,11 @@ export async function GET(request: Request) {
   } = await supabase.auth.getUser();
 
   if (userError) {
-    return authFailureRedirect(request, "user_lookup_failed", userError.message, next);
+    return authFailureRedirect(request, "user_lookup_failed", userError.message, next, otpType);
   }
 
   if (!user) {
-    return authFailureRedirect(request, "no_user", undefined, next);
+    return authFailureRedirect(request, "no_user", undefined, next, otpType);
   }
 
   const { error: profileError } = await ensureProfileForUser(user);
@@ -175,8 +193,8 @@ export async function GET(request: Request) {
   }
 
   const redirectPath =
-    next === "/reset-password"
-      ? next
+    isRecovery(next, otpType)
+      ? "/reset-password"
       : profile?.onboarding_completed
         ? next === "/onboarding"
           ? "/dashboard"

@@ -185,6 +185,58 @@ describe("a failed callback never lands on a signed-in page", () => {
   });
 });
 
+describe("a password-recovery link reaches the page with the password field", () => {
+  /*
+   * Reported 28 Sep 2026: "select the link just takes me back to the site". A
+   * recovery link carries a one-use token, so landing anywhere other than
+   * /reset-password spends it and shows a page with nothing to type a password
+   * into — the athlete is then locked out with no way back.
+   *
+   * The destination used to come only from `next`, a query parameter that has
+   * to survive a mail client and Supabase's verify endpoint to get here.
+   * Supabase also tells us `type=recovery` directly. These pin that either one
+   * is enough on its own.
+   */
+  it("honours type=recovery even when next never arrived", async () => {
+    const { GET } = await import("./route");
+    const res = await GET(callback("code=abc&type=recovery"));
+    expect(res.headers.get("location")).toBe("https://www.splitindex.co.uk/reset-password");
+  });
+
+  it("still honours next=/reset-password when type never arrived", async () => {
+    const { GET } = await import("./route");
+    const res = await GET(callback("code=abc&next=%2Freset-password"));
+    expect(res.headers.get("location")).toBe("https://www.splitindex.co.uk/reset-password");
+  });
+
+  it("sends a FAILED recovery back to the reset page, not to login", async () => {
+    // The old failurePath keyed on next alone, so a recovery whose next was
+    // lost failed to /login — where the athlete has no password to sign in
+    // with, which is the whole reason they were resetting.
+    exchangeMock.mockResolvedValue({ error: { message: "invalid flow state" } });
+    const { GET } = await import("./route");
+    const res = await GET(callback("code=abc&type=recovery"));
+    expect(res.headers.get("location")).toContain("/reset-password");
+    expect(res.headers.get("location")).not.toContain("/login");
+  });
+
+  it("does not divert an ordinary sign-in to the reset page", async () => {
+    // Guards the guard: isRecovery must not fire on everything.
+    const { GET } = await import("./route");
+    const res = await GET(callback("code=abc&next=%2Fdashboard"));
+    expect(res.headers.get("location")).toBe("https://www.splitindex.co.uk/dashboard");
+  });
+
+  it("sends a recovery to the reset page even before onboarding is complete", async () => {
+    // An athlete who never finished onboarding can still forget their
+    // password; the onboarding gate must not swallow the recovery.
+    fromMock.mockImplementation(profileReturning(false));
+    const { GET } = await import("./route");
+    const res = await GET(callback("code=abc&type=recovery"));
+    expect(res.headers.get("location")).toBe("https://www.splitindex.co.uk/reset-password");
+  });
+});
+
 describe("the callback cannot be used as an open redirect", () => {
   it("ignores an absolute URL in next", async () => {
     // `next` comes off the query string, and it decides where somebody lands
