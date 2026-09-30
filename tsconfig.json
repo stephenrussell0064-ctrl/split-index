@@ -37,7 +37,34 @@
     "expects) and SourcePackages/checkouts fills with third-party TypeScript —",
     "purchases-hybrid-common ships its own Jest suite — and `npx tsc --noEmit`",
     "starts reporting 'Cannot find name expect' in a vendored file nobody in",
-    "this project wrote. Build output is not source; list it here."
+    "this project wrote. Build output is not source; list it here.",
+    "",
+    "marketing/ is the same problem from the other direction: it is real",
+    "source, but each subdirectory is a separate Remotion project with its own",
+    "package.json, its own React types and its own tsconfig. Typechecking them",
+    "from here fails on imports this project has never installed. They are",
+    "checked by their own `npm run lint`, from inside their own directories.",
+    "",
+    "THE WHOLE DIRECTORY, not one child. This entry said marketing/video and",
+    "that shipped a failing Vercel build: there are two Remotion projects,",
+    "marketing/video and marketing/tiktok-video, and the one that was failing",
+    "was the one not named. A path pattern matches a prefix, not a sibling.",
+    "Excluding the parent means the next Remotion project added under here is",
+    "covered on the day it lands rather than the day it breaks a deploy.",
+    "",
+    "AND IT CANNOT BE CHECKED FROM A DEVELOPER MACHINE, which is why the narrow",
+    "version looked right. marketing/tiktok-video has its own node_modules from",
+    "somebody running npm install inside it, so tsc resolves @remotion/cli here",
+    "and reports nothing. The root package-lock.json carries zero @remotion",
+    "entries and Vercel installs only that, so the imports resolve locally and",
+    "fail in CI. Reproducing it needs a clean checkout with a root-only install,",
+    "not a tsc run in this working tree."
   ],
-  "exclude": ["node_modules", "ios/DerivedData", "ios/App/CapApp-SPM/build", "android/build"]
+  "exclude": [
+    "node_modules",
+    "ios/DerivedData",
+    "ios/App/CapApp-SPM/build",
+    "android/build",
+    "marketing"
+  ]
 }
