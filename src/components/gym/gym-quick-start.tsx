@@ -14,7 +14,16 @@ interface TemplateRow {
   template_data: WorkoutFormState;
 }
 
-export function GymQuickStart() {
+/**
+ * Preset plans, saved templates, and the start button.
+ *
+ * `compact` is the phone column's version (4 Oct 2026): the same six plans
+ * and the same links, in tiles with one line of meta instead of three and
+ * half the gaps, so the session history beneath it starts about 100px
+ * sooner. The sidebar on desktop keeps the roomier layout — it has the
+ * height to spend and nothing below it.
+ */
+export function GymQuickStart({ compact = false }: { compact?: boolean }) {
   const [templates, setTemplates] = useState<TemplateRow[]>([]);
   const [loadingTemplates, setLoadingTemplates] = useState(true);
 
@@ -35,10 +44,10 @@ export function GymQuickStart() {
   const featuredPlans = WORKOUT_PLANS.slice(0, 6);
 
   return (
-    <div className="space-y-8">
+    <div className={compact ? "space-y-3" : "space-y-8"}>
       {/* Preset plans — hero row */}
       <div>
-        <div className="mb-4 flex items-center justify-between">
+        <div className={cn("flex items-center justify-between", compact ? "mb-2" : "mb-4")}>
           <p className="micro-label text-gym-muted">Preset plans</p>
           <Link
             href="/gym/log"
@@ -49,19 +58,36 @@ export function GymQuickStart() {
         </div>
         {/* A grid, not a carousel. A row of 200px cards on a 358px phone shows
             one and a half plans and hides the rest behind a sideways swipe. */}
-        <div className="grid grid-cols-2 gap-3">
+        <div className={cn("grid grid-cols-2", compact ? "gap-2" : "gap-3")}>
           {featuredPlans.map((plan) => (
             <Link
               key={plan.id}
               href={`/gym/log?plan=${plan.id}`}
-              className="glass-gym rounded-2xl border border-gym-border/40 p-4 transition-all hover:border-gym-accent/50 hover:shadow-[0_0_24px_-8px_var(--gym-glow)]"
+              className={cn(
+                "glass-gym rounded-2xl border border-gym-border/40 transition-all hover:border-gym-accent/50 hover:shadow-[0_0_24px_-8px_var(--gym-glow)]",
+                compact ? "flex items-center gap-2.5 p-3" : "p-4"
+              )}
             >
-              <Dumbbell className="h-4 w-4 text-gym-accent mb-3" />
-              <p className="font-semibold text-gym-text text-sm">{plan.name}</p>
-              <p className="text-[10px] text-gym-muted mt-1">{plan.focus}</p>
-              <p className="text-[10px] text-gym-accent mt-2">
-                {plan.exercises.length} exercises · ~{plan.durationMinutes}m
-              </p>
+              {compact ? (
+                <>
+                  <Dumbbell className="h-4 w-4 shrink-0 text-gym-accent" />
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-semibold text-gym-text">{plan.name}</span>
+                    <span className="block truncate text-[10px] text-gym-muted">
+                      {plan.exercises.length} exercises · ~{plan.durationMinutes}m
+                    </span>
+                  </span>
+                </>
+              ) : (
+                <>
+                  <Dumbbell className="h-4 w-4 text-gym-accent mb-3" />
+                  <p className="font-semibold text-gym-text text-sm">{plan.name}</p>
+                  <p className="text-[10px] text-gym-muted mt-1">{plan.focus}</p>
+                  <p className="text-[10px] text-gym-accent mt-2">
+                    {plan.exercises.length} exercises · ~{plan.durationMinutes}m
+                  </p>
+                </>
+              )}
             </Link>
           ))}
         </div>
@@ -69,8 +95,8 @@ export function GymQuickStart() {
 
       {/* Saved templates */}
       {!loadingTemplates && templates.length > 0 && (
-        <div className="glass-gym rounded-2xl border border-gym-border/40 p-5">
-          <div className="mb-4 flex items-center gap-2">
+        <div className={cn("glass-gym rounded-2xl border border-gym-border/40", compact ? "p-3" : "p-5")}>
+          <div className={cn("flex items-center gap-2", compact ? "mb-2" : "mb-4")}>
             <Bookmark className="h-4 w-4 text-gym-accent" />
             <p className="micro-label text-gym-muted">Your saved templates</p>
           </div>
@@ -79,7 +105,7 @@ export function GymQuickStart() {
               <Link
                 key={t.id}
                 href={`/gym/log?template=${t.id}`}
-                className="rounded-xl border border-gym-border/40 px-4 py-2.5 text-sm text-gym-text transition-colors hover:border-gym-accent/50 hover:bg-gym-accent/5"
+                className="rounded-xl border border-gym-border/40 px-3.5 py-2 text-sm text-gym-text transition-colors hover:border-gym-accent/50 hover:bg-gym-accent/5"
               >
                 {t.name}
               </Link>

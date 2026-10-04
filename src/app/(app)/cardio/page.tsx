@@ -7,7 +7,6 @@ import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils/cn";
 import { LogbookFeed } from "@/components/activities/logbook-feed";
 import { fetchLogbookPage, LOGBOOK_ZONE_PAGE_SIZE } from "@/lib/activities/logbook-query";
-import { SportComparisonBars } from "@/components/activities/sport-comparison-bars";
 import { ZonePlanCard } from "@/components/hybrid-plan/zone-plan-card";
 import { loadTodaysSessionPayload } from "@/components/dashboard/todays-session-data";
 import { formatIndex } from "@/lib/utils/format";
@@ -79,7 +78,14 @@ export default async function CardioPage() {
     label: SPORT_INDEX_LABELS[sport as SportType] ?? sport,
   })).sort((a, b) => b.avg - a.avg);
 
-  const topSports = sportLeaderboard.slice(0, 3);
+  /*
+    The by-sport comparison lives in the strip and nowhere else. It used to
+    be drawn twice: three bars up here and the full "By sport" card under the
+    logbook, which on a phone put a second copy of the Endurance Blend at the
+    bottom of the page (owner: "remove the part at the bottom"). The strip
+    now carries every sport the athlete has scored, so nothing was lost.
+  */
+  const topSports = sportLeaderboard.slice(0, 5);
   const topMax = Math.max(...topSports.map((s) => s.avg), 1);
 
   return (
@@ -119,9 +125,9 @@ export default async function CardioPage() {
             own: a 72px number, a label and a caption, 215px tall before
             anything the athlete could act on (owner: the scores "take up too
             much space when u first click on the tab"). It is now one row —
-            the index on the left, the three strongest sports as thin bars on
-            the right — and the full by-sport comparison keeps its own card
-            beside the logbook on wide screens.
+            the index on the left, every scored sport as a thin bar on the
+            right, with its session count — and that is the only place the
+            by-sport comparison is drawn.
           */}
           <div className="glass-cardio mb-4 rounded-2xl p-4 sm:p-5">
             <div className="flex items-center justify-between gap-4">
@@ -158,6 +164,7 @@ export default async function CardioPage() {
                         </span>
                         <span className="shrink-0 font-mono font-semibold tabular-nums text-cardio-text">
                           {formatIndex(s.avg)}
+                          <span className="ml-1 font-sans font-normal text-cardio-muted">· {s.count}</span>
                         </span>
                       </div>
                       <div className="mt-0.5 h-1.5 w-full overflow-hidden rounded-full bg-cardio-border/25">
@@ -180,7 +187,7 @@ export default async function CardioPage() {
               condition, so an athlete with sessions but no scores yet saw no
               logbook at all. */}
           {logbookPage.total > 0 && (
-            <div className="grid gap-4 lg:grid-cols-[1fr_340px] mb-6">
+            <div className="mb-6">
               <LogbookFeed
                 initialPage={logbookPage}
                 surface="cardio"
@@ -190,21 +197,6 @@ export default async function CardioPage() {
                 title="Session history"
                 viewAllHref="/activities?zone=cardio"
               />
-
-              {sportLeaderboard.length > 0 && (
-                <div className="glass-cardio rounded-2xl p-5 lg:self-start">
-                  <p className="micro-label text-cardio-muted mb-4">By sport</p>
-                  <SportComparisonBars
-                    zone="cardio"
-                    items={sportLeaderboard.map((s) => ({
-                      label: s.sport.replace("_", " "),
-                      value: s.avg,
-                      displayValue: formatIndex(s.avg),
-                      sublabel: `${s.count} session${s.count === 1 ? "" : "s"}`,
-                    }))}
-                  />
-                </div>
-              )}
             </div>
           )}
 

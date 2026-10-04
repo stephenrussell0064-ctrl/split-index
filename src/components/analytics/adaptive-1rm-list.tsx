@@ -2,7 +2,6 @@
 
 import { TrendingUp, TrendingDown, Minus, Target } from "lucide-react";
 import { ScoringExplainerNote } from "@/components/scoring/scoring-explainer-note";
-import { CollapsibleSection, SummaryPills } from "@/components/ui/collapsible-section";
 import { isBodyweightOnlyExercise } from "@/lib/scoring/weight-entry";
 import { cn } from "@/lib/utils/cn";
 import type { StrengthEstimate } from "./types";
@@ -98,8 +97,11 @@ function LiftRow({ est, showConfidence }: { est: StrengthEstimate; showConfidenc
       {/* Name and number share a line. They were stacked with the number on its
           own row at 2rem, which is what made a dozen lifts scroll: the name line
           was mostly empty and the number line was mostly empty, twice per lift. */}
-      <div className="flex items-baseline gap-2">
-        <p className="min-w-0 flex-1 truncate text-[13px] font-medium leading-tight text-foreground">
+      {/* Name on its own line, number beneath. They shared a line until the
+          list went two-abreast on a phone, where "Deadlift" became "D." —
+          a lift name that has been truncated to a letter names nothing. */}
+      <div className="flex items-center gap-1.5">
+        <p className="min-w-0 flex-1 truncate text-[12px] font-medium leading-tight text-muted">
           {est.exerciseName}
         </p>
         {addedLoadOnly && <AddedLoadTag />}
@@ -108,10 +110,12 @@ function LiftRow({ est, showConfidence }: { est: StrengthEstimate; showConfidenc
             alone do not state it to a screen reader, which is why the word was
             there. Keeping it visible cost a whole line per lift. */}
         <span className="sr-only">{label}</span>
-        <span className="shrink-0 index-display text-[1.4rem] font-semibold leading-none text-foreground [font-variant-numeric:proportional-nums]">
+      </div>
+      <div className="mt-0.5 flex items-baseline gap-1">
+        <span className="index-display text-[1.4rem] font-semibold leading-none text-foreground [font-variant-numeric:proportional-nums]">
           {est.current1RmKg.toFixed(1)}
         </span>
-        <span className="shrink-0 text-[11px] font-medium text-muted">kg</span>
+        <span className="text-[11px] font-medium text-muted">kg</span>
       </div>
 
       {hasScale && (
@@ -168,36 +172,26 @@ export function AdaptiveOneRmList({
   const hasAddedLoadOnly = ordered.some((est) => isBodyweightOnlyExercise(est.exerciseName));
 
   /*
-    Closed by default, showing the three heaviest lifts as pills. User
-    feedback (24 Sep 2026): "I want the 1 rep max predictions in the data
-    analytics to be a drop down which you can see all of them, otherwise
-    they make the user scroll too much." Twelve lift cards at three lines
-    each was most of this tab's height on a phone.
+    EVERY LIFT, ALWAYS VISIBLE (4 Oct 2026). This was a drop-down showing
+    three pills; the owner's verdict was "I don't want them as dropdowns, I
+    want the values to be easy to see". The rows are the compact two-line
+    kind, two abreast on a phone, so a dozen lifts is six rows rather than a
+    scroll — and the heaviest, which are the main lifts, come first.
   */
-  const peek = ordered.slice(0, 3);
-
   return (
-    <CollapsibleSection
-      icon={<Target className="h-3.5 w-3.5 text-accent" aria-hidden />}
-      title="Adaptive 1RM"
-      count={`${ordered.length} lift${ordered.length === 1 ? "" : "s"}`}
-      description="What your recent training says you could lift today, against the heaviest you have ever hit."
-      summary={
-        <SummaryPills
-          items={peek.map((est) => ({
-            label: est.exerciseName,
-            value: `${est.current1RmKg.toFixed(1)} kg`,
-          }))}
-          more={ordered.length - peek.length}
-        />
-      }
-    >
-      <ScoringExplainerNote href="/how-scoring-works#one-rm" className="mb-3 mt-0">
-        The big number falls when your sessions do;{" "}
-        <strong className="not-italic text-foreground/90">Best</strong> only moves when you beat it.
-      </ScoringExplainerNote>
+    <section aria-label="Adaptive 1RM">
+      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+        <p className="micro-label flex items-center gap-1.5 text-muted">
+          <Target className="h-3.5 w-3.5 text-accent" aria-hidden />
+          Adaptive 1RM
+          <span className="font-normal normal-case tracking-normal">· {ordered.length} lift{ordered.length === 1 ? "" : "s"}</span>
+        </p>
+        <ScoringExplainerNote href="/how-scoring-works#one-rm" className="mt-0 mb-0">
+          Today&apos;s estimate falls when your sessions do; <strong className="not-italic text-foreground/90">best</strong> only moves when you beat it.
+        </ScoringExplainerNote>
+      </div>
 
-      <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      <ul className="grid grid-cols-2 gap-2 lg:grid-cols-3 xl:grid-cols-4">
         {ordered.map((est) => (
           <LiftRow key={est.exerciseName} est={est} showConfidence={showConfidence} />
         ))}
@@ -210,6 +204,6 @@ export function AdaptiveOneRmList({
           hard for one rep — not your bodyweight itself.
         </p>
       )}
-    </CollapsibleSection>
+    </section>
   );
 }

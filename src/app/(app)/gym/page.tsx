@@ -220,19 +220,19 @@ export default async function GymPage() {
           </div>
 
           {/*
-            THE ORDER OF THIS COLUMN IS THE FIX. On a phone this used to run:
-            a 320px scores panel, the recommended split, the plans accordion,
-            the six-plan quick-start grid with its saved templates and a
-            second start button, and only THEN the session history — the
-            thing most returning athletes open the tab to look at was two
-            full screens down (owner: "the lab logbook is too far down to
-            scroll to see"). Now: a one-row score strip, today's plan, the
-            recommended split, the logbook, and the preset plans AFTER it.
-            Nothing is removed; the preset plans and the recommended session
-            both stay, they just stop standing in front of the history.
+            SAME ORDER AS BEFORE, LESS AIR. The owner's ask was for the logbook
+            to arrive sooner WITHOUT the preset plans or the recommended
+            session moving: "just excess space which is not being used to be
+            moved around". So the sequence is unchanged — scores, today's
+            plan, the recommended split, the plan browser, the preset plans,
+            then the session history — and the height came out of the parts:
+            the scores are a strip rather than a hero, every gap is 12px
+            rather than 32, the recommended split is one row of chips, and
+            the preset-plan tiles are shorter. On a 390px phone the logbook
+            heading now lands roughly a screen earlier than it did.
           */}
           <div className="grid gap-6 xl:grid-cols-[1fr_380px]">
-            <div className="min-w-0 space-y-4">
+            <div className="min-w-0 space-y-3">
               <GymScoreStrip
                 strengthIndex={hasHistory ? strengthIndex : null}
                 dotsScore={breakdown.dots_score ?? null}
@@ -249,6 +249,19 @@ export default async function GymPage() {
 
               {hasHistory && <RecommendedSplitCard recommendation={recommendation} />}
 
+              <WorkoutPlansDisclosure />
+
+              {/*
+                Quick start on a phone, where it always was. The right rail
+                below is a sticky sidebar on desktop; on a phone the grid
+                collapses to one column and the aside would render last, so
+                the phone gets its own copy here and the aside is hidden
+                below `xl` — one of the two renders at any width, never both.
+              */}
+              <div className="xl:hidden">
+                <GymQuickStart compact />
+              </div>
+
               {/* Keyed off logged sessions, not scored ones: an unscored
                   session is still a session the athlete logged and expects
                   to find here. */}
@@ -263,19 +276,6 @@ export default async function GymPage() {
                   viewAllHref="/activities?zone=gym"
                 />
               )}
-
-              {/*
-                Quick start on a phone, after the logbook. The right rail
-                below is a sticky sidebar on desktop; on a phone the grid
-                collapses to one column and the aside would render last, so
-                the phone gets its own copy here and the aside is hidden
-                below `xl` — one of the two renders at any width, never both.
-              */}
-              <div className="xl:hidden">
-                <GymQuickStart />
-              </div>
-
-              <WorkoutPlansDisclosure />
             </div>
 
             <aside className="hidden min-w-0 xl:sticky xl:top-24 xl:block xl:self-start">

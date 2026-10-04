@@ -4,7 +4,6 @@ import { motion } from "framer-motion";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { PremiumTease } from "@/components/premium/premium-tease";
 import { ScoringExplainerNote } from "@/components/scoring/scoring-explainer-note";
-import { CollapsibleSection, SummaryPills } from "@/components/ui/collapsible-section";
 import { cn } from "@/lib/utils/cn";
 import { AdaptiveOneRmList } from "./adaptive-1rm-list";
 import {
@@ -127,11 +126,12 @@ function PredictionsContent({
       )}
 
       {/*
-        Each ladder is closed by default and shows its first three rungs as
-        pills (user feedback, 24 Sep 2026: the stored predictions "for running
-        and other cardio" should be a drop-down too). Five distances for each
-        of up to five sports was a wall of rows under the headline numbers,
-        which are what most people open this panel for.
+        EVERY RUNG, ALWAYS VISIBLE (4 Oct 2026). The ladders spent a fortnight
+        as drop-downs and the verdict was "I don't want them as dropdowns, I
+        want the values to be easy to see". Each sport is one row of tiles —
+        five distances across on a phone, each tile the distance over the
+        time — so the whole ladder is read at a glance and nothing has to be
+        opened. Height is kept by making the tiles small, not by hiding them.
       */}
       {ladders.map(({ benchmark, ladder }) => {
         const rungs = Object.entries(ladder)
@@ -143,23 +143,28 @@ function PredictionsContent({
           // below marathon"). Sort explicitly by the real distance.
           .sort(([a], [b]) => Number(a) - Number(b))
           .map(([dist, sec]) => ({ label: formatPredictionLabel(dist), value: formatRiegelPrediction(sec) }));
-        const peek = rungs.slice(0, 3);
         return (
-          <CollapsibleSection
-            key={benchmark.sport}
-            title={LADDER_TITLE[benchmark.sport] ?? "Race ladder"}
-            count={`${rungs.length} distance${rungs.length === 1 ? "" : "s"}`}
-            summary={<SummaryPills items={peek} more={rungs.length - peek.length} />}
-          >
-            <ul className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3 text-xs">
+          <section key={benchmark.sport} aria-label={LADDER_TITLE[benchmark.sport] ?? "Race ladder"}>
+            <p className="micro-label mb-2 text-muted">{LADDER_TITLE[benchmark.sport] ?? "Race ladder"}</p>
+            <ul
+              className="grid gap-1.5"
+              style={{ gridTemplateColumns: `repeat(${Math.min(rungs.length, 5)}, minmax(0, 1fr))` }}
+            >
               {rungs.map((rung) => (
-                <li key={rung.label} className="flex justify-between gap-2 tabular-nums glass rounded-lg px-3 py-1.5">
-                  <span className="text-muted">{rung.label}</span>
-                  <span className="font-medium">{rung.value}</span>
+                <li
+                  key={rung.label}
+                  className="flex min-w-0 flex-col items-center rounded-xl border border-white/[0.06] bg-white/[0.03] px-1.5 py-2 text-center"
+                >
+                  <span className="max-w-full truncate text-[9px] font-medium uppercase tracking-wide text-muted">
+                    {rung.label}
+                  </span>
+                  <span className="mt-0.5 font-mono text-sm font-semibold tabular-nums text-foreground sm:text-base">
+                    {rung.value}
+                  </span>
                 </li>
               ))}
             </ul>
-          </CollapsibleSection>
+          </section>
         );
       })}
 

@@ -516,14 +516,20 @@ function GpsRunScreen() {
   }
 
   async function handleDisconnectHeartRate() {
-    if (hrSource === "airpods") {
-      await stopAirPodsHeartRate();
-    } else {
-      await disconnectHeartRateMonitor();
+    try {
+      if (hrSource === "airpods") {
+        await stopAirPodsHeartRate();
+      } else {
+        await disconnectHeartRateMonitor();
+      }
+    } finally {
+      // The app's own idea of the source is cleared whether or not the native
+      // side managed to stop cleanly — a stuck plugin must not leave a
+      // "connected" row on screen that can never be disconnected.
+      setHrDeviceName(null);
+      setHrSource(null);
+      setLiveBpm(null);
     }
-    setHrDeviceName(null);
-    setHrSource(null);
-    setLiveBpm(null);
   }
 
   async function handleStart() {
@@ -700,6 +706,7 @@ function GpsRunScreen() {
   async function handleStop() {
     if (stopping) return;
     setStopping(true);
+    setError("");
     try {
       const now = Date.now();
       // Close whatever segment was open at the moment of stopping, so the
@@ -715,11 +722,31 @@ function GpsRunScreen() {
         setPaused(false);
       }
       const result = await stopGpsSession();
-      if (hrSource) await handleDisconnectHeartRate();
-      if (isOnFootSport) await stopStepCadence().catch(() => {});
-      await endLiveActivity();
+      /*
+        THE RUN IS FINISHED THE MOMENT THE TRACK IS IN HAND. Everything after
+        this line is teardown of optional extras — the heart-rate source, the
+        pedometer, the lock-screen Live Activity — and none of it may stand
+        between the athlete and their summary. It used to: each await here was
+        unguarded, so an AirPods workout session that refused to stop (which
+        HealthKit will do if it was never granted, or if the session was torn
+        down underneath us) threw out of this function, `finally` cleared the
+        spinner, and the Finish button simply did nothing, again and again,
+        with a run recorded behind it (owner: "it would not let me finish the
+        run as the button wouldn't work"). The summary and the phase change
+        now come FIRST, and each teardown step is allowed to fail on its own.
+      */
       setSummary(result);
       setPhase("reviewing");
+      if (hrSource) await handleDisconnectHeartRate().catch(() => {});
+      if (isOnFootSport) await stopStepCadence().catch(() => {});
+      await endLiveActivity().catch(() => {});
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : "";
+      setError(
+        detail
+          ? `Couldn't stop tracking: ${detail}. Try again — nothing recorded has been lost.`
+          : "Couldn't stop tracking. Try again — nothing recorded has been lost."
+      );
     } finally {
       setStopping(false);
     }
@@ -729,10 +756,10 @@ function GpsRunScreen() {
   async function handleDiscardTracking() {
     setStopping(true);
     try {
-      await stopGpsSession();
-      if (hrSource) await handleDisconnectHeartRate();
+      await stopGpsSession().catch(() => {});
+      if (hrSource) await handleDisconnectHeartRate().catch(() => {});
       if (isOnFootSport) await stopStepCadence().catch(() => {});
-      await endLiveActivity();
+      await endLiveActivity().catch(() => {});
     } finally {
       setStopping(false);
       resetToIdle();
@@ -903,7 +930,26 @@ function GpsRunScreen() {
     return createPortal(
       <div className="fixed inset-0 z-50 flex flex-col bg-background landscape:flex-row">
         <div className="relative h-1/2 w-full shrink-0 landscape:h-full landscape:w-1/2">
-          <GpsMap points={movingPoints} className="h-full w-full" />
+          <GpsMap points={movingPoints} className="h-full w-full" emptyTone="dark" />
+          {/*
+            No fix after fifteen seconds is almost always a permission, not a
+            satellite. Say so, on the HUD, instead of leaving a pale box that
+            reads as a blank map (owner: "the gps fixing wont load anymore and
+            the map screen is blank").
+          */}
+          {movingPoints.length === 0 && elapsedSeconds >= 15 && (
+            <div
+              className="pointer-events-none absolute inset-x-4 rounded-2xl border border-warning/30 bg-black/80 px-4 py-3 text-xs leading-relaxed text-white/85 backdrop-blur"
+              style={{ bottom: "1rem" }}
+            >
+              <p className="font-semibold text-warning">Still waiting for a GPS fix</p>
+              <p className="mt-0.5">
+                Check that Location is allowed for Split Index (Settings → Privacy &amp; Security →
+                Location Services) and that you are outdoors with a view of the sky. Tracking
+                starts the moment a fix arrives.
+              </p>
+            </div>
+          )}
           <div
             className="pointer-events-none absolute left-4 flex items-center gap-1.5 rounded-full border border-white/20 bg-black px-3 py-1.5 text-xs font-bold text-white shadow-lg"
             style={{ top: "max(1rem, calc(env(safe-area-inset-top) + 0.5rem))" }}
@@ -1008,6 +1054,11 @@ function GpsRunScreen() {
               this screen must never do is destroy a recorded run on a
               mis-tap (user report: "Once paused you can only discard run"). */}
           <div className="flex w-full max-w-sm shrink-0 flex-col items-center gap-4">
+            {error && (
+              <p role="alert" className="w-full rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-center text-xs text-white">
+                {error}
+              </p>
+            )}
             <div className="flex items-center justify-center gap-8">
               <button
                 type="button"
@@ -1329,8 +1380,10 @@ function GpsRunScreen() {
                         <>
                           <p className="text-sm font-semibold">Heart rate</p>
                           <p className="text-xs leading-relaxed text-muted">
-                            Optional. Garmin watches and Polar or Wahoo chest straps over Bluetooth;
-                            AirPods through Apple Health.
+                            Optional. Bluetooth works with Garmin watches and Polar or Wahoo chest
+                            straps. AirPods go through Apple Health: connecting opens an Apple
+                            workout session so the sensor switches on, and iOS shows its own workout
+                            indicator — nothing is recorded here until you press Start.
                           </p>
                           <div className="mt-2.5 flex flex-wrap gap-2">
                             <Button

@@ -22,7 +22,7 @@ export function WorkoutPlansDisclosure() {
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="mb-8">
+    <div>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}

@@ -85,7 +85,12 @@ export function AnalyticsFilters({
           ))}
         </select>
 
-        <div className="flex gap-0.5 rounded-lg border border-white/[0.06] glass p-0.5">
+        <div
+          className="flex gap-0.5 rounded-lg border border-white/[0.06] glass p-0.5"
+          role="group"
+          aria-label="Period: this week, this month or this year"
+          title="Sets the period for the figures below and the trend chart"
+        >
           {GRANULARITY_OPTIONS.map((g) => (
             <button
               key={g.value}
@@ -104,12 +109,21 @@ export function AnalyticsFilters({
           ))}
         </div>
 
+        {/*
+          ONE TAP. Compare used to open a row holding two selects and a THIRD
+          control, "Show comparison", that actually switched the panel on —
+          so tapping Compare appeared to do nothing (owner: the compare button
+          "doesn't work at all"). Opening the row now enables the comparison
+          and the panel renders directly beneath this bar; the row's selects
+          choose what is compared; closing the row switches it off.
+        */}
         <button
           type="button"
+          aria-pressed={comparisonOpen}
           onClick={() => {
             const next = !comparisonOpen;
             setComparisonOpen(next);
-            if (!next) onCompareToggle(false);
+            onCompareToggle(next);
           }}
           className={cn(
             "ml-auto flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium transition-all",
@@ -143,18 +157,9 @@ export function AnalyticsFilters({
             className="h-9"
             wrapperClassName="min-w-[130px] flex-1 sm:flex-none"
           />
-          <button
-            type="button"
-            onClick={() => onCompareToggle(!compareEnabled)}
-            className={cn(
-              "h-9 rounded-lg border px-3 text-xs font-medium transition-colors",
-              compareEnabled
-                ? "border-accent/30 bg-accent/20 text-accent"
-                : "border-white/10 text-muted hover:text-foreground"
-            )}
-          >
-            {compareEnabled ? `Comparing ${periodALabel} vs ${periodBLabel}` : "Show comparison"}
-          </button>
+          <p className="w-full text-[11px] text-muted sm:ml-auto sm:w-auto" aria-live="polite">
+            {compareEnabled ? `Comparing ${periodALabel} vs ${periodBLabel} — see below.` : ""}
+          </p>
         </div>
       )}
     </div>
