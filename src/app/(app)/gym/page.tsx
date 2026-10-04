@@ -5,10 +5,12 @@ import { createClient } from "@/lib/supabase/server";
 import { TrainZoneSwipe } from "@/components/layout/train-zone-swipe";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils/cn";
-import { GymStrengthPanel } from "@/components/dashboard/gym-strength-panel";
+import { GymScoreStrip } from "@/components/gym/gym-score-strip";
 import { GymQuickStart } from "@/components/gym/gym-quick-start";
 import { WorkoutPlansDisclosure } from "@/components/gym/workout-plans-disclosure";
 import { RecommendedSplitCard } from "@/components/gym/recommended-split-card";
+import { ZonePlanCard } from "@/components/hybrid-plan/zone-plan-card";
+import { loadTodaysSessionPayload } from "@/components/dashboard/todays-session-data";
 import { LogbookFeed } from "@/components/activities/logbook-feed";
 import { fetchLogbookPage, LOGBOOK_ZONE_PAGE_SIZE } from "@/lib/activities/logbook-query";
 import { canAccessProfile } from "@/lib/premium/features";
@@ -44,57 +46,82 @@ export default async function GymPage() {
 
   const showDotsGl = canAccessProfile("strength_dots_gl", profile);
 
-  const [{ data: latestIndex }, { data: gymScores }, logbookPage, { data: latestGymScore }] =
-    await Promise.all([
-      supabase
-        .from("split_index_history")
-        .select("strength_index")
-        .eq("user_id", user.id)
-        .order("recorded_at", { ascending: false })
-        .limit(1)
-        .single(),
-      supabase
-        .from("workout_scores")
-        .select("sport_index, created_at, activity_id")
-        .eq("user_id", user.id)
-        .eq("sport", "gym")
-        .order("created_at", { ascending: false })
-        .limit(20),
-      // The Lab's session history. User feedback (Slice 10): "not nice to
-      // view activities" — the list was capped at 8, then 20, with nothing
-      // to say more existed. It now opens on a page and keeps paging through
-      // /api/activities/logbook, with the running "showing N of M" count and
-      // a link into the full cross-zone logbook.
-      fetchLogbookPage(supabase, user.id, {
-        zone: "gym",
-        limit: LOGBOOK_ZONE_PAGE_SIZE,
-      }),
-      supabase
-        .from("workout_scores")
-        .select("score_breakdown, sport_index")
-        .eq("user_id", user.id)
-        .eq("sport", "gym")
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .single(),
-    ]);
+  // Balanced-split recommendation: mine muscle-group training recency/volume
+  // from the same lookback window the pure engine expects, so "what should I
+  // train next" reflects actual logged sets, not a generic program.
+  const lookbackSince = new Date(
+    Date.now() - GYM_RECOMMENDATION_CONFIG.LOOKBACK_DAYS * 86400000 // eslint-disable-line react-hooks/purity -- server component
+  ).toISOString();
+
+  /*
+   * ONE ROUND OF QUERIES, NOT FOUR. This page used to await a Promise.all of
+   * four selects and THEN the all-time lift rows, THEN the recent activities,
+   * THEN their exercises — three extra serial round trips to the database on
+   * every tap of the Strength tab, which was most of the "takes a while to
+   * load the tab" the owner reported. Everything that only depends on the
+   * user id now goes out together; the only thing left in series is the
+   * exercise lookup, which needs the activity ids back first.
+   */
+  const [
+    { data: latestIndex },
+    { data: gymScores },
+    logbookPage,
+    { data: latestGymScore },
+    allTimeExercises,
+    { data: recentGymActivities },
+    todaysSessionPayload,
+  ] = await Promise.all([
+    supabase
+      .from("split_index_history")
+      .select("strength_index")
+      .eq("user_id", user.id)
+      .order("recorded_at", { ascending: false })
+      .limit(1)
+      .single(),
+    supabase
+      .from("workout_scores")
+      .select("sport_index, created_at, activity_id")
+      .eq("user_id", user.id)
+      .eq("sport", "gym")
+      .order("created_at", { ascending: false })
+      .limit(20),
+    // The Lab's session history. User feedback (Slice 10): "not nice to
+    // view activities" — the list was capped at 8, then 20, with nothing
+    // to say more existed. It now opens on a page and keeps paging through
+    // /api/activities/logbook, with the running "showing N of M" count and
+    // a link into the full cross-zone logbook.
+    fetchLogbookPage(supabase, user.id, {
+      zone: "gym",
+      limit: LOGBOOK_ZONE_PAGE_SIZE,
+    }),
+    supabase
+      .from("workout_scores")
+      .select("score_breakdown, sport_index")
+      .eq("user_id", user.id)
+      .eq("sport", "gym")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .single(),
+    // Overall/profile DOTS & IPF GL — the athlete's best-ever squat/bench/
+    // deadlift across every logged gym session, not just the most recently
+    // logged one. From strength_scores, not gym_exercises — the two hold
+    // DIFFERENT numbers for the same lift. See lib/activities/all-time-one-rm.ts.
+    fetchAllTimeLiftRows(supabase, user.id),
+    supabase
+      .from("activities")
+      .select("id, started_at")
+      .eq("user_id", user.id)
+      .eq("sport", "gym")
+      .eq("is_draft", false)
+      .gte("started_at", lookbackSince),
+    // Today's prescribed session from the stored hybrid plan — the same two
+    // selects the dashboard band uses, never the generating endpoint.
+    loadTodaysSessionPayload(supabase, user.id),
+  ]);
 
   const strengthIndex = latestIndex?.strength_index ?? null;
   const hasHistory = (gymScores?.length ?? 0) > 0;
   const breakdown = (latestGymScore?.score_breakdown ?? {}) as ScoreBreakdown;
-
-  // Overall/profile DOTS & IPF GL — the athlete's best-ever squat/bench/
-  // deadlift across every logged gym session, not just the most recently
-  // logged one. Shown alongside (never instead of) the per-workout number
-  // so it's unambiguous which is which: user feedback flagged the dashboard
-  // DOTS/GL as "wrong" against a reference calculator when it was really
-  // just reflecting a single session that didn't touch all three lifts.
-  // From strength_scores, not gym_exercises — the two hold DIFFERENT numbers
-  // for the same lift (a per-hand dumbbell press, a single-arm cable, a
-  // weighted pull-up all mean something else on the flat column), and mixing
-  // them is what let a corrected score be quietly out-read by a stale one. See
-  // lib/activities/all-time-one-rm.ts.
-  const allTimeExercises = await fetchAllTimeLiftRows(supabase, user.id);
 
   const overallDotsGl =
     profile?.weight_kg && profile.weight_kg > 0
@@ -137,8 +164,7 @@ export default async function GymPage() {
         currentOneRM: result?.currentOneRM,
         // All three are the engine's own figure now, so this max compares like
         // with like: the stored history, whatever the engine remembers of it,
-        // and this session. It used to reach across two different rulers, where
-        // it could only ever pick the more generous of the two.
+        // and this session.
         allTimeOneRM: Math.max(
           allTime1RmByLift.get(key) ?? 0,
           result?.allTimeOneRM ?? 0,
@@ -148,20 +174,6 @@ export default async function GymPage() {
       });
     }
   }
-
-  // Balanced-split recommendation: mine muscle-group training recency/volume
-  // from the same lookback window the pure engine expects, so "what should I
-  // train next" reflects actual logged sets, not a generic program.
-  const lookbackSince = new Date(
-    Date.now() - GYM_RECOMMENDATION_CONFIG.LOOKBACK_DAYS * 86400000 // eslint-disable-line react-hooks/purity -- server component
-  ).toISOString();
-  const { data: recentGymActivities } = await supabase
-    .from("activities")
-    .select("id, started_at")
-    .eq("user_id", user.id)
-    .eq("sport", "gym")
-    .eq("is_draft", false)
-    .gte("started_at", lookbackSince);
 
   const activityDateById = new Map(
     (recentGymActivities ?? []).map((a) => [a.id as string, a.started_at as string])
@@ -188,10 +200,10 @@ export default async function GymPage() {
   return (
     <TrainZoneSwipe mode="gym">
       <div className="bg-gym-zone rounded-2xl overflow-hidden border border-gym-border/40 min-h-[80dvh]">
-        <div className="p-6 sm:p-10">
-          <div className="flex flex-wrap items-start justify-between gap-4 mb-8">
+        <div className="p-4 sm:p-10">
+          <div className="mb-4 flex flex-wrap items-start justify-between gap-4">
             <div>
-              <p className="micro-label text-gym-accent mb-2">Strength · The Lab</p>
+              <p className="micro-label text-gym-accent mb-1.5">Strength · The Lab</p>
               <h1 className="headline-tight text-3xl font-bold text-gym-text sm:text-5xl">
                 Strength
               </h1>
@@ -217,9 +229,21 @@ export default async function GymPage() {
             </div>
           </div>
 
-          <div className="grid gap-8 xl:grid-cols-[1fr_380px]">
-            <div className="min-w-0">
-              <GymStrengthPanel
+          {/*
+            SAME ORDER AS BEFORE, LESS AIR. The owner's ask was for the logbook
+            to arrive sooner WITHOUT the preset plans or the recommended
+            session moving: "just excess space which is not being used to be
+            moved around". So the sequence is unchanged — scores, today's
+            plan, the recommended split, the plan browser, the preset plans,
+            then the session history — and the height came out of the parts:
+            the scores are a strip rather than a hero, every gap is 12px
+            rather than 32, the recommended split is one row of chips, and
+            the preset-plan tiles are shorter. On a 390px phone the logbook
+            heading now lands roughly a screen earlier than it did.
+          */}
+          <div className="grid gap-6 xl:grid-cols-[1fr_380px]">
+            <div className="min-w-0 space-y-3">
+              <GymScoreStrip
                 strengthIndex={hasHistory ? strengthIndex : null}
                 dotsScore={breakdown.dots_score ?? null}
                 glPoints={breakdown.gl_points ?? null}
@@ -229,32 +253,23 @@ export default async function GymPage() {
                 lifts={lifts}
                 hasHistory={hasHistory}
                 showDotsGl={showDotsGl}
-                className="mb-8"
               />
 
-              {hasHistory && <RecommendedSplitCard recommendation={recommendation} className="mb-8" />}
+              <ZonePlanCard zone="gym" payload={todaysSessionPayload} />
+
+              {hasHistory && <RecommendedSplitCard recommendation={recommendation} />}
 
               <WorkoutPlansDisclosure />
 
               {/*
-                QUICK START, ON A PHONE, BEFORE THE LOGBOOK.
-
-                The right rail below is a sticky sidebar on desktop and a
-                perfectly good one. On a phone the grid collapses to one column
-                and it renders LAST — after the strength panel, the recommended
-                split, the plans disclosure and the entire paged logbook. So the
-                primary action of the strength zone, "start a session", sat
-                several screens below the fold on the device this app is mostly
-                used on.
-
-                Hoisted rather than reordered: `order-first` cannot move a child
-                across a grid-column collapse, because on desktop these are in
-                different columns rather than different positions in one. So the
-                phone gets its own copy here and the aside is hidden below `lg`
-                — one of the two renders at any width, never both.
+                Quick start on a phone, where it always was. The right rail
+                below is a sticky sidebar on desktop; on a phone the grid
+                collapses to one column and the aside would render last, so
+                the phone gets its own copy here and the aside is hidden
+                below `xl` — one of the two renders at any width, never both.
               */}
-              <div className="mb-8 xl:hidden">
-                <GymQuickStart />
+              <div className="xl:hidden">
+                <GymQuickStart compact />
               </div>
 
               {/* Keyed off logged sessions, not scored ones: an unscored

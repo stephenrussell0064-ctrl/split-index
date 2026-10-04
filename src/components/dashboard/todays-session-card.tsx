@@ -1,8 +1,60 @@
 import Link from "next/link";
+import { format } from "date-fns";
 import { CalendarDays, ChevronRight, Dumbbell, Footprints, Moon } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils/cn";
 import type { DailyTrainingDayPayload, DailyTrainingPayload } from "@/lib/native/daily-training";
+
+/**
+ * The week ahead, as a row of seven. One tile per day the payload covers
+ * (today first): the weekday letter, and a dot per session coloured by its
+ * half — green for strength, blue for endurance, a hollow ring for a rest
+ * day. Added when the owner asked for the plan to be "a larger section in
+ * the app and more easy to be seen": the band only ever showed today, so a
+ * plan read as one card's worth of content. Seeing the shape of the week
+ * is what makes it read as a plan. ~44px, on the band only.
+ */
+function WeekStrip({ days }: { days: DailyTrainingDayPayload[] }) {
+  if (days.length < 2) return null;
+  return (
+    <ol className="mt-2.5 grid grid-cols-7 gap-1" aria-label="The next seven days">
+      {days.slice(0, 7).map((day, i) => {
+        const date = new Date(`${day.date}T12:00:00`);
+        const label = Number.isNaN(date.getTime()) ? "·" : format(date, "EEEEE");
+        return (
+          <li
+            key={day.date}
+            className={cn(
+              "rounded-lg py-1.5 text-center",
+              i === 0 ? "bg-accent/15 ring-1 ring-accent/40" : "bg-white/[0.03]"
+            )}
+            title={day.isRest ? `Rest · ${day.weekLabel}` : day.sessions.map((s) => s.title).join(" + ")}
+          >
+            <p className={cn("text-[10px] font-semibold uppercase", i === 0 ? "text-accent" : "text-muted")}>
+              {label}
+            </p>
+            <div className="mt-1 flex h-2 items-center justify-center gap-0.5">
+              {day.isRest || day.sessions.length === 0 ? (
+                <span className="h-1.5 w-1.5 rounded-full border border-white/25" aria-hidden />
+              ) : (
+                day.sessions.slice(0, 3).map((s, j) => (
+                  <span
+                    key={j}
+                    className={cn(
+                      "h-1.5 w-1.5 rounded-full",
+                      s.domain === "strength" ? "bg-strength" : "bg-endurance"
+                    )}
+                    aria-hidden
+                  />
+                ))
+              )}
+            </div>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
 
 /**
  * Today's prescribed session, on the home page.
@@ -326,6 +378,7 @@ export function TodaysSessionCard({
       ) : (
         <TrainingDay day={today} variant={variant} />
       )}
+      {variant === "band" && <WeekStrip days={payload.days} />}
     </CardFrame>
   );
 }

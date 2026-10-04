@@ -4,7 +4,7 @@ import { Suspense, useEffect, useMemo, useRef, useState, useSyncExternalStore } 
 import { createPortal } from "react-dom";
 import nextDynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
-import { MapPin, Square, AlertTriangle, Gauge, Mountain, HeartPulse, Zap, Flag, Thermometer, Footprints, TrendingUp, Pause, Play, Trash2, Volume2, VolumeX } from "lucide-react";
+import { MapPin, Square, AlertTriangle, Gauge, Mountain, HeartPulse, Zap, Flag, Thermometer, Footprints, TrendingUp, Pause, Play, Trash2, Volume2, VolumeX, Bike, Bluetooth, Timer, Route, CircleCheck } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/input";
@@ -68,6 +68,50 @@ const GPS_SPORTS: { value: GpsSport; label: string }[] = [
   { value: "outdoor_cycling", label: "Outdoor Cycling" },
   { value: "walking", label: "Walking" },
 ];
+
+/** How each sport is drawn on the start screen, and what the start button calls the session. */
+const GPS_SPORT_META: Record<GpsSport, { short: string; noun: string; icon: typeof Footprints }> = {
+  running: { short: "Run", noun: "run", icon: Footprints },
+  outdoor_cycling: { short: "Ride", noun: "ride", icon: Bike },
+  walking: { short: "Walk", noun: "walk", icon: Route },
+};
+
+/** One tile in the stat grids. The same shape on every GPS screen, so nothing is singled out by accident. */
+function StatTile({
+  label,
+  value,
+  icon: Icon,
+  tone = "neutral",
+  size = "md",
+}: {
+  label: string;
+  value: React.ReactNode;
+  icon?: typeof Footprints;
+  tone?: "neutral" | "accent" | "danger" | "warning";
+  size?: "md" | "lg";
+}) {
+  const frame =
+    tone === "accent"
+      ? "border-cardio-accent/30 bg-cardio-accent/10"
+      : tone === "danger"
+        ? "border-danger/25 bg-danger/10"
+        : tone === "warning"
+          ? "border-warning/25 bg-warning/10"
+          : "border-white/10 bg-white/[0.06]";
+  const labelTone =
+    tone === "danger" ? "text-danger/80" : tone === "warning" ? "text-warning/80" : "text-white/55";
+  return (
+    <div className={`flex min-w-0 flex-col items-center justify-center rounded-2xl border px-2 text-center ${frame} ${size === "lg" ? "py-3.5" : "py-2.5"}`}>
+      <div className={`mb-1 flex items-center justify-center gap-1.5 ${labelTone}`}>
+        {Icon && <Icon className="h-3.5 w-3.5" aria-hidden />}
+        <p className="micro-label">{label}</p>
+      </div>
+      <p className={`index-display tabular-nums text-white ${size === "lg" ? "text-2xl font-bold" : "text-lg font-bold"}`}>
+        {value}
+      </p>
+    </div>
+  );
+}
 
 function formatElapsed(seconds: number): string {
   const h = Math.floor(seconds / 3600);
@@ -472,14 +516,20 @@ function GpsRunScreen() {
   }
 
   async function handleDisconnectHeartRate() {
-    if (hrSource === "airpods") {
-      await stopAirPodsHeartRate();
-    } else {
-      await disconnectHeartRateMonitor();
+    try {
+      if (hrSource === "airpods") {
+        await stopAirPodsHeartRate();
+      } else {
+        await disconnectHeartRateMonitor();
+      }
+    } finally {
+      // The app's own idea of the source is cleared whether or not the native
+      // side managed to stop cleanly — a stuck plugin must not leave a
+      // "connected" row on screen that can never be disconnected.
+      setHrDeviceName(null);
+      setHrSource(null);
+      setLiveBpm(null);
     }
-    setHrDeviceName(null);
-    setHrSource(null);
-    setLiveBpm(null);
   }
 
   async function handleStart() {
@@ -656,6 +706,7 @@ function GpsRunScreen() {
   async function handleStop() {
     if (stopping) return;
     setStopping(true);
+    setError("");
     try {
       const now = Date.now();
       // Close whatever segment was open at the moment of stopping, so the
@@ -671,11 +722,31 @@ function GpsRunScreen() {
         setPaused(false);
       }
       const result = await stopGpsSession();
-      if (hrSource) await handleDisconnectHeartRate();
-      if (isOnFootSport) await stopStepCadence().catch(() => {});
-      await endLiveActivity();
+      /*
+        THE RUN IS FINISHED THE MOMENT THE TRACK IS IN HAND. Everything after
+        this line is teardown of optional extras — the heart-rate source, the
+        pedometer, the lock-screen Live Activity — and none of it may stand
+        between the athlete and their summary. It used to: each await here was
+        unguarded, so an AirPods workout session that refused to stop (which
+        HealthKit will do if it was never granted, or if the session was torn
+        down underneath us) threw out of this function, `finally` cleared the
+        spinner, and the Finish button simply did nothing, again and again,
+        with a run recorded behind it (owner: "it would not let me finish the
+        run as the button wouldn't work"). The summary and the phase change
+        now come FIRST, and each teardown step is allowed to fail on its own.
+      */
       setSummary(result);
       setPhase("reviewing");
+      if (hrSource) await handleDisconnectHeartRate().catch(() => {});
+      if (isOnFootSport) await stopStepCadence().catch(() => {});
+      await endLiveActivity().catch(() => {});
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : "";
+      setError(
+        detail
+          ? `Couldn't stop tracking: ${detail}. Try again — nothing recorded has been lost.`
+          : "Couldn't stop tracking. Try again — nothing recorded has been lost."
+      );
     } finally {
       setStopping(false);
     }
@@ -685,10 +756,10 @@ function GpsRunScreen() {
   async function handleDiscardTracking() {
     setStopping(true);
     try {
-      await stopGpsSession();
-      if (hrSource) await handleDisconnectHeartRate();
+      await stopGpsSession().catch(() => {});
+      if (hrSource) await handleDisconnectHeartRate().catch(() => {});
       if (isOnFootSport) await stopStepCadence().catch(() => {});
-      await endLiveActivity();
+      await endLiveActivity().catch(() => {});
     } finally {
       setStopping(false);
       resetToIdle();
@@ -859,7 +930,26 @@ function GpsRunScreen() {
     return createPortal(
       <div className="fixed inset-0 z-50 flex flex-col bg-background landscape:flex-row">
         <div className="relative h-1/2 w-full shrink-0 landscape:h-full landscape:w-1/2">
-          <GpsMap points={movingPoints} className="h-full w-full" />
+          <GpsMap points={movingPoints} className="h-full w-full" emptyTone="dark" />
+          {/*
+            No fix after fifteen seconds is almost always a permission, not a
+            satellite. Say so, on the HUD, instead of leaving a pale box that
+            reads as a blank map (owner: "the gps fixing wont load anymore and
+            the map screen is blank").
+          */}
+          {movingPoints.length === 0 && elapsedSeconds >= 15 && (
+            <div
+              className="pointer-events-none absolute inset-x-4 rounded-2xl border border-warning/30 bg-black/80 px-4 py-3 text-xs leading-relaxed text-white/85 backdrop-blur"
+              style={{ bottom: "1rem" }}
+            >
+              <p className="font-semibold text-warning">Still waiting for a GPS fix</p>
+              <p className="mt-0.5">
+                Check that Location is allowed for Split Index (Settings → Privacy &amp; Security →
+                Location Services) and that you are outdoors with a view of the sky. Tracking
+                starts the moment a fix arrives.
+              </p>
+            </div>
+          )}
           <div
             className="pointer-events-none absolute left-4 flex items-center gap-1.5 rounded-full border border-white/20 bg-black px-3 py-1.5 text-xs font-bold text-white shadow-lg"
             style={{ top: "max(1rem, calc(env(safe-area-inset-top) + 0.5rem))" }}
@@ -880,19 +970,29 @@ function GpsRunScreen() {
 
         <div className="flex flex-1 flex-col items-center justify-between overflow-y-auto px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-5 landscape:h-full landscape:justify-center landscape:gap-6 landscape:py-6">
           <div className="flex w-full flex-1 flex-col items-center justify-center landscape:flex-none">
-            <div className="flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full bg-gradient-to-br from-cardio-accent to-strength-accent" aria-hidden />
-              <p className="micro-label text-white/60">Elapsed</p>
+            {/*
+              HIERARCHY, NOT A LIST. Distance and moving time are the two
+              numbers a runner glances at mid-run, so they are the hero pair at
+              twice the size of everything else; pace, the last split, heart
+              rate, elevation and cadence are a row of matching tiles beneath.
+              The previous HUD had one 60px clock and six equal tiles under it,
+              which made distance as prominent as cadence.
+            */}
+            <div className="grid w-full max-w-sm grid-cols-2 gap-2.5">
+              <StatTile
+                size="lg"
+                icon={MapPin}
+                label="Distance"
+                value={`${(liveDistanceMeters / 1000).toFixed(2)} km`}
+              />
+              <StatTile size="lg" icon={Timer} label="Moving time" value={formatElapsed(elapsedSeconds)} />
             </div>
-            <p className="index-display bg-gradient-to-br from-white to-white/70 bg-clip-text text-6xl font-extrabold tabular-nums text-transparent">
-              {formatElapsed(elapsedSeconds)}
-            </p>
 
             {isSegmentTracked && !paused && (
               <button
                 type="button"
                 onClick={toggleSegment}
-                className={`mt-3 flex items-center gap-2 rounded-full px-5 py-2 text-sm font-bold uppercase tracking-wide transition-colors ${
+                className={`mt-3 flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-bold uppercase tracking-wide transition-colors ${
                   segmentType === "hard"
                     ? "bg-danger text-white shadow-lg shadow-danger/30"
                     : "bg-white/15 text-white"
@@ -903,69 +1003,20 @@ function GpsRunScreen() {
               </button>
             )}
 
-            {/* Stat grid — Distance and Avg Split are just tiles here like
-                everything else (user feedback: Avg Split had a large box in
-                a different font/color, wanted it styled the same as every
-                other individual stat instead of singled out). */}
-            <div className="mt-6 grid w-full max-w-sm grid-cols-2 gap-2.5 text-center">
-              <div className="rounded-xl border border-white/10 bg-white/[0.06] py-2.5">
-                <div className="mb-1 flex items-center justify-center gap-1.5 text-white/50">
-                  <MapPin className="h-3.5 w-3.5" />
-                  <p className="micro-label">Distance</p>
-                </div>
-                <p className="text-lg font-bold tabular-nums text-white">
-                  {(liveDistanceMeters / 1000).toFixed(2)} km
-                </p>
-              </div>
-              <div className="rounded-xl border border-white/10 bg-white/[0.06] py-2.5">
-                <div className="mb-1 flex items-center justify-center gap-1.5 text-white/50">
-                  <Gauge className="h-3.5 w-3.5" />
-                  <p className="micro-label">Avg split</p>
-                </div>
-                <p className="text-lg font-bold tabular-nums text-white">
-                  {formatPaceOrSpeed(sport, livePaceSecondsPerKm)}
-                </p>
-              </div>
-              <div className="rounded-xl border border-white/10 bg-white/[0.06] py-2.5">
-                <p className="micro-label text-white/50">Current pace</p>
-                <p className="text-lg font-bold tabular-nums text-white">
-                  {formatPaceOrSpeed(sport, currentPaceSecondsPerKm)}
-                </p>
-              </div>
+            <div className="mt-2.5 grid w-full max-w-sm grid-cols-3 gap-2.5">
+              <StatTile icon={Gauge} label={sport === "outdoor_cycling" ? "Avg speed" : "Avg split"} value={formatPaceOrSpeed(sport, livePaceSecondsPerKm)} />
+              <StatTile label={sport === "outdoor_cycling" ? "Speed now" : "Pace now"} value={formatPaceOrSpeed(sport, currentPaceSecondsPerKm)} />
               {/* The most recent whole-kilometre split — the same number the
                   voice callout just read, kept on screen for a glance-check
                   when it was missed under traffic noise. */}
               {lastSplit && (
-                <div className="rounded-xl border border-cardio-accent/25 bg-cardio-accent/10 py-2.5">
-                  <p className="micro-label text-white/50">Km {lastSplit.km} split</p>
-                  <p className="text-lg font-bold tabular-nums text-white">
-                    {formatPaceOrSpeed(sport, lastSplit.splitSeconds)}
-                  </p>
-                </div>
+                <StatTile tone="accent" label={`Km ${lastSplit.km}`} value={formatPaceOrSpeed(sport, lastSplit.splitSeconds)} />
               )}
-              {liveBpm !== null && (
-                <div className="rounded-xl border border-danger/25 bg-danger/10 py-2.5">
-                  <p className="micro-label text-danger/80">Heart rate</p>
-                  <p className="flex items-center justify-center gap-1 text-lg font-bold tabular-nums text-white">
-                    <HeartPulse className="h-3.5 w-3.5 text-danger" fill="currentColor" />
-                    {liveBpm}
-                  </p>
-                </div>
-              )}
+              {liveBpm !== null && <StatTile tone="danger" icon={HeartPulse} label="Heart rate" value={liveBpm} />}
               {liveElevationGainMeters !== null && (
-                <div className="rounded-xl border border-warning/25 bg-warning/10 py-2.5">
-                  <p className="micro-label text-warning/80">Elevation</p>
-                  <p className="text-lg font-bold tabular-nums text-white">
-                    {Math.round(liveElevationGainMeters)} m
-                  </p>
-                </div>
+                <StatTile tone="warning" icon={Mountain} label="Climb" value={`${Math.round(liveElevationGainMeters)} m`} />
               )}
-              {liveCadence !== null && (
-                <div className="rounded-xl border border-white/10 bg-white/[0.06] py-2.5">
-                  <p className="micro-label text-white/50">Cadence</p>
-                  <p className="text-lg font-bold tabular-nums text-white">{liveCadence} spm</p>
-                </div>
-              )}
+              {liveCadence !== null && <StatTile icon={Footprints} label="Cadence" value={`${liveCadence}`} />}
             </div>
 
             {/* Live score-prediction ladder — running only, once there's enough distance for a real Riegel projection (see livePrediction memo). */}
@@ -981,7 +1032,7 @@ function GpsRunScreen() {
                   {livePrediction.map((entry) => (
                     <div
                       key={entry.label}
-                      className="flex min-w-0 flex-col items-center rounded-xl border border-white/10 bg-white/[0.06] px-2 py-2 text-center"
+                      className="flex min-w-0 flex-col items-center rounded-2xl border border-white/10 bg-white/[0.06] px-2 py-2 text-center"
                     >
                       <p className="micro-label text-white/50">{entry.label}</p>
                       <p className="text-sm font-bold tabular-nums text-white">
@@ -1003,6 +1054,11 @@ function GpsRunScreen() {
               this screen must never do is destroy a recorded run on a
               mis-tap (user report: "Once paused you can only discard run"). */}
           <div className="flex w-full max-w-sm shrink-0 flex-col items-center gap-4">
+            {error && (
+              <p role="alert" className="w-full rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-center text-xs text-white">
+                {error}
+              </p>
+            )}
             <div className="flex items-center justify-center gap-8">
               <button
                 type="button"
@@ -1192,258 +1248,312 @@ function GpsRunScreen() {
         </Card>
       )}
 
-      {phase === "idle" && (
-        <Card padding="lg">
-          <div className="flex flex-col items-center py-10 text-center">
-            <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-accent/15">
-              <MapPin className="h-8 w-8 text-accent" />
-            </div>
-            <p className="mb-6 max-w-xs text-sm text-muted">
-              Background location tracking continues even with the screen off — put your phone away
-              once you start.
-            </p>
+      {/*
+        THE START SCREEN, REBUILT (4 Oct 2026). What was here: a single card
+        with everything stacked and centred — a 64px icon medallion, a
+        paragraph, two native selects, a hand-rolled toggle, two full-width
+        secondary buttons, a paragraph about Garmin, and a 96px green circle
+        that said "Start". It read as a settings form with a button in the
+        middle (owner: "tacky and doesn't look great").
 
-            <Select
-              label="Sport"
-              value={sport}
-              onChange={(e) => setSport(e.target.value as GpsSport)}
-              options={GPS_SPORTS}
-              className="mb-4 w-full max-w-xs"
-            />
-
-            <Select
-              label="Session type"
-              value={sessionType}
-              onChange={(e) => setSessionType(e.target.value as SessionType)}
-              options={SESSION_TYPES}
-              className="mb-2 w-full max-w-xs"
-            />
-            {isSegmentTracked && (
-              <p className="mb-6 max-w-xs text-xs text-muted">
-                Tracking will show a Hard/Easy toggle so you can mark each effort as it happens —
-                pace and heart rate are captured separately for work vs. rest.
-              </p>
-            )}
-
-            {/* Spoken splits. On the GPS screen rather than buried in
-                Settings: it is a per-run decision (headphones in or not,
-                running alone or with someone) made in the ten seconds before
-                pressing Start, which is exactly here. */}
-            <button
-              type="button"
-              role="switch"
-              aria-checked={voiceSplits}
-              onClick={() => writeVoiceSplitsPreference(!voiceSplits)}
-              className="mb-6 mt-2 flex w-full max-w-xs items-center justify-between rounded-xl border border-white/15 bg-white/[0.06] px-4 py-2.5 text-left text-sm transition-colors hover:bg-white/10"
-            >
-              <span className="flex items-center gap-2 font-medium text-foreground/90">
-                {voiceSplits ? (
-                  <Volume2 className="h-4 w-4 text-cardio-accent" />
-                ) : (
-                  <VolumeX className="h-4 w-4 text-muted" />
-                )}
-                Call out every km
-              </span>
-              <span
-                className={`flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition-colors ${
-                  voiceSplits ? "bg-cardio-accent" : "bg-white/20"
-                }`}
-              >
-                <span
-                  className={`h-4 w-4 rounded-full bg-white transition-transform ${
-                    voiceSplits ? "translate-x-4" : "translate-x-0"
-                  }`}
-                />
-              </span>
-            </button>
-
-            <div className="mb-8 w-full max-w-xs">
-              {hrDeviceName ? (
-                <div className="flex items-center justify-between rounded-xl border border-white/15 bg-white/10 px-4 py-2.5 text-sm">
-                  <span className="flex items-center gap-2 font-medium text-white">
-                    <HeartPulse className="h-4 w-4 text-danger" />
-                    {hrDeviceName}
-                  </span>
-                  <button type="button" onClick={handleDisconnectHeartRate} className="text-xs text-white/70 hover:text-white">
-                    Disconnect
-                  </button>
+        Now it is laid out like the rest of the Engine: a hero that names
+        what you are about to do, with the sport as three tiles you can hit
+        with a thumb; a settings list, one row per decision, each with an icon
+        tile, a label and a one-line explanation; and one full-width primary
+        button at the bottom that says what it starts. Every control and every
+        handler is the same — only the arrangement changed.
+      */}
+      {phase === "idle" && (() => {
+        const meta = GPS_SPORT_META[sport];
+        const SportIcon = meta.icon;
+        return (
+          <div className="space-y-4">
+            <Card padding="md" className="overflow-hidden">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="micro-label text-muted">Live tracking</p>
+                  <h2 className="headline-tight mt-1 text-2xl font-bold">
+                    Record a {meta.noun}
+                  </h2>
+                  <p className="mt-1.5 text-sm leading-relaxed text-muted">
+                    Lock your phone and put it away — tracking keeps going in the background and
+                    the run is saved like any other session.
+                  </p>
                 </div>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className="w-full"
-                    loading={connectingHr === "ble"}
-                    disabled={connectingHr === "airpods"}
-                    onClick={handleConnectHeartRate}
+                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-accent/15 text-accent">
+                  <SportIcon className="h-6 w-6" aria-hidden />
+                </span>
+              </div>
+
+              <div className="mt-5">
+                <p className="micro-label mb-2 text-muted">Sport</p>
+                <div className="grid grid-cols-3 gap-2" role="group" aria-label="Sport">
+                  {GPS_SPORTS.map((option) => {
+                    const m = GPS_SPORT_META[option.value];
+                    const Icon = m.icon;
+                    const active = sport === option.value;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        aria-pressed={active}
+                        onClick={() => setSport(option.value)}
+                        className={`flex min-h-[4.5rem] flex-col items-center justify-center gap-1.5 rounded-2xl border text-sm font-semibold transition-colors ${
+                          active
+                            ? "border-accent/50 bg-accent/15 text-accent"
+                            : "border-white/10 bg-white/[0.03] text-muted hover:border-white/20 hover:text-foreground"
+                        }`}
+                      >
+                        <Icon className="h-5 w-5" aria-hidden />
+                        {m.short}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="mt-4">
+                <Select
+                  label="Session type"
+                  value={sessionType}
+                  onChange={(e) => setSessionType(e.target.value as SessionType)}
+                  options={SESSION_TYPES}
+                />
+                {isSegmentTracked && (
+                  <p className="mt-2 flex items-start gap-1.5 text-xs leading-relaxed text-muted">
+                    <Zap className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" aria-hidden />
+                    You will get a Hard/Easy toggle while tracking, so each effort is marked as it
+                    happens and scored separately from the rest.
+                  </p>
+                )}
+              </div>
+            </Card>
+
+            <Card padding="md">
+              <p className="micro-label mb-3 text-muted">Before you go</p>
+              <ul className="divide-y divide-white/[0.06]">
+                {/* Spoken splits. On the GPS screen rather than buried in
+                    Settings: it is a per-run decision (headphones in or not,
+                    running alone or with someone) made in the ten seconds
+                    before pressing Start, which is exactly here. */}
+                <li className="py-3 first:pt-0 last:pb-0">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={voiceSplits}
+                    onClick={() => writeVoiceSplitsPreference(!voiceSplits)}
+                    className="flex w-full items-center gap-3 text-left"
                   >
-                    <HeartPulse className="h-4 w-4" />
-                    Connect Bluetooth heart rate monitor
-                  </Button>
-                  {isAirPodsHeartRateSupported() && (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      className="w-full"
-                      loading={connectingHr === "airpods"}
-                      disabled={connectingHr === "ble"}
-                      onClick={handleConnectAirPods}
+                    <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${voiceSplits ? "bg-accent/15 text-accent" : "bg-white/[0.06] text-muted"}`}>
+                      {voiceSplits ? <Volume2 className="h-5 w-5" aria-hidden /> : <VolumeX className="h-5 w-5" aria-hidden />}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-semibold">Call out every kilometre</span>
+                      <span className="block text-xs text-muted">Split time read aloud as each km completes.</span>
+                    </span>
+                    <span
+                      className={`flex h-7 w-12 shrink-0 items-center rounded-full p-0.5 transition-colors ${voiceSplits ? "bg-accent" : "bg-white/20"}`}
+                      aria-hidden
                     >
-                      <HeartPulse className="h-4 w-4" />
-                      Use AirPods heart rate
-                    </Button>
-                  )}
+                      <span className={`h-6 w-6 rounded-full bg-white shadow transition-transform ${voiceSplits ? "translate-x-5" : "translate-x-0"}`} />
+                    </span>
+                  </button>
+                </li>
+
+                <li className="py-3 first:pt-0 last:pb-0">
+                  <div className="flex items-start gap-3">
+                    <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${hrDeviceName ? "bg-danger/15 text-danger" : "bg-white/[0.06] text-muted"}`}>
+                      <HeartPulse className="h-5 w-5" aria-hidden fill={hrDeviceName ? "currentColor" : "none"} />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      {hrDeviceName ? (
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold">Heart rate connected</p>
+                            <p className="truncate text-xs text-muted">{hrDeviceName}</p>
+                          </div>
+                          <Button size="sm" variant="ghost" onClick={handleDisconnectHeartRate}>
+                            Disconnect
+                          </Button>
+                        </div>
+                      ) : (
+                        <>
+                          <p className="text-sm font-semibold">Heart rate</p>
+                          <p className="text-xs leading-relaxed text-muted">
+                            Optional. Bluetooth works with Garmin watches and Polar or Wahoo chest
+                            straps. AirPods go through Apple Health: connecting opens an Apple
+                            workout session so the sensor switches on, and iOS shows its own workout
+                            indicator — nothing is recorded here until you press Start.
+                          </p>
+                          <div className="mt-2.5 flex flex-wrap gap-2">
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              loading={connectingHr === "ble"}
+                              disabled={connectingHr === "airpods"}
+                              onClick={handleConnectHeartRate}
+                            >
+                              <Bluetooth className="h-4 w-4" aria-hidden />
+                              Connect monitor
+                            </Button>
+                            {isAirPodsHeartRateSupported() && (
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                loading={connectingHr === "airpods"}
+                                disabled={connectingHr === "ble"}
+                                onClick={handleConnectAirPods}
+                              >
+                                <HeartPulse className="h-4 w-4" aria-hidden />
+                                Use AirPods
+                              </Button>
+                            )}
+                          </div>
+                        </>
+                      )}
+                      {hrError && <p className="mt-2 text-xs text-danger">{hrError}</p>}
+                    </div>
+                  </div>
+                </li>
+
+                <li className="py-3 first:pt-0 last:pb-0">
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/[0.06] text-muted">
+                      <Thermometer className="h-5 w-5" aria-hidden />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold">Weather is automatic</p>
+                      <p className="text-xs text-muted">Temperature is recorded from your starting location.</p>
+                    </div>
+                  </div>
+                </li>
+              </ul>
+            </Card>
+
+            <Button
+              size="lg"
+              className="w-full"
+              onClick={handleStart}
+              loading={starting}
+              aria-label={`Start ${meta.noun}`}
+            >
+              <MapPin className="h-5 w-5" aria-hidden />
+              Start {meta.noun}
+            </Button>
+          </div>
+        );
+      })()}
+
+      {phase === "reviewing" && summary && (() => {
+        const meta = GPS_SPORT_META[sport];
+        const avgHr =
+          hrReadings.length > 0
+            ? Math.round(hrReadings.reduce((sum, r) => sum + r.bpm, 0) / hrReadings.length)
+            : null;
+        const avgCadence =
+          cadenceSamples.length > 0
+            ? Math.round(cadenceSamples.reduce((sum, c) => sum + c.spm, 0) / cadenceSamples.length)
+            : null;
+        const hardEfforts = isSegmentTracked ? segments.filter((s) => s.type === "hard").length : 0;
+        return (
+          <div className="space-y-4">
+            {/*
+              THE REVIEW, AS A FINISHED THING. The route on top, then the two
+              numbers a runner looks for first — distance and moving time — at
+              hero size, then everything else as the same tiles the live HUD
+              used. Save is the one primary action and is full width; discard
+              is a quieter secondary beside it, and both stay above the fold.
+            */}
+            <Card padding="md" className="overflow-hidden">
+              {movingPoints.length > 0 && (
+                <GpsMap points={movingPoints} className="-mx-5 -mt-5 mb-4 h-52 w-[calc(100%+2.5rem)] md:-mx-6 md:-mt-6 md:w-[calc(100%+3rem)]" />
+              )}
+              <div className="flex items-center gap-2">
+                <CircleCheck className="h-4 w-4 text-accent" aria-hidden />
+                <p className="micro-label text-accent">{meta.short} complete</p>
+                <span className="ml-auto rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[11px] font-medium text-muted">
+                  {SESSION_TYPES.find((s) => s.value === sessionType)?.label ?? sessionType}
+                </span>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2.5">
+                <StatTile
+                  size="lg"
+                  icon={MapPin}
+                  label="Distance"
+                  value={`${(summary.distanceMeters / 1000).toFixed(2)} km`}
+                />
+                <StatTile size="lg" icon={Timer} label="Moving time" value={formatElapsed(summary.durationSeconds)} />
+              </div>
+              <div className="mt-2.5 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+                <StatTile icon={Gauge} label={sport === "outdoor_cycling" ? "Avg speed" : "Avg split"} value={formatPaceOrSpeed(sport, summary.avgPaceSecondsPerKm)} />
+                {summary.elevationGainMeters !== null && (
+                  <StatTile tone="warning" icon={Mountain} label="Elevation" value={`${Math.round(summary.elevationGainMeters)} m`} />
+                )}
+                {avgHr !== null && <StatTile tone="danger" icon={HeartPulse} label="Avg heart rate" value={`${avgHr} bpm`} />}
+                {avgCadence !== null && <StatTile icon={Footprints} label="Avg cadence" value={`${avgCadence} spm`} />}
+              </div>
+
+              {reviewPrediction && (
+                <div className="mt-5">
+                  <div className="mb-2 flex items-center gap-1.5">
+                    <TrendingUp className="h-3.5 w-3.5 text-cardio-accent-soft" aria-hidden />
+                    <p className="micro-label text-muted">Predicted at this pace &amp; effort</p>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                    {reviewPrediction.map((entry) => (
+                      <div
+                        key={entry.label}
+                        className="flex min-w-0 flex-col items-center rounded-2xl border border-white/10 bg-white/[0.06] px-2 py-2.5 text-center"
+                      >
+                        <p className="micro-label text-white/55">{entry.label}</p>
+                        <p className="mt-0.5 text-sm font-bold tabular-nums text-white">{formatRaceTime(entry.seconds)}</p>
+                        <p className={`text-xs font-bold tabular-nums ${scoreAccentClass(entry.score)}`}>
+                          {Math.round(entry.score)}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
-              {hrError && <p className="mt-2 text-xs text-danger">{hrError}</p>}
-              <p className="mt-2 text-xs text-muted">
-                Bluetooth works with Garmin watches and Polar/Wahoo-style chest straps. AirPods
-                heart rate runs through Apple Health — the first run will ask for Health access
-                and briefly show an Apple workout indicator.
-              </p>
-            </div>
 
-            <button
-              type="button"
-              onClick={handleStart}
-              disabled={starting}
-              aria-label="Start run"
-              className="flex h-24 w-24 items-center justify-center rounded-full bg-accent text-accent-foreground shadow-xl shadow-accent/30 transition-transform active:scale-95 disabled:opacity-60"
-            >
-              <span className="text-sm font-bold uppercase tracking-wide">
-                {starting ? "…" : "Start"}
-              </span>
-            </button>
-          </div>
-        </Card>
-      )}
-
-      {phase === "reviewing" && summary && (
-        <Card padding="lg">
-          {movingPoints.length > 0 && (
-            <GpsMap points={movingPoints} className="mb-6 h-48 w-full overflow-hidden rounded-2xl" />
-          )}
-
-          {/* Stat grid — Distance and Avg Split are just tiles here like
-              everything else (user feedback: Avg Split had a large box in a
-              different font/color, wanted it styled the same as every other
-              individual stat instead of singled out). */}
-          <div className="mb-6 grid grid-cols-2 gap-2.5">
-            <div className="flex flex-col items-center rounded-xl border border-white/15 bg-white/[0.06] py-3 text-center">
-              <div className="mb-1 flex items-center gap-1.5 text-white/60">
-                <MapPin className="h-4 w-4" />
-                <p className="micro-label">Distance</p>
-              </div>
-              <p className="text-lg font-bold tabular-nums text-white">
-                {(summary.distanceMeters / 1000).toFixed(2)} km
-              </p>
-            </div>
-            <div className="flex flex-col items-center rounded-xl border border-white/15 bg-white/[0.06] py-3 text-center">
-              <div className="mb-1 flex items-center gap-1.5 text-white/60">
-                <Gauge className="h-4 w-4" />
-                <p className="micro-label">Avg split</p>
-              </div>
-              <p className="text-lg font-bold tabular-nums text-white">
-                {formatPaceOrSpeed(sport, summary.avgPaceSecondsPerKm)}
-              </p>
-            </div>
-            {summary.elevationGainMeters !== null && (
-              <div className="flex flex-col items-center rounded-xl border border-warning/25 bg-warning/10 py-3 text-center">
-                <div className="mb-1 flex items-center gap-1.5 text-warning/80">
-                  <Mountain className="h-4 w-4" />
-                  <p className="micro-label">Elevation gain</p>
+              {hardEfforts > 0 && (
+                <div className="mt-4 flex items-start gap-2 rounded-2xl border border-accent/25 bg-accent/5 p-3 text-xs leading-relaxed text-foreground/90">
+                  <Flag className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" aria-hidden />
+                  <span>
+                    {hardEfforts} hard effort{hardEfforts === 1 ? "" : "s"} logged — your score will be
+                    calibrated off the work-effort pace and heart rate, not the whole-session average.
+                  </span>
                 </div>
-                <p className="text-lg font-bold tabular-nums text-white">{Math.round(summary.elevationGainMeters)} m</p>
-              </div>
-            )}
-            {hrReadings.length > 0 && (
-              <div className="flex flex-col items-center rounded-xl border border-danger/25 bg-danger/10 py-3 text-center">
-                <div className="mb-1 flex items-center gap-1.5 text-danger/80">
-                  <HeartPulse className="h-4 w-4" fill="currentColor" />
-                  <p className="micro-label">Avg heart rate</p>
-                </div>
-                <p className="text-lg font-bold tabular-nums text-white">
-                  {Math.round(hrReadings.reduce((sum, r) => sum + r.bpm, 0) / hrReadings.length)} bpm
-                </p>
-              </div>
-            )}
-            {cadenceSamples.length > 0 && (
-              <div className="flex flex-col items-center rounded-xl border border-white/15 bg-white/[0.06] py-3 text-center">
-                <div className="mb-1 flex items-center gap-1.5 text-white/60">
-                  <Footprints className="h-4 w-4" />
-                  <p className="micro-label">Avg cadence</p>
-                </div>
-                <p className="text-lg font-bold tabular-nums text-white">
-                  {Math.round(cadenceSamples.reduce((sum, c) => sum + c.spm, 0) / cadenceSamples.length)} spm
-                </p>
-              </div>
-            )}
-          </div>
+              )}
 
-          {reviewPrediction && (
-            <div className="mb-6">
-              <div className="mb-1.5 flex items-center gap-1.5 px-0.5">
-                <TrendingUp className="h-3.5 w-3.5 text-cardio-accent-soft" />
-                <p className="micro-label text-white/60">Predicted at this pace &amp; effort</p>
-              </div>
-              <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-                {reviewPrediction.map((entry) => (
-                  <div
-                    key={entry.label}
-                    className="flex min-w-0 flex-col items-center rounded-xl border border-white/10 bg-white/[0.06] px-2 py-2 text-center"
-                  >
-                    <p className="micro-label text-white/50">{entry.label}</p>
-                    <p className="text-sm font-bold tabular-nums text-white">{formatRaceTime(entry.seconds)}</p>
-                    <p className={`text-xs font-bold tabular-nums ${scoreAccentClass(entry.score)}`}>
-                      {Math.round(entry.score)}
-                    </p>
-                  </div>
-                ))}
-              </div>
+              <p className="mt-4 flex items-center gap-1.5 text-xs text-muted">
+                <Thermometer className="h-3.5 w-3.5" aria-hidden />
+                Temperature was recorded from your starting location and shows on the saved activity.
+              </p>
+            </Card>
+
+            {error && <p className="text-sm text-danger">{error}</p>}
+
+            <div className="flex gap-3">
+              <Button variant="secondary" onClick={handleDiscardReview} disabled={saving} aria-label={`Discard ${meta.noun}`}>
+                <Trash2 className="h-4 w-4" aria-hidden />
+                Discard
+              </Button>
+              <Button
+                size="lg"
+                className="h-12 min-h-12 flex-1 rounded-2xl text-sm"
+                loading={saving}
+                onClick={() =>
+                  submitSummary(summary, new Date(Date.now() - summary.durationSeconds * 1000).toISOString())
+                }
+              >
+                <CircleCheck className="h-5 w-5" aria-hidden />
+                Save {meta.noun}
+              </Button>
             </div>
-          )}
-
-          <p className="mb-6 flex items-center gap-1.5 text-xs text-muted">
-            <Thermometer className="h-3.5 w-3.5" />
-            Temperature is recorded automatically from your starting location — you&apos;ll see it
-            on the saved activity.
-          </p>
-
-          {isSegmentTracked && segments.filter((s) => s.type === "hard").length > 0 && (
-            <div className="mb-6 flex items-start gap-2 rounded-xl border border-accent/25 bg-accent/5 p-3 text-xs text-foreground/90">
-              <Flag className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />
-              <span>
-                {segments.filter((s) => s.type === "hard").length} hard effort
-                {segments.filter((s) => s.type === "hard").length === 1 ? "" : "s"} logged — your score
-                will be calibrated off the work-effort pace and heart rate, not the whole-session
-                average.
-              </span>
-            </div>
-          )}
-
-          <p className="mb-4 text-sm text-muted">
-            Session type: <span className="font-medium text-foreground/90">{SESSION_TYPES.find((s) => s.value === sessionType)?.label ?? sessionType}</span>
-          </p>
-
-          {error && <p className="mb-3 text-sm text-danger">{error}</p>}
-
-          <div className="flex gap-3">
-            <Button variant="destructive" onClick={handleDiscardReview} disabled={saving}>
-              Discard
-            </Button>
-            <Button
-              className="flex-1"
-              loading={saving}
-              onClick={() =>
-                submitSummary(summary, new Date(Date.now() - summary.durationSeconds * 1000).toISOString())
-              }
-            >
-              Save run
-            </Button>
           </div>
-        </Card>
-      )}
+        );
+      })()}
     </div>
   );
 }

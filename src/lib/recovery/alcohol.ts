@@ -312,14 +312,36 @@ export function bacAt(
  * decrements become reliable, and 1.5 g/kg is roughly the Parr protein-
  * synthesis dose. Below 0.15 g/kg — about one unit for most adults — the
  * effect on training is not distinguishable from noise and the curve says so.
+ *
+ * THE SHAPE IS CONVEX, AND THAT IS THE POINT (recalibrated 4 Oct 2026).
+ * The first version of this table rose fastest at the bottom — 0.12 by
+ * 0.15 g/kg, 0.34 by 0.3, 0.58 by 0.5 — which is the shape of a curve that
+ * has already done most of its work before the second drink. Priced through
+ * MAX_ACUTE_PENALTY it made one pint of lager cost a 75kg athlete nine points
+ * of recovery and two pints twenty-two, and the owner's report was the
+ * obvious one: "each beverage seems to have way too much impact".
+ *
+ * What the studies actually show is a threshold, not a ramp from zero: the
+ * low-dose arms (0.3 g/kg and under) produce small, often non-significant
+ * changes to sleep and no measurable next-day decrement, the moderate arms
+ * (~0.5) produce reliable REM suppression but modest performance effects,
+ * and the effect only becomes large approaching 1 g/kg. So the table now
+ * starts slowly and accelerates. With the same ceiling, for a 75kg athlete:
+ * one pint ~3 points, two ~10, three ~18, four ~26, and a genuinely heavy
+ * night (six pints and up, 1.4 g/kg+) still reaches the full deduction.
+ * Eight pints does not drive the score to zero — the ceiling on the total
+ * deduction is MAX_ACUTE_PENALTY + MAX_CHRONIC_PENALTY, which is a
+ * "compromised" or "depleted" morning depending on where the rest of the
+ * score sat, not an empty one.
  */
 const SEVERITY_ANCHORS: readonly [number, number][] = [
   [0, 0],
-  [0.15, 0.12],
-  [0.3, 0.34],
-  [0.5, 0.58],
-  [0.8, 0.8],
-  [1.2, 0.95],
+  [0.15, 0.03],
+  [0.3, 0.12],
+  [0.5, 0.28],
+  [0.8, 0.55],
+  [1.0, 0.72],
+  [1.2, 0.87],
   [1.5, 1],
 ];
 
@@ -492,8 +514,14 @@ export function computeAlcoholImpact(input: AlcoholImpactInput): AlcoholImpact {
       ? 1
       : Math.exp(-(hoursSinceLastDrink - ACUTE_PLATEAU_HOURS) / ACUTE_DECAY_TAU_HOURS);
 
-  const acutePenalty =
-    severity * MAX_ACUTE_PENALTY * timeFactor * (lateNight ? LATE_NIGHT_MULTIPLIER : 1);
+  // The late-night weighting cannot push an episode past the acute ceiling:
+  // MAX_ACUTE_PENALTY is what "the worst a night out can do" means, and a
+  // multiplier that quietly exceeded it made the ceiling a lie at the top of
+  // the curve, where the late-night effect is already priced into the dose.
+  const acutePenalty = Math.min(
+    MAX_ACUTE_PENALTY,
+    severity * MAX_ACUTE_PENALTY * timeFactor * (lateNight ? LATE_NIGHT_MULTIPLIER : 1)
+  );
 
   const curve = bacCurve(latest, bodyweightKg, input.sex);
   const currentBacGPerL = bacAt(latest, bodyweightKg, input.sex, now);

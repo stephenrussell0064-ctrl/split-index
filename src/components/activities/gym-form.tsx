@@ -854,6 +854,18 @@ function ExerciseRow({
           below is unaffected, and so is the drag-to-delete gesture.
         */
         drag={canRemove ? "x" : false}
+        /*
+          Direction lock is what makes the exercise list scrollable. Without
+          it, framer-motion applies the horizontal component of EVERY pointer
+          movement on this card to `x` — so a thumb scrolling the exercise
+          picker vertically, which always drifts a few pixels sideways, also
+          dragged the card left and back on each frame. The list scrolled, the
+          card wobbled, and the two fought (owner: "scrolling issue when
+          searching for exercises... does not work smoothly"). With the lock,
+          framer decides once per gesture whether it is horizontal; a vertical
+          one is released to the browser untouched.
+        */
+        dragDirectionLock
         dragConstraints={{ left: -100, right: 0 }}
         dragElastic={0.1}
         style={{ x: dragX }}
@@ -1541,6 +1553,35 @@ function ExerciseNameInput({
   const [muscleFilter, setMuscleFilter] = useState<MuscleGroupCategory>("all");
   const suggestedMuscle = categoryToMuscleGroup(muscleFilter);
   const frequent = useFrequentExercises();
+  /*
+   * THE SCROLLING LIST, AND WHY IT DID NOT SCROLL WELL.
+   *
+   * The list is a scroll box inside the exercise card, and the exercise card
+   * is a framer-motion drag surface (swipe left to delete). Framer listens
+   * for pointerdown on the card with a NATIVE listener, so every scroll
+   * gesture that began on the list also began a drag session on the card:
+   * the card translated sideways with the thumb's drift, framer kept
+   * re-evaluating the gesture on every frame, and the list underneath it
+   * stuttered. Two fixes, both needed. `dragDirectionLock` on the card (see
+   * ExerciseRow) stops a vertical gesture from moving the card at all. And
+   * this ref stops the drag session from ever starting from inside the
+   * list, by swallowing pointerdown in a native capture-phase listener —
+   * React's own onPointerDown fires too late for that, because framer's
+   * listener runs at the card node during bubbling, before React's root
+   * listener sees the event.
+   *
+   * The box also lost `overscroll-contain`: at the end of the list a thumb
+   * should carry on scrolling the page, which is what every native list
+   * does, not hit a wall. And it is taller — half the viewport rather than
+   * five rows — so there is less list to scroll in the first place.
+   */
+  const listRef = useCallback((node: HTMLDivElement | null) => {
+    if (!node) return;
+    const stop = (e: PointerEvent) => {
+      if (e.pointerType !== "mouse") e.stopPropagation();
+    };
+    node.addEventListener("pointerdown", stop, { capture: true });
+  }, []);
 
   const query = search.trim().toLowerCase();
 
@@ -1695,8 +1736,9 @@ function ExerciseNameInput({
       </div>
 
       <div
+        ref={listRef}
         className={cn(
-          "max-h-[248px] overflow-y-auto overscroll-contain rounded-xl border p-1",
+          "max-h-[min(50dvh,22rem)] touch-pan-y overflow-y-auto rounded-xl border p-1",
           invalid ? "border-danger/50" : "border-gym-border/40",
           "bg-gym-bg-elevated/60"
         )}

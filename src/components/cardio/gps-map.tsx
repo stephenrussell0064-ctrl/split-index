@@ -10,6 +10,12 @@ import type { GpsPoint } from "@/lib/scoring/gps-track";
 interface GpsMapProps {
   points: GpsPoint[];
   className?: string;
+  /**
+   * The empty state's colours. "light" matches the Engine's surfaces; "dark"
+   * is for the tracking HUD, which is portaled out of the light shell and
+   * where a pale box reads as a broken, blank map rather than as a message.
+   */
+  emptyTone?: "light" | "dark";
 }
 
 /** Keeps the map centered on the latest fix as new points arrive, without forcing the user's own pan/zoom to snap back every render. */
@@ -67,15 +73,25 @@ function InvalidateSizeOnResize() {
  * (free, no API key) to match the app's light cardio theme instead of a
  * dark map fighting the surrounding light UI.
  */
-export default function GpsMap({ points, className }: GpsMapProps) {
+export default function GpsMap({ points, className, emptyTone = "light" }: GpsMapProps) {
   if (points.length === 0) {
     return (
       <div
         className={cn(
-          "flex items-center justify-center border border-[#0c1a24]/10 bg-[#eef6ff] text-sm font-medium text-[#0c1a24]",
+          "flex flex-col items-center justify-center gap-2 text-sm font-medium",
+          emptyTone === "dark"
+            ? "bg-[#0b1218] text-white/80"
+            : "border border-[#0c1a24]/10 bg-[#eef6ff] text-[#0c1a24]",
           className
         )}
+        role="status"
       >
+        <span
+          className={cn(
+            "h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent opacity-60"
+          )}
+          aria-hidden
+        />
         Waiting for GPS fix…
       </div>
     );

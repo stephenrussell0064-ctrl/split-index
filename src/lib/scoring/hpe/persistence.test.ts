@@ -10,7 +10,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { evaluateRerun, loadLatestStoredPlan, type StoredProfileSummary } from "./persistence";
+import { evaluateRerun, loadLatestStoredPlan, savePlan, type StoredProfileSummary } from "./persistence";
 import { DIAGNOSTIC_RERUN_WEEKS, EMPHASIS_KEYS, HPE_CONSTANTS_VERSION, type EmphasisKey } from "./constants";
 import type { AthleteProfile, EmphasisVector, FindingId } from "./types";
 import { planFindingsById } from "./session-set";
@@ -293,5 +293,106 @@ describe("loadLatestStoredPlan", () => {
     const stored = await loadLatestStoredPlan(supabaseWith({ profile: storedProfileRow }), "user-1");
     const response = { generated: false, paused: true, weeks: stored?.weeks ?? [], profile: stored?.profile ?? null };
     expect(!response.generated && response.paused && response.weeks.length > 0 && response.profile != null).toBe(false);
+  });
+});
+
+/**
+ * Several blocks over time: what `savePlan` does with the one before.
+ *
+ * The owner's acceptance test for the hybrid plan is "make multiple plans
+ * and check it works". The engine side of that is multiple-plans.test.ts.
+ * This is the storage side: the second plan must be written as a NEW row,
+ * the first must be marked as the one it replaced, and an unchanged plan
+ * must not be written at all — so an athlete who rebuilds twice has one
+ * current block, not three.
+ */
+describe("savePlan, across several blocks", () => {
+  type Call = { table: string; op: string; args: unknown[]; filters: [string, ...unknown[]][] };
+
+  /** A supabase stub that records every write and answers reads from `plansCurrent`. */
+  function recordingSupabase(plansCurrent: Record<string, unknown> | null) {
+    const calls: Call[] = [];
+    const from = (table: string) => {
+      const call: Call = { table, op: "select", args: [], filters: [] };
+      calls.push(call);
+      const chain: Record<string, unknown> = {};
+      for (const op of ["select", "insert", "update"]) {
+        chain[op] = (...args: unknown[]) => {
+          // `.insert(...).select("id")` is still an insert — a select never
+          // demotes a write once one has been recorded on this chain.
+          if (op !== "select") call.op = op;
+          call.args.push(...args);
+          return chain;
+        };
+      }
+      for (const f of ["eq", "is", "neq", "order", "limit"]) {
+        chain[f] = (...args: unknown[]) => {
+          call.filters.push([f, ...args]);
+          return chain;
+        };
+      }
+      chain.maybeSingle = async () => ({ data: table === "hpe_plans" ? plansCurrent : null, error: null });
+      chain.single = async () => ({ data: { id: "plan-new" }, error: null });
+      chain.then = (resolve: (v: unknown) => void) => resolve({ data: null, error: null, count: 7 });
+      return chain;
+    };
+    return { supabase: { from } as never, calls };
+  }
+
+  const goal = { weeksOut: 8, priority: 0.5 } as unknown as Parameters<typeof savePlan>[2]["goal"];
+  const constraints = { daysAvailable: ["Mon", "Wed", "Fri"] } as unknown as Parameters<typeof savePlan>[2]["constraints"];
+  const args = {
+    profileId: "profile-1",
+    findingIds: new Map(),
+    constantsVersion: HPE_CONSTANTS_VERSION,
+    goal,
+    constraints,
+    weeks: [],
+    eventDate: null,
+  };
+
+  it("writes the first block as a new row", async () => {
+    const { supabase, calls } = recordingSupabase(null);
+    const result = await savePlan(supabase, "user-1", args);
+    expect(result?.planId).toBe("plan-new");
+    expect(result?.reused).toBeUndefined();
+    expect(calls.some((c) => c.table === "hpe_plans" && c.op === "insert")).toBe(true);
+  });
+
+  it("does not write the same block twice", async () => {
+    const { supabase, calls } = recordingSupabase({
+      id: "plan-1", profile_id: "profile-1", constants_version: HPE_CONSTANTS_VERSION,
+      weeks_out: 8, event_date: null, goal, constraints,
+    });
+    const result = await savePlan(supabase, "user-1", args);
+    expect(result).toMatchObject({ planId: "plan-1", reused: true });
+    expect(calls.some((c) => c.table === "hpe_plans" && c.op === "insert")).toBe(false);
+    expect(calls.some((c) => c.table === "hpe_plans" && c.op === "update")).toBe(false);
+  });
+
+  it("writes a changed block as a new row and marks the old one as replaced", async () => {
+    const { supabase, calls } = recordingSupabase({
+      id: "plan-1", profile_id: "profile-1", constants_version: HPE_CONSTANTS_VERSION,
+      weeks_out: 8, event_date: null, goal, constraints,
+    });
+    const result = await savePlan(supabase, "user-1", {
+      ...args,
+      goal: { ...goal, weeksOut: 6 } as typeof goal,
+    });
+    expect(result).toMatchObject({ planId: "plan-new" });
+
+    const insert = calls.find((c) => c.table === "hpe_plans" && c.op === "insert");
+    expect(insert).toBeDefined();
+
+    // The supersede: every still-current plan for this user EXCEPT the one
+    // just written, with a reason the athlete could be shown.
+    const supersede = calls.find((c) => c.table === "hpe_plans" && c.op === "update");
+    expect(supersede).toBeDefined();
+    const payload = supersede!.args[0] as { superseded_at: string; superseded_reason: string };
+    expect(payload.superseded_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(payload.superseded_reason).toMatch(/replaced/i);
+    expect(supersede!.filters).toContainEqual(["eq", "user_id", "user-1"]);
+    expect(supersede!.filters).toContainEqual(["is", "superseded_at", null]);
+    expect(supersede!.filters).toContainEqual(["neq", "id", "plan-new"]);
   });
 });

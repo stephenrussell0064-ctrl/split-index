@@ -207,31 +207,67 @@ export function AnalyticsClient({ data }: { data: AnalyticsPayload }) {
     ]
   );
 
+  /*
+    THE W / M / Y TOGGLE HAS TO MOVE SOMETHING YOU CAN SEE. It used to change
+    only the trend chart, which sits several panels down the page — so from
+    the top of the tab, where the toggle is, pressing it did nothing visible
+    (owner: the buttons "don't work at all"). The four figures directly under
+    the bar are now computed for the chosen period — this week, this month or
+    this year — with the previous period alongside for the change, and each
+    card says which period it is showing.
+  */
+  const windowPreset: PeriodPreset =
+    granularity === "week" ? "this_week" : granularity === "month" ? "this_month" : "this_year";
+  const previousPreset: PeriodPreset =
+    granularity === "week" ? "last_week" : granularity === "month" ? "last_month" : "last_year";
+  const windowRange = resolvePeriodPreset(windowPreset);
+  const previousRange = resolvePeriodPreset(previousPreset);
+  const windowMetrics = useMemo(
+    () =>
+      computePeriodMetrics(windowRange, data.indexHistory, filteredActivities, filteredScores, data.targetSessionsPerWeek),
+    [windowRange, data.indexHistory, filteredActivities, filteredScores, data.targetSessionsPerWeek]
+  );
+  const previousMetrics = useMemo(
+    () =>
+      computePeriodMetrics(previousRange, data.indexHistory, filteredActivities, filteredScores, data.targetSessionsPerWeek),
+    [previousRange, data.indexHistory, filteredActivities, filteredScores, data.targetSessionsPerWeek]
+  );
+
   const latest = data.indexHistory[data.indexHistory.length - 1];
-  const summaryStats = [
+  const change = (current: number, previous: number): string | null => {
+    if (previous === 0 && current === 0) return null;
+    const diff = current - previous;
+    if (diff === 0) return "same as " + previousRange.label.toLowerCase();
+    return `${diff > 0 ? "+" : "−"}${Math.abs(diff)} vs ${previousRange.label.toLowerCase()}`;
+  };
+  const summaryStats: { label: string; value: string; sub: string | null; color: string; href: string }[] = [
     {
       label: "Split Index",
       value: latest ? formatIndex(latest.split_index) : "—",
+      sub: windowMetrics.avgSplit > 0 ? `avg ${formatIndex(windowMetrics.avgSplit)} ${windowRange.label.toLowerCase()}` : "now",
       color: "text-accent",
+      href: "#trends",
+    },
+    {
+      label: `Sessions · ${windowRange.label}`,
+      value: String(windowMetrics.sessions),
+      sub: change(windowMetrics.sessions, previousMetrics.sessions),
+      color: "text-foreground",
+      href: "#consistency",
+    },
+    {
+      label: `Load · ${windowRange.label}`,
+      value: String(windowMetrics.totalLoad),
+      sub: change(windowMetrics.totalLoad, previousMetrics.totalLoad),
+      color: "text-warning",
       href: "#trends",
     },
     {
       label: "Recovery",
       value: latest ? formatPercent(latest.recovery_score) : "—",
+      sub: latest ? `fatigue ${formatPercent(latest.fatigue_score)}` : null,
       color: "text-success",
       href: "#recovery",
-    },
-    {
-      label: "Fatigue",
-      value: latest ? formatPercent(latest.fatigue_score) : "—",
-      color: "text-warning",
-      href: "#recovery",
-    },
-    {
-      label: "Sessions",
-      value: String(filteredActivities.length),
-      color: "text-foreground",
-      href: "#consistency",
     },
   ];
 
@@ -284,6 +320,22 @@ export function AnalyticsClient({ data }: { data: AnalyticsPayload }) {
         periodBLabel={rangeB.label}
       />
 
+      {/* Directly under the bar that switches it on, so the Compare button
+          visibly does something. It used to render after the injury and
+          ACWR panels, which from the top of the page looked like nothing. */}
+      {compareEnabled && (
+        data.isPremium ? (
+          <PeriodComparison periodA={periodMetricsA} periodB={periodMetricsB} />
+        ) : (
+          <PremiumTease
+            title="Period-over-period comparison"
+            subtitle={`${rangeA.label} vs ${rangeB.label} — unlock session volume, index delta, and consistency comparisons.`}
+          >
+            <PeriodComparison periodA={periodMetricsA} periodB={periodMetricsB} />
+          </PremiumTease>
+        )
+      )}
+
       {/* grid-cols-2 from the smallest screen up, not from sm: — with no base
           column count these four stat cards stacked into 396px of a 620px
           phone window and pushed the stored-predictions panel, the most
@@ -306,6 +358,9 @@ export function AnalyticsClient({ data }: { data: AnalyticsPayload }) {
               <MetricValue size="md" className={`mt-1.5 ${stat.color}`}>
                 {stat.value}
               </MetricValue>
+              {stat.sub && (
+                <p className="mt-1 truncate text-[11px] tabular-nums text-muted">{stat.sub}</p>
+              )}
             </Card>
           </motion.a>
         ))}
@@ -395,19 +450,6 @@ export function AnalyticsClient({ data }: { data: AnalyticsPayload }) {
       <PremiumGate locked={!data.isPremium} feature="ACWR trend analysis">
         <AcwrTrendChart data={acwrTrend} />
       </PremiumGate>
-
-      {compareEnabled && (
-        data.isPremium ? (
-          <PeriodComparison periodA={periodMetricsA} periodB={periodMetricsB} />
-        ) : (
-          <PremiumTease
-            title="Period-over-period comparison"
-            subtitle={`${rangeA.label} vs ${rangeB.label} — unlock session volume, index delta, and consistency comparisons.`}
-          >
-            <PeriodComparison periodA={periodMetricsA} periodB={periodMetricsB} />
-          </PremiumTease>
-        )
-      )}
 
       <div className="grid gap-6 lg:grid-cols-2">
         <div id="trends" className="scroll-mt-6">

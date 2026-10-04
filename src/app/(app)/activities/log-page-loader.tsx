@@ -38,17 +38,26 @@ export async function loadLogPage({
 
   if (!user) redirect("/login");
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select(
-      "onboarding_completed, weight_kg, gender, scoring_basis, experience, subscription_tier, subscription_status"
-    )
-    .eq("user_id", user.id)
-    .single();
+  // Profile, search params and drafts together: the drafts need only the user
+  // id, so there is no reason for them to wait behind the profile. The
+  // template/plan/recommend branches below still run after, because they
+  // genuinely depend on the params and the profile's bodyweight.
+  const [{ data: profile }, params, { data: drafts }] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select(
+        "onboarding_completed, weight_kg, gender, scoring_basis, experience, subscription_tier, subscription_status"
+      )
+      .eq("user_id", user.id)
+      .single(),
+    searchParams ? searchParams : Promise.resolve({} as { plan?: string; template?: string; recommend?: string }),
+    // `updated_at` so the client can tell a server draft from a newer local
+    // mirror — see draft-mirror.ts. Without it every stale server row would
+    // win over work this device typed offline.
+    supabase.from("workout_drafts").select("sport, form_data, updated_at").eq("user_id", user.id),
+  ]);
 
   if (!profile?.onboarding_completed) redirect("/onboarding");
-
-  const params = searchParams ? await searchParams : {};
   let initialRepeatState: WorkoutFormState | undefined;
 
   if (params.template && zoneMode === "gym") {
@@ -152,14 +161,6 @@ export async function loadLogPage({
       };
     }
   }
-
-  // `updated_at` so the client can tell a server draft from a newer local
-  // mirror — see draft-mirror.ts. Without it every stale server row would win
-  // over work this device typed offline.
-  const { data: drafts } = await supabase
-    .from("workout_drafts")
-    .select("sport, form_data, updated_at")
-    .eq("user_id", user.id);
 
   const initialDrafts = Object.fromEntries(
     (drafts ?? []).map((d) => [d.sport as SportType, d.form_data])
