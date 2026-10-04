@@ -96,15 +96,13 @@ const ELSEWHERE = [
   },
 ];
 
-export function FirstSessionGuide({ displayName }: { displayName: string | null }) {
-  const name = displayName?.trim() || null;
-
+export function FirstSessionGuide() {
   return (
     <div className="space-y-3">
       <Card glow="accent" padding="md">
         <p className="micro-label text-accent">Your first session</p>
         <h2 className="headline-tight mt-1 text-xl font-bold sm:text-2xl">
-          {name ? `${name}, log one session to get your Split Index` : "Log one session to get your Split Index"}
+          Log one session to get your Split Index
         </h2>
         <p className="mt-2 text-sm leading-relaxed text-muted">
           Your score out of 100 is worked out from what you actually do, so it starts the moment you

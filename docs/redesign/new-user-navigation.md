@@ -70,6 +70,19 @@ others, except where a dependency is named.
 | `src/app/(app)/settings/settings-client.tsx` | Sentence under the title instead of a label. | `git checkout origin/main -- <path>` |
 | `src/app/(app)/help/page.tsx` | "Getting around" rewritten for the new shape (tabs, the two halves of Train, the Progress page, behind your avatar). | `git checkout origin/main -- <path>`; depends on item 1. |
 
+### 6. Running the native shell against a local build (found while verifying)
+
+| File | Change | Revert |
+|---|---|---|
+| `src/lib/security/csp.ts` | `upgrade-insecure-requests` is now production-only in both policies, and the dev `connect-src` also allows `ws:`/`wss:`. WebKit, unlike Chrome, upgrades `http://localhost` subresources and does not treat `'self'` as covering the HMR websocket, so a Capacitor WebView pointed at a dev server rendered unstyled HTML. Production output is byte-for-byte unchanged (`csp.test.ts`, `proxy-csp.test.ts`). | `git checkout origin/main -- src/lib/security/csp.ts` |
+| `next.config.ts` | HSTS header is production-only (WebKit stores it for localhost and then refuses plain HTTP for two years); `allowedDevOrigins: ["127.0.0.1"]`. Dev only; production headers unchanged. | `git checkout origin/main -- next.config.ts` |
+
+Even with these, Next's dev client forces a document reload shortly after
+load inside the WebView, which Capacitor reports as a cancelled navigation and
+answers with its offline page. The simulator check was therefore done against
+`next build` + `next start` behind a local HTTPS proxy with a CA installed via
+`xcrun simctl keychain add-root-cert` — the same conditions as production.
+
 ## Verified
 
 - `npx tsc --noEmit`: clean.

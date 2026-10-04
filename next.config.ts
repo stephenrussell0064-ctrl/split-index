@@ -87,12 +87,18 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  /*
+   * Dev only (Next ignores it in production). The iOS shell, pointed at a
+   * local build, reaches the dev server as http://127.0.0.1 rather than
+   * localhost — see the HSTS note below for why — and Next blocks /_next dev
+   * resources from any origin it was not told about.
+   */
+  allowedDevOrigins: ["127.0.0.1"],
   async headers() {
     return [
       {
         source: "/(.*)",
         headers: [
-          {
             /*
              * HSTS. Vercel serves HTTPS and redirects, but without this the
              * FIRST request of a session is downgradeable — a redirect can be
@@ -106,10 +112,22 @@ const nextConfig: NextConfig = {
              *
              * Capacitor is unaffected: the native shell already pins
              * `cleartext: false` and only navigates splitindex.co.uk hosts.
+             *
+             * Production only. A dev server has no TLS, and WebKit — unlike
+             * Chrome — honours HSTS for localhost: one visit from the native
+             * shell pointed at a local build and every later http://localhost
+             * request is upgraded to https, refused, and the app lands on its
+             * offline page. Same reasoning as upgrade-insecure-requests in
+             * lib/security/csp.ts.
              */
-            key: "Strict-Transport-Security",
-            value: "max-age=63072000; includeSubDomains",
-          },
+            ...(process.env.NODE_ENV === "development"
+              ? []
+              : [
+                  {
+                    key: "Strict-Transport-Security",
+                    value: "max-age=63072000; includeSubDomains",
+                  },
+                ]),
           { key: "X-Frame-Options", value: "DENY" },
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },

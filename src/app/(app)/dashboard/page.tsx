@@ -671,7 +671,7 @@ export default async function DashboardPage() {
           </p>
         </div>
 
-        <FirstSessionGuide displayName={displayName} />
+        <FirstSessionGuide />
 
         <ScoreDisclaimer className="mt-2" />
       </div>

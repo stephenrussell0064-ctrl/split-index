@@ -122,12 +122,12 @@ export function publicCsp(isDev = process.env.NODE_ENV === "development"): strin
     style-src 'self' 'unsafe-inline';
     img-src 'self' data: https:;
     font-src 'self' data:;
-    connect-src 'self' ${supabaseUrl};
+    connect-src 'self' ${supabaseUrl}${isDev ? " ws: wss:" : ""};
     object-src 'none';
     base-uri 'self';
     form-action 'self';
     frame-ancestors 'none';
-    upgrade-insecure-requests;
+    ${isDev ? "" : "upgrade-insecure-requests;"}
   `);
 }
 
@@ -143,6 +143,14 @@ export function publicCsp(isDev = process.env.NODE_ENV === "development"): strin
  * `'unsafe-eval'` remains dev-only: React uses `eval` in development to
  * reconstruct server-side error stacks in the browser, and neither React nor
  * Next use it in production.
+ *
+ * `upgrade-insecure-requests` is PRODUCTION-ONLY, in both policies. There is
+ * no TLS on a dev server, and the directive is not a no-op there: Chrome
+ * treats localhost as potentially trustworthy and leaves it alone, but WebKit
+ * does not — a Capacitor WebView pointed at http://localhost upgrades every
+ * stylesheet and script request to https://localhost, all of which fail, and
+ * the app renders as unstyled HTML. Found while running the iOS shell against
+ * a local build; production, where everything is already HTTPS, is unchanged.
  */
 export function strictCsp(
   nonce: string,
@@ -154,12 +162,12 @@ export function strictCsp(
     style-src 'self' 'unsafe-inline';
     img-src 'self' data: https:;
     font-src 'self' data:;
-    connect-src 'self' ${supabaseUrl};
+    connect-src 'self' ${supabaseUrl}${isDev ? " ws: wss:" : ""};
     object-src 'none';
     base-uri 'self';
     form-action 'self';
     frame-ancestors 'none';
-    upgrade-insecure-requests;
+    ${isDev ? "" : "upgrade-insecure-requests;"}
   `);
 }
 
