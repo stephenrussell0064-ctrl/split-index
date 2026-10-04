@@ -68,7 +68,11 @@ describe("a brand-new account gets the guide and nothing else", () => {
   });
 
   it("returns early on isFirstRun rather than rendering the dashboard empty", () => {
-    expect(page).toMatch(/const isFirstRun = !hasActivities && !hasIndexHistory;/);
+    // A provisional (onboarding-estimate) index must not disqualify an
+    // account from the first-run screen — see the comment on the gate.
+    expect(page).toMatch(
+      /const isFirstRun = !hasActivities && \(!hasIndexHistory \|\| indexIsProvisional\);/
+    );
     expect(page).toMatch(/if \(isFirstRun\) \{\s*return \(/);
   });
 

@@ -100,6 +100,14 @@ describe("the shell, the hub and the guide render from the shared list", () => {
     expect(shell).not.toMatch(/label:\s*"The (Lab|Engine)"/);
     // The More sheet is gone: everything it held has a tab or a page now.
     expect(shell).not.toMatch(/MoreNavSheet|more-nav-sheet/);
+    // …and the Progress tab stands in for it as the current tab on every page
+    // the hub leads to, or nine screens have no current tab at all.
+    expect(shell).toMatch(
+      /item\.href === "\/progress" &&\s*\[\.\.\.PROGRESS_NAV, \.\.\.COMMUNITY_NAV, \.\.\.ACCOUNT_NAV\]\.some/
+    );
+    // Tab memory is seeded from the path the shell mounted on; the
+    // render-time update alone never records a cold start.
+    expect(shell).toMatch(/useState<Record<string, string>>\(\(\) =>/);
   });
 
   it("the guide lists every group, so a new destination cannot be left out of it", () => {

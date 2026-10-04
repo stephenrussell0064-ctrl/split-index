@@ -124,7 +124,15 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
   // "adjust state in response to a prop change" pattern as lastPathname
   // above, deliberately not a useEffect (this project's own lint rule flags
   // setState-in-effect, and there is no external system to synchronise with).
-  const [lastTabPaths, setLastTabPaths] = useState<Record<string, string>>({});
+  // Seeded with the path the shell mounted on, not `{}`: the render-time
+  // update below only fires when the pathname CHANGES, so a cold start on
+  // /cardio (the native shell's launch, a deep link, a refresh) would
+  // otherwise never be remembered, and Home → Train would send a runner back
+  // through /train's redirect to /gym.
+  const [lastTabPaths, setLastTabPaths] = useState<Record<string, string>>(() => {
+    const mountedOn = primaryNav.find((item) => navItemMatches(item, pathname));
+    return mountedOn ? { [mountedOn.href]: pathname } : {};
+  });
   if (pathname !== lastPathname) {
     setLastPathname(pathname);
     const match = primaryNav.find((item) => navItemMatches(item, pathname));
@@ -136,7 +144,19 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
   /** Where tapping this primary tab actually goes — the last path visited under it, if any, so an in-progress log (or anything else mid-flow) is exactly where it was left rather than resetting to the tab's bare root. */
   const navHref = (item: NavItem) => lastTabPaths[item.href] ?? item.href;
 
-  const isActive = (item: NavItem) => navItemMatches(item, pathname);
+  /**
+   * Which tab is current. The Progress tab is also current on every page the
+   * hub leads to — Analytics, Recovery, the Logbook, Social, Settings and the
+   * rest — the way the More button used to light up for them. Without this,
+   * nine screens had no current tab and no `aria-current` anywhere in the
+   * nav. Deliberately NOT done with `matchPrefixes` on the Progress item: that
+   * would also feed the tab memory, and tapping Progress from Analytics
+   * should go back to the hub, not stay on Analytics.
+   */
+  const isActive = (item: NavItem) =>
+    navItemMatches(item, pathname) ||
+    (item.href === "/progress" &&
+      [...PROGRESS_NAV, ...COMMUNITY_NAV, ...ACCOUNT_NAV].some((d) => navItemMatches(d, pathname)));
 
   /** The zone colour a tab lights up in when it is the current one. The Train tab takes the colour of whichever half is showing. */
   const accentClassFor = (item: NavItem) => {

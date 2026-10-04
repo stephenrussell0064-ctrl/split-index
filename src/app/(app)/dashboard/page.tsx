@@ -456,7 +456,12 @@ export default async function DashboardPage() {
     already fired (it is specifically interested in new accounts), and
     `RacePredictionsSync` is rendered below so the iOS widget is still written.
   */
-  const isFirstRun = !hasActivities && !hasIndexHistory;
+  // A provisional index is the onboarding estimate, and it is written for
+  // nearly every new account — so "no index at all" would exclude almost
+  // everyone this screen exists for. The rule is the same one IndexHero
+  // uses to decide whether to print a number: a provisional row is not a
+  // score. Nothing logged and nothing scored means first run.
+  const isFirstRun = !hasActivities && (!hasIndexHistory || indexIsProvisional);
   const streakMetrics = computeStreakMetrics(
     (allActivityDates ?? []).map((a) => a.started_at as string),
     new Date(),

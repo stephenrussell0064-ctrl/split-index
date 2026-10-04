@@ -149,7 +149,7 @@ export function FirstSessionGuide() {
 
         <Link
           href="/cardio/gps-run?sport=running"
-          className="mt-2.5 flex min-h-11 items-center justify-center gap-1.5 rounded-xl text-xs font-medium text-muted transition-colors hover:text-foreground"
+          className="group mt-2.5 flex min-h-11 items-center justify-center gap-1.5 rounded-xl text-xs font-medium text-muted transition-colors hover:text-foreground"
         >
           <MapPin className="h-3.5 w-3.5" aria-hidden />
           Or record a run live with GPS
