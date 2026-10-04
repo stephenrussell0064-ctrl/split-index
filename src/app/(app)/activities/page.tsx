@@ -53,8 +53,14 @@ export default async function ActivitiesPage({
     <div className="mx-auto max-w-4xl">
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
-          <p className="micro-label text-muted mb-2">Logbook</p>
-          <h1 className="page-title">Activities</h1>
+          <p className="micro-label text-muted mb-2">Every session</p>
+          {/* "Logbook", matching the nav label. The page used to be titled
+              "Activities" while the only route to it called it the Logbook,
+              so tapping the nav item appeared to land somewhere else. */}
+          <h1 className="page-title">Logbook</h1>
+          <p className="mt-2 text-sm text-muted">
+            Every session you have logged, newest first. Tap one to see its scores or edit it.
+          </p>
         </div>
         <Link href="/activities/new" className={buttonVariants({ size: "sm" })}>
           <PlusCircle className="h-4 w-4" />

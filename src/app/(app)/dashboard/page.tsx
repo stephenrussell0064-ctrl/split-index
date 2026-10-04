@@ -5,7 +5,7 @@ import { format } from "date-fns";
 import { createClient } from "@/lib/supabase/server";
 import { EngineLabTrendCard } from "@/components/dashboard/engine-lab-trend-card";
 import { IndexHero } from "@/components/dashboard/index-hero";
-import { GettingAroundCard } from "@/components/dashboard/getting-around-card";
+import { FirstSessionGuide } from "@/components/dashboard/first-session-guide";
 import {
   LiftPredictionStrip,
   RacePredictionStrip,
@@ -21,7 +21,6 @@ import { loadTodaysSessionPayload } from "@/components/dashboard/todays-session-
 import { type TrendPoint } from "@/components/analytics/charts";
 import { PremiumTease } from "@/components/premium/premium-tease";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { EmptyDashboardHero } from "@/components/retention/empty-dashboard-hero";
 import { InterferenceRadarCard } from "@/components/analytics/interference-radar-card";
 import { UpcomingRacesPanel } from "@/components/analytics/upcoming-races-panel";
 import { RecoveryScoreCard } from "@/components/recovery/recovery-score-card";
@@ -434,6 +433,30 @@ export default async function DashboardPage() {
   */
   const indexIsProvisional = hasIndexHistory && latestIndex!.is_provisional === true;
   const showIndexHero = hasActivities || hasIndexHistory;
+  /*
+    NOTHING LOGGED AND NOTHING SCORED — a different page, not this one emptied.
+
+    User feedback: new users cannot work out what the app is for or what to do
+    first. What they got here was a greeting, a "Getting around" text card, a
+    hero headed "Your index is unwritten", and then every block below rendered
+    its own empty state — plan band with no plan, AI coach with nothing to say,
+    trend chart with no trend, upcoming races, a "Your data" header over a
+    week-over-week card with no weeks and a recent-workouts list with no
+    workouts. Each of those is individually correct. Nine of them stacked up is
+    a wall, and a wall of empty containers reads as a broken app rather than a
+    new one — it says nothing about what to do, and the one thing to do (log
+    something) was a button inside the third card down.
+
+    So this returns early with ONE screen: FirstSessionGuide. Not a flag and
+    not a dismissal — the condition is "has this account got a session or a
+    score behind it", which the queries above already answer, so the full
+    dashboard comes back on its own the moment either is true.
+
+    Everything above this point still runs. `seedRetentionNotifications` has
+    already fired (it is specifically interested in new accounts), and
+    `RacePredictionsSync` is rendered below so the iOS widget is still written.
+  */
+  const isFirstRun = !hasActivities && !hasIndexHistory;
   const streakMetrics = computeStreakMetrics(
     (allActivityDates ?? []).map((a) => a.started_at as string),
     new Date(),
@@ -622,6 +645,39 @@ export default async function DashboardPage() {
     weakerSide
   );
 
+  /*
+    THE FIRST RUN IS ITS OWN SCREEN. See `isFirstRun` above for why.
+
+    Deliberately only four things: the sr-only page heading, the greeting, the
+    guide, and the disclaimer that has to sit under anything mentioning a
+    score. No TodaysSessionCard, no AICoachCard, no trend card, no
+    UpcomingRacesPanel, no WeekOverWeekCard, no RecentWorkouts — those are the
+    wall. The takeover is left out too: it has no block to show yet.
+  */
+  if (isFirstRun) {
+    return (
+      <div className="space-y-2.5">
+        {/* Renders nothing — keeps the iOS home-screen widget written even
+            on a brand-new account, where the payload is the "no data" shape. */}
+        <RacePredictionsSync payload={racePredictionPayload} />
+
+        <h1 className="sr-only">Dashboard</h1>
+        <div className="flex items-baseline gap-x-2 overflow-hidden">
+          <p className="headline-tight shrink-0 text-sm font-bold">
+            {displayName ? `Hi, ${displayName}` : "Welcome back"}
+          </p>
+          <p className="truncate text-xs text-muted">
+            {format(new Date(), "EEE d MMM")} · {sessionHint}
+          </p>
+        </div>
+
+        <FirstSessionGuide displayName={displayName} />
+
+        <ScoreDisclaimer className="mt-2" />
+      </div>
+    );
+  }
+
   return (
     /*
       THE FIRST SCREEN IS THE PRODUCT.
@@ -686,12 +742,13 @@ export default async function DashboardPage() {
       </div>
 
       {/*
-        ONCE, EVER: what the five controls at the bottom of the screen are.
-        Renders nothing after it has been dismissed, and nothing at all on the
-        server, so it costs a returning athlete no height. User feedback: the
-        app is hard to get around, and nothing ever said how it was laid out.
+        GONE FROM HERE — GettingAroundCard, the dismissable "here is how the
+        app is laid out" card. What it said now lives in FirstSessionGuide's
+        "Where everything is" tiles, on the one screen where somebody is
+        actually looking for it, built from the same shared nav list. It cost
+        a returning athlete a card to dismiss and told them nothing they had
+        not already worked out, and /help has the full version.
       */}
-      <GettingAroundCard />
 
       {/*
         THE WHOLE SCREEN, ONCE A DAY. Renders nothing at all unless there is a
@@ -702,7 +759,13 @@ export default async function DashboardPage() {
       */}
       <TodaysSessionTakeover payload={todaysSessionPayload} />
 
-      {!hasActivities && !hasIndexHistory && <EmptyDashboardHero displayName={displayName} />}
+      {/*
+        GONE FROM HERE — EmptyDashboardHero, and it could never render on this
+        branch anyway now: its condition was exactly `isFirstRun`, which
+        returned above. It sold four features off a spec sheet ("Hybrid 50/50
+        composite index") where a new athlete needed one instruction, and it
+        was the thing sitting on top of the wall rather than instead of it.
+      */}
 
       {/*
         WHERE DO I STAND. Stays first because it is the one block that has to

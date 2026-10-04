@@ -80,20 +80,21 @@ export default async function CardioPage() {
         <div className="p-4 sm:p-10">
           <div className="flex flex-wrap items-start justify-between gap-4 mb-5">
             <div>
-              <p className="micro-label text-cardio-accent mb-2">The Engine</p>
+              <p className="micro-label text-cardio-accent mb-2">Endurance · The Engine</p>
               <h1 className="headline-tight text-3xl font-bold text-cardio-text sm:text-4xl">
-                Endurance HQ
+                Endurance
               </h1>
               {/*
-                Hidden on phones. This is product copy on a screen the athlete
-                opens daily, and at 390px it wrapped to five lines — about
-                115px, which is a seventh of the visible screen spent telling a
-                returning user what the tab they just tapped is for. It stays
-                for the wider layouts, where it costs nothing.
+                Shown at every width now. The old line was hidden below `sm`
+                because it was five lines of benchmark jargon ("W/kg vs
+                sport-specific benchmarks") that a phone could not afford. This
+                one says what the screen is and what you can do on it, which is
+                precisely what a new athlete on a phone is missing — so it
+                earns the two lines it costs.
               */}
-              <p className="mt-2 hidden max-w-lg text-sm text-cardio-muted leading-relaxed sm:block">
-                Pace, split, and W/kg vs sport-specific benchmarks — ranked against your
-                own session history.
+              <p className="mt-2 max-w-lg text-sm text-cardio-muted leading-relaxed">
+                Your runs, rides, rows and swims, and your endurance score. Type one in, or
+                record it live with GPS.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -112,7 +113,7 @@ export default async function CardioPage() {
           </div>
 
           <div className="glass-cardio rounded-2xl p-5 mb-5 sm:p-8">
-            <p className="micro-label text-cardio-muted mb-2">Endurance Blend</p>
+            <p className="micro-label text-cardio-muted mb-2">Endurance score</p>
             {hasHistory && enduranceIndex !== null ? (
               <>
                 <p className="index-display text-5xl font-bold text-cardio-accent sm:text-7xl">
@@ -172,7 +173,7 @@ export default async function CardioPage() {
               <Activity className="mx-auto h-10 w-10 text-cardio-accent/60 mb-4" />
               <p className="text-cardio-text font-medium">No cardio sessions yet</p>
               <p className="text-sm text-cardio-muted mt-1">
-                Log a run, row, or swim to unlock The Engine
+                Log a run, ride, row or swim to get your endurance score
               </p>
             </div>
           )}

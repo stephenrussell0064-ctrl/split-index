@@ -1,15 +1,17 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ChevronRight, MoreHorizontal } from "lucide-react";
+import { ChevronRight, UserRound } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card } from "@/components/ui/card";
 import {
   ACCOUNT_NAV,
-  INSIGHTS_NAV,
+  COMMUNITY_NAV,
   LOG_WORKOUT,
   PRIMARY_NAV,
+  PROGRESS_NAV,
+  TRAIN_ZONES,
   type NavItem,
 } from "@/lib/navigation/app-nav";
 
@@ -27,11 +29,11 @@ export const metadata: Metadata = {
  * written for search engines, with no link to it from inside the app.
  *
  * The "Getting around" section is rendered from lib/navigation/app-nav.ts, the
- * same list the tab bar and menus are drawn from, so the guide cannot describe
- * a destination differently from the menu that leads to it — and cannot miss
- * one (app-nav.test.ts checks). The score definitions below are the short
- * versions; each links to the full methodology for anyone who wants the
- * formulas.
+ * same list the tab bar, the Progress hub and the account menu are drawn from,
+ * so the guide cannot describe a destination differently from the control that
+ * leads to it — and cannot miss one (app-nav.test.ts checks). The score
+ * definitions below are the short versions; each links to the full methodology
+ * for anyone who wants the formulas.
  */
 export default async function HelpPage() {
   const supabase = await createClient();
@@ -40,6 +42,8 @@ export default async function HelpPage() {
   } = await supabase.auth.getUser();
 
   if (!user) redirect("/login");
+
+  const [home, train, ...restPrimary] = PRIMARY_NAV;
 
   return (
     <div className="mx-auto max-w-3xl space-y-8">
@@ -69,14 +73,14 @@ export default async function HelpPage() {
       <section id="getting-around" className="scroll-mt-24 space-y-4">
         <h2 className="text-lg font-semibold">Getting around</h2>
         <p className="text-sm leading-relaxed text-muted">
-          On a phone, five controls along the bottom of the screen take you everywhere. On a
-          bigger screen the same things are listed down the left-hand side.
+          On a phone, five controls along the bottom of the screen take you everywhere: Home,
+          Train, the + button, Plan and Progress. Your account is behind your avatar at the top
+          right. On a bigger screen the same things are listed down the left-hand side.
         </p>
 
         <ul className="space-y-2">
-          {PRIMARY_NAV.map((item) => (
-            <NavGuideRow key={item.href} item={item} />
-          ))}
+          <NavGuideRow item={home} />
+          <NavGuideRow item={train} />
           <li>
             <Link
               href={LOG_WORKOUT.href}
@@ -92,34 +96,60 @@ export default async function HelpPage() {
               <ChevronRight className="h-4 w-4 shrink-0 text-muted" aria-hidden />
             </Link>
           </li>
-          <li className="glass flex items-center gap-4 rounded-2xl border border-white/[0.06] p-4">
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/5 text-muted">
-              <MoreHorizontal className="h-5 w-5" aria-hidden />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block text-sm font-semibold">More</span>
-              <span className="block text-sm leading-snug text-muted">
-                Everything below, each with a line saying what it is.
-              </span>
-            </span>
-          </li>
+          {restPrimary.map((item) => (
+            <NavGuideRow key={item.href} item={item} />
+          ))}
         </ul>
 
         <h3 className="pt-2 text-sm font-semibold uppercase tracking-wider text-muted">
-          In the More menu
+          The two halves of Train
         </h3>
+        <p className="text-sm leading-relaxed text-muted">
+          The switch at the top of the Train tab flips between them. Swiping sideways does the
+          same.
+        </p>
         <ul className="space-y-2">
-          {INSIGHTS_NAV.map((item) => (
+          {TRAIN_ZONES.map((item) => (
             <NavGuideRow key={item.href} item={item} />
           ))}
+        </ul>
+
+        <h3 className="pt-2 text-sm font-semibold uppercase tracking-wider text-muted">
+          On the Progress page
+        </h3>
+        <ul className="space-y-2">
+          {PROGRESS_NAV.map((item) => (
+            <NavGuideRow key={item.href} item={item} />
+          ))}
+          {COMMUNITY_NAV.map((item) => (
+            <NavGuideRow key={item.href} item={item} />
+          ))}
+        </ul>
+
+        <h3 className="pt-2 text-sm font-semibold uppercase tracking-wider text-muted">
+          Behind your avatar
+        </h3>
+        <ul className="space-y-2">
+          <li className="glass flex items-center gap-4 rounded-2xl border border-white/[0.06] p-4">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/5 text-muted">
+              <UserRound className="h-5 w-5" aria-hidden />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-semibold">Your avatar, top right</span>
+              <span className="block text-sm leading-snug text-muted">
+                Tap it for the three below, and to sign out.
+              </span>
+            </span>
+          </li>
           {ACCOUNT_NAV.map((item) => (
             <NavGuideRow key={item.href} item={item} />
           ))}
         </ul>
 
         <p className="text-sm leading-relaxed text-muted">
-          Wherever you are, the arrow at the top left takes you back, and the{" "}
-          <span className="font-medium text-foreground">?</span> at the top right brings you here.
+          Wherever you are, the arrow at the top left takes you back, and the small{" "}
+          <span className="font-medium text-foreground">?</span> beside any score explains it in a
+          line.
         </p>
       </section>
 
@@ -141,7 +171,7 @@ export default async function HelpPage() {
           <Definition id="endurance-score" term="Endurance score (The Engine)">
             How your runs, rides, rows and swims compare with published standards for your age and
             sex. The app calls the endurance half of your training The Engine, which is why that
-            word appears on the Endurance tab.
+            name appears on the Endurance side of Train.
           </Definition>
           <Definition id="strength-score" term="Strength score (The Lab)">
             How your lifting compares with published strength standards for your bodyweight, age
@@ -217,7 +247,8 @@ export default async function HelpPage() {
         </ol>
         <p className="text-sm leading-relaxed text-muted">
           Half-finished logs are saved automatically, so switching tabs or closing the app does not
-          lose them. Every session you have logged is in the Logbook, where it can be edited.
+          lose them. Every session you have logged is in the Logbook, on the Progress page, where it
+          can be edited.
         </p>
       </section>
 

@@ -46,10 +46,12 @@ const NONCE_PATH_PREFIXES = [
   "/interference",
   "/onboarding",
   "/profile",
+  "/progress",
   "/recovery",
   "/reports",
   "/settings",
   "/social",
+  "/train",
 ];
 
 const MANIFEST = ".next/prerender-manifest.json";

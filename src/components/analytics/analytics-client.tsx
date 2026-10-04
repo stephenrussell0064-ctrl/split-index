@@ -245,6 +245,7 @@ export function AnalyticsClient({ data }: { data: AnalyticsPayload }) {
       <PageHeader
         eyebrow="Performance"
         title="Analytics"
+        subtitle="How your scores, volume and consistency have changed over time, with predictions for what you could run or lift."
         help={
           <>
             <p>

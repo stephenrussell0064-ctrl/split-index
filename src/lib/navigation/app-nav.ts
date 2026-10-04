@@ -8,10 +8,11 @@ import {
   Dumbbell,
   FileText,
   HeartPulse,
-  LayoutDashboard,
+  House,
   PlusCircle,
   Radar,
   Settings,
+  TrendingUp,
   UserRound,
   Users,
 } from "lucide-react";
@@ -21,35 +22,41 @@ import {
  *
  * WHY THIS FILE EXISTS
  * --------------------
- * User feedback: the app is "too difficult to navigate", and the biggest thing
- * putting people off is not knowing what anything is or where anything lives.
- * Three things were behind that, and all three are addressed from here:
+ * User feedback, twice over: the app is "too difficult to navigate", and the
+ * biggest thing putting new people off is not knowing what anything is or
+ * where anything lives. The first pass at this gave every destination a plain
+ * label and a one-line description. It was not enough, because the SHAPE of
+ * the navigation was still wrong:
  *
- *   1. The two main tabs were labelled with the product's own names — "The
- *      Lab" and "The Engine" — and a first-time user has no way to know that
- *      one is the gym and the other is running. The brand names are kept, but
- *      as the SECOND thing you read, under a word that says what it is.
+ *   1. Half the tab bar was spent on two views of the same thing. "Strength"
+ *      and "Endurance" were separate tabs, and each page already carried a
+ *      toggle to the other — so one tab, Train, does the job of two and frees
+ *      a slot for something that was buried.
  *
- *   2. The "More" menu was six bare icons with one-word labels. A menu entry
- *      called "Interference" tells you nothing. Every destination now carries a
- *      one-sentence description, and the menu shows it.
+ *   2. The two features people pay for — the Hybrid Plan and the progress
+ *      tools (Analytics, Recovery, Interference, the logbook, the report) —
+ *      lived behind a "More" button. A popover list of nine rows is a place
+ *      things go to be forgotten. The plan is now a tab of its own, and the
+ *      progress tools have a real page, /progress, that shows a live number
+ *      from each before you tap it.
  *
- *   3. Three screens — the full logbook, your profile, and the athlete report —
- *      were not in any menu at all on a phone. You could only reach them by
- *      knowing which "View all" link to tap, or not at all.
+ *   3. Nothing on a phone offered Profile, Settings or Help in one tap. The
+ *      account menu now hangs off the avatar in the top bar, everywhere.
  *
- * The shell's tab bar and sidebar, the More menu, and the in-app guide
- * (/help) all render from THIS list, so a label, a description and the guide's
- * explanation of it cannot drift apart. app-nav.test.ts checks that every entry
- * has a real page behind it and that every page gets the strict CSP.
+ * The shell's tab bar and sidebar, the Progress hub, the account menu and the
+ * in-app guide (/help) all render from THIS list, so a label, a description
+ * and the guide's explanation of it cannot drift apart. app-nav.test.ts checks
+ * that every entry has a real page behind it and gets the strict CSP.
  */
 
 export type NavGroup =
-  /** The bottom tab bar on a phone; the "Train" section of the sidebar. */
+  /** The bottom tab bar on a phone; the top of the sidebar. */
   | "primary"
-  /** The More sheet on a phone; the "Insights" section of the sidebar. */
-  | "insights"
-  /** The bottom of the More sheet; the "Account" section of the sidebar. */
+  /** The Progress hub's first section; the "Progress" section of the sidebar. */
+  | "progress"
+  /** The Progress hub's second section; the "Community" section of the sidebar. */
+  | "community"
+  /** The avatar menu in the top bar; the foot of the Progress hub and the sidebar. */
   | "account";
 
 export type AppMode = "neutral" | "gym" | "cardio";
@@ -66,24 +73,25 @@ export interface NavItem {
   description: string;
   icon: LucideIcon;
   group: NavGroup;
-  /** Which colour theme this destination belongs to. Primary items only. */
+  /** Which colour theme this destination belongs to. */
   mode?: AppMode;
+  /**
+   * Other path prefixes this destination is "current" for. The Train tab is
+   * the one that needs it: /train only ever redirects, and the pages the tab
+   * actually shows live at /gym and /cardio.
+   */
+  matchPrefixes?: readonly string[];
 }
 
-export const APP_NAV: readonly NavItem[] = [
-  {
-    href: "/dashboard",
-    label: "Home",
-    shortLabel: "Home",
-    description: "Your score, today's session, and what you could run or lift right now.",
-    icon: LayoutDashboard,
-    group: "primary",
-    mode: "neutral",
-  },
+/**
+ * The two halves of Train. Not tabs any more — they are the segmented control
+ * at the top of the Train tab — but they are destinations with pages, so they
+ * are described here like everything else and the guide lists them.
+ */
+export const TRAIN_ZONES: readonly NavItem[] = [
   {
     href: "/gym",
     label: "Strength",
-    shortLabel: "Strength",
     brandName: "The Lab",
     description: "Your gym sessions, your best lifts, and your strength score.",
     icon: Dumbbell,
@@ -93,61 +101,94 @@ export const APP_NAV: readonly NavItem[] = [
   {
     href: "/cardio",
     label: "Endurance",
-    shortLabel: "Endurance",
     brandName: "The Engine",
     description: "Your runs, rides, rows and swims, and your endurance score.",
     icon: Activity,
     group: "primary",
     mode: "cardio",
   },
+];
+
+export const APP_NAV: readonly NavItem[] = [
+  {
+    href: "/dashboard",
+    label: "Home",
+    shortLabel: "Home",
+    description: "Your score, today's session, and what you could run or lift right now.",
+    icon: House,
+    group: "primary",
+    mode: "neutral",
+  },
+  {
+    href: "/train",
+    label: "Train",
+    shortLabel: "Train",
+    description: "Strength and endurance side by side: your sessions, best efforts and both scores.",
+    icon: Dumbbell,
+    group: "primary",
+    mode: "neutral",
+    matchPrefixes: ["/gym", "/cardio"],
+  },
   {
     href: "/hybrid-plan",
-    label: "Hybrid Plan",
+    label: "Plan",
+    shortLabel: "Plan",
+    brandName: "Hybrid Plan",
     description: "A training block built for you, balanced between lifting and endurance.",
     icon: CalendarRange,
-    group: "insights",
+    group: "primary",
+    mode: "neutral",
   },
   {
-    href: "/recovery",
-    label: "Recovery",
-    description: "How ready you are to train hard today, and what is holding you back.",
-    icon: HeartPulse,
-    group: "insights",
-  },
-  {
-    href: "/interference",
-    label: "Interference",
-    description: "Whether your lifting is slowing your running, or your running is costing you strength.",
-    icon: Radar,
-    group: "insights",
+    href: "/progress",
+    label: "Progress",
+    shortLabel: "Progress",
+    description: "Every way of looking back at your training, and the people you train alongside.",
+    icon: TrendingUp,
+    group: "primary",
+    mode: "neutral",
   },
   {
     href: "/analytics",
     label: "Analytics",
     description: "Charts of how your scores, volume and consistency have changed over time.",
     icon: BarChart3,
-    group: "insights",
+    group: "progress",
+  },
+  {
+    href: "/recovery",
+    label: "Recovery",
+    description: "How ready you are to train hard today, and what is holding you back.",
+    icon: HeartPulse,
+    group: "progress",
+  },
+  {
+    href: "/interference",
+    label: "Interference",
+    description: "Whether your lifting is slowing your running, or your running is costing you strength.",
+    icon: Radar,
+    group: "progress",
   },
   {
     href: "/activities",
     label: "Logbook",
     description: "Every session you have ever logged, in one list you can search and edit.",
     icon: BookOpen,
-    group: "insights",
+    group: "progress",
   },
   {
     href: "/reports",
     label: "Athlete report",
     description: "A summary of your trend, recovery and predictions, written to hand to a coach.",
     icon: FileText,
-    group: "insights",
+    group: "progress",
   },
   {
     href: "/social",
     label: "Social",
     description: "Friends, leaderboards, challenges and achievements.",
     icon: Users,
-    group: "insights",
+    group: "community",
   },
   {
     href: "/profile",
@@ -186,13 +227,25 @@ export const LOG_WORKOUT = {
 } as const;
 
 export const PRIMARY_NAV = APP_NAV.filter((item) => item.group === "primary");
-export const INSIGHTS_NAV = APP_NAV.filter((item) => item.group === "insights");
+export const PROGRESS_NAV = APP_NAV.filter((item) => item.group === "progress");
+export const COMMUNITY_NAV = APP_NAV.filter((item) => item.group === "community");
 export const ACCOUNT_NAV = APP_NAV.filter((item) => item.group === "account");
+
+/** Whether `pathname` is this destination or sits under it. */
+export function navItemMatches(item: NavItem, pathname: string): boolean {
+  const prefixes = [item.href, ...(item.matchPrefixes ?? [])];
+  return prefixes.some(
+    (prefix) =>
+      pathname === prefix ||
+      // Home is exact: every other page would otherwise also be "under" it.
+      (prefix !== "/dashboard" && pathname.startsWith(`${prefix}/`))
+  );
+}
 
 /** Looks a pathname up in the list: exact match first, then the tab it sits under. */
 export function navItemForPath(pathname: string): NavItem | undefined {
   return (
-    APP_NAV.find((item) => item.href === pathname) ??
-    APP_NAV.find((item) => item.href !== "/dashboard" && pathname.startsWith(`${item.href}/`))
+    [...APP_NAV, ...TRAIN_ZONES].find((item) => item.href === pathname) ??
+    APP_NAV.find((item) => navItemMatches(item, pathname))
   );
 }

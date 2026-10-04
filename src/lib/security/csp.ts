@@ -76,10 +76,12 @@ export const NONCE_PATH_PREFIXES = [
   "/interference",
   "/onboarding",
   "/profile",
+  "/progress",
   "/recovery",
   "/reports",
   "/settings",
   "/social",
+  "/train",
 ] as const;
 
 /**

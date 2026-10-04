@@ -19,7 +19,10 @@ export function TrainZoneSwipe({ mode, children }: TrainZoneSwipeProps) {
   const reducedMotion = useReducedMotion();
 
   const other = mode === "gym" ? "/cardio" : "/gym";
-  const otherLabel = mode === "gym" ? "The Engine" : "The Lab";
+  // Plain word first: the brand names ("The Lab", "The Engine") say nothing to
+  // someone who has just installed the app, so they are the caption and
+  // "Strength"/"Endurance" is the label everywhere this control speaks.
+  const otherLabel = mode === "gym" ? "Endurance" : "Strength";
 
   const navigateOther = () => {
     if (pathname !== other) router.push(other);
@@ -38,42 +41,54 @@ export function TrainZoneSwipe({ mode, children }: TrainZoneSwipeProps) {
   return (
     <div className="relative">
       <div className="mb-4 flex items-center justify-between gap-2">
-        <div className="flex rounded-xl border border-white/[0.08] bg-white/[0.02] p-1">
+        {/*
+          flex-1 on phones so the two halves fill the row and the control reads
+          as the Train tab's own switcher rather than a pair of chips that
+          happen to sit above the page. It goes back to its content width from
+          `sm` up, where the side shortcut shares the row with it.
+        */}
+        <div className="flex flex-1 rounded-xl border border-white/[0.08] bg-white/[0.02] p-1 sm:flex-none">
           <Link
             href="/gym"
             className={cn(
-              "rounded-lg px-4 py-2 text-sm font-medium transition-colors duration-200 min-h-[44px] flex items-center",
+              "flex min-h-[44px] flex-1 flex-col items-center justify-center rounded-lg px-4 py-1.5 text-center text-sm font-medium transition-colors duration-200 sm:flex-none",
               mode === "gym"
                 ? "bg-gym-accent/15 text-gym-accent"
                 : "text-muted hover:text-foreground"
             )}
           >
-            The Lab
+            Strength
+            <span className="text-[10px] font-normal leading-tight text-muted">
+              The Lab
+            </span>
           </Link>
           <Link
             href="/cardio"
             className={cn(
-              "rounded-lg px-4 py-2 text-sm font-medium transition-colors duration-200 min-h-[44px] flex items-center",
+              "flex min-h-[44px] flex-1 flex-col items-center justify-center rounded-lg px-4 py-1.5 text-center text-sm font-medium transition-colors duration-200 sm:flex-none",
               mode === "cardio"
                 ? "bg-cardio-accent/15 text-cardio-accent"
                 : "text-muted hover:text-foreground"
             )}
           >
-            The Engine
+            Endurance
+            <span className="text-[10px] font-normal leading-tight text-muted">
+              The Engine
+            </span>
           </Link>
         </div>
         <button
           type="button"
           onClick={navigateOther}
-          className="hidden sm:flex items-center gap-1 text-xs text-muted hover:text-foreground transition-colors duration-200"
+          className="hidden sm:flex shrink-0 items-center gap-1 text-xs text-muted hover:text-foreground transition-colors duration-200"
         >
           {mode === "gym" ? (
             <>
-              Engine <ChevronRight className="h-4 w-4" />
+              Endurance <ChevronRight className="h-4 w-4" />
             </>
           ) : (
             <>
-              <ChevronLeft className="h-4 w-4" /> Lab
+              <ChevronLeft className="h-4 w-4" /> Strength
             </>
           )}
         </button>

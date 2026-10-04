@@ -1,83 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { LogOut } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
-import { clearRacePredictions } from "@/lib/native/race-predictions";
-import { clearDailyTraining } from "@/lib/native/daily-training";
+import { signOutEverywhere } from "@/lib/auth/sign-out-client";
 import { Skeleton } from "@/components/ui/skeleton";
-
-interface AccountInfo {
-  name: string;
-  email: string;
-  avatarUrl: string | null;
-}
-
-function initials(name: string): string {
-  const source = name.trim();
-  if (!source) return "?";
-  const parts = source.split(/[\s._-]+/).filter(Boolean);
-  return parts
-    .slice(0, 2)
-    .map((p) => p[0]!.toUpperCase())
-    .join("");
-}
+import { initialsFor, useAccountSummary } from "./use-account-summary";
 
 export function SidebarAccount() {
   const router = useRouter();
-  const [account, setAccount] = useState<AccountInfo | null>(null);
-
-  useEffect(() => {
-    const supabase = createClient();
-    let cancelled = false;
-
-    async function load() {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user || cancelled) return;
-
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("username, display_name, avatar_url")
-        .eq("user_id", user.id)
-        .single();
-
-      if (cancelled) return;
-      const displayName =
-        profile?.username?.trim() ||
-        profile?.display_name?.trim() ||
-        "";
-      setAccount({
-        name: displayName,
-        email: user.email ?? "",
-        avatarUrl: profile?.avatar_url ?? null,
-      });
-    }
-
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const account = useAccountSummary();
 
   const handleSignOut = async () => {
-    const supabase = createClient();
-    // Wipe the home-screen widget's copy of the predictions before dropping
-    // the session. The widget reads an App Group container that outlives the
-    // webview, so without this a sign-out leaves the previous account's race
-    // times sitting on the home screen — wrong for the next person to sign
-    // in, and a small privacy leak on a shared phone. Best-effort by design
-    // (it no-ops off-device), and deliberately awaited before signOut so a
-    // slow bridge call cannot race the navigation away from this component.
-    await clearRacePredictions();
-    // Same reasoning for the daily-training widget, and the stakes are a
-    // little higher: a training block names what someone is doing and when,
-    // so it must not outlive their session on a shared phone either.
-    await clearDailyTraining();
-    await supabase.auth.signOut();
+    await signOutEverywhere();
     router.push("/");
     router.refresh();
   };
@@ -112,7 +47,7 @@ export function SidebarAccount() {
             />
           ) : (
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-accent to-strength text-xs font-bold text-white ring-1 ring-white/10">
-              {initials(account.name)}
+              {initialsFor(account.name)}
             </div>
           )}
           <div className="min-w-0">

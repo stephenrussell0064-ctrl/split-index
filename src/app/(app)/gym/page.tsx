@@ -191,10 +191,20 @@ export default async function GymPage() {
         <div className="p-6 sm:p-10">
           <div className="flex flex-wrap items-start justify-between gap-4 mb-8">
             <div>
-              <p className="micro-label text-gym-accent mb-2">The Lab</p>
+              <p className="micro-label text-gym-accent mb-2">Strength · The Lab</p>
               <h1 className="headline-tight text-3xl font-bold text-gym-text sm:text-5xl">
-                Strength HQ
+                Strength
               </h1>
+              {/*
+                Shown at every width, unlike the Engine's old desktop-only
+                paragraph: this is the one line that tells a new athlete what
+                the tab they just tapped actually holds, and a phone is where
+                they are reading it.
+              */}
+              <p className="mt-2 max-w-lg text-sm text-gym-muted leading-relaxed">
+                Your gym sessions, best lifts and strength score. Log a session and it is
+                scored straight away.
+              </p>
             </div>
             <div className="flex flex-wrap gap-2">
               <Link

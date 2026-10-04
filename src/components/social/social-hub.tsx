@@ -56,6 +56,14 @@ interface SocialHubProps {
   duels: DuelWithStandings[];
   squads: SquadSummary[];
   streak: number;
+  /**
+   * Which tab to open on, from `?tab=` — resolved on the server and passed
+   * down rather than read here with useSearchParams(), which would pull the
+   * whole route out of static prerendering (see the note in app-shell.tsx,
+   * where the same shortcut broke the production build). Unknown values fall
+   * back to the feed, so a stale or hand-typed link still lands somewhere.
+   */
+  initialTab?: string;
 }
 
 export function SocialHub({
@@ -72,8 +80,11 @@ export function SocialHub({
   duels,
   squads,
   streak,
+  initialTab,
 }: SocialHubProps) {
-  const [tab, setTab] = useState<SocialTab>("feed");
+  const [tab, setTab] = useState<SocialTab>(() =>
+    TABS.some((t) => t.id === initialTab) ? (initialTab as SocialTab) : "feed"
+  );
   const [compareOpen, setCompareOpen] = useState(false);
   const [compareTarget, setCompareTarget] = useState<{
     username?: string;
@@ -98,6 +109,7 @@ export function SocialHub({
       <PageHeader
         eyebrow="Community"
         title="Social"
+        subtitle="Friends, leaderboards, challenges and achievements. Nothing is shown to anyone unless you add them or opt in."
         help={
           <>
             <p>

@@ -89,7 +89,7 @@ export function LogLauncher({
 
   return (
     <div className="mx-auto max-w-3xl">
-      <p className="micro-label mb-3 text-muted">Log workout</p>
+      <p className="micro-label mb-3 text-muted">Log a workout</p>
 
       {/*
         Half each, and a real height rather than `flex-1` inside an auto-height
@@ -129,7 +129,7 @@ export function LogLauncher({
           </span>
 
           <div className="relative">
-            <p className="micro-label text-gym-accent">The Lab · Strength</p>
+            <p className="micro-label text-gym-accent">Strength · The Lab</p>
             <h2 className="headline-tight mt-1 text-2xl font-bold text-gym-text sm:text-3xl">
               Gym session
             </h2>
@@ -151,7 +151,7 @@ export function LogLauncher({
           transition={{ delay: 0.05, duration: 0.25 }}
           className="flex min-h-0 flex-col overflow-hidden rounded-3xl border border-cardio-border bg-cardio-bg p-5"
         >
-          <p className="micro-label text-cardio-accent">The Engine · Endurance</p>
+          <p className="micro-label text-cardio-accent">Endurance · The Engine</p>
 
           {/*
             GPS first, and as its own row rather than a badge on three of the

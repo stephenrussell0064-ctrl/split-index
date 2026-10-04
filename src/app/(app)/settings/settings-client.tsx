@@ -252,8 +252,12 @@ export default function SettingsClient() {
     <div className="max-w-2xl space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Settings</h1>
+        {/* A sentence, not a label. "Units" is deliberately absent: there is
+            no unit preference on this page (weights are edited on /profile).
+            Sign out is the last card's first button, so "at the bottom" is
+            literally where it is. */}
         <p className="text-muted text-sm mt-1">
-          Profile, subscription, and account
+          Your profile, subscription, reminders and privacy. Sign out is at the bottom.
         </p>
       </div>
 

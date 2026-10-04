@@ -12,7 +12,14 @@ import {
 import { computeTrainingStreak } from "@/lib/social/streaks";
 import { hasPaidAccess } from "@/lib/retention/trial";
 
-export default async function SocialPage() {
+export default async function SocialPage({
+  searchParams,
+}: {
+  // `?tab=` so the nav (and any link into this page) can open a specific tab.
+  // Read here on the server and handed to SocialHub as a prop: useSearchParams()
+  // in the client component would force the whole route out of prerendering.
+  searchParams: Promise<{ tab?: string }>;
+}) {
   const supabase = await createClient();
   const {
     data: { user },
@@ -31,6 +38,7 @@ export default async function SocialPage() {
   if (!profile?.onboarding_completed) redirect("/onboarding");
 
   const premium = hasPaidAccess(profile);
+  const initialTab = (await searchParams).tab;
 
   const [
     { data: activityDates },
@@ -90,6 +98,7 @@ export default async function SocialPage() {
       duels={duels}
       squads={squads}
       streak={streak}
+      initialTab={initialTab}
     />
   );
 }

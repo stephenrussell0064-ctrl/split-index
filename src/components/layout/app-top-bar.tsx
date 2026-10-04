@@ -3,10 +3,11 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Crown, ChevronLeft, CircleHelp } from "lucide-react";
+import { Crown, ChevronLeft } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 import { NotificationBell } from "@/components/retention/notification-bell";
 import { PremiumBadge } from "@/components/retention/premium-badge";
+import { AccountMenu } from "@/components/layout/account-menu";
 import { createClient } from "@/lib/supabase/client";
 import { hasPaidAccess } from "@/lib/retention/trial";
 import { navigateBack } from "@/lib/utils/navigate-back";
@@ -85,9 +86,9 @@ export function AppTopBar({
     };
   }, [reloadKey]);
 
-  const pathname = usePathname();
   // The plain word first, the product's name second — the same order as the
-  // tab the athlete just pressed, so the two never disagree about where they are.
+  // toggle at the top of the Train tab, so the two never disagree about where
+  // the athlete is.
   const modeLabel =
     mode === "gym" ? "Strength · The Lab" : mode === "cardio" ? "Endurance · The Engine" : null;
 
@@ -106,36 +107,27 @@ export function AppTopBar({
           </span>
         )}
       </div>
-      <div className="flex items-center gap-1.5">
-      {premium ? (
-        <PremiumBadge />
-      ) : (
-        <Link
-          href="/settings/billing"
-          className="inline-flex min-h-11 items-center gap-1 rounded-full border border-white/10 px-2.5 py-1 text-[11px] font-medium text-muted transition-colors hover:border-warning/30 hover:text-warning"
-        >
-          <Crown className="h-3 w-3" />
-          Upgrade
-        </Link>
-      )}
-      {/*
-        Help, reachable from every screen. User feedback: people could not
-        work out what things were or where things lived, and the only
-        explanation was a public methodology page with no way in from the app.
-        One tap from anywhere now opens the guide.
-      */}
-      <Link
-        href="/help"
-        aria-label="Help and guide"
-        aria-current={pathname === "/help" ? "page" : undefined}
-        className={cn(
-          "flex h-11 w-11 items-center justify-center rounded-full transition-colors hover:bg-white/8 hover:text-foreground",
-          pathname === "/help" ? "text-accent" : "text-foreground/80"
+      <div className="flex items-center gap-1">
+        {premium ? (
+          <PremiumBadge />
+        ) : (
+          <Link
+            href="/settings/billing"
+            className="inline-flex min-h-11 items-center gap-1 rounded-full border border-white/10 px-2.5 py-1 text-[11px] font-medium text-muted transition-colors hover:border-warning/30 hover:text-warning"
+          >
+            <Crown className="h-3 w-3" />
+            Upgrade
+          </Link>
         )}
-      >
-        <CircleHelp className="h-5 w-5" aria-hidden />
-      </Link>
-      <NotificationBell />
+        <NotificationBell />
+        {/*
+          The avatar, and behind it Profile, Settings, Help & guide and Sign
+          out. The "?" that used to sit here is inside the menu: the guide is
+          still one tap from everywhere, and the top bar stops being five
+          icons wide on a phone. The small "?" beside every explained score is
+          untouched — that is the help people actually use.
+        */}
+        <AccountMenu />
       </div>
     </div>
   );

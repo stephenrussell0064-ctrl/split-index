@@ -4,16 +4,18 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { PlusCircle, MoreHorizontal, X } from "lucide-react";
+import { PlusCircle } from "lucide-react";
 import { BrandMark } from "@/components/brand/brand-mark";
 import { mainContentProps } from "@/lib/a11y/main-content";
-import { useDialog } from "@/components/ui/use-dialog";
 import { cn } from "@/lib/utils/cn";
 import {
   ACCOUNT_NAV,
-  INSIGHTS_NAV,
+  COMMUNITY_NAV,
   LOG_WORKOUT,
   PRIMARY_NAV,
+  PROGRESS_NAV,
+  TRAIN_ZONES,
+  navItemMatches,
   type AppMode,
   type NavItem,
 } from "@/lib/navigation/app-nav";
@@ -26,36 +28,40 @@ import { StatusBarModeSync } from "@/components/layout/status-bar-mode-sync";
 import { PendingSyncBanner } from "@/components/activities/pending-sync-banner";
 
 /*
- * WHERE THE NAVIGATION IS DEFINED — and why it is not here any more.
+ * WHERE THE NAVIGATION IS DEFINED — and why it is not here.
  *
- * The tab bar, the sidebar and the More sheet all used to carry their own
- * lists of links, labelled with the product's own names ("The Lab", "The
- * Engine") and nothing else. User feedback: the app is too difficult to
- * navigate, and nothing explains what anything is. Every destination now
- * lives in lib/navigation/app-nav.ts with a plain-English label and a
- * one-sentence description, and the in-app guide at /help is rendered from
- * the same list. This file only decides where each group is drawn.
+ * Every destination lives in lib/navigation/app-nav.ts with a plain-English
+ * label and a one-sentence description; the in-app guide at /help, the
+ * Progress hub and the account menu render from the same list. This file only
+ * decides where each group is drawn.
  *
- * Recovery and Interference are first-class entries rather than sections of
- * Analytics on purpose — see the notes in app-nav.ts. The retired
- * /training-plan wizard 308s to /hybrid-plan from next.config.ts.
+ * THE SHAPE, AND WHY IT CHANGED
+ * -----------------------------
+ * The phone used to have Home · Strength · + · Endurance · More, with nine
+ * destinations behind More. User feedback, after the labels had already been
+ * made plain: still "too complicated to navigate", still impossible to tell
+ * what exists. The labels were not the problem; the shape was. Strength and
+ * Endurance each carried a toggle to the other, so two tab slots were doing
+ * one job — and the features people pay for sat in a popover.
+ *
+ * It is now Home · Train · + · Plan · Progress:
+ *
+ *   Train     one tab for both halves; the toggle at the top of the page is
+ *             the switch, and the tab remembers which half you were last in.
+ *   Plan      the Hybrid Plan, promoted from the More sheet to a tab.
+ *   Progress  a real page (/progress) that lists every retrospective and
+ *             social feature with a live number, instead of a sheet of names.
+ *
+ * Profile, Settings and Help moved to an avatar menu in the top bar, which is
+ * where every other app keeps them. The More sheet is gone.
  */
 const primaryNav = PRIMARY_NAV;
-/** Everything on the phone's More sheet and in the sidebar below "Train". */
-const secondaryNav: readonly NavItem[] = [...INSIGHTS_NAV, ...ACCOUNT_NAV];
 
-// The main tab roots — every other page reached by drilling in (activity
-// detail, edit forms, gps-run, a social profile, settings/billing, etc.)
-// gets a back button in the top bar. Exact match, not prefix: /gym/log is
-// reached by tapping "Log session" from The Lab, so it needs a back button
-// too even though it shares the /gym prefix with the tab root itself.
-//
-// /help is the one menu destination that KEEPS its back button: it is also
-// reached from the "?" beside every explained score, and "back to what I was
-// reading" is the thing a person wants after a one-paragraph answer.
-const TOP_LEVEL_ROUTES = new Set<string>(
-  [...primaryNav, ...secondaryNav].map((item) => item.href).filter((href) => href !== "/help")
-);
+// The tab roots and the two Train halves draw no back button — every other
+// page is reached by drilling in from one of them (activity detail, the log
+// forms, gps-run, a social profile, Analytics from the Progress hub, Settings
+// from the avatar menu) and gets a back button in the top bar.
+const TOP_LEVEL_ROUTES = new Set<string>([...primaryNav, ...TRAIN_ZONES].map((item) => item.href));
 
 function resolveMode(pathname: string): AppMode {
   if (pathname.startsWith("/gym")) return "gym";
@@ -66,20 +72,12 @@ function resolveMode(pathname: string): AppMode {
 /**
  * Where the + button goes: the launcher, always, from every tab.
  *
- * This used to resolve by mode — /gym/log from The Lab, /cardio/log from The
- * Engine, the launcher only from Home. The idea was that a tab already says
- * which half you are in, so the picker is a step you can skip. In practice it
- * made one control mean three different things depending on where you had
- * been, and the two zone-specific destinations are each half an app: tapping +
- * on The Engine could not reach a gym session, and tapping it on The Lab could
- * not start a GPS run. User report: "if you are on the engine and then click
- * the plus it should take you to [the launcher] rather than a cardio only log
- * screen."
- *
- * The launcher costs one tap and can reach everything — both halves of the
- * product and live GPS — so + is now the same promise everywhere.
- * /gym/log and /cardio/log are untouched and still reachable from The Lab and
- * The Engine's own buttons, which is where a zone-specific shortcut belongs.
+ * It used to resolve by mode — /gym/log from Strength, /cardio/log from
+ * Endurance — which made one control mean three things depending on where you
+ * had been, and each zone-specific destination could reach only half the
+ * product. The launcher costs one tap and reaches everything, including live
+ * GPS, so + is the same promise everywhere. /gym/log and /cardio/log are still
+ * reachable from the Train pages' own buttons, where a zone shortcut belongs.
  */
 const LOG_LAUNCHER_HREF = LOG_WORKOUT.href;
 
@@ -88,120 +86,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <ModeOverrideProvider>
       <AppShellContent>{children}</AppShellContent>
     </ModeOverrideProvider>
-  );
-}
-
-/** One row of the More sheet: what it is, and one line on what you will find there. */
-function MoreNavRow({
-  item,
-  active,
-  onClose,
-}: {
-  item: NavItem;
-  active: boolean;
-  onClose: () => void;
-}) {
-  const Icon = item.icon;
-  return (
-    <Link
-      href={item.href}
-      onClick={onClose}
-      aria-current={active ? "page" : undefined}
-      className={cn(
-        "flex items-center gap-3 rounded-xl px-2.5 py-2 transition-colors",
-        active ? "bg-white/8" : "hover:bg-white/5"
-      )}
-    >
-      <span
-        className={cn(
-          "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
-          active ? "bg-accent/15 text-accent" : "bg-white/5 text-muted"
-        )}
-      >
-        <Icon className="h-4 w-4" aria-hidden />
-      </span>
-      <span className="min-w-0">
-        <span className={cn("block text-sm font-semibold", active ? "text-foreground" : "text-foreground/90")}>
-          {item.label}
-        </span>
-        <span className="block text-xs leading-snug text-muted">{item.description}</span>
-      </span>
-    </Link>
-  );
-}
-
-/**
- * The mobile "More" sheet.
- *
- * Its own component only so that `useDialog` mounts and unmounts with the
- * sheet — a hook cannot live inside the `{moreOpen && …}` it guards, and the
- * focus work has to happen on open, not on every render of the shell.
- *
- * What was wrong with it: it dimmed the whole viewport behind a backdrop, which
- * is a modal, and had none of a modal's behaviour. Focus stayed on the "More"
- * button in the tab bar, so the first Tab after opening went to whatever
- * followed that button rather than into the sheet; nothing stopped Tab
- * continuing off the end of the sheet into the page underneath the dim; Escape
- * did nothing; and it was announced as an anonymous group of links rather than
- * as a dialog. The X is labelled and reachable, so it was operable — it was the
- * ORIENTATION that was missing, which is the half a screenshot cannot show.
- *
- * And what was wrong with it after that: six one-word links. "Interference"
- * on its own is not a destination anyone can choose, and three whole screens
- * — the logbook, your profile and the athlete report — were not on it at all.
- * Every row now says what it is, and the sheet scrolls rather than clipping on
- * a small phone.
- */
-function MoreNavSheet({
-  onClose,
-  isActive,
-}: {
-  onClose: () => void;
-  isActive: (href: string) => boolean;
-}) {
-  const { dialogRef, dialogProps } = useDialog(onClose, { label: "More" });
-
-  return (
-    <>
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        onClick={onClose}
-        className="fixed inset-0 z-40 bg-black/50 lg:hidden"
-      />
-      <motion.div
-        id="more-nav-sheet"
-        ref={dialogRef}
-        {...dialogProps}
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: 16 }}
-        transition={{ type: "spring", bounce: 0.1, duration: 0.35 }}
-        className="fixed bottom-[calc(4.25rem+env(safe-area-inset-bottom))] left-3 right-3 z-40 flex max-h-[calc(100dvh-6rem-env(safe-area-inset-bottom)-env(safe-area-inset-top))] flex-col rounded-2xl border border-white/10 glass-strong lg:hidden"
-      >
-        <div className="flex items-center justify-between px-4 pb-1 pt-3">
-          <p className="text-sm font-semibold">Everything else</p>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close menu"
-            className="-m-2 flex h-11 w-11 items-center justify-center rounded-lg text-muted hover:bg-white/5 hover:text-foreground"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-        <div className="overflow-y-auto p-2 pt-0">
-          {INSIGHTS_NAV.map((item) => (
-            <MoreNavRow key={item.href} item={item} active={isActive(item.href)} onClose={onClose} />
-          ))}
-          <div className="my-1.5 border-t border-white/5" />
-          {ACCOUNT_NAV.map((item) => (
-            <MoreNavRow key={item.href} item={item} active={isActive(item.href)} onClose={onClose} />
-          ))}
-        </div>
-      </motion.div>
-    </>
   );
 }
 
@@ -224,52 +108,49 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
   const showTopBar = pathname !== "/onboarding";
   const showBackButton = !TOP_LEVEL_ROUTES.has(pathname);
   const logHref = LOG_LAUNCHER_HREF;
-  const [moreOpen, setMoreOpen] = useState(false);
   const [lastPathname, setLastPathname] = useState(pathname);
   // User feedback: "when clicking off the lab onto the dashboard or engine
   // whilst logging an activity, the logging page disappears and you have
   // to back on and do it again... when you click back on the lab it takes
-  // you back to the page you left on." Tapping "Lab" always went to the
-  // bare /gym tab root, not back to /gym/log where an in-progress log
-  // actually lives — this remembers the last path visited under each
-  // primary-nav section (plain in-memory state, not persisted — this
-  // shell component stays mounted for the whole in-app session, the same
-  // way a native tab bar keeps each tab's own navigation stack without
-  // needing to write anything to disk) and routes the tab button there
-  // instead of the bare root. Updated here, during render when pathname
-  // actually changes — same "adjust state in response to a prop/pathname
-  // change" pattern lastPathname/setMoreOpen right below already use,
-  // deliberately not a useEffect (this project's own lint rule flags
-  // setState-in-effect, and there's no real external system to
-  // synchronize with here anyway).
+  // you back to the page you left on." Tapping a tab always went to its bare
+  // root, not back to where an in-progress log actually lives — this
+  // remembers the last path visited under each primary tab (plain in-memory
+  // state, not persisted — this shell stays mounted for the whole in-app
+  // session, the same way a native tab bar keeps each tab's own navigation
+  // stack) and routes the tab button there instead of the bare root. It is
+  // also what makes the Train tab go back to whichever half — /gym or
+  // /cardio — the athlete was last in, rather than through /train's redirect
+  // every time. Updated during render when pathname changes — the same
+  // "adjust state in response to a prop change" pattern as lastPathname
+  // above, deliberately not a useEffect (this project's own lint rule flags
+  // setState-in-effect, and there is no external system to synchronise with).
   const [lastTabPaths, setLastTabPaths] = useState<Record<string, string>>({});
   if (pathname !== lastPathname) {
     setLastPathname(pathname);
-    setMoreOpen(false);
-    const match = primaryNav.find((item) => pathname === item.href || pathname.startsWith(`${item.href}/`));
+    const match = primaryNav.find((item) => navItemMatches(item, pathname));
     if (match && lastTabPaths[match.href] !== pathname) {
       setLastTabPaths({ ...lastTabPaths, [match.href]: pathname });
     }
   }
 
-  /** Where tapping this primary-nav tab actually goes — the last path visited under it, if any, so an in-progress log (or anything else mid-flow) is exactly where it was left rather than resetting to the tab's bare root. */
+  /** Where tapping this primary tab actually goes — the last path visited under it, if any, so an in-progress log (or anything else mid-flow) is exactly where it was left rather than resetting to the tab's bare root. */
   const navHref = (item: NavItem) => lastTabPaths[item.href] ?? item.href;
 
-  const isActive = (href: string) =>
-    pathname === href ||
-    (href !== "/dashboard" && pathname.startsWith(href));
+  const isActive = (item: NavItem) => navItemMatches(item, pathname);
 
-  /** The zone colour a primary tab lights up in when it is the current one. */
-  const accentClassFor = (item: NavItem) =>
-    item.mode === "gym"
+  /** The zone colour a tab lights up in when it is the current one. The Train tab takes the colour of whichever half is showing. */
+  const accentClassFor = (item: NavItem) => {
+    const itemMode = item.href === "/train" ? mode : item.mode;
+    return itemMode === "gym"
       ? "text-gym-accent"
-      : item.mode === "cardio"
+      : itemMode === "cardio"
         ? "text-cardio-accent"
         : "text-accent";
+  };
 
   /** One phone tab. Label at 11px, not 10 — the smallest size the app's own label style allows. */
   const tabLink = (item: NavItem) => {
-    const active = isActive(item.href);
+    const active = isActive(item);
     const Icon = item.icon;
     return (
       <Link
@@ -277,7 +158,7 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
         href={navHref(item)}
         aria-current={active ? "page" : undefined}
         className={cn(
-          "flex min-w-0 flex-col items-center gap-1 rounded-2xl px-3 py-2 text-[11px] font-medium transition-colors",
+          "flex min-w-0 flex-1 flex-col items-center gap-1 rounded-2xl px-1 py-2 text-[11px] font-medium transition-colors",
           active ? cn("bg-white/8", accentClassFor(item)) : "text-muted"
         )}
       >
@@ -288,13 +169,13 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
   };
 
   /** One sidebar entry: the plain label, and the product's own name for it beside it where there is one. */
-  const sidebarLink = (item: NavItem, layoutId: string) => {
-    const active = isActive(item.href);
+  const sidebarLink = (item: NavItem, href = item.href) => {
+    const active = isActive(item);
     const Icon = item.icon;
     return (
       <Link
         key={item.href}
-        href={item.group === "primary" ? navHref(item) : item.href}
+        href={href}
         aria-current={active ? "page" : undefined}
         title={item.description}
         className={cn(
@@ -304,7 +185,7 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
       >
         {active && (
           <motion.div
-            layoutId={layoutId}
+            layoutId="nav-active-sidebar"
             className={cn(
               "absolute inset-0 rounded-xl border",
               item.mode === "gym" &&
@@ -324,6 +205,12 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
       </Link>
     );
   };
+
+  const sidebarSection = (label: string) => (
+    <p className="px-3 pb-2 pt-4 micro-label text-muted/60">{label}</p>
+  );
+
+  const [home, train, plan, progress] = primaryNav;
 
   return (
     // min-h-dvh, not min-h-screen (100vh): on mobile, 100vh locks to the
@@ -373,15 +260,17 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
           </Link>
 
           <nav aria-label="Primary" className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
-            <p className="px-3 pb-2 micro-label text-muted/60">Train</p>
-            {primaryNav.map((item) => sidebarLink(item, "nav-active-primary"))}
+            {sidebarLink(home)}
 
+            {sidebarSection("Train")}
+            {/* The two halves as rows rather than one "Train" row: there is room, and a sidebar that says "Strength · The Lab" is itself the explanation a new user needs. */}
+            {TRAIN_ZONES.map((zone) => sidebarLink(zone))}
             <Link
               href={logHref}
               title={LOG_WORKOUT.description}
               className={cn(
-                "relative mt-2 flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
-                isActive(logHref) || pathname.endsWith("/log")
+                "relative mt-1 flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
+                pathname === logHref || pathname.endsWith("/log")
                   ? "text-foreground"
                   : "text-muted hover:text-foreground hover:bg-white/5"
               )}
@@ -390,27 +279,29 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
               {LOG_WORKOUT.label}
             </Link>
 
-            <div className="my-4 border-t border-white/5" />
-            <p className="px-3 pb-2 micro-label text-muted/60">Insights</p>
-            {INSIGHTS_NAV.map((item) => sidebarLink(item, "nav-active-secondary"))}
+            {sidebarSection("Plan")}
+            {sidebarLink(plan)}
 
-            <div className="my-4 border-t border-white/5" />
-            <p className="px-3 pb-2 micro-label text-muted/60">Account</p>
+            {sidebarSection("Progress")}
+            {sidebarLink(progress)}
+            {PROGRESS_NAV.map((item) => sidebarLink(item))}
+
+            {sidebarSection("Community")}
+            {COMMUNITY_NAV.map((item) => sidebarLink(item))}
+
+            {sidebarSection("Account")}
             {/* Profile is the account block at the foot of the sidebar, so it is not listed twice. */}
-            {ACCOUNT_NAV.filter((item) => item.href !== "/profile").map((item) =>
-              sidebarLink(item, "nav-active-secondary")
-            )}
+            {ACCOUNT_NAV.filter((item) => item.href !== "/profile").map((item) => sidebarLink(item))}
           </nav>
 
           <SidebarAccount />
         </aside>
 
-        <AnimatePresence>
-          {moreOpen && <MoreNavSheet onClose={() => setMoreOpen(false)} isActive={isActive} />}
-        </AnimatePresence>
-
-        <nav aria-label="Bottom tab bar" className="fixed bottom-0 left-0 right-0 z-40 flex items-center justify-around border-t border-white/5 glass-strong px-1 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] lg:hidden">
-          {[primaryNav[0], primaryNav[1]].map(tabLink)}
+        <nav
+          aria-label="Bottom tab bar"
+          className="fixed bottom-0 left-0 right-0 z-40 flex items-center justify-around border-t border-white/5 glass-strong px-1 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] lg:hidden"
+        >
+          {[home, train].map(tabLink)}
 
           <Link
             href={logHref}
@@ -427,26 +318,7 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
             <PlusCircle className="h-7 w-7" aria-hidden />
           </Link>
 
-          {[primaryNav[2]].map(tabLink)}
-
-          {/* A toggle that does not say whether it is open leaves a screen
-              reader user tapping it to find out — and closing the sheet they
-              had just opened. */}
-          <button
-            type="button"
-            onClick={() => setMoreOpen((v) => !v)}
-            aria-expanded={moreOpen}
-            aria-controls="more-nav-sheet"
-            className={cn(
-              "flex min-w-0 flex-col items-center gap-1 rounded-2xl px-3 py-2 text-[11px] font-medium transition-colors",
-              moreOpen || secondaryNav.some((item) => isActive(item.href))
-                ? "bg-white/8 text-accent"
-                : "text-muted"
-            )}
-          >
-            <MoreHorizontal className="h-6 w-6 shrink-0" aria-hidden />
-            <span className="truncate">More</span>
-          </button>
+          {[plan, progress].map(tabLink)}
         </nav>
 
         {/* tabIndex -1 so the skip link actually MOVES focus. Without it
