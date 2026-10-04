@@ -1539,10 +1539,34 @@ function ExerciseNameInput({
   // shared by every row, which hid exercises from every row but the one the
   // athlete last filtered — see the note there.
   const [muscleFilter, setMuscleFilter] = useState<MuscleGroupCategory>("all");
+  /*
+   * NO INNER SCROLL BOX. The list used to live in a `max-h-[248px]
+   * overflow-y-auto overscroll-contain` div inside the page — a scroll
+   * container nested in a scroll container. On a phone that is the classic
+   * trap: a finger that lands on the list scrolls the list, the list is five
+   * rows tall so it hits its end almost immediately, `overscroll-contain`
+   * then refuses to hand the gesture back to the page, and the athlete is
+   * left dragging a box that will not move while the page beneath it will
+   * not move either. Owner's report: "scrolling issue when searching for
+   * exercises on the lab that it does not work smoothly".
+   *
+   * The list now sits in the page flow and the page is the only thing that
+   * scrolls. What stops it being 186 rows long is a cap rather than a
+   * viewport: the first LIST_PAGE matches, then a "Show N more" row that
+   * reveals the rest. Searching or filtering resets the cap, because a
+   * narrowed list is the one the athlete asked to see all of.
+   */
+  const [showAll, setShowAll] = useState(false);
+  const [capKey, setCapKey] = useState("");
   const suggestedMuscle = categoryToMuscleGroup(muscleFilter);
   const frequent = useFrequentExercises();
 
   const query = search.trim().toLowerCase();
+  const nextCapKey = `${query}|${muscleFilter}`;
+  if (capKey !== nextCapKey) {
+    setCapKey(nextCapKey);
+    setShowAll(false);
+  }
 
   const matches = useMemo(() => {
     return COMMON_EXERCISES.filter((ex) => {
@@ -1569,6 +1593,11 @@ function ExerciseNameInput({
 
   const usualNames = new Set(usual.map((ex) => ex.name));
   const rest = usual.length > 0 ? matches.filter((ex) => !usualNames.has(ex.name)) : matches;
+  // A full page of results in the flow, then the rest on request. Once the
+  // athlete is typing the list is short and the cap rarely bites.
+  const LIST_PAGE = 8;
+  const visibleRest = showAll ? rest : rest.slice(0, LIST_PAGE);
+  const hiddenCount = rest.length - visibleRest.length;
 
   const knownExercise = COMMON_EXERCISES.find(
     (ex) => ex.name.toLowerCase() === value.trim().toLowerCase()
@@ -1696,11 +1725,11 @@ function ExerciseNameInput({
 
       <div
         className={cn(
-          "max-h-[248px] overflow-y-auto overscroll-contain rounded-xl border p-1",
+          "rounded-xl border p-1",
           invalid ? "border-danger/50" : "border-gym-border/40",
           "bg-gym-bg-elevated/60"
         )}
-        role="listbox"
+        role="group"
         aria-label="Exercises"
       >
         {usual.length > 0 && (
@@ -1718,7 +1747,18 @@ function ExerciseNameInput({
             Nothing matches “{search.trim()}”. Add it as a custom exercise below.
           </p>
         ) : (
-          rest.map(renderRow)
+          visibleRest.map(renderRow)
+        )}
+
+        {hiddenCount > 0 && (
+          <button
+            type="button"
+            onClick={() => setShowAll(true)}
+            className="mt-1 flex min-h-[44px] w-full items-center justify-center gap-1.5 rounded-lg border-t border-gym-border/25 text-xs font-semibold text-gym-accent transition-colors hover:bg-gym-accent/5"
+          >
+            Show {hiddenCount} more
+            <ChevronDown className="h-3.5 w-3.5" aria-hidden />
+          </button>
         )}
       </div>
 

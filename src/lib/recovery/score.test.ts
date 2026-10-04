@@ -147,6 +147,29 @@ describe("composing the recovery score", () => {
     expect(hungover.alcohol.penalty).toBeGreaterThan(15);
   });
 
+  it("prices a single pint as a few points, not a band", () => {
+    // Owner's report, 4 Oct 2026: "each beverage seems to have way too much
+    // impact". One pint of 4% lager (~2.3 units) for an 80kg athlete must
+    // not move the score out of its band on its own.
+    const sober = computeRecoveryScore(input());
+    const onePint = computeRecoveryScore(input({ drinks: [drink(11, 2.27)] }));
+    expect(sober.score - onePint.score).toBeLessThanOrEqual(5);
+    expect(onePint.band).toBe(sober.band);
+  });
+
+  it("eight pints is a very bad morning, not an empty score", () => {
+    // ~18 units in one evening, 1.8 g/kg for an 80kg athlete. The deduction
+    // saturates at its ceiling rather than wiping the score: the other
+    // signals still count, so a well-rested athlete lands in "compromised"
+    // or "depleted" rather than on zero.
+    const eightPints = computeRecoveryScore(input({ drinks: [drink(11, 18.2)] }));
+    expect(eightPints.alcohol.penalty).toBeLessThanOrEqual(45);
+    expect(eightPints.alcohol.penalty).toBeGreaterThan(35);
+    expect(eightPints.score).toBeGreaterThan(15);
+    expect(["compromised", "depleted"]).toContain(eightPints.band);
+    expect(eightPints.limiter).toBe("alcohol");
+  });
+
   it("names alcohol as the limiter when alcohol is the limiter", () => {
     const result = computeRecoveryScore(input({ readiness: readiness(92), drinks: [drink(10, 9)] }));
     expect(result.limiter).toBe("alcohol");

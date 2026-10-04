@@ -154,8 +154,27 @@ describe("dose severity", () => {
 
   it("treats one unit as near-noise and a heavy night as near-maximal", () => {
     const oneUnitFor80kg = UK_UNIT_GRAMS_ETHANOL / 80; // ~0.1 g/kg
-    expect(doseSeverity(oneUnitFor80kg)).toBeLessThan(0.15);
-    expect(doseSeverity(1.0)).toBeGreaterThan(0.85);
+    expect(doseSeverity(oneUnitFor80kg)).toBeLessThan(0.05);
+    expect(doseSeverity(1.0)).toBeGreaterThan(0.65);
+    expect(doseSeverity(1.5)).toBe(1);
+  });
+
+  it("starts slowly: a single pint is a few points, not a tenth of the score", () => {
+    // The recalibration of 4 Oct 2026. One pint of 4% lager is ~18g, which is
+    // 0.24 g/kg for a 75kg athlete — the low-dose arm of every sleep study,
+    // where the effect is small and often non-significant. The old curve
+    // priced it at nine points off recovery.
+    const onePint = gramsOfEthanol(568, 4) / 75;
+    expect(doseSeverity(onePint)).toBeLessThan(0.1);
+    // ...while four pints (just under 1 g/kg) is a real dose and reads as one.
+    expect(doseSeverity((4 * gramsOfEthanol(568, 4)) / 75)).toBeGreaterThan(0.6);
+  });
+
+  it("starts convex — the first pint is the cheapest, the second and third cost more each", () => {
+    const pint = gramsOfEthanol(568, 4) / 75;
+    const [one, two, three] = [1, 2, 3].map((n) => doseSeverity(n * pint));
+    expect(two - one).toBeGreaterThan(one);
+    expect(three - two).toBeGreaterThanOrEqual(two - one);
   });
 
   it("never exceeds 1, however much is drunk", () => {

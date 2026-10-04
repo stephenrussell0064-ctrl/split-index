@@ -390,9 +390,23 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
               {LOG_WORKOUT.label}
             </Link>
 
+            {/*
+              The Hybrid Plan sits with the training tabs, not with the
+              insights. It is the one screen that tells the athlete what to
+              train, which is a "Train" thing; filed under Insights it was the
+              fourth row of a second section, and the owner's report was that
+              it was not easy to find. The phone's More sheet already lists it
+              first; this is the desktop equivalent.
+            */}
+            {INSIGHTS_NAV.filter((item) => item.href === "/hybrid-plan").map((item) =>
+              sidebarLink(item, "nav-active-primary")
+            )}
+
             <div className="my-4 border-t border-white/5" />
             <p className="px-3 pb-2 micro-label text-muted/60">Insights</p>
-            {INSIGHTS_NAV.map((item) => sidebarLink(item, "nav-active-secondary"))}
+            {INSIGHTS_NAV.filter((item) => item.href !== "/hybrid-plan").map((item) =>
+              sidebarLink(item, "nav-active-secondary")
+            )}
 
             <div className="my-4 border-t border-white/5" />
             <p className="px-3 pb-2 micro-label text-muted/60">Account</p>

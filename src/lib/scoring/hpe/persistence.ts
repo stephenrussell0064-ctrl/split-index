@@ -321,6 +321,30 @@ export async function savePlan(
   if (error || !plan) return null;
   const planId = plan.id as string;
 
+  /*
+    ONE CURRENT BLOCK. A new row has just been written because something about
+    the plan genuinely changed — a new goal, a moved event, a fresh diagnostic.
+    The block it replaces used to be left with `superseded_at IS NULL`, so an
+    athlete who had rebuilt their plan twice had three "current" plans and the
+    readers disagreed about which one they were on: `loadLatestStoredPlan`
+    took the newest by date, the feedback loader took the newest un-superseded,
+    and the reuse check above only ever looked at one of them. Stamping the
+    rest here, with the reason, makes "current" mean one row everywhere, and
+    keeps the history readable: nothing is deleted, the old block is simply
+    marked as the one this one replaced.
+  */
+  await supabase
+    .from("hpe_plans")
+    .update({
+      superseded_at: new Date().toISOString(),
+      superseded_reason: current
+        ? "Replaced by a new block built from updated goals, constraints or diagnosis."
+        : "Replaced by a newer block.",
+    })
+    .eq("user_id", userId)
+    .is("superseded_at", null)
+    .neq("id", planId);
+
   const rows: Record<string, unknown>[] = [];
   let dropped = 0;
   for (const week of args.weeks) {
