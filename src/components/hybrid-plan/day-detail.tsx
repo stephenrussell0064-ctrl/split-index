@@ -190,9 +190,9 @@ function SessionBlock({
           {finding ? (
             <>
               <p className="text-sm leading-relaxed text-foreground/90">{finding.text}</p>
-              <p className="mt-2 font-mono text-[0.65rem] uppercase tracking-wider text-muted/60">
-                finding: {finding.id} · emphasis: {session.emphasisKey.replace(/_/g, " ")}
-              </p>
+              {/* The finding id and emphasis key are not shown: they are
+                  engine identifiers in a monospace caption, and the one
+                  reader who needs them has the Diagnostic tab. */}
             </>
           ) : (
             // Unreachable for a session the engine prescribed: every finding
@@ -272,7 +272,14 @@ export function DayDetail({
               key={`${session.kind}-${session.slot ?? "x"}-${i}`}
               session={session}
               findingsById={findingsById}
-              defaultOpen={day.sessions.length === 1}
+              /*
+                Shut, always. It used to open on a one-session day, which put
+                the diagnostic paragraph under every single session on the
+                screen that is meant to say what to do today. User feedback:
+                too much writing. The reason is still one tap away, and the
+                button says so.
+              */
+              defaultOpen={false}
               offsetDays={day.offsetDays}
             />
           ))

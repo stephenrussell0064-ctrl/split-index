@@ -176,6 +176,51 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "event", label: "Event day" },
 ];
 
+/**
+ * A paragraph or three that belong to the plan but not in front of it: a
+ * title and a one-line summary always visible, the full text on request. A
+ * native `<details>` for the same reasons the "how tailored" card uses one —
+ * no state, keyboard-operable, and it survives a re-render.
+ */
+function FoldedNotes({
+  eyebrow,
+  title,
+  summary,
+  items,
+  glow = "none",
+}: {
+  eyebrow: string;
+  title: string;
+  summary: string;
+  items: readonly string[];
+  glow?: "accent" | "none";
+}) {
+  return (
+    <Card glow={glow}>
+      <details className="group">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
+          <div className="min-w-0">
+            <p className="text-xs font-medium uppercase tracking-widest text-muted">{eyebrow}</p>
+            <h2 className="mt-1 text-base font-semibold tracking-tight">{title}</h2>
+            <p className="mt-1 text-sm text-muted">{summary}</p>
+          </div>
+          <ChevronDown
+            className="h-4 w-4 shrink-0 text-muted transition-transform group-open:rotate-180"
+            aria-hidden
+          />
+        </summary>
+        <ul className="mt-3 space-y-2 border-t border-white/[0.06] pt-3">
+          {items.map((item) => (
+            <li key={item} className="text-sm leading-relaxed text-foreground/85">
+              {item}
+            </li>
+          ))}
+        </ul>
+      </details>
+    </Card>
+  );
+}
+
 /** One mapping, used by both the live plan and a stored plan read back while generation is paused. */
 function toPlanWeeks(raw: NonNullable<PlanResponse["weeks"]>): PlanWeekView[] {
   return raw.map((w) => ({
@@ -577,26 +622,28 @@ export function HybridPlanScreen() {
         title="Your block"
         subtitle={
           profile
-            ? `Built from ${profile.findings.length} findings in your own logged history. Limiter: ${profile.limiter}.`
+            ? `${weeks.length} weeks, built from your own sessions. Today first, then the week, then the block.`
             : undefined
         }
       />
 
-      {/* The four-weekly re-run, when it has fired. A plan that changes
-          silently is indistinguishable from a plan that is broken. */}
-      {data.rerun?.shouldRegenerate && data.rerun.explanations.length > 0 && (
-        <Card glow="accent">
-          <h2 className="text-base font-semibold tracking-tight">Your plan has been rebuilt</h2>
-          <p className="mt-1 text-sm text-muted">Four more weeks of your data moved the diagnosis.</p>
-          <ul className="mt-3 space-y-2">
-            {data.rerun.explanations.map((e) => (
-              <li key={e} className="text-sm leading-relaxed text-foreground/85">
-                {e}
-              </li>
-            ))}
-          </ul>
-        </Card>
-      )}
+      {/*
+        THE PLAN COMES FIRST. EVERYTHING WRITTEN ABOUT IT COMES AFTER, FOLDED.
+
+        User feedback on the built-plan screen: "there is too much writing, no
+        user is going to read this and this is going to discourage them from
+        using". Measured on a 390px phone: the header, the "Your plan has been
+        rebuilt" card and the "Is the target realistic?" card — three
+        paragraphs of projection arithmetic — filled the entire first screen,
+        and the day the athlete was meant to train was below the fold.
+
+        Nothing is deleted. The rebuild notice and the feasibility notes are
+        now `<details>` cards UNDER the plan, shut by default, with a one-line
+        summary each; the "how tailored" card was already there in that shape.
+        The medical referral directly below is the one thing kept above the
+        plan: it is one line, it fires on one PAR-Q+ answer, and it is the only
+        text on this screen that has to be read before training.
+      */}
 
       {/* How individual this plan actually is.
           This is the whole justification for generating a plan from thin data
@@ -653,19 +700,6 @@ export function HybridPlanScreen() {
               </p>
             </div>
           </div>
-        </Card>
-      )}
-
-      {(data.feasibility?.messages.length ?? 0) > 0 && (
-        <Card>
-          <h2 className="text-base font-semibold tracking-tight">Is the target realistic?</h2>
-          <ul className="mt-2 space-y-2">
-            {data.feasibility!.messages.map((m) => (
-              <li key={m} className="text-sm leading-relaxed text-foreground/85">
-                {m}
-              </li>
-            ))}
-          </ul>
         </Card>
       )}
 
@@ -727,6 +761,34 @@ export function HybridPlanScreen() {
             pacing={data.pacing ?? null}
           />
         </div>
+      )}
+
+      {/* The four-weekly re-run, when it has fired. A plan that changes
+          silently is indistinguishable from a plan that is broken — so it is
+          still announced, but as one line the athlete can open, under the
+          plan rather than on top of it. */}
+      {data.rerun?.shouldRegenerate && data.rerun.explanations.length > 0 && (
+        <FoldedNotes
+          eyebrow="Plan rebuilt"
+          title="Your plan has been rebuilt"
+          summary="Four more weeks of your data moved the diagnosis."
+          items={data.rerun.explanations}
+          glow="accent"
+        />
+      )}
+
+      {/* The feasibility notes: whether the goals the block chases are within
+          reach of the block. Worth having, never worth reading before
+          training, and three paragraphs long. */}
+      {(data.feasibility?.messages.length ?? 0) > 0 && (
+        <FoldedNotes
+          eyebrow="Your targets"
+          title="Is the target realistic?"
+          summary={`${data.feasibility!.messages.length} ${
+            data.feasibility!.messages.length === 1 ? "note" : "notes"
+          } on how far this block gets you towards your goals.`}
+          items={data.feasibility!.messages}
+        />
       )}
 
       {/*
