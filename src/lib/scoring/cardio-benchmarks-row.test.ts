@@ -50,7 +50,7 @@ describe("timeToScore — row (general-population anchors)", () => {
     expect(timeToScore("row", 423.4, "male")).toBeCloseTo(timeToScore("run", 1305, "male"), 0);
     // ...and at the median, where the old logbook table was worst: it scored
     // its median rower 475 against a runner who needed to be top-fifth.
-    expect(timeToScore("row", 483.1, "male")).toBeCloseTo(timeToScore("run", 1800, "male"), 0);
+    expect(timeToScore("row", 483.1, "male")).toBeCloseTo(timeToScore("run", 1888, "male"), 0);
   });
 
   it("999 is reserved for the actual Concept2 2000m world record (user feedback: never achieved unless it's a world record for age/gender)", () => {

@@ -23,9 +23,9 @@ export default function GymLoading() {
         <div className="p-4 sm:p-10">
           <div className="mb-4 flex flex-wrap items-start justify-between gap-4">
             <div>
-              <p className="micro-label text-gym-accent mb-1.5">The Lab</p>
+              <p className="micro-label text-gym-accent mb-1.5">Strength · The Lab</p>
               <h1 className="headline-tight text-3xl font-bold text-gym-text sm:text-5xl">
-                Strength HQ
+                Strength
               </h1>
             </div>
             <Skeleton className="h-12 w-36 rounded-2xl bg-gym-accent/20 border-gym-accent/20" />

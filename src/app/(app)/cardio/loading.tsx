@@ -14,9 +14,9 @@ export default function CardioLoading() {
         <div className="p-4 sm:p-10">
           <div className="mb-4 flex flex-wrap items-start justify-between gap-4">
             <div>
-              <p className="micro-label text-cardio-accent mb-1.5">The Engine</p>
+              <p className="micro-label text-cardio-accent mb-1.5">Endurance · The Engine</p>
               <h1 className="headline-tight text-3xl font-bold text-cardio-text sm:text-4xl">
-                Endurance HQ
+                Endurance
               </h1>
             </div>
             <div className="flex gap-2">

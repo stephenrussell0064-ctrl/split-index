@@ -83,6 +83,25 @@ answers with its offline page. The simulator check was therefore done against
 `next build` + `next start` behind a local HTTPS proxy with a CA installed via
 `xcrun simctl keychain add-root-cert` — the same conditions as production.
 
+### 7. Hybrid Plan screen: the plan first, the prose folded
+
+| File | Change | Revert |
+|---|---|---|
+| `src/components/hybrid-plan/hybrid-plan-screen.tsx` | The rebuild notice and the "Is the target realistic?" notes moved from above the tabs to `<details>` cards under the plan (`FoldedNotes`), shut by default with a one-line summary. Subtitle shortened. The medical referral stays above the plan. | `git checkout origin/main -- <path>` |
+| `src/components/hybrid-plan/day-detail.tsx` | "Why this session?" no longer opens by itself on a one-session day; the engine identifier caption under the finding text is gone. | `git checkout origin/main -- <path>` |
+
+### 8. Running score: median anchor re-sourced
+
+| File | Change | Revert |
+|---|---|---|
+| `src/lib/scoring/cardio-benchmarks.ts` | The 5 km median anchor moves from 30:00 (a "reasoned middle point") to 31:28, RunRepeat's 34-million-result men's median, which the same comment already cited. Faster anchors unchanged. Effect: a 50:00 10 km at age 30 goes 66.7 → 67.6; a 60:00 10 km 56.4 → 58.8; nothing at or above the 80th percentile moves. | `git checkout origin/main -- src/lib/scoring/cardio-benchmarks.ts docs/pre-launch/calibration-data.md` and the five tests that pin the anchor (`cardio-benchmarks-{run,row,swim}.test.ts`, `cardio-sex-calibration.test.ts`). |
+
+Tried and rejected: softening the effort-curve exponent (2.2 → 2.0) lifts runs whose heart rate shows restraint by 0.2–0.7 of a point, but moves the one validated tempo data point (6 km at 4:06, 178 bpm) out of its pinned range. The reported session itself (10 km at 5:00/km, 180 bpm) sits at or above the model's sustainable-intensity ceiling, so no heart-rate lever can touch it; it is scored purely against the population table, which is what this change moves.
+
+### 9. Merge of `origin/main` (the "App UI and performance fixes" session)
+
+Merged at `f2dc8ab8`. Conflicts in the Strength/Endurance page headers (took the new one-strip layouts from main, kept the plain-word headings) and the sidebar (kept the Plan group). The two new `loading.tsx` skeletons from main were relabelled to match the headings.
+
 ## Verified
 
 - `npx tsc --noEmit`: clean.

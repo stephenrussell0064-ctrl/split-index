@@ -91,9 +91,16 @@ type Anchor = [seconds: number, score: number];
  * Athletics results) and RunDida's combined-population percentile table
  * both independently converge on ~30:00 for the 50th percentile and ~23:00
  * for the 75th, and RunRepeat's own 34-million-result "State of Running"
- * study puts the men's median at 31:28 (close, slightly slower) — 30:00 is
- * a reasoned middle point across these, not the single most extreme number
- * found. The fast end moved too: a 15:00 5K is genuinely national/
+ * study puts the men's median at 31:28 (close, slightly slower). 30:00 was
+ * taken as a reasoned middle point across these; the median anchor now sits
+ * on the 31:28 figure instead, because it is the one number here that comes
+ * from a single published dataset of 34 million results rather than an
+ * aggregate of aggregates, and because the owner's own read of the table was
+ * that steady runs scored a touch low ("10 km at 5:00/km ... 66.7 which is
+ * too low"). The 80th-percentile and faster anchors are untouched — every
+ * source agrees on those — so the change is confined to the middle of the
+ * field, where a 50:00 10 km moves from 66.7 to 67.6 and a 60:00 one from
+ * 56.4 to 58.8. The fast end moved too: a 15:00 5K is genuinely national/
  * professional-class, not just "95th percentile of people who run 5Ks," so
  * pinning 99th-percentile-of-the-general-population at 17:00 (not 15:00)
  * is consistent with the same population re-basis, not a separate
@@ -106,7 +113,7 @@ const RUN_5K_ANCHORS: Anchor[] = [
   [1020, 925], // 17:00 — 99th percentile
   [1140, 850], // 19:00 — 95th percentile
   [1305, 725], // 21:45 — 80th percentile
-  [1800, 475], // 30:00 — 50th percentile (median)
+  [1888, 475], // 31:28 — 50th percentile (median; RunRepeat men's median)
   [2310, 250], // 38:30 — 20th percentile
   [2940, 125], // 49:00 — 5th percentile
 ];

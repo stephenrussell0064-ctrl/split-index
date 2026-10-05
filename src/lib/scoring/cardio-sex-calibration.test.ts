@@ -202,7 +202,7 @@ describe("cross-sport parity for the same-ability athlete", () => {
     own table is documented as a partial correction rather than a rebase.
   */
   const MEDIAN_PERFORMANCES: { sport: BenchmarkSport; seconds: number; label: string }[] = [
-    { sport: "run", seconds: 1800, label: "30:00 5k" },
+    { sport: "run", seconds: 1888, label: "31:28 5k" },
     { sport: "row", seconds: 483.1, label: "8:03 2k" },
     { sport: "swim", seconds: 560, label: "9:20 400m" },
     { sport: "cycle", seconds: 2402, label: "40:02 20k" },

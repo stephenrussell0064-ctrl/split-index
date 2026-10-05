@@ -48,7 +48,7 @@ describe("timeToScore — swim (general-population 400m anchors)", () => {
    */
   it("puts swim on the same ruler as run and row at matched percentiles", () => {
     // 50th percentile of each sport's own general population.
-    expect(timeToScore("swim", 560, "male")).toBe(timeToScore("run", 1800, "male"));
+    expect(timeToScore("swim", 560, "male")).toBe(timeToScore("run", 1888, "male"));
     expect(timeToScore("swim", 560, "male")).toBe(timeToScore("row", 483.1, "male"));
     // 80th percentile of each.
     expect(timeToScore("swim", 440, "male")).toBe(timeToScore("run", 1305, "male"));

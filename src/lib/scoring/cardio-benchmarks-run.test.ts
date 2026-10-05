@@ -18,13 +18,15 @@ describe("timeToScore — run (general-population recalibrated anchors)", () => 
     expect(timeToScore("run", 1020, "male")).toBeCloseTo(925, 0); // 17:00 — 99th percentile
     expect(timeToScore("run", 1140, "male")).toBeCloseTo(850, 0); // 19:00 — 95th percentile
     expect(timeToScore("run", 1305, "male")).toBeCloseTo(725, 0); // 21:45 — 80th percentile
-    expect(timeToScore("run", 1800, "male")).toBeCloseTo(475, 0); // 30:00 — 50th percentile (median)
+    expect(timeToScore("run", 1888, "male")).toBeCloseTo(475, 0); // 31:28 — 50th percentile (median)
     expect(timeToScore("run", 2310, "male")).toBeCloseTo(250, 0); // 38:30 — 20th percentile
     expect(timeToScore("run", 2940, "male")).toBeCloseTo(125, 0); // 49:00 — 5th percentile
   });
 
   it("a genuinely average pace for someone new to running (~30-32 min 5K) now scores near the middle of the scale, not deep in the low range", () => {
-    expect(timeToScore("run", 30 * 60, "male")).toBeCloseTo(475, 0);
+    // 31:28 — the RunRepeat men's median — is the operating point now; 30:00 sits just above it.
+    expect(timeToScore("run", 1888, "male")).toBeCloseTo(475, 0);
+    expect(timeToScore("run", 30 * 60, "male")).toBeGreaterThan(475);
     const score32 = timeToScore("run", 32 * 60, "male");
     expect(score32).toBeGreaterThan(350);
     expect(score32).toBeLessThan(475);
