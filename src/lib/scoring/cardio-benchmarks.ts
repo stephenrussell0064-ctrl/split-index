@@ -99,8 +99,12 @@ type Anchor = [seconds: number, score: number];
  * that steady runs scored a touch low ("10 km at 5:00/km ... 66.7 which is
  * too low"). The 80th-percentile and faster anchors are untouched — every
  * source agrees on those — so the change is confined to the middle of the
- * field, where a 50:00 10 km moves from 66.7 to 67.6 and a 60:00 one from
- * 56.4 to 58.8. The fast end moved too: a 15:00 5K is genuinely national/
+ * field. The 80th-percentile anchor then followed, 21:45 → 22:47, on the
+ * owner's decision to aim that same 50:00 10 km at 70 rather than 67.6: the
+ * sources above put the 75th percentile at ~23:00, so 22:47 for the 80th is
+ * at the generous edge of what they support rather than outside it. The 95th
+ * and 99th anchors are untouched, so a fast runner's score is unchanged;
+ * a 50:00 10 km reads 70.0, a 60:00 one 58.8, and a 21:45 5 km 75.9. The fast end moved too: a 15:00 5K is genuinely national/
  * professional-class, not just "95th percentile of people who run 5Ks," so
  * pinning 99th-percentile-of-the-general-population at 17:00 (not 15:00)
  * is consistent with the same population re-basis, not a separate
@@ -112,7 +116,7 @@ type Anchor = [seconds: number, score: number];
 const RUN_5K_ANCHORS: Anchor[] = [
   [1020, 925], // 17:00 — 99th percentile
   [1140, 850], // 19:00 — 95th percentile
-  [1305, 725], // 21:45 — 80th percentile
+  [1367, 725], // 22:47 — 80th percentile (was 21:45; see the note above)
   [1888, 475], // 31:28 — 50th percentile (median; RunRepeat men's median)
   [2310, 250], // 38:30 — 20th percentile
   [2940, 125], // 49:00 — 5th percentile

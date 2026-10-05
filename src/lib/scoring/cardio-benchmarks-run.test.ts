@@ -17,7 +17,7 @@ describe("timeToScore — run (general-population recalibrated anchors)", () => 
   it("matches its own anchor points exactly", () => {
     expect(timeToScore("run", 1020, "male")).toBeCloseTo(925, 0); // 17:00 — 99th percentile
     expect(timeToScore("run", 1140, "male")).toBeCloseTo(850, 0); // 19:00 — 95th percentile
-    expect(timeToScore("run", 1305, "male")).toBeCloseTo(725, 0); // 21:45 — 80th percentile
+    expect(timeToScore("run", 1367, "male")).toBeCloseTo(725, 0); // 22:47 — 80th percentile
     expect(timeToScore("run", 1888, "male")).toBeCloseTo(475, 0); // 31:28 — 50th percentile (median)
     expect(timeToScore("run", 2310, "male")).toBeCloseTo(250, 0); // 38:30 — 20th percentile
     expect(timeToScore("run", 2940, "male")).toBeCloseTo(125, 0); // 49:00 — 5th percentile

@@ -51,7 +51,7 @@ describe("timeToScore — swim (general-population 400m anchors)", () => {
     expect(timeToScore("swim", 560, "male")).toBe(timeToScore("run", 1888, "male"));
     expect(timeToScore("swim", 560, "male")).toBe(timeToScore("row", 483.1, "male"));
     // 80th percentile of each.
-    expect(timeToScore("swim", 440, "male")).toBe(timeToScore("run", 1305, "male"));
+    expect(timeToScore("swim", 440, "male")).toBe(timeToScore("run", 1367, "male"));
     expect(timeToScore("swim", 440, "male")).toBe(timeToScore("row", 423.4, "male"));
   });
 

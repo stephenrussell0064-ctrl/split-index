@@ -47,7 +47,7 @@ describe("timeToScore — row (general-population anchors)", () => {
     // athlete gets one Split Index across sports, so equal physiology has to
     // read as an equal score. ~45 mL/kg/min is a 21:45 5k on Daniels and a
     // ~7:03 2k on Concept2 power at an 80 kg male reference.
-    expect(timeToScore("row", 423.4, "male")).toBeCloseTo(timeToScore("run", 1305, "male"), 0);
+    expect(timeToScore("row", 423.4, "male")).toBeCloseTo(timeToScore("run", 1367, "male"), 0);
     // ...and at the median, where the old logbook table was worst: it scored
     // its median rower 475 against a runner who needed to be top-fifth.
     expect(timeToScore("row", 483.1, "male")).toBeCloseTo(timeToScore("run", 1888, "male"), 0);
