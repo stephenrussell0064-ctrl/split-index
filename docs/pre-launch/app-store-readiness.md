@@ -271,7 +271,7 @@ OAuth, social and technical data. What it **never mentions**:
 | Background location while the phone is locked | `NSLocationAlwaysAndWhenInUseUsageDescription`, `UIBackgroundModes: location` | **No** |
 | Apple HealthKit heart-rate reads | `NSHealthShareUsageDescription`, `HeartRateWorkoutPlugin.swift` | **No** |
 | HealthKit workout-session writes | `NSHealthUpdateUsageDescription` | **No** |
-| Bluetooth device connections (HR straps, Concept2 PM5) | `NSBluetoothAlwaysUsageDescription`, `src/lib/native/pm5-monitor.ts` | **No** |
+| Bluetooth device connections (HR straps) | `NSBluetoothAlwaysUsageDescription`, `src/lib/native/heart-rate.ts` | **No** |
 | Motion & step/cadence data | `NSMotionUsageDescription`, `StepCadencePlugin.swift` | **No** |
 | RevenueCat as a payment processor | `src/lib/native/billing.ts` | **No** |
 | Apple / Google as payment processors | native IAP | **No** |
@@ -376,7 +376,7 @@ For the record, 4.2 is **satisfied**, and comfortably. The native surface a revi
 
 - Background GPS tracking with an offline queue — `src/lib/native/gps-tracking.ts`,
   `src/lib/activities/offline-queue.ts`
-- BLE heart-rate straps and Concept2 PM5 rowing ergs — `src/lib/native/heart-rate.ts`, `pm5-monitor.ts`
+- BLE heart-rate straps — `src/lib/native/heart-rate.ts` (the Concept2 PM5 reader was deleted on 9 October 2026: it had no callers, and the support page, privacy policy and Bluetooth usage string all advertised it)
 - HealthKit workout session to activate the AirPods Pro heart sensor — `HeartRateWorkoutPlugin.swift`
 - CoreMotion step cadence — `StepCadencePlugin.swift`
 - WidgetKit home-screen widgets — `SplitIndexWidgets/RacePredictionWidget.swift`, `DailyTrainingWidget.swift`

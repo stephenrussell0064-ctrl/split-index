@@ -127,10 +127,10 @@ export default function PrivacyPolicyPage() {
                 </li>
                 <li>
                   <strong>Connected Bluetooth equipment (mobile apps):</strong> readings
-                  from heart rate monitors and rowing machines you choose to pair, such as
-                  heart-rate straps and compatible equipment such as the Concept2 PM5. We use Bluetooth to talk to the
-                  equipment in front of you; we do not use it to detect your location or
-                  nearby devices for any other purpose.
+                  from heart-rate monitors you choose to pair, such as chest straps and
+                  armbands that use the standard Bluetooth heart-rate profile. We use
+                  Bluetooth to talk to the device in front of you; we do not use it to
+                  detect your location or nearby devices for any other purpose.
                 </li>
                 <li>
                   <strong>Apple Health (iOS app):</strong> if you allow it, we read your

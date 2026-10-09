@@ -108,7 +108,15 @@ export const FREE_TIER_FEATURES = [
   "Current Split Index & per-workout cardio index",
   "Last 7 days on dashboard",
   "Rules-based training snippet",
-  "Manual entry + CSV import",
+  /*
+   * Was "Manual entry + CSV import" until 9 October 2026. No importer, route
+   * or file input ever existed behind the second half, and this list is
+   * rendered verbatim on the billing screen, the settings page and the
+   * pricing CTA — so it was a promise with nothing behind it. The csv_import
+   * flag above stays reserved for the file-import phase of the logging-effort
+   * plan; put the words back only when a parser ships.
+   */
+  "Manual entry",
   "Country leaderboard preview",
 ] as const;
 

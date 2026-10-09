@@ -92,8 +92,7 @@
 	  Two modes, both of which this app actually uses.
 
 	  `location` for GPS recording with the screen locked, and
-	  `bluetooth-central` for a chest strap or a Concept2 PM5 during that same
-	  session. Without the BLE mode iOS silently stops delivering notifications
+	  `bluetooth-central` for a chest strap during that same session. Without the BLE mode iOS silently stops delivering notifications
 	  once the screen locks, and the run is saved with an average heart rate
 	  that looks plausible and is wrong — the worst failure shape available.
 
@@ -114,8 +113,7 @@
 	  Two modes, both of which this app actually uses.
 
 	  `location` for GPS recording with the screen locked, and
-	  `bluetooth-central` for a chest strap or a Concept2 PM5 during that same
-	  session. Without the BLE mode iOS silently stops delivering notifications
+	  `bluetooth-central` for a chest strap during that same session. Without the BLE mode iOS silently stops delivering notifications
 	  once the screen locks, and the run is saved with an average heart rate
 	  that looks plausible and is wrong — the worst failure shape available.
 
@@ -157,7 +155,7 @@
 		<string>audio</string>
 	</array>
 	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>Split Index connects to your heart rate monitor or rowing machine (Garmin, Polar, Concept2, or other standard Bluetooth devices) during a session.</string>
+	<string>Split Index connects to your heart rate monitor (Garmin, Polar, or any strap using the standard Bluetooth heart-rate profile) during a session.</string>
 	<key>NSHealthShareUsageDescription</key>
 	<string>Split Index reads your heart rate from Apple Health (including AirPods Pro) during a run.</string>
 	<key>NSHealthUpdateUsageDescription</key>

@@ -250,21 +250,19 @@ Located in `src/lib/scoring/engine.ts`. Key formulas:
 - **Fatigue**: Acute:Chronic Workload Ratio (ACWR)
 - **Recovery**: Derived from fatigue, ACWR, and rest days
 
-## Integrations & background sync
+## Data sources & background jobs
 
-OAuth and CSV import live under **Settings → Integrations**. GPX/TCX file upload uses `POST /api/integrations/import/file`.
+There is no third-party import. Every activity is either typed in (`/gym/log`, `/cardio/log`, `/activities/new`) or recorded by the in-app GPS run, which can also take live heart rate from a Bluetooth strap or, on iOS, from AirPods Pro via a HealthKit workout session. Apple Health import, one-tap prescribed gym logging and FIT/TCX/GPX file import are planned — see the logging-effort plan. The `activity_source` enum already carries `apple_health` and `file` for that work; nothing writes them yet.
 
-**Free tier:** manual logging + CSV import. **Premium:** Strava, Garmin, and all OAuth providers with background auto-sync.
-
-For production cron jobs, set `CRON_SECRET` and configure Vercel cron (daily):
+For production cron jobs, set `CRON_SECRET` and configure Vercel cron:
 
 ```bash
-# Integration auto-sync
-GET /api/integrations/sync?cron=1
-Authorization: Bearer $CRON_SECRET
-
 # Leaderboard rank refresh (weekly / monthly / all-time)
 GET /api/cron/leaderboard
+Authorization: Bearer $CRON_SECRET
+
+# Hybrid Plan weekly reports
+GET /api/cron/hybrid-reports
 Authorization: Bearer $CRON_SECRET
 ```
 

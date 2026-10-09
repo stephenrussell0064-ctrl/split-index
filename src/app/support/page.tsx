@@ -129,9 +129,9 @@ export default function SupportPage() {
                   run. iOS Settings → Split Index → Location.
                 </li>
                 <li>
-                  <strong>Heart rate straps and rowing machines:</strong> we connect
-                  to standard Bluetooth devices, including Garmin and Polar straps
-                  and the Concept2 PM5. Wake the device and make sure no other app
+                  <strong>Heart rate straps:</strong> we connect to any monitor that
+                  uses the standard Bluetooth heart-rate profile, including Garmin
+                  and Polar straps. Wake the device and make sure no other app
                   holds the connection — Bluetooth sensors pair with one app at a
                   time.
                 </li>

@@ -94,7 +94,7 @@ predates manifest support, upgrade it, or the upload fails on the SDK rather tha
   premium account, or they cannot reach the paid surfaces.
 - **App Review notes** — say where the native features are, or Guideline 4.2 becomes a question:
   background GPS tracking with the screen locked, Live Activities, the home-screen widget, Bluetooth
-  heart-rate straps and Concept2 PM5 support, HealthKit. Also state plainly that the app loads its UI
+  heart-rate straps, HealthKit. Also state plainly that the app loads its UI
   from `splitindex.co.uk` inside a Capacitor shell.
 - **Screenshots** for every required size, showing real data.
 - **Age rating** — answer the questionnaire honestly about user-generated content and social features.
