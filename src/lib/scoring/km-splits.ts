@@ -2,6 +2,7 @@ import {
   cumulativeTrackDistances,
   movingMillis,
   type GpsPoint,
+  type HrReading,
   type PauseInterval,
 } from "@/lib/scoring/gps-track";
 
@@ -22,6 +23,12 @@ export interface KilometreSplit {
   splitSeconds: number;
   /** Moving seconds from the start of the run to the end of this kilometre. */
   elapsedSeconds: number;
+  /**
+   * Mean heart rate over this kilometre, from the readings timestamped inside
+   * it. Null when no monitor was connected or nothing was read during the
+   * kilometre — never zero, which is a number a synthesiser would read out.
+   */
+  avgHr: number | null;
 }
 
 const METERS_PER_SPLIT = 1000;
@@ -44,11 +51,14 @@ const METERS_PER_SPLIT = 1000;
 export function kilometreSplits(
   points: GpsPoint[],
   pauses: readonly PauseInterval[],
-  startedAt: number
+  startedAt: number,
+  /** Heart-rate readings from the run so far, in any order. Optional: a run without a monitor has none. */
+  hrReadings: readonly HrReading[] = []
 ): KilometreSplit[] {
   const cumulative = cumulativeTrackDistances(points, pauses);
   const splits: KilometreSplit[] = [];
   let previousElapsed = 0;
+  let previousCrossedAt = startedAt;
 
   for (let i = 1; i < cumulative.length; i++) {
     const prev = cumulative[i - 1];
@@ -65,13 +75,33 @@ export function kilometreSplits(
         km: splits.length + 1,
         splitSeconds: elapsedSeconds - previousElapsed,
         elapsedSeconds,
+        avgHr: averageHrBetween(hrReadings, previousCrossedAt, crossedAt),
       });
       previousElapsed = elapsedSeconds;
+      previousCrossedAt = crossedAt;
       boundary += METERS_PER_SPLIT;
     }
   }
 
   return splits;
+}
+
+/**
+ * Mean of the readings whose timestamp falls inside (from, to]. Wall-clock
+ * bounds, not moving-time bounds: a reading taken during a pause inside the
+ * kilometre still describes the athlete's heart during that kilometre, and
+ * resting at a crossing is part of what the number should reflect.
+ */
+function averageHrBetween(readings: readonly HrReading[], from: number, to: number): number | null {
+  let sum = 0;
+  let count = 0;
+  for (const r of readings) {
+    if (r.time > from && r.time <= to && r.bpm > 0) {
+      sum += r.bpm;
+      count++;
+    }
+  }
+  return count > 0 ? Math.round(sum / count) : null;
 }
 
 /** "5 minutes 12 seconds", "1 hour 3 minutes 40 seconds", "48 seconds" — words, because a synthesiser reads "5:12" as five-twelve or as a time of day. */
@@ -92,10 +122,23 @@ export function spokenDuration(totalSeconds: number): string {
  * how long the last one took, and the running total. The first kilometre's
  * split IS the total, so it is said once rather than twice.
  */
-export function splitAnnouncement(split: KilometreSplit): string {
+export function splitAnnouncement(
+  split: KilometreSplit,
+  options: {
+    /**
+     * Say the kilometre's average heart rate after the times. Off by default
+     * so the existing callouts are unchanged; the GPS screen offers it as its
+     * own switch, because a number read into your ear every kilometre is
+     * something you choose, not something a connected strap imposes.
+     */
+    includeHeartRate?: boolean;
+  } = {}
+): string {
   const distance = `${split.km} ${split.km === 1 ? "kilometre" : "kilometres"}`;
+  const heartRate =
+    options.includeHeartRate && split.avgHr != null ? ` Average heart rate ${split.avgHr}.` : "";
   if (split.km === 1) {
-    return `${distance}. ${spokenDuration(split.splitSeconds)}.`;
+    return `${distance}. ${spokenDuration(split.splitSeconds)}.${heartRate}`;
   }
-  return `${distance}. Last kilometre ${spokenDuration(split.splitSeconds)}. Total ${spokenDuration(split.elapsedSeconds)}.`;
+  return `${distance}. Last kilometre ${spokenDuration(split.splitSeconds)}. Total ${spokenDuration(split.elapsedSeconds)}.${heartRate}`;
 }

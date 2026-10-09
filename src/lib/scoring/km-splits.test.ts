@@ -143,14 +143,54 @@ describe("spokenDuration", () => {
 
 describe("splitAnnouncement", () => {
   it("says the first kilometre's time once, since it is also the total", () => {
-    expect(splitAnnouncement({ km: 1, splitSeconds: 312, elapsedSeconds: 312 })).toBe(
+    expect(splitAnnouncement({ km: 1, splitSeconds: 312, elapsedSeconds: 312, avgHr: null })).toBe(
       "1 kilometre. 5 minutes 12 seconds."
     );
   });
 
   it("says how many kilometres are in, the last split, and the total", () => {
-    expect(splitAnnouncement({ km: 3, splitSeconds: 305, elapsedSeconds: 927 })).toBe(
+    expect(splitAnnouncement({ km: 3, splitSeconds: 305, elapsedSeconds: 927, avgHr: null })).toBe(
       "3 kilometres. Last kilometre 5 minutes 5 seconds. Total 15 minutes 27 seconds."
     );
+  });
+
+  it("adds the kilometre's average heart rate only when asked, and only when there is one", () => {
+    const split = { km: 2, splitSeconds: 300, elapsedSeconds: 600, avgHr: 158 };
+    expect(splitAnnouncement(split)).toBe(
+      "2 kilometres. Last kilometre 5 minutes. Total 10 minutes."
+    );
+    expect(splitAnnouncement(split, { includeHeartRate: true })).toBe(
+      "2 kilometres. Last kilometre 5 minutes. Total 10 minutes. Average heart rate 158."
+    );
+    expect(splitAnnouncement({ ...split, avgHr: null }, { includeHeartRate: true })).toBe(
+      "2 kilometres. Last kilometre 5 minutes. Total 10 minutes."
+    );
+    expect(splitAnnouncement({ km: 1, splitSeconds: 312, elapsedSeconds: 312, avgHr: 141 }, { includeHeartRate: true })).toBe(
+      "1 kilometre. 5 minutes 12 seconds. Average heart rate 141."
+    );
+  });
+});
+
+describe("heart rate per kilometre", () => {
+  it("averages the readings timestamped inside each kilometre, and is null where there are none", () => {
+    // 2.5km at 5:00/km, a reading every 30s: 140s for the first kilometre,
+    // 160s for the second, nothing after.
+    const points = track(26, 30);
+    const readings = Array.from({ length: 20 }, (_, i) => ({
+      time: i * 30_000 + 15_000,
+      bpm: i < 10 ? 140 : 160,
+    }));
+    const splits = kilometreSplits(points, [], 0, readings);
+    expect(splits.map((s) => s.avgHr)).toEqual([140, 160]);
+    expect(kilometreSplits(points, [], 0).map((s) => s.avgHr)).toEqual([null, null]);
+  });
+
+  it("ignores readings of zero, which a strap sends while it is still settling", () => {
+    const readings = [
+      { time: 60_000, bpm: 0 },
+      { time: 120_000, bpm: 150 },
+      { time: 180_000, bpm: 154 },
+    ];
+    expect(kilometreSplits(track(12, 30), [], 0, readings)[0].avgHr).toBe(152);
   });
 });

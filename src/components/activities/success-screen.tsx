@@ -88,13 +88,25 @@ export function SuccessScreen({
   isPremium = false,
   skipRedirect = false,
   redirectPath = "/dashboard",
+  redirectLabel,
+  redirectButtonLabel,
 }: {
   result: ScoreResultSummary;
   onLogAnother: () => void;
   isPremium?: boolean;
   skipRedirect?: boolean;
   redirectPath?: string;
+  /** "Taking you to {redirectLabel}…" — derived from the path for the three tab roots, required for anything else to read sensibly. */
+  redirectLabel?: string;
+  /** The button that goes there now. */
+  redirectButtonLabel?: string;
 }) {
+  const destinationLabel =
+    redirectLabel ??
+    (redirectPath === "/gym" ? "The Lab" : redirectPath === "/cardio" ? "The Engine" : "your dashboard");
+  const destinationButton =
+    redirectButtonLabel ??
+    (redirectPath === "/gym" ? "Open The Lab" : redirectPath === "/cardio" ? "Open The Engine" : "View dashboard");
   const router = useRouter();
   const sportIndex = useCountUp(result.sportIndex, 0.55);
   const isGym = result.sport === "gym";
@@ -268,17 +280,11 @@ export function SuccessScreen({
           className="mt-8 space-y-4 text-center"
         >
           {!skipRedirect && (
-            <p className="text-xs text-muted">
-              Taking you to {redirectPath === "/gym" ? "The Lab" : redirectPath === "/cardio" ? "The Engine" : "your dashboard"}…
-            </p>
+            <p className="text-xs text-muted">Taking you to {destinationLabel}…</p>
           )}
           <div className="flex justify-center gap-3">
             <Button variant="secondary" onClick={() => router.push(redirectPath)}>
-              {redirectPath === "/gym"
-                ? "Open The Lab"
-                : redirectPath === "/cardio"
-                  ? "Open The Engine"
-                  : "View dashboard"}
+              {destinationButton}
             </Button>
             {!skipRedirect && (
               <Button variant="ghost" onClick={onLogAnother}>

@@ -205,6 +205,32 @@ function writeVoiceSplitsPreference(enabled: boolean): void {
   for (const listener of voiceSplitsListeners) listener();
 }
 
+/**
+ * Whether the split callout also reads the kilometre's average heart rate
+ * (owner, 9 Oct 2026: "the option to have the average heart rate of the km
+ * called out with the split"). Its own switch, remembered the same way as
+ * the splits themselves; it only has an effect while a monitor is connected
+ * and the splits are being read.
+ */
+const VOICE_HR_KEY = "gps-voice-hr";
+
+function readVoiceHrPreference(): boolean {
+  try {
+    return window.localStorage.getItem(VOICE_HR_KEY) !== "off";
+  } catch {
+    return true;
+  }
+}
+
+function writeVoiceHrPreference(enabled: boolean): void {
+  try {
+    window.localStorage.setItem(VOICE_HR_KEY, enabled ? "on" : "off");
+  } catch {
+    // As above.
+  }
+  for (const listener of voiceSplitsListeners) listener();
+}
+
 type Phase = "idle" | "tracking" | "reviewing" | "overview";
 
 /**
@@ -267,6 +293,8 @@ function GpsRunScreen() {
   const [error, setError] = useState("");
   const [overviewResult, setOverviewResult] = useState<ScoreResultSummary | null>(null);
   const [overviewIsPremium, setOverviewIsPremium] = useState(false);
+  /** The row /api/activities just wrote — where the score screen sends the athlete next. */
+  const [savedActivityId, setSavedActivityId] = useState<string | null>(null);
   const [profile, setProfile] = useState<{
     restingHr: number | null;
     maxHr: number | null;
@@ -291,6 +319,7 @@ function GpsRunScreen() {
     readVoiceSplitsPreference,
     serverVoiceSplitsPreference
   );
+  const voiceHr = useSyncExternalStore(subscribeVoiceSplits, readVoiceHrPreference, serverVoiceSplitsPreference);
   /** The instant a still-running clock would have to have started from to show the correct *moving* time — what the lock-screen Live Activity ticks from, so paused seconds don't accumulate there either. */
   const [liveClockStartMs, setLiveClockStartMs] = useState(0);
 
@@ -381,7 +410,12 @@ function GpsRunScreen() {
 
   /** Every whole kilometre completed so far — what the voice callouts read from, and what the "Last km" tile shows. Same distance the Distance tile is built on, so the two can never disagree about when a kilometre finished. */
   const completedSplits = useMemo(
-    () => (phase === "tracking" ? kilometreSplits(livePoints, pauses, startedAtRef.current) : []),
+    () => (phase === "tracking" ? kilometreSplits(livePoints, pauses, startedAtRef.current, hrReadings) : []),
+    // hrReadings is NOT a dependency on purpose: a split is cut when a fix
+    // crosses a kilometre, and the readings up to that instant are what it
+    // averages. Recomputing on every heartbeat would rebuild every split
+    // once a second for no change in any of them.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [phase, livePoints, pauses]
   );
   const lastSplit = completedSplits.length > 0 ? completedSplits[completedSplits.length - 1] : null;
@@ -402,8 +436,12 @@ function GpsRunScreen() {
     const pending = completedSplits.length > announcedSplitsRef.current;
     announcedSplitsRef.current = completedSplits.length;
     if (!voiceSplits || !pending) return;
-    void speak(splitAnnouncement(completedSplits[completedSplits.length - 1]));
-  }, [phase, paused, completedSplits, voiceSplits]);
+    void speak(
+      splitAnnouncement(completedSplits[completedSplits.length - 1], {
+        includeHeartRate: voiceHr && hrSource !== null,
+      })
+    );
+  }, [phase, paused, completedSplits, voiceSplits, voiceHr, hrSource]);
 
   /** Current Pace — a rolling last-60-seconds-of-*running* window, distinct from Avg Split above. Falls back to the whole-run average until there's at least 60s/two GPS fixes of recent data to compute a genuine rolling number from. */
   const currentPaceSecondsPerKm = useMemo(() => {
@@ -773,6 +811,7 @@ function GpsRunScreen() {
   function resetToIdle() {
     setPhase("idle");
     setSummary(null);
+    setSavedActivityId(null);
     setLivePoints([]);
     setSegments([]);
     setSegmentType("easy");
@@ -869,6 +908,19 @@ function GpsRunScreen() {
       }
       setOverviewIsPremium(!data.premium_required);
       setOverviewResult(buildOverviewResult(data));
+      /*
+        WHERE THE SCORE SCREEN GOES NEXT. It used to send the athlete back to
+        The Engine, and the run's own page — map, splits, heart-rate zones,
+        best efforts — was something to find in the logbook afterwards
+        (owner: "take you to the screen which provides all the analysis and
+        breakdown of the run straight away"). The save response carries the
+        new activity's id, so the score screen now lands on that page, and
+        its button says so.
+      */
+      // `activity.id` on a fresh save; `activity_id` when the route recognised a
+      // resubmission of a run it had already stored and returned that row.
+      const activityId = (data.activity as { id?: string } | undefined)?.id ?? data.activity_id;
+      setSavedActivityId(typeof activityId === "string" ? activityId : null);
       setPhase("overview");
     } catch {
       setError("Could not save this run. Please try again.");
@@ -905,7 +957,9 @@ function GpsRunScreen() {
         result={overviewResult}
         onLogAnother={resetToIdle}
         isPremium={overviewIsPremium}
-        redirectPath="/cardio"
+        redirectPath={savedActivityId ? `/activities/${savedActivityId}` : "/cardio"}
+        redirectLabel={savedActivityId ? "the full breakdown of this run" : undefined}
+        redirectButtonLabel={savedActivityId ? "See the full breakdown" : undefined}
       />
     );
   }
@@ -1010,7 +1064,11 @@ function GpsRunScreen() {
                   voice callout just read, kept on screen for a glance-check
                   when it was missed under traffic noise. */}
               {lastSplit && (
-                <StatTile tone="accent" label={`Km ${lastSplit.km}`} value={formatPaceOrSpeed(sport, lastSplit.splitSeconds)} />
+                <StatTile
+                  tone="accent"
+                  label={lastSplit.avgHr != null ? `Km ${lastSplit.km} · ${lastSplit.avgHr} bpm` : `Km ${lastSplit.km}`}
+                  value={formatPaceOrSpeed(sport, lastSplit.splitSeconds)}
+                />
               )}
               {liveBpm !== null && <StatTile tone="danger" icon={HeartPulse} label="Heart rate" value={liveBpm} />}
               {liveElevationGainMeters !== null && (
@@ -1359,6 +1417,36 @@ function GpsRunScreen() {
                     </span>
                   </button>
                 </li>
+
+                {voiceSplits && (
+                  <li className="py-3 first:pt-0 last:pb-0">
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={voiceHr}
+                      onClick={() => writeVoiceHrPreference(!voiceHr)}
+                      className="flex w-full items-center gap-3 text-left"
+                    >
+                      <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${voiceHr ? "bg-danger/15 text-danger" : "bg-white/[0.06] text-muted"}`}>
+                        <HeartPulse className="h-5 w-5" aria-hidden fill={voiceHr ? "currentColor" : "none"} />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm font-semibold">Add heart rate to the callout</span>
+                        <span className="block text-xs text-muted">
+                          {hrDeviceName
+                            ? "Each kilometre's average heart rate, read after the split."
+                            : "Needs a heart-rate source below — then each kilometre's average is read after the split."}
+                        </span>
+                      </span>
+                      <span
+                        className={`flex h-7 w-12 shrink-0 items-center rounded-full p-0.5 transition-colors ${voiceHr ? "bg-accent" : "bg-white/20"}`}
+                        aria-hidden
+                      >
+                        <span className={`h-6 w-6 rounded-full bg-white shadow transition-transform ${voiceHr ? "translate-x-5" : "translate-x-0"}`} />
+                      </span>
+                    </button>
+                  </li>
+                )}
 
                 <li className="py-3 first:pt-0 last:pb-0">
                   <div className="flex items-start gap-3">
