@@ -16,6 +16,7 @@ removing it.
 | `pre/phase0-false-claims` | `80167f5b`, 9 Oct 2026 | Everything in this plan |
 | `pre/phase2-one-tap-gym` | `77ba6997`, 9 Oct 2026 | Phase 2 and later (keeps Phase 0) |
 | `pre/phase1-apple-health` | `a3a7e9a9`, 10 Oct 2026 | Phase 1 (keeps Phases 0 and 2) |
+| `pre/phase3-file-import` | `14e548f6`, 10 Oct 2026 | Phase 3 (keeps Phases 0, 2 and 1) |
 
 Reset main to a tag only as a last resort — it discards every commit after it,
 including unrelated ones. Prefer `git revert` of the specific commits listed
@@ -115,3 +116,36 @@ is written into `docs/MASTER-BRIEF.md` §9 in the same branch.
 - The app's own GPS run (which starts a HealthKit workout session for the
   AirPods sensor) is filtered out by bundle id in Swift and again on the
   server.
+
+## Phase 3: GPX, TCX and FIT file import
+
+Branch `worktree-phase3-file-import`, tag `pre/phase3-file-import` on
+`14e548f6`. No migration: `activities.source = 'file'` has existed since 005.
+
+| Commit | What it adds | Undo |
+| --- | --- | --- |
+| Parsers | `src/lib/import/parsers.ts` and its test; `@garmin/fitsdk` added to `package.json` for FIT. GPX and TCX are read by regex like `gpx-elevation.ts`. Pure | `git revert`; the dependency goes with it |
+| Route and schema | `POST /api/activities/import` returns a preview and writes nothing; the activity schema and `ActivityFormData` accept `source: "file"`; the activity page shows the map and analysis for a file import as it does for a GPS run | `git revert`. A `source = 'file'` row already saved keeps its streams but loses the analysis panel until the page branch is back |
+| Page and copy | `/cardio/import` and `components/activities/file-import.tsx`; the "Import a file" button on `/cardio`; `csv_import` renamed `file_import` and read by the route; the free-tier line says "Manual entry + file import (GPX, TCX, FIT)"; README | `git revert`. Change the free-tier line back to "Manual entry" in the same revert, or the billing screen promises a page that is gone |
+| Docs | This section; the plan doc's Phase 3 status | `git revert` |
+
+### What Phase 3 deliberately does not do
+
+- No bulk history. Files dated more than 90 days ago are refused with a
+  message that says so. A year of imports in one afternoon would reshape
+  ACWR and the recovery baseline overnight.
+- No CSV. Nobody exports a run as CSV; the three formats are what watches
+  and apps write. The old flag name was wrong, not the feature.
+- No gym. A FIT strength file carries no sets the form could use; the
+  parser reads it as a session with no sport and the page asks, and the
+  athlete can only pick an endurance sport.
+- No offline queue. A file upload needs a connection; the save is a plain
+  fetch carrying the file's hash as its idempotency key.
+
+### Behaviour that is unchanged for everyone not using it
+
+- Nothing else sends `source: "file"`, so every other save is as before.
+- The same file uploaded twice answers with the first session, through the
+  activities route's existing `client_request_id` dedup.
+- A second session of the same sport within ten minutes is warned about,
+  not blocked: the athlete may genuinely have two.
