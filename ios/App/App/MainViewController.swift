@@ -13,6 +13,7 @@ class MainViewController: CAPBridgeViewController {
     override func capacitorDidLoad() {
         bridge?.registerPluginInstance(HeartRateWorkoutPlugin())
         bridge?.registerPluginInstance(StepCadencePlugin())
+        bridge?.registerPluginInstance(HealthImportPlugin())
         bridge?.registerPluginInstance(LiveActivityPlugin())
         bridge?.registerPluginInstance(RacePredictionsPlugin())
         bridge?.registerPluginInstance(DailyTrainingPlugin())
