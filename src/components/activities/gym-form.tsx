@@ -279,6 +279,22 @@ export function GymExercises({
 
   return (
     <div className="space-y-3">
+      {/*
+        Opened from a Hybrid Plan session. Says so once, at the top, because
+        every set below arrives already filled in and the athlete needs to
+        know those numbers are the PLAN's — the one deliberate exception to
+        the blank-start rule (see createSetRow in form-state.ts), made honest
+        by naming its source. Each filled set carries its own mark too.
+      */}
+      {state.hpeSessionId && (
+        <div className="rounded-2xl border border-gym-accent/30 bg-gym-accent/[0.06] px-4 py-3">
+          <p className="micro-label text-gym-accent">From your Hybrid Plan</p>
+          <p className="mt-1 text-sm leading-relaxed text-foreground/90">
+            Every set is filled in as prescribed. Change any that differed, then save — sets you
+            leave alone are logged as written.
+          </p>
+        </div>
+      )}
       {/* Session bar — bodyweight (needed for every × bodyweight score) and
           the running totals.
 
@@ -1052,6 +1068,21 @@ function ExerciseRow({
               Nothing in this row appears or disappears as values are typed.
               That is the point of it. */}
           {row.sets.map((set, setIndex) => {
+            /*
+              Still exactly what it was filled in with — by the plan, or by
+              the athlete's own last set. The set-number cell carries the
+              mark rather than a new cell, because the sm layout is a fixed
+              grid and an extra element would shift every column.
+            */
+            const asFilled =
+              set.prescribed != null &&
+              set.weight.trim() === set.prescribed.weight.trim() &&
+              set.reps.trim() === set.prescribed.reps.trim() &&
+              (set.durationSeconds ?? "").trim() === (set.prescribed.durationSeconds ?? "").trim();
+            const filledTitle =
+              set.prescribed?.source === "history"
+                ? "Filled in from your last logged set of this exercise. Edit it if today differed."
+                : "Filled in from your plan's prescription. Edit it if today differed.";
             const countInput =
               tracking === "time" ? (
                 <UnitInput
@@ -1096,12 +1127,20 @@ function ExerciseRow({
               >
                 <div className="flex items-center gap-2 sm:contents">
                   <span
+                    title={asFilled ? filledTitle : undefined}
+                    aria-label={
+                      asFilled
+                        ? `Set ${setIndex + 1}, ${set.prescribed?.source === "history" ? "as last time" : "as prescribed"}`
+                        : undefined
+                    }
                     className={cn(
-                      "w-6 shrink-0 text-center text-xs font-semibold tabular-nums text-muted/70 sm:row-start-1 sm:w-auto",
+                      "w-6 shrink-0 text-center text-xs font-semibold tabular-nums sm:row-start-1 sm:w-auto",
+                      asFilled ? "text-gym-accent" : "text-muted/70",
                       SM_COL[col.idx]
                     )}
                   >
                     {setIndex + 1}
+                    {asFilled && <span aria-hidden className="ml-0.5 text-[9px] align-top">●</span>}
                   </span>
                   {!isBodyweightOnly && (
                     <UnitInput
