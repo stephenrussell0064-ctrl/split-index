@@ -28,6 +28,25 @@ export interface SetRowState {
   durationSeconds?: string;
   /** Distance covered, for `tracking: "distance"` exercises (carries, sled work). Optional for the same reason as durationSeconds. */
   distanceMeters?: string;
+  /**
+   * What this set was FILLED IN WITH before the athlete touched it, when it
+   * was filled in at all — by the Hybrid Plan's prescription ("plan") or by
+   * the athlete's own last logged set of the exercise ("history").
+   *
+   * This is the one deliberate exception to createSetRow's blank-start rule,
+   * and it is honest about itself: the values are shown with a badge naming
+   * their source, the athlete chose to open the form from the prescription,
+   * and the set still counts as THEIRS at submit — a set left exactly as
+   * prescribed is "accepted", one changed is "edited", and both numbers go
+   * to the server (see prescribedSetsSummary). Absent on every set the
+   * athlete typed from nothing.
+   */
+  prescribed?: {
+    weight: string;
+    reps: string;
+    durationSeconds?: string;
+    source: "plan" | "history";
+  };
 }
 
 export interface ExerciseRowState {
@@ -129,6 +148,13 @@ export interface WorkoutFormState {
   fartlekOnDistance: string; // meters
   fartlekOnSeconds: string;
   fartlekOnHr: string; // optional, on-effort avg HR
+  /**
+   * The `hpe_sessions` row this form was opened from (`/gym/log?hpeSession=`),
+   * so the saved activity can be linked back to the prescription. Optional:
+   * absent on every form not opened from the plan, and on every draft saved
+   * before it existed.
+   */
+  hpeSessionId?: string | null;
 }
 
 /** Payload sent to POST/PATCH /api/activities. Extensions beyond ActivityFormData. */
@@ -574,6 +600,25 @@ export function restoreDraftState(
                   // existed — default blank rather than dropping the set.
                   durationSeconds: str(s.durationSeconds, ""),
                   distanceMeters: str(s.distanceMeters, ""),
+                  // A draft of a prescribed session keeps knowing what it was
+                  // filled in with, or the accepted/edited count would reset
+                  // to "all edited" on every reopen.
+                  ...(s.prescribed && typeof s.prescribed === "object"
+                    ? {
+                        prescribed: {
+                          weight: str((s.prescribed as Record<string, unknown>).weight, ""),
+                          reps: str((s.prescribed as Record<string, unknown>).reps, ""),
+                          durationSeconds: str(
+                            (s.prescribed as Record<string, unknown>).durationSeconds,
+                            ""
+                          ),
+                          source:
+                            (s.prescribed as Record<string, unknown>).source === "history"
+                              ? ("history" as const)
+                              : ("plan" as const),
+                        },
+                      }
+                    : {}),
                 }))
             : [
                 {
@@ -661,6 +706,8 @@ export function restoreDraftState(
               : [],
           }))
       : base.intervalBlocks,
+    // Only ever a uuid string the loader set; anything else reads as "not from the plan".
+    hpeSessionId: typeof d.hpeSessionId === "string" && d.hpeSessionId ? d.hpeSessionId : null,
     fartlekOnDistance: str(d.fartlekOnDistance, base.fartlekOnDistance),
     fartlekOnSeconds: str(d.fartlekOnSeconds, base.fartlekOnSeconds),
     fartlekOnHr: str(d.fartlekOnHr, base.fartlekOnHr),
@@ -1063,6 +1110,42 @@ const payloadSchema = z.object({
 interface ValidationResult {
   errors: FormErrors;
   payload: ActivityPayload | null;
+}
+
+/**
+ * How much of a prefilled session was logged as filled in.
+ *
+ * A set is ACCEPTED when its load and count are exactly what it was filled in
+ * with (string-equal after trimming, because the fields are strings and "100"
+ * and "100.0" are a change the athlete made). Everything else that has an
+ * entry is EDITED — including a set the athlete added, which was never
+ * prescribed at all. Sets that were filled in and then cleared count as
+ * neither: an empty set is skipped at submit, so it is not logged data.
+ *
+ * Null when nothing in the session was prefilled, so a hand-typed session
+ * sends no counts at all rather than "0 accepted, 12 edited".
+ */
+export function prescribedSetsSummary(
+  state: WorkoutFormState
+): { accepted: number; edited: number } | null {
+  let prefilledAnywhere = false;
+  let accepted = 0;
+  let edited = 0;
+  for (const row of state.exercises) {
+    for (const set of row.sets) {
+      if (set.prescribed) prefilledAnywhere = true;
+      if (!setHasEntry(set)) continue;
+      const p = set.prescribed;
+      const untouched =
+        p != null &&
+        set.weight.trim() === p.weight.trim() &&
+        set.reps.trim() === p.reps.trim() &&
+        (set.durationSeconds ?? "").trim() === (p.durationSeconds ?? "").trim();
+      if (untouched) accepted += 1;
+      else edited += 1;
+    }
+  }
+  return prefilledAnywhere ? { accepted, edited } : null;
 }
 
 export function validateAndBuildPayload(
@@ -1510,6 +1593,16 @@ export function validateAndBuildPayload(
     exercises,
     bodyweight_kg: bodyweight,
     exercise_notes: exerciseNotes,
+    // Both only for a gym session that was opened from a prescription or
+    // filled from history; a hand-typed session carries neither key, so the
+    // request body is byte-identical to what it was before phase 2.
+    ...(sport === "gym" && state.hpeSessionId ? { hpe_session_id: state.hpeSessionId } : {}),
+    ...(sport === "gym"
+      ? (() => {
+          const summary = prescribedSetsSummary(state);
+          return summary ? { prescribed_sets: summary } : {};
+        })()
+      : {}),
   };
 
   // Structural safety net — strips nothing, just guarantees shape.

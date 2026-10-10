@@ -659,3 +659,117 @@ describe("POST /api/activities — route privacy zone", () => {
     });
   });
 });
+
+/**
+ * One-tap prescribed logging (logging-effort plan, phase 2).
+ *
+ * A gym session may name the Hybrid Plan session it is the record of. The
+ * route must (a) refuse a session that is not the athlete's, with the same
+ * answer a missing one gets, (b) write the link and the set counts, (c) record
+ * the plan's own feedback row only when nothing was edited, and (d) still save
+ * the session on a database that has not applied migration 088.
+ */
+describe("POST /api/activities — a session logged from a Hybrid Plan prescription", () => {
+  const SESSION_ID = "11111111-2222-4333-8444-555555555555";
+
+  function prescribedBody(prescribed: { accepted: number; edited: number } = { accepted: 2, edited: 0 }) {
+    return { ...gymSessionBody(), hpe_session_id: SESSION_ID, prescribed_sets: prescribed };
+  }
+
+  function ownedSession(): Record<string, QueryResult> {
+    return {
+      ...happyPathResults(),
+      "hpe_sessions:select": {
+        data: { id: SESSION_ID, hpe_plans: { user_id: USER_ID } },
+        error: null,
+      },
+    };
+  }
+
+  function activityInsert(calls: RecordedCall[]) {
+    return calls.filter((c) => c.table === "activities" && c.op === "insert");
+  }
+
+  it("refuses a session that belongs to someone else, before writing anything", async () => {
+    const { response, calls } = await postWith(
+      {
+        ...happyPathResults(),
+        "hpe_sessions:select": {
+          data: { id: SESSION_ID, hpe_plans: { user_id: "someone-else" } },
+          error: null,
+        },
+      },
+      prescribedBody()
+    );
+    expect(response.status).toBe(404);
+    expect(activityInsert(calls)).toHaveLength(0);
+  });
+
+  it("refuses a session that does not exist with the same answer", async () => {
+    const { response } = await postWith(
+      { ...happyPathResults(), "hpe_sessions:select": { data: null, error: null } },
+      prescribedBody()
+    );
+    expect(response.status).toBe(404);
+  });
+
+  it("writes the link and the set counts", async () => {
+    const { response, calls } = await postWith(ownedSession(), prescribedBody({ accepted: 1, edited: 1 }));
+    expect(response.status).toBe(200);
+    const row = activityInsert(calls)[0].payload as Record<string, unknown>;
+    expect(row.hpe_session_id).toBe(SESSION_ID);
+    expect((row.metadata as Record<string, unknown>).prescribed_sets).toEqual({ accepted: 1, edited: 1 });
+  });
+
+  it("records the plan's feedback row when every set was logged as prescribed", async () => {
+    const { calls } = await postWith(ownedSession(), prescribedBody({ accepted: 2, edited: 0 }));
+    const feedback = calls.filter((c) => c.table === "hpe_session_feedback" && c.op === "upsert");
+    expect(feedback).toHaveLength(1);
+    expect(feedback[0].payload).toMatchObject({
+      user_id: USER_ID,
+      session_id: SESSION_ID,
+      completed: true,
+      met_prescription: true,
+    });
+  });
+
+  it("leaves the feedback to the athlete when any set was edited", async () => {
+    // 5 reps instead of 4 is still inside a 3-5 prescription; the route does
+    // not know, so it says nothing rather than something wrong.
+    const { response, calls } = await postWith(ownedSession(), prescribedBody({ accepted: 1, edited: 1 }));
+    expect(response.status).toBe(200);
+    expect(calls.filter((c) => c.table === "hpe_session_feedback")).toHaveLength(0);
+  });
+
+  it("sends neither key for a session logged by hand", async () => {
+    const { calls } = await postWith(happyPathResults(), gymSessionBody());
+    const row = activityInsert(calls)[0].payload as Record<string, unknown>;
+    expect(row).not.toHaveProperty("hpe_session_id");
+    expect(row.metadata as Record<string, unknown>).not.toHaveProperty("prescribed_sets");
+    expect(calls.filter((c) => c.table === "hpe_sessions")).toHaveLength(0);
+  });
+
+  it("still saves the session, without the link, when the database is behind on migration 088", async () => {
+    const ACTIVITY_COLUMNS_BEFORE_088 = [
+      "user_id", "client_request_id", "sport", "title", "started_at", "duration_seconds",
+      "distance_meters", "elevation_meters", "avg_heart_rate", "max_heart_rate", "avg_power_watts",
+      "avg_cadence", "avg_pace_seconds_per_km", "avg_split_seconds", "stroke_type",
+      "temperature_celsius", "session_type", "interval_reps", "interval_work_distance_meters",
+      "interval_work_seconds", "interval_rest_seconds", "interval_work_avg_hr",
+      "fartlek_on_distance_meters", "fartlek_on_seconds", "fartlek_on_avg_hr", "rpe", "notes",
+      "is_draft", "source", "is_partial_track", "metadata",
+    ];
+    const { response, calls } = await postWith(ownedSession(), prescribedBody(), {
+      activities: ACTIVITY_COLUMNS_BEFORE_088,
+    });
+    expect(response.status).toBe(200);
+    const inserts = activityInsert(calls);
+    // First attempt carries the link and is rejected; the retry drops it.
+    expect(inserts).toHaveLength(2);
+    expect(inserts[1].payload).not.toHaveProperty("hpe_session_id");
+    expect(deletedActivity(calls)).toBe(false);
+    expect(console.error).toHaveBeenCalledWith(
+      "[activities] activities is missing column hpe_session_id (migration 088), saved without the plan link"
+    );
+  });
+});

@@ -5,11 +5,13 @@ import {
   createIntervalRepOverride,
   flattenIntervalBlocks,
   parseSeconds,
+  prescribedSetsSummary,
   readIntervalBlocks,
   resolveIntervalBlock,
   restoreDraftState,
   validateAndBuildPayload,
   type IntervalBlockState,
+  type SetRowState,
   type WorkoutFormState,
 } from "./form-state";
 import {
@@ -309,5 +311,90 @@ describe("restoreDraftState", () => {
     );
     expect(restored.intervalBlocks).toEqual([]);
     expect(readIntervalBlocks(restored)[0].reps).toBe("6");
+  });
+});
+
+describe("prescribedSetsSummary and the payload it rides on", () => {
+  function gymState(sets: Partial<SetRowState>[], hpeSessionId: string | null = null): WorkoutFormState {
+    return {
+      ...createDefaultState("gym", 80),
+      minutes: "45",
+      bodyweight: "80",
+      hpeSessionId,
+      exercises: [
+        {
+          id: "ex1",
+          name: "Bench Press",
+          muscleGroup: "Chest",
+          weightEntryMode: "total",
+          attachment: null,
+          notes: "",
+          sets: sets.map((s, i) => ({
+            id: `s${i}`,
+            weight: "",
+            reps: "",
+            rpe: "",
+            repsInReserve: "",
+            ...s,
+          })),
+        },
+      ],
+    };
+  }
+
+  const PLAN = { weight: "100", reps: "5", source: "plan" as const };
+  const SESSION = "11111111-2222-4333-8444-555555555555";
+
+  it("sends nothing for a session typed from nothing", () => {
+    const state = gymState([{ weight: "100", reps: "5" }]);
+    expect(prescribedSetsSummary(state)).toBeNull();
+    const { payload } = validateAndBuildPayload("gym", state);
+    expect(payload).not.toHaveProperty("prescribed_sets");
+    expect(payload).not.toHaveProperty("hpe_session_id");
+  });
+
+  it("counts a set left exactly as filled in as accepted, and a changed one as edited", () => {
+    const state = gymState([
+      { weight: "100", reps: "5", prescribed: PLAN },
+      { weight: "100", reps: "6", prescribed: PLAN },
+    ]);
+    expect(prescribedSetsSummary(state)).toEqual({ accepted: 1, edited: 1 });
+  });
+
+  it("counts a set the athlete added as edited — it was never prescribed", () => {
+    const state = gymState([
+      { weight: "100", reps: "5", prescribed: PLAN },
+      { weight: "100", reps: "5" },
+    ]);
+    expect(prescribedSetsSummary(state)).toEqual({ accepted: 1, edited: 1 });
+  });
+
+  it("skips a prescribed set the athlete cleared — an empty set is not logged data", () => {
+    const state = gymState([
+      { weight: "100", reps: "5", prescribed: PLAN },
+      { weight: "", reps: "", prescribed: PLAN },
+    ]);
+    expect(prescribedSetsSummary(state)).toEqual({ accepted: 1, edited: 0 });
+  });
+
+  it("carries the session id and the counts on the payload", () => {
+    const state = gymState([{ weight: "100", reps: "5", prescribed: PLAN }], SESSION);
+    const { errors, payload } = validateAndBuildPayload("gym", state);
+    expect(errors).toEqual({});
+    expect(payload?.hpe_session_id).toBe(SESSION);
+    expect(payload?.prescribed_sets).toEqual({ accepted: 1, edited: 0 });
+  });
+
+  it("survives a draft round trip", () => {
+    const state = gymState([{ weight: "100", reps: "5", prescribed: PLAN }], SESSION);
+    const restored = restoreDraftState("gym", JSON.parse(JSON.stringify(state)), 80);
+    expect(restored.hpeSessionId).toBe(SESSION);
+    expect(restored.exercises[0].sets[0].prescribed).toEqual({
+      weight: "100",
+      reps: "5",
+      durationSeconds: "",
+      source: "plan",
+    });
+    expect(prescribedSetsSummary(restored)).toEqual({ accepted: 1, edited: 0 });
   });
 });

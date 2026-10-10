@@ -148,6 +148,67 @@ async function failAndRollback(
   );
 }
 
+/**
+ * Whether a Hybrid Plan session belongs to this athlete.
+ *
+ * `hpe_sessions` is reached through `hpe_plans.user_id`, so the id alone
+ * proves nothing — the same check api/hpe/session-feedback makes, for the same
+ * reason: without it anyone could file an activity against a stranger's
+ * session and mark their plan done. A session that is not theirs gets the
+ * same answer as one that does not exist.
+ */
+async function ownsHpeSession(
+  supabase: SupabaseServerClient,
+  userId: string,
+  sessionId: string
+): Promise<boolean> {
+  const { data } = await supabase
+    .from("hpe_sessions")
+    .select("id, hpe_plans!inner(user_id)")
+    .eq("id", sessionId)
+    .maybeSingle();
+  const owner = (data as { hpe_plans?: { user_id?: string } } | null)?.hpe_plans?.user_id;
+  return !!data && owner === userId;
+}
+
+/**
+ * The plan's own record that a prescribed session was done, written for the
+ * athlete when they log the session rather than asked for afterwards.
+ *
+ * Written ONLY when every set was logged exactly as filled in: then the
+ * session went as written and `met_prescription` is a fact, not a guess. A
+ * session with any edited set is left for the athlete's own three-button
+ * answer — an edit from 4 reps to 5 is still inside a 3-5 prescription, and
+ * calling it "came up short" because a number changed would feed
+ * `autoregulate` a wrong signal, which is worse than no signal. IGNORED ON
+ * CONFLICT, never upserted over: if the athlete has already said how it went,
+ * their answer stands.
+ *
+ * Non-fatal. The activity is the primary record and is already saved; a
+ * feedback row that fails to land is logged and the save still succeeds.
+ */
+async function recordPrescribedSessionDone(
+  supabase: SupabaseServerClient,
+  userId: string,
+  sessionId: string,
+  prescribedSets: { accepted: number; edited: number } | undefined
+) {
+  if (!prescribedSets || prescribedSets.edited > 0 || prescribedSets.accepted === 0) return;
+  const { error } = await supabase.from("hpe_session_feedback").upsert(
+    {
+      user_id: userId,
+      session_id: sessionId,
+      completed: true,
+      met_prescription: true,
+      logged_at: new Date().toISOString(),
+    },
+    { onConflict: "session_id", ignoreDuplicates: true }
+  );
+  if (error) {
+    console.error("[activities] could not record plan feedback for session", sessionId, error.message);
+  }
+}
+
 export async function POST(request: Request) {
   const supabase = await createClient();
   const {
@@ -220,6 +281,12 @@ export async function POST(request: Request) {
 
   if (!profile) {
     return NextResponse.json({ error: "Profile not found" }, { status: 404 });
+  }
+
+  // Checked before anything is written, so a bad id costs nothing to unwind.
+  const hpeSessionId = body.sport === "gym" ? body.hpe_session_id ?? null : null;
+  if (hpeSessionId && !(await ownsHpeSession(supabase, user.id, hpeSessionId))) {
+    return NextResponse.json({ error: "Session not found" }, { status: 404 });
   }
 
   const bodyweightKg = resolveScoringBodyweightKg(body.sport, {
@@ -334,11 +401,19 @@ export async function POST(request: Request) {
 
   const routePolyline = sanitizeRoute((body as { route?: unknown }).route);
 
-  const { data: activity, error: activityError } = await supabase
-    .from("activities")
-    .insert({
+  /*
+   * The link to a prescribed session is the one column here that a database
+   * behind on migration 088 does not have. It is only ever present on a
+   * session logged from the plan, so a hand-logged or GPS session never
+   * touches it; when it IS present and the column is missing, the session is
+   * saved without the link rather than refused for it — the same
+   * additive-migration rule insertGymExercises applies — and the log says
+   * which migration to apply.
+   */
+  const activityRow = {
       user_id: user.id,
       client_request_id: clientRequestId,
+      ...(hpeSessionId ? { hpe_session_id: hpeSessionId } : {}),
       sport: body.sport,
       title: body.title,
       started_at: body.started_at,
@@ -390,10 +465,34 @@ export async function POST(request: Request) {
               ) as Record<string, WeightEntryMode>,
             }
           : {}),
+        // How much of a prefilled session was logged untouched. Telemetry for
+        // the logging-effort plan; nothing renders it.
+        ...(body.prescribed_sets ? { prescribed_sets: body.prescribed_sets } : {}),
       },
-    })
+  };
+
+  let { data: activity, error: activityError } = await supabase
+    .from("activities")
+    .insert(activityRow)
     .select()
     .single();
+
+  if (
+    activityError?.code === "PGRST204" &&
+    /hpe_session_id/.test(activityError.message ?? "") &&
+    "hpe_session_id" in activityRow
+  ) {
+    console.error(
+      "[activities] activities is missing column hpe_session_id (migration 088), saved without the plan link"
+    );
+    const { hpe_session_id: _dropped, ...withoutLink } = activityRow;
+    void _dropped;
+    ({ data: activity, error: activityError } = await supabase
+      .from("activities")
+      .insert(withoutLink)
+      .select()
+      .single());
+  }
 
   if (activityError || !activity) {
     /*
@@ -444,6 +543,10 @@ export async function POST(request: Request) {
     if (exercisesError) {
       return failAndRollback(supabase, activity.id, "gym_exercises", exercisesError.message);
     }
+  }
+
+  if (hpeSessionId) {
+    await recordPrescribedSessionDone(supabase, user.id, hpeSessionId, body.prescribed_sets);
   }
 
   const enduranceIndices =

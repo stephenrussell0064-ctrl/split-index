@@ -543,4 +543,18 @@ export interface ActivityFormData {
   source?: "manual" | "gps";
   /** True when background GPS tracking was interrupted mid-session (permission revoked, OS killed the process, a sampling gap beyond what normal GPS dropout explains) — never score a partial track as if it were a complete, clean effort. */
   is_partial_track?: boolean;
+  /**
+   * The Hybrid Plan session this activity is the record of, when it was logged
+   * from a prescription (migration 088, `activities.hpe_session_id`). Absent
+   * for every other session. The route checks the session belongs to the
+   * athlete and records the plan feedback for it.
+   */
+  hpe_session_id?: string;
+  /**
+   * How much of a prescribed session was logged untouched: sets whose load and
+   * reps equal what the plan filled in versus sets the athlete changed or
+   * added. Only sent with `hpe_session_id` or a history-prefilled session;
+   * stored in `activities.metadata` and never shown to the athlete.
+   */
+  prescribed_sets?: { accepted: number; edited: number };
 }

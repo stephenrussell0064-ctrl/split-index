@@ -231,6 +231,22 @@ export const activityFieldsSchema = z
      * before trusting the value.
      */
     client_request_id: z.string().max(100).optional(),
+
+    /*
+     * One-tap prescribed logging (logging-effort plan, phase 2). The session
+     * id is checked against the athlete's own plan before it is written — a
+     * uuid alone proves nothing, exactly as api/hpe/session-feedback says.
+     * The counts are telemetry for the metadata column, bounded by the same
+     * ceiling as the sets themselves.
+     */
+    hpe_session_id: z.string().uuid().optional(),
+    prescribed_sets: z
+      .object({
+        accepted: bounded([0, MAX_SETS_PER_SESSION], "accepted sets").int(),
+        edited: bounded([0, MAX_SETS_PER_SESSION], "edited sets").int(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 
