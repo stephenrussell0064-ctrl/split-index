@@ -35,6 +35,18 @@ const OPTIONS: { value: Outcome; label: string; hint: string }[] = [
   { value: "missed", label: "Missed it", hint: "Did not do this session" },
 ];
 
+/**
+ * Session RPE, 1-10, offered once the athlete has said the session happened.
+ *
+ * The route has validated and stored `sessionRpe` since the control was
+ * written, and `computeAdherence` averages it into `meanSessionRpe` — but no
+ * client ever sent it, so the number was null for every athlete and the
+ * adherence metric was permanently blind to how hard the week felt. Still
+ * optional, still one tap, and never shown for a missed session: there is no
+ * effort to rate.
+ */
+const RPE_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
+
 export function SessionFeedbackControl({
   sessionId,
   initial = null,
@@ -46,18 +58,26 @@ export function SessionFeedbackControl({
   className?: string;
 }) {
   const [outcome, setOutcome] = useState<Outcome | null>(initial);
-  const [saving, setSaving] = useState<Outcome | null>(null);
+  const [rpe, setRpe] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState(false);
 
   if (!sessionId) return null;
 
-  async function record(next: Outcome) {
-    setSaving(next);
+  /**
+   * One row per session, upserted — so every post carries the whole answer.
+   * Rating the effort re-sends the outcome it belongs to, and choosing a
+   * different outcome keeps the rating unless the session is now "missed".
+   */
+  async function post(next: Outcome, nextRpe: number | null) {
+    setSaving(true);
     setError(false);
     // Optimistic: the athlete has told us what happened, and the value is
     // theirs either way. A failure puts it back.
-    const previous = outcome;
+    const previousOutcome = outcome;
+    const previousRpe = rpe;
     setOutcome(next);
+    setRpe(nextRpe);
     try {
       const res = await fetch("/api/hpe/session-feedback", {
         method: "POST",
@@ -66,19 +86,28 @@ export function SessionFeedbackControl({
           sessionId,
           completed: next !== "missed",
           metPrescription: next === "hit",
+          sessionRpe: next === "missed" ? null : nextRpe,
         }),
       });
       if (!res.ok) {
-        setOutcome(previous);
+        setOutcome(previousOutcome);
+        setRpe(previousRpe);
         setError(true);
       }
     } catch {
-      setOutcome(previous);
+      setOutcome(previousOutcome);
+      setRpe(previousRpe);
       setError(true);
     } finally {
-      setSaving(null);
+      setSaving(false);
     }
   }
+
+  const record = (next: Outcome) => post(next, next === "missed" ? null : rpe);
+  const rate = (value: number) => {
+    if (!outcome || outcome === "missed") return;
+    void post(outcome, value);
+  };
 
   return (
     <div className={cn("mt-3", className)}>
@@ -92,7 +121,7 @@ export function SessionFeedbackControl({
               type="button"
               title={option.hint}
               aria-pressed={active}
-              disabled={saving !== null}
+              disabled={saving}
               onClick={() => record(option.value)}
               className={cn(
                 "flex min-h-[36px] items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors",
@@ -101,7 +130,7 @@ export function SessionFeedbackControl({
                     ? "border-danger/40 bg-danger/10 text-danger"
                     : "border-accent/40 bg-accent/10 text-accent"
                   : "border-white/10 text-muted hover:border-white/20 hover:text-foreground",
-                saving !== null && "opacity-60"
+                saving && "opacity-60"
               )}
             >
               {active &&
@@ -115,6 +144,40 @@ export function SessionFeedbackControl({
           );
         })}
       </div>
+      {outcome && outcome !== "missed" && (
+        <div className="mt-2">
+          <p className="micro-label mb-1 text-muted/70">How hard was it? (optional)</p>
+          <div
+            role="radiogroup"
+            aria-label="Session RPE, 1 easy to 10 maximal"
+            className="flex flex-wrap gap-1"
+          >
+            {RPE_OPTIONS.map((value) => {
+              const active = rpe === value;
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  aria-label={`RPE ${value}`}
+                  disabled={saving}
+                  onClick={() => rate(value)}
+                  className={cn(
+                    "flex h-9 w-9 items-center justify-center rounded-lg border text-xs font-semibold tabular-nums transition-colors",
+                    active
+                      ? "border-accent/40 bg-accent/10 text-accent"
+                      : "border-white/10 text-muted hover:border-white/20 hover:text-foreground",
+                    saving && "opacity-60"
+                  )}
+                >
+                  {value}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
       {error && (
         <p className="mt-1.5 text-xs text-danger">
           That didn&apos;t save. Tap again when you have signal.
