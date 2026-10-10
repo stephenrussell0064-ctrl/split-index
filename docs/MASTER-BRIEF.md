@@ -267,7 +267,9 @@ Let users **optionally** add HRV data (from a wearable) to sharpen the load/reco
 - **Free:** view all rows + own full detail. **Premium:** hover/tap another user → card with their main strength scores, core-lift 1RMs, and race predictions (blurred + lock badge for free users).
 - Only usernames + scores are public; never raw data, bodyweight, or personal details. Compute/store ranks server-side (anti-tamper).
 
-**Remove entirely (from UI + onboarding):** all Strava, Apple Health, Garmin, Google Fit integrations and "connect your watch" steps. Logging is **manual + file import only** for now. Keep the architecture clean so integrations can return later, but nothing about them is visible currently.
+**Remove entirely (from UI + onboarding):** all Strava, Garmin, Google Fit integrations and "connect your watch" steps. Logging is **manual + file import** plus the one read integration below. Keep the architecture clean so partner integrations can return later, but nothing about them is visible currently.
+
+> **Amended 10 October 2026 (logging-effort plan, phase 1).** This line originally removed Apple Health as well. Reversed, for Apple Health only: a READ import of workouts, HRV, resting heart rate, sleep and bodyweight from the phone's health store, which every wearable already writes into, so the scores have data without the athlete typing it. Still true: no Strava/Garmin OAuth, no partner tokens, no onboarding step. The connect card lives on the Recovery page and in Settings, asks once, and every input it feeds is optional to the scores. §8's "treat manual entry and future wearable import identically" holds for the pipeline but NOT the baseline — Apple reports HRV as SDNN and the manual entry is rMSSD, so each source keeps its own baseline (migration 089).
 
 ---
 

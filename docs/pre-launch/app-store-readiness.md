@@ -269,8 +269,9 @@ OAuth, social and technical data. What it **never mentions**:
 |---|---|---|
 | Precise GPS location + full route traces | `NSLocationWhenInUseUsageDescription`, `src/lib/native/gps-tracking.ts` | **No** |
 | Background location while the phone is locked | `NSLocationAlwaysAndWhenInUseUsageDescription`, `UIBackgroundModes: location` | **No** |
-| Apple HealthKit heart-rate reads | `NSHealthShareUsageDescription`, `HeartRateWorkoutPlugin.swift` | **No** |
-| HealthKit workout-session writes | `NSHealthUpdateUsageDescription` | **No** |
+| Apple HealthKit heart-rate reads | `NSHealthShareUsageDescription`, `HeartRateWorkoutPlugin.swift` | Yes (since the privacy page's Apple Health bullet) |
+| Apple HealthKit import: workouts, HRV, resting HR, sleep, bodyweight | `NSHealthShareUsageDescription`, `HealthImportPlugin.swift` (10 Oct 2026) | Yes — same bullet, rewritten for the import. The nutrition label must list Health & Fitness → Health, Fitness as collected and linked to identity |
+| HealthKit workout-session writes | `NSHealthUpdateUsageDescription` | Yes (same bullet: started to switch the AirPods sensor on, never saved) |
 | Bluetooth device connections (HR straps) | `NSBluetoothAlwaysUsageDescription`, `src/lib/native/heart-rate.ts` | **No** |
 | Motion & step/cadence data | `NSMotionUsageDescription`, `StepCadencePlugin.swift` | **No** |
 | RevenueCat as a payment processor | `src/lib/native/billing.ts` | **No** |

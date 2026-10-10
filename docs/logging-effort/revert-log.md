@@ -15,6 +15,7 @@ removing it.
 | --- | --- | --- |
 | `pre/phase0-false-claims` | `80167f5b`, 9 Oct 2026 | Everything in this plan |
 | `pre/phase2-one-tap-gym` | `77ba6997`, 9 Oct 2026 | Phase 2 and later (keeps Phase 0) |
+| `pre/phase1-apple-health` | `a3a7e9a9`, 10 Oct 2026 | Phase 1 (keeps Phases 0 and 2) |
 
 Reset main to a tag only as a last resort — it discards every commit after it,
 including unrelated ones. Prefer `git revert` of the specific commits listed
@@ -68,3 +69,49 @@ without the later ones will not compile, so revert from the latest backwards.
 - A database that has not applied migration 088 still saves every session.
   A linked one is saved without the link and the server log names the
   migration.
+
+## Phase 1: Apple Health read import
+
+Branch `worktree-phase1-apple-health`, tag `pre/phase1-apple-health` on
+`a3a7e9a9`. Reverses the September brief for Apple Health only; the amendment
+is written into `docs/MASTER-BRIEF.md` §9 in the same branch.
+
+| Commit | What it adds | Undo |
+| --- | --- | --- |
+| Samples and mapping | `src/lib/health/samples.ts` — the batch schema and the pure mapping from Apple's vocabulary (workout type → sport, daily means, nightly sleep hours, own-bundle filter). No callers outside the phase | Delete the file and its test |
+| Storage | Migration `089_apple_health_import.sql`: `recovery_snapshots.source`, `health_imports`, `health_import_state`. `003_integrations.sql` becomes a no-op stub (it never ran; the ledger records it as applied; a gap would trip `migration-numbering.test.ts`) | `git revert`, then `DROP TABLE IF EXISTS health_imports; DROP TABLE IF EXISTS health_import_state; ALTER TABLE recovery_snapshots DROP COLUMN IF EXISTS source;`. Imported rows survive (find them by `activities.source = 'apple_health'` and the uuids in `health_imports` first) |
+| Server | `/api/health/import` (GET state, PUT connect, POST batch, DELETE disconnect); `lib/recovery/data.ts` builds the HRV baseline per source and reports `hrvSource` | `git revert`. The HRV card falls back to one baseline over every row |
+| Native | `ios/App/App/HealthImportPlugin.swift` (read-only HealthKit queries), four `project.pbxproj` entries under ids `B7E4A1C2D3F4056789ABCD01/02`, the `registerPluginInstance` line in `MainViewController.swift`, the rewritten `NSHealthShareUsageDescription` in `Info.plist` | `git revert`. Ships only with an App Store build, so until one is cut the plugin is not on any phone |
+| Web | `lib/native/health-import.ts` bridge, `lib/health/sync-client.ts`, `components/health/apple-health-card.tsx` (Recovery page and Settings), `components/health/health-auto-sync.tsx` mounted in the app shell, the Apple Health bullet on `/privacy` | `git revert`. On the web the card renders nothing (Recovery) or a note (Settings); removing it removes a card, not a flow |
+| Docs | `MASTER-BRIEF.md` §9 amendment, `app-store-readiness.md` HealthKit rows, this file | `git revert` |
+
+### What Phase 1 deliberately does not do
+
+- No background delivery. The app is a WebView, so there is no JavaScript to
+  hand samples to while it is in the background; syncing happens on launch
+  and on resume, throttled to once a quarter hour. The
+  `healthkit.background-delivery` entitlement therefore stays unused and is
+  still an open item on the App Store readiness checklist.
+- No strength workouts. A watch records no sets, reps or loads, and a gym
+  session without exercises cannot be scored. They are read, recorded as seen,
+  and skipped.
+- No onboarding step. The brief's "no connect-your-watch step" still holds;
+  the card is on the Recovery page and in Settings and asks once.
+- No Android. Health Connect is a second native plugin; the web side is ready
+  for it (the batch schema is platform-neutral) but nothing reads it yet.
+- Sleep is stored (`recovery_snapshots.sleep_hours`) and not yet scored.
+  Reading it into the recovery score is a scoring change, not an import one.
+- Nothing is written to Apple Health. `requestAuthorization` asks for read
+  types only.
+
+### Behaviour that is unchanged for everyone not using it
+
+- An athlete who never connects sees no new network traffic: the auto-sync
+  checks a per-device hint before asking the server, and the server answers
+  "not connected" to anything else.
+- A typed HRV for a day is never overwritten by an import for that day.
+- A session already logged by hand within ten minutes of an imported workout
+  of the same sport is treated as that session, never a second one.
+- The app's own GPS run (which starts a HealthKit workout session for the
+  AirPods sensor) is filtered out by bundle id in Swift and again on the
+  server.
