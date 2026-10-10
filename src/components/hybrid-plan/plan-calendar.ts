@@ -37,6 +37,15 @@ export interface PlanSessionView {
    * readers and no writers.
    */
   sessionId?: string | null;
+  /**
+   * The logged activity this session already has, when it was logged from
+   * the prescription (activities.hpe_session_id, migration 088). Null when
+   * nothing has been logged against it — which is also what a session logged
+   * by hand through /gym/log without the link looks like.
+   */
+  activityId?: string | null;
+  /** How the athlete said it went, if they have — read back so the control shows what was saved rather than forgetting on every reload. */
+  feedback?: "hit" | "short" | "missed" | null;
   kind: string;
   /** What the athlete calls it — "Push", "Legs". Falls back to the engine's kind. */
   label?: string;

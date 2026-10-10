@@ -375,7 +375,10 @@ export async function GET(request: Request) {
     `generatePlan` indexes it by: week N's plan is adjusted by what happened in
     the weeks before it.
   */
-  const feedbackByWeek = await loadFeedbackByWeek(supabase, user.id);
+  const { byWeek: feedbackByWeek, bySession: feedbackBySession } = await loadFeedbackByWeek(
+    supabase,
+    user.id
+  );
 
   const plan = generatePlan({
     state,
@@ -471,15 +474,31 @@ export async function GET(request: Request) {
     ? await loadSessionIds(supabase, persisted.planId)
     : {};
 
+  /*
+    Which of those sessions already has an activity logged from it (migration
+    088), so the day view can say "logged" and offer the session's record
+    instead of offering to log it again.
+  */
+  const activityBySession = await loadLoggedActivityIds(
+    supabase,
+    user.id,
+    Object.values(sessionIds)
+  );
+
   const weeksWithIds = plan.weeks.map((week) => ({
     ...week,
-    placements: week.placements.map((placement) => ({
-      ...placement,
-      sessionId:
+    placements: week.placements.map((placement) => {
+      const sessionId =
         sessionIds[
           `${week.week}|${placement.day ?? ""}|${placement.slot ?? ""}|${placement.session.kind}`
-        ] ?? null,
-    })),
+        ] ?? null;
+      return {
+        ...placement,
+        sessionId,
+        activityId: sessionId ? activityBySession[sessionId] ?? null : null,
+        feedback: sessionId ? feedbackBySession[sessionId] ?? null : null,
+      };
+    }),
   }));
 
   return NextResponse.json({
@@ -526,7 +545,11 @@ export async function GET(request: Request) {
 async function loadFeedbackByWeek(
   supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string
-): Promise<Record<number, SessionFeedback[]>> {
+): Promise<{
+  byWeek: Record<number, SessionFeedback[]>;
+  /** The same rows as the three-button answer each one is, keyed by session — so the control shows what was saved instead of forgetting on reload. */
+  bySession: Record<string, "hit" | "short" | "missed">;
+}> {
   const { data: currentPlan } = await supabase
     .from("hpe_plans")
     .select("id")
@@ -536,28 +559,70 @@ async function loadFeedbackByWeek(
     .limit(1)
     .maybeSingle();
 
-  if (!currentPlan) return {};
+  if (!currentPlan) return { byWeek: {}, bySession: {} };
 
   const { data: rows } = await supabase
     .from("hpe_session_feedback")
-    .select("completed, session_rpe, met_prescription, logged_at, hpe_sessions!inner(week, kind, plan_id)")
+    .select(
+      "session_id, completed, session_rpe, met_prescription, logged_at, hpe_sessions!inner(week, kind, plan_id)"
+    )
     .eq("user_id", userId)
     .eq("hpe_sessions.plan_id", currentPlan.id as string)
     .order("logged_at", { ascending: true });
 
   const byWeek: Record<number, SessionFeedback[]> = {};
+  const bySession: Record<string, "hit" | "short" | "missed"> = {};
   for (const row of rows ?? []) {
     const session = (row as { hpe_sessions?: { week?: number; kind?: string } }).hpe_sessions;
     if (!session || typeof session.week !== "number" || !session.kind) continue;
+    const completed = row.completed as boolean;
+    const metPrescription = row.met_prescription as boolean;
     (byWeek[session.week] ??= []).push({
       kind: session.kind,
-      completed: row.completed as boolean,
+      completed,
       sessionRpe: row.session_rpe != null ? Number(row.session_rpe) : null,
-      metPrescription: row.met_prescription as boolean,
+      metPrescription,
       loggedAt: row.logged_at as string,
     });
+    if (typeof row.session_id === "string") {
+      bySession[row.session_id] = !completed ? "missed" : metPrescription ? "hit" : "short";
+    }
   }
-  return byWeek;
+  return { byWeek, bySession };
+}
+
+/**
+ * The activity logged from each prescribed session, if any.
+ *
+ * Reads `activities.hpe_session_id` (migration 088). A database that has not
+ * applied it answers with an error on the unknown column; that is swallowed
+ * into "nothing logged" rather than failing the whole plan, because the link
+ * is a refinement on the plan screen and the plan itself does not depend on
+ * it.
+ */
+async function loadLoggedActivityIds(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  sessionIds: string[]
+): Promise<Record<string, string>> {
+  if (sessionIds.length === 0) return {};
+  const { data, error } = await supabase
+    .from("activities")
+    .select("id, hpe_session_id")
+    .eq("user_id", userId)
+    .eq("is_draft", false)
+    .in("hpe_session_id", sessionIds);
+  if (error) {
+    console.error("[hpe/plan] could not read activities.hpe_session_id (migration 088?):", error.message);
+    return {};
+  }
+  const bySession: Record<string, string> = {};
+  for (const row of data ?? []) {
+    if (typeof row.hpe_session_id === "string" && typeof row.id === "string") {
+      bySession[row.hpe_session_id] ??= row.id;
+    }
+  }
+  return bySession;
 }
 
 /** Stored session ids for one plan, keyed `week|day|slot|kind` — the tuple savePlan writes. */

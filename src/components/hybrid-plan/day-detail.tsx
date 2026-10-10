@@ -1,6 +1,7 @@
 "use client";
 
 import { SessionFeedbackControl } from "./session-feedback-control";
+import { LogPrescribedControl } from "./log-prescribed-control";
 import { useState } from "react";
 import { format, isToday, isTomorrow, isYesterday } from "date-fns";
 import { cn } from "@/lib/utils/cn";
@@ -54,6 +55,7 @@ function SessionBlock({
   findingsById,
   defaultOpen,
   offsetDays,
+  date,
 }: {
   session: PlanSessionView;
   /** Built by `planFindingsById`, which is the athlete's diagnosis PLUS the baseline rationale. Keyed by slug, never by the `hpe_findings` row id. */
@@ -62,8 +64,19 @@ function SessionBlock({
   defaultOpen: boolean;
   /** Days from today — negative in the past. Feedback is only offered once the day has arrived. */
   offsetDays: number;
+  /** The day this session is scheduled on, local midnight — what a session logged from here is dated. */
+  date: Date;
 }) {
   const [showWhy, setShowWhy] = useState(defaultOpen);
+  /*
+    The activity logged from this prescription, and the answer the plan holds
+    for it. Both start from what the API read back and move the moment the
+    athlete logs from here: a one-tap log IS "nailed it" — the server writes
+    that row — so the feedback control is remounted to show it, rather than
+    asking a question the athlete has just answered by logging.
+  */
+  const [loggedActivityId, setLoggedActivityId] = useState<string | null>(session.activityId ?? null);
+  const [feedback, setFeedback] = useState(session.feedback ?? null);
   const finding = findingsById.get(session.findingId);
   const metrics = sessionMetrics(session);
   const primary = metrics.filter((m) => m.tier === "primary");
@@ -174,7 +187,35 @@ function SessionBlock({
         Only on a session whose day has arrived. Asking on Tuesday how Friday's
         run went is noise, and a control that is mostly noise stops being read.
       */}
-      {offsetDays <= 0 && <SessionFeedbackControl sessionId={session.sessionId ?? null} />}
+      {/*
+        A lift, once its day has arrived, can be logged from here: one tap for
+        a session done as written, or the form with every set already filled
+        for one that differed. Endurance sessions keep the GPS run and the
+        cardio log; nothing here is for them.
+      */}
+      {offsetDays <= 0 && !isEndurance && session.sessionId && (
+        <LogPrescribedControl
+          sessionId={session.sessionId}
+          prescriptionText={session.prescription}
+          title={sessionTitle(session)}
+          sessionDate={date}
+          offsetDays={offsetDays}
+          minutes={session.minutes}
+          activityId={loggedActivityId}
+          onLogged={(id) => {
+            setLoggedActivityId(id);
+            setFeedback("hit");
+          }}
+        />
+      )}
+
+      {offsetDays <= 0 && (
+        <SessionFeedbackControl
+          key={`${session.sessionId ?? "none"}:${feedback ?? "unanswered"}`}
+          sessionId={session.sessionId ?? null}
+          initial={feedback}
+        />
+      )}
 
       <button
         type="button"
@@ -281,6 +322,7 @@ export function DayDetail({
               */
               defaultOpen={false}
               offsetDays={day.offsetDays}
+              date={day.date}
             />
           ))
         )}
