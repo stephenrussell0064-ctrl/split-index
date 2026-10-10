@@ -11,6 +11,7 @@ import { AlcoholStatusCard } from "@/components/recovery/alcohol-status-card";
 import { DrinkLogger } from "@/components/recovery/drink-logger";
 import { DrinkHistoryList } from "@/components/recovery/drink-history-list";
 import { HrvEntryCard } from "@/components/recovery/hrv-entry-card";
+import { AppleHealthCard } from "@/components/health/apple-health-card";
 import { SessionImpactCard } from "@/components/recovery/session-impact-card";
 import { SessionTimingStrip } from "@/components/recovery/session-timing-strip";
 import { WeeklyUnitsPanel } from "@/components/recovery/weekly-units-panel";
@@ -260,7 +261,10 @@ export default async function RecoveryPage() {
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
         <RecoveryBreakdown result={result} />
         <div className="space-y-3">
-          <HrvEntryCard hrvToday={inputs.hrvToday} hrvBaseline={inputs.hrvBaseline} />
+          {/* Where the inputs below can come from on their own. Renders nothing on the web. */}
+          <AppleHealthCard />
+
+          <HrvEntryCard hrvToday={inputs.hrvToday} hrvBaseline={inputs.hrvBaseline} hrvSource={inputs.hrvSource} />
 
           <Link href="/analytics">
             <Card interactive className="flex items-center justify-between gap-4">

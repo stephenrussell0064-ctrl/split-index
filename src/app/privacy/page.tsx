@@ -133,10 +133,16 @@ export default function PrivacyPolicyPage() {
                   detect your location or nearby devices for any other purpose.
                 </li>
                 <li>
-                  <strong>Apple Health (iOS app):</strong> if you allow it, we read your
-                  heart rate from Apple Health during a session, including from compatible
-                  headphones. The app also starts a Health workout session so those sensors
-                  switch on — that workout is not saved to Apple Health.
+                  <strong>Apple Health (iOS app):</strong> if you connect it, we read your
+                  workouts (type, time, distance, heart rate), heart rate variability, resting
+                  heart rate, sleep and weight from Apple Health, including anything a watch or
+                  another app has written there, and store them in your account as sessions and
+                  recovery inputs. We read only what you allow in Apple&apos;s permission sheet,
+                  we never write to Apple Health, and you can disconnect in Settings at any time —
+                  what was already imported stays in your log until you delete it. Separately,
+                  during a session we read your live heart rate, including from compatible
+                  headphones; the app starts a Health workout session so those sensors switch on,
+                  and that workout is not saved to Apple Health.
                 </li>
                 <li>
                   <strong>Payment information:</strong> subscription status, billing

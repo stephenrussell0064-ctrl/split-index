@@ -24,6 +24,7 @@ import { AppTopBar } from "@/components/layout/app-top-bar";
 import { EdgeSwipeBack } from "@/components/layout/edge-swipe-back";
 import { ModeOverrideProvider, useModeOverride } from "@/components/layout/mode-override-context";
 import { NativeBillingBootstrap } from "@/components/layout/native-billing-bootstrap";
+import { HealthAutoSync } from "@/components/health/health-auto-sync";
 import { StatusBarModeSync } from "@/components/layout/status-bar-mode-sync";
 import { PendingSyncBanner } from "@/components/activities/pending-sync-banner";
 
@@ -247,6 +248,7 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
         `id="main-content"` and its tabIndex below.
       */}
       <NativeBillingBootstrap />
+      <HealthAutoSync />
       <StatusBarModeSync mode={mode} />
       {/*
         Themed background lives on a FIXED, viewport-covering backdrop rather

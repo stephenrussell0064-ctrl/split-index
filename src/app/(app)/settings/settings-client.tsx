@@ -29,6 +29,7 @@ import {
 import { WidgetStatus } from "@/components/settings/widget-status";
 import { TrainingReminders } from "@/components/settings/training-reminders";
 import { Article9ConsentCard } from "@/components/settings/article9-consent-card";
+import { AppleHealthCard } from "@/components/health/apple-health-card";
 import { PremiumBadge } from "@/components/retention/premium-badge";
 import { createClient } from "@/lib/supabase/client";
 import { clearRacePredictions } from "@/lib/native/race-predictions";
@@ -327,6 +328,13 @@ export default function SettingsClient() {
         Settings, not inside the feature they are trying to switch off.
       */}
       <Article9ConsentCard />
+
+      {/*
+        Apple Health import (logging-effort plan, phase 1). With the other
+        data controls, so "how do I stop that" is found where an athlete looks
+        for it. On the web it explains where to connect rather than hiding.
+      */}
+      <AppleHealthCard webFallback="note" />
 
       {/*
         iOS only, and renders nothing at all unless there's a widget
