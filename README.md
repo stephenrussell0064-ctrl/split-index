@@ -252,7 +252,14 @@ Located in `src/lib/scoring/engine.ts`. Key formulas:
 
 ## Data sources & background jobs
 
-There is no third-party import. Every activity is either typed in (`/gym/log`, `/cardio/log`, `/activities/new`) or recorded by the in-app GPS run, which can also take live heart rate from a Bluetooth strap or, on iOS, from AirPods Pro via a HealthKit workout session. Apple Health import, one-tap prescribed gym logging and FIT/TCX/GPX file import are planned — see the logging-effort plan. The `activity_source` enum already carries `apple_health` and `file` for that work; nothing writes them yet.
+Four ways in, no partner APIs:
+
+- **Typed** (`/gym/log`, `/cardio/log`, `/activities/new`), or logged in one tap from a Hybrid Plan prescription (`/hybrid-plan`, `/gym/log?hpeSession=`). `source = 'manual'`.
+- **Recorded** by the in-app GPS run (`/cardio/gps-run`), with live heart rate from a Bluetooth strap or, on iOS, AirPods Pro via a HealthKit workout session. `source = 'gps'`.
+- **Imported from Apple Health** on iOS (`HealthImportPlugin.swift` → `POST /api/health/import`): workouts, HRV, resting heart rate, sleep and bodyweight from the phone's health store, which every wearable writes into. `source = 'apple_health'`. Foreground sync on launch and resume; see `docs/logging-effort/`.
+- **Imported from a file** (`/cardio/import` → `POST /api/activities/import` for the preview, then `POST /api/activities`): GPX, TCX or FIT, dated within the last 90 days, with the route and per-sample streams where the file carries a track. `source = 'file'`, idempotent on the file's hash.
+
+There is no Strava or Garmin OAuth. `docs/logging-effort/revert-log.md` lists every piece and how to undo it.
 
 For production cron jobs, set `CRON_SECRET` and configure Vercel cron:
 

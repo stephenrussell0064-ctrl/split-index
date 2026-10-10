@@ -18,7 +18,7 @@ export type PremiumFeature =
   | "data_export"
   | "oauth_sync"
   | "global_rank"
-  | "csv_import"
+  | "file_import"
   | "manual_logging"
   | "run_analysis"
   | "hybrid_plan"
@@ -31,7 +31,12 @@ type TierAccess = { free: boolean; premium: boolean };
 export const PREMIUM_FEATURES: Record<PremiumFeature, TierAccess> = {
   full_logging: { free: true, premium: true },
   manual_logging: { free: true, premium: true },
-  csv_import: { free: true, premium: true },
+  /*
+   * GPX/TCX/FIT import, free: it is a way of logging, and logging is never
+   * paywalled (see recovery_score below for the principle). Was `csv_import`,
+   * a key no gate ever read; POST /api/activities/import reads this one.
+   */
+  file_import: { free: true, premium: true },
   split_index_current: { free: true, premium: true },
   cardio_index_per_workout: { free: true, premium: true },
   ai_coaching_rules_snippet: { free: true, premium: true },
@@ -109,14 +114,15 @@ export const FREE_TIER_FEATURES = [
   "Last 7 days on dashboard",
   "Rules-based training snippet",
   /*
-   * Was "Manual entry + CSV import" until 9 October 2026. No importer, route
-   * or file input ever existed behind the second half, and this list is
-   * rendered verbatim on the billing screen, the settings page and the
-   * pricing CTA — so it was a promise with nothing behind it. The csv_import
-   * flag above stays reserved for the file-import phase of the logging-effort
-   * plan; put the words back only when a parser ships.
+   * Was "Manual entry + CSV import" until 9 October 2026, when it became
+   * "Manual entry" because no importer existed behind the second half and
+   * this list is rendered verbatim on the billing screen, the settings page
+   * and the pricing CTA. The words came back on 10 October with the thing
+   * itself: /cardio/import reads GPX, TCX and FIT (logging-effort plan,
+   * phase 3). Not CSV — nobody exports a run as CSV, and the three formats
+   * named are what every watch and app actually writes.
    */
-  "Manual entry",
+  "Manual entry + file import (GPX, TCX, FIT)",
   "Country leaderboard preview",
 ] as const;
 

@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { Activity, PlusCircle, MapPin } from "lucide-react";
+import { Activity, PlusCircle, MapPin, Upload } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { TrainZoneSwipe } from "@/components/layout/train-zone-swipe";
 import { buttonVariants } from "@/components/ui/button";
@@ -115,6 +115,10 @@ export default async function CardioPage() {
               <Link href="/cardio/log" className={buttonVariants({ variant: "secondary" })}>
                 <PlusCircle className="h-4 w-4" />
                 Log manually
+              </Link>
+              <Link href="/cardio/import" className={buttonVariants({ variant: "secondary" })}>
+                <Upload className="h-4 w-4" />
+                Import a file
               </Link>
               <Link
                 href="/cardio/gps-run"

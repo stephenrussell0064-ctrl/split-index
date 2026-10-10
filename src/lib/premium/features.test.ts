@@ -47,7 +47,7 @@ describe("the paid/free line, feature by feature", () => {
   const FREE_FOR_EVERYONE: PremiumFeature[] = [
     "full_logging",
     "manual_logging",
-    "csv_import",
+    "file_import",
     "split_index_current",
     "cardio_index_per_workout",
     "ai_coaching_rules_snippet",
