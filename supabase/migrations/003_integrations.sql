@@ -1,77 +1,24 @@
--- Split Index — Integrations & Import Jobs
--- OAuth connections, sync state, and import progress tracking
+-- 003: deliberately a no-op.
+--
+-- This file used to create `integration_connections`, `import_jobs` and three
+-- enum types for a Strava/Garmin OAuth sync that was never built. It NEVER
+-- RAN against production: docs/pre-launch/migration-reconciliation.md §4
+-- found both tables absent on 21 Sep 2026 and recorded 003 in the migration
+-- ledger as applied anyway, because its bare `CREATE TYPE` statements would
+-- abort a `supabase db push` if they were ever replayed.
+--
+-- So the ledger says "applied", the database has none of it, and the only
+-- honest content for this number is nothing. The reconciliation doc asked for
+-- the file to be deleted when a real import arrived; it is kept as this stub
+-- instead because migration-numbering.test.ts treats a missing number as a
+-- deleted migration worth investigating, and a stub that says why is better
+-- than a gap that makes someone go and find out.
+--
+-- The real import — Apple Health, read-only, no partner tokens — is migration
+-- 089 (logging-effort plan, phase 1). Do not revive the schema that was here:
+-- if Strava or Garmin OAuth is ever built it needs a fresh migration above
+-- every number on every branch, with `CREATE TYPE` guarded.
+--
+-- Emptied 10 October 2026.
 
-CREATE TYPE integration_provider AS ENUM (
-  'strava', 'garmin', 'apple_health', 'polar', 'coros', 'fitbit'
-);
-
-CREATE TYPE import_job_status AS ENUM (
-  'pending', 'parsing', 'validating', 'scoring', 'completed', 'failed'
-);
-
-CREATE TYPE sync_status AS ENUM (
-  'idle', 'syncing', 'error', 'success'
-);
-
--- ─── Integration Connections ──────────────────────────────────────────────────
-CREATE TABLE integration_connections (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  provider integration_provider NOT NULL,
-  access_token TEXT,
-  refresh_token TEXT,
-  token_expires_at TIMESTAMPTZ,
-  provider_user_id TEXT,
-  scopes TEXT[] DEFAULT '{}',
-  auto_sync BOOLEAN DEFAULT FALSE,
-  last_sync_at TIMESTAMPTZ,
-  sync_status sync_status DEFAULT 'idle',
-  sync_error TEXT,
-  metadata JSONB DEFAULT '{}',
-  connected_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE(user_id, provider)
-);
-
-CREATE INDEX idx_integration_connections_auto_sync
-  ON integration_connections(auto_sync, provider)
-  WHERE auto_sync = TRUE;
-
--- ─── Import Jobs ──────────────────────────────────────────────────────────────
-CREATE TABLE import_jobs (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  source activity_source NOT NULL,
-  provider integration_provider,
-  status import_job_status DEFAULT 'pending',
-  step TEXT DEFAULT 'parsing',
-  progress_pct INTEGER DEFAULT 0 CHECK (progress_pct >= 0 AND progress_pct <= 100),
-  total INTEGER DEFAULT 0,
-  processed INTEGER DEFAULT 0,
-  imported INTEGER DEFAULT 0,
-  skipped INTEGER DEFAULT 0,
-  failed INTEGER DEFAULT 0,
-  errors JSONB DEFAULT '[]',
-  result JSONB DEFAULT '{}',
-  draft_backup JSONB DEFAULT '{}',
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  completed_at TIMESTAMPTZ
-);
-
-CREATE INDEX idx_import_jobs_user ON import_jobs(user_id, created_at DESC);
-
-CREATE TRIGGER integration_connections_updated_at
-  BEFORE UPDATE ON integration_connections
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
-
--- ─── Row Level Security ───────────────────────────────────────────────────────
-ALTER TABLE integration_connections ENABLE ROW LEVEL SECURITY;
-ALTER TABLE import_jobs ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Users manage own integration connections"
-  ON integration_connections FOR ALL
-  USING (auth.uid() = user_id);
-
-CREATE POLICY "Users manage own import jobs"
-  ON import_jobs FOR ALL
-  USING (auth.uid() = user_id);
+SELECT 1;
