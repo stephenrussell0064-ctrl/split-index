@@ -132,11 +132,13 @@ export default async function ActivityDetailPage({
    * gated, it is decorated." Computing the analysis and then hiding it would
    * ship every split inside the server-rendered HTML.
    *
-   * Only a GPS session has streams at all. A manual entry has nothing
-   * per-sample to analyse, so it gets no panel and no upsell — there is
-   * nothing behind the lock for it.
+   * Only a recorded session has streams at all — one tracked by GPS here, or
+   * one imported from a GPX/TCX/FIT file, which carries the same per-sample
+   * series. A manual entry has nothing per-sample to analyse, so it gets no
+   * panel and no upsell — there is nothing behind the lock for it.
    */
-  const isGpsCardio = activity.source === "gps" && activity.sport !== "gym";
+  const isGpsCardio =
+    (activity.source === "gps" || activity.source === "file") && activity.sport !== "gym";
   const streams = isGpsCardio && showRunAnalysis ? await fetchActivityStreams(supabase, id) : null;
   const runAnalysis = streams
     ? analyzeRun(streams, {

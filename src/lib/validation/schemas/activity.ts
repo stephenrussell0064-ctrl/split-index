@@ -148,7 +148,10 @@ export const activityFieldsSchema = z
       )
       .optional(),
 
-    source: z.enum(["manual", "gps"]).optional(),
+    // 'file' is a GPX/TCX/FIT import (logging-effort plan, phase 3); the DB
+    // enum has carried it since migration 005. 'apple_health' is written only
+    // by the health import route, never by a client, so it is not here.
+    source: z.enum(["manual", "gps", "file"]).optional(),
     is_partial_track: z.boolean().optional(),
 
     /*
