@@ -18,9 +18,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 export function HrvEntryCard({
   hrvToday,
   hrvBaseline,
+  hrvSource = null,
 }: {
   hrvToday: number | null;
   hrvBaseline: number | null;
+  /** Where today's reading came from. An Apple Health reading is SDNN, not rMSSD, and the card says so rather than inviting a typed value on top of it. */
+  hrvSource?: "manual" | "apple_health" | null;
 }) {
   const router = useRouter();
   const [value, setValue] = useState("");
@@ -93,9 +96,13 @@ export function HrvEntryCard({
         </div>
 
         <p className="text-xs leading-relaxed text-muted">
-          {hrvBaseline == null
-            ? "A single reading has nothing to compare against. Log for a few mornings and a personal baseline forms — then this starts contributing to your Recovery score."
-            : "Taken on waking, before getting up, from any strap or app that reports rMSSD. Optional — the score works without it."}
+          {hrvSource === "apple_health"
+            ? hrvBaseline == null
+              ? "Today's reading came from Apple Health (SDNN). A baseline forms after a few more nights, then this contributes to your Recovery score. A value you type here is kept separately as rMSSD."
+              : "Today's reading came from Apple Health (SDNN), compared against your Apple Health baseline. A value you type here is kept separately as rMSSD and never mixed with it."
+            : hrvBaseline == null
+              ? "A single reading has nothing to compare against. Log for a few mornings and a personal baseline forms — then this starts contributing to your Recovery score."
+              : "Taken on waking, before getting up, from any strap or app that reports rMSSD. Optional — the score works without it."}
         </p>
         {status === "error" && <p className="text-xs text-danger">That couldn&apos;t be saved.</p>}
       </CardContent>

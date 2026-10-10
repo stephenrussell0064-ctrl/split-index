@@ -29,6 +29,13 @@ export interface RecoveryInputs {
   hrvToday: number | null;
   /** Mean of the readings BEFORE today's — a baseline cannot include itself. */
   hrvBaseline: number | null;
+  /**
+   * Which instrument today's reading came from. The baseline is built from
+   * readings of the SAME source only: Apple reports SDNN, the manual entry is
+   * rMSSD, and a baseline that mixed them would compare today against a
+   * number measured a different way. Null when there is no reading.
+   */
+  hrvSource: "manual" | "apple_health" | null;
   /** Session start times in the trailing 7 days. */
   recentSessionDates: string[];
   bodyweightKg: number | null;
@@ -53,13 +60,20 @@ export async function fetchRecoveryInputs(
         .gte("drank_at", new Date(Date.now() - DRINK_HISTORY_DAYS * MS_PER_DAY).toISOString())
         .order("drank_at", { ascending: false })
         .limit(500),
+      /*
+       * More than the window, because the window is per SOURCE: the newest
+       * reading decides which instrument today's number is from, and only
+       * readings from that instrument form its baseline (migration 089). A
+       * fortnight of Apple readings with one typed rMSSD among them must not
+       * put that typed value in the baseline.
+       */
       supabase
         .from("recovery_snapshots")
-        .select("hrv_ms, recorded_at")
+        .select("hrv_ms, recorded_at, source")
         .eq("user_id", userId)
         .not("hrv_ms", "is", null)
         .order("recorded_at", { ascending: false })
-        .limit(HRV_BASELINE_READINGS + 1),
+        .limit((HRV_BASELINE_READINGS + 1) * 2),
       supabase
         .from("activities")
         .select("started_at")
@@ -83,24 +97,53 @@ export async function fetchRecoveryInputs(
         .maybeSingle(),
     ]);
 
-  const hrvReadings = (hrvRows ?? [])
-    .map((r) => Number(r.hrv_ms))
-    .filter((v) => Number.isFinite(v) && v > 0);
-  const hrvToday = hrvReadings[0] ?? null;
-  const priorReadings = hrvReadings.slice(1);
-  const hrvBaseline =
-    priorReadings.length > 0
-      ? priorReadings.reduce((sum, v) => sum + v, 0) / priorReadings.length
-      : null;
+  const { hrvToday, hrvBaseline, hrvSource } = hrvFromReadings(
+    (hrvRows ?? []).map((r) => ({
+      hrv_ms: r.hrv_ms as number | string | null,
+      // Rows written before 089 carry no column; they were all typed.
+      source: (r as { source?: string | null }).source ?? "manual",
+    }))
+  );
 
   return {
     drinks: (drinks ?? []) as DrinkRow[],
     hrvToday,
     hrvBaseline,
+    hrvSource,
     recentSessionDates: (sessions ?? []).map((s) => s.started_at as string),
     bodyweightKg:
       (bodyMetric?.weight_kg != null ? Number(bodyMetric.weight_kg) : null) ??
       (options.profileWeightKg != null ? Number(options.profileWeightKg) : null),
+  };
+}
+
+/**
+ * Today's reading and its baseline from rows newest-first, per source.
+ *
+ * The newest reading is today's. Its baseline is the mean of up to
+ * HRV_BASELINE_READINGS EARLIER readings from the same source — a baseline
+ * cannot include itself, and it cannot mix instruments. Exported for the
+ * test; the page calls fetchRecoveryInputs.
+ */
+export function hrvFromReadings(
+  rows: { hrv_ms: number | string | null; source?: string | null }[]
+): { hrvToday: number | null; hrvBaseline: number | null; hrvSource: "manual" | "apple_health" | null } {
+  const readings = rows
+    .map((r) => ({
+      value: Number(r.hrv_ms),
+      source: r.source === "apple_health" ? ("apple_health" as const) : ("manual" as const),
+    }))
+    .filter((r) => Number.isFinite(r.value) && r.value > 0);
+  const today = readings[0];
+  if (!today) return { hrvToday: null, hrvBaseline: null, hrvSource: null };
+  const prior = readings
+    .slice(1)
+    .filter((r) => r.source === today.source)
+    .slice(0, HRV_BASELINE_READINGS);
+  return {
+    hrvToday: today.value,
+    hrvBaseline: prior.length > 0 ? prior.reduce((sum, r) => sum + r.value, 0) / prior.length : null,
+    hrvSource: today.source,
   };
 }
 
