@@ -84,3 +84,14 @@ docs/pre-launch/uat-bot-report.md
 # `git add -A` away from being in the history, and that is exactly how the UAT
 # report got swept into an unrelated commit on 22 Sep.
 supabase/.temp/
+
+# 4beat/ is a scratch Python project (a wrist-and-ankle sensor rep-counting
+# pipeline, unrelated to this app) that was created inside this checkout. Its
+# source was never committed, but its virtualenv — 4,395 files, ~167 MB of
+# numpy, scipy and scikit-learn binaries — was swept into f59fdbda on
+# 12 Aug 2026 by the same `git add -A` that pulled in .claude-flow/. Nothing in
+# the build, tests or scripts reads it. Untracked on 11 Oct 2026. The pytest
+# cache beside it is ignored for the same reason; the directory itself is not,
+# so that if its source is ever meant to live here it can be added on purpose.
+4beat/.venv/
+4beat/.pytest_cache/
