@@ -16,7 +16,7 @@ import { correlationId } from "@/lib/api/errors";
  *
  * WHERE THIS IS USED, AND WHY EACH ONE IS JUSTIFIED
  * ------------------------------------------------
- * Twelve call sites, all server-side, all needing to act outside one user's
+ * Thirteen call sites, all server-side, all needing to act outside one user's
  * RLS scope. Kept here rather than scattered so the list can be read in one
  * place and audited without a grep — verify it with:
  *
@@ -38,6 +38,10 @@ import { correlationId } from "@/lib/api/errors";
  *   api/hpe/admin/fleet         Fleet-wide read, behind resolveAdminRole.
  *   api/hpe/admin/rollout       Fleet-wide write, behind resolveAdminRole and
  *                               an audit row.
+ *   api/admin/logging-effort    Reads migration 090's three weekly views, which
+ *                               are granted to no role but the service role
+ *                               because they aggregate every athlete's rows.
+ *                               Behind resolveAdminRole and an audit row.
  *   api/races                   Writes the shared known-race catalogue, which
  *                               is reference data no single user owns.
  *   api/squads/join             Reads a squad by invite code before the joiner
@@ -52,7 +56,7 @@ import { correlationId } from "@/lib/api/errors";
  *                               edit the log of their own accesses defeats the
  *                               point of keeping one.
  *
- * Adding a thirteenth means adding it to that list and to SECURITY.md. If the
+ * Adding a fourteenth means adding it to that list and to SECURITY.md. If the
  * reason is "it was easier", it is the wrong client.
  *
  * N9 — WHY THE RECORD IS MADE HERE AND NOT AT EACH CALL SITE

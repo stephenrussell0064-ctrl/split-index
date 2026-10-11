@@ -149,3 +149,39 @@ Branch `worktree-phase3-file-import`, tag `pre/phase3-file-import` on
   activities route's existing `client_request_id` dedup.
 - A second session of the same sport within ten minutes is warned about,
   not blocked: the athlete may genuinely have two.
+
+## Measurement: the plan's six numbers
+
+Branch `worktree-measurement-instrumentation`, tag
+`pre/measurement-instrumentation` on `c730ae91`.
+
+| Commit | What it adds | Undo |
+| --- | --- | --- |
+| Per-session numbers | `logging_effort { entry, fields_touched, seconds_to_save }` on `ActivityFormData`, the activity schema and `activities.metadata`; `countFieldsTouched` in `form-state.ts`; every save path tags its door — the form (typed, template, preset plan, recommended, plan-in-form), the one-tap plan log, the GPS run, the file import, the Apple Health import | `git revert`. The key stops being written; rows already carrying it keep it harmlessly |
+| Views and admin page | Migration `090_logging_effort_views.sql` (three weekly views, service role only); `GET /api/admin/logging-effort`; `/admin/logging-effort` | `git revert`, then `DROP VIEW IF EXISTS logging_effort_weekly, recovery_inputs_weekly, active_loggers_weekly;` |
+
+### How to read it
+
+`/admin/logging-effort`, admins only, last 84 days by default. Six tables,
+one per number the plan named, each with the plan's target in its caption.
+Weeks start on Monday. Sessions saved before the measurement shipped count
+in totals and carry no median.
+
+### What it deliberately does not do
+
+- No per-athlete rows anywhere. The views group by week, domain, source and
+  door; the smallest group can be one athlete, which is why only admins see
+  it and nothing lists who.
+- No second model. The page reads the views; the views read the metadata.
+  A number on the page is a number in the database.
+- The gym "fields touched" count over-counts a form opened from a preset
+  plan or a saved template, which arrive with names and reps filled but no
+  per-set marker. The door is stored beside the number, so the over-count
+  is attributable per door rather than silent.
+- Edits are not logging events and send nothing.
+
+### Behaviour that is unchanged for everyone
+
+- Nothing the athlete sees changes. One more key in a JSON column per save.
+- Every target in the plan is a target, not a gate: nothing is paywalled,
+  blocked or shown on the strength of these numbers.
