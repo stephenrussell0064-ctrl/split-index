@@ -30,6 +30,16 @@ const MIGRATIONS = fileURLToPath(
 
 const FIX = "081_display_name_never_an_email_at_source.sql";
 
+/**
+ * The raw address is `NEW.email`. The `\b` matters: 091 mirrors
+ * `NEW.email_confirmed_at` (a timestamp) onto profiles, and a bare
+ * `/NEW\.email/` matched the first nine characters of that identifier and
+ * failed the suite against a trigger that writes no address at all. `_` is a
+ * word character, so the boundary refuses `email_confirmed_at` and still
+ * catches `NEW.email` followed by `)`, `,`, whitespace or a cast.
+ */
+const RAW_EMAIL_WRITE = /NEW\.email\b/i;
+
 function migrationFiles(): string[] {
   return readdirSync(MIGRATIONS).filter((f) => f.endsWith(".sql")).sort();
 }
@@ -80,7 +90,27 @@ describe("the signup trigger", () => {
         "NEW.email into profiles. That column is published to anon through " +
         "public_profiles, so this writes an email address somewhere strangers " +
         "can read it. See N10 in AUDIT-split-index.md."
-    ).not.toMatch(/NEW\.email/i);
+    ).not.toMatch(RAW_EMAIL_WRITE);
+  });
+
+  /**
+   * Guards the regex itself, in both directions. Loosening it back to
+   * `/NEW\.email/` fails the first case; a well-meant tightening to something
+   * like `/NEW\.email\)/` would pass 091 and miss `NEW.email,` or `NEW.email `,
+   * which fails the second.
+   */
+  it("the email check distinguishes the address from its confirmation timestamp", () => {
+    expect("VALUES (NEW.id, provided_name, NEW.email_confirmed_at)").not.toMatch(
+      RAW_EMAIL_WRITE
+    );
+    for (const regression of [
+      "COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.email)",
+      "VALUES (NEW.id, NEW.email, NEW.email_confirmed_at)",
+      "VALUES (NEW.id, NEW.email::text)",
+      "VALUES (NEW.id, new.Email )",
+    ]) {
+      expect(regression).toMatch(RAW_EMAIL_WRITE);
+    }
   });
 
   it("still writes the row it exists to write", () => {
