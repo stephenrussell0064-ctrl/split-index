@@ -38,6 +38,9 @@ one branch, not of the database.
 | `drink_logs` RLS + `pg_policy` | `true`, one owner-scoped policy with `WITH CHECK` | `086` ran in full, not half — see §4.5 |
 | `public_alcohol_free_streaks` to `anon` | denied, `42501` | `087` ran, and its REVOKE landed |
 | `public_alcohol_free_streaks` count, 21 profiles present | `0` | `087`'s consent predicate filters — see §4.6 |
+| `pg_views` in `public` whose definition mentions `auth.users` | `0` | `091` ran — both profile views were rebuilt without the join; see §4.7 |
+| `profiles.email_confirmed_at` vs `auth.users.email_confirmed_at`, 28 profiles | `0` mismatches | `091`'s backfill ran in full |
+| `public_profiles` / `leaderboard_profiles` count, before and after `091` | `19` / `19` both times | the mirrored gate admits exactly the rows the auth.users join did |
 
 So production is **main's lineage through 075, plus 076–080 from the app-store
 line**. The schema is not behind. The problem is entirely one of file numbering
@@ -326,6 +329,53 @@ row on the board. The first opt-in should be checked by eye — the athlete
 should appear, and disappear again on withdrawal.
 
 ---
+
+### 4.7 Record 091 as it was applied — DONE
+
+`091_public_profile_views_no_longer_read_auth_users` — the fix for the two
+CRITICAL `auth_users_exposed` rows in the Supabase Security Advisor (the
+"Action required: security vulnerabilities detected" email). Applied
+11 October 2026 through the SQL editor, with a ledger row written in the same
+sitting; `supabase_migrations.schema_migrations` now ends `088, 089, 090, 091`.
+
+**Numbering.** Drafted as `090`. While it was being written, a concurrent
+session landed and applied `090_logging_effort_views` to production with its
+own ledger row. The collision was caught by reading the ledger tail during the
+post-apply probes, before this migration's row was inserted, and the file was
+renumbered to `091`. Had the row gone in as `090` it would have hit the
+primary key and failed loudly, which is the better of the two failure modes —
+the silent one is a `db push` later skipping a file whose number is already
+recorded. Worth noting for the rule in §4.4: "number above every branch and
+tag" has to be re-checked at apply time, not at draft time.
+
+Measured in the SQL editor immediately afterwards:
+
+| Probe | Before | After |
+|---|---|---|
+| `count(*) FROM public_profiles` | 19 | 19 |
+| `count(*) FROM leaderboard_profiles` | 19 | 19 |
+| `profiles` rows whose `email_confirmed_at` differs from `auth.users` | — | 0 of 28 |
+| views in `public` mentioning `auth.users` | 2 | 0 |
+| `anon` on `public_profiles` / `leaderboard_profiles` | true / false | true / false |
+| `authenticated` on `leaderboard_profiles` | true | true |
+| `security_invoker` on both views | off | off |
+| trigger `on_auth_user_email_confirmed` on `auth.users` | absent | present |
+
+**Why the unchanged 19 is the row that matters.** The gate moved from
+`auth.users.email_confirmed_at` to a mirrored column on `profiles`. A backfill
+that missed rows would show as a smaller count; a gate that stopped filtering
+would show as 27 or 28. Nineteen both times is the mirror agreeing with the
+source for every profile that has a username.
+
+**What has NOT been demonstrated.** The confirmation trigger has not yet seen a
+real OTP confirmation. The next new signup should be checked by eye: after they
+enter the six-digit code, their `profiles.email_confirmed_at` should be set
+and they should appear in `public_profiles` once they pick a username.
+
+**The ten `security_definer_view` errors are still in the advisor** and are
+meant to be: every projection view runs `security_invoker = off` by design
+(056, 085, `public-projections.test.ts`). The dashboard has no per-item
+ignore, so the digest email may continue for those alone.
 
 ## 5. Where this leaves the project
 
