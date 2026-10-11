@@ -44,7 +44,7 @@ its current status inline; this table is the summary.
 | L4 `geolocation=()` undocumented | **CLOSED** | `6b6aebf` |
 | M12 index gaps | **OPEN — deliberately.** No index added, because no query plan could be produced. Diagnostic shipped instead; needs an operator to run it | `7893c0c` |
 | M9 CSP allows `'unsafe-inline'` | **CLOSED on the authenticated surface** — public pages keep it, deliberately; see the finding | `3e8994d` |
-| N10 email addresses in an anon-readable column | **CLOSED** by a peer session's migration 064, which masks the column in both views rather than scrubbing rows — a better fix than my 061, which never landed | `ff0ab52` |
+| N10 email addresses in an anon-readable column | **CLOSED** by a peer session's migration 064, which masks the column in both views rather than scrubbing rows — a better fix than my 061, which never landed. The regression test's one false alarm (against 091, 11 Oct) is recorded in the finding | `ff0ab52`, `9c8687ae` |
 | M6 `CRON_SECRET` accepted from the query string | **CLOSED** | see finding |
 | N11 `REVOKE FROM PUBLIC` leaves anon's direct grant | **OPEN — High.** 067 written, not applied; `prune_security_events` is the one with teeth | `067` |
 | M10 share card content and per-share consent | **CLOSED** — and the finding's "Tier 2" claim corrected; see the finding | see finding |
@@ -1805,6 +1805,22 @@ The practical consequence is narrow but sharp: **`git revert ff0ab52` restores t
 migration**, and so does cherry-picking `da224f7` onto another branch. Anyone undoing the
 rename must undo both commits or neither. If those views are ever rebuilt, rebuild from
 064 — never from 056.
+
+**The regression test, and its one false alarm (2026-10-11).** `eff60acd` added
+[display-name-privacy.test.ts](src/lib/security/display-name-privacy.test.ts), which
+reads every `handle_new_user()` body in apply order and asserts the *last* one never
+mentions `NEW.email` — the regression worth catching is a later migration quietly
+reinstating the fallback. On 11 Oct it fired against migration 091 (`e18eb84b`), which
+redefines the trigger so the views stop reading `auth.users`. That was a false positive,
+checked against the body rather than the message: 091 writes `provided_name` (nulled on
+`@`) into `display_name` and `NEW.email_confirmed_at` — a timestamp — into a new
+`profiles.email_confirmed_at` column, which the rebuilt `public_profiles` reads only in
+its `WHERE` and does not publish. The assertion was `/NEW\.email/i`, which matches the
+first nine characters of `NEW.email_confirmed_at`. `9c8687ae` tightened it to
+`/NEW\.email\b/i` — `_` is a word character, so the boundary refuses the timestamp and
+still catches `NEW.email` followed by `)`, `,`, whitespace or a cast — and added a case
+that pins the regex in both directions. 091 is sound and was already applied to
+production; no migration was needed. The finding stays closed.
 
 **Still outstanding, and no longer urgent:**
 
