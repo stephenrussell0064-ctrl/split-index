@@ -1113,6 +1113,100 @@ interface ValidationResult {
 }
 
 /**
+ * How many inputs the athlete filled or changed by hand.
+ *
+ * The logging-effort plan's first metric, with the number it was written
+ * against: a five-exercise, four-set gym session typed from nothing is about
+ * sixty fields. Counted from the final state at submit, as what is filled
+ * MINUS what was filled in for them and left alone:
+ *
+ *  - gym: every exercise name and muscle group, every entered cell of every
+ *    set (load, count, RPE, RIR), every note. A set still exactly as the plan
+ *    or history filled it in does not count its filled cells, and a row that
+ *    arrived with prefilled sets does not count its name or group either.
+ *    Bodyweight is never counted; it is filled from the profile.
+ *  - cardio: each field with something in it, duration and split as one
+ *    each, session type only when changed from the default, every interval
+ *    block as its four fields.
+ *
+ * Known over-count, stated rather than hidden: a form opened from a preset
+ * plan or a saved template arrives with names and reps filled but carries no
+ * per-set marker, so those count as touched. The `entry` the server stores
+ * beside this number says which door the session came in by, so the
+ * over-count is attributable per entry rather than silent.
+ */
+export function countFieldsTouched(sport: SportType, state: WorkoutFormState): number {
+  if (sport === "gym") {
+    let touched = 0;
+    for (const row of state.exercises) {
+      const meaningful = row.name.trim() !== "" || row.sets.some((s) => setHasEntry(s));
+      if (!meaningful) continue;
+      const rowPrefilled = row.sets.some((s) => s.prescribed != null);
+      if (!rowPrefilled) {
+        if (row.name.trim()) touched += 1;
+        if (row.muscleGroup) touched += 1;
+      }
+      if (row.notes.trim()) touched += 1;
+      for (const set of row.sets) {
+        if (!setHasEntry(set)) continue;
+        const p = set.prescribed;
+        const untouched =
+          p != null &&
+          set.weight.trim() === p.weight.trim() &&
+          set.reps.trim() === p.reps.trim() &&
+          (set.durationSeconds ?? "").trim() === (p.durationSeconds ?? "").trim();
+        if (set.weight.trim() && !(untouched && p.weight.trim())) touched += 1;
+        if (set.reps.trim() && !(untouched && p.reps.trim())) touched += 1;
+        if ((set.durationSeconds ?? "").trim() && !(untouched && (p?.durationSeconds ?? "").trim())) touched += 1;
+        if ((set.distanceMeters ?? "").trim()) touched += 1;
+        if (set.rpe.trim()) touched += 1;
+        if (set.repsInReserve.trim()) touched += 1;
+      }
+    }
+    return touched;
+  }
+
+  // Cardio: a field counts when it differs from what the form opened with,
+  // so a default stroke type or session type is not a touch and a typed one
+  // is. Start time is not compared: it defaults to now and is rarely changed.
+  const base = createDefaultState(sport);
+  let touched = 0;
+  const changed = (key: keyof WorkoutFormState) =>
+    String(state[key] ?? "").trim() !== String(base[key] ?? "").trim();
+  if (changed("title")) touched += 1;
+  if (changed("distance")) touched += 1;
+  if (changed("hours") || changed("minutes") || changed("seconds")) touched += 1;
+  if (changed("elevation")) touched += 1;
+  if (changed("avgHr")) touched += 1;
+  if (changed("avgPower")) touched += 1;
+  if (changed("splitMinutes") || changed("splitSeconds")) touched += 1;
+  if (changed("strokeType")) touched += 1;
+  if (changed("temperature")) touched += 1;
+  if (changed("rpe")) touched += 1;
+  if (changed("notes")) touched += 1;
+  if (changed("sessionType")) touched += 1;
+  for (const key of [
+    "intervalReps",
+    "intervalWorkDistance",
+    "intervalWorkSeconds",
+    "intervalRestSeconds",
+    "intervalWorkHr",
+    "fartlekOnDistance",
+    "fartlekOnSeconds",
+    "fartlekOnHr",
+  ] as const) {
+    if (changed(key)) touched += 1;
+  }
+  const filled = (v: string | undefined) => (v ?? "").trim() !== "";
+  for (const block of state.intervalBlocks) {
+    for (const v of [block.reps, block.distanceMeters, block.workSeconds, block.restSeconds, block.workHr]) {
+      if (filled(v)) touched += 1;
+    }
+  }
+  return touched;
+}
+
+/**
  * How much of a prefilled session was logged as filled in.
  *
  * A set is ACCEPTED when its load and count are exactly what it was filled in

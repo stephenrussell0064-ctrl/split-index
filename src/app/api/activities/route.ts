@@ -468,6 +468,9 @@ export async function POST(request: Request) {
         // How much of a prefilled session was logged untouched. Telemetry for
         // the logging-effort plan; nothing renders it.
         ...(body.prescribed_sets ? { prescribed_sets: body.prescribed_sets } : {}),
+        // Which door, how many fields by hand, how long. Read only by the
+        // logging-effort admin view (migration 090).
+        ...(body.logging_effort ? { logging_effort: body.logging_effort } : {}),
       },
   };
 

@@ -5,6 +5,7 @@ import {
   createIntervalRepOverride,
   flattenIntervalBlocks,
   parseSeconds,
+  countFieldsTouched,
   prescribedSetsSummary,
   readIntervalBlocks,
   resolveIntervalBlock,
@@ -396,5 +397,64 @@ describe("prescribedSetsSummary and the payload it rides on", () => {
       source: "plan",
     });
     expect(prescribedSetsSummary(restored)).toEqual({ accepted: 1, edited: 0 });
+  });
+});
+
+describe("countFieldsTouched — the logging-effort plan's first metric", () => {
+  function gymRows(exerciseCount: number, setCount: number, prescribed: boolean): WorkoutFormState["exercises"] {
+    return Array.from({ length: exerciseCount }, (_, e) => ({
+      id: `ex${e}`,
+      name: `Lift ${e}`,
+      muscleGroup: "Chest",
+      weightEntryMode: "total" as const,
+      attachment: null,
+      notes: "",
+      sets: Array.from({ length: setCount }, (_, s) => ({
+        id: `ex${e}s${s}`,
+        weight: "100",
+        reps: "5",
+        rpe: "",
+        repsInReserve: "",
+        ...(prescribed ? { prescribed: { weight: "100", reps: "5", source: "plan" as const } } : {}),
+      })),
+    }));
+  }
+
+  it("counts a five-by-four gym session typed from nothing at about the plan's sixty", () => {
+    const state = { ...createDefaultState("gym", 80), exercises: gymRows(5, 4, false) };
+    // 5 names + 5 groups + 20 sets × (weight + reps) = 50; RPE and RIR left blank.
+    expect(countFieldsTouched("gym", state)).toBe(50);
+  });
+
+  it("counts the same session logged from the plan untouched as zero", () => {
+    const state = { ...createDefaultState("gym", 80), exercises: gymRows(5, 4, true) };
+    expect(countFieldsTouched("gym", state)).toBe(0);
+  });
+
+  it("counts only what was changed on a prescribed session", () => {
+    const rows = gymRows(1, 3, true);
+    rows[0].sets[1].reps = "6"; // one edit: the whole set's filled cells now count
+    rows[0].sets[2].rpe = "8"; // an effort rating is always by hand
+    const state = { ...createDefaultState("gym", 80), exercises: rows };
+    expect(countFieldsTouched("gym", state)).toBe(3);
+  });
+
+  it("never counts bodyweight, which comes from the profile", () => {
+    const state = { ...createDefaultState("gym", 80), bodyweight: "80", exercises: gymRows(1, 1, false) };
+    expect(countFieldsTouched("gym", state)).toBe(4);
+  });
+
+  it("counts a typed run field by field, duration as one, session type only when changed", () => {
+    const state: WorkoutFormState = {
+      ...createDefaultState("running", 75),
+      distance: "8",
+      hours: "",
+      minutes: "40",
+      seconds: "30",
+      avgHr: "150",
+      sessionType: "easy",
+    };
+    expect(countFieldsTouched("running", state)).toBe(3);
+    expect(countFieldsTouched("running", { ...state, sessionType: "tempo", notes: "hilly" })).toBe(5);
   });
 });

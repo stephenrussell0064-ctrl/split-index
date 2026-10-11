@@ -557,4 +557,31 @@ export interface ActivityFormData {
    * stored in `activities.metadata` and never shown to the athlete.
    */
   prescribed_sets?: { accepted: number; edited: number };
+  /**
+   * How much work logging this session took: which door it came in by, how
+   * many fields the athlete filled by hand, and how long from opening the
+   * form to saving. The logging-effort plan's measurement, stored in
+   * `activities.metadata` and read only by the admin view. Absent on edits.
+   */
+  logging_effort?: LoggingEffort;
+}
+
+/** Which way a session came in. The measurement groups by this. */
+export type LoggingEntry =
+  | "typed"
+  | "template"
+  | "plan_preset"
+  | "recommended"
+  | "prescribed_form"
+  | "prescribed_one_tap"
+  | "gps"
+  | "file"
+  | "apple_health";
+
+export interface LoggingEffort {
+  entry: LoggingEntry;
+  /** Inputs the athlete filled or changed by hand. Zero for an import or a one-tap log. */
+  fields_touched: number;
+  /** From the form opening to the save landing. Zero where there was no form. */
+  seconds_to_save: number;
 }

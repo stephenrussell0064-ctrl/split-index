@@ -97,6 +97,8 @@ export function buildPrescribedActivityPayload(input: {
     exercises: payloadExercises,
     hpe_session_id: input.sessionId,
     prescribed_sets: { accepted: totalSets, edited: 0 },
+    // One tap: nothing typed, no form opened.
+    logging_effort: { entry: "prescribed_one_tap", fields_touched: 0, seconds_to_save: 0 },
   };
 }
 

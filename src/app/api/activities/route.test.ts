@@ -669,6 +669,36 @@ describe("POST /api/activities — route privacy zone", () => {
  * the plan's own feedback row only when nothing was edited, and (d) still save
  * the session on a database that has not applied migration 088.
  */
+describe("POST /api/activities — the logging-effort measurement", () => {
+  it("stores which door, how many fields and how long in the metadata", async () => {
+    const { response, calls } = await postWith(happyPathResults(), {
+      ...gymSessionBody(),
+      logging_effort: { entry: "typed", fields_touched: 12, seconds_to_save: 95 },
+    });
+    expect(response.status).toBe(200);
+    const row = calls.find((c) => c.table === "activities" && c.op === "insert")!.payload as Record<string, unknown>;
+    expect((row.metadata as Record<string, unknown>).logging_effort).toEqual({
+      entry: "typed",
+      fields_touched: 12,
+      seconds_to_save: 95,
+    });
+  });
+
+  it("stores nothing for a session that sent none", async () => {
+    const { calls } = await postWith(happyPathResults(), gymSessionBody());
+    const row = calls.find((c) => c.table === "activities" && c.op === "insert")!.payload as Record<string, unknown>;
+    expect(row.metadata as Record<string, unknown>).not.toHaveProperty("logging_effort");
+  });
+
+  it("refuses a door nobody named", async () => {
+    const { response } = await postWith(happyPathResults(), {
+      ...gymSessionBody(),
+      logging_effort: { entry: "telepathy", fields_touched: 0, seconds_to_save: 0 },
+    });
+    expect(response.status).toBe(400);
+  });
+});
+
 describe("POST /api/activities — a session logged from a Hybrid Plan prescription", () => {
   const SESSION_ID = "11111111-2222-4333-8444-555555555555";
 

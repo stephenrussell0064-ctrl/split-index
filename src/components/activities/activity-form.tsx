@@ -13,9 +13,10 @@ import {
   formatStrengthHeadline,
 } from "@/lib/utils/scoring-display";
 import { cn } from "@/lib/utils/cn";
-import type { ExperienceLevel, Gender, SportType } from "@/types";
+import type { ExperienceLevel, Gender, LoggingEntry, SportType } from "@/types";
 import { DeleteActivityModal } from "./delete-activity-modal";
 import {
+  countFieldsTouched,
   createDefaultState,
   isStateDirty,
   restoreDraftState,
@@ -156,6 +157,7 @@ export function ActivityForm({
   zoneMode = "generic",
   enduranceOnly = false,
   successRedirect,
+  entry = "typed",
 }: {
   profileWeightKg?: number | null;
   initialDrafts?: Partial<Record<SportType, unknown>>;
@@ -186,8 +188,21 @@ export function ActivityForm({
   zoneMode?: "gym" | "cardio" | "generic";
   enduranceOnly?: boolean;
   successRedirect?: string;
+  /** Which door this form was opened by — a prescription, a template, a recommendation, or nothing. Stored with the save for the logging-effort measurement. */
+  entry?: LoggingEntry;
 }) {
   const isEdit = mode === "edit";
+  /*
+    The logging-effort plan's second metric: seconds from this form opening
+    to the save landing. Mount time, not first keystroke — the time spent
+    reading a prefilled form before deciding nothing needs changing is part
+    of the cost being measured.
+  */
+  const openedAt = useRef<number | null>(null);
+  useEffect(() => {
+    // Set once, on mount; the clock is not read during render.
+    openedAt.current ??= Date.now();
+  }, []);
   const editSport = isEdit && initialEditState ? initialSport : null;
   const openFormInitially = isEdit || Boolean(initialSport);
 
@@ -526,7 +541,19 @@ export function ActivityForm({
     try {
       const url = isEdit && activityId ? `/api/activities/${activityId}` : "/api/activities";
       const method = isEdit ? "PATCH" : "POST";
-      const result = await submitActivityRequest(url, method, payload);
+      // Only on a create: an edit is not a logging event, and the PATCH
+      // schema would reject the key anyway.
+      const measured = isEdit
+        ? payload
+        : {
+            ...payload,
+            logging_effort: {
+              entry,
+              fields_touched: countFieldsTouched(sport, currentState),
+              seconds_to_save: Math.max(0, Math.round((Date.now() - (openedAt.current ?? Date.now())) / 1000)),
+            },
+          };
+      const result = await submitActivityRequest(url, method, measured);
 
       if (!result.ok) {
         throw new Error(result.error);

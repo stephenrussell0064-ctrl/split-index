@@ -250,6 +250,30 @@ export const activityFieldsSchema = z
       })
       .strict()
       .optional(),
+
+    /*
+     * The logging-effort measurement: which door, how many fields by hand,
+     * how long. Telemetry for the metadata column; bounded so a bad client
+     * cannot store a number no form could produce.
+     */
+    logging_effort: z
+      .object({
+        entry: z.enum([
+          "typed",
+          "template",
+          "plan_preset",
+          "recommended",
+          "prescribed_form",
+          "prescribed_one_tap",
+          "gps",
+          "file",
+          "apple_health",
+        ]),
+        fields_touched: bounded([0, 2000], "fields touched").int(),
+        seconds_to_save: bounded([0, 86_400], "seconds to save").int(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 

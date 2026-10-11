@@ -61,6 +61,8 @@ export function FileImport() {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [phase, setPhase] = useState<"pick" | "reading" | "preview" | "saving">("pick");
+  /** When the preview appeared — the logging-effort clock for an import starts at the first thing the athlete could act on. */
+  const previewAt = useRef(0);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<PreviewResponse | null>(null);
   const [sport, setSport] = useState<SportType | "">("");
@@ -82,6 +84,7 @@ export function FileImport() {
       setResult(body);
       setSport(body.preview.fields.sport ?? "");
       setTitle(body.preview.fields.title);
+      previewAt.current = Date.now();
       setPhase("preview");
     } catch (err) {
       setError(err instanceof Error ? err.message : "That file couldn't be read.");
@@ -108,6 +111,16 @@ export function FileImport() {
       session_type: sessionType,
       source: "file",
       client_request_id: result.clientRequestId,
+      // What the athlete changed by hand on the preview: the sport where the
+      // file did not say, a session type other than the default, the title.
+      logging_effort: {
+        entry: "file",
+        fields_touched:
+          (sport !== (fields.sport ?? "") ? 1 : 0) +
+          (sessionType !== "easy" ? 1 : 0) +
+          (title.trim() !== fields.title ? 1 : 0),
+        seconds_to_save: Math.max(0, Math.round((Date.now() - previewAt.current) / 1000)),
+      },
       ...(result.preview.route ? { route: result.preview.route } : {}),
       ...(result.preview.streams ? { streams: result.preview.streams } : {}),
     };

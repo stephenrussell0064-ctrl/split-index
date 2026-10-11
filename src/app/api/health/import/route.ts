@@ -278,6 +278,9 @@ export async function POST(request: Request) {
         external_id: workout.uuid,
         is_draft: false,
         metadata: {
+          // Imported: nothing typed, no form. The logging-effort measurement
+          // groups on this (migration 090).
+          logging_effort: { entry: "apple_health", fields_touched: 0, seconds_to_save: 0 },
           health: {
             activityType: workout.activityType,
             sourceName: workout.sourceName ?? null,

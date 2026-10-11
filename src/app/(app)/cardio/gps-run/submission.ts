@@ -111,6 +111,9 @@ export function buildGpsActivityPayload(input: GpsSubmissionInput): Record<strin
     // to false rather than left to the server's default: the intent has to be
     // visible here, where the payload is built.
     is_partial_track: false,
+    // Recorded, not typed: the session type was the one choice made by hand.
+    // The logging-effort measurement groups on this (migration 090).
+    logging_effort: { entry: "gps", fields_touched: 1, seconds_to_save: 0 },
     // Starting coordinates only — used server-side to auto-fetch the
     // temperature at run time (no manual entry needed for GPS runs). Never
     // persisted as their own column, just consumed once.

@@ -21,7 +21,7 @@ import {
   isBodyweightMovement,
 } from "@/lib/scoring/hpe/prescribed-sets";
 import { KIND_LABEL } from "@/components/hybrid-plan/plan-calendar";
-import type { SportType } from "@/types";
+import type { LoggingEntry, SportType } from "@/types";
 import type { ExerciseRowState, WorkoutFormState } from "@/components/activities/form-state";
 
 type LogSearchParams = {
@@ -110,6 +110,9 @@ export async function loadLogPage({
 
   if (!profile?.onboarding_completed) redirect("/onboarding");
   let initialRepeatState: WorkoutFormState | undefined;
+  // Which door the form is opened by, stored with the save so the
+  // logging-effort measurement can compare them.
+  let entry: LoggingEntry = "typed";
 
   if (params.hpeSession && zoneMode === "gym") {
     /*
@@ -130,6 +133,7 @@ export async function loadLogPage({
       const rows = prescribedExerciseRows(hpeSession.prescription as string);
       if (rows.length > 0) {
         const base = createDefaultState("gym", profile.weight_kg);
+        entry = "prescribed_form";
         initialRepeatState = {
           ...base,
           title:
@@ -150,6 +154,7 @@ export async function loadLogPage({
       .single();
 
     if (template?.template_data) {
+      entry = "template";
       initialRepeatState = template.template_data as WorkoutFormState;
       if (template.name && !initialRepeatState.title) {
         initialRepeatState = { ...initialRepeatState, title: template.name as string };
@@ -160,6 +165,7 @@ export async function loadLogPage({
     const plan = getWorkoutPlan(params.plan);
     if (plan) {
       const base = createDefaultState("gym", profile.weight_kg);
+      entry = "plan_preset";
       initialRepeatState = {
         ...base,
         title: plan.name,
@@ -248,6 +254,7 @@ export async function loadLogPage({
       }
 
       const base = createDefaultState("gym", profile.weight_kg);
+      entry = "recommended";
       initialRepeatState = {
         ...base,
         title: "Recommended session",
@@ -300,6 +307,7 @@ export async function loadLogPage({
       successRedirect={zoneMode === "gym" ? "/gym" : "/cardio"}
       profileScoringSex={resolveScoringSex(profile)}
       profileExperience={profile.experience}
+      entry={entry}
     />
   );
 }
