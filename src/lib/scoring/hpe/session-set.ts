@@ -141,6 +141,21 @@ export interface PlannedSession {
   /** Non-negotiable #7 — the named diagnostic finding this session exists to answer. */
   findingId: FindingId;
   stress: number;
+  /**
+   * The same session built for a different duration — prescription text,
+   * distance and stress all recomputed.
+   *
+   * Three reconciliations shorten endurance sessions after they are built:
+   * the week's own budget, the athlete's weekly hours, and the ACWR cap. Each
+   * rewrote `minutes` and `stress` and left `prescription` as it was, so a
+   * 30-minute long run read "12.3km in 63min" — the distance and the duration
+   * of the session it had been before the trim. The athlete sees the text, not
+   * the field. Set by the endurance builder, which is the only place that has
+   * everything a prescription needs; absent on a strength session, which is
+   * never retimed, and on anything read back from storage. A function, so it
+   * is dropped by JSON serialisation rather than stored.
+   */
+  rebuild?: (minutes: number) => PlannedSession;
 }
 
 /**
@@ -597,6 +612,9 @@ function buildEnduranceSession(args: {
   progression?: Omit<EndurancePrescriptionOptions, "minutes">;
 }): PlannedSession {
   const { profile, modality, fitness, kind, emphasisKey, findingId, minutes } = args;
+  // A later trim rebuilds the whole session at the new duration, so the text
+  // the athlete reads describes the session they are given.
+  const rebuild = (m: number) => buildEnduranceSession({ ...args, minutes: m });
 
   if (modality === "run") {
     const prescription = prescribeEndurance(profile, kind, findingId, {
@@ -605,12 +623,14 @@ function buildEnduranceSession(args: {
       extra: args.extra,
       ...(args.progression ?? {}),
     });
-    return makeSession(kind, "endurance", emphasisKey, findingId, prescription, {
+    const session = makeSession(kind, "endurance", emphasisKey, findingId, prescription, {
       intensity: args.intensity,
       isQuality: args.isQuality,
       minutes,
       modality,
     });
+    session.rebuild = rebuild;
+    return session;
   }
 
   const resolved = fitness ?? emptyModalityFitness(modality);
@@ -619,13 +639,15 @@ function buildEnduranceSession(args: {
     suppressHeartRate: args.suppressHeartRate,
     extra: args.extra,
   });
-  return makeSession(kind, "endurance", emphasisKey, findingId, prescription, {
+  const session = makeSession(kind, "endurance", emphasisKey, findingId, prescription, {
     intensity: args.intensity,
     isQuality: args.isQuality,
     minutes,
     modality,
     label: modalitySessionLabel(modality, kind),
   });
+  session.rebuild = rebuild;
+  return session;
 }
 
 export function buildSessionSet(input: SessionSetInput): SessionSet {
@@ -705,9 +727,33 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
     enduranceByPhase,
     Math.min(neededForBudget, constraints.maxSessionsPerWeek)
   );
+  /**
+   * A chosen split is a request for THAT MANY gym days a week.
+   *
+   * The phase table decides how many strength sessions a developing week
+   * wants — four in base and build, three at peak — and the split only decided
+   * how those sessions were labelled. An athlete who asked for push / pull /
+   * legs + upper / lower was handed four of its five days every week, with the
+   * fifth rolling over to the following week, which is not that split; it is a
+   * four-day rotation wearing its names. The same held for anyone whose own
+   * day structure runs to more days than the table gives.
+   *
+   * The split's day count is the floor the athlete asked for, in every phase
+   * except the taper, where volume comes down by design. It is still a REQUEST:
+   * `maxSessionsPerWeek` binds below, and when the split cannot fit inside the
+   * cap the athlete gave, the trim says so and names the cap rather than
+   * quietly handing over a shorter week.
+   */
+  const chosenSplitDayCount = (() => {
+    if ((constraints.customSplitDays?.length ?? 0) > 0) return constraints.customSplitDays!.length;
+    if (constraints.trainingSplit != null) return TRAINING_SPLITS[constraints.trainingSplit].days.length;
+    return null;
+  })();
+  const splitFloor =
+    chosenSplitDayCount != null && mode.strength === "develop" && phase !== "taper" ? chosenSplitDayCount : null;
   const strengthWanted =
     mode.strength === "develop"
-      ? Math.max(2, STRENGTH_SESSIONS_BY_PHASE[phase] - (goal.priority < 0.5 ? 1 : 0))
+      ? Math.max(2, STRENGTH_SESSIONS_BY_PHASE[phase] - (goal.priority < 0.5 ? 1 : 0), splitFloor ?? 0)
       : Math.max(MMD_STRENGTH_SESSIONS_PER_WEEK, 2);
 
   // Each endurance session has to be long enough to be a session. Where the
@@ -733,10 +779,15 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
   const fewerLongerRuns = enduranceSlots < enduranceWanted;
 
   // Fit inside the athlete's own stated ceiling, trimming whichever domain is
-  // furthest above its minimum dose first.
+  // furthest above its minimum dose first. A chosen split raises strength's
+  // floor to the split's day count, so endurance gives way first — down to its
+  // own minimum dose, never below — and the split is only cut when the cap the
+  // athlete gave leaves no other way to fit the week.
+  const strengthFloor = splitFloor ?? MMD_STRENGTH_SESSIONS_PER_WEEK;
+  const enduranceBeforeCap = enduranceSlots;
   while (enduranceSlots + strengthSlots > constraints.maxSessionsPerWeek) {
     const enduranceHeadroom = enduranceSlots - MMD_ENDURANCE_SESSIONS_PER_WEEK;
-    const strengthHeadroom = strengthSlots - MMD_STRENGTH_SESSIONS_PER_WEEK;
+    const strengthHeadroom = strengthSlots - strengthFloor;
     if (enduranceHeadroom <= 0 && strengthHeadroom <= 0) {
       if (enduranceSlots >= strengthSlots) enduranceSlots--;
       else strengthSlots--;
@@ -748,6 +799,18 @@ export function buildSessionSet(input: SessionSetInput): SessionSet {
   }
   enduranceSlots = Math.max(0, enduranceSlots);
   strengthSlots = Math.max(0, strengthSlots);
+  if (splitFloor != null && strengthSlots < splitFloor) {
+    notes.push(
+      `Your split asks for ${splitFloor} gym days a week and this week has ${strengthSlots}. The limit is the ` +
+        `${constraints.maxSessionsPerWeek} sessions a week you set in your intake — the running needs at least ` +
+        `${MMD_ENDURANCE_SESSIONS_PER_WEEK} of those — so raising that number is what completes the split.`
+    );
+  } else if (splitFloor != null && enduranceSlots < enduranceBeforeCap) {
+    notes.push(
+      `Endurance is at ${enduranceSlots} session${enduranceSlots === 1 ? "" : "s"} this week so that all ` +
+        `${splitFloor} days of your split fit inside the ${constraints.maxSessionsPerWeek} sessions you allowed.`
+    );
+  }
 
   // ---- step 1: reserve the mandatory minimums -----------------------------
   // The long run is reserved before the emphasis vector bids for anything —
@@ -1516,11 +1579,17 @@ export function fitEnduranceToMinutes(
 
   const floorFor = (x: PlannedSession) =>
     x.isQuality && !isEasy(x) && x.kind !== "long_run" ? MIN_QUALITY_SESSION_MIN : MIN_ENDURANCE_SESSION_MIN;
-  const retime = (x: PlannedSession, minutes: number): PlannedSession => ({
-    ...x,
-    minutes,
-    stress: x.minutes > 0 ? (x.stress / x.minutes) * minutes : x.stress,
-  });
+  // Re-prescribed where the session knows how, so distance and the duration in
+  // the text follow the minutes. The arithmetic fallback is for sessions built
+  // without a rebuilder — tests, and anything read back from storage.
+  const retime = (x: PlannedSession, minutes: number): PlannedSession =>
+    x.rebuild
+      ? x.rebuild(minutes)
+      : {
+          ...x,
+          minutes,
+          stress: x.minutes > 0 ? (x.stress / x.minutes) * minutes : x.stress,
+        };
 
   // Pass 1 — durations, longest-first, never below the floor.
   let guard = 0;

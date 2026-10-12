@@ -249,6 +249,12 @@ export async function savePlan(
     constraints: Constraints;
     weeks: PlanWeek[];
     eventDate?: string | null;
+    /**
+     * The findings this plan was built from, so a session whose finding has no
+     * stored row yet can be given one rather than dropped. See the note above
+     * the rows loop.
+     */
+    findings?: readonly Finding[];
   }
 ): Promise<{ planId: string; storedSessions: number; droppedSessions: number; reused?: boolean } | null> {
   /*
@@ -345,12 +351,56 @@ export async function savePlan(
     .is("superseded_at", null)
     .neq("id", planId);
 
+  /*
+    A session whose finding has no stored row is given one, not dropped.
+
+    `findingIds` is read from the LAST STORED diagnostic when the profile is
+    not being rewritten this request, and the plan is generated from the
+    CURRENT diagnosis. Those two can emit different findings — the stored run
+    said "under-expressed", today's says "under-built" — and every session that
+    cited the newer finding failed the lookup below and was silently left out
+    of the stored plan. Observed live: a plan generated with four lifting
+    sessions a week was stored, and re-read on every visit, with none. The
+    athlete saw a running plan and a split they had chosen that did nothing.
+
+    The foreign key is still the enforcement point for non-negotiable #7: the
+    row is written only when the plan can say what the finding IS, from the
+    findings it was built with, or from the baseline rationale. A finding the
+    plan cannot name is still dropped.
+  */
+  const findingIds = new Map(args.findingIds);
+  const missing = new Map<FindingId, string>();
+  for (const week of args.weeks) {
+    for (const placement of week.placements) {
+      const id = placement.session.findingId;
+      if (findingIds.has(id) || missing.has(id)) continue;
+      const known =
+        args.findings?.find((f) => f.id === id) ?? (id === HYBRID_BASELINE_FINDING.id ? HYBRID_BASELINE_FINDING : null);
+      if (known) missing.set(id, known.text);
+    }
+  }
+  if (missing.size > 0) {
+    const { data: added } = await supabase
+      .from("hpe_findings")
+      .upsert(
+        [...missing].map(([finding_key, body], i) => ({
+          profile_id: args.profileId,
+          finding_key,
+          body,
+          ordinal: args.findingIds.size + i,
+        })),
+        { onConflict: "profile_id,finding_key" }
+      )
+      .select("id, finding_key");
+    for (const row of added ?? []) findingIds.set(row.finding_key as FindingId, row.id as string);
+  }
+
   const rows: Record<string, unknown>[] = [];
   let dropped = 0;
   for (const week of args.weeks) {
     for (const placement of week.placements) {
       const session = placement.session;
-      const findingId = args.findingIds.get(session.findingId);
+      const findingId = findingIds.get(session.findingId);
       if (!findingId) {
         dropped++;
         continue;

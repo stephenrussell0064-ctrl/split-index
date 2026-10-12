@@ -69,6 +69,8 @@ import {
   DEFAULT_GOAL_PRIORITY,
   EASY_ANCHOR_DISAGREEMENT_FLAG,
   EASY_PACE_BOUNDS_VS_5K,
+  EASY_PACE_HR_ANCHOR_BOUND_VS_5K,
+  MIN_EASY_BAND_WIDTH_S_PER_KM,
   EASY_FRACTION_TARGET,
   EASY_HR_FRACTION_HRR,
   EMPHASIS_FLOOR,
@@ -116,6 +118,7 @@ import {
   VO2MAX_PACE_MULTIPLIER,
   type EmphasisKey,
   RIEGEL_5K_EXTRAPOLATION_RANGE_KM,
+  MAX_EFFORT_RECENCY_DAYS,
 } from "./constants";
 import {
   paceSPerKm,
@@ -415,12 +418,24 @@ export function easyPaceBand(
     // because the slowest anchor governs, that extrapolation then WINS. The
     // engine was reading "you never run easy" and answering with a number
     // derived from the absence of the very data it was complaining about.
+    const fitFloorKph = hrModel.loKph * HR_PACE_MODEL_RANGE_TOLERANCE_LOW;
     const withinFit = (kph: number) =>
-      kph >= hrModel.loKph * HR_PACE_MODEL_RANGE_TOLERANCE_LOW &&
-      kph <= hrModel.hiKph * HR_PACE_MODEL_RANGE_TOLERANCE_HIGH;
+      kph >= fitFloorKph && kph <= hrModel.hiKph * HR_PACE_MODEL_RANGE_TOLERANCE_HIGH;
 
-    if (loKph > 0 && hiKph > 0 && withinFit(loKph) && withinFit(hiKph)) {
-      candidates.hr_inverted = { lo: 3600 / hiKph, hi: 3600 / loKph };
+    // It is the CEILING that has to invert inside the fit. The anchor's job in
+    // the "slowest governs" rule is its fast bound — the pace at the easy HR
+    // ceiling — and that is the number the forward check below would also be
+    // asked about. Requiring the FLOOR to invert inside the fit as well threw
+    // the whole anchor away for exactly the athlete it exists for: someone
+    // whose easy runs all sit near the ceiling has a model fitted on that one
+    // band, so 62% of HR reserve is below every speed it has seen, and the one
+    // anchor measured from their own heart rate was dropped while the two
+    // derived from a race time survived. The slow bound is then taken no
+    // slower than the fit reaches, rather than extrapolated — the extrapolation
+    // risk the old rule was guarding against was always on this side.
+    if (hiKph > 0 && withinFit(hiKph)) {
+      const slowKph = loKph > 0 ? Math.max(loKph, fitFloorKph) : fitFloorKph;
+      candidates.hr_inverted = { lo: 3600 / hiKph, hi: 3600 / slowKph };
     }
   }
 
@@ -429,21 +444,46 @@ export function easyPaceBand(
   // precisely because it is the slowest. Clamped to a band around the
   // athlete's own 5k pace — a derivation this crude would be a poor primary
   // source and is a sound guard against nonsense.
+  //
+  // The HR anchor gets a wider bound. It is measured, not derived, and when
+  // it disagrees with the 5k-based anchors the 5k is the more likely of the
+  // two to be wrong — see EASY_PACE_HR_ANCHOR_BOUND_VS_5K.
   const p5kPace = predicted5kS / 5.0;
   const slowestPlausible = p5kPace * EASY_PACE_BOUNDS_VS_5K[1];
+  const slowestFromHr = p5kPace * EASY_PACE_HR_ANCHOR_BOUND_VS_5K;
   const fastestPlausible = p5kPace * EASY_PACE_BOUNDS_VS_5K[0];
   for (const key of Object.keys(candidates) as EasyAnchorName[]) {
     const c = candidates[key]!;
-    candidates[key] = {
-      lo: Math.min(slowestPlausible, Math.max(fastestPlausible, c.lo)),
-      hi: Math.min(slowestPlausible, Math.max(fastestPlausible, c.hi)),
+    const slowest = key === "hr_inverted" ? slowestFromHr : slowestPlausible;
+    const clamped = {
+      lo: Math.min(slowest, Math.max(fastestPlausible, c.lo)),
+      hi: Math.min(slowest, Math.max(fastestPlausible, c.hi)),
     };
+    // A derived anchor whose FAST bound hit the backstop has said everything it
+    // can say — "at least this slow" — and nothing about where inside that the
+    // athlete's easy pace lies. While it stands it wins the slowest-governs
+    // vote with a bound that is the clamp's, not the athlete's, and the band
+    // collapses to a single pace. When the athlete's own heart-rate data has
+    // produced an anchor, that measured answer is the better one to the same
+    // question, and the saturated anchor steps aside. Without an HR anchor it
+    // stays: a floor from a crude derivation still beats a race-pace multiple
+    // the diagnostic has already said not to trust.
+    const saturated = key !== "hr_inverted" && c.lo >= slowestPlausible;
+    if (saturated && candidates.hr_inverted) {
+      delete candidates[key];
+      continue;
+    }
+    candidates[key] = clamped;
   }
 
   const entries = Object.entries(candidates) as [EasyAnchorName, EasyAnchor][];
   const los = entries.map(([, c]) => c.lo);
   const lo = Math.max(...los);
-  const hi = Math.max(...entries.map(([, c]) => c.hi));
+  // Nobody runs to a single pace. Two anchors clamped to the same bound, or an
+  // anchor whose own band is narrower than a watch can hold, produce a
+  // zero-width prescription ("6:00-6:00/km") that reads as a mistake, so the
+  // band is given the width a real easy run has.
+  const hi = Math.max(...entries.map(([, c]) => c.hi), lo + MIN_EASY_BAND_WIDTH_S_PER_KM);
   const spreadSPerKm = Math.max(...los) - Math.min(...los);
   // The slowest lower bound governs — Object.entries preserves insertion
   // order, so ties resolve to the earlier-inserted anchor exactly as the
@@ -1188,7 +1228,16 @@ export function diagnose(
   let predicted5kFromEffort: boolean;
   let predicted5kSource: Predicted5kSource;
   if (efforts.length > 0) {
-    const best = efforts.reduce((a, b) =>
+    // CURRENT fitness, not best-ever. The fastest effort in the window used
+    // to win outright, so an athlete's whole plan — threshold pace, the easy
+    // band's plausibility clamp, the interval targets — descended from a race
+    // two months stale that they had since run 16% slower than. Only efforts
+    // close in time to the most recent one describe the athlete who will run
+    // these sessions; an older, faster one is a ceiling, and it still shapes
+    // k above, which is where a ceiling belongs. See MAX_EFFORT_RECENCY_DAYS.
+    const latest = Math.max(...efforts.map((r) => r.dateIdx));
+    const current = efforts.filter((r) => r.dateIdx >= latest - MAX_EFFORT_RECENCY_DAYS);
+    const best = current.reduce((a, b) =>
       b.durationS / Math.pow(b.distanceKm, kEff) < a.durationS / Math.pow(a.distanceKm, kEff) ? b : a
     );
     predicted5kS = best.durationS * Math.pow(5.0 / best.distanceKm, kEff);

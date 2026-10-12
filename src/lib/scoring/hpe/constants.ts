@@ -86,8 +86,26 @@
  * a version change as grounds to rebuild a plan at an athlete's next due
  * rerun and tell them why, so leaving it stale would have quietly denied them
  * both.
+ *
+ * 2.4.0 — four fixes reported from a live plan, each of which moves what a
+ * week contains or what a run is prescribed at:
+ *
+ *   - The predicted 5k is the athlete's CURRENT fitness: the best maximal
+ *     effort inside MAX_EFFORT_RECENCY_DAYS of their most recent one, rather
+ *     than the fastest thing they ever ran. A 16:45 from an August 10k was
+ *     anchoring every pace for someone who had run 20:00 three weeks earlier.
+ *   - The easy band's HR anchor is accepted when the CEILING inverts inside
+ *     the fitted range, and is no longer clamped to 1.5x a 5k pace it was
+ *     measured against. The band had collapsed to a single pace the athlete's
+ *     own regression put ten beats over the ceiling printed beside it.
+ *   - A chosen gym split is a request for that many gym days, honoured ahead
+ *     of the phase table. Push/pull/legs + upper/lower produced four days.
+ *   - The scheduler reads the per-day windows the intake collects — several
+ *     windows a day, two sessions where the athlete said so — instead of a
+ *     flat AM hour and a global two-a-days flag it defaulted to false. Strength
+ *     is also held to the gym days the athlete named.
  */
-export const HPE_CONSTANTS_VERSION = "2.3.0";
+export const HPE_CONSTANTS_VERSION = "2.4.0";
 
 // ---------------------------------------------------------------------------
 // Fatigue resistance (Riegel exponent)
@@ -109,6 +127,24 @@ export const HPE_CONSTANTS_VERSION = "2.3.0";
  * logged session rather than one effort — is the better answer.
  */
 export const RIEGEL_5K_EXTRAPOLATION_RANGE_KM: readonly [number, number] = [3, 10];
+
+/**
+ * [EST] How far back from the athlete's MOST RECENT maximal effort an older,
+ * faster effort still counts as evidence of current fitness.
+ *
+ * The predicted 5k used to be the fastest effort in the whole history window,
+ * on the reasoning that a race is a race. It is not current fitness: an
+ * athlete with a 16:45-equivalent 10k in August and a 20:00 5k three weeks ago
+ * was prescribed threshold at 3:31/km and an easy band whose floor their own
+ * heart-rate data put at 174 bpm against a 164 ceiling. Every pace in the plan
+ * descends from this one number, so it has to describe the athlete who will
+ * run the sessions, not the one who ran the best race.
+ *
+ * Six weeks is the window inside which two efforts are usually describing the
+ * same fitness; a faster effort further back than that is a ceiling the
+ * athlete has shown they can reach, which is a different and less useful fact.
+ */
+export const MAX_EFFORT_RECENCY_DAYS = 42;
 
 export const RIEGEL_K_DEFAULT = 1.06;
 /** [DATA] Below this, fatigue resistance is strong — speed, not endurance, is the limiter. */
@@ -168,6 +204,25 @@ export const EASY_ANCHOR_DISAGREEMENT_FLAG = 15.0;
  * precisely BECAUSE it is the slowest.
  */
 export const EASY_PACE_BOUNDS_VS_5K: readonly [number, number] = [1.22, 1.5];
+
+/**
+ * [EST] The slow bound for the HEART-RATE anchor alone, as a multiple of 5k
+ * pace. Wider than EASY_PACE_BOUNDS_VS_5K on purpose.
+ *
+ * That backstop exists for a "badly-conditioned anchor" — a derivation that
+ * has gone wrong. The HR-inverted anchor, when it comes from inside the
+ * regression's fitted range, is not a derivation at all: it is the pace this
+ * athlete has actually been measured running at the easy ceiling. Clamping it
+ * to 1.5x the 5k pace is what produced an easy band of 5:02-5:02/km for an
+ * athlete whose own data put 5:02 at 174 bpm — the 5k the clamp was anchored
+ * on was optimistic, and the one measured anchor that could have corrected it
+ * was clamped to agree. Still bounded, because a fit on six points can be
+ * poor, but bounded where easy running stops being running.
+ */
+export const EASY_PACE_HR_ANCHOR_BOUND_VS_5K = 1.8;
+
+/** [EST] The narrowest easy band worth printing, s/km. Two anchors clamped to one bound otherwise prescribe a single pace. */
+export const MIN_EASY_BAND_WIDTH_S_PER_KM = 12;
 
 /**
  * [EST] Where inside the easy band to actually prescribe, for an athlete whose
@@ -1145,6 +1200,10 @@ export const PENALTY: Readonly<Record<string, number>> = {
   no_rest_day: 300,
   consecutive_days_exceeded: 250,
   day_unavailable: 10000,
+  // A strength session on a day the athlete said they cannot reach a gym. The
+  // intake has promised "strength sessions are only ever placed on these" since
+  // it was written, and nothing enforced it.
+  gym_day_unavailable: 10000,
   daily_stress_cap: 2,
   volume_before_intensity: 45,
   wrong_order_same_day: 60,
@@ -1177,6 +1236,7 @@ export const HARD_PENALTIES: ReadonlySet<string> = new Set([
   "no_rest_day",
   "consecutive_days_exceeded",
   "day_unavailable",
+  "gym_day_unavailable",
 ]);
 
 export const DAILY_STRESS_CAP = 150.0;

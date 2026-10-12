@@ -148,7 +148,15 @@ export function generatePlan(input: GeneratePlanInput): GeneratedPlan {
 
   // ---- 3. FEASIBILITY, MODE, MACROCYCLE -----------------------------------
   const feasibility = feasibilityScreen(state, goal, safety.rampMultiplier * tailoring.rampMultiplier);
-  const mode = classifyDomains(state, goal, constraints.trainingSplit != null);
+  // An athlete's own day structure is as much a statement of intent to train
+  // as picking a stock split — more, if anything. It was not counted, so a
+  // custom split with no numeric lift target fell into maintenance mode: two
+  // generic sessions a week and the structure they had typed out ignored.
+  const mode = classifyDomains(
+    state,
+    goal,
+    constraints.trainingSplit != null || (constraints.customSplitDays?.length ?? 0) > 0
+  );
   // Both caution factors compound: a novice runner with no logged history gets
   // the halved novice ramp AND the halved provisional ramp, which is the
   // correct direction to stack them.
@@ -303,6 +311,31 @@ export function generatePlan(input: GeneratePlanInput): GeneratedPlan {
     const schedule = scheduleWeek(sessions, constraints);
     const stress = schedule.placements.reduce((s, p) => s + p.session.stress, 0);
     rawStress.push(stress);
+    /**
+     * A session the week could not place is told to the athlete, not swallowed.
+     *
+     * `droppedSessions` has been returned by the scheduler and carried on the
+     * week since the scheduler was written, and nothing in the plan the athlete
+     * reads ever mentioned it. The sessions were built — the diagnostic bought
+     * them, the budget paid for them — and then disappeared between the session
+     * set and the calendar. Someone who had set a five-day split and seven
+     * single-session days saw a week with lifts missing and no reason given.
+     *
+     * The fix for the shortfall is almost always one intake answer: a second
+     * session on a day they are free twice, or another training day. Naming it
+     * is what lets them make it.
+     */
+    if (schedule.droppedSessions.length > 0) {
+      const names = schedule.droppedSessions
+        .map((s) => s.label ?? s.kind.replace(/_/g, " "))
+        .join(", ");
+      notes.push(
+        `${schedule.droppedSessions.length} session${schedule.droppedSessions.length > 1 ? "s" : ""} could not be ` +
+          `placed this week (${names}). Your availability gives ${schedule.slotCount} training slot` +
+          `${schedule.slotCount === 1 ? "" : "s"} and the week asked for ${sessions.length}. Marking a day as free ` +
+          `for two sessions, adding a second training window to a day, or adding a day is what makes room.`
+      );
+    }
     // The athlete said their week varies, so the week is delivered as an order
     // as well as a shape. The intake has promised this since it was written and
     // the scheduler never read the answer — see `ScheduleResult.prioritisedOrder`.

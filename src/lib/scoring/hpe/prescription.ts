@@ -41,6 +41,8 @@ import {
   INTERVAL_REP_METERS,
   INTERVAL_WORK_FRACTION,
   GREY_ZONE_EASY_BIAS,
+  HR_PACE_MODEL_RANGE_TOLERANCE_HIGH,
+  HR_PACE_MODEL_RANGE_TOLERANCE_LOW,
   LONG_RUN_VS_EASY,
   RECOVERY_VS_EASY,
   REP_RUN_METERS,
@@ -66,7 +68,7 @@ import {
   modalityPaceBand,
   type ModalityFitness,
 } from "./modality";
-import type { AthleteProfile, FindingId } from "./types";
+import type { AthleteProfile, FindingId, HrPaceModel } from "./types";
 
 export type EnduranceKind = "recovery_run" | "easy_run" | "long_run" | "threshold_run" | "interval_run" | "rep_run";
 
@@ -119,6 +121,47 @@ export function paceBandFor(profile: AthleteProfile, kind: EnduranceKind): { lo:
   const base = profile.predicted5kS / 5.0;
   const band = SESSION_PACE_BANDS[kind] ?? SESSION_PACE_BANDS.easy_run;
   return { lo: base * band[0], hi: base * band[1] };
+}
+
+/**
+ * The regression run backwards: the pace at which this athlete's heart rate
+ * reads `hr`. Null outside the fitted speed range, for the same reason
+ * `predictHrAtPace` is — the line is only a line where it was measured.
+ */
+export function paceAtHr(model: HrPaceModel | null, hr: number): number | null {
+  if (!model || model.slope <= 0) return null;
+  const kph = (hr - model.intercept) / model.slope;
+  if (!(kph > 0)) return null;
+  if (kph < model.loKph * HR_PACE_MODEL_RANGE_TOLERANCE_LOW) return null;
+  if (kph > model.hiKph * HR_PACE_MODEL_RANGE_TOLERANCE_HIGH) return null;
+  return 3600 / kph;
+}
+
+/**
+ * On an easy day the heart-rate ceiling is the prescription and the pace is
+ * the estimate of where that ceiling falls. The two were printed side by side
+ * without ever being checked against each other, and for an athlete whose
+ * easy band came from a race-derived anchor they disagreed by ten beats: "5:02
+ * at HR 147-164", from a regression that put 5:02/km at 174. The athlete
+ * reads that as a pace they cannot hold at the heart rate they were told not
+ * to exceed — which is exactly what it was.
+ *
+ * Where the athlete's own HR-vs-pace data covers the prescribed pace and says
+ * it sits above the ceiling, the band is slowed to the pace the ceiling
+ * actually produces. Only ever slower, only from measured data, and refused
+ * outside the fitted range like every other use of the regression.
+ */
+export function reconcilePaceWithHrCeiling(
+  profile: AthleteProfile,
+  band: { lo: number; hi: number },
+  hrCeiling: number
+): { band: { lo: number; hi: number }; slowed: boolean } {
+  const predicted = predictHrAtPace(profile.hrPaceModel, band.lo, profile.hrMax, profile.hrRest);
+  if (predicted == null || predicted <= hrCeiling) return { band, slowed: false };
+  const atCeiling = paceAtHr(profile.hrPaceModel, hrCeiling);
+  if (atCeiling == null || atCeiling <= band.lo) return { band, slowed: false };
+  const width = band.hi - band.lo;
+  return { band: { lo: atCeiling, hi: Math.max(band.hi, atCeiling + width) }, slowed: true };
 }
 
 // ---------------------------------------------------------------------------
@@ -220,9 +263,17 @@ export function prescribeEndurance(
   options: EndurancePrescriptionOptions
 ): Prescription {
   const { minutes, suppressHeartRate = false } = options;
-  const band = options.paceOverride ?? paceBandFor(profile, kind);
+  const derived = options.paceOverride ?? paceBandFor(profile, kind);
+  const hr = suppressHeartRate ? null : hrBandFor(profile, kind, derived);
+  // Continuous runs are prescribed by heart rate; the pace has to be the pace
+  // THAT heart rate produces in this athlete, or the two lines contradict.
+  const continuous = kind === "easy_run" || kind === "long_run" || kind === "recovery_run";
+  const reconciled =
+    continuous && hr && !options.paceOverride
+      ? reconcilePaceWithHrCeiling(profile, derived, hr.hi)
+      : { band: derived, slowed: false };
+  const band = reconciled.band;
   const mid = (band.lo + band.hi) / 2;
-  const hr = suppressHeartRate ? null : hrBandFor(profile, kind, band);
 
   const hrText = hr
     ? `HR ${hr.lo}-${hr.hi} (${hr.source})`
@@ -292,12 +343,17 @@ export function prescribeEndurance(
   // Continuous runs — easy, long, recovery.
   const distanceKm = (minutes * 60) / mid;
   const upperBoundLine =
-    hr && (kind === "easy_run" || kind === "long_run" || kind === "recovery_run")
+    hr && continuous
       ? ` Do not exceed ${hr.hi} — on easy days the upper bound matters more than the lower one.`
       : "";
+  // Said plainly when it happened: the athlete can see the race-derived pace
+  // elsewhere in their report and deserves to know why this one is slower.
+  const slowedLine = reconciled.slowed
+    ? ` Pace is set from your own heart-rate data here — at ${mmss(derived.lo)}/km your HR runs above ${hr?.hi}, so the band has been slowed to where that ceiling actually falls for you.`
+    : "";
   return {
     text:
-      `${distanceKm.toFixed(1)}km in ${Math.round(minutes)}min at ${paceText}. ${hrText}.${upperBoundLine}` +
+      `${distanceKm.toFixed(1)}km in ${Math.round(minutes)}min at ${paceText}. ${hrText}.${upperBoundLine}${slowedLine}` +
       `${options.extra ? ` ${options.extra}` : ""}`,
     findingId,
     distanceKm,

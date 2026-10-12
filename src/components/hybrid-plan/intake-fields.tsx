@@ -323,13 +323,34 @@ export function PrefilledOverridable({
   );
 }
 
-/** Wire shape for one day's window — snake_case to match `day_windows` as stored (see `parseDayWindows` in `hpe/intake-record.ts`). */
+/** One free period in a day, as stored. */
+export interface TimeWindowValue {
+  start_hour: number;
+  end_hour: number;
+}
+
+/**
+ * Wire shape for one day — snake_case to match `day_windows` as stored (see
+ * `parseDayWindows` in `hpe/intake-record.ts`). `start_hour`/`end_hour` are
+ * the outer span of `windows` and are kept for readers that predate it.
+ */
 export interface DayWindowValue {
   day: string;
   available: boolean;
   start_hour: number;
   end_hour: number;
   two_sessions: boolean;
+  windows: TimeWindowValue[];
+}
+
+/** The most windows one day can hold before the question stops meaning anything. Matches the validation schema. */
+const MAX_WINDOWS_PER_DAY = 6;
+
+/** A sensible next window: after the last one, an hour long, clipped to the day. */
+function nextWindowAfter(windows: TimeWindowValue[]): TimeWindowValue {
+  const last = windows[windows.length - 1];
+  const start = last ? Math.min(23, Math.max(last.end_hour, last.start_hour + 1)) : 7;
+  return { start_hour: start, end_hour: Math.min(23.5, start + 1) };
 }
 
 /**
@@ -338,6 +359,14 @@ export interface DayWindowValue {
  * from them — collapsing a week to one AM/PM pair throws away exactly what
  * that rule depends on. A day left unavailable here still falls back to the
  * flat hours elsewhere in Availability, so nothing here is required.
+ *
+ * A day can hold MORE THAN ONE window. Free before work and free again after
+ * it is the ordinary shape of a working day, and a single start-to-end range
+ * could not say it: the athlete entered one or the other and every session
+ * went at the morning time. Each window is a place the scheduler can start a
+ * session, so two windows is two sessions without needing the toggle — the
+ * toggle stays for the athlete with one long free block who could train twice
+ * inside it.
  */
 export function DayWindowsEditor({
   days,
@@ -349,11 +378,32 @@ export function DayWindowsEditor({
   onChange: (value: DayWindowValue[]) => void;
 }) {
   const forDay = (day: string): DayWindowValue =>
-    value.find((w) => w.day === day) ?? { day, available: false, start_hour: 7, end_hour: 18, two_sessions: false };
+    value.find((w) => w.day === day) ?? {
+      day,
+      available: false,
+      start_hour: 7,
+      end_hour: 18,
+      two_sessions: false,
+      windows: [{ start_hour: 7, end_hour: 18 }],
+    };
 
   const update = (day: string, patch: Partial<DayWindowValue>) => {
-    const next = { ...forDay(day), ...patch };
+    const merged = { ...forDay(day), ...patch };
+    const windows = merged.windows.length > 0 ? merged.windows : [{ start_hour: merged.start_hour, end_hour: merged.end_hour }];
+    // The flat pair follows the windows, so a reader of either sees the same day.
+    const next: DayWindowValue = {
+      ...merged,
+      windows,
+      start_hour: Math.min(...windows.map((w) => w.start_hour)),
+      end_hour: Math.max(...windows.map((w) => w.end_hour)),
+    };
     onChange([...value.filter((w) => w.day !== day), next]);
+  };
+
+  const updateWindow = (day: string, index: number, patch: Partial<TimeWindowValue>) => {
+    const w = forDay(day);
+    const windows = w.windows.map((tw, i) => (i === index ? { ...tw, ...patch } : tw));
+    update(day, { windows });
   };
 
   return (
@@ -361,46 +411,26 @@ export function DayWindowsEditor({
       {days.map((day) => {
         const w = forDay(day);
         return (
-          <div
-            key={day}
-            className="flex flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2"
-          >
-            <span className="w-10 shrink-0 text-sm font-medium">{day}</span>
-            <button
-              type="button"
-              onClick={() => update(day, { available: !w.available })}
-              aria-pressed={w.available}
-              className={cn(
-                "min-h-9 rounded-lg border px-3 text-xs font-medium transition-colors",
-                w.available
-                  ? "border-endurance/40 bg-endurance/15 text-endurance"
-                  : "border-white/10 text-muted hover:border-white/20 hover:text-foreground"
-              )}
-            >
-              {w.available ? "Available" : "Rest day"}
-            </button>
-            {/* Hours and the two-sessions toggle only mean something once the day is available — hiding them otherwise keeps a rest day reading as a rest day. */}
-            {w.available && (
-              <>
-                <div className="flex items-center gap-1">
-                  {/* Same select as the flat morning/evening times. These had
-                      the same defect in a different form: Number("") is 0, so
-                      clearing the field to retype it snapped the value to
-                      midnight rather than letting you type. */}
-                  <TimeOfDaySelect
-                    value={w.start_hour}
-                    onChange={(v) => update(day, { start_hour: v })}
-                    ariaLabel={`${day} earliest start time`}
-                    className="min-h-9 px-2"
-                  />
-                  <span className="text-xs text-muted">to</span>
-                  <TimeOfDaySelect
-                    value={w.end_hour}
-                    onChange={(v) => update(day, { end_hour: v })}
-                    ariaLabel={`${day} latest end time`}
-                    className="min-h-9 px-2"
-                  />
-                </div>
+          <div key={day} className="rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="w-10 shrink-0 text-sm font-medium">{day}</span>
+              <button
+                type="button"
+                onClick={() => update(day, { available: !w.available })}
+                aria-pressed={w.available}
+                className={cn(
+                  "min-h-9 rounded-lg border px-3 text-xs font-medium transition-colors",
+                  w.available
+                    ? "border-endurance/40 bg-endurance/15 text-endurance"
+                    : "border-white/10 text-muted hover:border-white/20 hover:text-foreground"
+                )}
+              >
+                {w.available ? "Available" : "Rest day"}
+              </button>
+              {/* The two-sessions toggle only means something for a single
+                  window — with two windows the answer is already yes — and
+                  only once the day is available, so a rest day reads as one. */}
+              {w.available && w.windows.length === 1 && (
                 <button
                   type="button"
                   onClick={() => update(day, { two_sessions: !w.two_sessions })}
@@ -414,7 +444,54 @@ export function DayWindowsEditor({
                 >
                   Two sessions possible
                 </button>
-              </>
+              )}
+              {w.available && w.windows.length > 1 && (
+                <span className="text-xs text-accent">{w.windows.length} windows — up to {w.windows.length} sessions</span>
+              )}
+            </div>
+            {w.available && (
+              <div className="mt-2 space-y-1.5">
+                {w.windows.map((tw, i) => (
+                  <div key={i} className="flex flex-wrap items-center gap-1">
+                    {/* Same select as the flat morning/evening times. These had
+                        the same defect in a different form: Number("") is 0, so
+                        clearing the field to retype it snapped the value to
+                        midnight rather than letting you type. */}
+                    <TimeOfDaySelect
+                      value={tw.start_hour}
+                      onChange={(v) => updateWindow(day, i, { start_hour: v })}
+                      ariaLabel={`${day} window ${i + 1} start time`}
+                      className="min-h-9 px-2"
+                    />
+                    <span className="text-xs text-muted">to</span>
+                    <TimeOfDaySelect
+                      value={tw.end_hour}
+                      onChange={(v) => updateWindow(day, i, { end_hour: v })}
+                      ariaLabel={`${day} window ${i + 1} end time`}
+                      className="min-h-9 px-2"
+                    />
+                    {w.windows.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => update(day, { windows: w.windows.filter((_, k) => k !== i) })}
+                        aria-label={`Remove ${day} window ${i + 1}`}
+                        className="min-h-9 min-w-9 rounded-lg border border-white/10 px-2 text-xs text-muted hover:border-white/20 hover:text-foreground"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+                ))}
+                {w.windows.length < MAX_WINDOWS_PER_DAY && (
+                  <button
+                    type="button"
+                    onClick={() => update(day, { windows: [...w.windows, nextWindowAfter(w.windows)] })}
+                    className="min-h-9 rounded-lg border border-dashed border-white/15 px-3 text-xs font-medium text-muted hover:border-white/30 hover:text-foreground"
+                  >
+                    + Add another free window
+                  </button>
+                )}
+              </div>
             )}
           </div>
         );

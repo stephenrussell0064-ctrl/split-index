@@ -419,6 +419,9 @@ export async function GET(request: Request) {
       constraints,
       weeks: plan.weeks,
       eventDate,
+      // So a session citing a finding the stored diagnostic never emitted is
+      // stored with its rationale rather than dropped — see savePlan.
+      findings: plan.findings,
     }).catch(() => null);
   }
 

@@ -255,16 +255,37 @@ export interface Goal {
   eventOrderKnown: boolean;
 }
 
-/** One day's training window. Times are local clock hours. */
+/** One stretch of the day the athlete is free to train. Local clock hours, fractional for the half hour. */
+export interface TimeWindow {
+  startHour: number;
+  endHour: number;
+}
+
+/** One day's training availability. Times are local clock hours. */
 export interface DayWindow {
   day: string;
   /** False = a rest day this athlete cannot train at all. */
   available: boolean;
-  /** Earliest and latest they could start a session that day. */
+  /**
+   * The span of the day they could train in — earliest start, latest finish.
+   * When `windows` is set these are its outer bounds, kept so a reader that
+   * predates `windows` still sees the day correctly.
+   */
   startHour: number;
   endHour: number;
-  /** Whether they could fit two sessions on this specific day. */
+  /** Whether they could fit two sessions on this specific day. Implied when `windows` has more than one entry. */
   twoSessions: boolean;
+  /**
+   * The free periods within the day, when the athlete gave more than one.
+   *
+   * A single start-to-end range cannot describe a day with a free hour before
+   * work and another after it, and the intake had no way to say so — an
+   * athlete free 06:00-07:00 and 18:00-21:00 could only enter one or the other,
+   * and the scheduler placed every session at the morning hour regardless. Each
+   * window is a place a session can start; the scheduler reads these directly.
+   * Absent or empty means the single range above is the whole answer.
+   */
+  windows?: TimeWindow[];
 }
 
 export interface Constraints {

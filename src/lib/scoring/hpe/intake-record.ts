@@ -39,6 +39,7 @@ import {
   type DayWindow,
   type IntakeIssue,
   type SafetyFlags,
+  type TimeWindow,
 } from "./intake";
 
 /** The stored row, camel-cased. Every field optional — a half-finished intake is a normal state, not an error. */
@@ -319,8 +320,30 @@ const ALL_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 /** Maps a raw Supabase row onto IntakeRecord, filling structural defaults only — never safety ones. */
 
+const clampHour = (h: number) => Math.min(24, Math.max(0, h));
+
+/**
+ * The free periods inside one day, from either wire spelling. Malformed or
+ * inverted entries are dropped rather than thrown, and the result is sorted so
+ * the scheduler can treat it as the day in order.
+ */
+function parseTimeWindows(value: unknown): TimeWindow[] {
+  if (!Array.isArray(value)) return [];
+  const out: TimeWindow[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") continue;
+    const e = entry as Record<string, unknown>;
+    const startHour = Number(e.start_hour ?? e.startHour);
+    const endHour = Number(e.end_hour ?? e.endHour);
+    if (!Number.isFinite(startHour) || !Number.isFinite(endHour)) continue;
+    if (endHour < startHour) continue;
+    out.push({ startHour: clampHour(startHour), endHour: clampHour(endHour) });
+  }
+  return out.sort((a, b) => a.startHour - b.startHour);
+}
+
 /** Reads stored per-day windows, dropping anything malformed rather than throwing inside a request. */
-function parseDayWindows(value: unknown): DayWindow[] {
+export function parseDayWindows(value: unknown): DayWindow[] {
   if (!Array.isArray(value)) return [];
   const out: DayWindow[] = [];
   for (const entry of value) {
@@ -328,15 +351,22 @@ function parseDayWindows(value: unknown): DayWindow[] {
     const e = entry as Record<string, unknown>;
     const day = String(e.day ?? "");
     if (!DAYS.includes(day as (typeof DAYS)[number])) continue;
-    const startHour = Number(e.start_hour ?? e.startHour);
-    const endHour = Number(e.end_hour ?? e.endHour);
+    const windows = parseTimeWindows(e.windows);
+    // The flat start/end pair is the span of the day. When the athlete gave
+    // individual windows it is derived from them, so a row written by the new
+    // editor and one written by the old editor read the same way here.
+    const startHour = windows.length > 0 ? windows[0].startHour : Number(e.start_hour ?? e.startHour);
+    const endHour =
+      windows.length > 0 ? Math.max(...windows.map((w) => w.endHour)) : Number(e.end_hour ?? e.endHour);
     if (!Number.isFinite(startHour) || !Number.isFinite(endHour)) continue;
     out.push({
       day,
       available: e.available !== false,
-      startHour: Math.min(23, Math.max(0, startHour)),
-      endHour: Math.min(23, Math.max(0, endHour)),
-      twoSessions: Boolean(e.two_sessions ?? e.twoSessions),
+      startHour: clampHour(startHour),
+      endHour: clampHour(endHour),
+      // Two windows IS two sessions; the flag is the single-window athlete's way of saying the same thing.
+      twoSessions: Boolean(e.two_sessions ?? e.twoSessions) || windows.length > 1,
+      ...(windows.length > 0 ? { windows } : {}),
     });
   }
   return out;

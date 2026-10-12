@@ -21,7 +21,19 @@
  *      training at 06:00 and 12:00 has a 6-hour gap while one training at
  *      12:00 and 17:00 does not. Assuming default clock times silently breaks
  *      the constraint the engine claims to enforce." Separation is computed
- *      from the athlete's own `amHour`/`pmHour`.
+ *      from the athlete's own training times — PER DAY, from the windows the
+ *      intake collects, falling back to the flat `amHour`/`pmHour` only for a
+ *      day they gave no window for.
+ *
+ *      That last clause is new. The intake had collected per-day windows and a
+ *      per-day "two sessions possible" flag since migration 043, resolved them
+ *      into `Constraints.dayWindows`, and this module never read them: every
+ *      session went at `amHour`, a second slot existed only if the GLOBAL
+ *      two-a-days flag was set (default false), and anything the week could not
+ *      fit in one-session-a-day was dropped without a word. An athlete who had
+ *      said "Wednesday, Saturday and Sunday I can train twice" got seven
+ *      single-session days, a hard-rule violation on every one of them for
+ *      having no rest day, and a plan that did not let them train twice.
  *
  * The assurance review's warning about this whole module is worth keeping in
  * view: both Rev A and Rev B score zero hard-rule violations, and Rev A was
@@ -45,15 +57,35 @@ import {
   SCHEDULER_PLATEAU_ITERATIONS,
   SCHEDULER_SEED,
 } from "./constants";
-import type { Constraints } from "./intake";
+import type { Constraints, DayWindow } from "./intake";
 import type { PlannedSession } from "./session-set";
 
+/**
+ * The half of the day a session falls in. A LABEL, not a time: the clock time
+ * lives on `Placement.hour`. Kept to two values because `hpe_sessions.slot` is
+ * CHECK-constrained to them, and because "AM"/"PM" is what the plan screen,
+ * the widget payload and the activity-matching key all read.
+ */
 export type Slot = "AM" | "PM";
 
 export interface Placement {
   session: PlannedSession;
   day: string;
   slot: Slot;
+  /**
+   * Local clock hour the session starts, fractional for the half hour. Optional
+   * only so a placement read back from storage — which has no hour column —
+   * still types; the scheduler always sets it, and separation is computed from
+   * it. A missing hour falls back to the flat `amHour`/`pmHour` for its slot.
+   */
+  hour?: number;
+}
+
+/** One place a session could go: a day, and a start time on it. */
+export interface SlotCandidate {
+  day: string;
+  slot: Slot;
+  hour: number;
 }
 
 /** Deterministic linear congruential generator — same seed, same schedule, always. */
@@ -70,12 +102,68 @@ function makeRng(seed: number) {
   };
 }
 
-function hourOf(constraints: Constraints, slot: Slot): number {
-  return slot === "AM" ? constraints.amHour : constraints.pmHour;
+export function slotLabel(hour: number): Slot {
+  return hour < 12 ? "AM" : "PM";
 }
 
-function absoluteHour(constraints: Constraints, day: string, slot: Slot): number {
-  return DAYS.indexOf(day as (typeof DAYS)[number]) * 24 + hourOf(constraints, slot);
+/**
+ * The start times the athlete can train on one day, from their own answers.
+ *
+ *  - No window stated for the day: the flat morning hour, plus the flat
+ *    evening hour when they said two-a-days are possible in general. This is
+ *    exactly what the scheduler did for every day before windows were read.
+ *  - A window marked unavailable: nothing. The day is a rest day whatever the
+ *    days-available list says, because the per-day answer is the more
+ *    specific one.
+ *  - Several windows: one start per window. Two free hours in a day are two
+ *    chances to train, and saying so is the only reason to enter two.
+ *  - One window with "two sessions possible": its start, and a second slot
+ *    late in the window — an hour before it closes, so a session starting there
+ *    still fits — provided the window is at least the floor separation wide.
+ *    Two sessions three hours apart is a double the physiology rules can still
+ *    police; two sessions in a ninety-minute window is one session.
+ *  - One window otherwise: its start.
+ */
+export function slotHoursFor(day: string, constraints: Constraints): number[] {
+  const window: DayWindow | undefined = constraints.dayWindows?.find((w) => w.day === day);
+  if (!window) {
+    return constraints.twoADaysPossible ? [constraints.amHour, constraints.pmHour] : [constraints.amHour];
+  }
+  if (!window.available) return [];
+
+  const windows =
+    window.windows && window.windows.length > 0
+      ? window.windows
+      : [{ startHour: window.startHour, endHour: window.endHour }];
+
+  if (windows.length >= 2) {
+    return [...new Set(windows.map((w) => w.startHour))].sort((a, b) => a - b);
+  }
+
+  const only = windows[0];
+  if (window.twoSessions && only.endHour - only.startHour >= FLOOR_SEPARATION_H) {
+    const second = Math.max(only.startHour + FLOOR_SEPARATION_H, only.endHour - 1);
+    return second > only.startHour ? [only.startHour, second] : [only.startHour];
+  }
+  return [only.startHour];
+}
+
+/** Every place a session could go this week. */
+export function slotCandidates(constraints: Constraints): SlotCandidate[] {
+  const out: SlotCandidate[] = [];
+  for (const day of constraints.daysAvailable) {
+    for (const hour of slotHoursFor(day, constraints)) out.push({ day, slot: slotLabel(hour), hour });
+  }
+  return out;
+}
+
+function hourOf(constraints: Constraints, placement: Placement): number {
+  if (placement.hour != null) return placement.hour;
+  return placement.slot === "AM" ? constraints.amHour : constraints.pmHour;
+}
+
+function absoluteHour(constraints: Constraints, placement: Placement): number {
+  return DAYS.indexOf(placement.day as (typeof DAYS)[number]) * 24 + hourOf(constraints, placement);
 }
 
 /** True for any session whose fatigue lands mostly on the legs and back. */
@@ -94,8 +182,18 @@ export function scoreWeek(placements: Placement[], constraints: Constraints): Pe
   const p: PenaltyBreakdown = Object.fromEntries(Object.keys(PENALTY).map((k) => [k, 0]));
   const usedDays = new Set(placements.map((x) => x.day));
 
-  for (const { day } of placements) {
+  for (const { day, session } of placements) {
     if (!constraints.daysAvailable.includes(day)) p.day_unavailable += PENALTY.day_unavailable;
+    // The intake promises "strength sessions are only ever placed on these".
+    // An empty list means every training day (intake-record resolves it so),
+    // and the rule is only applied to a list the athlete actually narrowed.
+    if (
+      session.domain === "strength" &&
+      constraints.gymAccessDays.length > 0 &&
+      !constraints.gymAccessDays.includes(day)
+    ) {
+      p.gym_day_unavailable += PENALTY.gym_day_unavailable;
+    }
   }
 
   // Soft preferences. Weighted far below every physiological rule, so they
@@ -140,8 +238,8 @@ export function scoreWeek(placements: Placement[], constraints: Constraints): Pe
     for (let j = i + 1; j < placements.length; j++) {
       const a = placements[i];
       const b = placements[j];
-      const ta = absoluteHour(constraints, a.day, a.slot);
-      const tb = absoluteHour(constraints, b.day, b.slot);
+      const ta = absoluteHour(constraints, a);
+      const tb = absoluteHour(constraints, b);
       const gap = Math.abs(tb - ta);
 
       if (a.day === b.day && a.session.domain !== b.session.domain) {
@@ -218,6 +316,8 @@ export interface ScheduleResult {
   hardPenalty: number;
   /** Set when there were more sessions than slots — the week is truncated rather than overbooked, and the caller is told. */
   droppedSessions: PlannedSession[];
+  /** How many places the athlete's availability offered this week. What `droppedSessions` is measured against. */
+  slotCount: number;
   /**
    * The week as an ORDERED LIST rather than a set of fixed weekdays, produced
    * when `constraints.availabilityVaries` says the athlete's week genuinely
@@ -269,11 +369,7 @@ export function prioritiseWeek(sessions: PlannedSession[]): PlannedSession[] {
  * mode this whole engine exists to avoid.
  */
 export function scheduleWeek(sessions: PlannedSession[], constraints: Constraints): ScheduleResult {
-  const slots: Slot[] = constraints.twoADaysPossible ? ["AM", "PM"] : ["AM"];
-  const candidates: { day: string; slot: Slot }[] = [];
-  for (const day of constraints.daysAvailable) {
-    for (const slot of slots) candidates.push({ day, slot });
-  }
+  const candidates = slotCandidates(constraints);
 
   let toPlace = sessions;
   let droppedSessions: PlannedSession[] = [];
@@ -294,11 +390,26 @@ export function scheduleWeek(sessions: PlannedSession[], constraints: Constraint
   const prioritisedOrder = constraints.availabilityVaries ? prioritiseWeek(toPlace) : null;
 
   if (toPlace.length === 0) {
-    return { placements: [], penalty: 0, hardPenalty: 0, droppedSessions, prioritisedOrder };
+    return {
+      placements: [],
+      penalty: 0,
+      hardPenalty: 0,
+      droppedSessions,
+      slotCount: candidates.length,
+      prioritisedOrder,
+    };
   }
 
   let bestGlobal: Placement[] | null = null;
   let bestGlobalScore = Number.POSITIVE_INFINITY;
+
+  const sameSlot = (pl: Placement, c: SlotCandidate) => pl.day === c.day && pl.hour === c.hour;
+  const at = (pl: Placement, c: Pick<SlotCandidate, "day" | "slot" | "hour">): Placement => ({
+    ...pl,
+    day: c.day,
+    slot: c.slot,
+    hour: c.hour,
+  });
 
   for (let restart = 0; restart < SCHEDULER_RESTARTS; restart++) {
     const rng = makeRng(SCHEDULER_SEED + restart * 101);
@@ -313,6 +424,7 @@ export function scheduleWeek(sessions: PlannedSession[], constraints: Constraint
       session,
       day: shuffled[i].day,
       slot: shuffled[i].slot,
+      hour: shuffled[i].hour,
     }));
     let currentScore = totalPenalty(current, constraints);
 
@@ -324,16 +436,17 @@ export function scheduleWeek(sessions: PlannedSession[], constraints: Constraint
       const trial = [...current];
       const i = rng.int(trial.length);
       const pick = candidates[rng.int(candidates.length)];
-      const occupant = trial.findIndex((pl) => pl.day === pick.day && pl.slot === pick.slot);
+      const occupant = trial.findIndex((pl) => sameSlot(pl, pick));
       if (occupant >= 0) {
         if (occupant === i) {
           sinceImprovement++;
           continue;
         }
-        trial[i] = { ...trial[i], day: trial[occupant].day, slot: trial[occupant].slot };
-        trial[occupant] = { ...trial[occupant], day: current[i].day, slot: current[i].slot };
+        const from = current[i];
+        trial[i] = at(trial[i], { day: trial[occupant].day, slot: trial[occupant].slot, hour: trial[occupant].hour! });
+        trial[occupant] = at(trial[occupant], { day: from.day, slot: from.slot, hour: from.hour! });
       } else {
-        trial[i] = { ...trial[i], day: pick.day, slot: pick.slot };
+        trial[i] = at(trial[i], pick);
       }
       const score = totalPenalty(trial, constraints);
       if (score < currentScore) {
@@ -357,13 +470,14 @@ export function scheduleWeek(sessions: PlannedSession[], constraints: Constraint
   }
 
   const placements = (bestGlobal ?? []).sort(
-    (a, b) => absoluteHour(constraints, a.day, a.slot) - absoluteHour(constraints, b.day, b.slot)
+    (a, b) => absoluteHour(constraints, a) - absoluteHour(constraints, b)
   );
   return {
     placements,
     penalty: bestGlobalScore,
     hardPenalty: hardViolations(placements, constraints),
     droppedSessions,
+    slotCount: candidates.length,
     prioritisedOrder,
   };
 }

@@ -65,8 +65,32 @@ const TIER2_SCHEMAS = {
   lea_amenorrhoea: bool,
 } as const;
 
+/** A local clock hour, fractional for the half hour. 24 is allowed as a window's closing bound. */
+const hourOfDay = z
+  .number({ message: "A time of day is needed." })
+  .min(0, "A time of day is needed.")
+  .max(24, "A time of day is needed.");
+
+/**
+ * Per-day availability, as the editor writes it. The shape belongs to
+ * `parseDayWindows` in hpe/intake-record.ts, which also tolerates the older
+ * rows without `windows`; this only refuses what that reader could not use.
+ * Unknown keys are stripped rather than rejected, matching the rest of the
+ * tier-1 fields.
+ */
+const timeWindow = z.object({ start_hour: hourOfDay, end_hour: hourOfDay });
+const dayWindow = z.object({
+  day: text(3, "Day"),
+  available: bool.optional(),
+  start_hour: hourOfDay.optional(),
+  end_hour: hourOfDay.optional(),
+  two_sessions: bool.optional(),
+  windows: z.array(timeWindow).max(6, "That is more training windows than a day holds.").optional(),
+});
+
 /** Tier 1 fields that reach the engine as numbers, plus the obvious lists and flags. */
 const TIER1_SCHEMAS = {
+  day_windows: z.array(dayWindow).max(7, "A week has seven days.").nullish(),
   target_squat_kg: bounded(BOUND_LIFT_LOAD_KG, "target squat").nullish(),
   target_bench_kg: bounded(BOUND_LIFT_LOAD_KG, "target bench").nullish(),
   target_deadlift_kg: bounded(BOUND_LIFT_LOAD_KG, "target deadlift").nullish(),

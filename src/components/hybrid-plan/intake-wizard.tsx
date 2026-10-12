@@ -145,12 +145,23 @@ function normalizeDayWindows(raw: unknown): DayWindowValue[] {
   return raw
     .map((entry) => {
       const e = entry as Record<string, unknown>;
+      const start_hour = Number(e.start_hour ?? e.startHour ?? 7);
+      const end_hour = Number(e.end_hour ?? e.endHour ?? 18);
+      // A row from before windows existed has only the flat pair; it becomes
+      // one window so the editor has something to show and extend.
+      const windows = (Array.isArray(e.windows) ? e.windows : [])
+        .map((tw) => {
+          const t = tw as Record<string, unknown>;
+          return { start_hour: Number(t.start_hour ?? t.startHour), end_hour: Number(t.end_hour ?? t.endHour) };
+        })
+        .filter((tw) => Number.isFinite(tw.start_hour) && Number.isFinite(tw.end_hour));
       return {
         day: String(e.day ?? ""),
         available: Boolean(e.available),
-        start_hour: Number(e.start_hour ?? e.startHour ?? 7),
-        end_hour: Number(e.end_hour ?? e.endHour ?? 18),
+        start_hour,
+        end_hour,
         two_sessions: Boolean(e.two_sessions ?? e.twoSessions),
+        windows: windows.length > 0 ? windows : [{ start_hour, end_hour }],
       };
     })
     .filter((w) => w.day.length > 0);
@@ -644,10 +655,10 @@ export function IntakeWizard() {
                   ariaLabel="Days available"
                 />
               </Field>
-              <Field label="Can you train twice on some days?" why="Enables same-day pairs, which is the only way to fit a big week into few days.">
+              <Field label="Can you train twice on some days?" why="Enables same-day pairs, which is the only way to fit a big week into few days. Applies to any day you have not given exact windows for below — a day with its own windows follows them instead.">
                 <YesNo value={get("two_a_days_possible", intake.twoADaysPossible) as boolean} onChange={(v) => set("two_a_days_possible", v)} />
               </Field>
-              <Field label="Roughly what times do you train?" why="The six-hour separation rule between a hard lift and a hard run is computed from these, not assumed. Training at 06:00 and 12:00 clears it; 12:00 and 17:00 does not.">
+              <Field label="Roughly what times do you train?" why="Used for any day you have not given exact windows for below. The six-hour separation rule between a hard lift and a hard run is computed from these, not assumed. Training at 06:00 and 12:00 clears it; 12:00 and 17:00 does not.">
                 <div className="flex flex-wrap items-center gap-3">
                   <label className="flex items-center gap-2 text-sm text-muted">
                     Morning
@@ -712,7 +723,7 @@ export function IntakeWizard() {
                   still mattered. From the athlete's side it read as the app
                   taking the question away for giving the honest answer.
               */}
-              <Field label="Exact training windows, per day" why="Optional. Set the days you can actually train and the hours on each. The six-hour separation rule between a hard lift and a hard run is computed from these, so they are worth setting even if your week moves around.">
+              <Field label="Exact training windows, per day" why="Optional. Set the days you can actually train and the hours on each — add a second window for a day you are free before work and again after it, and the plan can put a session in each. The six-hour separation rule between a hard lift and a hard run is computed from these, so they are worth setting even if your week moves around.">
                 <DayWindowsEditor
                   days={INTAKE_DAYS}
                   value={normalizeDayWindows(get("day_windows", intake.dayWindows))}
