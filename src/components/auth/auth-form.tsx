@@ -67,7 +67,7 @@ export function isSubmittableOtp(otp: string): boolean {
 
 /*
  * Whether the welcome intro goes in front of the form — decided from two
- * things only the browser knows (the Capacitor global, localStorage), so it
+ * things only the browser knows (the Capacitor global, sessionStorage), so it
  * is read through useSyncExternalStore with a third answer, "unknown", for
  * the server render. While unknown, the page draws the brand mark and nothing
  * else: rendering the form and then replacing it with the intro a frame later
@@ -78,7 +78,7 @@ type IntroDecision = "show" | "hide" | "unknown";
 const subscribeToNothing = () => () => {};
 function introSeen(): boolean {
   try {
-    return localStorage.getItem(INTRO_SEEN_KEY) !== null;
+    return sessionStorage.getItem(INTRO_SEEN_KEY) !== null;
   } catch {
     return false;
   }

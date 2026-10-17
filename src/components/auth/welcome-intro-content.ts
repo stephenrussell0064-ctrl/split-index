@@ -13,7 +13,9 @@
  * a haptic click per letter, so it is read rather than skimmed — and the third
  * is Sign in with Apple, which needs nothing filled in at all.
  *
- * Every screen advances on one tap. Skip is always visible.
+ * Every screen advances on one tap. Skip is always visible. Shown on every
+ * cold launch while signed out (the key below lives in sessionStorage, not
+ * localStorage — see markSeen in welcome-intro.tsx for why).
  */
 
 export const INTRO_SEEN_KEY = "split-index-intro-seen";

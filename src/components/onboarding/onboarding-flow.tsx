@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
-import { Camera, Check, ChevronDown, Compass, HeartPulse, Loader2, Sparkles, X } from "lucide-react";
+import { Camera, Check, ChevronDown, Compass, Loader2, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
@@ -15,11 +15,6 @@ import { supabaseErrorMessage } from "@/lib/supabase/errors";
 import { validateUsernameFormat } from "@/lib/utils/username";
 import { useKeyboardSafeFocus } from "@/components/activities/use-keyboard";
 import { ageFromDateOfBirth, maxDobForMinAge, minDobForMaxAge } from "@/lib/utils/age";
-import { useIsNativeShell } from "@/lib/native/use-is-native-shell";
-import { getNativePlatform } from "@/lib/native/platform";
-import { fetchHealthProfile } from "@/lib/native/health-import";
-import { connectHealth } from "@/lib/health/sync-client";
-import { applyHealthProfile, describePrefill } from "@/lib/health/profile-prefill";
 import { impact, success } from "@/lib/native/haptics";
 import { startTour } from "@/lib/tour/tour-state";
 import { cn } from "@/lib/utils/cn";
@@ -50,10 +45,15 @@ import type { Gender, ScoringBasis, SportType } from "@/types";
  * This one has one rule: CONTINUE ALWAYS WORKS. Every step has a default —
  * the username is suggested from the name Apple gave us, the two hybrid
  * sports are preselected, and every measurement is optional and nullable
- * (onboarding-state.ts has the reasons the engines are fine with that). On
- * the iPhone, one tap on "Fill in from Apple Health" reads date of birth,
- * sex, height, weight and resting HR instead of asking for them. Four taps of
- * Continue is a complete, working account.
+ * (onboarding-state.ts has the reasons the engines are fine with that). Four
+ * taps of Continue is a complete, working account.
+ *
+ * NOT YET HERE: an Apple Health step that prefills the form. It was built
+ * (lib/health/profile-prefill.ts, HealthImportPlugin.fetchProfile) and then
+ * pulled from the sign-up path on 17 Oct 2026 because, on the app binary
+ * most people were running, it surfaced as an error on the way in. It comes
+ * back only once the native half has shipped and the step has been seen to
+ * work end to end on a device.
  *
  * It greets the athlete by first name (typed, with a haptic click per letter)
  * because the provider already told us it, and ends by offering — not
@@ -98,9 +98,7 @@ export function OnboardingFlow({
   const formRef = useRef<HTMLDivElement>(null);
   useKeyboardSafeFocus(formRef);
 
-  const native = useIsNativeShell();
-  const healthAvailable = native && getNativePlatform() === "ios";
-  const steps = useMemo(() => buildSteps({ healthAvailable }), [healthAvailable]);
+  const steps = buildSteps();
 
   const [stepIndex, setStepIndex] = useState(0);
   const step: OnboardingStepId = steps[Math.min(stepIndex, steps.length - 1)]!;
@@ -119,11 +117,6 @@ export function OnboardingFlow({
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string | null>(null);
   const [avatarError, setAvatarError] = useState("");
-
-  // Health step
-  const [healthBusy, setHealthBusy] = useState(false);
-  const [healthNote, setHealthNote] = useState<string | null>(null);
-  const [healthError, setHealthError] = useState<string | null>(null);
 
   // Username: the suggested candidate is checked on mount; edits are checked
   // after a 400 ms pause. A response is only trusted when it was issued for
@@ -297,26 +290,6 @@ export function OnboardingFlow({
   const back = () => {
     impact("light");
     goTo(Math.max(0, stepIndex - 1));
-  };
-
-  /** Apple's sheet, the server-side connection, a first workout sync, and the profile read — one tap. */
-  const connectAppleHealth = async () => {
-    impact("medium");
-    setHealthBusy(true);
-    setHealthError(null);
-    try {
-      await connectHealth();
-      const characteristics = await fetchHealthProfile();
-      const { form: filled, filled: fields } = applyHealthProfile(form, characteristics);
-      setForm(filled);
-      setHealthNote(describePrefill(fields) ?? "Connected. Nothing to prefill yet — fill in what you like.");
-      success();
-      goTo(stepIndex + 1);
-    } catch (err) {
-      setHealthError(err instanceof Error ? err.message : "Couldn't connect Apple Health.");
-    } finally {
-      setHealthBusy(false);
-    }
   };
 
   const save = async () => {
@@ -545,38 +518,7 @@ export function OnboardingFlow({
             </>
           )}
 
-          {/* ── 2. Apple Health (iPhone only): fill the next step without typing ── */}
-          {step === "health" && (
-            <>
-              <h1 className="headline-tight text-2xl font-bold">Fill this in from Apple Health?</h1>
-              <p className="mt-2 text-sm text-muted">
-                One tap reads your date of birth, height, weight and resting heart rate — and brings in
-                your runs and rides from Apple Watch or anything else that writes to Health. Nothing is
-                written back.
-              </p>
-              <Card className="mt-6 space-y-4">
-                <div className="flex items-start gap-3">
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent/15 text-accent">
-                    <HeartPulse className="h-5 w-5" aria-hidden />
-                  </span>
-                  <ul className="space-y-1 text-sm text-foreground/85">
-                    <li>Date of birth, height and weight → your profile</li>
-                    <li>Runs, rides, rows and swims → your logbook, scored</li>
-                    <li>HRV, resting heart rate and sleep → your recovery score</li>
-                  </ul>
-                </div>
-                {healthError && <p className="text-xs text-danger">{healthError}</p>}
-                <Button size="lg" className="w-full" loading={healthBusy} onClick={connectAppleHealth}>
-                  Fill in from Apple Health
-                </Button>
-                <p className="text-center text-xs text-muted">
-                  Optional. Every score works without it, and you can connect later in Settings.
-                </p>
-              </Card>
-            </>
-          )}
-
-          {/* ── 3. About you: all optional, prefilled when Health was connected ── */}
+          {/* ── 2. About you: all optional ── */}
           {step === "about" && (
             <>
               <h1 className="headline-tight text-2xl font-bold">About you</h1>
@@ -584,12 +526,6 @@ export function OnboardingFlow({
                 All optional. Each one makes your scores more accurate; skip any you like and add
                 them later in Profile.
               </p>
-              {healthNote && (
-                <p className="mt-3 flex items-center gap-1.5 text-xs text-success">
-                  <Check className="h-3.5 w-3.5" aria-hidden />
-                  {healthNote}
-                </p>
-              )}
               <Card className="mt-6 space-y-4">
                 <Input
                   label="Date of birth"
@@ -721,7 +657,7 @@ export function OnboardingFlow({
             </>
           )}
 
-          {/* ── 4. Sports: the hybrid pair preselected ── */}
+          {/* ── 3. Sports: the hybrid pair preselected ── */}
           {step === "sports" && (
             <>
               <h1 className="headline-tight text-2xl font-bold">What do you train?</h1>
@@ -759,7 +695,7 @@ export function OnboardingFlow({
             </>
           )}
 
-          {/* ── 5. Done: saved, and a tour on offer ── */}
+          {/* ── 4. Done: saved, and a tour on offer ── */}
           {step === "done" && (
             <Card className="glass-strong relative overflow-hidden px-6 py-10 text-center">
               <div
@@ -840,14 +776,9 @@ export function OnboardingFlow({
                   </Button>
                 )}
                 <Button size="lg" className="flex-1" onClick={advance}>
-                  {step === "health" ? "Skip for now" : step === "sports" ? "Finish" : "Continue"}
+                  {step === "sports" ? "Finish" : "Continue"}
                 </Button>
               </div>
-              {step !== "welcome" && step !== "health" && (
-                <p className="mt-3 text-center text-xs text-muted">
-                  Nothing here is required — Continue works as it is.
-                </p>
-              )}
             </>
           )}
         </motion.div>

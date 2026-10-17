@@ -67,10 +67,9 @@ describe("Continue with nothing typed produces a working profile", () => {
   });
 });
 
-describe("the Apple Health step exists only where there is a health store", () => {
-  it("is in the iOS shell's list and nowhere else", () => {
-    expect(buildSteps({ healthAvailable: true })).toEqual(["welcome", "health", "about", "sports", "done"]);
-    expect(buildSteps({ healthAvailable: false })).toEqual(["welcome", "about", "sports", "done"]);
+describe("the steps", () => {
+  it("are four, with no Apple Health step until that is integrated end to end", () => {
+    expect(buildSteps()).toEqual(["welcome", "about", "sports", "done"]);
   });
 });
 

@@ -22,17 +22,15 @@ import type { Gender, ScoringBasis, SportType } from "@/types";
  * before it would save anything. Each of those is a place to bounce.
  */
 
-export type OnboardingStepId = "welcome" | "health" | "about" | "sports" | "done";
+export type OnboardingStepId = "welcome" | "about" | "sports" | "done";
 
 /**
- * The Apple Health step only exists where there is a health store to read:
- * the iOS shell. On the web and on Android it is not shown as "unavailable",
- * it is not shown at all.
+ * Four steps, the same everywhere. An Apple Health step that prefills the
+ * form is built but deliberately not in this list — see the note at the top
+ * of onboarding-flow.tsx.
  */
-export function buildSteps({ healthAvailable }: { healthAvailable: boolean }): OnboardingStepId[] {
-  return healthAvailable
-    ? ["welcome", "health", "about", "sports", "done"]
-    : ["welcome", "about", "sports", "done"];
+export function buildSteps(): OnboardingStepId[] {
+  return ["welcome", "about", "sports", "done"];
 }
 
 /** Gym and running — the pair the product is named for. */
@@ -144,9 +142,10 @@ export function validateAbout(form: OnboardingForm, now = new Date()): Record<st
   const errors: Record<string, string> = {};
   if (form.date_of_birth !== "") {
     const age = ageFromDateOfBirth(form.date_of_birth, now);
-    if (age === null) errors.date_of_birth = "Enter a valid date of birth";
-    else if (age < LIMITS.age.min || age > LIMITS.age.max)
-      errors.date_of_birth = `Age must be between ${LIMITS.age.min} and ${LIMITS.age.max}`;
+    // The date picker on iOS opens on today's date, so a stray tap reads as
+    // age 0. Say how to skip as well as what is wrong.
+    if (age === null || age < LIMITS.age.min || age > LIMITS.age.max)
+      errors.date_of_birth = `Enter a date that makes you ${LIMITS.age.min} or over, or clear it to skip`;
   }
   if (form.height_cm !== "" && !inRange(form.height_cm, LIMITS.height_cm))
     errors.height_cm = `Height should be ${LIMITS.height_cm.min}–${LIMITS.height_cm.max} cm`;

@@ -15,10 +15,18 @@ import {
   nextIntroScreen,
 } from "@/components/auth/welcome-intro-content";
 
-/** Remember that the intro has been seen; it is shown once per device. */
+/**
+ * Remember that the intro has been seen — for THIS app session only.
+ *
+ * It was once-per-device (localStorage) at first, and the first thing
+ * reported was "I don't see the onboarding messages any more": every launch
+ * of the app without an account went straight to the login form after the
+ * first. sessionStorage clears when the app is quit, so each cold launch
+ * gets the intro, while signing out and back in during one session does not.
+ */
 function markSeen() {
   try {
-    localStorage.setItem(INTRO_SEEN_KEY, String(Date.now()));
+    sessionStorage.setItem(INTRO_SEEN_KEY, String(Date.now()));
   } catch {
     /* storage unavailable: shown again next launch, which is harmless */
   }
