@@ -210,11 +210,13 @@ export function GymExercises({
   errors,
   onUpdate,
   profileScoringSex = null,
+  profileAge = null,
 }: {
   state: WorkoutFormState;
   errors: FormErrors;
   onUpdate: UpdateField;
   profileScoringSex?: Gender | null;
+  profileAge?: number | null;
 }) {
   const rows = state.exercises;
   // The muscle-group filter deliberately does NOT live here. It used to be a
@@ -373,6 +375,7 @@ export function GymExercises({
             errors={errors}
             canRemove={rows.length > 1}
             profileScoringSex={profileScoringSex}
+            profileAge={profileAge}
             onUpdate={(patch) => updateRow(row.id, patch)}
             onRemove={() => removeRow(row.id)}
           />
@@ -514,6 +517,7 @@ function ExerciseRow({
   errors,
   canRemove,
   profileScoringSex,
+  profileAge = null,
   onUpdate,
   onRemove,
 }: {
@@ -523,6 +527,7 @@ function ExerciseRow({
   errors: FormErrors;
   canRemove: boolean;
   profileScoringSex?: Gender | null;
+  profileAge?: number | null;
   onUpdate: (patch: Partial<ExerciseRowState>) => void;
   onRemove: () => void;
 }) {
@@ -610,6 +615,14 @@ function ExerciseRow({
    * individual set in the lab." The exercise's own figure is this same
    * function applied to its best set, so a set's number and the exercise's
    * number can never disagree about the same set.
+   *
+   * Age is the athlete's real age (17 Oct 2026). It was hard-coded to 28
+   * here while the save path used the profile's derived age, so for anyone
+   * under 23 or over 35 the Lab and the logbook disagreed by the age factor.
+   * The remaining, deliberate difference between the two numbers: this is a
+   * single set scored with no history and no premium 1RM blending, and the
+   * logbook row is the session index — a confidence-weighted mean across
+   * every exercise, which a premium athlete's history also feeds.
    */
   const scoreSet = useCallback(
     (set: SetRowState): number | null => {
@@ -635,7 +648,7 @@ function ExerciseRow({
             sets: [{ weightKg: resolved?.scoringWeightKg ?? 0, durationSeconds: holdSeconds }],
             bodyweightKg: bodyweight,
             sex: scoringSex,
-            age: 28,
+            age: profileAge,
           }).score ?? null
         );
       }
@@ -649,7 +662,7 @@ function ExerciseRow({
             sets: [{ weightKg: resolved.scoringWeightKg, distanceMeters: carryMeters }],
             bodyweightKg: bodyweight,
             sex: scoringSex,
-            age: 28,
+            age: profileAge,
           }).score ?? null
         );
       }
@@ -666,7 +679,7 @@ function ExerciseRow({
         },
         bodyweightKg: bodyweight,
         sex: scoringSex,
-        age: 28,
+        age: profileAge,
         isPremium: false,
         isBodyweightRelative: resolved.isBodyweightRelative,
         weightEntryMode: resolved.mode,
@@ -680,6 +693,7 @@ function ExerciseRow({
       row.attachment,
       bodyweight,
       scoringSex,
+      profileAge,
       tracking,
       isBodyweightOnly,
     ]

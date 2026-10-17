@@ -6,13 +6,29 @@ function epley1RM(weightKg: number, reps: number): number {
   return weightKg * (1 + reps / 30);
 }
 
+/**
+ * How a set ranks against its siblings when picking the exercise's best.
+ *
+ * Mirrors bestSetRow() in components/activities/form-state.ts exactly. A
+ * bodyweight-only set (pull-ups, dips, push-ups with nothing added) has
+ * weight_kg 0, so Epley is 0 for every one of them; ranking on that alone
+ * returned `sets[0]` — the FIRST set — while the Lab's picker fell back to
+ * reps and chose the highest-rep set. Same session, two different sets
+ * scored, two different numbers (owner, 17 Oct 2026: "Why is the score in
+ * the logbook different to the score i see next to each set in the lab").
+ */
+function setRank(s: GymExerciseSet): number {
+  const estimate = epley1RM(s.weight_kg, s.reps);
+  return estimate > 0 ? estimate : s.reps;
+}
+
 /** The set with the highest estimated 1RM — representative of the exercise's peak effort that session. */
 export function bestSet(sets: GymExerciseSet[]): GymExerciseSet | null {
   if (sets.length === 0) return null;
   let best = sets[0];
-  let bestEstimate = epley1RM(best.weight_kg, best.reps);
+  let bestEstimate = setRank(best);
   for (const s of sets.slice(1)) {
-    const estimate = epley1RM(s.weight_kg, s.reps);
+    const estimate = setRank(s);
     if (estimate > bestEstimate) {
       best = s;
       bestEstimate = estimate;

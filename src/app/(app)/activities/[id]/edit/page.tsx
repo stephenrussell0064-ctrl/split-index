@@ -1,3 +1,4 @@
+import { ageFromDateOfBirth } from "@/lib/utils/age";
 import { redirect, notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { ActivityForm } from "@/components/activities/activity-form";
@@ -23,7 +24,7 @@ export default async function EditActivityPage({
   const { data: profile } = await supabase
     .from("profiles")
     .select(
-      "onboarding_completed, weight_kg, gender, scoring_basis, experience, subscription_tier, subscription_status"
+      "onboarding_completed, weight_kg, gender, scoring_basis, experience, subscription_tier, subscription_status, date_of_birth, age"
     )
     .eq("user_id", user.id)
     .single();
@@ -65,6 +66,7 @@ export default async function EditActivityPage({
       editActivityTitle={(activity.title as string) ?? sport}
       profileWeightKg={profile.weight_kg}
       profileScoringSex={resolveScoringSex(profile)}
+      profileAge={ageFromDateOfBirth(profile.date_of_birth) ?? profile.age ?? null}
       profileExperience={profile.experience}
       isPremium={premium}
     />

@@ -85,14 +85,18 @@ const ANCHOR_FIXTURES: Array<{
   tier: StrengthTier;
   note: string;
 }> = [
-  { lift: "bench", kg: 140, score: 872, tier: "Elite", note: "between 132kg(850) and 169kg(950)" },
+  // 872 -> 917 on 17 Oct 2026: every bench anchor x0.89 at the owner's
+  // direction. Bench no longer claims percentile parity — see its table note.
+  { lift: "bench", kg: 140, score: 917, tier: "Elite", note: "between 118kg(850) and 151kg(950)" },
   { lift: "squat", kg: 160, score: 784, tier: "Advanced", note: "between 132kg(650) and 168kg(850)" },
   { lift: "deadlift", kg: 200, score: 850, tier: "Elite", note: "sits ON the 200kg 80th-percentile anchor, so 850 exactly" },
   { lift: "ohp", kg: 75, score: 768, tier: "Advanced", note: "between 62kg(650) and 81kg(850)" },
   { lift: "barbellRow", kg: 120, score: 861, tier: "Elite", note: "between 114kg(850) and 141kg(950)" },
   { lift: "frontSquat", kg: 120, score: 720, tier: "Semi-Pro", note: "log curve, no published table" },
   { lift: "inclineBench", kg: 100, score: 759, tier: "Advanced", note: "log curve, no published table" },
-  { lift: "weightedPullup", kg: 50, score: 726, tier: "Advanced", note: "log curve, no published table" },
+  // 726 -> 859 on 17 Oct 2026: pull-ups moved onto PULL_UP_ANCHORS (owner: 20
+  // bodyweight reps should read ~90). +50 kg is a 0.60 added-load ratio.
+  { lift: "weightedPullup", kg: 50, score: 859, tier: "Elite", note: "owner-dictated table, between ratio .493(790) and .667(900)" },
   { lift: "inclineDbPress", kg: 55, score: 322, tier: "Intermediate", note: "TOTAL load: between 44kg(150) and 58kg(400) — 27.5kg per hand" },
   { lift: "flatDbPress", kg: 50, score: 300, tier: "Intermediate", note: "TOTAL load: between 38kg(150) and 56kg(400) — 25kg per hand" },
   { lift: "machineChestPress", kg: 120, score: 765, tier: "Advanced", note: "log curve, no published table" },
@@ -283,11 +287,15 @@ describe("age factor", () => {
   });
 
   it("gives an older athlete a gentle boost without moving them a tier", () => {
-    const young = scoreSingleSet("bench", 140);
+    // 100 kg, not 140: after the 17 Oct 2026 bench re-anchor a 140 kg single
+    // sits 8 points under the World Class line, so ANY credit crosses it and
+    // the fixture stopped testing what it says. 100 kg is mid-Advanced for both
+    // ages (766 / 817), which is the shape this test exists to pin.
+    const young = scoreSingleSet("bench", 100);
     const older = scoreStrength({
       liftKey: "bench",
       history: [],
-      latestSet: { weightKg: 140, reps: 1 },
+      latestSet: { weightKg: 100, reps: 1 },
       bodyweightKg: BODYWEIGHT_KG,
       sex: "male",
       age: 50,

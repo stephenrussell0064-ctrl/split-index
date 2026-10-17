@@ -482,9 +482,14 @@ export function computePeriodMetrics(
   const avg = (vals: number[]) =>
     vals.length > 0 ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : 0;
 
-  const totalLoad = actsInRange.reduce(
-    (sum, a) => sum + (loadByActivity.get(a.id) ?? Math.round(a.duration_seconds / 60)),
-    0
+  // Rounded: load_score is stored to one decimal, and summing those floats
+  // rendered as "1234.5000000000002 AU" (owner: "the load score in analytics
+  // has too many 0s on the end"). A whole number is all the card can show.
+  const totalLoad = Math.round(
+    actsInRange.reduce(
+      (sum, a) => sum + (loadByActivity.get(a.id) ?? Math.round(a.duration_seconds / 60)),
+      0
+    )
   );
 
   const days = Math.max(

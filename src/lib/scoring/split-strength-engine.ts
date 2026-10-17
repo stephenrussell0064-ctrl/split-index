@@ -269,7 +269,7 @@ const PRIMARY_ANCHORS: Record<string, LiftAnchor> = {
   // value (0.785, "recalibrated so 120×4/110×6/100×9 ≈ 800 @ 80kg BW") scored
   // a real bench PB (140kg @ 83kg BW) at ~850 "Elite" — a full tier more
   // generous than Strength Level's population data implies (~752, Advanced).
-  bench: { anchorRatio: 81 / 83, category: "chest", bodyPart: "upperBody" },
+  bench: { anchorRatio: 62 / 83, category: "chest", bodyPart: "upperBody" },
   squat: { anchorRatio: 0.9984, category: "legs", bodyPart: "lowerBody" },
   // Deadlift was already close to accurate (200kg @ 83kg BW -> 770 vs. the
   // corrected 725) — least-urgent of the two, still corrected for
@@ -442,6 +442,50 @@ function slTable(kgAtRowBodyweight: readonly [number, number, number, number, nu
  *    Strength Level population data exists for them, so there is nothing to
  *    map. They keep their documented engineering-judgement anchors.
  */
+
+/**
+ * Pull-ups, 17 Oct 2026. Reported: "pull ups need to be buffed as 20 only
+ * scores 75.6 which should be much higher and around 90."
+ *
+ * The log formula could do that only by moving the single anchor from 0.333
+ * to ~0.23, which drives 25 reps to 977 and 30 reps onto the 999 clamp — the
+ * "pull ups have a ceiling" complaint of 26 Sep, back again one tier higher.
+ * A table has independent control of the top, so pull-ups get one, the same
+ * mechanism bench and the rest of the catalogue use. It is read on the
+ * engine's existing basis for this family — ADDED load as a ratio of
+ * bodyweight — so it serves bodyweight reps and weighted singles alike and
+ * both twins (Pull Up / Weighted Pull Up) share it, as they shared the anchor.
+ *
+ * At REFERENCE_BODYWEIGHT_KG a bodyweight set's added-load ratio is exactly
+ * repMaxMultiplier(reps) - 1, so the rows below ARE rep counts for an 83 kg
+ * athlete (a heavier athlete reads slightly higher at the same reps, as the
+ * allometric exponent has always had it):
+ *
+ *   reps   1     5    10    15    20    30    50
+ *   ratio  0  .124  .333  .493  .667  1.00  1.22
+ *   score 100  350   620   790   900   960   990
+ *
+ * Measured at the owner's 78 kg: 20 reps 756 -> 891, 10 reps 493 -> 609,
+ * +30 kg x 8 (the 26 Sep case) 780 -> 905. The bottom row replaces the
+ * BODYWEIGHT_FLOOR for this lift: one strict pull-up is 100, not 1, and every
+ * rep from there is a different number. Like the single-arm pushdown and now
+ * bench, these are not percentile boundaries — a pull-up tier label is more
+ * generous than a squat one.
+ *
+ * Declared before the table that references it: a `const` read inside the
+ * object literal below is evaluated at module load, and the temporal dead zone
+ * would throw if this came after.
+ */
+const PULL_UP_ANCHORS: WeightAnchor[] = [
+  [0, 100],
+  [0.124, 350],
+  [0.333, 620],
+  [0.493, 790],
+  [0.667, 900],
+  [1.0, 960],
+  [1.222, 990],
+];
+
 const WEIGHT_RATIO_ANCHOR_TABLES: Partial<Record<string, WeightAnchor[]>> = {
   /*
    * The bottom three anchors eased, 22 Sep 2026, the top two left alone.
@@ -457,13 +501,36 @@ const WEIGHT_RATIO_ANCHOR_TABLES: Partial<Record<string, WeightAnchor[]>> = {
    * which is worth noticing: each was a response to one athlete's sense of
    * where they should rank, and none to new population data. If it moves a
    * fifth time, that is the thing to question rather than the number.
+   *
+   * FIFTH RE-ANCHOR, 17 Oct 2026 — and the thing above was questioned, and
+   * the owner's answer was to move the number. Reported: "a 140kg bench at
+   * 78 bw should score well into the 90s yet it only scores 88.8, the whole
+   * bench score system needs to be buffed more." "The whole system", so this
+   * is a uniform scale rather than another nudge to one end: every one of the
+   * five anchors is the previous value x 0.89 (40/59/84/132/169 ->
+   * 36/53/75/118/151). The curve's shape is untouched; its level is ~11%
+   * easier everywhere.
+   *
+   * What that does, male, age 30 (internal / display):
+   *   140 kg @ 78 kg   888 -> 935   (the reported case, 88.8 -> 93.5)
+   *   140 kg @ 83 kg   872 -> 917
+   *   132 kg @ 83 kg   850 -> 892
+   *   100 kg @ 83 kg   717 -> 766
+   *    75 kg @ 83 kg   560 -> 650   (an ordinary gym-floor bench reads Semi-Pro)
+   *
+   * Stated plainly, as the single-arm pushdown note does: bench no longer
+   * claims percentile parity with Strength Level. 118 kg now reads as the
+   * Elite boundary where their 80th percentile sits at 132 kg, so a bench
+   * score of X is a more generous statement than a squat or deadlift score of
+   * X. That asymmetry is the owner's call and is the thing to revisit if the
+   * three lifts are ever compared on one scale again.
    */
   bench: [
-    [40 / REFERENCE_BODYWEIGHT_KG, 150],
-    [59 / REFERENCE_BODYWEIGHT_KG, 400],
-    [84 / REFERENCE_BODYWEIGHT_KG, 650],
-    [132 / REFERENCE_BODYWEIGHT_KG, 850],
-    [169 / REFERENCE_BODYWEIGHT_KG, 950],
+    [36 / REFERENCE_BODYWEIGHT_KG, 150],
+    [53 / REFERENCE_BODYWEIGHT_KG, 400],
+    [75 / REFERENCE_BODYWEIGHT_KG, 650],
+    [118 / REFERENCE_BODYWEIGHT_KG, 850],
+    [151 / REFERENCE_BODYWEIGHT_KG, 950],
   ],
   deadlift: [
     [78 / REFERENCE_BODYWEIGHT_KG, 150],
@@ -574,6 +641,10 @@ const WEIGHT_RATIO_ANCHOR_TABLES: Partial<Record<string, WeightAnchor[]>> = {
    * compressed curve the athlete asked for is intact.
    */
   tricepPushdownSingleArm: slTable([7.2, 12.0, 18.4, 30.4, 54.4]),
+
+  // --- pull-ups: a table in ADDED-load ratio, dictated by the owner --------
+  pullUp: PULL_UP_ANCHORS,
+  weightedPullup: PULL_UP_ANCHORS,
 };
 
 const ACCESSORY_MAP: Record<string, LiftAnchor> = {

@@ -153,6 +153,7 @@ export function ActivityForm({
   initialEditState,
   editActivityTitle,
   profileScoringSex,
+  profileAge = null,
   profileExperience = null,
   zoneMode = "generic",
   enduranceOnly = false,
@@ -184,6 +185,14 @@ export function ActivityForm({
     no default the compiler names every route that has to answer for it.
   */
   profileScoringSex: Gender | null;
+  /**
+   * The athlete's current age, for the Lab's live set scores. The saved score
+   * applies ageFactor() from the real age; the Lab used to hard-code 28, so a
+   * junior or masters athlete saw one number next to the set and another in
+   * the logbook. Null (unknown) scores without an age factor, exactly as the
+   * save path does when the profile has no date of birth.
+   */
+  profileAge?: number | null;
   profileExperience?: ExperienceLevel | null;
   zoneMode?: "gym" | "cardio" | "generic";
   enduranceOnly?: boolean;
@@ -896,6 +905,7 @@ export function ActivityForm({
                     errors={errors}
                     onUpdate={updateField}
                     profileScoringSex={profileScoringSex}
+                    profileAge={profileAge}
                   />
                 </motion.div>
               </AnimatePresence>

@@ -33,21 +33,21 @@ function scoreAtOneRM(liftKey: string, targetOneRMKg: number, overrides: Partial
 }
 
 describe("scoreStrength — bench/deadlift corrected anchors (Part G, re-anchored a 3rd time)", () => {
-  it("bench: 140kg @ 83kg BW now scores ~872 (Elite), not 752 (Advanced) — user feedback: a 120x3/~132kg 1RM set scoring 724 was 'way too low... comparing to the average person in gym not elite athletes'", () => {
+  it("bench: 140kg @ 83kg BW scores ~917 (Elite) after the 17 Oct uniform buff; was ~872, and 752 before Part G", () => {
     const result = scoreAtOneRM("bench", 140);
-    expect(result.score).toBeCloseTo(872, -1); // within ~10 points
+    expect(result.score).toBeCloseTo(917, -1); // within ~10 points
     expect(result.tier).toBe("Elite");
   });
 
-  it("bench matches the re-anchored table exactly (bottom three eased twice on 22 Sep; top two still untouched)", () => {
-    // Eased from 47/70/98 so an ordinary 83 kg lifter benching 75 kg reads 49.3
-    // rather than 44.5. The top two are deliberately unchanged — moving them
-    // too would have made 132 kg Elite at about 121.
-    expect(scoreAtOneRM("bench", 40).score).toBeCloseTo(150, 0);
-    expect(scoreAtOneRM("bench", 59).score).toBeCloseTo(400, 0);
-    expect(scoreAtOneRM("bench", 84).score).toBeCloseTo(650, 0);
-    expect(scoreAtOneRM("bench", 132).score).toBeCloseTo(850, 0); // raised from 725 — now the Elite boundary
-    expect(scoreAtOneRM("bench", 169).score).toBeCloseTo(950, 0); // raised from 850 — deep into World Class
+  it("bench matches the re-anchored table exactly (every anchor x0.89 on 17 Oct 2026 — see the table's own note)", () => {
+    // 40/59/84/132/169 -> 36/53/75/118/151. Owner: "the whole bench score
+    // system needs to be buffed more", so the level moved and the shape did
+    // not. An ordinary 83 kg lifter benching 75 kg now reads 65.0.
+    expect(scoreAtOneRM("bench", 36).score).toBeCloseTo(150, 0);
+    expect(scoreAtOneRM("bench", 53).score).toBeCloseTo(400, 0);
+    expect(scoreAtOneRM("bench", 75).score).toBeCloseTo(650, 0);
+    expect(scoreAtOneRM("bench", 118).score).toBeCloseTo(850, 0); // the Elite boundary
+    expect(scoreAtOneRM("bench", 151).score).toBeCloseTo(950, 0); // deep into World Class
   });
 
   it("bench: 100kg @ 83kg BW (a genuinely good lift) now scores well above 'merely average' 500, not ~501", () => {
@@ -374,14 +374,19 @@ describe("ageFactor — Foster junior coefficients", () => {
   // the removed +6% sub-max correction never applied at three reps or fewer,
   // so this lift loses only the Epley-vs-Strength-Level gap. What this test
   // is actually about is unchanged and is the reason both numbers are pinned:
-  // the junior credit is still worth exactly +16, so the gate is still on the
+  // the junior credit is still worth a fixed step, so the gate is still on the
   // factor rather than on `age > 35`.
-  it("APPLIES the junior credit — the reported lift moves 893 -> 909, and 'age-factor-beta' is flagged", () => {
+  //
+  // 893/909 -> 941/959 on 17 Oct 2026, when every bench anchor was scaled
+  // x0.89 (see the table's note). The credit grew from +16 to +18 because the
+  // junior lift now sits past the 950 anchor, on the shallower extrapolated
+  // tail, where the same 4% ratio credit is worth a few more points.
+  it("APPLIES the junior credit — the reported lift moves 941 -> 959, and 'age-factor-beta' is flagged", () => {
     const junior = bench140(19);
     const peak = bench140(30);
-    expect(peak.score).toBe(893);
-    expect(junior.score).toBe(909);
-    expect(junior.score - peak.score).toBe(16);
+    expect(peak.score).toBe(941);
+    expect(junior.score).toBe(959);
+    expect(junior.score - peak.score).toBe(18);
     expect(junior.flags).toContain("age-factor-beta");
     expect(junior.appliedFactors.some((f) => f.startsWith("age:19"))).toBe(true);
   });

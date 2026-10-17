@@ -64,6 +64,7 @@ import {
   recoverOrphanedSession,
   rejoinGpsSession,
   stopGpsSession,
+  discardGpsSession,
 } from "./gps-tracking";
 
 const SESSION_KEY = "gps-tracking-session";
@@ -227,7 +228,116 @@ describe("recovering a session the WebView lost", () => {
     // Its callback can never fire again, but on iOS the native subscription can
     // outlive the WebView and keep costing battery with nobody listening.
     expect(watcher.removed).toContain("stale-watcher");
+    // The RECORD stays (17 Oct 2026): until the athlete saves or discards, storage
+    // is the only copy of the run, and recovery used to delete it on sight.
+    expect(store.has(SESSION_KEY)).toBe(true);
+  });
+
+  it("keeps the record across a second recovery, so a reload with the banner showing loses nothing", async () => {
+    const now = Date.now();
+    seedSession({ startedAt: now - 60_000, pointTimes: [now - 60_000, now - 30_000] });
+
+    const first = await recoverOrphanedSession();
+    const second = await recoverOrphanedSession();
+
+    expect(second?.points).toHaveLength(2);
+    expect(second?.startedAt).toBe(first?.startedAt);
+  });
+
+  it("clears a record that cannot be parsed, so a corrupt entry cannot wedge every launch", async () => {
+    store.set(SESSION_KEY, "{not json");
+
+    expect(await recoverOrphanedSession()).toBeNull();
     expect(store.has(SESSION_KEY)).toBe(false);
+  });
+
+  it("clears a record with no fixes in it — there is nothing to save", async () => {
+    seedSession({ startedAt: Date.now() - 60_000, pointTimes: [] });
+
+    expect(await recoverOrphanedSession()).toBeNull();
+    expect(store.has(SESSION_KEY)).toBe(false);
+  });
+});
+
+/**
+ * Owner, 17 Oct 2026: "If you stop a run and then click off the app for too
+ * long it will discard the run for u even if u wish to keep it, this needs to
+ * be fixed so that all activities are recorded and put in the logbook unless
+ * specifically discarded." Finish used to delete the stored run and leave it
+ * in React state alone; iOS recreating the WebView during the review screen
+ * then lost it. Finish now keeps the record, stamped as stopped, until a save
+ * or an explicit discard.
+ */
+describe("a finished run survives until it is saved or discarded", () => {
+  async function runAndStop() {
+    await startGpsSession();
+    const t0 = Date.now() - 120_000;
+    await watcher.callback!(fixAt(0, t0));
+    await watcher.callback!(fixAt(400, t0 + 100_000));
+    const stoppedAt = t0 + 120_000;
+    const summary = await stopGpsSession(stoppedAt);
+    return { t0, stoppedAt, summary };
+  }
+
+  it("stopGpsSession keeps the record on disk, stamped as stopped, and tears the watcher down", async () => {
+    const { stoppedAt } = await runAndStop();
+
+    const stored = storedSession();
+    expect(stored).not.toBeNull();
+    expect(stored.points).toHaveLength(2);
+    expect(stored.stoppedAt).toBe(stoppedAt);
+    expect(watcher.removed).toContain("watcher-0");
+  });
+
+  it("closes a pause left open at Finish, at the moment Finish was pressed", async () => {
+    await startGpsSession();
+    const t0 = Date.now() - 120_000;
+    await watcher.callback!(fixAt(0, t0));
+    await watcher.callback!(fixAt(400, t0 + 60_000));
+    await pauseGpsSession(t0 + 60_000);
+
+    const summary = await stopGpsSession(t0 + 120_000);
+
+    expect(storedSession().pauses[0].endTime).toBe(t0 + 120_000);
+    // 120s of wall clock less the 60s standing still.
+    expect(summary.durationSeconds).toBe(60);
+  });
+
+  it("recovers a stopped run as finished — not resumable, not paused — with the same summary Finish produced", async () => {
+    const { summary, t0 } = await runAndStop();
+
+    const recovered = await recoverOrphanedSession();
+
+    expect(recovered).not.toBeNull();
+    expect(recovered!.stopped).toBe(true);
+    expect(recovered!.resumable).toBe(false);
+    expect(recovered!.wasPaused).toBe(false);
+    expect(recovered!.startedAt).toBeGreaterThanOrEqual(t0 - 1);
+    expect(recovered!.summary.distanceMeters).toBeCloseTo(summary.distanceMeters, 3);
+    expect(recovered!.summary.durationSeconds).toBe(summary.durationSeconds);
+    expect(recovered!.points).toHaveLength(2);
+  });
+
+  it("discardGpsSession is what removes it", async () => {
+    await runAndStop();
+    expect(store.has(SESSION_KEY)).toBe(true);
+
+    await discardGpsSession();
+
+    expect(store.has(SESSION_KEY)).toBe(false);
+    expect(await recoverOrphanedSession()).toBeNull();
+  });
+
+  it("a run that was never stopped is still offered as a live run, not a finished one", async () => {
+    await startGpsSession();
+    const now = Date.now();
+    await watcher.callback!(fixAt(0, now - 60_000));
+    await watcher.callback!(fixAt(400, now - 30_000));
+
+    const recovered = await recoverOrphanedSession();
+
+    expect(recovered!.stopped).toBe(false);
+    expect(recovered!.resumable).toBe(true);
   });
 });
 

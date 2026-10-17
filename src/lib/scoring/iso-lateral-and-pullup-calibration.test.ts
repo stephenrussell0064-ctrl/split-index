@@ -154,10 +154,16 @@ describe("Pull Up — the reported +30kg x 8 = 72.9 case", () => {
   // move here is small because bodyweight-relative lifts subtract bodyweight
   // back out — the correction applies to the ~108kg total load, not to the
   // 30kg the athlete logged.
-  it("scores ~78, not 72.9: added load is credited on top of bodyweight", () => {
+  // 17 Oct 2026: pull-ups moved onto their own anchor table (owner: 20
+  // bodyweight reps "should be ... around 90"). The same +30 x 8 set now reads
+  // ~905 — the table equates it with roughly twenty strict reps, which is what
+  // the engine's added-load basis has always said about it. The band below
+  // tracks that; the point of the test is unchanged — the load is credited on
+  // top of bodyweight, not as the whole lift.
+  it("scores ~90, up from the reported 72.9: added load is credited on top of bodyweight", () => {
     const result = scoreLogged("Pull Up", 30, 8);
-    expect(result.score).toBeGreaterThan(770);
-    expect(result.score).toBeLessThan(830);
+    expect(result.score).toBeGreaterThan(880);
+    expect(result.score).toBeLessThan(930);
   });
 
   it("the same set on the Weighted Pull Up twin scores identically", () => {
@@ -172,8 +178,8 @@ describe("Pull Up — the reported +30kg x 8 = 72.9 case", () => {
   it("still credits a heavier athlete's added load correctly (bodyweight is part of the load, not a penalty)", () => {
     for (const bw of [70, 78, 85, 95]) {
       const result = scoreLogged("Pull Up", 30, 8, bw);
-      expect(result.score, `BW ${bw}`).toBeGreaterThan(750);
-      expect(result.score, `BW ${bw}`).toBeLessThan(860);
+      expect(result.score, `BW ${bw}`).toBeGreaterThan(870);
+      expect(result.score, `BW ${bw}`).toBeLessThan(930);
     }
   });
 

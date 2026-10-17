@@ -152,12 +152,14 @@ export function SportForm({
   errors,
   onUpdate,
   profileScoringSex = null,
+  profileAge = null,
 }: {
   sport: SportType;
   state: WorkoutFormState;
   errors: FormErrors;
   onUpdate: UpdateField;
   profileScoringSex?: import("@/types").Gender | null;
+  profileAge?: number | null;
 }) {
   const fields = SPORT_FIELDS[sport];
   const durationSeconds = totalDurationSeconds(state);
@@ -291,6 +293,7 @@ export function SportForm({
             errors={errors}
             onUpdate={onUpdate}
             profileScoringSex={profileScoringSex}
+            profileAge={profileAge}
           />
         </>
       ) : (

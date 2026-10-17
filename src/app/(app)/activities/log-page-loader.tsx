@@ -1,3 +1,4 @@
+import { ageFromDateOfBirth } from "@/lib/utils/age";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { ActivityForm } from "@/components/activities/activity-form";
@@ -97,7 +98,7 @@ export async function loadLogPage({
     supabase
       .from("profiles")
       .select(
-        "onboarding_completed, weight_kg, gender, scoring_basis, experience, subscription_tier, subscription_status"
+        "onboarding_completed, weight_kg, gender, scoring_basis, experience, subscription_tier, subscription_status, date_of_birth, age"
       )
       .eq("user_id", user.id)
       .single(),
@@ -306,6 +307,7 @@ export async function loadLogPage({
       enduranceOnly={enduranceOnly}
       successRedirect={zoneMode === "gym" ? "/gym" : "/cardio"}
       profileScoringSex={resolveScoringSex(profile)}
+      profileAge={ageFromDateOfBirth(profile.date_of_birth) ?? profile.age ?? null}
       profileExperience={profile.experience}
       entry={entry}
     />

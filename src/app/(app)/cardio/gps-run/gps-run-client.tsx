@@ -18,6 +18,7 @@ import { livePredictionLadder, type LivePredictionEntry } from "@/lib/scoring/ca
 import {
   startGpsSession,
   stopGpsSession,
+  discardGpsSession,
   pauseGpsSession,
   resumeGpsSession,
   recoverOrphanedSession,
@@ -336,7 +337,27 @@ function GpsRunScreen() {
   useEffect(() => {
     if (!native) return;
     recoverOrphanedSession().then((recovered) => {
-      if (recovered) setOrphaned(recovered);
+      if (!recovered) return;
+      if (recovered.stopped) {
+        /*
+          Finish had been pressed and the review screen was open when the
+          WebView was reloaded (owner: "if you stop a run and then click off
+          the app for too long it will discard the run"). There is nothing to
+          ask: put the finished run back on the review screen exactly as it
+          was, with the same Save and Discard buttons. The route and pauses
+          are restored from storage; heart rate, cadence and effort segments
+          live only in this component and are not, so a run recovered this way
+          saves without them — the same limitation a rejoined run has.
+        */
+        setLivePoints(recovered.points);
+        applyPauses(recovered.pauses);
+        startedAtRef.current = recovered.startedAt;
+        setElapsedSeconds(Math.round(recovered.summary.durationSeconds));
+        setSummary(recovered.summary);
+        setPhase("reviewing");
+        return;
+      }
+      setOrphaned(recovered);
     });
   }, [native]);
 
@@ -408,7 +429,7 @@ function GpsRunScreen() {
   const livePaceSecondsPerKm =
     liveDistanceMeters > 0 ? elapsedSeconds / (liveDistanceMeters / 1000) : null;
 
-  /** Every whole kilometre completed so far — what the voice callouts read from, and what the "Last km" tile shows. Same distance the Distance tile is built on, so the two can never disagree about when a kilometre finished. */
+  /** Every 500 m split completed so far — what the voice callouts read from, and what the last-split tile shows. Same distance the Distance tile is built on, so the two can never disagree about when a split finished. */
   const completedSplits = useMemo(
     () => (phase === "tracking" ? kilometreSplits(livePoints, pauses, startedAtRef.current, hrReadings) : []),
     // hrReadings is NOT a dependency on purpose: a split is cut when a fix
@@ -420,8 +441,9 @@ function GpsRunScreen() {
   );
   const lastSplit = completedSplits.length > 0 ? completedSplits[completedSplits.length - 1] : null;
 
-  // Voice callout at every kilometre (user feedback: "call out the splits
-  // every 1km with how many km you are in"). Driven by the fixes arriving,
+  // Voice callout at every 500 m (user feedback: "call out the splits every
+  // 1km with how many km you are in", then 17 Oct 2026: "called out every
+  // 500m rather 1km" — METERS_PER_SPLIT in km-splits.ts). Driven by the fixes arriving,
   // not by a timer, so it fires the moment the boundary is crossed and keeps
   // firing with the screen locked — native location callbacks still reach
   // the WebView in the background, timers do not. Each split is read once:
@@ -572,6 +594,12 @@ function GpsRunScreen() {
 
   async function handleStart() {
     if (starting) return; // guards against a double-tap firing two watchers
+    if (orphaned) {
+      // startGpsSession overwrites the one stored record. A recovered run that
+      // has not been saved or discarded yet would be lost by starting over it.
+      setError("Save or discard the recovered run above before starting a new one.");
+      return;
+    }
     setStarting(true);
     setError("");
     setLivePoints([]);
@@ -794,7 +822,10 @@ function GpsRunScreen() {
   async function handleDiscardTracking() {
     setStopping(true);
     try {
-      await stopGpsSession().catch(() => {});
+      // discardGpsSession, not stopGpsSession: stopping now KEEPS the record
+      // for the review screen, and this is the one place the athlete has asked
+      // for it to go.
+      await discardGpsSession().catch(() => {});
       if (hrSource) await handleDisconnectHeartRate().catch(() => {});
       if (isOnFootSport) await stopStepCadence().catch(() => {});
       await endLiveActivity().catch(() => {});
@@ -804,8 +835,30 @@ function GpsRunScreen() {
     }
   }
 
-  function handleDiscardReview() {
+  /**
+   * Discard from the review screen. Two-step, like the in-run discard: the
+   * finished run is still on disk at this point (see stopGpsSession) and this
+   * is the only tap that deletes it, so one mis-tap must not be enough.
+   */
+  async function handleDiscardReview() {
+    if (!confirmingDiscard) {
+      setConfirmingDiscard(true);
+      return;
+    }
+    await discardGpsSession().catch(() => {});
     resetToIdle();
+  }
+
+  /** Discard a recovered run from the banner. Same two-step, same reason — storage is the only copy. */
+  async function handleDiscardOrphaned() {
+    if (!confirmingDiscard) {
+      setConfirmingDiscard(true);
+      return;
+    }
+    await discardGpsSession().catch(() => {});
+    setConfirmingDiscard(false);
+    setOrphaned(null);
+    setError("");
   }
 
   function resetToIdle() {
@@ -906,6 +959,11 @@ function GpsRunScreen() {
         setSaving(false);
         return;
       }
+      // The server has the run. Only now does the stored copy go — see
+      // stopGpsSession for why it survived this long.
+      await discardGpsSession().catch(() => {});
+      setOrphaned(null);
+      setConfirmingDiscard(false);
       setOverviewIsPremium(!data.premium_required);
       setOverviewResult(buildOverviewResult(data));
       /*
@@ -1060,13 +1118,13 @@ function GpsRunScreen() {
             <div className="mt-2.5 grid w-full max-w-sm grid-cols-3 gap-2.5">
               <StatTile icon={Gauge} label={sport === "outdoor_cycling" ? "Avg speed" : "Avg split"} value={formatPaceOrSpeed(sport, livePaceSecondsPerKm)} />
               <StatTile label={sport === "outdoor_cycling" ? "Speed now" : "Pace now"} value={formatPaceOrSpeed(sport, currentPaceSecondsPerKm)} />
-              {/* The most recent whole-kilometre split — the same number the
-                  voice callout just read, kept on screen for a glance-check
-                  when it was missed under traffic noise. */}
+              {/* The most recent 500 m split — the same number the voice
+                  callout just read, kept on screen for a glance-check when it
+                  was missed under traffic noise. */}
               {lastSplit && (
                 <StatTile
                   tone="accent"
-                  label={lastSplit.avgHr != null ? `Km ${lastSplit.km} · ${lastSplit.avgHr} bpm` : `Km ${lastSplit.km}`}
+                  label={lastSplit.avgHr != null ? `${lastSplit.km} km · ${lastSplit.avgHr} bpm` : `${lastSplit.km} km`}
                   value={formatPaceOrSpeed(sport, lastSplit.splitSeconds)}
                 />
               )}
@@ -1282,10 +1340,13 @@ function GpsRunScreen() {
                   size="sm"
                   variant="secondary"
                   disabled={rejoining}
+                  loading={saving}
                   onClick={() =>
                     submitSummary(
                       orphaned.summary,
-                      new Date(Date.now() - orphaned.summary.durationSeconds * 1000).toISOString(),
+                      // The real start, not "now minus moving time": a run with
+                      // pauses began earlier than its moving duration implies.
+                      new Date(orphaned.startedAt).toISOString(),
                       // Load-bearing: the recovered run's fixes live here, not
                       // in `livePoints` — this component mounted fresh after
                       // the app was killed. Without them the run saves with no
@@ -1297,9 +1358,20 @@ function GpsRunScreen() {
                 >
                   Save run
                 </Button>
-                <Button size="sm" variant="ghost" onClick={() => setOrphaned(null)}>
-                  Discard
-                </Button>
+                {confirmingDiscard ? (
+                  <>
+                    <Button size="sm" variant="secondary" onClick={() => setConfirmingDiscard(false)}>
+                      Keep it
+                    </Button>
+                    <Button size="sm" variant="destructive" onClick={handleDiscardOrphaned}>
+                      Discard for good
+                    </Button>
+                  </>
+                ) : (
+                  <Button size="sm" variant="ghost" onClick={handleDiscardOrphaned}>
+                    Discard
+                  </Button>
+                )}
               </div>
             </div>
           </div>
@@ -1523,6 +1595,7 @@ function GpsRunScreen() {
               className="w-full"
               onClick={handleStart}
               loading={starting}
+              disabled={orphaned !== null}
               aria-label={`Start ${meta.noun}`}
             >
               <MapPin className="h-5 w-5" aria-hidden />
@@ -1622,23 +1695,56 @@ function GpsRunScreen() {
 
             {error && <p className="text-sm text-danger">{error}</p>}
 
-            <div className="flex gap-3">
-              <Button variant="secondary" onClick={handleDiscardReview} disabled={saving} aria-label={`Discard ${meta.noun}`}>
-                <Trash2 className="h-4 w-4" aria-hidden />
-                Discard
-              </Button>
-              <Button
-                size="lg"
-                className="h-12 min-h-12 flex-1 rounded-2xl text-sm"
-                loading={saving}
-                onClick={() =>
-                  submitSummary(summary, new Date(Date.now() - summary.durationSeconds * 1000).toISOString())
-                }
-              >
-                <CircleCheck className="h-5 w-5" aria-hidden />
-                Save {meta.noun}
-              </Button>
-            </div>
+            {confirmingDiscard ? (
+              <div className="flex gap-3">
+                <Button
+                  variant="secondary"
+                  className="flex-1"
+                  onClick={() => setConfirmingDiscard(false)}
+                  disabled={saving}
+                >
+                  Keep it
+                </Button>
+                <Button
+                  variant="destructive"
+                  className="flex-1"
+                  onClick={handleDiscardReview}
+                  disabled={saving}
+                  aria-label={`Discard ${meta.noun} for good`}
+                >
+                  <Trash2 className="h-4 w-4" aria-hidden />
+                  Discard for good
+                </Button>
+              </div>
+            ) : (
+              <div className="flex gap-3">
+                <Button variant="secondary" onClick={handleDiscardReview} disabled={saving} aria-label={`Discard ${meta.noun}`}>
+                  <Trash2 className="h-4 w-4" aria-hidden />
+                  Discard
+                </Button>
+                <Button
+                  size="lg"
+                  className="h-12 min-h-12 flex-1 rounded-2xl text-sm"
+                  loading={saving}
+                  onClick={() =>
+                    submitSummary(
+                      summary,
+                      // The instant Start was pressed — the HUD clock's origin,
+                      // restored from storage on a recovered run. "Now minus
+                      // moving time" put a paused run's start after it began.
+                      new Date(
+                        startedAtRef.current > 0
+                          ? startedAtRef.current
+                          : Date.now() - summary.durationSeconds * 1000
+                      ).toISOString()
+                    )
+                  }
+                >
+                  <CircleCheck className="h-5 w-5" aria-hidden />
+                  Save {meta.noun}
+                </Button>
+              </div>
+            )}
           </div>
         );
       })()}
