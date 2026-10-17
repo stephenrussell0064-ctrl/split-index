@@ -7,6 +7,9 @@ import type { StoredPredictedBenchmark } from "./predicted-benchmark";
 function readiness(overrides: Partial<ReadinessResult> = {}): ReadinessResult {
   return {
     readiness: 80,
+    acuteLoad: 0,
+    typicalDailyLoad: 40,
+    hoursSinceLastHardSession: null,
     overallAcwr: 1.0,
     gymAcwr: 1.0,
     cardioAcwr: 1.0,

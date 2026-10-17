@@ -1,10 +1,11 @@
-import { Activity, HeartPulse, Layers, Wine } from "lucide-react";
+import { Activity, Flame, HeartPulse, Layers, Wine } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils/cn";
 import type { RecoveryComponentKey, RecoveryScoreResult } from "@/lib/recovery/score";
 
 const ICONS: Record<RecoveryComponentKey, typeof Activity> = {
   load: Activity,
+  acute: Flame,
   hrv: HeartPulse,
   density: Layers,
   alcohol: Wine,

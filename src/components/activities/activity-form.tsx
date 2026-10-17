@@ -20,6 +20,7 @@ import {
   createDefaultState,
   isStateDirty,
   restoreDraftState,
+  isStaleDraft,
   validateAndBuildPayload,
   totalDurationSeconds,
   splitSecondsFromState,
@@ -239,6 +240,8 @@ export function ActivityForm({
   );
   const [errors, setErrors] = useState<FormErrors>({});
   const [restoredSport, setRestoredSport] = useState<SportType | null>(null);
+  /** The restored draft was old enough that its date was reset to now — the banner says so. */
+  const [restoredWasStale, setRestoredWasStale] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   /*
@@ -341,12 +344,23 @@ export function ActivityForm({
           // the queue still holds it.
           queuedSportsOnDevice().includes(next) ? null : readMirroredDraft(next)
         );
+        // When the draft was last touched, from whichever copy won. A draft
+        // from another day keeps its sets and distances but not its date.
+        const savedAt =
+          source === "mirror"
+            ? readMirroredDraft(next)?.savedAt ?? null
+            : source === "server" && draftUpdatedAt?.[next]
+              ? new Date(draftUpdatedAt[next] as string).getTime()
+              : null;
         const hydrated =
           source === "none"
             ? createDefaultState(next, profileWeightKg)
-            : restoreDraftState(next, draft, profileWeightKg);
+            : restoreDraftState(next, draft, profileWeightKg, { savedAt });
         setStateMap((prev) => ({ ...prev, [next]: hydrated }));
-        if (source !== "none") setRestoredSport(next);
+        if (source !== "none") {
+          setRestoredSport(next);
+          setRestoredWasStale(isStaleDraft(savedAt));
+        }
       }
       setErrors({});
       setSubmitError(null);
@@ -774,7 +788,7 @@ export function ActivityForm({
                   {restoredSport === sport && (
                     <span className="inline-flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-muted">
                       <CloudUpload className="h-3.5 w-3.5 text-accent" />
-                      Draft restored
+                      {restoredWasStale ? "Old draft restored — date set to now" : "Draft restored"}
                     </span>
                   )}
                   {/*

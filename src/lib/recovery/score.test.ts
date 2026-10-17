@@ -16,6 +16,9 @@ const NOW = new Date("2026-09-24T09:00:00.000Z");
 function readiness(value: number): ReadinessResult {
   return {
     readiness: value,
+    acuteLoad: 0,
+    typicalDailyLoad: 40,
+    hoursSinceLastHardSession: null,
     overallAcwr: 1.0,
     gymAcwr: 1.0,
     cardioAcwr: 1.0,

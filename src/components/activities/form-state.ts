@@ -555,14 +555,35 @@ export function createDefaultState(
 }
 
 /** Merge a saved draft (JSONB round-trip) over fresh defaults, defensively. */
+/**
+ * A draft last touched longer ago than this is an old session, not today's.
+ *
+ * A restored draft kept whatever date it was started with, and nothing
+ * refreshed it: a run form abandoned on the 23rd and reopened three weeks
+ * later came back dated the 23rd, the athlete typed today's 20km into it, and
+ * the session went into the logbook twenty-four days in the past — invisible to
+ * the Recovery score, which only reads the last week, and to the ACWR window.
+ * Six hours is long enough to survive a session logged in two sittings and
+ * short enough that a draft from another day is reset to now.
+ */
+export const STALE_DRAFT_MS = 6 * 3_600_000;
+
+export function isStaleDraft(savedAt: number | null | undefined, now: number = Date.now()): boolean {
+  return savedAt != null && Number.isFinite(savedAt) && now - savedAt > STALE_DRAFT_MS;
+}
+
 export function restoreDraftState(
   sport: SportType,
   draft: unknown,
-  profileWeightKg?: number | null
+  profileWeightKg?: number | null,
+  options: { savedAt?: number | null; now?: number } = {}
 ): WorkoutFormState {
   const base = createDefaultState(sport, profileWeightKg);
   if (!draft || typeof draft !== "object") return base;
   const d = draft as Partial<WorkoutFormState>;
+  // The date is the one field a stale draft must NOT carry forward — see
+  // STALE_DRAFT_MS. Everything else the athlete typed is still theirs.
+  const stale = isStaleDraft(options.savedAt, options.now);
 
   const str = (v: unknown, fallback: string) =>
     typeof v === "string" ? v : typeof v === "number" ? String(v) : fallback;
@@ -658,7 +679,7 @@ export function restoreDraftState(
 
   return {
     title: str(d.title, base.title),
-    startedAt: str(d.startedAt, base.startedAt),
+    startedAt: stale ? base.startedAt : str(d.startedAt, base.startedAt),
     hours: str(d.hours, base.hours),
     minutes: str(d.minutes, base.minutes),
     seconds: str(d.seconds, base.seconds),

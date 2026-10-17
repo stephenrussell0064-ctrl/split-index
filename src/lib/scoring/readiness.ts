@@ -20,6 +20,17 @@ import type { TimelineSession } from "./timeline";
 export interface ReadinessResult {
   /** 0-100, higher = more ready to train hard today. */
   readiness: number;
+  /**
+   * Load done in the last two days, weighted toward the last 24 hours — full
+   * weight inside a day, fading to nothing at 48 hours. The "what did I just
+   * do" signal the 7-against-28-day ratio cannot carry: a race this morning is
+   * one seventh of a week to ACWR, and the whole of today to the athlete.
+   */
+  acuteLoad: number;
+  /** The athlete's own ordinary day — the 28-day load averaged per day. What `acuteLoad` is read against. */
+  typicalDailyLoad: number;
+  /** Hours since the last session that counted as hard, or null when nothing in the window did. */
+  hoursSinceLastHardSession: number | null;
   overallAcwr: number;
   /** null when no gym sessions exist in the window at all (not the same as "not elevated"). */
   gymAcwr: number | null;
@@ -33,6 +44,48 @@ function loadRows(sessions: TimelineSession[]): { load_score: number; created_at
   return sessions
     .filter((s) => s.loadScore != null)
     .map((s) => ({ load_score: s.loadScore!, created_at: s.startedAt }));
+}
+
+const HOUR_MS = 3_600_000;
+/** A session is "hard" past this load, or when the athlete tagged it so. */
+const HARD_SESSION_LOAD = 50;
+const HARD_SESSION_TYPES = new Set(["tempo", "threshold", "interval", "fartlek", "race", "long"]);
+/** A lift this long is a hard session whatever its load says — strength load units run far below cardio's. */
+const HARD_STRENGTH_MIN_SECONDS = 45 * 60;
+const ACUTE_FULL_WEIGHT_HOURS = 24;
+const ACUTE_ZERO_WEIGHT_HOURS = 48;
+
+export function isHardSession(s: TimelineSession): boolean {
+  if ((s.loadScore ?? 0) >= HARD_SESSION_LOAD) return true;
+  if (s.sessionType && HARD_SESSION_TYPES.has(s.sessionType)) return true;
+  return s.domain === "strength" && s.durationSeconds >= HARD_STRENGTH_MIN_SECONDS;
+}
+
+/** Full weight inside the last day, fading linearly to zero at two days. */
+export function acuteWeight(ageHours: number): number {
+  if (ageHours < 0) return 0;
+  if (ageHours <= ACUTE_FULL_WEIGHT_HOURS) return 1;
+  if (ageHours >= ACUTE_ZERO_WEIGHT_HOURS) return 0;
+  return 1 - (ageHours - ACUTE_FULL_WEIGHT_HOURS) / (ACUTE_ZERO_WEIGHT_HOURS - ACUTE_FULL_WEIGHT_HOURS);
+}
+
+export function computeAcuteLoad(sessions: TimelineSession[], asOf: number): number {
+  return sessions.reduce((sum, s) => {
+    if (s.loadScore == null) return sum;
+    const ageHours = (asOf - new Date(s.startedAt).getTime()) / HOUR_MS;
+    return sum + s.loadScore * acuteWeight(ageHours);
+  }, 0);
+}
+
+export function hoursSinceLastHard(sessions: TimelineSession[], asOf: number): number | null {
+  let latest: number | null = null;
+  for (const s of sessions) {
+    if (!isHardSession(s)) continue;
+    const t = new Date(s.startedAt).getTime();
+    if (t > asOf) continue;
+    if (latest == null || t > latest) latest = t;
+  }
+  return latest == null ? null : (asOf - latest) / HOUR_MS;
 }
 
 function domainAcwr(sessions: TimelineSession[], asOf: number): number | null {
@@ -65,12 +118,24 @@ export function computeReadiness(
   const { acute, chronic } = computeRecentLoads(loadRows(sessions), asOf);
   const overallAcwr = calculateACWR(acute, chronic);
   const fatigueScore = calculateFatigueScore(overallAcwr, acute);
-  // daysSinceLastHardSession is hardcoded to 1 to match the existing
-  // recovery-score call sites elsewhere in the app (activity-scorer.ts,
-  // api/recovery/hrv/route.ts) — keeping this number consistent with what
-  // HeroStatWall already shows matters more than refining this one input,
-  // which is a separate, pre-existing simplification unrelated to Part 2.
-  const readiness = calculateRecoveryScore(fatigueScore, overallAcwr, 1);
+  /*
+    Days since the last hard session, measured rather than assumed.
+
+    This was hard-coded to 1, so the rest term in calculateRecoveryScore was a
+    constant 15 points for every athlete on every day: someone three hours out
+    of a 20km race and someone a week into a taper scored identically on it.
+    The number was kept constant "to match the other call sites", which is a
+    reason for the other call sites to change, not for this one to stay wrong.
+    Those two (activity-scorer.ts, api/recovery/hrv/route.ts) feed a stored
+    snapshot and an older panel, not the dashboard; they are left as they are.
+
+    No hard session in the window reads as fully rested, which is what it is.
+  */
+  const sinceHard = hoursSinceLastHard(sessions, asOf);
+  const daysSinceLastHardSession = sinceHard == null ? 7 : sinceHard / 24;
+  const readiness = calculateRecoveryScore(fatigueScore, overallAcwr, daysSinceLastHardSession);
+  const acuteLoad = computeAcuteLoad(sessions, asOf);
+  const typicalDailyLoad = chronic / 7;
 
   const gymAcwr = domainAcwr(sessions.filter((s) => s.domain === "strength"), asOf);
   const cardioAcwr = domainAcwr(sessions.filter((s) => s.domain === "cardio"), asOf);
@@ -79,6 +144,9 @@ export function computeReadiness(
 
   return {
     readiness,
+    acuteLoad: Math.round(acuteLoad * 10) / 10,
+    typicalDailyLoad: Math.round(typicalDailyLoad * 10) / 10,
+    hoursSinceLastHardSession: sinceHard == null ? null : Math.round(sinceHard * 10) / 10,
     overallAcwr: Math.round(overallAcwr * 100) / 100,
     gymAcwr: gymAcwr !== null ? Math.round(gymAcwr * 100) / 100 : null,
     cardioAcwr: cardioAcwr !== null ? Math.round(cardioAcwr * 100) / 100 : null,

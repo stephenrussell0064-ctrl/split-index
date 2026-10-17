@@ -196,7 +196,7 @@ describe("buildFullHybridReport", () => {
   });
 
   it("withholds the injury zone without Article 9 consent, and never invents one without sessions", () => {
-    const readiness = { readiness: 62, overallAcwr: 1.45, gymAcwr: null, cardioAcwr: null, gymElevated: false, cardioElevated: true, reason: "" };
+    const readiness = { readiness: 62, acuteLoad: 0, typicalDailyLoad: 40, hoursSinceLastHardSession: null, overallAcwr: 1.45, gymAcwr: null, cardioAcwr: null, gymElevated: false, cardioElevated: true, reason: "" };
     const noConsent = buildFullHybridReport(inputs({ readiness, article9Consent: false, sessions: [] }));
     expect(noConsent.recovery.acwr).toBe(1.45);
     expect(noConsent.recovery.injury).toBeNull();

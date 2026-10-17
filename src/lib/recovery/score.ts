@@ -35,7 +35,7 @@ import type { ReadinessResult } from "@/lib/scoring/readiness";
 
 export type RecoveryBand = "primed" | "steady" | "compromised" | "depleted";
 
-export type RecoveryComponentKey = "load" | "hrv" | "density" | "alcohol";
+export type RecoveryComponentKey = "load" | "acute" | "hrv" | "density" | "alcohol";
 
 export interface RecoveryComponent {
   key: RecoveryComponentKey;
@@ -76,12 +76,20 @@ export interface RecoveryScoreInput {
 }
 
 /**
- * Base weights. Load carries the most because it is the only signal the app
- * can compute for every athlete from data they already log; HRV outranks
- * session density when present because it is a measurement of the athlete
- * rather than an inference about them.
+ * Base weights. Load and the acute term together carry the most because they
+ * are the signals the app can compute for every athlete from data they
+ * already log; HRV outranks session density when present because it is a
+ * measurement of the athlete rather than an inference about them.
+ *
+ * ACUTE IS THE SAME-DAY TERM. The load component is a 7-day against 28-day
+ * ratio, and it is right about weeks: it cannot be right about today. A 20km
+ * race plus two rows this morning is one seventh of the acute window to ACWR,
+ * and the score read 86 "primed" with the athlete on the floor. Acute reads
+ * the last 24 hours at full weight, fading to nothing at 48, against the
+ * athlete's own ordinary day — so the race costs the score the day it was run
+ * and gives the points back as it recedes.
  */
-const WEIGHTS = { load: 0.5, hrv: 0.3, density: 0.2 } as const;
+const WEIGHTS = { load: 0.3, acute: 0.3, hrv: 0.25, density: 0.15 } as const;
 
 const DAY_MS = 86_400_000;
 
@@ -107,6 +115,35 @@ const HRV_ANCHORS: readonly [number, number][] = [
 export function hrvComponentScore(today: number, baseline: number): number {
   if (baseline <= 0) return 50;
   return Math.round(interpolate(HRV_ANCHORS, today / baseline));
+}
+
+/**
+ * Last-two-days load as a multiple of the athlete's ordinary day, mapped to
+ * 0-100. A day at the athlete's own average costs a little; two days' worth in
+ * one costs real points; a week's worth in one is depleted, whatever the
+ * weekly ratio says.
+ */
+const ACUTE_ANCHORS: readonly [number, number][] = [
+  [0, 100],
+  [0.5, 93],
+  [1, 82],
+  [2, 60],
+  [3, 42],
+  [5, 20],
+  [8, 0],
+];
+
+/**
+ * The smallest "ordinary day" the ratio is read against. An athlete coming
+ * back from a month off has a near-zero daily average, and reading a gentle
+ * 30-minute run against it would call them depleted. Below this, a day is
+ * judged against a modest fixed day instead of their own.
+ */
+const ACUTE_FLOOR_DAILY_LOAD = 30;
+
+export function acuteComponentScore(acuteLoad: number, typicalDailyLoad: number): number {
+  const ratio = acuteLoad / Math.max(typicalDailyLoad, ACUTE_FLOOR_DAILY_LOAD);
+  return Math.max(0, Math.min(100, Math.round(interpolate(ACUTE_ANCHORS, ratio))));
 }
 
 /**
@@ -200,9 +237,19 @@ export function computeRecoveryScore(input: RecoveryScoreInput): RecoveryScoreRe
   // somebody who just deleted their account, so it sits out instead.
   const densityPresent = density.sessionCount > 0;
 
+  // Present only when something was done in the last two days. "Nothing
+  // recent, so 100" would be the detrained athlete's bonus, exactly as with
+  // density below; with nothing to read, it sits out.
+  const acuteLoad = Math.max(0, input.readiness.acuteLoad ?? 0);
+  const acutePresent = acuteLoad > 0;
+  const acuteScore = acutePresent
+    ? acuteComponentScore(acuteLoad, input.readiness.typicalDailyLoad ?? 0)
+    : null;
+
   const parts: { key: RecoveryComponentKey; score: number; weight: number }[] = [
     { key: "load", score: loadScore, weight: WEIGHTS.load },
   ];
+  if (acutePresent) parts.push({ key: "acute", score: acuteScore as number, weight: WEIGHTS.acute });
   if (hrvPresent) parts.push({ key: "hrv", score: hrvScore as number, weight: WEIGHTS.hrv });
   if (densityPresent) parts.push({ key: "density", score: density.score, weight: WEIGHTS.density });
 
@@ -228,6 +275,16 @@ export function computeRecoveryScore(input: RecoveryScoreInput): RecoveryScoreRe
       weight: WEIGHTS.load / totalWeight,
       present: true,
       detail: input.readiness.reason,
+    },
+    {
+      key: "acute",
+      label: "Last 48 hours",
+      value: acuteScore,
+      weight: acutePresent ? WEIGHTS.acute / totalWeight : 0,
+      present: acutePresent,
+      detail: acutePresent
+        ? describeAcute(acuteLoad, input.readiness.typicalDailyLoad ?? 0, input.readiness.hoursSinceLastHardSession ?? null)
+        : "Nothing logged in the last two days, so there is no fresh load to recover from.",
     },
     {
       key: "hrv",
@@ -278,6 +335,20 @@ function describeHrv(today: number, baseline: number): string {
   if (delta < 0) return `${today}ms is ${Math.abs(delta)}% below your ${Math.round(baseline)}ms baseline.`;
   if (delta === 0) return `${today}ms is right on your baseline.`;
   return `${today}ms is ${delta}% above your ${Math.round(baseline)}ms baseline.`;
+}
+
+function describeAcute(acuteLoad: number, typicalDailyLoad: number, hoursSinceHard: number | null): string {
+  const ratio = acuteLoad / Math.max(typicalDailyLoad, ACUTE_FLOOR_DAILY_LOAD);
+  const multiple = ratio >= 10 ? `${Math.round(ratio)}x` : `${Math.round(ratio * 10) / 10}x`;
+  const since =
+    hoursSinceHard == null
+      ? ""
+      : hoursSinceHard < 24
+        ? ` Last hard session ${Math.max(1, Math.round(hoursSinceHard))}h ago.`
+        : ` Last hard session ${Math.round(hoursSinceHard / 24)}d ago.`;
+  if (ratio >= 3) return `${multiple} your usual day's load in the last 48 hours — this is the recovery cost of what you just did.${since}`;
+  if (ratio >= 1.5) return `${multiple} your usual day's load in the last 48 hours.${since}`;
+  return `About ${multiple} your usual day's load in the last 48 hours — a normal couple of days.${since}`;
 }
 
 function describeDensity(sessionCount: number, restDays: number): string {

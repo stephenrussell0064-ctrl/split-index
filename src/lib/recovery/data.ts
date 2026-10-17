@@ -45,6 +45,16 @@ export interface RecoveryInputs {
 const DRINK_HISTORY_DAYS = 30;
 const HRV_BASELINE_READINGS = 14;
 const MS_PER_DAY = 86_400_000;
+/**
+ * How old a reading can be and still count as "today's".
+ *
+ * The most recent HRV row was taken as today's whatever its date, so an
+ * 80ms reading from 25 days earlier was scoring 97 against the baseline and
+ * carrying 30% of a Recovery score on a day the athlete had raced 20km. A
+ * reading describes the morning it was taken; a day and a half covers "logged
+ * yesterday morning, reading the score tonight" and nothing older.
+ */
+export const HRV_FRESH_HOURS = 36;
 
 export async function fetchRecoveryInputs(
   supabase: SupabaseClient,
@@ -100,6 +110,7 @@ export async function fetchRecoveryInputs(
   const { hrvToday, hrvBaseline, hrvSource } = hrvFromReadings(
     (hrvRows ?? []).map((r) => ({
       hrv_ms: r.hrv_ms as number | string | null,
+      recorded_at: r.recorded_at as string | null,
       // Rows written before 089 carry no column; they were all typed.
       source: (r as { source?: string | null }).source ?? "manual",
     }))
@@ -120,22 +131,30 @@ export async function fetchRecoveryInputs(
 /**
  * Today's reading and its baseline from rows newest-first, per source.
  *
- * The newest reading is today's. Its baseline is the mean of up to
- * HRV_BASELINE_READINGS EARLIER readings from the same source — a baseline
- * cannot include itself, and it cannot mix instruments. Exported for the
- * test; the page calls fetchRecoveryInputs.
+ * The newest reading is today's — IF it is recent enough to be. Its baseline
+ * is the mean of up to HRV_BASELINE_READINGS EARLIER readings from the same
+ * source — a baseline cannot include itself, and it cannot mix instruments.
+ * A newest reading older than HRV_FRESH_HOURS is not today's at all, so
+ * today has no reading and HRV sits the score out. A row without a
+ * recorded_at is taken as fresh, so a caller that passes no dates keeps the
+ * old behaviour. Exported for the test; the page calls fetchRecoveryInputs.
  */
 export function hrvFromReadings(
-  rows: { hrv_ms: number | string | null; source?: string | null }[]
+  rows: { hrv_ms: number | string | null; recorded_at?: string | null; source?: string | null }[],
+  now: Date = new Date()
 ): { hrvToday: number | null; hrvBaseline: number | null; hrvSource: "manual" | "apple_health" | null } {
   const readings = rows
     .map((r) => ({
       value: Number(r.hrv_ms),
+      at: r.recorded_at ? new Date(r.recorded_at).getTime() : null,
       source: r.source === "apple_health" ? ("apple_health" as const) : ("manual" as const),
     }))
     .filter((r) => Number.isFinite(r.value) && r.value > 0);
   const today = readings[0];
   if (!today) return { hrvToday: null, hrvBaseline: null, hrvSource: null };
+  const fresh =
+    today.at == null || !Number.isFinite(today.at) || now.getTime() - today.at <= HRV_FRESH_HOURS * 3_600_000;
+  if (!fresh) return { hrvToday: null, hrvBaseline: null, hrvSource: null };
   const prior = readings
     .slice(1)
     .filter((r) => r.source === today.source)
