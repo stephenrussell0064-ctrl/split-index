@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createDefaultState,
+  exerciseRowPatchForName,
   createIntervalBlock,
   createIntervalRepOverride,
   flattenIntervalBlocks,
@@ -456,5 +457,70 @@ describe("countFieldsTouched — the logging-effort plan's first metric", () => 
     };
     expect(countFieldsTouched("running", state)).toBe(3);
     expect(countFieldsTouched("running", { ...state, sessionType: "tempo", notes: "hilly" })).toBe(5);
+  });
+});
+
+/**
+ * Seen on the live Lab, 17 Oct 2026: a row changed from Bench Press at 140 kg
+ * to Pull Up kept the hidden 140. The weight input is not rendered for
+ * bodyweight-only lifts, so the summary cards read 233 kg / 3.0x BW / 2800 kg
+ * for twenty bodyweight pull-ups and the payload would have carried weight_kg
+ * 140 into the save path as added load.
+ */
+describe("switching a row to a bodyweight-only lift", () => {
+  const row = {
+    weightEntryMode: "total" as const,
+    sets: [
+      { id: "s1", weight: "140", reps: "1", rpe: "", repsInReserve: "" },
+      { id: "s2", weight: "", reps: "", rpe: "", repsInReserve: "" },
+    ],
+  };
+
+  it("clears the set weights, keeps the reps, and resets the attachment", () => {
+    const patch = exerciseRowPatchForName(row, "Pull Up", "Back");
+    expect(patch.name).toBe("Pull Up");
+    expect(patch.muscleGroup).toBe("Back");
+    expect(patch.attachment).toBeNull();
+    expect(patch.sets?.map((s) => s.weight)).toEqual(["", ""]);
+    expect(patch.sets?.map((s) => s.reps)).toEqual(["1", ""]);
+  });
+
+  it("leaves the sets alone for a loaded lift, so typing a weight then picking the exercise keeps it", () => {
+    const patch = exerciseRowPatchForName(row, "Squat", "Quads");
+    expect(patch.sets).toBeUndefined();
+    expect(patch.weightEntryMode).toBe("total");
+  });
+
+  it("does not touch the sets when nothing needs clearing", () => {
+    const blank = { ...row, sets: [row.sets[1]] };
+    expect(exerciseRowPatchForName(blank, "Pull Up", "Back").sets).toBeUndefined();
+  });
+
+  it("keeps the previous load convention while the name is still blank", () => {
+    const patch = exerciseRowPatchForName({ ...row, weightEntryMode: "per_hand" }, "");
+    expect(patch.weightEntryMode).toBe("per_hand");
+    expect(patch.muscleGroup).toBeUndefined();
+  });
+
+  it("submits weight_kg 0 for a bodyweight-only lift even if a stale weight is still in the row", () => {
+    const state = {
+      ...createDefaultState("gym", 78),
+      bodyweight: "78",
+      minutes: "45",
+      exercises: [
+        {
+          id: "ex1",
+          name: "Pull Up",
+          muscleGroup: "Back",
+          weightEntryMode: "added" as const,
+          attachment: null,
+          notes: "",
+          sets: [{ id: "s1", weight: "140", reps: "20", rpe: "", repsInReserve: "" }],
+        },
+      ],
+    };
+    const { errors, payload } = validateAndBuildPayload("gym", state);
+    expect(errors).toEqual({});
+    expect(payload?.exercises?.[0].sets[0]).toMatchObject({ weight_kg: 0, reps: 20 });
   });
 });

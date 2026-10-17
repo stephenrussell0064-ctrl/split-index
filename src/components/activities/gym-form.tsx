@@ -33,7 +33,6 @@ import { AttachmentPicker } from "@/components/gym/attachment-picker";
 import {
   conventionLabel,
   conventionToMode,
-  defaultWeightEntryMode,
   getExerciseLoadConfig,
   resolveScoringWeight,
   weightEntryLabel,
@@ -56,6 +55,7 @@ import {
   type FormErrors,
   type SetRowState,
   type WorkoutFormState,
+  exerciseRowPatchForName,
 } from "./form-state";
 import type { UpdateField } from "./sport-form";
 
@@ -174,8 +174,10 @@ function useExerciseHistory(exerciseName: string): {
     const timer = setTimeout(async () => {
       try {
         const res = await fetch(`/api/gym-exercises/history?name=${encodeURIComponent(trimmed)}`);
-        if (!res.ok || cancelled) return;
-        const data = (await res.json()) as ExerciseHistory;
+        if (cancelled) return;
+        // A lookup that fails must not leave the previous exercise's chips on
+        // screen under this one's name.
+        const data = res.ok ? ((await res.json()) as ExerciseHistory) : null;
         if (!cancelled) setHistory(data);
       } catch {
         // Best-effort — see doc comment above.
@@ -192,7 +194,14 @@ function useExerciseHistory(exerciseName: string): {
     };
   }, [trimmed]);
 
-  return { history, pending: trimmed !== "" && resolvedFor !== trimmed };
+  const pending = trimmed !== "" && resolvedFor !== trimmed;
+  // While the new name's lookup is in flight, `history` still holds the LAST
+  // name's answer. Rendering it meant that switching Bench Press -> Pull Up
+  // showed "Last time 140kg added x 1" under Pull Up for the 300 ms debounce
+  // plus the round trip — and for good, if the request failed. The hint
+  // reserves its height through `pending`, so withholding the stale value
+  // costs no layout.
+  return { history: pending ? null : history, pending };
 }
 
 /**
@@ -954,33 +963,21 @@ function ExerciseRow({
             onChange={(name, suggestedMuscle) => {
               // Typing a custom name keeps the picker open — see pickerOpen.
               setPickerOpen(true);
-              onUpdate({
-                name,
-                // Typing a CUSTOM exercise name never set a muscle group,
-                // unlike picking one from the list (onPick below), so every
-                // custom exercise failed submit on "Pick a muscle group" —
-                // a field the athlete had no reason to think was required.
-                // Seed it from the category they're browsing under, but
-                // only where that's unambiguous (see categoryToMuscleGroup)
-                // and only when they haven't already chosen one themselves.
-                muscleGroup: row.muscleGroup || suggestedMuscle || "",
-                weightEntryMode: name.trim()
-                  ? defaultWeightEntryMode(name)
-                  : row.weightEntryMode,
-                // A previously-picked attachment (e.g. "rope") almost
-                // certainly doesn't apply once the exercise itself
-                // changes — reset rather than silently carry it over.
-                attachment: null,
-              });
+              // Typing a CUSTOM exercise name never set a muscle group,
+              // unlike picking one from the list (onPick below), so every
+              // custom exercise failed submit on "Pick a muscle group" —
+              // a field the athlete had no reason to think was required.
+              // Seed it from the category they're browsing under, but
+              // only where that's unambiguous (see categoryToMuscleGroup)
+              // and only when they haven't already chosen one themselves.
+              // Everything else that changes with the name — load
+              // convention, attachment, and set weights for a
+              // bodyweight-only lift — is exerciseRowPatchForName's job.
+              onUpdate(exerciseRowPatchForName(row, name, row.muscleGroup || suggestedMuscle || ""));
             }}
             onPick={(name, muscle) => {
               setPickerOpen(false);
-              onUpdate({
-                name,
-                muscleGroup: muscle,
-                weightEntryMode: defaultWeightEntryMode(name),
-                attachment: null,
-              });
+              onUpdate(exerciseRowPatchForName(row, name, muscle));
             }}
             onDone={hasName ? () => setPickerOpen(false) : undefined}
           />

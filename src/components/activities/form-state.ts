@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { ActivityFormData, SessionType, SportType } from "@/types";
 import type { WeightEntryMode } from "@/lib/scoring/weight-entry";
-import { defaultWeightEntryMode } from "@/lib/scoring/weight-entry";
+import { defaultWeightEntryMode, isBodyweightOnlyExercise } from "@/lib/scoring/weight-entry";
 import { getExerciseTracking } from "@/lib/constants/sports";
 import { liftWeightLimits } from "@/lib/scoring/input-guards";
 
@@ -461,6 +461,43 @@ export function createSetRow(): SetRowState {
     durationSeconds: "",
     distanceMeters: "",
   };
+}
+
+/**
+ * The row patch for choosing (or typing) an exercise name.
+ *
+ * One place for what changes when the movement changes: the muscle group,
+ * the load convention, the attachment (a rope picked for a pushdown is not a
+ * property of the row's next exercise), and — the part that was missing —
+ * the set weights when the new lift is bodyweight-only.
+ *
+ * Seen live on 17 Oct 2026: a row switched from Bench Press at 140 kg to
+ * Pull Up kept the hidden "140". The Lab's set score was right, because it
+ * forces bodyweight-only rows to 0 kg, but the Est. 1RM / x BW / Volume cards
+ * read 233 kg / 3.0x BW / 2800 kg for twenty bodyweight pull-ups, and the
+ * payload would have sent weight_kg 140 — scored on save as a +140 kg
+ * weighted pull-up. The weight field is not on screen for these lifts, so
+ * there was no way to notice, let alone clear it.
+ *
+ * `muscleGroup` is only applied when given (the picker knows it; a typed
+ * name may not), so callers keep their own fallback rules.
+ */
+export function exerciseRowPatchForName(
+  row: Pick<ExerciseRowState, "sets" | "weightEntryMode">,
+  name: string,
+  muscleGroup?: string
+): Partial<ExerciseRowState> {
+  const trimmed = name.trim();
+  const patch: Partial<ExerciseRowState> = {
+    name,
+    weightEntryMode: trimmed ? defaultWeightEntryMode(name) : row.weightEntryMode,
+    attachment: null,
+  };
+  if (muscleGroup !== undefined) patch.muscleGroup = muscleGroup;
+  if (trimmed && isBodyweightOnlyExercise(name) && row.sets.some((s) => s.weight.trim() !== "")) {
+    patch.sets = row.sets.map((s) => (s.weight.trim() === "" ? s : { ...s, weight: "" }));
+  }
+  return patch;
 }
 
 export function createExerciseRow(): ExerciseRowState {
@@ -1573,6 +1610,11 @@ export function validateAndBuildPayload(
       // a single row's error aborts the whole payload, one plank blocked the
       // entire session from saving.
       const tracking = getExerciseTracking(row.name);
+      // A bodyweight-only lift has no weight input, so any weight string on
+      // its sets is a leftover from a previous exercise in this row (see
+      // exerciseRowPatchForName) or a draft from before that fix. It must not
+      // reach the server as added load.
+      const bodyweightOnly = isBodyweightOnlyExercise(row.name);
 
       const meaningfulSets = row.sets.filter((s) => setHasEntry(s));
       if (meaningfulSets.length === 0) {
@@ -1593,11 +1635,13 @@ export function validateAndBuildPayload(
         // The limit is per-exercise: machine-anchored leg movements carry a
         // higher ceiling than free weights, so a hardcoded constant would now
         // reject loads the server is happy to accept.
-        const weight = requireNumber(setKey("weight"), s.weight, {
-          min: 0,
-          max: liftWeightLimits(row.name).maxWeightKg,
-          label: "Weight",
-        });
+        const weight = bodyweightOnly
+          ? 0
+          : requireNumber(setKey("weight"), s.weight, {
+              min: 0,
+              max: liftWeightLimits(row.name).maxWeightKg,
+              label: "Weight",
+            });
         // Only ONE of reps / duration / distance is required, and which one
         // depends on the movement.
         const reps =
@@ -1641,7 +1685,7 @@ export function validateAndBuildPayload(
             })
           : undefined;
         return {
-          weight_kg: s.weight.trim() === "" ? 0 : weight ?? 0,
+          weight_kg: bodyweightOnly || s.weight.trim() === "" ? 0 : weight ?? 0,
           // `reps` is NOT NULL CHECK (reps > 0) on gym_exercises, and the API
           // inserts the summarised row without checking for an error — so a
           // reps-less plank sent as reps: 0 would fail the insert silently and
