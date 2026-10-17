@@ -81,6 +81,10 @@ function isAuthPath(path: string): boolean {
   return path === "/login" || path.startsWith("/auth/") || path.startsWith("/login/");
 }
 
+function isOnboardingPath(path: string): boolean {
+  return path === "/onboarding" || path.startsWith("/onboarding/");
+}
+
 /** Whether a path is one we would ever hand back to the athlete. */
 export function isRestorablePath(path: string): boolean {
   if (isAuthPath(path)) return false;
@@ -122,6 +126,23 @@ export async function forgetRoute(): Promise<void> {
 export async function resolveRestoreTarget(landedOn: string): Promise<string | null> {
   try {
     if (isAuthPath(landedOn)) {
+      await forgetRoute();
+      return null;
+    }
+
+    /*
+      Landing on /onboarding is the server saying "this account has not been
+      set up" — and that is a decision, not a place the athlete happened to
+      be. The sign-in that got here was an OAuth round trip, which on native
+      finishes as a FRESH document at /auth/callback's redirect target, so the
+      auth-landing check above never saw /auth/callback at all. Before this,
+      an athlete who deleted their account from Settings and signed straight
+      back up with Google was carried from /onboarding to the stored
+      /settings — "the settings page of the account I just deleted" — and
+      never onboarded. A restore from here is always wrong; the stored route
+      belonged to whoever was signed in before.
+    */
+    if (isOnboardingPath(landedOn)) {
       await forgetRoute();
       return null;
     }

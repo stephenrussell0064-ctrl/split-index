@@ -34,6 +34,7 @@ import { PremiumBadge } from "@/components/retention/premium-badge";
 import { createClient } from "@/lib/supabase/client";
 import { clearRacePredictions } from "@/lib/native/race-predictions";
 import { clearDailyTraining } from "@/lib/native/daily-training";
+import { forgetRoute } from "@/lib/native/last-route";
 import type { SubscriptionStatus, SubscriptionTier } from "@/types";
 
 /*
@@ -176,6 +177,7 @@ export default function SettingsClient() {
     await clearNativeWidgets();
     const supabase = createClient();
     await supabase.auth.signOut();
+    await forgetRoute();
     router.push("/");
   };
 
@@ -241,6 +243,10 @@ export default function SettingsClient() {
       await clearNativeWidgets();
       const supabase = createClient();
       await supabase.auth.signOut();
+      // And the remembered route: the next sign-in on this phone is a new
+      // account, and restoring it into this one's Settings page was reported
+      // as "it takes me back to the account I just deleted".
+      await forgetRoute();
       router.push("/");
     } catch {
       setDeleteError("Failed to delete account. Please try again.");

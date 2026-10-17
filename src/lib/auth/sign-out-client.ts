@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/client";
 import { clearRacePredictions } from "@/lib/native/race-predictions";
 import { clearDailyTraining } from "@/lib/native/daily-training";
+import { forgetRoute } from "@/lib/native/last-route";
 
 /**
  * Sign out, and take the home-screen widgets' copies of this account's data
@@ -24,4 +25,8 @@ export async function signOutEverywhere(): Promise<void> {
   await clearDailyTraining();
   const supabase = createClient();
   await supabase.auth.signOut();
+  // The remembered route belonged to this account. Whoever signs in next —
+  // including the same person with a new account — must not be restored
+  // into it. See last-route.ts for the deleted-account report this fixes.
+  await forgetRoute();
 }

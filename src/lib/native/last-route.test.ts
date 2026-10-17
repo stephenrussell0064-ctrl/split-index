@@ -130,6 +130,15 @@ describe("resolveRestoreTarget", () => {
     expect(store.has(KEY)).toBe(false);
   });
 
+  it("never carries a fresh account away from onboarding, and clears the old account's route", async () => {
+    // Delete the account from Settings (route stored: /settings), sign straight
+    // back up with Google. The OAuth round trip lands a NEW document on
+    // /onboarding — the callback's redirect target, not /auth/callback itself.
+    seed("/settings");
+    await expect(resolveRestoreTarget("/onboarding")).resolves.toBeNull();
+    expect(store.has(KEY)).toBe(false);
+  });
+
   it("does not fire on the OAuth callback path", async () => {
     seed("/gym");
     await expect(resolveRestoreTarget("/auth/callback")).resolves.toBeNull();
