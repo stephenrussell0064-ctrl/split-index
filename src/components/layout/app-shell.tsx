@@ -27,6 +27,20 @@ import { NativeBillingBootstrap } from "@/components/layout/native-billing-boots
 import { HealthAutoSync } from "@/components/health/health-auto-sync";
 import { StatusBarModeSync } from "@/components/layout/status-bar-mode-sync";
 import { PendingSyncBanner } from "@/components/activities/pending-sync-banner";
+import { AppTour } from "@/components/tour/app-tour";
+import type { TourTarget } from "@/components/tour/tour-steps";
+
+/**
+ * The hook the tab-bar tour finds each control by. Keyed by href so the
+ * sidebar entry and the phone tab for the same destination carry the same
+ * value; the tour picks whichever is laid out. See components/tour.
+ */
+const TOUR_TARGET_BY_HREF: Record<string, TourTarget> = {
+  "/dashboard": "home",
+  "/train": "train",
+  "/hybrid-plan": "plan",
+  "/progress": "progress",
+};
 
 /*
  * WHERE THE NAVIGATION IS DEFINED — and why it is not here.
@@ -178,6 +192,7 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
         key={item.href}
         href={navHref(item)}
         aria-current={active ? "page" : undefined}
+        data-tour={TOUR_TARGET_BY_HREF[item.href]}
         className={cn(
           "flex min-w-0 flex-1 flex-col items-center gap-1 rounded-2xl px-1 py-2 text-[11px] font-medium transition-colors",
           active ? cn("bg-white/8", accentClassFor(item)) : "text-muted"
@@ -199,6 +214,7 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
         href={href}
         aria-current={active ? "page" : undefined}
         title={item.description}
+        data-tour={TOUR_TARGET_BY_HREF[item.href]}
         className={cn(
           "relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
           active ? "text-foreground" : "text-muted hover:text-foreground hover:bg-white/5"
@@ -250,6 +266,8 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
       <NativeBillingBootstrap />
       <HealthAutoSync />
       <StatusBarModeSync mode={mode} />
+      {/* Renders nothing until startTour() is called — the end of onboarding, or Help. */}
+      <AppTour />
       {/*
         Themed background lives on a FIXED, viewport-covering backdrop rather
         than on the growing content wrapper. A min-height wrapper's painted
@@ -290,6 +308,7 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
             <Link
               href={logHref}
               title={LOG_WORKOUT.description}
+              data-tour="log"
               className={cn(
                 "relative mt-1 flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
                 pathname === logHref || pathname.endsWith("/log")
@@ -328,6 +347,7 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
           <Link
             href={logHref}
             aria-label={LOG_WORKOUT.label}
+            data-tour="log"
             className={cn(
               "-mt-6 flex h-14 w-14 shrink-0 items-center justify-center rounded-full shadow-lg transition-transform active:scale-95",
               mode === "gym"

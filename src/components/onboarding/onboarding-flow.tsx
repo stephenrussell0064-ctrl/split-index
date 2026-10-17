@@ -1,138 +1,194 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
-import { Sparkles, Dumbbell, Activity, Check, X, Loader2, Camera } from "lucide-react";
+import { Camera, Check, ChevronDown, Compass, HeartPulse, Loader2, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input, Select } from "@/components/ui/input";
+import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
-import {
-  GENDERS,
-  SCORING_BASES,
-  SCORING_BASIS_EXPLANATION,
-  SPORTS,
-} from "@/lib/constants/sports";
+import { Typewriter } from "@/components/ui/typewriter";
+import { GENDERS, SCORING_BASES, SCORING_BASIS_EXPLANATION, SPORTS } from "@/lib/constants/sports";
 import { PRESET_AVATARS } from "@/lib/constants/avatars";
 import { createClient } from "@/lib/supabase/client";
 import { supabaseErrorMessage } from "@/lib/supabase/errors";
-import { validateDisplayText, validateUsernameFormat } from "@/lib/utils/username";
+import { validateUsernameFormat } from "@/lib/utils/username";
 import { useKeyboardSafeFocus } from "@/components/activities/use-keyboard";
 import { ageFromDateOfBirth, maxDobForMinAge, minDobForMaxAge } from "@/lib/utils/age";
+import { useIsNativeShell } from "@/lib/native/use-is-native-shell";
+import { getNativePlatform } from "@/lib/native/platform";
+import { fetchHealthProfile } from "@/lib/native/health-import";
+import { connectHealth } from "@/lib/health/sync-client";
+import { applyHealthProfile, describePrefill } from "@/lib/health/profile-prefill";
+import { impact, success } from "@/lib/native/haptics";
+import { startTour } from "@/lib/tour/tour-state";
 import { cn } from "@/lib/utils/cn";
-import { ScoreRevealSequence } from "@/components/onboarding/score-reveal";
+import {
+  LIMITS,
+  buildProfilePayload,
+  buildSteps,
+  emptyForm,
+  genderDeterminesScoringBasis,
+  nextUsernameCandidate,
+  pickDefaultAvatar,
+  suggestUsername,
+  validateAbout,
+  type OnboardingForm,
+  type OnboardingStepId,
+} from "@/components/onboarding/onboarding-state";
 import type { PostgrestError } from "@supabase/supabase-js";
 import type { Gender, ScoringBasis, SportType } from "@/types";
 
-/**
- * Does the identity answer already tell us which comparison tables to use?
- * When it does, the scoring-basis question is not asked — nobody should have
- * to answer the same thing twice.
+/*
+ * ONBOARDING, SECOND DESIGN.
+ *
+ * The first one asked for a username, date of birth, gender, height, weight
+ * and a sport before it would save anything, then showed a fake "calculating"
+ * spinner, a calibration form, and a paywall. Six required fields and three
+ * extra screens between Sign in with Apple and the app. People bounced there.
+ *
+ * This one has one rule: CONTINUE ALWAYS WORKS. Every step has a default —
+ * the username is suggested from the name Apple gave us, the two hybrid
+ * sports are preselected, and every measurement is optional and nullable
+ * (onboarding-state.ts has the reasons the engines are fine with that). On
+ * the iPhone, one tap on "Fill in from Apple Health" reads date of birth,
+ * sex, height, weight and resting HR instead of asking for them. Four taps of
+ * Continue is a complete, working account.
+ *
+ * It greets the athlete by first name (typed, with a haptic click per letter)
+ * because the provider already told us it, and ends by offering — not
+ * imposing — a thirty-second tour of the five controls on the tab bar.
+ *
+ * What is NOT here any more: the calibration form and the trial paywall that
+ * used to follow the save. The calibrate API still exists; the dashboard's
+ * first-session guide is where the first score now comes from.
  */
-function genderDeterminesScoringBasis(gender: Gender | ""): boolean {
-  return gender === "male" || gender === "female";
-}
 
 const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
 const ACCEPTED_AVATAR_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
+const USERNAME_ATTEMPTS = 4;
 
 type UsernameStatus = "idle" | "checking" | "available" | "taken" | "invalid";
+type SaveState = "idle" | "saving" | "saved" | "error";
 
-// Only what's needed to log a first session — experience, goals, and a
-// target index are collected later via the deferred "complete your
-// profile" prompt (Slice D: these come after the first score is seen, not
-// before it, so a casual user doesn't bounce at onboarding).
-const STEPS = ["Basics", "Body", "Sports", "Ready"];
-
-const LIMITS = {
-  age: { min: 13, max: 120 },
-  height_cm: { min: 100, max: 250 },
-  weight_kg: { min: 30, max: 300 },
-  max_hr: { min: 100, max: 230 },
-  resting_hr: { min: 30, max: 120 },
-};
-
-function inRange(value: string, { min, max }: { min: number; max: number }) {
-  const n = Number(value);
-  return value !== "" && !Number.isNaN(n) && n >= min && n <= max;
+async function checkUsername(username: string): Promise<{ available: boolean; reason?: string }> {
+  const res = await fetch(`/api/profile/username-check?u=${encodeURIComponent(username)}`);
+  const data = (await res.json()) as { available?: boolean; reason?: string; error?: string };
+  if (!res.ok) throw new Error(data.error ?? "Could not check availability");
+  return { available: data.available === true, reason: data.reason };
 }
 
-export function OnboardingFlow() {
+export function OnboardingFlow({
+  firstName,
+  providerName,
+  email,
+}: {
+  /** From the provider (Apple, Google) — null for an email signup. */
+  firstName: string | null;
+  providerName: string | null;
+  email: string | null;
+}) {
   const router = useRouter();
+  const reducedMotion = useReducedMotion();
   /*
     On iOS the software keyboard does NOT resize the layout viewport, so a
-    field in the lower half of a step is typed into blind — it sits behind the
-    keyboard and nothing scrolls to reveal it. This is the very first form a
-    new athlete meets, and it is several fields long on every step.
-
-    Declared up here with the other hooks rather than beside the JSX, because
-    this component returns early for the score-reveal step and a hook after
-    that return would run conditionally.
+    field in the lower half of a step is typed into blind. Declared with the
+    other hooks because this component has no early returns before JSX.
   */
   const formRef = useRef<HTMLDivElement>(null);
   useKeyboardSafeFocus(formRef);
-  const reducedMotion = useReducedMotion();
-  const [step, setStep] = useState(0);
-  const [loading, setLoading] = useState(false);
+
+  const native = useIsNativeShell();
+  const healthAvailable = native && getNativePlatform() === "ios";
+  const steps = useMemo(() => buildSteps({ healthAvailable }), [healthAvailable]);
+
+  const [stepIndex, setStepIndex] = useState(0);
+  const step: OnboardingStepId = steps[Math.min(stepIndex, steps.length - 1)]!;
+  const visibleSteps = steps.filter((s) => s !== "done");
+
+  const [form, setForm] = useState<OnboardingForm>(() =>
+    emptyForm({ avatar_url: pickDefaultAvatar(PRESET_AVATARS, email ?? firstName ?? "")?.url ?? null })
+  );
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitError, setSubmitError] = useState("");
-  const [showReveal, setShowReveal] = useState(false);
-  const [username, setUsername] = useState("");
+  const [saveState, setSaveState] = useState<SaveState>("idle");
+  const [showMore, setShowMore] = useState(false);
+
+  // Avatar: a preset is preselected at random so skipping leaves no blank
+  // circle on the leaderboard; the big circle is still an upload target.
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string | null>(null);
-  const [presetAvatarUrl, setPresetAvatarUrl] = useState<string | null>(null);
   const [avatarError, setAvatarError] = useState("");
-  // Result of the debounced availability fetch, tagged with the username it
-  // was issued for — only trusted when it matches the *current* value, so a
-  // stale response for a since-edited username can't flash "available".
+
+  // Health step
+  const [healthBusy, setHealthBusy] = useState(false);
+  const [healthNote, setHealthNote] = useState<string | null>(null);
+  const [healthError, setHealthError] = useState<string | null>(null);
+
+  // Username: the suggested candidate is checked on mount; edits are checked
+  // after a 400 ms pause. A response is only trusted when it was issued for
+  // the value still in the field.
   const [asyncCheck, setAsyncCheck] = useState<{
     forUsername: string;
     status: "available" | "taken" | "error";
     reason?: string;
   } | null>(null);
-  const [form, setForm] = useState({
-    date_of_birth: "",
-    gender: "" as Gender | "",
-    // Only ever filled in when `gender` does not already answer it — see
-    // scoringBasisToSave below, which derives it from gender otherwise.
-    scoring_basis: "" as ScoringBasis | "",
-    height_cm: "",
-    weight_kg: "",
-    max_hr: "",
-    resting_hr: "",
-    preferred_sports: [] as SportType[],
-  });
-
-  const trimmedUsername = username.trim();
+  const [suggesting, setSuggesting] = useState(true);
+  const trimmedUsername = form.username.trim();
   const usernameFormat = trimmedUsername ? validateUsernameFormat(trimmedUsername) : null;
-  const derivedAge = ageFromDateOfBirth(form.date_of_birth);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      let candidate = suggestUsername({ name: firstName, email });
+      for (let attempt = 0; attempt < USERNAME_ATTEMPTS; attempt += 1) {
+        try {
+          const result = await checkUsername(candidate);
+          if (cancelled) return;
+          if (result.available) {
+            setForm((prev) => (prev.username ? prev : { ...prev, username: candidate }));
+            setAsyncCheck({ forUsername: candidate, status: "available" });
+            setSuggesting(false);
+            return;
+          }
+        } catch {
+          if (cancelled) return;
+          break;
+        }
+        candidate = nextUsernameCandidate(candidate, attempt);
+      }
+      // Nothing free, or the check failed: show the last candidate and let the
+      // ordinary debounced check below report on it.
+      setForm((prev) => (prev.username ? prev : { ...prev, username: candidate }));
+      setSuggesting(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [firstName, email]);
 
   useEffect(() => {
     if (!trimmedUsername || !usernameFormat?.valid) return;
-
+    if (asyncCheck?.forUsername === trimmedUsername) return;
     let cancelled = false;
     const timer = setTimeout(async () => {
       try {
-        const res = await fetch(
-          `/api/profile/username-check?u=${encodeURIComponent(trimmedUsername)}`
-        );
-        const data = await res.json();
+        const result = await checkUsername(trimmedUsername);
         if (cancelled) return;
         setAsyncCheck({
           forUsername: trimmedUsername,
-          status: res.ok ? (data.available ? "available" : "taken") : "error",
-          reason: data.reason ?? data.error,
+          status: result.available ? "available" : "taken",
+          reason: result.reason,
         });
-      } catch {
+      } catch (err) {
         if (cancelled) return;
         setAsyncCheck({
           forUsername: trimmedUsername,
           status: "error",
-          reason: "Could not check availability",
+          reason: err instanceof Error ? err.message : "Could not check availability",
         });
       }
     }, 400);
-
     return () => {
       cancelled = true;
       clearTimeout(timer);
@@ -141,7 +197,9 @@ export function OnboardingFlow() {
   }, [trimmedUsername]);
 
   const usernameStatus: UsernameStatus = !trimmedUsername
-    ? "idle"
+    ? suggesting
+      ? "checking"
+      : "idle"
     : !usernameFormat!.valid
       ? "invalid"
       : asyncCheck?.forUsername === trimmedUsername
@@ -157,34 +215,9 @@ export function OnboardingFlow() {
         ? asyncCheck.reason
         : undefined;
 
-  const handleAvatarSelect = (file: File | null) => {
-    setAvatarError("");
-    if (!file) {
-      setAvatarFile(null);
-      setAvatarPreviewUrl(null);
-      return;
-    }
-    if (!ACCEPTED_AVATAR_TYPES.includes(file.type)) {
-      setAvatarError("Use a PNG, JPEG, WebP, or GIF image");
-      return;
-    }
-    if (file.size > MAX_AVATAR_BYTES) {
-      setAvatarError("Image must be under 2MB");
-      return;
-    }
-    setPresetAvatarUrl(null);
-    setAvatarFile(file);
-    setAvatarPreviewUrl(URL.createObjectURL(file));
-  };
+  const derivedAge = ageFromDateOfBirth(form.date_of_birth);
 
-  const handlePresetAvatarSelect = (url: string) => {
-    setAvatarError("");
-    setAvatarFile(null);
-    setPresetAvatarUrl(url);
-    setAvatarPreviewUrl(url);
-  };
-
-  const update = (key: string, value: unknown) => {
+  const update = <K extends keyof OnboardingForm>(key: K, value: OnboardingForm[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
     setErrors((prev) => {
       if (!(key in prev)) return prev;
@@ -194,51 +227,32 @@ export function OnboardingFlow() {
     });
   };
 
-  const validateStep = (current: number): boolean => {
-    const next: Record<string, string> = {};
-
-    if (current === 0) {
-      if (!form.date_of_birth) {
-        next.date_of_birth = "Enter your date of birth";
-      } else if (derivedAge === null) {
-        next.date_of_birth = "Enter a valid date of birth";
-      } else if (derivedAge < LIMITS.age.min || derivedAge > LIMITS.age.max) {
-        next.date_of_birth = `Age must be between ${LIMITS.age.min} and ${LIMITS.age.max}`;
-      }
-      if (!form.gender) next.gender = "Select a gender";
-      if (usernameStatus !== "available") {
-        next.username =
-          usernameStatus === "checking"
-            ? "Still checking availability…"
-            : (usernameReason ?? "Choose a username for the leaderboard");
-      }
-      if (avatarError) next.avatar = avatarError;
+  const handleAvatarSelect = (file: File | null) => {
+    setAvatarError("");
+    if (!file) return;
+    if (!ACCEPTED_AVATAR_TYPES.includes(file.type)) {
+      setAvatarError("Use a PNG, JPEG, WebP, or GIF image");
+      return;
     }
-
-    if (current === 1) {
-      if (!inRange(form.height_cm, LIMITS.height_cm))
-        next.height_cm = `Enter a height between ${LIMITS.height_cm.min} and ${LIMITS.height_cm.max} cm`;
-      if (!inRange(form.weight_kg, LIMITS.weight_kg))
-        next.weight_kg = `Enter a weight between ${LIMITS.weight_kg.min} and ${LIMITS.weight_kg.max} kg`;
-      if (form.max_hr !== "" && !inRange(form.max_hr, LIMITS.max_hr))
-        next.max_hr = `Max heart rate must be between ${LIMITS.max_hr.min} and ${LIMITS.max_hr.max}`;
-      if (form.resting_hr !== "" && !inRange(form.resting_hr, LIMITS.resting_hr))
-        next.resting_hr = `Resting heart rate must be between ${LIMITS.resting_hr.min} and ${LIMITS.resting_hr.max}`;
+    if (file.size > MAX_AVATAR_BYTES) {
+      setAvatarError("Image must be under 2MB");
+      return;
     }
-
-    if (current === 2 && form.preferred_sports.length === 0) {
-      next.preferred_sports = "Pick at least one sport";
-    }
-
-    setErrors(next);
-    return Object.keys(next).length === 0;
+    setAvatarFile(file);
+    setAvatarPreviewUrl(URL.createObjectURL(file));
+    update("avatar_url", null);
   };
 
-  const handleContinue = () => {
-    if (validateStep(step)) setStep(step + 1);
+  const choosePreset = (url: string) => {
+    impact("light");
+    setAvatarError("");
+    setAvatarFile(null);
+    setAvatarPreviewUrl(null);
+    update("avatar_url", url);
   };
 
   const toggleSport = (sport: SportType) => {
+    impact("light");
     update(
       "preferred_sports",
       form.preferred_sports.includes(sport)
@@ -247,112 +261,115 @@ export function OnboardingFlow() {
     );
   };
 
-  const handleComplete = async () => {
-    if (!validateStep(step)) return;
+  /** True when this step is happy to be left. Only the welcome step can refuse. */
+  const validateCurrent = (): boolean => {
+    let next: Record<string, string> = {};
+    if (step === "welcome") {
+      if (usernameStatus !== "available") {
+        next.username =
+          usernameStatus === "checking"
+            ? "Still checking that name…"
+            : (usernameReason ?? "Pick a name for the leaderboard");
+      }
+      if (avatarError) next.avatar = avatarError;
+    }
+    if (step === "about") next = validateAbout(form);
+    setErrors(next);
+    return Object.keys(next).length === 0;
+  };
 
-    setLoading(true);
+  const goTo = (index: number) => {
+    setSubmitError("");
+    setStepIndex(index);
+  };
+
+  const advance = () => {
+    if (!validateCurrent()) return;
+    impact("light");
+    const nextIndex = stepIndex + 1;
+    if (steps[nextIndex] === "done") {
+      setSaveState("saving");
+      void save();
+    }
+    goTo(nextIndex);
+  };
+
+  const back = () => {
+    impact("light");
+    goTo(Math.max(0, stepIndex - 1));
+  };
+
+  /** Apple's sheet, the server-side connection, a first workout sync, and the profile read — one tap. */
+  const connectAppleHealth = async () => {
+    impact("medium");
+    setHealthBusy(true);
+    setHealthError(null);
+    try {
+      await connectHealth();
+      const characteristics = await fetchHealthProfile();
+      const { form: filled, filled: fields } = applyHealthProfile(form, characteristics);
+      setForm(filled);
+      setHealthNote(describePrefill(fields) ?? "Connected. Nothing to prefill yet — fill in what you like.");
+      success();
+      goTo(stepIndex + 1);
+    } catch (err) {
+      setHealthError(err instanceof Error ? err.message : "Couldn't connect Apple Health.");
+    } finally {
+      setHealthBusy(false);
+    }
+  };
+
+  const save = async () => {
     setSubmitError("");
     const supabase = createClient();
     const {
       data: { user },
     } = await supabase.auth.getUser();
-
     if (!user) {
       router.push("/login");
       return;
     }
 
-    if (!form.gender) {
-      setSubmitError("Please go back and complete all required fields.");
-      setLoading(false);
-      return;
-    }
-
     const ensureRes = await fetch("/api/profile/ensure", { method: "POST" });
     if (!ensureRes.ok) {
-      const body = (await ensureRes.json().catch(() => ({}))) as {
-        error?: string;
-        code?: string;
-      };
+      const body = (await ensureRes.json().catch(() => ({}))) as { error?: string; code?: string };
       setSubmitError(
         supabaseErrorMessage("Could not save your profile. Please try again.", {
-          message:
-            body.error ??
-            "Profile table missing — run supabase/migrations in the Supabase SQL editor.",
+          message: body.error ?? "Profile table missing",
           code: body.code ?? "",
           details: "",
           hint: "",
           name: "PostgrestError",
         } as PostgrestError)
       );
-      setLoading(false);
+      setSaveState("error");
       return;
     }
 
-    let avatarUrl: string | null = presetAvatarUrl;
+    let avatarUrl = form.avatar_url;
     if (avatarFile) {
       const ext = avatarFile.name.split(".").pop() ?? "jpg";
       const path = `${user.id}/${Date.now()}.${ext}`;
       const { error: uploadError } = await supabase.storage
         .from("avatars")
         .upload(path, avatarFile, { upsert: true, contentType: avatarFile.type });
-
       if (uploadError) {
         setSubmitError(`Could not upload your profile icon: ${uploadError.message}`);
-        setLoading(false);
+        setSaveState("error");
         return;
       }
-
       avatarUrl = supabase.storage.from("avatars").getPublicUrl(path).data.publicUrl;
     }
 
-    /*
-      NEVER THE EMAIL ADDRESS.
-
-      This fell back to `user.email` when the identity provider gave no name —
-      which is every ordinary email/password signup. `display_name` is not
-      private: `PROFILE_SELECT` in social/leaderboard.ts returns it, the
-      leaderboard renders `displayName ?? username` as the athlete's name, and
-      both share-card routes print it onto an image made to be posted. So
-      signing up with an email address and tapping through onboarding put that
-      address on a public leaderboard and into a shareable PNG, with nothing
-      anywhere saying so.
-
-      Null instead. Every render site already falls back to the username the
-      athlete chose two steps earlier, which is the name they picked to be
-      known by. An OAuth-provided name is still used, trimmed and length-capped
-      the same way the profile form caps one typed by hand — a provider is not
-      a validated input either.
-    */
-    const providerName = (user.user_metadata?.full_name as string | undefined)?.trim();
-    const profilePayload = {
-      user_id: user.id,
-      display_name:
-        providerName && validateDisplayText(providerName, { label: "Display name" }).valid
-          ? providerName
-          : null,
-      username: username.trim(),
-      avatar_url: avatarUrl,
-      date_of_birth: form.date_of_birth,
-      age: derivedAge,
-      gender: form.gender as Gender,
-      // Identity answers the scoring question whenever it can, so male/female
-      // athletes are never asked twice; everyone else gets whatever they
-      // chose, or null (scoring then falls back and flags itself).
-      scoring_basis: genderDeterminesScoringBasis(form.gender)
-        ? (form.gender as ScoringBasis)
-        : form.scoring_basis || null,
-      height_cm: Number(form.height_cm),
-      weight_kg: Number(form.weight_kg),
-      max_hr: Number(form.max_hr) || (derivedAge ? Math.round(220 - derivedAge) : null),
-      resting_hr: Number(form.resting_hr) || null,
-      preferred_sports: form.preferred_sports,
-      onboarding_completed: true,
-    };
+    const payload = buildProfilePayload({
+      userId: user.id,
+      form: { ...form, avatar_url: avatarUrl },
+      providerName,
+    });
 
     const { data: savedProfile, error: profileError } = await supabase
       .from("profiles")
-      .upsert(profilePayload, { onConflict: "user_id" })
+      .upsert(payload, { onConflict: "user_id" })
       .select("id")
       .single();
 
@@ -362,79 +379,73 @@ export function OnboardingFlow() {
         status: "taken",
         reason: "That username was just taken — try another",
       });
-      setStep(0);
       setSubmitError("Someone just took that username — please pick another.");
-      setLoading(false);
+      setSaveState("idle");
+      goTo(0);
       return;
     }
-
     if (profileError || !savedProfile) {
       setSubmitError(
         supabaseErrorMessage(
           "Could not save your profile. Please try again.",
-          profileError ?? {
-            message: "No profile row was saved",
-            code: "PGRST116",
-            details: "",
-            hint: "",
-            name: "PostgrestError",
-          }
+          profileError ?? ({ message: "No profile row was saved", code: "PGRST116", details: "", hint: "", name: "PostgrestError" } as PostgrestError)
         )
       );
-      setLoading(false);
+      setSaveState("error");
       return;
     }
 
-    const { error: metricsError } = await supabase.from("body_metrics").insert({
-      user_id: user.id,
-      weight_kg: Number(form.weight_kg),
-    });
-
-    if (metricsError) {
-      setSubmitError(
-        supabaseErrorMessage("Could not save your weight. Please try again.", metricsError)
-      );
-      setLoading(false);
-      return;
+    // A weigh-in only when there was a weight. The old flow made this a hard
+    // failure; a blank weight is now an ordinary outcome.
+    if (payload.weight_kg !== null) {
+      const { error: metricsError } = await supabase
+        .from("body_metrics")
+        .insert({ user_id: user.id, weight_kg: payload.weight_kg });
+      if (metricsError) {
+        setSubmitError(supabaseErrorMessage("Could not save your weight. Please try again.", metricsError));
+        setSaveState("error");
+        return;
+      }
     }
 
-    localStorage.setItem("split-index-account-created", String(Date.now()));
-    setLoading(false);
-    setShowReveal(true);
+    try {
+      localStorage.setItem("split-index-account-created", String(Date.now()));
+    } catch {
+      /* storage unavailable */
+    }
+    success();
+    setSaveState("saved");
   };
 
-  const hasGym = form.preferred_sports.includes("gym");
-  const hasCardio = form.preferred_sports.some((s) => s !== "gym");
+  const finish = (withTour: boolean) => {
+    impact("medium");
+    if (withTour) startTour();
+    router.push("/dashboard");
+  };
 
-  if (showReveal) {
-    return (
-      <div className="mx-auto max-w-lg">
-        <ScoreRevealSequence onDone={() => router.push("/dashboard")} />
-      </div>
-    );
-  }
+  const greeting = firstName ? `Hey ${firstName}.` : "Welcome.";
+  const showScoringBasis = form.gender !== "" && !genderDeterminesScoringBasis(form.gender);
 
   return (
     <div ref={formRef} className="mx-auto max-w-lg">
-      <div className="mb-8">
-        <div className="mb-4 flex gap-2">
-          {STEPS.map((s, i) => (
-            <div
-              key={s}
-              className={`h-1 flex-1 rounded-full transition-colors duration-300 ${
-                i <= step ? "bg-accent shadow-[0_0_8px_var(--accent-glow)]" : "bg-white/[0.08]"
-              }`}
-            />
-          ))}
+      {step !== "done" && (
+        <div className="mb-6">
+          <div className="mb-5 flex gap-1.5" aria-hidden>
+            {visibleSteps.map((s, i) => (
+              <div
+                key={s}
+                className={cn(
+                  "h-1 flex-1 rounded-full transition-colors duration-300",
+                  i <= stepIndex ? "bg-accent shadow-[0_0_8px_var(--accent-glow)]" : "bg-white/[0.08]"
+                )}
+              />
+            ))}
+          </div>
+          <p className="sr-only">
+            Step {stepIndex + 1} of {visibleSteps.length}
+          </p>
         </div>
-        <p className="mb-1.5 micro-label text-muted">Onboarding</p>
-        <h1 className="headline-tight text-2xl font-semibold md:text-3xl">
-          {STEPS[step]}
-        </h1>
-        <p className="mt-1.5 text-sm text-muted">
-          Step {step + 1} of {STEPS.length}
-        </p>
-      </div>
+      )}
 
       <AnimatePresence mode="wait">
         <motion.div
@@ -444,145 +455,215 @@ export function OnboardingFlow() {
           exit={{ opacity: 0, x: -24, filter: "blur(4px)" }}
           transition={{ type: "spring", stiffness: 400, damping: 30 }}
         >
-          {step < 3 && (
-            <Card className="space-y-4 mb-6">
-              {step === 0 && (
-                <>
-                  <div className="flex items-center gap-4">
-                    <label className="group relative flex h-16 w-16 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full border border-white/15 bg-white/[0.03]">
-                      {avatarPreviewUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={avatarPreviewUrl}
-                          alt="Profile icon preview"
-                          className="h-full w-full object-cover"
-                        />
-                      ) : (
-                        <Camera className="h-5 w-5 text-muted" />
+          {/* ── 1. Welcome: the name they'll be known by ── */}
+          {step === "welcome" && (
+            <>
+              <h1 className="headline-tight font-display text-3xl font-black">
+                <Typewriter text={greeting} speedMs={40} />
+              </h1>
+              <p className="mt-2 text-sm text-muted">
+                {firstName
+                  ? "Good to have you. One thing to check, then you're in."
+                  : "One thing to check, then you're in."}
+              </p>
+
+              <Card className="mt-6 space-y-5">
+                <div>
+                  <Input
+                    label="Leaderboard name"
+                    value={form.username}
+                    error={errors.username}
+                    hint="Public. Letters, numbers and underscores. Change it any time."
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    onChange={(e) => update("username", e.target.value)}
+                  />
+                  {form.username.trim() && !errors.username && (
+                    <p
+                      className={cn(
+                        "mt-1.5 flex items-center gap-1.5 text-xs",
+                        usernameStatus === "available" && "text-success",
+                        usernameStatus === "taken" && "text-danger",
+                        usernameStatus === "checking" && "text-muted"
                       )}
-                      <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
-                        <Camera className="h-5 w-5 text-white" />
-                      </div>
-                      <input
-                        type="file"
-                        accept={ACCEPTED_AVATAR_TYPES.join(",")}
-                        className="hidden"
-                        onChange={(e) => handleAvatarSelect(e.target.files?.[0] ?? null)}
+                    >
+                      {usernameStatus === "checking" && <Loader2 className="h-3 w-3 animate-spin" />}
+                      {usernameStatus === "available" && <Check className="h-3 w-3" />}
+                      {usernameStatus === "taken" && <X className="h-3 w-3" />}
+                      {usernameStatus === "checking" && "Checking…"}
+                      {usernameStatus === "available" && "Available"}
+                      {usernameStatus === "taken" && (usernameReason ?? "Taken")}
+                    </p>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <label className="group relative flex h-14 w-14 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full border border-white/15 bg-white/[0.03]">
+                    {avatarPreviewUrl || form.avatar_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={avatarPreviewUrl ?? form.avatar_url ?? ""}
+                        alt="Profile icon preview"
+                        className="h-full w-full object-cover"
                       />
-                    </label>
-                    <div>
-                      <p className="text-sm font-medium text-foreground">Profile icon</p>
-                      <p className="text-xs text-muted">Optional — shown on the leaderboard</p>
-                      {avatarError && <p className="mt-1 text-xs text-danger">{avatarError}</p>}
+                    ) : (
+                      <Camera className="h-5 w-5 text-muted" />
+                    )}
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
+                      <Camera className="h-5 w-5 text-white" />
                     </div>
-                  </div>
-
-                  <div>
-                    <p className="mb-2 text-xs text-muted">Or pick one</p>
-                    <div className="flex flex-wrap gap-2">
-                      {PRESET_AVATARS.map((preset) => (
-                        <button
-                          key={preset.id}
-                          type="button"
-                          aria-label={`Use the ${preset.label} icon`}
-                          aria-pressed={presetAvatarUrl === preset.url}
-                          onClick={() => handlePresetAvatarSelect(preset.url)}
-                          className={cn(
-                            "h-11 w-11 shrink-0 overflow-hidden rounded-full border transition-all",
-                            presetAvatarUrl === preset.url
-                              ? "border-accent ring-2 ring-accent/40"
-                              : "border-white/15 opacity-80 hover:opacity-100"
-                          )}
-                        >
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={preset.url}
-                            alt={preset.label}
-                            className="h-full w-full object-cover"
-                          />
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div>
-                    <Input
-                      label="Username"
-                      value={username}
-                      hint="Public — shown on the leaderboard. Letters, numbers, underscore."
-                      error={errors.username}
-                      onChange={(e) => setUsername(e.target.value)}
+                    <input
+                      type="file"
+                      accept={ACCEPTED_AVATAR_TYPES.join(",")}
+                      className="hidden"
+                      onChange={(e) => handleAvatarSelect(e.target.files?.[0] ?? null)}
                     />
-                    {username.trim() && !errors.username && (
-                      <p
+                  </label>
+                  <div className="flex min-w-0 flex-1 gap-1.5 overflow-x-auto py-1">
+                    {PRESET_AVATARS.map((preset) => (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        aria-label={`Use the ${preset.label} icon`}
+                        aria-pressed={form.avatar_url === preset.url && !avatarFile}
+                        onClick={() => choosePreset(preset.url)}
                         className={cn(
-                          "mt-1.5 flex items-center gap-1.5 text-xs",
-                          usernameStatus === "available" && "text-success",
-                          usernameStatus === "taken" && "text-danger",
-                          usernameStatus === "checking" && "text-muted"
+                          "h-11 w-11 shrink-0 overflow-hidden rounded-full border transition-all",
+                          form.avatar_url === preset.url && !avatarFile
+                            ? "border-accent ring-2 ring-accent/40"
+                            : "border-white/15 opacity-70 hover:opacity-100"
                         )}
                       >
-                        {usernameStatus === "checking" && (
-                          <Loader2 className="h-3 w-3 animate-spin" />
-                        )}
-                        {usernameStatus === "available" && <Check className="h-3 w-3" />}
-                        {usernameStatus === "taken" && <X className="h-3 w-3" />}
-                        {usernameStatus === "checking" && "Checking availability…"}
-                        {usernameStatus === "available" && "Available"}
-                        {usernameStatus === "taken" && (usernameReason ?? "Taken")}
-                      </p>
-                    )}
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={preset.url} alt={preset.label} className="h-full w-full object-cover" />
+                      </button>
+                    ))}
                   </div>
+                </div>
+                {avatarError && <p className="text-xs text-danger">{avatarError}</p>}
+              </Card>
+            </>
+          )}
 
-                  <Input
-                    label="Date of Birth"
-                    type="date"
-                    min={minDobForMaxAge(LIMITS.age.max)}
-                    max={maxDobForMinAge(LIMITS.age.min)}
-                    value={form.date_of_birth}
-                    error={errors.date_of_birth}
-                    onChange={(e) => update("date_of_birth", e.target.value)}
-                    hint={derivedAge !== null ? `Age ${derivedAge}` : "We use this to calculate your age"}
-                  />
-                  <Select
-                    label="Gender"
-                    options={[{ value: "", label: "Select…" }, ...GENDERS]}
-                    value={form.gender}
-                    error={errors.gender}
-                    onChange={(e) => update("gender", e.target.value)}
-                  />
-                  {/*
-                    Asked only when the answer above does not already settle
-                    it. Optional: an athlete who would rather not say still
-                    gets a fully working app — their scores fall back to a
-                    documented default and are flagged as such, which is a
-                    better trade than the old behaviour of refusing to score
-                    them at all.
-                  */}
-                  {form.gender !== "" && !genderDeterminesScoringBasis(form.gender) && (
-                    <div>
-                      <Select
-                        label="Score me against (optional)"
-                        options={[
-                          { value: "", label: "Not now — use the default" },
-                          ...SCORING_BASES,
-                        ]}
-                        value={form.scoring_basis}
-                        onChange={(e) => update("scoring_basis", e.target.value)}
-                      />
-                      <p className="mt-1.5 text-xs text-muted">
-                        {SCORING_BASIS_EXPLANATION}
+          {/* ── 2. Apple Health (iPhone only): fill the next step without typing ── */}
+          {step === "health" && (
+            <>
+              <h1 className="headline-tight text-2xl font-bold">Fill this in from Apple Health?</h1>
+              <p className="mt-2 text-sm text-muted">
+                One tap reads your date of birth, height, weight and resting heart rate — and brings in
+                your runs and rides from Apple Watch or anything else that writes to Health. Nothing is
+                written back.
+              </p>
+              <Card className="mt-6 space-y-4">
+                <div className="flex items-start gap-3">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent/15 text-accent">
+                    <HeartPulse className="h-5 w-5" aria-hidden />
+                  </span>
+                  <ul className="space-y-1 text-sm text-foreground/85">
+                    <li>Date of birth, height and weight → your profile</li>
+                    <li>Runs, rides, rows and swims → your logbook, scored</li>
+                    <li>HRV, resting heart rate and sleep → your recovery score</li>
+                  </ul>
+                </div>
+                {healthError && <p className="text-xs text-danger">{healthError}</p>}
+                <Button size="lg" className="w-full" loading={healthBusy} onClick={connectAppleHealth}>
+                  Fill in from Apple Health
+                </Button>
+                <p className="text-center text-xs text-muted">
+                  Optional. Every score works without it, and you can connect later in Settings.
+                </p>
+              </Card>
+            </>
+          )}
+
+          {/* ── 3. About you: all optional, prefilled when Health was connected ── */}
+          {step === "about" && (
+            <>
+              <h1 className="headline-tight text-2xl font-bold">About you</h1>
+              <p className="mt-2 text-sm text-muted">
+                All optional. Each one makes your scores more accurate; skip any you like and add
+                them later in Profile.
+              </p>
+              {healthNote && (
+                <p className="mt-3 flex items-center gap-1.5 text-xs text-success">
+                  <Check className="h-3.5 w-3.5" aria-hidden />
+                  {healthNote}
+                </p>
+              )}
+              <Card className="mt-6 space-y-4">
+                <Input
+                  label="Date of birth"
+                  type="date"
+                  min={minDobForMaxAge(LIMITS.age.max)}
+                  max={maxDobForMinAge(LIMITS.age.min)}
+                  value={form.date_of_birth}
+                  error={errors.date_of_birth}
+                  onChange={(e) => update("date_of_birth", e.target.value)}
+                  hint={derivedAge !== null ? `Age ${derivedAge}` : "For age-graded pace and your max heart rate"}
+                />
+
+                <div>
+                  <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.1em] text-muted">Gender</p>
+                  <div className="flex flex-wrap gap-2">
+                    {GENDERS.map((g) => {
+                      const selected = form.gender === g.value;
+                      return (
+                        <button
+                          key={g.value}
+                          type="button"
+                          aria-pressed={selected}
+                          onClick={() => {
+                            impact("light");
+                            update("gender", selected ? "" : (g.value as Gender));
+                          }}
+                          className={cn(
+                            "min-h-11 rounded-full border px-4 text-sm transition-colors",
+                            selected
+                              ? "border-accent bg-accent/15 text-foreground"
+                              : "glass text-muted hover:text-foreground"
+                          )}
+                        >
+                          {g.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {showScoringBasis && (
+                    <div className="mt-3">
+                      <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.1em] text-muted">
+                        Score me against (optional)
                       </p>
+                      <div className="flex flex-wrap gap-2">
+                        {SCORING_BASES.map((b) => {
+                          const selected = form.scoring_basis === b.value;
+                          return (
+                            <button
+                              key={b.value}
+                              type="button"
+                              aria-pressed={selected}
+                              onClick={() => update("scoring_basis", selected ? "" : (b.value as ScoringBasis))}
+                              className={cn(
+                                "min-h-11 rounded-full border px-4 text-sm transition-colors",
+                                selected
+                                  ? "border-accent bg-accent/15 text-foreground"
+                                  : "glass text-muted hover:text-foreground"
+                              )}
+                            >
+                              {b.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <p className="mt-1.5 text-xs text-muted">{SCORING_BASIS_EXPLANATION}</p>
                     </div>
                   )}
-                </>
-              )}
+                </div>
 
-              {step === 1 && (
-                <>
+                <div className="grid grid-cols-2 gap-3">
                   <Input
                     label="Height (cm)"
                     type="number"
+                    inputMode="decimal"
                     min={LIMITS.height_cm.min}
                     max={LIMITS.height_cm.max}
                     value={form.height_cm}
@@ -592,143 +673,183 @@ export function OnboardingFlow() {
                   <Input
                     label="Weight (kg)"
                     type="number"
+                    inputMode="decimal"
                     min={LIMITS.weight_kg.min}
                     max={LIMITS.weight_kg.max}
                     value={form.weight_kg}
                     error={errors.weight_kg}
                     onChange={(e) => update("weight_kg", e.target.value)}
                   />
-                  <Input
-                    label="Max Heart Rate"
-                    type="number"
-                    min={LIMITS.max_hr.min}
-                    max={LIMITS.max_hr.max}
-                    value={form.max_hr}
-                    error={errors.max_hr}
-                    onChange={(e) => update("max_hr", e.target.value)}
-                    hint={`Optional — suggested: ${derivedAge ? Math.round(220 - derivedAge) : "220 - age"}`}
-                  />
-                  <Input
-                    label="Resting Heart Rate"
-                    type="number"
-                    min={LIMITS.resting_hr.min}
-                    max={LIMITS.resting_hr.max}
-                    value={form.resting_hr}
-                    error={errors.resting_hr}
-                    onChange={(e) => update("resting_hr", e.target.value)}
-                    hint="Optional — with max HR above, lets every session be scored on how hard you were actually working, not just your pace"
-                  />
-                </>
-              )}
+                </div>
 
-              {step === 2 && (
-                <div>
-                  <p className="text-sm font-medium text-muted mb-3">
-                    Preferred Sports
-                  </p>
-                  <div className="grid grid-cols-2 gap-2">
-                    {SPORTS.map((s) => (
+                <button
+                  type="button"
+                  aria-expanded={showMore}
+                  onClick={() => setShowMore((v) => !v)}
+                  className="flex min-h-11 items-center gap-1 text-sm text-muted transition-colors hover:text-foreground"
+                >
+                  <ChevronDown className={cn("h-4 w-4 transition-transform", showMore && "rotate-180")} aria-hidden />
+                  Heart rate {showMore ? "" : "(optional)"}
+                </button>
+                {showMore && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <Input
+                      label="Max HR"
+                      type="number"
+                      inputMode="numeric"
+                      min={LIMITS.max_hr.min}
+                      max={LIMITS.max_hr.max}
+                      value={form.max_hr}
+                      error={errors.max_hr}
+                      onChange={(e) => update("max_hr", e.target.value)}
+                      hint={derivedAge ? `Suggested ${Math.round(220 - derivedAge)}` : "Suggested 220 − age"}
+                    />
+                    <Input
+                      label="Resting HR"
+                      type="number"
+                      inputMode="numeric"
+                      min={LIMITS.resting_hr.min}
+                      max={LIMITS.resting_hr.max}
+                      value={form.resting_hr}
+                      error={errors.resting_hr}
+                      onChange={(e) => update("resting_hr", e.target.value)}
+                      hint="Scores effort, not just pace"
+                    />
+                  </div>
+                )}
+              </Card>
+            </>
+          )}
+
+          {/* ── 4. Sports: the hybrid pair preselected ── */}
+          {step === "sports" && (
+            <>
+              <h1 className="headline-tight text-2xl font-bold">What do you train?</h1>
+              <p className="mt-2 text-sm text-muted">
+                We&apos;ve picked the usual pair. Tap to change — it only affects what the app
+                suggests, not what you can log.
+              </p>
+              <Card className="mt-6">
+                <div className="grid grid-cols-2 gap-2">
+                  {SPORTS.map((s) => {
+                    const selected = form.preferred_sports.includes(s.id);
+                    return (
                       <button
                         key={s.id}
                         type="button"
+                        aria-pressed={selected}
                         onClick={() => toggleSport(s.id)}
-                        className={`flex items-center gap-2 rounded-xl p-3 text-sm transition-colors ${
-                          form.preferred_sports.includes(s.id)
+                        className={cn(
+                          "flex min-h-12 items-center gap-2 rounded-xl p-3 text-sm transition-colors",
+                          selected
                             ? s.category === "strength"
-                              ? "bg-gym-accent/20 border border-gym-accent/40 text-foreground"
-                              : "bg-cardio-accent/20 border border-cardio-accent/40 text-foreground"
+                              ? "border border-gym-accent/40 bg-gym-accent/20 text-foreground"
+                              : "border border-cardio-accent/40 bg-cardio-accent/20 text-foreground"
                             : "glass hover:bg-white/5"
-                        }`}
+                        )}
                       >
-                        <span>{s.icon}</span>
+                        <span aria-hidden>{s.icon}</span>
                         {s.name}
+                        {selected && <Check className="ml-auto h-4 w-4 opacity-70" aria-hidden />}
                       </button>
-                    ))}
-                  </div>
-                  {errors.preferred_sports && (
-                    <p className="text-xs text-danger mt-3">
-                      {errors.preferred_sports}
-                    </p>
-                  )}
+                    );
+                  })}
                 </div>
-              )}
+              </Card>
+            </>
+          )}
+
+          {/* ── 5. Done: saved, and a tour on offer ── */}
+          {step === "done" && (
+            <Card className="glass-strong relative overflow-hidden px-6 py-10 text-center">
+              <div
+                aria-hidden
+                className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_60%_80%_at_50%_0%,rgba(61,255,110,0.08),transparent)]"
+              />
+              <div className="relative">
+                {saveState === "saving" && (
+                  <>
+                    <motion.div
+                      animate={reducedMotion ? undefined : { rotate: 360 }}
+                      transition={{ repeat: Infinity, duration: 1.2, ease: "linear" }}
+                      className="mx-auto mb-5 h-12 w-12 rounded-full border-2 border-accent/30 border-t-accent"
+                    />
+                    <p className="headline-tight text-lg font-semibold">Setting you up…</p>
+                  </>
+                )}
+                {saveState === "saved" && (
+                  <>
+                    <motion.div
+                      initial={reducedMotion ? false : { scale: 0.8, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      transition={{ type: "spring", bounce: 0.4 }}
+                      className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full border border-success/30 bg-success/15"
+                    >
+                      <Sparkles className="h-7 w-7 text-success" aria-hidden />
+                    </motion.div>
+                    <h1 className="headline-tight font-display text-2xl font-black">
+                      <Typewriter text={firstName ? `You're in, ${firstName}.` : "You're in."} speedMs={40} />
+                    </h1>
+                    <p className="mx-auto mt-2 max-w-sm text-sm text-muted">
+                      Log one session and your Split Index appears. Want the thirty-second tour of the
+                      five buttons first?
+                    </p>
+                    <div className="mt-6 space-y-2.5">
+                      <Button size="lg" className="w-full gap-2" onClick={() => finish(true)}>
+                        <Compass className="h-5 w-5" aria-hidden />
+                        Show me around
+                      </Button>
+                      <Button variant="secondary" size="lg" className="w-full" onClick={() => finish(false)}>
+                        Straight to the app
+                      </Button>
+                    </div>
+                  </>
+                )}
+                {saveState === "error" && (
+                  <>
+                    <p className="headline-tight text-lg font-semibold">That didn&apos;t save</p>
+                    {submitError && <p className="mt-2 text-sm text-danger">{submitError}</p>}
+                    <div className="mt-6 space-y-2.5">
+                      <Button
+                        size="lg"
+                        className="w-full"
+                        onClick={() => {
+                          setSaveState("saving");
+                          void save();
+                        }}
+                      >
+                        Try again
+                      </Button>
+                      <Button variant="secondary" size="lg" className="w-full" onClick={back}>
+                        Back
+                      </Button>
+                    </div>
+                  </>
+                )}
+              </div>
             </Card>
           )}
 
-          {step === 3 && (
-            <div className="space-y-6 mb-6">
-              <Card className="glass-strong holographic-border text-center py-10 px-6 overflow-hidden relative">
-                <div
-                  aria-hidden
-                  className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_60%_80%_at_50%_0%,rgba(99,102,241,0.1),transparent)]"
-                />
-                <div className="relative">
-                  <p className="micro-label text-muted mb-4">Your Split Index</p>
-                  <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-full border border-dashed border-white/15 bg-white/[0.03]">
-                    <span className="text-3xl font-bold text-muted/40">—</span>
-                  </div>
-                  <p className="text-lg font-semibold tracking-tight">
-                    Earned from your first workout
-                  </p>
-                  <p className="mt-2 text-sm text-muted max-w-sm mx-auto">
-                    No baseline guess. Each sport builds its own index — running vs
-                    running, gym vs gym — then blends into your hybrid score.
-                  </p>
-                  <div className="mt-6 flex justify-center gap-4">
-                    {hasGym && (
-                      <div className="flex items-center gap-2 text-xs text-gym-accent">
-                        <Dumbbell className="h-4 w-4" />
-                        Gym Strength Index
-                      </div>
-                    )}
-                    {hasCardio && (
-                      <div className="flex items-center gap-2 text-xs text-cardio-accent">
-                        <Activity className="h-4 w-4" />
-                        Sport-specific endurance
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </Card>
-
-              <Card className="glass-strong text-center py-8 px-6">
-                <motion.div
-                  initial={{ scale: 0.8, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  transition={{ type: "spring", bounce: 0.4 }}
-                  className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-success/15 border border-success/30"
-                >
-                  <Sparkles className="h-7 w-7 text-success" />
-                </motion.div>
-                <h2 className="headline-tight text-xl font-bold">You&apos;re set</h2>
-                <p className="mt-2 text-sm text-muted max-w-sm mx-auto">
-                  Log your first workout to unlock your sport-specific index — goals
-                  and experience level can wait until after you&apos;ve seen your score.
+          {step !== "done" && (
+            <>
+              {submitError && <p className="mt-4 text-sm text-danger">{submitError}</p>}
+              <div className="mt-6 flex gap-3">
+                {stepIndex > 0 && (
+                  <Button variant="secondary" size="lg" onClick={back}>
+                    Back
+                  </Button>
+                )}
+                <Button size="lg" className="flex-1" onClick={advance}>
+                  {step === "health" ? "Skip for now" : step === "sports" ? "Finish" : "Continue"}
+                </Button>
+              </div>
+              {step !== "welcome" && step !== "health" && (
+                <p className="mt-3 text-center text-xs text-muted">
+                  Nothing here is required — Continue works as it is.
                 </p>
-              </Card>
-            </div>
+              )}
+            </>
           )}
-
-          {submitError && (
-            <p className="text-sm text-danger mb-4">{submitError}</p>
-          )}
-
-          <div className="flex gap-3">
-            {step > 0 && step < 3 && (
-              <Button variant="secondary" onClick={() => setStep(step - 1)}>
-                Back
-              </Button>
-            )}
-            {step < 3 ? (
-              <Button className="flex-1" onClick={handleContinue}>
-                Continue
-              </Button>
-            ) : (
-              <Button className="flex-1" loading={loading} onClick={handleComplete}>
-                Go to Dashboard
-              </Button>
-            )}
-          </div>
         </motion.div>
       </AnimatePresence>
     </div>

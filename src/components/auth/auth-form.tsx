@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion, useReducedMotion } from "framer-motion";
 import type { AuthError } from "@supabase/supabase-js";
 import { BrandMark } from "@/components/brand/brand-mark";
 import { AppleIcon, GoogleIcon } from "@/components/auth/oauth-icons";
+import { WelcomeIntro } from "@/components/auth/welcome-intro";
+import { INTRO_SEEN_KEY, shouldShowIntro } from "@/components/auth/welcome-intro-content";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { createClient } from "@/lib/supabase/client";
@@ -63,6 +65,32 @@ export function isSubmittableOtp(otp: string): boolean {
   return otp.length >= OTP_MIN_LENGTH;
 }
 
+/*
+ * Whether the welcome intro goes in front of the form — decided from two
+ * things only the browser knows (the Capacitor global, localStorage), so it
+ * is read through useSyncExternalStore with a third answer, "unknown", for
+ * the server render. While unknown, the page draws the brand mark and nothing
+ * else: rendering the form and then replacing it with the intro a frame later
+ * is the flash this avoids. See use-is-native-shell.ts for why this and not
+ * setState in an effect.
+ */
+type IntroDecision = "show" | "hide" | "unknown";
+const subscribeToNothing = () => () => {};
+function introSeen(): boolean {
+  try {
+    return localStorage.getItem(INTRO_SEEN_KEY) !== null;
+  } catch {
+    return false;
+  }
+}
+function useIntroDecision(mode: "login" | "signup"): IntroDecision {
+  return useSyncExternalStore(
+    subscribeToNothing,
+    () => (shouldShowIntro({ mode, native: isNativePlatform(), seen: introSeen() }) ? "show" : "hide"),
+    () => "unknown"
+  );
+}
+
 export function AuthForm({
   mode,
   initialError,
@@ -79,6 +107,10 @@ export function AuthForm({
   const [resending, setResending] = useState(false);
   const [error, setError] = useState(initialError ?? "");
   const [message, setMessage] = useState("");
+  // The intro is skipped outright when the page arrived carrying an error —
+  // an OAuth failure bounced back here needs the message read, not a pitch.
+  const introDecision = useIntroDecision(mode);
+  const [introDismissed, setIntroDismissed] = useState(Boolean(initialError));
 
   const authCallbackUrl = (nextPath = "/dashboard") => buildAuthCallbackUrl(undefined, nextPath);
 
@@ -259,6 +291,24 @@ export function AuthForm({
   };
 
   const reducedMotion = useReducedMotion();
+
+  if (introDecision === "unknown" && !introDismissed) {
+    return (
+      <div className="w-full max-w-md">
+        <BrandMark variant="full" href="/" logoHeight={36} priority />
+      </div>
+    );
+  }
+
+  if (introDecision === "show" && !introDismissed) {
+    return (
+      <WelcomeIntro
+        onApple={() => handleOAuth("apple")}
+        onGoogle={() => handleOAuth("google")}
+        onEmail={() => setIntroDismissed(true)}
+      />
+    );
+  }
 
   return (
     <div className="w-full max-w-md">

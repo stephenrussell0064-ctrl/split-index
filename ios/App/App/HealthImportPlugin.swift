@@ -12,14 +12,17 @@ import HealthKit
  * READ ONLY. Nothing here writes to Health. (HeartRateWorkoutPlugin starts
  * a workout session to switch the AirPods sensor on, and discards it.)
  *
- * Three methods, all promises:
+ * Four methods, all promises:
  *   isAvailable          — HKHealthStore.isHealthDataAvailable()
- *   requestAuthorization — Apple's permission sheet for the five read types.
+ *   requestAuthorization — Apple's permission sheet for the read types.
  *                          HealthKit never says what was granted; a refused
  *                          type simply returns no samples.
  *   fetchSamples         — every sample on or after `since`, at most `limit`
  *                          per type, as plain JSON the web side validates
  *                          (lib/health/samples.ts) before anything is written.
+ *   fetchProfile         — date of birth, biological sex, latest height,
+ *                          weight and resting HR, so onboarding can prefill
+ *                          the form instead of asking (lib/health/profile-prefill.ts).
  *
  * Foreground sync, not background delivery. The app is a WebView on the
  * production site, so the JavaScript that posts samples to the server runs
@@ -41,6 +44,7 @@ public class HealthImportPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "isAvailable", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "requestAuthorization", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "fetchSamples", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "fetchProfile", returnType: CAPPluginReturnPromise),
     ]
 
     private let healthStore = HKHealthStore()
@@ -72,9 +76,21 @@ public class HealthImportPlugin: CAPPlugin, CAPBridgedPlugin {
     private var bodyMassType: HKQuantityType { HKQuantityType.quantityType(forIdentifier: .bodyMass)! }
     private var heartRateType: HKQuantityType { HKQuantityType.quantityType(forIdentifier: .heartRate)! }
     private var sleepType: HKCategoryType { HKCategoryType.categoryType(forIdentifier: .sleepAnalysis)! }
+    private var heightType: HKQuantityType { HKQuantityType.quantityType(forIdentifier: .height)! }
+    private var dateOfBirthType: HKCharacteristicType { HKCharacteristicType.characteristicType(forIdentifier: .dateOfBirth)! }
+    private var biologicalSexType: HKCharacteristicType { HKCharacteristicType.characteristicType(forIdentifier: .biologicalSex)! }
 
+    /*
+     * The three profile types (height, date of birth, biological sex) ride on
+     * the same permission sheet as the workout import — one ask, once. They
+     * exist so onboarding can fill in the form the athlete used to type:
+     * see `fetchProfile` and lib/health/profile-prefill.ts.
+     */
     private var readTypes: Set<HKObjectType> {
-        return [HKObjectType.workoutType(), hrvType, restingHrType, bodyMassType, heartRateType, sleepType]
+        return [
+            HKObjectType.workoutType(), hrvType, restingHrType, bodyMassType, heartRateType, sleepType,
+            heightType, dateOfBirthType, biologicalSexType,
+        ]
     }
 
     // MARK: - Methods
@@ -238,6 +254,69 @@ public class HealthImportPlugin: CAPPlugin, CAPBridgedPlugin {
             ]
             lock.unlock()
             call.resolve(result)
+        }
+    }
+
+    /// The athlete's own details, for onboarding to prefill: date of birth and
+    /// biological sex (characteristics, entered once in the Health app), the
+    /// latest height, weight and resting heart rate samples. Every field is
+    /// null when unset or refused — HealthKit never says which, and the web
+    /// side treats both the same way (leave the field blank).
+    @objc func fetchProfile(_ call: CAPPluginCall) {
+        guard HKHealthStore.isHealthDataAvailable() else {
+            call.reject("Apple Health is not available on this device")
+            return
+        }
+
+        var result: [String: Any] = [
+            "dateOfBirth": NSNull(),
+            "biologicalSex": NSNull(),
+            "heightCm": NSNull(),
+            "weightKg": NSNull(),
+            "restingHr": NSNull(),
+        ]
+
+        if let components = try? healthStore.dateOfBirthComponents(),
+           let year = components.year, let month = components.month, let day = components.day {
+            result["dateOfBirth"] = String(format: "%04d-%02d-%02d", year, month, day)
+        }
+
+        if let sex = try? healthStore.biologicalSex().biologicalSex {
+            switch sex {
+            case .male: result["biologicalSex"] = "male"
+            case .female: result["biologicalSex"] = "female"
+            case .other: result["biologicalSex"] = "other"
+            default: break
+            }
+        }
+
+        let group = DispatchGroup()
+        let lock = NSLock()
+        let descending = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: false)
+        let bpm = HKUnit.count().unitDivided(by: .minute())
+
+        func latest(_ type: HKQuantityType, unit: HKUnit, key: String) {
+            group.enter()
+            let query = HKSampleQuery(sampleType: type, predicate: nil, limit: 1, sortDescriptors: [descending]) { _, samples, _ in
+                if let sample = (samples as? [HKQuantitySample])?.first {
+                    lock.lock()
+                    result[key] = sample.quantity.doubleValue(for: unit)
+                    lock.unlock()
+                }
+                group.leave()
+            }
+            healthStore.execute(query)
+        }
+
+        latest(heightType, unit: .meterUnit(with: .centi), key: "heightCm")
+        latest(bodyMassType, unit: .gramUnit(with: .kilo), key: "weightKg")
+        latest(restingHrType, unit: bpm, key: "restingHr")
+
+        group.notify(queue: .main) {
+            lock.lock()
+            let snapshot = result
+            lock.unlock()
+            call.resolve(snapshot)
         }
     }
 

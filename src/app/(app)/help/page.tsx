@@ -5,6 +5,7 @@ import { ChevronRight, UserRound } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card } from "@/components/ui/card";
+import { ReplayTourButton } from "@/components/tour/replay-tour-button";
 import {
   ACCOUNT_NAV,
   COMMUNITY_NAV,
@@ -77,6 +78,8 @@ export default async function HelpPage() {
           Train, the + button, Plan and Progress. Your account is behind your avatar at the top
           right. On a bigger screen the same things are listed down the left-hand side.
         </p>
+        {/* The thirty-second spotlight tour onboarding offers, replayable from here. */}
+        <ReplayTourButton />
 
         <ul className="space-y-2">
           <NavGuideRow item={home} />

@@ -77,11 +77,17 @@ export async function POST(request: Request) {
     finished onboarding with a score calibrated off two lifts, was told it
     worked, and never learned the third had been discarded.
 
-    It refuses now, and the error names the lift. The shipped form only ever
-    sends lifts the athlete actually filled in (see `filledLifts` in
-    score-reveal.tsx), so nothing that works today starts failing: what changes
-    is only the filled-but-out-of-range case, which is exactly the one that was
-    being thrown away in silence.
+    It refuses now, and the error names the lift. A form posting here should
+    only ever send lifts the athlete actually filled in, so nothing that works
+    starts failing: what changes is only the filled-but-out-of-range case,
+    which is exactly the one that was being thrown away in silence.
+
+    NO LONGER CALLED FROM ONBOARDING. The second onboarding design dropped the
+    post-save calibration screen (and the paywall after it) to get a new
+    athlete into the app in four taps; the first score now comes from the
+    first logged session via the dashboard's first-session guide. The route
+    stays — it is rate-limited, validated and tested — for a future "enter a
+    recent result" surface that is not in the sign-up path.
   */
   const parsed = await parseBody(request, calibrateSchema);
   if (parsed.response) return parsed.response;
