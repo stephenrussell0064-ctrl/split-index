@@ -47,7 +47,7 @@ export const INTRO_SCREENS: readonly IntroScreen[] = [
     id: "start",
     eyebrow: "Ready",
     headline: "Ready when you are.",
-    lines: ["One tap to sign in. The rest can wait."],
+    lines: ["Glad you're here. One tap to sign in, and we'll handle the rest."],
   },
 ];
 
