@@ -46,8 +46,8 @@ export const INTRO_SCREENS: readonly IntroScreen[] = [
   {
     id: "start",
     eyebrow: "Ready",
-    headline: "Nothing to fill in.",
-    lines: ["Continue with Apple and you're in. Your details can wait."],
+    headline: "Ready when you are.",
+    lines: ["One tap to sign in. The rest can wait."],
   },
 ];
 
