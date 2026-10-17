@@ -524,3 +524,33 @@ describe("switching a row to a bodyweight-only lift", () => {
     expect(payload?.exercises?.[0].sets[0]).toMatchObject({ weight_kg: 0, reps: 20 });
   });
 });
+
+describe("restoring a draft that carries a weight under a bodyweight-only lift", () => {
+  it("drops the weight so an old draft cannot resurrect the stale-weight defect", () => {
+    const restored = restoreDraftState("gym", {
+      ...createDefaultState("gym", 78),
+      exercises: [
+        {
+          id: "ex1",
+          name: "Pull Up",
+          muscleGroup: "Back",
+          weightEntryMode: "added",
+          attachment: null,
+          notes: "",
+          sets: [{ id: "s1", weight: "140", reps: "20", rpe: "", repsInReserve: "" }],
+        },
+        {
+          id: "ex2",
+          name: "Bench Press",
+          muscleGroup: "Chest",
+          weightEntryMode: "total",
+          attachment: null,
+          notes: "",
+          sets: [{ id: "s2", weight: "140", reps: "1", rpe: "", repsInReserve: "" }],
+        },
+      ],
+    });
+    expect(restored.exercises[0].sets[0]).toMatchObject({ weight: "", reps: "20" });
+    expect(restored.exercises[1].sets[0]).toMatchObject({ weight: "140", reps: "1" });
+  });
+});

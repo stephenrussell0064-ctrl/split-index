@@ -716,12 +716,17 @@ function ExerciseRow({
    */
   const setScores = useMemo(() => row.sets.map(scoreSet), [row.sets, scoreSet]);
   const engineScore = topSet ? scoreSet(topSet) : null;
-  const oneRm = topSet ? epley1RM(parseNum(topSet.weight), parseNum(topSet.reps)) : null;
+  // The cards read the raw weight string. For a bodyweight-only lift that
+  // string is never shown and must be treated as 0, exactly as scoreSet does
+  // — otherwise a weight left over from a previous exercise (or an old draft)
+  // prints "Est. 1RM 233 kg / 3.0x BW" over twenty bodyweight pull-ups.
+  const oneRm =
+    topSet && !isBodyweightOnly ? epley1RM(parseNum(topSet.weight), parseNum(topSet.reps)) : null;
   const relativeBw =
     oneRm && bodyweight && bodyweight > 0
       ? Math.round((oneRm / bodyweight) * 100) / 100
       : null;
-  const volume = totalVolumeFromSets(row.sets);
+  const volume = isBodyweightOnly ? 0 : totalVolumeFromSets(row.sets);
   const weightUnit = weightEntryLabel(row.weightEntryMode);
 
   const updateSet = (setId: string, patch: Partial<SetRowState>) => {

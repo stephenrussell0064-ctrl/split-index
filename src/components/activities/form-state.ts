@@ -645,12 +645,19 @@ export function restoreDraftState(
     ? (d.exercises as unknown[])
         .filter((row): row is RawExerciseRow => !!row && typeof row === "object")
         .map((row) => {
+          const name = str(row.name, "");
+          // A draft saved before exerciseRowPatchForName cleared weights on an
+          // exercise change can still carry a loaded lift's weight under a
+          // bodyweight-only name. Drop it here so it never reaches the cards,
+          // the next exercise this row is changed to, or (belt and braces with
+          // the submit guard) the payload.
+          const bodyweightOnly = name.trim() !== "" && isBodyweightOnlyExercise(name);
           const rowSets: SetRowState[] = Array.isArray(row.sets)
             ? row.sets
                 .filter((s): s is Record<string, unknown> => !!s && typeof s === "object")
                 .map((s) => ({
                   id: str(s.id, nextSetId()),
-                  weight: str(s.weight, ""),
+                  weight: bodyweightOnly ? "" : str(s.weight, ""),
                   reps: str(s.reps, ""),
                   rpe: str(s.rpe, ""),
                   repsInReserve: str(s.repsInReserve, ""),
@@ -681,7 +688,7 @@ export function restoreDraftState(
             : [
                 {
                   id: nextSetId(),
-                  weight: str(row.weight, ""),
+                  weight: bodyweightOnly ? "" : str(row.weight, ""),
                   reps: str(row.reps, ""),
                   rpe: str(row.rpe, ""),
                   repsInReserve: "",
@@ -690,7 +697,6 @@ export function restoreDraftState(
                 },
               ];
 
-          const name = str(row.name, "");
           return {
             id: str(row.id, nextRowId()),
             name,
