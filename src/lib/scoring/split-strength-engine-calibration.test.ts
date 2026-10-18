@@ -428,7 +428,9 @@ describe("scoreStrength — Strength Level anchor tables (percentile parity)", (
     ["Overhead Press", 62, 81],
     ["Barbell Row", 88, 114],
     ["Lat Pulldown", 85, 108],
-    ["Pec Deck", 89, 119],
+    // Pec Deck left this list on 18 Oct 2026 at the owner's direction ("around
+    // 90 or lower, make it lower than bench"): every anchor x1.24, so their
+    // median now reads ~550. See its table note.
     ["Leg Extension", 103, 140],
     ["Leg Curl", 66, 90],
     // Tricep Pushdown left this list on 18 Oct 2026: like its single-arm

@@ -588,7 +588,26 @@ const WEIGHT_RATIO_ANCHOR_TABLES: Partial<Record<string, WeightAnchor[]>> = {
 
   // --- machines and cables (total load on the stack / sled) ---------------
   latPulldown: slTable([47, 64, 85, 108, 133]),
-  pecDeck: slTable([42, 63, 89, 119, 152]),
+  /**
+   * Pec deck, 18 Oct 2026 — the owner's call, after the tapered tail above
+   * Elite had already taken 130 x 8 from 999 to 964: "pec deck should be
+   * around 90 or lower, make it lower than bench." Strength Level's own
+   * machine-fly standards (42/63/89/119/152 at 80 kg) put that set — a 160 kg
+   * single — past their Elite line, so on parity it can only read in the
+   * high 90s and above the owner's 140 kg bench (935). Every anchor is
+   * therefore scaled x1.24 (-> 52/78/110/148/188), which lands 130 x 8 at
+   * 888 at 78 kg / age 30 and keeps the curve's shape. Measured: 80 x 10 ->
+   * 638, 100 x 10 -> 785, 120 x 8 -> 857, 130 x 8 -> 888 (915 at age 45,
+   * still under the bench's 956 there).
+   *
+   * Like the pushdowns and bench, this is no longer a percentile mapping; a
+   * pec deck tier label now understates the athlete's standing against
+   * Strength Level's population rather than overstating it. The machine is
+   * the likely reason the parity number felt wrong: a selectorised fly
+   * stack is not the same load as a plate-loaded one, and the population
+   * table averages over both.
+   */
+  pecDeck: slTable([52, 78, 110, 148, 188]),
   legExtension: slTable([48, 72, 103, 140, 180]),
   legCurl: slTable([30, 46, 66, 90, 116]),
   calfRaise: slTable([49, 88, 141, 207, 282]),

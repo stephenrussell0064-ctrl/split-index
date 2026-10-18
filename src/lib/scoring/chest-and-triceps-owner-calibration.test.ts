@@ -35,12 +35,13 @@ function scoreLogged(exerciseName: string, loggedWeightKg: number, reps: number,
 }
 
 describe("above the top anchor the curve tapers instead of running to 999", () => {
-  it("pec deck 130 x 8 reads in the mid 960s at age 30, not 984 — and never 999 with age credit", () => {
-    const peak = scoreLogged("Pec Deck", 130, 8);
+  it("a lift a third of a step past Elite reads in the 960s, not 984, and never 999 with age credit", () => {
+    // Lat pulldown 145 kg at 83 kg: 12 kg past the 133 kg Elite anchor.
+    const peak = scoreLogged("Lat Pulldown", 145, 1, 30, 83);
     expect(peak.score).toBeGreaterThanOrEqual(955);
     expect(peak.score).toBeLessThanOrEqual(972);
     for (const age of [40, 45, 50, 60]) {
-      expect(scoreLogged("Pec Deck", 130, 8, age).score, `age ${age}`).toBeLessThan(999);
+      expect(scoreLogged("Lat Pulldown", 145, 1, age, 83).score, `age ${age}`).toBeLessThan(999);
     }
   });
 
@@ -54,7 +55,30 @@ describe("above the top anchor the curve tapers instead of running to 999", () =
     // Bench at 83 kg: Advanced 118, Elite 151, so two steps past is 217 kg.
     // The tail reaches 999 only by rounding, more than four steps out.
     expect(scoreLogged("Bench Press", 217, 1, 30, 83).score).toBeLessThan(999);
-    expect(scoreLogged("Pec Deck", 218, 1, 30, 83).score).toBeLessThan(999);
+    // Pec deck at 83 kg: Advanced 148, Elite 188, so two steps past is 268 kg.
+    expect(scoreLogged("Pec Deck", 268, 1, 30, 83).score).toBeLessThan(999);
+  });
+});
+
+describe("pec deck — the reported 130 x 8 = 99.9 case, re-dictated to ~90", () => {
+  it("reads around 89 at 78 kg", () => {
+    const result = scoreLogged("Pec Deck", 130, 8);
+    expect(result.score).toBeGreaterThanOrEqual(880);
+    expect(result.score).toBeLessThanOrEqual(900);
+  });
+
+  it("reads below the owner's bench, at every age", () => {
+    for (const age of [null, 30, 40, 50]) {
+      expect(scoreLogged("Pec Deck", 130, 8, age).score, `age ${age}`).toBeLessThan(
+        scoreLogged("Bench Press", 140, 1, age).score
+      );
+    }
+  });
+
+  it("kept the curve's shape: an ordinary 80 x 10 is a Semi-Pro set, not a Beginner one", () => {
+    const score = scoreLogged("Pec Deck", 80, 10).score;
+    expect(score).toBeGreaterThanOrEqual(620);
+    expect(score).toBeLessThanOrEqual(670);
   });
 
   it("still rises past the anchor — the tail is a taper, not a clamp", () => {
