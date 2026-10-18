@@ -26,6 +26,23 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { weekOffset, weeksMatchStoredRows, type StoredSessionKeyRow } from "./plan-continuity";
+
+/** JSON with keys sorted at every level and `undefined` members dropped — what JSONB gives back, from either side. */
+export function canonical(value: unknown): string {
+  const sortKeys = (v: unknown): unknown => {
+    if (Array.isArray(v)) return v.map(sortKeys);
+    if (v && typeof v === "object") {
+      return Object.fromEntries(
+        Object.entries(v as Record<string, unknown>)
+          .filter(([, x]) => x !== undefined)
+          .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+          .map(([k, x]) => [k, sortKeys(x)])
+      );
+    }
+    return v;
+  };
+  return JSON.stringify(sortKeys(value));
+}
 import { DIAGNOSTIC_RERUN_WEEKS, EMPHASIS_KEYS, type EmphasisKey } from "./constants";
 import { compareEmphasis, type EmphasisDrift } from "./progression";
 import { HYBRID_BASELINE_FINDING } from "./session-set";
@@ -292,13 +309,22 @@ export async function savePlan(
     .limit(1)
     .maybeSingle();
 
-  const sameInputs =
+  /*
+    Compared CANONICALLY. `JSON.stringify` of a JSONB column round-trips with
+    its keys in the database's order and its `undefined` members gone, so the
+    stored goal never matched the one just built, and the reuse check below
+    never fired — every visit wrote a new block even when the diagnostic row
+    was the same one. Forty-six blocks on one account in a day.
+  */
+  const sameFrame =
     current != null &&
     current.constants_version === args.constantsVersion &&
     current.weeks_out === args.goal.weeksOut &&
-    (current.event_date ?? null) === (args.eventDate ?? null) &&
-    JSON.stringify(current.goal ?? {}) === JSON.stringify(args.goal) &&
-    JSON.stringify(current.constraints ?? {}) === JSON.stringify(args.constraints);
+    (current.event_date ?? null) === (args.eventDate ?? null);
+  const sameInputs =
+    sameFrame &&
+    canonical(current.goal ?? {}) === canonical(args.goal) &&
+    canonical(current.constraints ?? {}) === canonical(args.constraints);
 
   if (sameInputs && current.profile_id === args.profileId) {
     const { count } = await supabase
@@ -325,9 +351,11 @@ export async function savePlan(
     what is already stored, the stored block is returned — with its own
     generated_at, so the athlete keeps advancing through it — provided both
     anchor week one to the same Monday; a block from an earlier calendar
-    week is a different block even when its rows happen to agree.
+    week is a different block even when its rows happen to agree. The goal
+    and constraints are not consulted here: a goal edit that changes no
+    session changed nothing the athlete can see.
   */
-  if (sameInputs && weekOffset(new Date(current.generated_at as string), args.now ?? new Date()) === 0) {
+  if (sameFrame && weekOffset(new Date(current.generated_at as string), args.now ?? new Date()) === 0) {
     const { data: storedRows } = await supabase
       .from("hpe_sessions")
       .select("week, day_of_week, slot, kind, minutes, distance_km, prescription")

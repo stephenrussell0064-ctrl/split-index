@@ -77,6 +77,24 @@ function args() {
 }
 
 describe("savePlan reuses a block whose rows did not change", () => {
+  it("matches a goal the database handed back with its keys reordered and its undefined members gone", async () => {
+    const reordered = { ...current, profile_id: "profile-NEW", goal: { priority: 0.5, weeksOut: 5 } };
+    const { supabase, calls } = stub(reordered, []);
+    const result = await savePlan(supabase, "u", {
+      ...args(),
+      goal: { weeksOut: 5, priority: 0.5, targetSquatKg: undefined } as unknown as ReturnType<typeof args>["goal"],
+    });
+    expect(result).toMatchObject({ planId: "plan-old", reused: true });
+    expect(calls.some((c) => c.table === "hpe_plans" && c.op === "insert")).toBe(false);
+  });
+
+  it("reuses on identical rows even when the goal text differs", async () => {
+    const { supabase, calls } = stub({ ...current, goal: { ...goal, priority: 0.6 } }, [matchingRow]);
+    const result = await savePlan(supabase, "u", args());
+    expect(result).toMatchObject({ planId: "plan-old", reused: true });
+    expect(calls.some((c) => c.table === "hpe_plans" && c.op === "insert")).toBe(false);
+  });
+
   it("returns the stored block when the diagnostic was re-stored but every session is the same", async () => {
     const { supabase, calls } = stub(current, [matchingRow]);
     const result = await savePlan(supabase, "u", args());
