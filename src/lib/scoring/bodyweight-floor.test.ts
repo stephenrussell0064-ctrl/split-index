@@ -27,12 +27,12 @@ function bodyweightSet(liftKey: string, reps: number, addedKg = 0) {
 }
 
 /*
-  Pull-ups left the floor on 17 Oct 2026: they are scored off their own anchor
-  table now (PULL_UP_ANCHORS in split-strength-engine.ts), whose bottom row
-  does the floor's job for that lift. The two properties the floor was built
-  to guarantee still hold for them and are pinned in the pull-up block below;
-  the "joins the curve at 120" mechanics are specific to the log path and so
-  specific to push-ups and dips.
+  Pull-ups left the floor on 17 Oct 2026 and dips on 18 Oct: both are scored
+  off their own anchor tables now (PULL_UP_ANCHORS / DIP_ANCHORS in
+  split-strength-engine.ts), whose bottom rows do the floor's job for those
+  lifts. The two properties the floor was built to guarantee still hold for
+  them and are pinned in the first block; the "joins the curve at 120"
+  mechanics are specific to the log path and so, now, to push-ups alone.
 */
 describe.each(["Pull-up", "Push-up", "Dip"])("%s at bodyweight", (lift) => {
   it("is a set, not an absence", () => {
@@ -52,7 +52,7 @@ describe.each(["Pull-up", "Push-up", "Dip"])("%s at bodyweight", (lift) => {
   });
 });
 
-describe.each(["Push-up", "Dip"])("%s at bodyweight (log path)", (lift) => {
+describe.each(["Push-up"])("%s at bodyweight (log path)", (lift) => {
   it("joins the main curve without a step", () => {
     // The floor only replaces scores below 120; the join must not be a jump.
     const below = bodyweightSet(lift, 5).score;
@@ -65,11 +65,12 @@ describe.each(["Push-up", "Dip"])("%s at bodyweight (log path)", (lift) => {
 describe("the floor is a floor, not a recalibration", () => {
   it("leaves weighted work exactly where it was", () => {
     // Above the floor nothing may change: these are the numbers the engine
-    // produced before it existed. Pinned on dips since 17 Oct 2026 — pull-ups
-    // moved to their own table that day and no longer go through the floor.
-    expect(bodyweightSet("Dip", 3, 20).score).toBe(358);
-    expect(bodyweightSet("Dip", 3, 40).score).toBe(583);
-    expect(bodyweightSet("Dip", 3, 60).score).toBe(723);
+    // produced before it existed. Pinned on push-ups since 18 Oct 2026 —
+    // pull-ups (17 Oct) and dips (18 Oct) moved to their own tables and no
+    // longer go through the floor.
+    expect(bodyweightSet("Push-up", 3, 20).score).toBe(500);
+    expect(bodyweightSet("Push-up", 3, 40).score).toBe(737);
+    expect(bodyweightSet("Push-up", 3, 60).score).toBe(882);
   });
 
   it("never lets a bodyweight-only set reach a serious tier", () => {
@@ -78,7 +79,9 @@ describe("the floor is a floor, not a recalibration", () => {
     expect(bodyweightSet("Pull-up", 1).tier).toBe("Beginner");
     expect(bodyweightSet("Pull-up", 1).score).toBeLessThanOrEqual(120);
     expect(bodyweightSet("Dip", 1).tier).toBe("Beginner");
-    expect(bodyweightSet("Dip", 1).score).toBeLessThan(120);
+    expect(bodyweightSet("Dip", 1).score).toBeLessThanOrEqual(120);
+    expect(bodyweightSet("Push-up", 1).tier).toBe("Beginner");
+    expect(bodyweightSet("Push-up", 1).score).toBeLessThan(120);
   });
 
   it("keeps a pull-up above a push-up at the same rep count", () => {

@@ -292,6 +292,9 @@ const PRIMARY_ANCHORS: Record<string, LiftAnchor> = {
   // addedKg=0 correctly (see the fix note on that function).
   weightedPullup: { anchorRatio: 0.3327, category: "back", bodyPart: "pull" },
   pullUp: { anchorRatio: 0.3327, category: "back", bodyPart: "pull" },
+  // Pull-ups (17 Oct 2026) and dips (18 Oct) are scored through their own
+  // tables in WEIGHT_RATIO_ANCHOR_TABLES now; these anchorRatios are the
+  // fallback reference only, like bench's.
   weightedDips: { anchorRatio: 0.4731, category: "chest", bodyPart: "upperBody" },
   dip: { anchorRatio: 0.4731, category: "chest", bodyPart: "upperBody" },
   pushUp: { anchorRatio: 0.303, category: "chest", bodyPart: "upperBody" },
@@ -486,6 +489,29 @@ const PULL_UP_ANCHORS: WeightAnchor[] = [
   [1.222, 990],
 ];
 
+/**
+ * Dips, 18 Oct 2026 (owner: "weighted dips are too low scoring as well").
+ *
+ * Dips were still on the single-anchor log formula while their pull-up twin
+ * had moved to the owner's table the day before, so +30 kg x 8 read 629 on
+ * the dip and 905 on the pull-up. The two movements are not that far apart,
+ * and Strength Level says exactly how far: at 80 kg their dip standards are
+ * +5/+26/+52/+81/+111 kg of added load against +(-2)/+14/+33/+54/+75 for
+ * pull-ups — about 1.5x at every level from Intermediate up. So the dip table
+ * is the pull-up table with every added-load ratio multiplied by 1.5, which
+ * keeps the owner's calibration of the pull-up and reads the dip against it
+ * with the published relationship. Shared by Dip and Weighted Dips, as the
+ * pull-up twins share theirs.
+ *
+ * Measured at the owner's 78 kg: +30 kg x 8  629 -> 758; +40 kg x 8  -> 837;
+ * twenty bodyweight dips -> 729 (twenty pull-ups read 891 — a dip is the
+ * easier rep, so that ordering is right).
+ */
+const DIP_TO_PULL_UP_LOAD = 1.5;
+const DIP_ANCHORS: WeightAnchor[] = PULL_UP_ANCHORS.map(
+  ([ratio, score]) => [ratio * DIP_TO_PULL_UP_LOAD, score] as WeightAnchor
+);
+
 const WEIGHT_RATIO_ANCHOR_TABLES: Partial<Record<string, WeightAnchor[]>> = {
   /*
    * The bottom three anchors eased, 22 Sep 2026, the top two left alone.
@@ -566,7 +592,21 @@ const WEIGHT_RATIO_ANCHOR_TABLES: Partial<Record<string, WeightAnchor[]>> = {
   legExtension: slTable([48, 72, 103, 140, 180]),
   legCurl: slTable([30, 46, 66, 90, 116]),
   calfRaise: slTable([49, 88, 141, 207, 282]),
-  tricepPushdown: slTable([22, 36, 56, 80, 107]),
+  /**
+   * Two-arm pushdown, 18 Oct 2026 (owner: "tricep pushdowns are way too low
+   * scoring, 45kg for 8 now scores 64.3"). 64 IS Strength Level's median —
+   * their 80 kg standards are 22/36/56/80/107 and a 45 x 8 set implies a 56 kg
+   * single — so this is the same call the owner already made for the
+   * single-arm version below: the pushdown is scored on their dictated curve,
+   * not on percentile parity. The single-arm table was built as 55% of the
+   * two-arm standard before it was re-dictated; dividing it back out by that
+   * same 0.55 puts the two arms on one curve, so a load split across two
+   * hands scores what it scores in one. Measured at 78 kg: 30 x 10 -> 716,
+   * 45 x 8 -> 853, 60 x 10 -> 910 (the set that once pinned 999 still does
+   * not). Like the single-arm table, these are NOT percentile boundaries —
+   * see that table's note for the cost.
+   */
+  tricepPushdown: slTable([13.1, 21.8, 33.5, 55.3, 98.9]),
   /**
    * Leg press — the 7.2x overshoot the iso-lateral pass documented and left.
    * With no anchor and no alias it fell to DEFAULT_GENERIC_ANCHOR, so an
@@ -645,6 +685,8 @@ const WEIGHT_RATIO_ANCHOR_TABLES: Partial<Record<string, WeightAnchor[]>> = {
   // --- pull-ups: a table in ADDED-load ratio, dictated by the owner --------
   pullUp: PULL_UP_ANCHORS,
   weightedPullup: PULL_UP_ANCHORS,
+  dip: DIP_ANCHORS,
+  weightedDips: DIP_ANCHORS,
 };
 
 const ACCESSORY_MAP: Record<string, LiftAnchor> = {
@@ -1490,9 +1532,31 @@ function interpolateWeightAnchors(anchors: WeightAnchor[], ratio: number): numbe
     return Math.max(0, first[1] + slope * (ratio - first[0]));
   }
   if (ratio >= last[0]) {
+    /*
+      ABOVE THE TOP ANCHOR THE TABLE HAS NOTHING MORE TO SAY.
+
+      This used to continue the last segment's slope to 999. The last segment
+      is Advanced -> Elite (80th -> 95th percentile, 850 -> 950), so a lift a
+      few percent past the Elite anchor earned the whole of the remaining
+      scale: pec deck 130 kg x 8 — a 160 kg single against a 152 kg Elite
+      anchor — read 984 at age 30 and pinned 999 with any age credit at all
+      (owner, 18 Oct 2026: "my 130 for 8 scores 99.9 and this is not right").
+
+      The cardio tables settled this already: 999 is reserved for a record,
+      and the curve approaches it rather than running into it. A strength
+      table has no record anchor, so the rule is the shape alone: the
+      remaining headroom above the top anchor is approached asymptotically,
+      with one more Advanced-to-Elite step above Elite earning 63% of it
+      (1 - 1/e). Being as far past Elite as Elite is past Advanced therefore
+      reads ~981, not 999, and the rounded score reaches 999 only more than
+      four such steps out — a lift of genuine record class, not a heavy
+      working set on a machine.
+    */
     const prev = sorted[sorted.length - 2] ?? last;
-    const slope = last[0] === prev[0] ? 0 : (last[1] - prev[1]) / (last[0] - prev[0]);
-    return Math.min(999, last[1] + slope * (ratio - last[0]));
+    const step = last[0] - prev[0];
+    if (step <= 0) return last[1];
+    const headroom = MAX_SCORE - last[1];
+    return last[1] + headroom * (1 - Math.exp(-(ratio - last[0]) / step));
   }
   for (let i = 0; i < sorted.length - 1; i++) {
     const [x0, y0] = sorted[i];
@@ -1517,9 +1581,15 @@ function inverseInterpolateWeightAnchors(anchors: WeightAnchor[], targetScore: n
     return first[0] + slope * (targetScore - first[1]);
   }
   if (targetScore >= last[1]) {
+    // Inverse of the asymptotic tail above. 999 itself is unreachable, so a
+    // target at the ceiling is answered with the ratio for all but the last
+    // tenth of a point of it.
     const prev = sorted[sorted.length - 2] ?? last;
-    const slope = last[1] === prev[1] ? 0 : (last[0] - prev[0]) / (last[1] - prev[1]);
-    return last[0] + slope * (targetScore - last[1]);
+    const step = last[0] - prev[0];
+    const headroom = MAX_SCORE - last[1];
+    if (step <= 0 || headroom <= 0) return last[0];
+    const fraction = Math.min((targetScore - last[1]) / headroom, 1 - 0.1 / headroom);
+    return last[0] - step * Math.log(1 - fraction);
   }
   for (let i = 0; i < sorted.length - 1; i++) {
     const [x0, y0] = sorted[i];

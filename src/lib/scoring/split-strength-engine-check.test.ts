@@ -100,7 +100,9 @@ const ANCHOR_FIXTURES: Array<{
   { lift: "inclineDbPress", kg: 55, score: 322, tier: "Intermediate", note: "TOTAL load: between 44kg(150) and 58kg(400) — 27.5kg per hand" },
   { lift: "flatDbPress", kg: 50, score: 300, tier: "Intermediate", note: "TOTAL load: between 38kg(150) and 56kg(400) — 25kg per hand" },
   { lift: "machineChestPress", kg: 120, score: 765, tier: "Advanced", note: "log curve, no published table" },
-  { lift: "tricepPushdown", kg: 60, score: 671, tier: "Semi-Pro", note: "between 56kg(650) and 80kg(850)" },
+  // 671 -> 857 on 18 Oct 2026: the two-arm pushdown joined the single-arm
+  // one on the owner's dictated curve (its table note has the derivation).
+  { lift: "tricepPushdown", kg: 60, score: 857, tier: "Elite", note: "owner-dictated curve, between 55.3kg(850) and 98.9kg(950)" },
   { lift: "dbShoulderPress", kg: 40, score: 311, tier: "Intermediate", note: "TOTAL load: between 30kg(150) and 44kg(400) — 20kg per hand" },
   { lift: "lateralRaise", kg: 22, score: 771, tier: "Advanced", note: "PER HAND: between 16kg(650) and 25kg(850)" },
   { lift: "dbRow", kg: 67, score: 720, tier: "Semi-Pro", note: "log curve, aliases too mixed to table" },
@@ -109,7 +111,10 @@ const ANCHOR_FIXTURES: Array<{
   // curl too low scoring, needs a buff". Safe to hand-tune precisely because
   // there is no published table behind it, unlike dbCurl and latPulldown.
   { lift: "preacherCurl", kg: 65, score: 834, tier: "Advanced", note: "log curve, no published table" },
-  { lift: "latPulldown", kg: 145, score: 984, tier: "World Class", note: "ABOVE the 133kg 95th-percentile anchor" },
+  // 984 -> 964 on 18 Oct 2026: above the top anchor the curve now approaches
+  // 999 asymptotically instead of continuing the Advanced->Elite slope into it
+  // (see interpolateWeightAnchors). 12 kg past Elite is a third of a step.
+  { lift: "latPulldown", kg: 145, score: 964, tier: "World Class", note: "ABOVE the 133kg 95th-percentile anchor, on the tapered tail" },
   { lift: "legExtension", kg: 150, score: 866, tier: "Elite", note: "between 140kg(850) and 180kg(950)" },
   { lift: "bulgarianSplit", kg: 55, score: 387, tier: "Intermediate", note: "log curve, no published table" },
 ];

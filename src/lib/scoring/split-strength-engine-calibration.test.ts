@@ -378,15 +378,16 @@ describe("ageFactor — Foster junior coefficients", () => {
   // factor rather than on `age > 35`.
   //
   // 893/909 -> 941/959 on 17 Oct 2026, when every bench anchor was scaled
-  // x0.89 (see the table's note). The credit grew from +16 to +18 because the
-  // junior lift now sits past the 950 anchor, on the shallower extrapolated
-  // tail, where the same 4% ratio credit is worth a few more points.
-  it("APPLIES the junior credit — the reported lift moves 941 -> 959, and 'age-factor-beta' is flagged", () => {
+  // x0.89 (see the table's note), then 959 -> 954 on 18 Oct when the tail
+  // above the top anchor became asymptotic: the junior lift sits just past
+  // the 950 anchor, where the 4% ratio credit is now worth +13 rather than
+  // +18. The gate is still on the factor, which is what this pins.
+  it("APPLIES the junior credit — the reported lift moves 941 -> 954, and 'age-factor-beta' is flagged", () => {
     const junior = bench140(19);
     const peak = bench140(30);
     expect(peak.score).toBe(941);
-    expect(junior.score).toBe(959);
-    expect(junior.score - peak.score).toBe(18);
+    expect(junior.score).toBe(954);
+    expect(junior.score - peak.score).toBe(13);
     expect(junior.flags).toContain("age-factor-beta");
     expect(junior.appliedFactors.some((f) => f.startsWith("age:19"))).toBe(true);
   });
@@ -430,7 +431,9 @@ describe("scoreStrength — Strength Level anchor tables (percentile parity)", (
     ["Pec Deck", 89, 119],
     ["Leg Extension", 103, 140],
     ["Leg Curl", 66, 90],
-    ["Tricep Pushdown", 56, 80],
+    // Tricep Pushdown left this list on 18 Oct 2026: like its single-arm
+    // twin it is on the owner's dictated curve now, not percentile parity
+    // (56 kg reads ~852, not 650). See its table note.
     ["Leg Press", 230, 309],
     ["Hack Squat", 152, 213],
     ["Hip Thrust", 149, 213],
