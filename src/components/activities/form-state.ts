@@ -1758,10 +1758,12 @@ export function validateAndBuildPayload(
     exercises,
     bodyweight_kg: bodyweight,
     exercise_notes: exerciseNotes,
-    // Both only for a gym session that was opened from a prescription or
-    // filled from history; a hand-typed session carries neither key, so the
-    // request body is byte-identical to what it was before phase 2.
-    ...(sport === "gym" && state.hpeSessionId ? { hpe_session_id: state.hpeSessionId } : {}),
+    // Only for a session opened from a prescription or filled from history; a
+    // hand-typed session carries neither key, so the request body is
+    // byte-identical to what it was before phase 2. The link is for any sport
+    // — a run opened from the plan's long run is as much the plan's as a lift
+    // is — while the set counts only mean something for a lift.
+    ...(state.hpeSessionId ? { hpe_session_id: state.hpeSessionId } : {}),
     ...(sport === "gym"
       ? (() => {
           const summary = prescribedSetsSummary(state);

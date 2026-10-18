@@ -22,6 +22,7 @@ import {
   isBodyweightMovement,
 } from "@/lib/scoring/hpe/prescribed-sets";
 import { KIND_LABEL } from "@/components/hybrid-plan/plan-calendar";
+import { prescribedEnduranceFields } from "@/lib/scoring/hpe/prescribed-endurance";
 import type { LoggingEntry, SportType } from "@/types";
 import type { ExerciseRowState, WorkoutFormState } from "@/components/activities/form-state";
 
@@ -78,7 +79,7 @@ export function prescribedExerciseRows(prescriptionText: string): ExerciseRowSta
 }
 
 export async function loadLogPage({
-  sport,
+  sport: requestedSport,
   zoneMode,
   enduranceOnly,
   searchParams,
@@ -111,11 +112,51 @@ export async function loadLogPage({
 
   if (!profile?.onboarding_completed) redirect("/onboarding");
   let initialRepeatState: WorkoutFormState | undefined;
+  // A cardio prescription picks the sport itself — the plan's swim opens the
+  // swim form, not whichever sport the zone defaulted to.
+  let sport = requestedSport;
   // Which door the form is opened by, stored with the save so the
   // logging-effort measurement can compare them.
   let entry: LoggingEntry = "typed";
 
-  if (params.hpeSession && zoneMode === "gym") {
+  if (params.hpeSession && zoneMode === "cardio") {
+    /*
+      hpeSession=<id> on the cardio form: the plan's run, ride, row or swim
+      with its sport, distance, time and session type already filled in. The
+      same ownership check as the lift path below; a session that is not the
+      athlete's, or not an endurance session, falls through to a blank form.
+    */
+    const { data: hpeSession } = await supabase
+      .from("hpe_sessions")
+      .select("id, kind, domain, prescription, minutes, distance_km, hpe_plans!inner(user_id)")
+      .eq("id", params.hpeSession)
+      .maybeSingle();
+    const owner = (hpeSession as { hpe_plans?: { user_id?: string } } | null)?.hpe_plans?.user_id;
+    if (hpeSession && owner === user.id && hpeSession.domain === "endurance") {
+      const fields = prescribedEnduranceFields({
+        id: hpeSession.id as string,
+        kind: hpeSession.kind as string,
+        prescription: (hpeSession.prescription as string | null) ?? "",
+        minutes: hpeSession.minutes != null ? Number(hpeSession.minutes) : null,
+        distanceKm: hpeSession.distance_km != null ? Number(hpeSession.distance_km) : null,
+      });
+      if (fields) {
+        const base = createDefaultState(fields.sport, profile.weight_kg);
+        entry = "prescribed_form";
+        sport = fields.sport;
+        initialRepeatState = {
+          ...base,
+          title: fields.title,
+          sessionType: fields.sessionType,
+          distance: fields.distance,
+          hours: fields.hours,
+          minutes: fields.minutes,
+          seconds: fields.seconds,
+          hpeSessionId: hpeSession.id as string,
+        };
+      }
+    }
+  } else if (params.hpeSession && zoneMode === "gym") {
     /*
       hpeSession=<id> → the form, filled from a Hybrid Plan prescription.
 

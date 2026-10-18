@@ -35,6 +35,7 @@ import {
   type HistorySession,
 } from "@/lib/scoring/cardio/race-prediction";
 import { isEnduranceSport } from "@/lib/scoring/engine";
+import { enduranceMetPrescription } from "@/lib/scoring/hpe/prescribed-endurance";
 import { hasPaidAccess } from "@/lib/retention/trial";
 import { serializeScoreBreakdown } from "@/lib/scoring/presentation";
 import { canAccessProfile } from "@/lib/premium/features";
@@ -157,18 +158,35 @@ async function failAndRollback(
  * session and mark their plan done. A session that is not theirs gets the
  * same answer as one that does not exist.
  */
-async function ownsHpeSession(
+/** The prescribed session a log claims to be, if it is this athlete's. Null for anyone else's, or none. */
+interface OwnedHpeSession {
+  id: string;
+  domain: "endurance" | "strength";
+  minutes: number | null;
+  distanceKm: number | null;
+}
+
+async function ownedHpeSession(
   supabase: SupabaseServerClient,
   userId: string,
   sessionId: string
-): Promise<boolean> {
+): Promise<OwnedHpeSession | null> {
   const { data } = await supabase
     .from("hpe_sessions")
-    .select("id, hpe_plans!inner(user_id)")
+    .select("id, domain, minutes, distance_km, hpe_plans!inner(user_id)")
     .eq("id", sessionId)
     .maybeSingle();
-  const owner = (data as { hpe_plans?: { user_id?: string } } | null)?.hpe_plans?.user_id;
-  return !!data && owner === userId;
+  const row = data as
+    | { id: string; domain?: string; minutes?: unknown; distance_km?: unknown; hpe_plans?: { user_id?: string } }
+    | null;
+  if (!row || row.hpe_plans?.user_id !== userId) return null;
+  const num = (v: unknown) => (v == null ? null : Number.isFinite(Number(v)) ? Number(v) : null);
+  return {
+    id: row.id,
+    domain: row.domain === "endurance" ? "endurance" : "strength",
+    minutes: num(row.minutes),
+    distanceKm: num(row.distance_km),
+  };
 }
 
 /**
@@ -206,6 +224,37 @@ async function recordPrescribedSessionDone(
   );
   if (error) {
     console.error("[activities] could not record plan feedback for session", sessionId, error.message);
+  }
+}
+
+/**
+ * The endurance counterpart. A run has no sets to count as accepted or
+ * edited; what it has is a distance and a time, and the prescription had
+ * one or both. `enduranceMetPrescription` compares them — nine-tenths of the
+ * prescribed distance (or time, when no distance was given) is the session
+ * done — and says nothing when the prescription had nothing to measure
+ * against. Same conflict rule as the lifts: the athlete's own answer stands.
+ */
+async function recordPrescribedEnduranceDone(
+  supabase: SupabaseServerClient,
+  userId: string,
+  session: OwnedHpeSession,
+  logged: { distanceMeters: number | null | undefined; durationSeconds: number }
+) {
+  const met = enduranceMetPrescription(session, logged);
+  if (met == null) return;
+  const { error } = await supabase.from("hpe_session_feedback").upsert(
+    {
+      user_id: userId,
+      session_id: session.id,
+      completed: true,
+      met_prescription: met,
+      logged_at: new Date().toISOString(),
+    },
+    { onConflict: "session_id", ignoreDuplicates: true }
+  );
+  if (error) {
+    console.error("[activities] could not record plan feedback for session", session.id, error.message);
   }
 }
 
@@ -284,8 +333,12 @@ export async function POST(request: Request) {
   }
 
   // Checked before anything is written, so a bad id costs nothing to unwind.
-  const hpeSessionId = body.sport === "gym" ? body.hpe_session_id ?? null : null;
-  if (hpeSessionId && !(await ownsHpeSession(supabase, user.id, hpeSessionId))) {
+  // Any sport may carry the link now. It was gym-only, so a run logged from
+  // the plan's own long run arrived here, had its session id dropped, and
+  // could never be shown as done.
+  const hpeSessionId = body.hpe_session_id ?? null;
+  const hpeSession = hpeSessionId ? await ownedHpeSession(supabase, user.id, hpeSessionId) : null;
+  if (hpeSessionId && !hpeSession) {
     return NextResponse.json({ error: "Session not found" }, { status: 404 });
   }
 
@@ -548,8 +601,13 @@ export async function POST(request: Request) {
     }
   }
 
-  if (hpeSessionId) {
-    await recordPrescribedSessionDone(supabase, user.id, hpeSessionId, body.prescribed_sets);
+  if (hpeSession && hpeSession.domain === "strength") {
+    await recordPrescribedSessionDone(supabase, user.id, hpeSession.id, body.prescribed_sets);
+  } else if (hpeSession) {
+    await recordPrescribedEnduranceDone(supabase, user.id, hpeSession, {
+      distanceMeters: body.distance_meters,
+      durationSeconds: body.duration_seconds,
+    });
   }
 
   const enduranceIndices =

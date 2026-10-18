@@ -771,6 +771,71 @@ describe("POST /api/activities — a session logged from a Hybrid Plan prescript
     expect(calls.filter((c) => c.table === "hpe_session_feedback")).toHaveLength(0);
   });
 
+  function runBody(overrides: Record<string, unknown> = {}) {
+    return {
+      sport: "running",
+      title: "Long run",
+      started_at: "2026-01-05T08:00:00.000Z",
+      duration_seconds: 2880,
+      distance_meters: 8100,
+      avg_heart_rate: 150,
+      session_type: "long",
+      hpe_session_id: SESSION_ID,
+      ...overrides,
+    };
+  }
+
+  function ownedRunSession(): Record<string, QueryResult> {
+    return {
+      ...happyPathResults(),
+      "activities:insert": { data: { ...ACTIVITY_ROW, sport: "running" }, error: null },
+      "hpe_sessions:select": {
+        data: { id: SESSION_ID, domain: "endurance", minutes: 48, distance_km: 8.1, hpe_plans: { user_id: USER_ID } },
+        error: null,
+      },
+    };
+  }
+
+  it("keeps the link on a run — the session id used to be dropped for every sport but gym", async () => {
+    const { response, calls } = await postWith(ownedRunSession(), runBody());
+    expect(response.status).toBe(200);
+    const row = activityInsert(calls)[0].payload as Record<string, unknown>;
+    expect(row.hpe_session_id).toBe(SESSION_ID);
+    expect(row.metadata as Record<string, unknown>).not.toHaveProperty("prescribed_sets");
+  });
+
+  it("records a run that covered the prescribed distance as done and met", async () => {
+    const { calls } = await postWith(ownedRunSession(), runBody({ distance_meters: 7500 }));
+    const feedback = calls.filter((c) => c.table === "hpe_session_feedback" && c.op === "upsert");
+    expect(feedback).toHaveLength(1);
+    expect(feedback[0].payload).toMatchObject({ session_id: SESSION_ID, completed: true, met_prescription: true });
+  });
+
+  it("records a run well short of the prescription as done but not met", async () => {
+    const { calls } = await postWith(ownedRunSession(), runBody({ distance_meters: 4000, duration_seconds: 1400 }));
+    const feedback = calls.filter((c) => c.table === "hpe_session_feedback" && c.op === "upsert");
+    expect(feedback).toHaveLength(1);
+    expect(feedback[0].payload).toMatchObject({ completed: true, met_prescription: false });
+  });
+
+  it("leaves the feedback to the athlete when the run was logged without a distance", async () => {
+    const { response, calls } = await postWith(ownedRunSession(), runBody({ distance_meters: undefined }));
+    expect(response.status).toBe(200);
+    expect(calls.filter((c) => c.table === "hpe_session_feedback")).toHaveLength(0);
+  });
+
+  it("refuses a run against someone else's session, before writing anything", async () => {
+    const { response, calls } = await postWith(
+      {
+        ...ownedRunSession(),
+        "hpe_sessions:select": { data: { id: SESSION_ID, domain: "endurance", hpe_plans: { user_id: "someone-else" } }, error: null },
+      },
+      runBody()
+    );
+    expect(response.status).toBe(404);
+    expect(activityInsert(calls)).toHaveLength(0);
+  });
+
   it("sends neither key for a session logged by hand", async () => {
     const { calls } = await postWith(happyPathResults(), gymSessionBody());
     const row = activityInsert(calls)[0].payload as Record<string, unknown>;

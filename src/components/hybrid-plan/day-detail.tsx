@@ -188,14 +188,18 @@ function SessionBlock({
         run went is noise, and a control that is mostly noise stops being read.
       */}
       {/*
-        A lift, once its day has arrived, can be logged from here: one tap for
-        a session done as written, or the form with every set already filled
-        for one that differed. Endurance sessions keep the GPS run and the
-        cardio log; nothing here is for them.
+        A session, once its day has arrived, can be logged from here. A lift:
+        one tap for a session done as written, or the Lab with every set
+        already filled for one that differed. A run, ride, row or swim: the
+        cardio log with the sport, distance and time already filled — there is
+        no one-tap, because an endurance session is what was actually covered
+        in what time, and that is the athlete's to type. Both carry the plan
+        link, so the card shows the session as done.
       */}
-      {offsetDays <= 0 && !isEndurance && session.sessionId && (
+      {offsetDays <= 0 && session.sessionId && (
         <LogPrescribedControl
           sessionId={session.sessionId}
+          domain={session.domain}
           prescriptionText={session.prescription}
           title={sessionTitle(session)}
           sessionDate={date}

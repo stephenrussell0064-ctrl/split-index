@@ -112,6 +112,7 @@ export function prescribedStartedAt(sessionDate: Date, offsetDays: number): Date
 
 export function LogPrescribedControl({
   sessionId,
+  domain = "strength",
   prescriptionText,
   title,
   sessionDate,
@@ -122,6 +123,8 @@ export function LogPrescribedControl({
   className,
 }: {
   sessionId: string;
+  /** Strength opens the Lab and may log in one tap; endurance opens the cardio log, filled in. */
+  domain?: "endurance" | "strength";
   prescriptionText: string;
   title: string;
   sessionDate: Date;
@@ -135,14 +138,24 @@ export function LogPrescribedControl({
   const [phase, setPhase] = useState<Phase>("idle");
   const [message, setMessage] = useState<string | null>(null);
 
-  const exercises = parsePrescribedExercises(prescriptionText);
-  const oneTap = canLogAsPrescribed(exercises);
-  const formHref = `/gym/log?hpeSession=${encodeURIComponent(sessionId)}`;
+  const isEndurance = domain === "endurance";
+  const exercises = isEndurance ? [] : parsePrescribedExercises(prescriptionText);
+  const oneTap = !isEndurance && canLogAsPrescribed(exercises);
+  const formHref = isEndurance
+    ? `/cardio/log?hpeSession=${encodeURIComponent(sessionId)}`
+    : `/gym/log?hpeSession=${encodeURIComponent(sessionId)}`;
 
   if (activityId) {
     return (
       <div className={cn("mt-4 flex flex-wrap items-center gap-2", className)}>
-        <span className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border border-gym-accent/30 bg-gym-accent/10 px-2.5 text-xs font-medium text-gym-accent">
+        <span
+          className={cn(
+            "inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium",
+            isEndurance
+              ? "border-cardio-accent/30 bg-cardio-accent/10 text-cardio-accent"
+              : "border-gym-accent/30 bg-gym-accent/10 text-gym-accent"
+          )}
+        >
           <Check className="h-3 w-3" aria-hidden />
           Logged
         </span>
@@ -220,17 +233,21 @@ export function LogPrescribedControl({
             "inline-flex min-h-11 items-center gap-1.5 rounded-xl border px-4 text-sm font-semibold transition-colors",
             oneTap
               ? "border-white/10 text-foreground/90 hover:border-white/20"
-              : "border-gym-accent/40 bg-gym-accent/10 text-gym-accent hover:bg-gym-accent/15"
+              : isEndurance
+                ? "border-cardio-accent/40 bg-cardio-accent/10 text-cardio-accent hover:bg-cardio-accent/15"
+                : "border-gym-accent/40 bg-gym-accent/10 text-gym-accent hover:bg-gym-accent/15"
           )}
         >
           <PenLine className="h-4 w-4" aria-hidden />
-          {oneTap ? "Edit, then log" : "Open in Lab"}
+          {oneTap ? "Edit, then log" : isEndurance ? "Log this session" : "Open in Lab"}
         </Link>
       </div>
       <p className="mt-1.5 text-xs text-muted">
         {oneTap
           ? "One tap logs every set as written. Edit instead if anything differed."
-          : "Some loads need your number — the form opens with the reps filled in."}
+          : isEndurance
+            ? "The log opens with the sport, distance and time filled in from the plan — change them to what you actually did."
+            : "Some loads need your number — the form opens with the reps filled in."}
       </p>
       {phase === "failed" && (
         <p className="mt-1.5 text-xs text-danger">{message ?? "That didn't save. Try again when you have signal."}</p>
