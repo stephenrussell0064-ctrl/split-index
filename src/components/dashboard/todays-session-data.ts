@@ -25,6 +25,8 @@ import type { DailyTrainingPayload } from "@/lib/native/daily-training";
  */
 
 export interface StoredPlacement {
+  /** The `hpe_sessions` row, when the stored plan carries it. */
+  sessionId?: string;
   day: string | null;
   slot: string | null;
   session: {
@@ -36,7 +38,18 @@ export interface StoredPlacement {
     emphasisKey: string;
     prescription: { text: string };
     label?: string;
+    distanceKm?: number | null;
+    paceLoSPerKm?: number | null;
+    paceHiSPerKm?: number | null;
+    hrLo?: number | null;
+    hrHi?: number | null;
   };
+}
+
+/** What has been logged against which session: the activity, and the three-button answer. */
+export interface LoggedState {
+  activityBySession: Record<string, string>;
+  feedbackBySession: Record<string, "hit" | "short" | "missed">;
 }
 
 export interface StoredWeek {
@@ -61,7 +74,7 @@ export interface StoredWeek {
  * engine's own sentence, which is a real prescription rather than a summary of
  * one.
  */
-export function toPlanWeeks(raw: StoredWeek[]): PlanWeekView[] {
+export function toPlanWeeks(raw: StoredWeek[], logged?: LoggedState): PlanWeekView[] {
   return raw.map((w) => ({
     week: w.week,
     phase: w.phase,
@@ -72,6 +85,9 @@ export function toPlanWeeks(raw: StoredWeek[]): PlanWeekView[] {
     notes: w.notes,
     sessions: w.placements.map(
       (p): PlanSessionView => ({
+        sessionId: p.sessionId ?? null,
+        activityId: p.sessionId ? logged?.activityBySession[p.sessionId] ?? null : null,
+        feedback: p.sessionId ? logged?.feedbackBySession[p.sessionId] ?? null : null,
         kind: p.session.kind,
         domain: p.session.domain,
         day: p.day,
@@ -82,6 +98,14 @@ export function toPlanWeeks(raw: StoredWeek[]): PlanWeekView[] {
         emphasisKey: p.session.emphasisKey,
         prescription: p.session.prescription.text,
         label: p.session.label,
+        // Present since the stored plan started carrying them; absent — not
+        // null — on rows that do not, so the widget's detail line falls back
+        // to the prescription's first sentence exactly as before.
+        ...(p.session.distanceKm != null ? { distanceKm: p.session.distanceKm } : {}),
+        ...(p.session.paceLoSPerKm != null ? { paceLoSPerKm: p.session.paceLoSPerKm } : {}),
+        ...(p.session.paceHiSPerKm != null ? { paceHiSPerKm: p.session.paceHiSPerKm } : {}),
+        ...(p.session.hrLo != null ? { hrLo: p.session.hrLo } : {}),
+        ...(p.session.hrHi != null ? { hrHi: p.session.hrHi } : {}),
       })
     ),
   }));
@@ -98,7 +122,17 @@ export async function loadTodaysSessionPayload(
   const stored = await loadLatestStoredPlan(supabase, userId).catch(() => null);
   if (!stored) return null;
 
-  const weeks = toPlanWeeks((stored.weeks ?? []) as StoredWeek[]);
+  const rawWeeks = (stored.weeks ?? []) as StoredWeek[];
+  /*
+    What has been logged against today's sessions. The card used to be built
+    from the stored prescriptions alone, so a long run logged from the plan
+    — "Logged" on the plan screen itself — still read on the dashboard as a
+    session to go and do. Same two reads the plan route makes.
+  */
+  const logged = await loadLoggedState(supabase, userId, rawWeeks).catch(
+    (): LoggedState => ({ activityBySession: {}, feedbackBySession: {} })
+  );
+  const weeks = toPlanWeeks(rawWeeks, logged);
   if (weeks.length === 0) return null;
 
   return buildDailyTrainingPayload({
@@ -106,4 +140,38 @@ export async function loadTodaysSessionPayload(
     planStart: new Date(stored.generatedAt),
     today,
   });
+}
+
+export async function loadLoggedState(
+  supabase: SupabaseClient,
+  userId: string,
+  weeks: StoredWeek[]
+): Promise<LoggedState> {
+  const ids = weeks.flatMap((w) => w.placements.map((p) => p.sessionId)).filter((id): id is string => !!id);
+  const out: LoggedState = { activityBySession: {}, feedbackBySession: {} };
+  if (ids.length === 0) return out;
+  const [{ data: activities }, { data: feedback }] = await Promise.all([
+    supabase
+      .from("activities")
+      .select("id, hpe_session_id")
+      .eq("user_id", userId)
+      .eq("is_draft", false)
+      .in("hpe_session_id", ids),
+    supabase
+      .from("hpe_session_feedback")
+      .select("session_id, completed, met_prescription")
+      .eq("user_id", userId)
+      .in("session_id", ids),
+  ]);
+  for (const a of activities ?? []) {
+    if (typeof a.hpe_session_id === "string" && typeof a.id === "string") {
+      out.activityBySession[a.hpe_session_id] ??= a.id;
+    }
+  }
+  for (const f of feedback ?? []) {
+    if (typeof f.session_id !== "string") continue;
+    // The same reading the plan route gives the three-button answer.
+    out.feedbackBySession[f.session_id] = !f.completed ? "missed" : f.met_prescription ? "hit" : "short";
+  }
+  return out;
 }

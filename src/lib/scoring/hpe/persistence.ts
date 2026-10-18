@@ -693,7 +693,7 @@ export async function loadLatestStoredPlan(
   const { data: sessionRows } = await supabase
     .from("hpe_sessions")
     .select(
-      "week, phase, is_deload, day_of_week, slot, kind, domain, emphasis_key, is_quality, minutes, distance_km, hr_lo, hr_hi, hr_source, prescription, finding_id"
+      "id, week, phase, is_deload, day_of_week, slot, kind, label, domain, emphasis_key, is_quality, minutes, distance_km, pace_lo_s_per_km, pace_hi_s_per_km, hr_lo, hr_hi, hr_source, prescription, finding_id"
     )
     .eq("plan_id", plan.id as string)
     .order("week", { ascending: true });
@@ -717,13 +717,23 @@ export async function loadLatestStoredPlan(
     }
     const w = byWeek.get(week)!;
     (w.placements as unknown[]).push({
+      // The row's id, so a reader of the stored plan — the dashboard's today
+      // card — can find the activity logged against a session and show it
+      // as done rather than as still to do.
+      sessionId: r.id,
       day: r.day_of_week,
       slot: r.slot,
       session: {
         kind: r.kind,
         domain: r.domain,
+        ...(r.label ? { label: r.label } : {}),
         minutes: Number(r.minutes ?? 0),
         isQuality: Boolean(r.is_quality),
+        distanceKm: r.distance_km != null ? Number(r.distance_km) : null,
+        paceLoSPerKm: r.pace_lo_s_per_km != null ? Number(r.pace_lo_s_per_km) : null,
+        paceHiSPerKm: r.pace_hi_s_per_km != null ? Number(r.pace_hi_s_per_km) : null,
+        hrLo: r.hr_lo != null ? Number(r.hr_lo) : null,
+        hrHi: r.hr_hi != null ? Number(r.hr_hi) : null,
         // Unresolvable only if the finding row is genuinely gone, which the
         // ON DELETE RESTRICT forbids. Passing the raw id through in that case
         // leaves the screen's "could not be loaded" message saying something

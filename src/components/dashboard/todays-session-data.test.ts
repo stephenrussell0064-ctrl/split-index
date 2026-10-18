@@ -66,12 +66,28 @@ describe("toPlanWeeks — the stored-plan shape the dashboard reads", () => {
     expect(week!.sessions[0]!.label).toBe("Push");
   });
 
-  it("invents no structured metrics — the stored rows genuinely carry none", () => {
+  it("invents no structured metrics when the stored rows carry none", () => {
     const [week] = toPlanWeeks([storedWeek([placement("Wed")])]);
     const session = week!.sessions[0]!;
     expect(session.distanceKm).toBeUndefined();
     expect(session.paceLoSPerKm).toBeUndefined();
     expect(session.hrLo).toBeUndefined();
+  });
+
+  it("carries the metrics the stored rows do have, so the widget line reads as the plan's", () => {
+    const [week] = toPlanWeeks([storedWeek([placement("Wed", { distanceKm: 5.55, paceLoSPerKm: 342, paceHiSPerKm: 372, hrLo: 147, hrHi: 164 })])]);
+    expect(week!.sessions[0]).toMatchObject({ distanceKm: 5.55, paceLoSPerKm: 342, hrHi: 164 });
+  });
+
+  it("marks a session the athlete has logged against, by its stored row id", () => {
+    const [week] = toPlanWeeks(
+      [storedWeek([{ ...placement("Wed"), sessionId: "s-1" }, { ...placement("Wed", { kind: "long_run" }, "PM"), sessionId: "s-2" }])],
+      { activityBySession: { "s-1": "act-9" }, feedbackBySession: { "s-2": "short" } }
+    );
+    expect(week!.sessions[0]).toMatchObject({ sessionId: "s-1", activityId: "act-9", feedback: null });
+    expect(week!.sessions[1]).toMatchObject({ sessionId: "s-2", activityId: null, feedback: "short" });
+    const payload = buildDailyTrainingPayload({ weeks: toPlanWeeks([storedWeek([{ ...placement("Wed"), sessionId: "s-1" }])], { activityBySession: { "s-1": "act-9" }, feedbackBySession: {} }), planStart: MONDAY, today: WEDNESDAY });
+    expect(payload.days![0]!.sessions[0]).toMatchObject({ done: true, activityId: "act-9" });
   });
 });
 

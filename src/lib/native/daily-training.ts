@@ -53,6 +53,10 @@ export interface DailyTrainingSessionPayload {
   domain: "endurance" | "strength";
   minutes: number;
   isQuality: boolean;
+  /** The athlete has logged this session, or answered how it went. Optional sibling, per the note above. */
+  done?: boolean;
+  /** The logged activity, when there is one, so a tap can open it. */
+  activityId?: string;
 }
 
 export interface DailyTrainingDayPayload {

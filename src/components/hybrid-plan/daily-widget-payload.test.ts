@@ -223,3 +223,25 @@ describe("week label", () => {
     expect(widgetWeekLabel(calendar.days[0]!)).toBe("Week 6 · Build");
   });
 });
+
+describe("a logged session is done", () => {
+  it("marks a session with an activity, or answered as done or short, and leaves a missed one alone", () => {
+    const payload = buildDailyTrainingPayload({
+      weeks: [
+        week({
+          sessions: [
+            session({ day: "Mon", kind: "long_run", activityId: "act-1" }),
+            session({ day: "Mon", kind: "easy_run", feedback: "short" }),
+            session({ day: "Mon", kind: "squat_volume", domain: "strength", feedback: "missed" }),
+          ],
+        }),
+      ],
+      planStart: MONDAY,
+      today: MONDAY,
+    });
+    const today = payload.days![0]!;
+    expect(today.sessions.map((s) => s.done ?? false)).toEqual([true, true, false]);
+    expect(today.sessions[0]!.activityId).toBe("act-1");
+    expect(today.sessions[1]).not.toHaveProperty("activityId");
+  });
+});

@@ -273,6 +273,11 @@ function TrainingDay({ day, variant }: { day: DailyTrainingDayPayload; variant: 
                         Quality
                       </span>
                     )}
+                    {session.done && (
+                      <span className="rounded-full border border-success/30 bg-success/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-success">
+                        Done
+                      </span>
+                    )}
                     <span className="ml-auto shrink-0 text-[11px] tabular-nums text-muted">
                       {session.minutes} min
                     </span>

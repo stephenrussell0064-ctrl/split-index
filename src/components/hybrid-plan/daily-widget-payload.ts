@@ -93,6 +93,10 @@ function toSessionPayload(session: PlanSessionView): DailyTrainingSessionPayload
     domain: session.domain,
     minutes: Math.round(session.minutes),
     isQuality: session.isQuality,
+    // Done is logged, or answered as done or short. "Missed" is an answer,
+    // not a session done.
+    ...(session.activityId || session.feedback === "hit" || session.feedback === "short" ? { done: true } : {}),
+    ...(session.activityId ? { activityId: session.activityId } : {}),
   };
 }
 
