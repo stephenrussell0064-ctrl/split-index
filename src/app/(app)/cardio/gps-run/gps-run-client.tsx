@@ -50,7 +50,12 @@ import {
   type RunSegment,
   type PauseInterval,
 } from "@/lib/scoring/gps-track";
-import { kilometreSplits, splitAnnouncement } from "@/lib/scoring/km-splits";
+import {
+  HEART_RATE_CALLOUT_METERS,
+  heartRateAnnouncement,
+  kilometreSplits,
+  splitAnnouncement,
+} from "@/lib/scoring/km-splits";
 import { buildGpsActivityPayload } from "./submission";
 import type { SessionType } from "@/types";
 
@@ -307,6 +312,8 @@ function GpsRunScreen() {
   const pausesRef = useRef<PauseInterval[]>([]);
   /** How many whole kilometres have already been read aloud this run, so each split is announced exactly once. */
   const announcedSplitsRef = useRef(0);
+  /** The same, for the half-kilometre heart-rate lines. */
+  const announcedHrSplitsRef = useRef(0);
   /**
    * Whether to read the kilometre splits aloud. Remembered in localStorage
    * rather than on the profile: it is a property of the phone in the
@@ -429,7 +436,7 @@ function GpsRunScreen() {
   const livePaceSecondsPerKm =
     liveDistanceMeters > 0 ? elapsedSeconds / (liveDistanceMeters / 1000) : null;
 
-  /** Every 500 m split completed so far — what the voice callouts read from, and what the last-split tile shows. Same distance the Distance tile is built on, so the two can never disagree about when a split finished. */
+  /** Every whole kilometre completed so far — what the voice callouts read from, and what the "Last km" tile shows. Same distance the Distance tile is built on, so the two can never disagree about when a kilometre finished. */
   const completedSplits = useMemo(
     () => (phase === "tracking" ? kilometreSplits(livePoints, pauses, startedAtRef.current, hrReadings) : []),
     // hrReadings is NOT a dependency on purpose: a split is cut when a fix
@@ -441,9 +448,25 @@ function GpsRunScreen() {
   );
   const lastSplit = completedSplits.length > 0 ? completedSplits[completedSplits.length - 1] : null;
 
-  // Voice callout at every 500 m (user feedback: "call out the splits every
-  // 1km with how many km you are in", then 17 Oct 2026: "called out every
-  // 500m rather 1km" — METERS_PER_SPLIT in km-splits.ts). Driven by the fixes arriving,
+  /**
+   * The same track cut every 500 m, for the heart-rate-only callouts (owner,
+   * 18 Oct 2026: "keep the km callouts, just add HR every 500m"). Only
+   * computed while a monitor is connected and the HR voice is on — with
+   * neither there is nothing to say, so there is no reason to walk the track
+   * a second time on every fix.
+   */
+  const heartRateSplits = useMemo(
+    () =>
+      phase === "tracking" && voiceSplits && voiceHr && hrSource !== null
+        ? kilometreSplits(livePoints, pauses, startedAtRef.current, hrReadings, HEART_RATE_CALLOUT_METERS)
+        : [],
+    // hrReadings deliberately omitted, as above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [phase, livePoints, pauses, voiceSplits, voiceHr, hrSource]
+  );
+
+  // Voice callout at every kilometre (user feedback: "call out the splits
+  // every 1km with how many km you are in"). Driven by the fixes arriving,
   // not by a timer, so it fires the moment the boundary is crossed and keeps
   // firing with the screen locked — native location callbacks still reach
   // the WebView in the background, timers do not. Each split is read once:
@@ -464,6 +487,19 @@ function GpsRunScreen() {
       })
     );
   }, [phase, paused, completedSplits, voiceSplits, voiceHr, hrSource]);
+
+  // "Heart rate 152." at each half-kilometre. Same once-only bookkeeping as
+  // the kilometre callout, on its own counter. The whole-kilometre marks in
+  // this list are skipped by heartRateAnnouncement — the kilometre callout a
+  // moment earlier already carried that average.
+  useEffect(() => {
+    if (phase !== "tracking" || paused) return;
+    if (heartRateSplits.length <= announcedHrSplitsRef.current) return;
+    const latest = heartRateSplits[heartRateSplits.length - 1];
+    announcedHrSplitsRef.current = heartRateSplits.length;
+    const line = heartRateAnnouncement(latest);
+    if (line) void speak(line);
+  }, [phase, paused, heartRateSplits]);
 
   /** Current Pace — a rolling last-60-seconds-of-*running* window, distinct from Avg Split above. Falls back to the whole-run average until there's at least 60s/two GPS fixes of recent data to compute a genuine rolling number from. */
   const currentPaceSecondsPerKm = useMemo(() => {
@@ -612,6 +648,7 @@ function GpsRunScreen() {
     setConfirmingDiscard(false);
     applyPauses([]);
     announcedSplitsRef.current = 0;
+    announcedHrSplitsRef.current = 0;
     try {
       await startGpsSession((point) => setLivePoints((prev) => [...prev, point]));
       if (isOnFootSport && isStepCadenceSupported()) {
@@ -687,6 +724,13 @@ function GpsRunScreen() {
         recovered.points,
         recovered.livePauses,
         recovered.startedAt
+      ).length;
+      announcedHrSplitsRef.current = kilometreSplits(
+        recovered.points,
+        recovered.livePauses,
+        recovered.startedAt,
+        [],
+        HEART_RATE_CALLOUT_METERS
       ).length;
       // Effort segments are not persisted, so a rejoined interval run starts a
       // fresh segment here rather than pretending one has been open since the
@@ -879,6 +923,7 @@ function GpsRunScreen() {
     setConfirmingDiscard(false);
     applyPauses([]);
     announcedSplitsRef.current = 0;
+    announcedHrSplitsRef.current = 0;
     setLiveClockStartMs(0);
     setError("");
   }
@@ -1118,13 +1163,13 @@ function GpsRunScreen() {
             <div className="mt-2.5 grid w-full max-w-sm grid-cols-3 gap-2.5">
               <StatTile icon={Gauge} label={sport === "outdoor_cycling" ? "Avg speed" : "Avg split"} value={formatPaceOrSpeed(sport, livePaceSecondsPerKm)} />
               <StatTile label={sport === "outdoor_cycling" ? "Speed now" : "Pace now"} value={formatPaceOrSpeed(sport, currentPaceSecondsPerKm)} />
-              {/* The most recent 500 m split — the same number the voice
-                  callout just read, kept on screen for a glance-check when it
-                  was missed under traffic noise. */}
+              {/* The most recent whole-kilometre split — the same number the
+                  voice callout just read, kept on screen for a glance-check
+                  when it was missed under traffic noise. */}
               {lastSplit && (
                 <StatTile
                   tone="accent"
-                  label={lastSplit.avgHr != null ? `${lastSplit.km} km · ${lastSplit.avgHr} bpm` : `${lastSplit.km} km`}
+                  label={lastSplit.avgHr != null ? `Km ${lastSplit.km} · ${lastSplit.avgHr} bpm` : `Km ${lastSplit.km}`}
                   value={formatPaceOrSpeed(sport, lastSplit.splitSeconds)}
                 />
               )}
