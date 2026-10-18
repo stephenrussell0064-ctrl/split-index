@@ -430,14 +430,113 @@ export async function savePlan(
   }
 
   if (rows.length > 0) {
-    const { error: sessionError } = await supabase.from("hpe_sessions").insert(rows);
+    const { data: inserted, error: sessionError } = await supabase
+      .from("hpe_sessions")
+      .insert(rows)
+      .select("id, week, day_of_week, kind");
     if (sessionError) {
       console.error("hpe_sessions insert failed:", sessionError.message);
       return { planId, storedSessions: 0, droppedSessions: rows.length + dropped };
     }
+    if (current) {
+      await carryForwardSessionRecords(
+        supabase,
+        current.id as string,
+        (inserted ?? []) as SessionKeyRow[]
+      );
+    }
   }
 
   return { planId, storedSessions: rows.length, droppedSessions: dropped };
+}
+
+interface SessionKeyRow {
+  id: string;
+  week: number;
+  day_of_week: string | null;
+  kind: string;
+}
+
+/**
+ * What the athlete has already done survives a rebuild.
+ *
+ * Every session row belongs to one plan, and a rebuilt plan gets new rows
+ * with new ids. The activity logged from a prescription and the plan's
+ * feedback row both point at the OLD id, so the moment the block was rebuilt
+ * — which logging a session itself causes, since the new run changes the
+ * diagnostic — the card for that very session read "Log this session" again
+ * and the feedback loader found nothing. Observed live: a long run logged
+ * from the plan at 12:59, the plan rebuilt on the next page load at 13:01,
+ * and the run gone from the plan's view of the week.
+ *
+ * Matched on (week, day, kind), then (week, kind) where that is unambiguous
+ * — a rebuild may move a session to another day but rarely changes what it
+ * is. The activity's link is MOVED to the new row; the feedback row is
+ * COPIED, since the old one belongs to the old plan's history. Non-fatal
+ * throughout: the plan is already written.
+ */
+async function carryForwardSessionRecords(
+  supabase: SupabaseClient,
+  previousPlanId: string,
+  inserted: SessionKeyRow[]
+): Promise<void> {
+  if (inserted.length === 0) return;
+  const { data: previous } = await supabase
+    .from("hpe_sessions")
+    .select("id, week, day_of_week, kind")
+    .eq("plan_id", previousPlanId);
+  const old = (previous ?? []) as SessionKeyRow[];
+  if (old.length === 0) return;
+
+  const exact = (r: SessionKeyRow) => `${r.week}|${r.day_of_week ?? ""}|${r.kind}`;
+  const loose = (r: SessionKeyRow) => `${r.week}|${r.kind}`;
+  const byExact = new Map<string, SessionKeyRow[]>();
+  const byLoose = new Map<string, SessionKeyRow[]>();
+  for (const r of inserted) {
+    byExact.set(exact(r), [...(byExact.get(exact(r)) ?? []), r]);
+    byLoose.set(loose(r), [...(byLoose.get(loose(r)) ?? []), r]);
+  }
+  const mapping = new Map<string, string>();
+  for (const r of old) {
+    const hit = byExact.get(exact(r));
+    if (hit && hit.length === 1) {
+      mapping.set(r.id, hit[0].id);
+      continue;
+    }
+    const near = byLoose.get(loose(r));
+    const oldNear = old.filter((o) => loose(o) === loose(r));
+    if (near && near.length === 1 && oldNear.length === 1) mapping.set(r.id, near[0].id);
+  }
+  if (mapping.size === 0) return;
+  const oldIds = [...mapping.keys()];
+
+  const { data: linked } = await supabase
+    .from("activities")
+    .select("id, hpe_session_id")
+    .in("hpe_session_id", oldIds);
+  for (const row of linked ?? []) {
+    const next = mapping.get(row.hpe_session_id as string);
+    if (!next) continue;
+    const { error } = await supabase.from("activities").update({ hpe_session_id: next }).eq("id", row.id as string);
+    if (error) console.error("[hpe] could not carry an activity's plan link forward:", error.message);
+  }
+
+  const { data: feedback } = await supabase
+    .from("hpe_session_feedback")
+    .select("user_id, session_id, completed, session_rpe, met_prescription, low_capacity_flagged, notes, logged_at")
+    .in("session_id", oldIds);
+  const copies = (feedback ?? [])
+    .map((f) => {
+      const next = mapping.get(f.session_id as string);
+      return next ? { ...f, session_id: next } : null;
+    })
+    .filter((f): f is NonNullable<typeof f> => f != null);
+  if (copies.length > 0) {
+    const { error } = await supabase
+      .from("hpe_session_feedback")
+      .upsert(copies, { onConflict: "session_id", ignoreDuplicates: true });
+    if (error) console.error("[hpe] could not carry plan feedback forward:", error.message);
+  }
 }
 
 /** Marks the plans a regenerated diagnosis has superseded, with the reason the athlete was shown. */
