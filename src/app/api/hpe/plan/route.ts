@@ -8,6 +8,7 @@ import { estimatedMaxHr } from "@/lib/scoring/hpe/intake";
 /** The intake spec's documented default, flagged as assumed rather than silently applied. */
 const ASSUMED_RESTING_HR = 60;
 import { loadLatestStoredPlan, savePlan, supersedePlans } from "@/lib/scoring/hpe/persistence";
+import { freezeLoggedWeeks, loadPlanContinuity } from "@/lib/scoring/hpe/plan-continuity";
 import { selectAttempts, racePacing, type SessionFeedback } from "@/lib/scoring/hpe/progression";
 import { validateIntake } from "@/lib/scoring/hpe/intake";
 import { parseIntakeRow, resolveIntakeInputs } from "@/lib/scoring/hpe/intake-record";
@@ -403,6 +404,30 @@ export async function GET(request: Request) {
       tier: profile.tier,
       profile_id: diagnostic?.profileId ?? null,
     });
+  }
+
+  /*
+    A week the athlete has already logged into is kept as it was.
+
+    Logging a session changes the diagnostic, which rebuilds the block, which
+    rewrote the very week the session was logged in: a long run prescribed as
+    5.5km, logged as written, and re-prescribed minutes later as 6.2km with
+    the logged run attached. The stored week replaces the regenerated one
+    here, before the plan is either stored or shown, so the two agree. See
+    plan-continuity.ts.
+  */
+  if (plan.generated) {
+    const continuity = await loadPlanContinuity(supabase, user.id).catch(() => null);
+    if (continuity) {
+      const frozen = freezeLoggedWeeks(plan.weeks, continuity, new Date());
+      if (frozen.frozenWeeks.length > 0) {
+        plan.weeks = frozen.weeks;
+        // The frozen sessions cite the findings of the run that prescribed
+        // them; the screen resolves every session's reason by slug.
+        const known = new Set(plan.findings.map((f) => f.id));
+        plan.findings = [...plan.findings, ...frozen.findings.filter((f) => !known.has(f.id))];
+      }
+    }
   }
 
   // Persist when the plan is real and the diagnostic behind it was stored.

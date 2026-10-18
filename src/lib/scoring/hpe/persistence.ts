@@ -25,6 +25,7 @@
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { weekOffset, weeksMatchStoredRows, type StoredSessionKeyRow } from "./plan-continuity";
 import { DIAGNOSTIC_RERUN_WEEKS, EMPHASIS_KEYS, type EmphasisKey } from "./constants";
 import { compareEmphasis, type EmphasisDrift } from "./progression";
 import { HYBRID_BASELINE_FINDING } from "./session-set";
@@ -255,6 +256,8 @@ export async function savePlan(
      * the rows loop.
      */
     findings?: readonly Finding[];
+    /** Injectable clock, for the week-anchor check. */
+    now?: Date;
   }
 ): Promise<{ planId: string; storedSessions: number; droppedSessions: number; reused?: boolean } | null> {
   /*
@@ -282,22 +285,22 @@ export async function savePlan(
   */
   const { data: current } = await supabase
     .from("hpe_plans")
-    .select("id, profile_id, constants_version, weeks_out, event_date, goal, constraints")
+    .select("id, profile_id, generated_at, constants_version, weeks_out, event_date, goal, constraints")
     .eq("user_id", userId)
     .is("superseded_at", null)
     .order("generated_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
-  if (
-    current &&
-    current.profile_id === args.profileId &&
+  const sameInputs =
+    current != null &&
     current.constants_version === args.constantsVersion &&
     current.weeks_out === args.goal.weeksOut &&
     (current.event_date ?? null) === (args.eventDate ?? null) &&
     JSON.stringify(current.goal ?? {}) === JSON.stringify(args.goal) &&
-    JSON.stringify(current.constraints ?? {}) === JSON.stringify(args.constraints)
-  ) {
+    JSON.stringify(current.constraints ?? {}) === JSON.stringify(args.constraints);
+
+  if (sameInputs && current.profile_id === args.profileId) {
     const { count } = await supabase
       .from("hpe_sessions")
       .select("id", { count: "exact", head: true })
@@ -308,6 +311,36 @@ export async function savePlan(
       droppedSessions: 0,
       reused: true,
     };
+  }
+
+  /*
+    SAME ROWS, SAME BLOCK — whatever the diagnostic's row id says.
+
+    The check above keys on `profile_id`, and that id changes whenever the
+    diagnostic is re-stored, which happens whenever new training is logged.
+    So a plan that regenerated to exactly the same sessions was written as a
+    new block anyway: two identical blocks sixteen seconds apart on a live
+    account, every one of the athlete's session links moved each time. The
+    rows are the plan. If the block this request would write is row-for-row
+    what is already stored, the stored block is returned — with its own
+    generated_at, so the athlete keeps advancing through it — provided both
+    anchor week one to the same Monday; a block from an earlier calendar
+    week is a different block even when its rows happen to agree.
+  */
+  if (sameInputs && weekOffset(new Date(current.generated_at as string), args.now ?? new Date()) === 0) {
+    const { data: storedRows } = await supabase
+      .from("hpe_sessions")
+      .select("week, day_of_week, slot, kind, minutes, distance_km, prescription")
+      .eq("plan_id", current.id as string);
+    const rows = (storedRows ?? []) as StoredSessionKeyRow[];
+    if (rows.length > 0 && weeksMatchStoredRows(args.weeks, rows)) {
+      return {
+        planId: current.id as string,
+        storedSessions: rows.length,
+        droppedSessions: 0,
+        reused: true,
+      };
+    }
   }
 
   const { data: plan, error } = await supabase
@@ -425,6 +458,15 @@ export async function savePlan(
         hr_hi: session.prescription.hrHi ?? null,
         hr_source: session.prescription.hrSource ?? null,
         prescription: session.prescription.text,
+        // Migration 076's columns, so a stored week can be carried into a
+        // rebuilt block exactly as the engine built it (plan-continuity.ts)
+        // rather than inferred back from its kind.
+        label: session.label ?? null,
+        lift: session.lift ?? null,
+        intensity: session.intensity,
+        is_heavy_lower: session.isHeavyLower,
+        is_deadlift: session.isDeadlift,
+        stress: session.stress,
       });
     }
   }

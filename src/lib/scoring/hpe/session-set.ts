@@ -315,7 +315,7 @@ export interface SessionSet {
   notes: string[];
 }
 
-function stressFor(kind: SessionKind, minutes: number, domain: "endurance" | "strength"): number {
+export function stressFor(kind: SessionKind, minutes: number, domain: "endurance" | "strength"): number {
   if (domain === "strength") return STRENGTH_STRESS[kind] ?? DEFAULT_STRENGTH_STRESS;
   return (BASE_STRESS_PER_MIN[kind] ?? DEFAULT_STRESS_PER_MIN) * minutes;
 }
