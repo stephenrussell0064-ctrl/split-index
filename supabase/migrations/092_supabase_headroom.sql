@@ -67,7 +67,7 @@ AS $$
       SELECT max(t) FROM (
         SELECT max(last_sign_in_at) AS t FROM auth.users
         UNION ALL SELECT max(created_at) FROM public.activities
-        UNION ALL SELECT max(created_at) FROM public.recovery_snapshots
+        UNION ALL SELECT max(recorded_at) FROM public.recovery_snapshots
       ) AS latest
     ),
     'measured_at', now()
