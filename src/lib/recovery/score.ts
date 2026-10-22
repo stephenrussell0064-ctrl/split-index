@@ -170,10 +170,28 @@ const DENSITY_ANCHORS: readonly [number, number][] = [
 /** No rest day in a week is its own signal, independent of how many sessions. */
 const NO_REST_DAY_PENALTY = 12;
 
+/**
+ * How fast the frequency cost fades once the athlete stops.
+ *
+ * Owner, 22 Oct 2026, four days without training and a score in the 30s: the
+ * breakdown read "6 sessions in the last 7 days, 5 rest days" and charged 66
+ * for it. Six sessions a week ago, packed into two days, are not the same
+ * recovery problem on day five as on day one — they are mostly recovered
+ * from, and the count alone cannot see that. The cost is therefore faded by
+ * the unbroken rest since the last session: a session yesterday leaves it
+ * whole (training on consecutive days is exactly what the term is for),
+ * then it halves every day and a half beyond that. Four days out, a quarter
+ * of the cost remains.
+ */
+const DENSITY_FADE_GRACE_DAYS = 1;
+const DENSITY_FADE_HALF_LIFE_DAYS = 1.5;
+
 export function densityComponentScore(sessionDates: Date[], now: Date): {
   score: number;
   sessionCount: number;
   restDays: number;
+  /** Days since the most recent session in the window; null when there is none. */
+  daysSinceLast: number | null;
 } {
   const weekAgo = now.getTime() - 7 * DAY_MS;
   const inWindow = sessionDates.filter(
@@ -186,10 +204,18 @@ export function densityComponentScore(sessionDates: Date[], now: Date): {
   let score = interpolate(DENSITY_ANCHORS, inWindow.length);
   if (restDays === 0 && inWindow.length > 0) score -= NO_REST_DAY_PENALTY;
 
+  const latest = inWindow.reduce<number | null>((m, d) => (m === null || d.getTime() > m ? d.getTime() : m), null);
+  const daysSinceLast = latest === null ? null : (now.getTime() - latest) / DAY_MS;
+  if (daysSinceLast !== null && daysSinceLast > DENSITY_FADE_GRACE_DAYS) {
+    const fade = 0.5 ** ((daysSinceLast - DENSITY_FADE_GRACE_DAYS) / DENSITY_FADE_HALF_LIFE_DAYS);
+    score = 100 - (100 - score) * fade;
+  }
+
   return {
     score: Math.max(0, Math.min(100, Math.round(score))),
     sessionCount: inWindow.length,
     restDays,
+    daysSinceLast: daysSinceLast === null ? null : Math.round(daysSinceLast * 10) / 10,
   };
 }
 
@@ -303,7 +329,7 @@ export function computeRecoveryScore(input: RecoveryScoreInput): RecoveryScoreRe
       weight: densityPresent ? WEIGHTS.density / totalWeight : 0,
       present: densityPresent,
       detail: densityPresent
-        ? describeDensity(density.sessionCount, density.restDays)
+        ? describeDensity(density.sessionCount, density.restDays, density.daysSinceLast)
         : "No sessions in the last 7 days, so frequency isn't saying anything yet.",
     },
     {
@@ -351,10 +377,14 @@ function describeAcute(acuteLoad: number, typicalDailyLoad: number, hoursSinceHa
   return `About ${multiple} your usual day's load in the last 48 hours — a normal couple of days.${since}`;
 }
 
-function describeDensity(sessionCount: number, restDays: number): string {
+function describeDensity(sessionCount: number, restDays: number, daysSinceLast: number | null): string {
   if (restDays === 0) return `${sessionCount} sessions and no rest day in the last 7 — frequency alone is a recovery cost.`;
-  if (sessionCount >= 7) return `${sessionCount} sessions in 7 days with ${restDays} rest ${restDays === 1 ? "day" : "days"}.`;
-  return `${sessionCount} sessions in the last 7 days, ${restDays} rest ${restDays === 1 ? "day" : "days"}.`;
+  const sinceLast =
+    daysSinceLast !== null && daysSinceLast >= 2
+      ? ` Nothing for ${Math.floor(daysSinceLast)} days, so most of that cost has faded.`
+      : "";
+  if (sessionCount >= 7) return `${sessionCount} sessions in 7 days with ${restDays} rest ${restDays === 1 ? "day" : "days"}.${sinceLast}`;
+  return `${sessionCount} sessions in the last 7 days, ${restDays} rest ${restDays === 1 ? "day" : "days"}.${sinceLast}`;
 }
 
 /** The component costing the most, which is what the one-line summary names. */
