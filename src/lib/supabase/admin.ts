@@ -42,6 +42,12 @@ import { correlationId } from "@/lib/api/errors";
  *                               are granted to no role but the service role
  *                               because they aggregate every athlete's rows.
  *                               Behind resolveAdminRole and an audit row.
+ *   api/admin/supabase-headroom Calls migration 092's supabase_headroom(),
+ *                               which reads pg_database_size, auth.users
+ *                               counts and storage.objects totals that no
+ *                               exposed schema offers. Aggregate only, service
+ *                               role only. Behind resolveAdminRole and an
+ *                               audit row.
  *   api/races                   Writes the shared known-race catalogue, which
  *                               is reference data no single user owns.
  *   api/squads/join             Reads a squad by invite code before the joiner

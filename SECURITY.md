@@ -126,6 +126,7 @@ code, because that is where somebody adding a fourteenth will be looking.
 | `api/hpe/admin/fleet` | Fleet-wide read, behind `resolveAdminRole` |
 | `api/hpe/admin/rollout` | Fleet-wide write, behind `resolveAdminRole` and an audit row |
 | `api/admin/logging-effort` | Reads migration 090's three weekly views, which aggregate every athlete's rows and are granted to no role but the service role. Behind `resolveAdminRole` and an audit row |
+| `api/admin/supabase-headroom` | Calls migration 092's `supabase_headroom()`, which reads `pg_database_size`, `auth.users` counts and `storage.objects` totals that no exposed schema offers; aggregate only, granted to the service role alone. Behind `resolveAdminRole` and an audit row |
 | `api/races` | Writes the shared known-race catalogue — reference data no user owns |
 | `api/squads/join` | Reads a squad by invite code before the joiner is a member, so RLS cannot see it |
 | `lib/supabase/ensure-profile` | Creates the profile row a brand-new user does not have yet |
