@@ -2,7 +2,7 @@
 
 import { motion } from "framer-motion";
 import { PencilLine } from "lucide-react";
-import { GpsRecordRow } from "./log-launcher";
+import { GpsRecordRow, LiveErgRecordRow } from "./log-launcher";
 import { ENDURANCE_SPORTS, SPORTS } from "@/lib/constants/sports";
 import { cn } from "@/lib/utils/cn";
 import type { SportType } from "@/types";
@@ -33,7 +33,10 @@ export function CardioSportPicker({
         nowhere to be found from + here is not a distinction anyone would
         design on purpose.
       */}
-      <GpsRecordRow />
+      <div className="space-y-2">
+        <GpsRecordRow />
+        <LiveErgRecordRow />
+      </div>
 
       <p className="mt-6 mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-cardio-muted">
         <PencilLine className="h-3 w-3" />

@@ -53,6 +53,7 @@ const NOT_IN_THE_FORM_TYPE: Record<string, string> = {
   exercise_notes: "Per-exercise notes, keyed by exercise.",
   client_request_id: "The offline queue's idempotency key, added by submitActivityRequest.",
   streams: "The per-sample series for run analysis (migration 078). Built by the GPS tracker, never typed into the form.",
+  live_session: "The live erg screen's record of a session — calories, heart-rate samples, paused time. Built by the screen, never typed into the form.",
 };
 
 describe("the schema and ActivityFormData do not drift", () => {

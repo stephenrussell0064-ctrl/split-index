@@ -47,6 +47,7 @@ const COMPETITORS = [
  */
 const ALLOWED: Record<string, string> = {
   "app/(app)/cardio/gps-run/gps-run-client.tsx": "which chest straps pair over BLE",
+  "app/(app)/cardio/live-erg/live-erg-client.tsx": "which chest straps pair over BLE",
   "app/support/page.tsx": "which chest straps pair over BLE",
 };
 

@@ -1,4 +1,4 @@
-import { Clock, MapPin, Gauge, Mountain, HeartPulse, Thermometer, Footprints } from "lucide-react";
+import { Clock, MapPin, Gauge, Mountain, HeartPulse, Thermometer, Footprints, Flame } from "lucide-react";
 import { formatDuration, formatDistance, formatSportPace } from "@/lib/utils/format";
 import type { SportType } from "@/types";
 
@@ -12,6 +12,8 @@ interface RawStatsPanelProps {
   avgSplitSeconds: number | null;
   avgCadence: number | null;
   temperatureCelsius: number | null;
+  /** The live erg screen's estimate, when the session was recorded there. Null otherwise. */
+  caloriesKcal?: number | null;
 }
 
 /**
@@ -38,6 +40,7 @@ export function RawStatsPanel({
   avgSplitSeconds,
   avgCadence,
   temperatureCelsius,
+  caloriesKcal = null,
 }: RawStatsPanelProps) {
   // One formatter, shared with the logbook. This panel used to carry its own
   // pair — a per-km `formatPace` and a per-500m `formatSplit` for the ergs —
@@ -75,6 +78,9 @@ export function RawStatsPanel({
       ? { label: "Avg heart rate", value: `${avgHeartRate} bpm`, icon: HeartPulse }
       : null,
     showCadence ? { label: "Avg cadence", value: `${avgCadence} spm`, icon: Footprints } : null,
+    caloriesKcal !== null && caloriesKcal > 0
+      ? { label: "Calories", value: `${Math.round(caloriesKcal)} kcal`, icon: Flame }
+      : null,
     temperatureCelsius !== null
       ? { label: "Temperature", value: `${temperatureCelsius}°C`, icon: Thermometer }
       : null,

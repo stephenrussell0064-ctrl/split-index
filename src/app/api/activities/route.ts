@@ -496,6 +496,8 @@ export async function POST(request: Request) {
       source: body.source ?? "manual",
       is_partial_track: body.is_partial_track ?? false,
       metadata: {
+        // The live erg screen's record of the session (see schemas/activity.ts).
+        ...(body.live_session ? { live_session: body.live_session } : {}),
         ...(bodyweightKg ? { bodyweight_kg: bodyweightKg } : {}),
         // The run's shape, already simplified client-side (see
         // buildRoutePolyline). Validated here rather than trusted: this is

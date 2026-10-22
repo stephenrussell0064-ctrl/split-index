@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { Dumbbell, MapPin, PencilLine, ChevronRight } from "lucide-react";
+import { Dumbbell, MapPin, PencilLine, ChevronRight, HeartPulse } from "lucide-react";
 import { ENDURANCE_SPORTS, SPORTS } from "@/lib/constants/sports";
 import { cn } from "@/lib/utils/cn";
 import type { SportType } from "@/types";
@@ -64,6 +64,43 @@ export function GpsRecordRow() {
           <span className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider opacity-80">
             <MapPin className="h-3 w-3" />
             GPS
+          </span>
+          <span className="text-sm font-semibold leading-none">
+            <span aria-hidden className="mr-1">
+              {icon}
+            </span>
+            {label}
+          </span>
+        </Link>
+      ))}
+    </div>
+  );
+}
+
+/** The live erg screen's two sports — see LIVE_SPORTS on the live-erg page, which this must not get ahead of. */
+const LIVE_ERG_OPTIONS: { sport: SportType; label: string; icon: string }[] = [
+  { sport: "rowing", label: "Row", icon: "🚣" },
+  { sport: "bike_erg", label: "BikeErg", icon: "🚴" },
+];
+
+/**
+ * "Record indoors" beside "record outdoors": the erg equivalent of the GPS
+ * row. A rower or bike erg has no GPS to track, so the live screen times the
+ * session, reads a heart-rate source and estimates the calories as it goes;
+ * the distance comes off the machine's own monitor at the end.
+ */
+export function LiveErgRecordRow() {
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      {LIVE_ERG_OPTIONS.map(({ sport, label, icon }) => (
+        <Link
+          key={sport}
+          href={`/cardio/live-erg?sport=${sport}`}
+          className="flex flex-col items-center justify-center gap-0.5 rounded-2xl border border-cardio-accent/40 bg-cardio-accent/10 px-2 py-2.5 text-cardio-text transition-colors hover:bg-cardio-accent/15"
+        >
+          <span className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider opacity-80">
+            <HeartPulse className="h-3 w-3" />
+            Live
           </span>
           <span className="text-sm font-semibold leading-none">
             <span aria-hidden className="mr-1">
@@ -160,8 +197,9 @@ export function LogLauncher({
             that has to happen before the session is the one that belongs at
             the top.
           */}
-          <div className="mt-2.5">
+          <div className="mt-2.5 space-y-2">
             <GpsRecordRow />
+            <LiveErgRecordRow />
           </div>
 
           <p className="mt-4 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-cardio-muted">

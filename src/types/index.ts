@@ -575,6 +575,7 @@ export type LoggingEntry =
   | "prescribed_form"
   | "prescribed_one_tap"
   | "gps"
+  | "live"
   | "file"
   | "apple_health";
 

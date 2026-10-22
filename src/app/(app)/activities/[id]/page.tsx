@@ -177,6 +177,11 @@ export default async function ActivityDetailPage({
     : null;
 
   const metadata = (activity.metadata ?? {}) as Record<string, unknown>;
+  /** The live erg screen's calories estimate, where the session was recorded there. */
+  const liveSessionCalories = (m: Record<string, unknown>): number | null => {
+    const live = m.live_session as { calories_kcal?: unknown } | undefined;
+    return typeof live?.calories_kcal === "number" ? live.calories_kcal : null;
+  };
   const bodyweightKg =
     typeof metadata.bodyweight_kg === "number" ? metadata.bodyweight_kg : null;
   // Present only on a session that was made by merging — and the only route
@@ -269,6 +274,7 @@ export default async function ActivityDetailPage({
           avgSplitSeconds={(activity.avg_split_seconds as number | null) ?? null}
           avgCadence={(activity.avg_cadence as number | null) ?? null}
           temperatureCelsius={(activity.temperature_celsius as number | null) ?? null}
+          caloriesKcal={liveSessionCalories(metadata)}
         />
       )}
 

@@ -151,7 +151,9 @@ export const activityFieldsSchema = z
     // 'file' is a GPX/TCX/FIT import (logging-effort plan, phase 3); the DB
     // enum has carried it since migration 005. 'apple_health' is written only
     // by the health import route, never by a client, so it is not here.
-    source: z.enum(["manual", "gps", "file"]).optional(),
+    // 'live' is an indoor session recorded on the live erg screen: timed in
+    // the app with a heart-rate source, no GPS and no file.
+    source: z.enum(["manual", "gps", "live", "file"]).optional(),
     is_partial_track: z.boolean().optional(),
 
     /*
@@ -171,6 +173,23 @@ export const activityFieldsSchema = z
      * arrive pre-simplification and sanitizeRoute does the trimming and the
      * privacy-zone removal afterwards.
      */
+    /*
+     * The live erg screen's own record of the session: the calories estimate
+     * and how it was made, the heart-rate sample count and source, and the
+     * paused time. Stored under metadata, read back by the activity page.
+     */
+    live_session: z
+      .object({
+        calories_kcal: bounded([0, 10_000], "calories").int(),
+        calories_method: z.enum(["heart-rate", "met"]),
+        calories_assumed_profile: z.boolean(),
+        hr_samples: bounded([0, 100_000], "heart-rate samples").int(),
+        hr_source: z.enum(["ble", "airpods"]).nullable(),
+        paused_seconds: bounded([0, 86_400], "paused time").int(),
+      })
+      .strict()
+      .optional(),
+
     route: z
       .array(z.tuple([z.number().finite(), z.number().finite()]))
       .max(20_000, "That route has too many points.")
@@ -266,6 +285,7 @@ export const activityFieldsSchema = z
           "prescribed_form",
           "prescribed_one_tap",
           "gps",
+          "live",
           "file",
           "apple_health",
         ]),
