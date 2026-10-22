@@ -481,6 +481,15 @@ export default function SettingsClient() {
               Hybrid Plan fleet &amp; rollout
             </Link>
           )}
+          {adminRole && (
+            <Link
+              href="/admin/logging-effort"
+              className={cn(buttonVariants({ variant: "outline" }), "w-full")}
+            >
+              <Shield className="h-4 w-4" />
+              Logging effort &amp; Supabase headroom
+            </Link>
+          )}
           <Button variant="destructive" className="w-full" onClick={handleSignOut}>
             <LogOut className="h-4 w-4" />
             Sign out

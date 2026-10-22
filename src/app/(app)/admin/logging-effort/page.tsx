@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { resolveAdminRole } from "@/lib/auth/admin-role";
 import { PageHeader } from "@/components/ui/page-header";
 import { LoggingEffortDashboard } from "@/components/admin/logging-effort-dashboard";
+import { SupabaseHeadroomCard } from "@/components/admin/supabase-headroom-card";
 
 /**
  * The logging-effort plan's measurement, read from migration 090's views.
@@ -27,6 +28,8 @@ export default async function LoggingEffortPage() {
         title="Logging effort"
         subtitle="Whether each phase of the logging-effort plan lowered the work of logging, and whether more athletes log more often. Aggregate across all users; no individual athlete is identifiable here."
       />
+      {/* Free-plan headroom first: a paused project makes every number below it moot. */}
+      <SupabaseHeadroomCard />
       <LoggingEffortDashboard />
     </div>
   );
