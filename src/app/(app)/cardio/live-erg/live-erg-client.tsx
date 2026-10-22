@@ -26,7 +26,6 @@ import { isNativePlatform } from "@/lib/native/platform";
 import { createClient } from "@/lib/supabase/client";
 import { ageFromDateOfBirth } from "@/lib/utils/age";
 import { connectHeartRateMonitor, disconnectHeartRateMonitor } from "@/lib/native/heart-rate";
-import { isAirPodsHeartRateSupported, startAirPodsHeartRate, stopAirPodsHeartRate } from "@/lib/native/airpods-heart-rate";
 import { isLiveActivitySupported, startLiveActivity, updateLiveActivity, endLiveActivity } from "@/lib/native/live-activity";
 import { clearErgSession, loadErgSession, saveErgSession, type ErgSessionRecord } from "@/lib/native/erg-session";
 import { estimateSessionEnergy, type LiveSport } from "@/lib/scoring/energy";
@@ -118,9 +117,10 @@ export default function LiveErgClient() {
  * Live recording for a rowing machine or bike erg.
  *
  * There is no GPS to track indoors, so what this screen does is keep the
- * clock, read a heart-rate source — a Bluetooth strap or watch, or AirPods
- * through Apple Health — and estimate the calories the session has cost so
- * far from that heart rate (lib/scoring/energy.ts). The distance is the
+ * clock, read a Bluetooth heart-rate strap or watch, and estimate the
+ * calories the session has cost so far from that heart rate
+ * (lib/scoring/energy.ts). Apple Health is deliberately not involved here —
+ * no HealthKit session is started from this screen. The distance is the
  * erg's own monitor's number and is typed in at the finish, where it turns
  * into the split the rowing score needs.
  *
@@ -146,8 +146,8 @@ function LiveErgScreen() {
   const [hrReadings, setHrReadings] = useState<HrReading[]>([]);
   const [liveBpm, setLiveBpm] = useState<number | null>(null);
   const [hrDeviceName, setHrDeviceName] = useState<string | null>(null);
-  const [hrSource, setHrSource] = useState<"ble" | "airpods" | null>(null);
-  const [connectingHr, setConnectingHr] = useState<"ble" | "airpods" | null>(null);
+  const [hrSource, setHrSource] = useState<"ble" | null>(null);
+  const [connectingHr, setConnectingHr] = useState(false);
   const [hrError, setHrError] = useState("");
   const [recovered, setRecovered] = useState<ErgSessionRecord | null>(null);
   const [endedAt, setEndedAt] = useState<number | null>(null);
@@ -282,7 +282,7 @@ function LiveErgScreen() {
 
   async function handleConnectHeartRate() {
     if (connectingHr) return;
-    setConnectingHr("ble");
+    setConnectingHr(true);
     setHrError("");
     try {
       const device = await connectHeartRateMonitor(onHeartRate);
@@ -291,30 +291,13 @@ function LiveErgScreen() {
     } catch {
       setHrError("Couldn't connect — make sure the monitor is on and in pairing range.");
     } finally {
-      setConnectingHr(null);
-    }
-  }
-
-  async function handleConnectAirPods() {
-    if (connectingHr) return;
-    setConnectingHr("airpods");
-    setHrError("");
-    try {
-      await startAirPodsHeartRate(sport, onHeartRate);
-      setHrDeviceName("AirPods (Apple Health)");
-      setHrSource("airpods");
-    } catch (err) {
-      const detail = err instanceof Error ? err.message : "";
-      setHrError(detail ? `Couldn't start AirPods heart rate: ${detail}` : "Couldn't start — check Health access is allowed for Split Index in Settings.");
-    } finally {
-      setConnectingHr(null);
+      setConnectingHr(false);
     }
   }
 
   async function handleDisconnectHeartRate() {
     try {
-      if (hrSource === "airpods") await stopAirPodsHeartRate();
-      else await disconnectHeartRateMonitor();
+      await disconnectHeartRateMonitor();
     } finally {
       setHrDeviceName(null);
       setHrSource(null);
@@ -582,15 +565,10 @@ function LiveErgScreen() {
             </div>
             {!hrDeviceName && native && (
               <div className="flex flex-wrap justify-center gap-2">
-                <Button variant="ghost" size="sm" loading={connectingHr === "ble"} onClick={handleConnectHeartRate}>
+                <Button variant="ghost" size="sm" loading={connectingHr} onClick={handleConnectHeartRate}>
                   <Bluetooth className="mr-1.5 h-4 w-4" aria-hidden />
                   Connect heart rate
                 </Button>
-                {isAirPodsHeartRateSupported() && (
-                  <Button variant="ghost" size="sm" loading={connectingHr === "airpods"} onClick={handleConnectAirPods}>
-                    AirPods
-                  </Button>
-                )}
               </div>
             )}
             {hrError && <p className="text-center text-xs text-danger">{hrError}</p>}
@@ -707,8 +685,8 @@ function LiveErgScreen() {
             <p className="micro-label text-muted">Live session</p>
             <h2 className="headline-tight mt-1 text-2xl font-bold">Record a {meta.noun}</h2>
             <p className="mt-1.5 text-sm leading-relaxed text-muted">
-              The clock runs here; the distance comes off the machine&apos;s monitor at the end. Connect a heart-rate source for
-              a calories figure built from your own heart rate.
+              The clock runs here; the distance comes off the machine&apos;s monitor at the end. Connect a Bluetooth strap
+              or watch for a calories figure built from your own heart rate.
             </p>
           </div>
           <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-accent/15 text-accent">
@@ -769,21 +747,16 @@ function LiveErgScreen() {
               </div>
             ) : native ? (
               <>
-                <p className="text-sm font-semibold">Connect a source</p>
+                <p className="text-sm font-semibold">Connect a strap or watch</p>
                 <p className="text-xs leading-relaxed text-muted">
-                  Bluetooth works with Garmin watches and Polar or Wahoo chest straps. AirPods go through Apple Health.
-                  Without one the calories are a rough estimate from the sport and your bodyweight.
+                  Bluetooth works with Garmin watches and Polar or Wahoo chest straps. Without one the calories are a
+                  rough estimate from the sport and your bodyweight.
                 </p>
                 <div className="mt-2.5 flex flex-wrap gap-2">
-                  <Button variant="secondary" size="sm" loading={connectingHr === "ble"} disabled={connectingHr === "airpods"} onClick={handleConnectHeartRate}>
+                  <Button variant="secondary" size="sm" loading={connectingHr} onClick={handleConnectHeartRate}>
                     <Bluetooth className="mr-1.5 h-4 w-4" aria-hidden />
-                    Bluetooth
+                    Connect over Bluetooth
                   </Button>
-                  {isAirPodsHeartRateSupported() && (
-                    <Button variant="secondary" size="sm" loading={connectingHr === "airpods"} disabled={connectingHr === "ble"} onClick={handleConnectAirPods}>
-                      AirPods
-                    </Button>
-                  )}
                 </div>
                 {hrError && <p className="mt-2 text-xs text-danger">{hrError}</p>}
               </>
@@ -791,8 +764,8 @@ function LiveErgScreen() {
               <>
                 <p className="text-sm font-semibold">Heart rate needs the app</p>
                 <p className="text-xs leading-relaxed text-muted">
-                  A browser cannot read a chest strap or AirPods. The timer and a rough calories estimate still work here; for
-                  heart rate, record from the Split Index app.
+                  A browser cannot read a chest strap. The timer and a rough calories estimate still work here; for heart
+                  rate, record from the Split Index app.
                 </p>
               </>
             )}

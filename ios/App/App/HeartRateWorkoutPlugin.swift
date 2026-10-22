@@ -120,24 +120,14 @@ private class HeartRateWorkoutSession: NSObject, HKWorkoutSessionDelegate, HKLiv
         switch activityType {
         case "outdoor_cycling": return .cycling
         case "walking": return .walking
-        case "rowing": return .rowing
-        case "bike_erg": return .cycling
         default: return .running
-        }
-    }
-
-    /// The live erg screen's two sports are indoor; everything the GPS page starts is outdoor.
-    private func locationType(for activityType: String) -> HKWorkoutSessionLocationType {
-        switch activityType {
-        case "rowing", "bike_erg": return .indoor
-        default: return .outdoor
         }
     }
 
     private func beginWorkoutSession(_ call: CAPPluginCall, activityType: String) {
         let configuration = HKWorkoutConfiguration()
         configuration.activityType = healthKitActivityType(for: activityType)
-        configuration.locationType = locationType(for: activityType)
+        configuration.locationType = .outdoor
 
         do {
             let session = try HKWorkoutSession(healthStore: healthStore, configuration: configuration)

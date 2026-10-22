@@ -184,7 +184,7 @@ export const activityFieldsSchema = z
         calories_method: z.enum(["heart-rate", "met"]),
         calories_assumed_profile: z.boolean(),
         hr_samples: bounded([0, 100_000], "heart-rate samples").int(),
-        hr_source: z.enum(["ble", "airpods"]).nullable(),
+        hr_source: z.enum(["ble"]).nullable(),
         paused_seconds: bounded([0, 86_400], "paused time").int(),
       })
       .strict()

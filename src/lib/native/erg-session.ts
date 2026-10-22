@@ -25,7 +25,7 @@ export interface ErgSessionRecord {
   startedAt: number;
   pauses: PauseInterval[];
   hrReadings: HrReading[];
-  hrSource: "ble" | "airpods" | null;
+  hrSource: "ble" | null;
   /** The plan session this was started from, when it was. */
   hpeSessionId: string | null;
 }
@@ -72,7 +72,7 @@ export async function loadErgSession(): Promise<ErgSessionRecord | null> {
       startedAt: parsed.startedAt,
       pauses: Array.isArray(parsed.pauses) ? parsed.pauses : [],
       hrReadings: Array.isArray(parsed.hrReadings) ? parsed.hrReadings : [],
-      hrSource: parsed.hrSource === "ble" || parsed.hrSource === "airpods" ? parsed.hrSource : null,
+      hrSource: parsed.hrSource === "ble" ? "ble" : null,
       hpeSessionId: typeof parsed.hpeSessionId === "string" ? parsed.hpeSessionId : null,
     };
   } catch {

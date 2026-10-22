@@ -2,14 +2,8 @@ import { registerPlugin, type PluginListenerHandle } from "@capacitor/core";
 import { isNativePlatform, getNativePlatform } from "./platform";
 import type { HrReading } from "@/lib/scoring/gps-track";
 
-/**
- * The GPS page's three sports plus the two the live erg screen records.
- * HealthKit's own activityType enum is much larger; the Swift side maps each
- * of these to the right one and marks the ergs as indoor. An older native
- * build that predates the erg cases falls back to "running" — the workout is
- * discarded at the end either way, so nothing wrong reaches Apple Health.
- */
-export type AirPodsWorkoutSport = "running" | "outdoor_cycling" | "walking" | "rowing" | "bike_erg";
+/** Matches the GpsSport union in the gps-run page — HealthKit's own activityType enum is much larger, but these are the only three GPS tracking supports. */
+export type AirPodsWorkoutSport = "running" | "outdoor_cycling" | "walking";
 
 interface HeartRateWorkoutPlugin {
   isAvailable(): Promise<{ available: boolean }>;

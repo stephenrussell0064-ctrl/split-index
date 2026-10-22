@@ -18,7 +18,7 @@ export interface ErgSubmissionInput {
   /** Every pause, with any open one already closed at `endedAt`. */
   pauses: readonly PauseInterval[];
   hrReadings: readonly HrReading[];
-  hrSource: "ble" | "airpods" | null;
+  hrSource: "ble" | null;
   profile: { weightKg: number | null; age: number | null; sex: "male" | "female" };
   /** Off the erg's own monitor, typed at the finish. Null when not entered. */
   distanceMeters: number | null;
