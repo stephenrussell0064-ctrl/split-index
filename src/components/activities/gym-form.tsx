@@ -36,6 +36,7 @@ import {
   getExerciseLoadConfig,
   resolveScoringWeight,
   weightEntryLabel,
+  isBodyweightOnlyExercise,
 } from "@/lib/scoring/weight-entry";
 import type { Gender } from "@/types";
 import {
@@ -48,7 +49,6 @@ import {
   bestSetRow,
   createExerciseRow,
   createSetRow,
-  epley1RM,
   parseNum,
   totalVolumeFromSets,
   type ExerciseRowState,
@@ -57,6 +57,7 @@ import {
   type WorkoutFormState,
   exerciseRowPatchForName,
 } from "./form-state";
+import { labOneRM } from "./lab-one-rm";
 import type { UpdateField } from "./sport-form";
 
 /**
@@ -278,9 +279,18 @@ export function GymExercises({
     let best: { name: string; ratio: number } | null = null;
     for (const row of rows) {
       const top = bestSetRow(row.sets);
-      const oneRm = top ? epley1RM(parseNum(top.weight), parseNum(top.reps)) : null;
-      if (!oneRm || !row.name.trim()) continue;
-      const ratio = oneRm / bodyweight;
+      if (!top || !row.name.trim()) continue;
+      // Same estimator as the save and the per-exercise card below, so the
+      // session's top lift is in the same currency as the logbook.
+      const estimate = labOneRM({
+        exerciseName: row.name,
+        weightEntryMode: row.weightEntryMode,
+        set: top,
+        bodyweightKg: bodyweight,
+        bodyweightOnly: isBodyweightOnlyExercise(row.name),
+      });
+      if (!estimate) continue;
+      const ratio = estimate.kg / bodyweight;
       if (!best || ratio > best.ratio) {
         best = { name: row.name.trim(), ratio };
       }
@@ -716,12 +726,21 @@ function ExerciseRow({
    */
   const setScores = useMemo(() => row.sets.map(scoreSet), [row.sets, scoreSet]);
   const engineScore = topSet ? scoreSet(topSet) : null;
-  // The cards read the raw weight string. For a bodyweight-only lift that
-  // string is never shown and must be treated as 0, exactly as scoreSet does
-  // — otherwise a weight left over from a previous exercise (or an old draft)
-  // prints "Est. 1RM 233 kg / 3.0x BW" over twenty bodyweight pull-ups.
-  const oneRm =
-    topSet && !isBodyweightOnly ? epley1RM(parseNum(topSet.weight), parseNum(topSet.reps)) : null;
+  // The 1RM the logbook will show for this set, from the same estimator the
+  // save uses (see lab-one-rm.ts). A bodyweight-only lift is scored at 0 kg
+  // whatever string the weight field holds — a weight left over from a
+  // previous exercise or an old draft used to print "Est. 1RM 233 kg" over
+  // twenty bodyweight pull-ups.
+  const oneRmEstimate = topSet
+    ? labOneRM({
+        exerciseName: row.name,
+        weightEntryMode: row.weightEntryMode,
+        set: topSet,
+        bodyweightKg: bodyweight,
+        bodyweightOnly: isBodyweightOnly,
+      })
+    : null;
+  const oneRm = oneRmEstimate?.kg ?? null;
   const relativeBw =
     oneRm && bodyweight && bodyweight > 0
       ? Math.round((oneRm / bodyweight) * 100) / 100
@@ -1292,7 +1311,12 @@ function ExerciseRow({
             exist until their values did, growing the row from 50px to 76px
             mid-set. See StatCell. */}
         <div className="grid grid-cols-4 gap-2 rounded-xl bg-white/[0.02] px-2.5 py-1.5">
-          <StatCell label="Est. 1RM" value={oneRm ? `${oneRm} kg` : null} />
+          {/* Labelled by convention so a doubled dumbbell figure or an
+              added-load pull-up figure reads as what it is. */}
+          <StatCell
+            label={oneRmEstimate?.pair ? "Est. 1RM · pair" : oneRmEstimate?.addedLoad ? "Est. 1RM · added" : "Est. 1RM"}
+            value={oneRm ? `${oneRm} kg` : null}
+          />
           <StatCell
             label="× BW"
             value={relativeBw ? formatRelativeStrength(relativeBw, true) : null}
