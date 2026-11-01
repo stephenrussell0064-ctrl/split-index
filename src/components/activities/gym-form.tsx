@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion, useMotionValue, useTransform, PanInfo } from "framer-motion";
 import {
+  ArrowDownRight,
   Check,
   ChevronDown,
   Copy,
@@ -26,8 +27,13 @@ import { cn } from "@/lib/utils/cn";
 import { resolveAnchorKey, scoreStrength } from "@/lib/scoring/split-strength-engine";
 import { scoreLoadedCarry, scoreTimedHold } from "@/lib/scoring/strength/isometric-carry";
 import {
-  getAttachmentOptionsByKey,
+  defaultAttachmentValue,
+  encodeAttachmentValue,
+  getArmModeOptions,
+  getAttachmentOptions,
   getAttachmentPickerLabel,
+  parseAttachmentValue,
+  type ArmMode,
 } from "@/lib/scoring/strength/attachments";
 import { AttachmentPicker } from "@/components/gym/attachment-picker";
 import {
@@ -554,7 +560,14 @@ function ExerciseRow({
   // Resolved once: the options and the noun to put above them both key off the
   // same anchor key, and resolving it twice is how the two drift apart.
   const anchorKey = row.name.trim() ? resolveAnchorKey(row.name) : null;
-  const attachmentOptions = anchorKey ? getAttachmentOptionsByKey(anchorKey) : null;
+  // By NAME first: a dumbbell kickback scores on a cable anchor but has no
+  // rope — see ATTACHMENT_SET_BY_EXERCISE_NAME in strength/attachments.ts.
+  const attachmentOptions = anchorKey ? getAttachmentOptions(row.name, anchorKey) : null;
+  const armModeOptions = anchorKey ? getArmModeOptions(row.name, anchorKey) : null;
+  // One stored string, two choices ("rope|single"). An untouched row shows
+  // and scores as what the exercise means by default — a "Single Arm Cable
+  // Row" is the single handle before anyone taps it.
+  const attachmentValue = parseAttachmentValue(row.attachment ?? defaultAttachmentValue(row.name));
   const { history, pending: historyPending } = useExerciseHistory(row.name);
   /**
    * The exercise picker (muscle-filter chips + search box + select) is ~150px
@@ -755,6 +768,23 @@ function ExerciseRow({
   };
   const addSet = () => {
     onUpdate({ sets: [...row.sets, createSetRow()] });
+  };
+  /**
+   * A drop set (user request: "add option for drop sets"): a new set flagged
+   * as done straight after the one above it, lighter, no rest. Reps are left
+   * blank — a drop is usually taken to failure, so the number is whatever
+   * came out — and so is the weight, since "lighter than the last set" is
+   * the athlete's call. The flag is the whole feature: scoring already takes
+   * the heaviest set, so a drop set is recorded for what it was without ever
+   * being mistaken for a top set.
+   */
+  const addDropSet = () => {
+    onUpdate({ sets: [...row.sets, { ...createSetRow(), dropSet: true }] });
+  };
+  const toggleDropSet = (setId: string) => {
+    onUpdate({
+      sets: row.sets.map((s) => (s.id === setId ? { ...s, dropSet: !s.dropSet } : s)),
+    });
   };
   /**
    * Write a remembered load into the first set that has nothing in it, adding
@@ -1050,9 +1080,23 @@ function ExerciseRow({
         {attachmentOptions && anchorKey && (
           <AttachmentPicker
             options={attachmentOptions}
-            value={row.attachment}
-            onChange={(id) => onUpdate({ attachment: id })}
-            label={getAttachmentPickerLabel(anchorKey)}
+            value={attachmentValue.attachment}
+            onChange={(id) =>
+              onUpdate({ attachment: encodeAttachmentValue(id, attachmentValue.armMode) })
+            }
+            label={getAttachmentPickerLabel(anchorKey, row.name)}
+          />
+        )}
+        {armModeOptions && (
+          <AttachmentPicker
+            options={armModeOptions.options}
+            value={attachmentValue.armMode}
+            onChange={(id) =>
+              onUpdate({
+                attachment: encodeAttachmentValue(attachmentValue.attachment, id as ArmMode),
+              })
+            }
+            label={armModeOptions.label}
           />
         )}
 
@@ -1161,6 +1205,23 @@ function ExerciseRow({
                 )}
               >
                 <div className="flex items-center gap-2 sm:contents">
+                  {set.dropSet ? (
+                    // The badge is the control: tapping it turns the drop set
+                    // back into an ordinary set, so a mis-tap on "Drop set" is
+                    // one tap to undo rather than a delete-and-re-add.
+                    <button
+                      type="button"
+                      onClick={() => toggleDropSet(set.id)}
+                      title="Drop set — done straight after the set above, lighter, no rest. Tap to make it an ordinary set."
+                      aria-label={`Set ${setIndex + 1}, drop set. Tap to make it an ordinary set.`}
+                      className={cn(
+                        "flex w-6 shrink-0 items-center justify-center text-warning sm:row-start-1 sm:w-auto",
+                        SM_COL[col.idx]
+                      )}
+                    >
+                      <ArrowDownRight className="h-3.5 w-3.5" />
+                    </button>
+                  ) : (
                   <span
                     title={asFilled ? filledTitle : undefined}
                     aria-label={
@@ -1177,6 +1238,7 @@ function ExerciseRow({
                     {setIndex + 1}
                     {asFilled && <span aria-hidden className="ml-0.5 text-[9px] align-top">●</span>}
                   </span>
+                  )}
                   {!isBodyweightOnly && (
                     <UnitInput
                       aria-label={`Set ${setIndex + 1} weight`}
@@ -1278,7 +1340,7 @@ function ExerciseRow({
               appear at that moment — shrinking "Add set" from 325px to 225px
               under the athlete's thumb on the keystroke that completed set 1.
               Its column is always there now; only its contents arrive. */}
-          <div className="grid grid-cols-[1fr_auto] gap-2">
+          <div className="grid grid-cols-[1fr_auto_auto] gap-2">
             <button
               type="button"
               onClick={addSet}
@@ -1286,6 +1348,22 @@ function ExerciseRow({
             >
               <Plus className="h-4 w-4" />
               Add set
+            </button>
+            <button
+              type="button"
+              onClick={addDropSet}
+              title="Add a drop set: straight after the last set, lighter, no rest"
+              // Same hidden-not-unmounted treatment as Repeat: a drop set only
+              // makes sense after a set exists to drop from.
+              aria-hidden={!lastFilledSet}
+              tabIndex={lastFilledSet ? undefined : -1}
+              className={cn(
+                "flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-xl border border-white/[0.08] px-3 text-sm font-medium text-muted transition-colors hover:text-foreground",
+                !lastFilledSet && "invisible pointer-events-none"
+              )}
+            >
+              <ArrowDownRight className="h-3.5 w-3.5" />
+              Drop set
             </button>
             <button
               type="button"

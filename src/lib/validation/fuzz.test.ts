@@ -126,6 +126,16 @@ describe("fuzz — the fields that reach the scoring engine", () => {
     }
   });
 
+  it("accepts the drop-set flag the gym form sends, and nothing else in its place", () => {
+    // The set schema is .strict(), so the flag has to be declared or every
+    // workout with a drop set fails validation at the API.
+    expect(gymSetSchema.safeParse({ weight_kg: 40, reps: 8, drop_set: true }).success).toBe(true);
+    expect(gymSetSchema.safeParse({ weight_kg: 40, reps: 8, drop_set: null }).success).toBe(true);
+    expect(gymSetSchema.safeParse({ weight_kg: 40, reps: 8 }).success).toBe(true);
+    expect(gymSetSchema.safeParse({ weight_kg: 40, reps: 8, drop_set: "yes" }).success).toBe(false);
+    expect(gymSetSchema.safeParse({ weight_kg: 40, reps: 8, dropset: true }).success).toBe(false);
+  });
+
   it("rejects an implausible heart rate but keeps the band's edges", () => {
     const [min, max] = BOUND_HR_BPM;
     for (const v of [min - 1, max + 1, 0, -5, 1e9]) {

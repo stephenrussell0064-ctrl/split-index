@@ -145,6 +145,7 @@ export function activityToFormState(
                   s.duration_seconds != null ? String(s.duration_seconds) : "",
                 distanceMeters:
                   s.distance_meters != null ? String(s.distance_meters) : "",
+                dropSet: s.drop_set === true,
               })),
               notes: exerciseNotes[String(ex.order_index)] ?? "",
               weightEntryMode:

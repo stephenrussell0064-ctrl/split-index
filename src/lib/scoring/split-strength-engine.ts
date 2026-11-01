@@ -68,6 +68,7 @@ import {
   type ExerciseClass,
 } from "@/lib/scoring/strength/one-rm";
 import {
+  getExerciseLoadConfig,
   resolveScoringWeight,
   type WeightEntryMode,
 } from "@/lib/scoring/weight-entry";
@@ -701,6 +702,49 @@ const WEIGHT_RATIO_ANCHOR_TABLES: Partial<Record<string, WeightAnchor[]>> = {
    */
   tricepPushdownSingleArm: slTable([7.2, 12.0, 18.4, 30.4, 54.4]),
 
+  // --- 1 Nov 2026 balance pass ------------------------------------------------
+  // Owner: "go through every gym exercise and ensure they're balanced". A
+  // dump of every catalogue exercise's resolved anchor found 44 of 187 on a
+  // generic category anchor (a 30 kg barbell shrug scored the same 500 as a
+  // 30 kg face pull, and nothing generic could pass 724) and a dozen more on
+  // a sibling's curve that was not theirs (a goblet squat asked for the
+  // front squat's 53 kg at 500; a 25 kg reverse pec deck read 800 on the
+  // dumbbell lateral raise's standard). Each table below is Strength
+  // Level's 80 kg male row read on 1 Nov 2026, same convention as every
+  // table above — percentile parity, not a dictated curve.
+  barbellShrug: slTable([53, 85, 126, 175, 230]),
+  goodMorning: slTable([30, 53, 84, 122, 165]),
+  straightArmPulldown: slTable([20, 34, 54, 77, 104]),
+  seatedCableRow: slTable([47, 65, 87, 112, 140]),
+  gobletSquat: slTable([15, 26, 41, 59, 80]),
+  seatedCalfRaise: slTable([31, 57, 93, 138, 188]),
+  cableKickback: slTable([7, 23, 49, 86, 131]),
+  cablePullThrough: slTable([15, 34, 62, 98, 140]),
+  powerClean: slTable([52, 68, 88, 111, 135]),
+  cleanAndJerk: slTable([47, 67, 91, 118, 148]),
+  snatch: slTable([37, 53, 74, 98, 124]),
+  thruster: slTable([33, 50, 72, 98, 127]),
+  // Not published by Strength Level. A two-hand swing loads like something
+  // between a pull-through and a clean; this is an estimate held to that
+  // neighbourhood, and the one row here that is not a read-off.
+  kettlebellSwing: slTable([16, 28, 44, 64, 86]),
+  cableCrunch: slTable([26, 44, 68, 97, 130]),
+  uprightRow: slTable([23, 39, 59, 84, 111]),
+  reversePecDeck: slTable([29, 46, 67, 92, 119]),
+  machineLateralRaise: slTable([25, 41, 61, 84, 111]),
+  dumbbellPullover: slTable([15, 24, 35, 49, 65]),
+  // Strength Level's "Tricep Extension" — the bar, lying or overhead. Also
+  // the JM press, which is that movement with a bench-press start.
+  barbellTricepExtension: slTable([15, 28, 46, 70, 96]),
+  // One dumbbell, both hands, behind the head. The equipment picker scales
+  // this for a bar or a cable — see overheadTricepExtension in
+  // strength/attachments.ts.
+  overheadTricepExtension: slTable([6, 12, 22, 33, 47]),
+  // dumbbells, DOUBLED (dbFly's anchorConvention is total): 8/15/24/35/47 per hand.
+  dbFly: slTable([16, 30, 48, 70, 94]),
+  // dumbbells, NOT doubled: one arm, one dumbbell.
+  dbKickback: slTable([5, 10, 18, 28, 40]),
+
   // --- pull-ups: a table in ADDED-load ratio, dictated by the owner --------
   pullUp: PULL_UP_ANCHORS,
   weightedPullup: PULL_UP_ANCHORS,
@@ -794,6 +838,42 @@ const ACCESSORY_MAP: Record<string, LiftAnchor> = {
   dbShrug: { anchorRatio: 0.8488, category: "back", bodyPart: "pull" },
 
   // -------------------------------------------------------------------------
+  // 1 Nov 2026 balance pass — see the matching block in
+  // WEIGHT_RATIO_ANCHOR_TABLES. `anchorRatio` is each table's 500-point
+  // (novice + 0.4 x (intermediate - novice), over 80 kg), kept in step the
+  // same way as the block above.
+  // -------------------------------------------------------------------------
+  barbellShrug: { anchorRatio: 1.2675, category: "back", bodyPart: "pull" },
+  goodMorning: { anchorRatio: 0.8175, category: "legs", bodyPart: "lowerBody" },
+  straightArmPulldown: { anchorRatio: 0.525, category: "back", bodyPart: "pull" },
+  seatedCableRow: { anchorRatio: 0.9225, category: "back", bodyPart: "pull" },
+  gobletSquat: { anchorRatio: 0.40, category: "legs", bodyPart: "lowerBody" },
+  seatedCalfRaise: { anchorRatio: 0.8925, category: "legs", bodyPart: "lowerBody" },
+  cableKickback: { anchorRatio: 0.4175, category: "legs", bodyPart: "lowerBody" },
+  cablePullThrough: { anchorRatio: 0.565, category: "legs", bodyPart: "lowerBody" },
+  powerClean: { anchorRatio: 0.95, category: "legs", bodyPart: "lowerBody" },
+  cleanAndJerk: { anchorRatio: 0.9575, category: "legs", bodyPart: "lowerBody" },
+  snatch: { anchorRatio: 0.7675, category: "legs", bodyPart: "lowerBody" },
+  thruster: { anchorRatio: 0.735, category: "legs", bodyPart: "lowerBody" },
+  kettlebellSwing: { anchorRatio: 0.43, category: "legs", bodyPart: "lowerBody" },
+  cableCrunch: { anchorRatio: 0.67, category: "core", bodyPart: "lowerBody" },
+  uprightRow: { anchorRatio: 0.5875, category: "shoulders", bodyPart: "upperBody" },
+  reversePecDeck: { anchorRatio: 0.68, category: "shoulders", bodyPart: "upperBody" },
+  machineLateralRaise: { anchorRatio: 0.6125, category: "shoulders", bodyPart: "upperBody" },
+  dumbbellPullover: { anchorRatio: 0.355, category: "chest", bodyPart: "upperBody" },
+  barbellTricepExtension: { anchorRatio: 0.44, category: "arms", bodyPart: "upperBody" },
+  overheadTricepExtension: { anchorRatio: 0.20, category: "arms", bodyPart: "upperBody" },
+  dbFly: { anchorRatio: 0.465, category: "chest", bodyPart: "upperBody" },
+  dbKickback: { anchorRatio: 0.165, category: "arms", bodyPart: "upperBody" },
+  // No published standards for these three; single-anchor estimates that
+  // replace the category fallback, which asked 33 kg of a tibialis raise
+  // (a movement most people do with 5-15 kg) and a Svend press alike, and
+  // put a Y raise on the lateral raise's 10 kg when 3-5 kg is the norm.
+  tibialisRaise: { anchorRatio: 0.15, category: "legs", bodyPart: "lowerBody" },
+  svendPress: { anchorRatio: 0.15, category: "chest", bodyPart: "upperBody" },
+  yRaise: { anchorRatio: 0.06, category: "shoulders", bodyPart: "upperBody" },
+
+  // -------------------------------------------------------------------------
   // Iso-Lateral (Hammer Strength) plate-loaded machines — their OWN anchors.
   //
   // These used to alias onto the nearest free-weight/cable sibling (high row
@@ -885,8 +965,16 @@ const LIFT_ALIASES: Record<string, string> = {
   deadlift: "deadlift", "sumo deadlift": "deadlift", "trap bar deadlift": "deadlift", "rack pull": "deadlift",
   "overhead press": "ohp", ohp: "ohp", "seated overhead press": "ohp", "push press": "ohp", "z press": "ohp", "landmine press": "ohp",
   "barbell row": "barbellRow", "pendlay row": "barbellRow", "chest supported row": "barbellRow", "seal row": "barbellRow", "t-bar row": "barbellRow", "meadows row": "barbellRow",
-  "front squat": "frontSquat", "goblet squat": "frontSquat",
-  "incline bench press": "inclineBench", "decline bench press": "inclineBench", "smith machine bench press": "inclineBench",
+  "front squat": "frontSquat",
+  // Was frontSquat — a dumbbell held at the chest scored on a barbell lift,
+  // asking 53 kg at 500 of a movement Strength Level puts at 26 kg novice.
+  "goblet squat": "gobletSquat",
+  "incline bench press": "inclineBench",
+  // Both were inclineBench, the SOFTER of the bench curves. A decline is if
+  // anything easier than flat and a Smith bench is a flat bench on rails, so
+  // each out-scored the bench press it is a variant of at the same load —
+  // the rule the Zercher/Spoto block below exists to enforce.
+  "decline bench press": "bench", "smith machine bench press": "bench",
   // Weighted variants are a separate key from the plain bodyweight ones —
   // see the comment on PRIMARY_MAP above.
   "weighted pull up": "weightedPullup", "weighted pull-up": "weightedPullup", "weighted chin up": "weightedPullup",
@@ -945,9 +1033,11 @@ const LIFT_ALIASES: Record<string, string> = {
   "iso-lateral leg extension": "isoLateralLegExtension",
   "iso-lateral leg curl": "isoLateralLegCurl",
   "cable fly": "cableFly", "low-to-high cable fly": "cableFly", "high-to-low cable fly": "cableFly",
-  "dumbbell fly": "cableFly", "incline dumbbell fly": "cableFly",
+  // Were cableFly: a per-hand dumbbell on a cable stack's anchor read a 9 kg
+  // dumbbell as 500 where Strength Level's novice is 15.
+  "dumbbell fly": "dbFly", "incline dumbbell fly": "dbFly",
   "pec deck": "pecDeck",
-  "rope pushdown": "tricepPushdown", "tricep pushdown": "tricepPushdown", "tricep extension": "tricepPushdown",
+  "rope pushdown": "tricepPushdown", "tricep pushdown": "tricepPushdown",
   // The catalogue entry is "Single Arm Pushdown", but the athlete's own words
   // for it were "single arm tricep pushdowns" — typed as a custom exercise,
   // that spelling missed every alias and landed on DEFAULT_GENERIC_ANCHOR, so
@@ -959,11 +1049,33 @@ const LIFT_ALIASES: Record<string, string> = {
   "single arm rope pushdown": "tricepPushdownSingleArm",
   "one arm pushdown": "tricepPushdownSingleArm",
   "one arm tricep pushdown": "tricepPushdownSingleArm",
-  "skull crusher": "skullcrusher", "overhead tricep extension": "tricepPushdown",
-  "cable overhead extension": "tricepPushdown", "dumbbell kickback": "tricepPushdown", "jm press": "tricepPushdown",
+  "skull crusher": "skullcrusher",
+  // The triceps family used to all land on tricepPushdown, a two-arm CABLE
+  // standard, so a dumbbell kickback (one arm, one dumbbell) needed 21 kg to
+  // reach 500 and offered a rope attachment. Each is now its own movement;
+  // the overhead extension's equipment (dumbbell / bar / cable) is a picker.
+  "overhead tricep extension": "overheadTricepExtension",
+  "tricep extension": "overheadTricepExtension",
+  "cable overhead extension": "overheadTricepExtension",
+  "overhead cable extension": "overheadTricepExtension",
+  "dumbbell kickback": "dbKickback", "tricep kickback": "dbKickback", "kickback": "dbKickback",
+  "jm press": "barbellTricepExtension",
+  "lying tricep extension": "barbellTricepExtension",
+  "ez bar overhead extension": "barbellTricepExtension", "barbell overhead extension": "barbellTricepExtension",
   "dumbbell shoulder press": "dbShoulderPress", "seated dumbbell press": "dbShoulderPress", "machine shoulder press": "dbShoulderPress", "arnold press": "dbShoulderPress",
-  "cable lateral raise": "lateralRaise", "machine lateral raise": "lateralRaise", "front raise": "lateralRaise", "rear delt fly": "lateralRaise", "reverse pec deck": "lateralRaise", "upright row": "lateralRaise", "cable rear delt pull": "lateralRaise",
-  "dumbbell row": "dbRow", "single arm cable row": "dbRow", "seated cable row": "dbRow", "inverted row": "dbRow", "face pull": "dbRow", "machine row": "dbRow",
+  // Only the dumbbell/cable raises stay on lateralRaise (per hand). The
+  // machines were there too, scored on a 10 kg dumbbell standard: a 25 kg
+  // reverse pec deck — a light warm-up stack — read 800.
+  "cable lateral raise": "lateralRaise", "front raise": "lateralRaise", "rear delt fly": "lateralRaise", "cable rear delt pull": "lateralRaise",
+  "machine lateral raise": "machineLateralRaise",
+  "reverse pec deck": "reversePecDeck", "machine reverse fly": "reversePecDeck", "rear delt machine": "reversePecDeck",
+  "upright row": "uprightRow",
+  "y raise": "yRaise", "w raise": "yRaise",
+  // The cable rows were on dbRow, a two-dumbbell standard whose 36 kg total
+  // at 500 is a light seated row (Strength Level novice: 65). The dumbbell
+  // row keeps dbRow and loses the V-bar/rope picker it never had a use for.
+  "dumbbell row": "dbRow", "inverted row": "dbRow", "face pull": "dbRow",
+  "seated cable row": "seatedCableRow", "single arm cable row": "seatedCableRow", "machine row": "seatedCableRow", "cable row": "seatedCableRow",
   "ez bar curl": "barbellCurl", "dumbbell curl": "dbCurl", "hammer curl": "hammerCurl", "cross body hammer curl": "hammerCurl", "cable curl": "cableCurl", "bayesian cable curl": "cableCurl", "concentration curl": "dbCurl", "reverse curl": "barbellCurl", "wrist curl": "barbellCurl",
   "skull crushers": "skullcrusher", "dumbbell skull crusher": "skullcrusher",
   "machine preacher curl": "preacherCurl", "spider curl": "preacherCurl",
@@ -971,7 +1083,11 @@ const LIFT_ALIASES: Record<string, string> = {
   "leg extension": "legExtension", "single leg extension": "legExtension",
   "walking lunges": "walkingLunge", lunges: "walkingLunge", "reverse lunges": "walkingLunge",
   "bulgarian split squat": "bulgarianSplit", "step up": "bulgarianSplit",
-  "standing calf raise": "calfRaise", "seated calf raise": "calfRaise", "calf raise": "calfRaise",
+  "standing calf raise": "calfRaise", "calf raise": "calfRaise",
+  // Was calfRaise: a bent-knee seated raise moves about two thirds of a
+  // standing one (Strength Level 57 vs 88 novice) and was being asked for
+  // the standing load.
+  "seated calf raise": "seatedCalfRaise",
   "leg press calf raise": "calfRaise",
   "hip adduction": "hipAdduction", "hip abduction": "hipAdduction",
   "seated leg curl": "legCurl", "leg curl": "legCurl",
@@ -989,7 +1105,28 @@ const LIFT_ALIASES: Record<string, string> = {
   "deficit deadlift": "deadlift", "block pull": "deadlift", "jefferson deadlift": "deadlift",
   "landmine row": "barbellRow",
   "incline dumbbell curl": "dbCurl",
-  "overhead cable extension": "tricepPushdown",
+
+  // 1 Nov 2026 balance pass: catalogue exercises that had no alias and fell
+  // to a category anchor. See the matching WEIGHT_RATIO_ANCHOR_TABLES block.
+  shrug: "barbellShrug", "barbell shrug": "barbellShrug", "trap bar shrug": "barbellShrug",
+  "good morning": "goodMorning",
+  "straight arm pulldown": "straightArmPulldown", "straight-arm pulldown": "straightArmPulldown",
+  // Unilateral versions of tabled movements: the parent's anchor, scored one
+  // side at a time by DEFAULT_ATTACHMENT_BY_EXERCISE_NAME in
+  // strength/attachments.ts rather than by a separate table.
+  "single leg press": "legPress",
+  "single leg rdl": "walkingLunge", "single leg romanian deadlift": "walkingLunge",
+  "glute kickback": "cableKickback", "cable kickback": "cableKickback", "cable glute kickback": "cableKickback",
+  "cable pull through": "cablePullThrough", "cable pull-through": "cablePullThrough",
+  "power clean": "powerClean", "hang clean": "powerClean", clean: "powerClean",
+  "clean and jerk": "cleanAndJerk", "clean & jerk": "cleanAndJerk",
+  snatch: "snatch", "power snatch": "snatch", "hang snatch": "snatch",
+  thruster: "thruster", "barbell thruster": "thruster",
+  "kettlebell swing": "kettlebellSwing", "kb swing": "kettlebellSwing",
+  "cable crunch": "cableCrunch", "machine crunch": "cableCrunch", "weighted crunch": "cableCrunch",
+  "dumbbell pullover": "dumbbellPullover", pullover: "dumbbellPullover",
+  "svend press": "svendPress",
+  "tibialis raise": "tibialisRaise",
 };
 
 /**
@@ -1146,6 +1283,21 @@ export const EXERCISE_CLASS: Record<string, ExerciseClass> = {
   isoLateralLegCurl: "accessory",
   tricepPushdown: "isolation",
   tricepPushdownSingleArm: "isolation",
+  // 1 Nov 2026 balance pass. The Olympic lifts and the hinge/squat patterns
+  // are full-body barbell compounds; the rest are single-joint or machine
+  // work and take the accessory default.
+  powerClean: "compound",
+  cleanAndJerk: "compound",
+  snatch: "compound",
+  thruster: "compound",
+  goodMorning: "compound",
+  gobletSquat: "compound",
+  overheadTricepExtension: "isolation",
+  barbellTricepExtension: "isolation",
+  dbKickback: "isolation",
+  machineLateralRaise: "isolation",
+  reversePecDeck: "isolation",
+  yRaise: "isolation",
   dbCurl: "isolation",
   hammerCurl: "isolation",
   skullcrusher: "isolation",
@@ -2002,7 +2154,18 @@ export function scoreStrength(input: ScoreStrengthInput): ScoreStrengthResult {
 
   let effectiveAnchor = anchor.anchorRatio;
 
-  const attachmentMultiplier = resolveAttachmentMultiplierByKey(resolvedKey, input.attachment);
+  // A per-hand entry on a total-load anchor has already been doubled by the
+  // caller (resolveScoringWeight); a single-arm set logged that way is one
+  // arm's load counted twice, which the multiplier has to know about.
+  const weightScaled =
+    input.weightEntryMode === "per_hand" &&
+    getExerciseLoadConfig(exerciseName).anchorConvention === "total";
+  const attachmentMultiplier = resolveAttachmentMultiplierByKey(
+    resolvedKey,
+    input.attachment,
+    exerciseName,
+    weightScaled
+  );
   if (attachmentMultiplier !== 1.0) {
     effectiveAnchor *= attachmentMultiplier;
     appliedFactors.push(`attachment:${input.attachment} ×${attachmentMultiplier}`);

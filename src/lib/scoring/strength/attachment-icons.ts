@@ -14,4 +14,9 @@ export type ExerciseAttachmentIcon =
   // getAttachmentPickerLabel in attachments.ts.
   | "sled-45"
   | "horizontal-press"
-  | "vertical-press";
+  | "vertical-press"
+  // Equipment for the overhead tricep extension (dumbbell vs bar vs cable).
+  | "dumbbell"
+  // The single-vs-both arms/legs picker — see getArmModeOptions.
+  | "both-limbs"
+  | "single-limb";

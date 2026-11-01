@@ -26,6 +26,12 @@ interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
    * onboarding cardio row as one input shorter than the two beside it.
    */
   wrapperClassName?: string;
+  /**
+   * Something to sit inside the control at its right edge — a show/hide
+   * password toggle. Only when set does the input get wrapped and padded;
+   * every existing caller renders exactly as before.
+   */
+  trailing?: React.ReactNode;
 }
 
 const labelClass =
@@ -37,6 +43,7 @@ export function Input({
   hint,
   className,
   wrapperClassName,
+  trailing,
   id,
   "aria-describedby": describedBy,
   ...props
@@ -65,13 +72,7 @@ export function Input({
   const hintId = `${inputId}-hint`;
   const showHint = Boolean(hint) && !error;
 
-  return (
-    <div className={cn("flex flex-col gap-1.5", wrapperClassName)}>
-      {label && (
-        <label htmlFor={inputId} className={labelClass}>
-          {label}
-        </label>
-      )}
+  const control = (
       <input
         id={inputId}
         aria-invalid={fieldInvalid(Boolean(error))}
@@ -98,10 +99,28 @@ export function Input({
           "border border-white/10 focus:border-accent/50 focus:ring-1 focus:ring-accent/30 focus:outline-none",
           "transition-all duration-200",
           error && "border-danger/50 focus:border-danger/50 focus:ring-danger/30",
+          trailing && "pr-11",
           className
         )}
         {...props}
       />
+  );
+
+  return (
+    <div className={cn("flex flex-col gap-1.5", wrapperClassName)}>
+      {label && (
+        <label htmlFor={inputId} className={labelClass}>
+          {label}
+        </label>
+      )}
+      {trailing ? (
+        <div className="relative">
+          {control}
+          <div className="absolute inset-y-0 right-1 flex items-center">{trailing}</div>
+        </div>
+      ) : (
+        control
+      )}
       {showHint && (
         <p id={hintId} className="text-xs text-muted/80">
           {hint}

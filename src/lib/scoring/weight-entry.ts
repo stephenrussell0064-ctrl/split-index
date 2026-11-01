@@ -260,6 +260,21 @@ export const EXERCISE_LOAD_CONFIG: Record<string, ExerciseConfig> = {
     anchorConvention: "total",
     conventionNote: "Total load on the sled (plates; the sled's own frame weight isn't counted).",
   },
+  // One arm, one dumbbell — the anchor (dbKickback, 1 Nov 2026) is per hand.
+  dbKickback: {
+    defaultConvention: "perHand",
+    allowedConventions: ["perHand"],
+    anchorConvention: "perHand",
+    conventionNote: "The one dumbbell in your hand.",
+  },
+  // A single dumbbell held in both hands: one load, not per hand. The bar
+  // and cable versions are chosen in the equipment picker, same convention.
+  overheadTricepExtension: {
+    defaultConvention: "total",
+    allowedConventions: ["total"],
+    anchorConvention: "total",
+    conventionNote: "The dumbbell, bar or stack you lifted — one number.",
+  },
   ...isoLateralConfigs(),
 };
 
@@ -338,6 +353,19 @@ const NAME_TO_CONFIG_KEY: Record<string, string> = {
   "dumbbell fly": "dbFly",
   "incline dumbbell fly": "dbFly",
   "dumbbell shrug": "dbShrug",
+  // 1 Nov 2026 balance pass — kept in step with LIFT_ALIASES, as above.
+  "dumbbell kickback": "dbKickback",
+  "tricep kickback": "dbKickback",
+  "overhead tricep extension": "overheadTricepExtension",
+  "tricep extension": "overheadTricepExtension",
+  "cable overhead extension": "overheadTricepExtension",
+  "overhead cable extension": "overheadTricepExtension",
+  // One dumbbell per hand, like the lunges it now scores alongside.
+  "single leg rdl": "bulgarianSplit",
+  "single leg romanian deadlift": "bulgarianSplit",
+  // Light dumbbells, one per hand, like the lateral raise they score near.
+  "y raise": "lateralRaise",
+  "w raise": "lateralRaise",
   "barbell curl": "barbellCurl",
   "ez bar curl": "barbellCurl",
   "farmer's carry": "farmersCarry",

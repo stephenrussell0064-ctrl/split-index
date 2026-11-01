@@ -76,6 +76,8 @@ export const gymSetSchema = z
     reps_in_reserve: bounded([0, 10], "reps in reserve").nullish(),
     duration_seconds: bounded(BOUND_DURATION_S, "hold time").nullish(),
     distance_meters: bounded(BOUND_DISTANCE_M, "carry distance").nullish(),
+    /** A drop set — see GymExerciseSet. Descriptive only; never scored. */
+    drop_set: z.boolean().nullish(),
   })
   .strict();
 

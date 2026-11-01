@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { Swords, Check, X, Ban, Crown } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -140,6 +140,10 @@ export function DuelsPanel({ initialDuels, friends, currentUserId }: DuelsPanelP
   const [days, setDays] = useState("7");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sentTo, setSentTo] = useState<string | null>(null);
+  // The Pending section, so a just-sent invite can be brought on screen —
+  // see sendDuel.
+  const pendingRef = useRef<HTMLDivElement>(null);
 
   async function refresh() {
     const res = await fetch("/api/duels");
@@ -151,6 +155,7 @@ export function DuelsPanel({ initialDuels, friends, currentUserId }: DuelsPanelP
     if (!friendId) return;
     setSending(true);
     setError(null);
+    setSentTo(null);
     try {
       const res = await fetch("/api/duels", {
         method: "POST",
@@ -160,6 +165,17 @@ export function DuelsPanel({ initialDuels, friends, currentUserId }: DuelsPanelP
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       await refresh();
+      const friend = friends.find((f) => f.profile.userId === friendId)?.profile;
+      setSentTo(friend?.displayName ?? friend?.username ?? "your friend");
+      // Owner: "won't let you scroll to see the duel once you have requested
+      // it". On a phone the new Pending card lands below the form, under the
+      // keyboard-dismiss scroll position and (in the native shell) behind the
+      // tab bar, so nothing on screen changes when the invite goes. Bring it
+      // into view rather than leaving the athlete to hunt for it. Deferred a
+      // frame so the Pending section has rendered and the ref is attached.
+      requestAnimationFrame(() => {
+        pendingRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to send duel");
     } finally {
@@ -229,6 +245,11 @@ export function DuelsPanel({ initialDuels, friends, currentUserId }: DuelsPanelP
                 />
               </div>
               {error && <p className="text-xs text-danger">{error}</p>}
+              {sentTo && !error && (
+                <p className="text-xs text-success" role="status">
+                  Invite sent to {sentTo}. It is waiting under Pending below until they accept.
+                </p>
+              )}
               <Button size="sm" loading={sending} onClick={sendDuel}>
                 <Swords className="h-3.5 w-3.5" />
                 Send duel invite
@@ -239,7 +260,7 @@ export function DuelsPanel({ initialDuels, friends, currentUserId }: DuelsPanelP
       </Card>
 
       {pending.length > 0 && (
-        <div>
+        <div ref={pendingRef} className="scroll-mt-4">
           <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted">
             Pending
           </p>

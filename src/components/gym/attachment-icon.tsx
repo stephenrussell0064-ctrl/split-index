@@ -7,6 +7,9 @@ import {
   TrendingUp,
   MoveRight,
   MoveUp,
+  Dumbbell,
+  Columns2,
+  Hand,
 } from "lucide-react";
 import type { ExerciseAttachmentIcon } from "@/lib/scoring/strength/attachment-icons";
 
@@ -29,6 +32,10 @@ const ICONS: Record<ExerciseAttachmentIcon, typeof Waves> = {
   "sled-45": TrendingUp,
   "horizontal-press": MoveRight,
   "vertical-press": MoveUp,
+  dumbbell: Dumbbell,
+  // Arms/legs picker: two columns for both sides, one hand for one.
+  "both-limbs": Columns2,
+  "single-limb": Hand,
 };
 
 export function AttachmentIcon({

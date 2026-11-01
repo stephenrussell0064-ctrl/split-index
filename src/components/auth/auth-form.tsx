@@ -11,6 +11,7 @@ import { WelcomeIntro } from "@/components/auth/welcome-intro";
 import { INTRO_SEEN_KEY, shouldShowIntro } from "@/components/auth/welcome-intro-content";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { createClient } from "@/lib/supabase/client";
 import { authErrorMessage } from "@/lib/supabase/auth-errors";
 import { buildAuthCallbackUrl } from "@/lib/supabase/auth-callback-url";
@@ -102,6 +103,11 @@ export function AuthForm({
   const [phase, setPhase] = useState<Phase>("form");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  // Sign-up only (user request: "add confirm password so that people don't
+  // enter the wrong password by accident"). Checked here, before Supabase is
+  // ever called, so a typo never creates an account the athlete cannot get
+  // back into.
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [otp, setOtp] = useState("");
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
@@ -118,6 +124,11 @@ export function AuthForm({
 
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (mode === "signup" && password !== confirmPassword) {
+      setError("Passwords do not match.");
+      setMessage("");
+      return;
+    }
     setLoading(true);
     setError("");
     setMessage("");
@@ -426,19 +437,34 @@ export function AuthForm({
                 onChange={(e) => setEmail(e.target.value)}
                 required
               />
-              <Input
+              <PasswordInput
                 label="Password"
-                type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 minLength={mode === "signup" ? 8 : undefined}
+                autoComplete={mode === "signup" ? "new-password" : "current-password"}
               />
               {mode === "signup" && (
                 <p className="text-xs text-muted -mt-2">
                   Use at least 8 characters. Longer passwords with letters and numbers are
                   stronger.
                 </p>
+              )}
+              {mode === "signup" && (
+                <PasswordInput
+                  label="Confirm password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                  minLength={8}
+                  autoComplete="new-password"
+                  error={
+                    confirmPassword && confirmPassword !== password
+                      ? "Passwords do not match."
+                      : undefined
+                  }
+                />
               )}
 
               {mode === "login" && (

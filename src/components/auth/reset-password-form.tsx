@@ -7,7 +7,7 @@ import { motion, useReducedMotion } from "framer-motion";
 import { BrandMark } from "@/components/brand/brand-mark";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils/cn";
-import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { createClient } from "@/lib/supabase/client";
 import { authErrorMessage } from "@/lib/supabase/auth-errors";
 
@@ -109,23 +109,26 @@ export function ResetPasswordForm() {
             </p>
 
             <form onSubmit={handleSubmit} className="space-y-4">
-              <Input
+              <PasswordInput
                 label="New password"
-                type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 minLength={8}
                 autoComplete="new-password"
               />
-              <Input
+              <PasswordInput
                 label="Confirm password"
-                type="password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 required
                 minLength={8}
                 autoComplete="new-password"
+                error={
+                  confirmPassword && confirmPassword !== password
+                    ? "Passwords do not match."
+                    : undefined
+                }
               />
 
               {error && <p className="text-sm text-danger">{error}</p>}

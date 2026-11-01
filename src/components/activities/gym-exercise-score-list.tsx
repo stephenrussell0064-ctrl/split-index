@@ -16,7 +16,9 @@ function formatSetSummary(ex: GymExercise): string {
   const best = sets.reduce((top, s) =>
     s.weight_kg * (1 + s.reps / 30) > top.weight_kg * (1 + top.reps / 30) ? s : top
   );
-  return `${sets.length} sets · best ${formatWeight(best.weight_kg)}×${best.reps}`;
+  const drops = sets.filter((s) => s.drop_set === true).length;
+  const dropNote = drops > 0 ? ` · ${drops} drop ${drops === 1 ? "set" : "sets"}` : "";
+  return `${sets.length} sets · best ${formatWeight(best.weight_kg)}×${best.reps}${dropNote}`;
 }
 
 function insightForExercise(

@@ -510,12 +510,34 @@ describe("resolveLiftAnchor — generic fallback", () => {
   });
 
   it("an un-anchored CATALOGUE exercise inherits its movement pattern, and stays honestly flagged as generic", () => {
-    const clean = score("Power Clean", 60);
-    expect(clean.source).toBe("generic");
-    expect(clean.flags).toContain("estimated-generic-standard");
+    // Was the power clean, which got its own Strength Level table in the
+    // 1 Nov 2026 balance pass. A wall ball is the legs compound still with
+    // no published standard.
+    const wallBall = score("Wall Ball", 60);
+    expect(wallBall.source).toBe("generic");
+    expect(wallBall.flags).toContain("estimated-generic-standard");
     // A legs compound, not a 0.35 upper-body-shaped guess: the same load on
     // the flat generic read 925.
-    expect(clean.score).toBeLessThan(700);
+    expect(wallBall.score).toBeLessThan(700);
+  });
+
+  it("the Olympic lifts and the other 1 Nov 2026 balance-pass movements are calibrated, not generic", () => {
+    for (const name of [
+      "Power Clean",
+      "Snatch",
+      "Shrug",
+      "Goblet Squat",
+      "Seated Cable Row",
+      "Reverse Pec Deck",
+      "Dumbbell Kickback",
+      "Overhead Tricep Extension",
+      "Cable Crunch",
+      "Seated Calf Raise",
+    ]) {
+      const result = score(name, 40);
+      expect(result.source, name).toBe("accessory");
+      expect(result.flags, name).not.toContain("estimated-generic-standard");
+    }
   });
 
   it("a loaded core movement no longer pins the scale at an ordinary working set", () => {

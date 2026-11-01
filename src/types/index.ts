@@ -194,6 +194,14 @@ export interface GymExerciseSet {
    */
   duration_seconds?: number | null;
   distance_meters?: number | null;
+  /**
+   * True when this set was a drop set: performed straight after the set
+   * before it, at a lighter load, with no rest. Purely descriptive — scoring
+   * takes the exercise's heaviest set either way, so a drop set can never
+   * score the exercise and never needs to. Absent on everything logged
+   * before the flag existed, which reads as false.
+   */
+  drop_set?: boolean | null;
 }
 
 export interface GymExercise {

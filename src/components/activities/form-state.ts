@@ -29,6 +29,13 @@ export interface SetRowState {
   /** Distance covered, for `tracking: "distance"` exercises (carries, sled work). Optional for the same reason as durationSeconds. */
   distanceMeters?: string;
   /**
+   * A drop set: done straight after the set above it, lighter, no rest.
+   * Marked by the "Drop set" button under the set list; shown as a badge in
+   * place of the set number. Optional for the same reason as durationSeconds
+   * — absent means an ordinary set.
+   */
+  dropSet?: boolean;
+  /**
    * What this set was FILLED IN WITH before the athlete touched it, when it
    * was filled in at all — by the Hybrid Plan's prescription ("plan") or by
    * the athlete's own last logged set of the exercise ("history").
@@ -1706,6 +1713,9 @@ export function validateAndBuildPayload(
             durationSeconds !== undefined ? Math.round(durationSeconds) : null,
           distance_meters:
             setDistanceMeters !== undefined ? Math.round(setDistanceMeters) : null,
+          // Only ever sent as true: the stored shape stays identical to every
+          // set logged before drop sets existed unless the athlete marked one.
+          ...(s.dropSet ? { drop_set: true } : {}),
         };
       });
 
