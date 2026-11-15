@@ -36,6 +36,7 @@ const PURCHASE_PATH_FILES = [
   "components/pricing/sku-picker.tsx",
   "components/layout/native-billing-bootstrap.tsx",
   "components/pricing/manage-subscription.tsx",
+  "components/pricing/switch-to-free.tsx",
 ];
 
 /** Strips comments so prose about the old behaviour does not trip the check. */
